@@ -106,9 +106,22 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
     uint64_t l_skey_len = sizeof(uint64_t);
     uint64_t l_pkey_len = sizeof(uint64_t);
     for(size_t i = 0; i < a_params->key_count; ++i) {
-        l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
-        l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
+        if (a_params->keys[i]) {
+            size_t l_priv_size = dap_enc_ser_priv_key_size(a_params->keys[i]);
+            size_t l_pub_size = dap_enc_ser_pub_key_size(a_params->keys[i]);
+            log_it(L_DEBUG, "Key %zu type=%d, priv_size=%zu, pub_size=%zu", i, a_params->keys[i]->type, l_priv_size, l_pub_size);
+            if (l_priv_size == 0 || l_pub_size == 0) {
+                log_it(L_ERROR, "Key %zu has zero serialization size: priv=%zu pub=%zu", i, l_priv_size, l_pub_size);
+                return -3;
+            }
+            l_skey_len += l_priv_size;
+            l_pkey_len += l_pub_size;
+        } else {
+            log_it(L_ERROR, "Key %zu is NULL in multisign params", i);
+            return -4;
+        }
     }
+    log_it(L_DEBUG, "Total sizes: l_skey_len=%llu, l_pkey_len=%llu", (unsigned long long)l_skey_len, (unsigned long long)l_pkey_len);
     l_skey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_multisign_private_key_t, l_skey_len, -1);
     l_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_multisign_public_key_t, l_pkey_len, -1, l_skey);
 // func work
@@ -297,7 +310,8 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
 {
 // sanity check
     dap_multi_sign_params_t *l_params = a_key->_pvt;
-    dap_return_val_if_pass(!l_params || !l_params->key_count || l_params->type.type != SIG_TYPE_MULTI_CHAINED, -1);
+    dap_return_val_if_pass(!l_params || !l_params->key_count || 
+                          (l_params->type.type != SIG_TYPE_MULTI_CHAINED && l_params->type.type != SIG_TYPE_MULTI_ECDSA_DILITHIUM), -1);
 // memory alloc
     dap_multi_sign_t *l_sign = a_sign_out;
     l_sign->key_hashes = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_chain_hash_fast_t, l_params->key_count, -6);
@@ -368,8 +382,8 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
 {
     dap_return_val_if_pass(!a_sign || !a_msg, -1);
     dap_multi_sign_t *l_sign = a_sign;
-    if (l_sign->type.type != SIG_TYPE_MULTI_CHAINED) {
-        log_it (L_ERROR, "Unsupported multi-signature type");
+    if (l_sign->type.type != SIG_TYPE_MULTI_CHAINED && l_sign->type.type != SIG_TYPE_MULTI_ECDSA_DILITHIUM) {
+        log_it (L_ERROR, "Unsupported multi-signature type: %u", l_sign->type.type);
         return -1;
     }
     if (!l_sign->sign_data || !l_sign->key_hashes || !l_sign->meta || !l_sign->key_seq) {
@@ -381,8 +395,17 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
     for (uint8_t i = 0; i < l_sign->sign_count; ++i) {
         dap_chain_hash_fast_t l_data_hash;
         dap_multisign_public_key_t *l_pkeys = a_key->pub_key_data;
+        if (!l_pkeys) {
+            log_it(L_ERROR, "Invalid multisign public key data at step %d", i);
+            return -5;
+        }
         size_t l_pkey_size = l_sign->meta[i].sign_header.sign_pkey_size;
         size_t l_sign_size = l_sign->meta[i].sign_header.sign_size;
+        if (l_pkeys_mem_shift + l_pkey_size > l_pkeys->len) {
+            log_it(L_ERROR, "Public key memory overflow at step %d: offset=%u, size=%zu, total=%llu", 
+                   i, l_pkeys_mem_shift, l_pkey_size, (unsigned long long)l_pkeys->len);
+            return -6;
+        }
         dap_sign_t *l_step_sign = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_sign_t, sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size, -1);
         int l_verified = 0;
         // get multisign hash data
@@ -421,4 +444,28 @@ void dap_multi_sign_delete(void *a_sign)
     dap_multi_sign_t *l_sign = (dap_multi_sign_t*)a_sign;
     DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq);
 
+}
+
+/**
+ * @brief Calculate serialized private key size for multisign
+ * @param a_priv_key Private key data
+ * @return Size of serialized private key
+ */
+uint64_t dap_enc_sig_multisign_ser_priv_key_size(const void *a_priv_key)
+{
+    dap_return_val_if_pass(!a_priv_key, 0);
+    const dap_multisign_private_key_t *l_skey = (const dap_multisign_private_key_t*)a_priv_key;
+    return l_skey->len;
+}
+
+/**
+ * @brief Calculate serialized public key size for multisign
+ * @param a_pub_key Public key data
+ * @return Size of serialized public key
+ */
+uint64_t dap_enc_sig_multisign_ser_pub_key_size(const void *a_pub_key)
+{
+    dap_return_val_if_pass(!a_pub_key, 0);
+    const dap_multisign_public_key_t *l_pkey = (const dap_multisign_public_key_t*)a_pub_key;
+    return l_pkey->len;
 }

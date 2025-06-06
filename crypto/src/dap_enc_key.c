@@ -485,6 +485,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_multisign_ecdsa_dilithium_key_new_generate,
 
         .delete_callback =                  dap_enc_sig_multisign_key_delete,
+        .del_sign =                         dap_multi_sign_delete,
         .del_pub_key =                      NULL,
         .del_priv_key =                     NULL,
 
@@ -658,8 +659,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_sign =                         dap_enc_sig_multisign_write_signature,
         .ser_priv_key =                     NULL,
         .ser_pub_key =                      NULL,
-        .ser_priv_key_size =                NULL,
-        .ser_pub_key_size =                 NULL,
+        .ser_priv_key_size =                dap_enc_sig_multisign_ser_priv_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_multisign_ser_pub_key_size,
 
         .deser_sign =                       dap_enc_sig_multisign_read_signature,
         .deser_priv_key =                   NULL,
@@ -1197,7 +1198,7 @@ size_t dap_enc_ser_pub_key_size(dap_enc_key_t *a_key)
     dap_return_val_if_pass(!a_key, 0);
 // func work
     if(s_callbacks[a_key->type].ser_pub_key_size) {
-        return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
+        return s_callbacks[a_key->type].ser_pub_key_size(a_key->pub_key_data);
     }
     log_it(L_WARNING, "No callback for public key size calculate to %s enc key", dap_enc_get_type_name(a_key->type));
     return a_key->pub_key_data_size;

@@ -97,7 +97,7 @@ uint64_t dap_enc_chipmunk_deser_public_key_size(const void *unused);
 
 // Signature serialization/deserialization functions
 uint8_t *dap_enc_chipmunk_write_signature(const void *a_sign, size_t *a_sign_len);
-uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen);
+void *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen);
 
 // Delete functions for memory cleanup
 void dap_enc_chipmunk_public_key_delete(void *a_pub_key);

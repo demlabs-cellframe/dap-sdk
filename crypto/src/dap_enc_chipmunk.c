@@ -391,14 +391,16 @@ uint8_t *dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_o
 
 uint64_t dap_enc_chipmunk_ser_private_key_size(const void *a_key)
 {
-    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
-    return l_key ? l_key->priv_key_data_size : 0;
+    // a_key is actually the private key data, not dap_enc_key_t structure
+    (void)a_key; // Suppress unused parameter warning
+    return CHIPMUNK_PRIVATE_KEY_SIZE;
 }
 
 uint64_t dap_enc_chipmunk_ser_public_key_size(const void *a_key)
 {
-    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
-    return l_key ? l_key->pub_key_data_size : 0;
+    // a_key is actually the public key data, not dap_enc_key_t structure
+    (void)a_key; // Suppress unused parameter warning
+    return CHIPMUNK_PUBLIC_KEY_SIZE;
 }
 
 void* dap_enc_chipmunk_read_private_key(const uint8_t *a_buf, size_t a_buflen)
@@ -466,7 +468,7 @@ uint8_t *dap_enc_chipmunk_write_signature(const void *a_sign, size_t *a_sign_len
     return l_buf;
 }
 
-uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
     if (!a_buf || a_buflen != CHIPMUNK_SIGNATURE_SIZE) {
         log_it(L_ERROR, "Invalid buffer for signature deserialization");
@@ -480,7 +482,7 @@ uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen)
     }
     
     memcpy(l_sign, a_buf, a_buflen);
-    return l_sign;
+    return (void*)l_sign;
 }
 
 // Delete functions for memory cleanup
