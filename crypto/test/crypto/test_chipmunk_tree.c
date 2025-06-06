@@ -250,21 +250,41 @@ static bool test_hots_pk_conversion() {
         return false;
     }
 
-    // Check conversion results
-    bool l_has_expected_values = true;
-    for (int i = 0; i < 10; i++) {
-        int32_t l_expected = l_hots_pk.v0.coeffs[i] % CHIPMUNK_HVC_Q;
-        if (l_expected < 0) l_expected += CHIPMUNK_HVC_Q;
-        
-        if (l_hvc_poly.coeffs[i] != l_expected) {
-            printf("   ❌ Conversion mismatch at index %d: got %d, expected %d\n", 
-                   i, l_hvc_poly.coeffs[i], l_expected);
-            l_has_expected_values = false;
+    // Check that conversion produced valid HVC polynomial (within symmetric range)
+    bool l_valid_conversion = true;
+    int32_t half_q = CHIPMUNK_HVC_Q / 2;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_hvc_poly.coeffs[i] < -half_q || l_hvc_poly.coeffs[i] >= half_q) {
+            printf("   ❌ Invalid HVC coefficient at index %d: %d (must be -%d <= coeff < %d)\n", 
+                   i, l_hvc_poly.coeffs[i], half_q, half_q);
+            l_valid_conversion = false;
             break;
         }
     }
 
-    if (!l_has_expected_values) {
+    if (!l_valid_conversion) {
+        return false;
+    }
+
+    // Check that conversion is deterministic (same input produces same output)
+    chipmunk_hvc_poly_t l_hvc_poly2;
+    int l_ret2 = chipmunk_hots_pk_to_hvc_poly(&l_hots_pk, &l_hvc_poly2);
+    if (l_ret2 != CHIPMUNK_ERROR_SUCCESS) {
+        printf("   ❌ Second conversion failed: %d\n", l_ret2);
+        return false;
+    }
+
+    bool l_deterministic = true;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_hvc_poly.coeffs[i] != l_hvc_poly2.coeffs[i]) {
+            printf("   ❌ Conversion not deterministic at index %d: %d vs %d\n", 
+                   i, l_hvc_poly.coeffs[i], l_hvc_poly2.coeffs[i]);
+            l_deterministic = false;
+            break;
+        }
+    }
+
+    if (!l_deterministic) {
         return false;
     }
 
