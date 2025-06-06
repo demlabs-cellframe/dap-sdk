@@ -560,7 +560,7 @@ int main(void)
         s_debug_more = true;
         log_it(L_INFO, "🔧 Debug output enabled");
     }
-
+    
     log_it(L_NOTICE, "🚀 CHIPMUNK STANDALONE TESTS");
     log_it(L_NOTICE, "Multi-signature aggregation & batch verification");
     log_it(L_NOTICE, " ");

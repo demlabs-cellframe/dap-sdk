@@ -933,6 +933,20 @@ DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const c
 #define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
 
+/**
+ * @brief DEBUG_MORE macro - extended debug logging controlled by BUILD_DEBUG_MORE CMake flag
+ * 
+ * When BUILD_DEBUG_MORE is defined in CMake, DEBUG_MORE acts as an alias to log_it with L_DEBUG level.
+ * Otherwise, it does nothing (for minimal performance impact in production).
+ * 
+ * Usage: DEBUG_MORE("Detailed debug info: value=%d", value);
+ */
+#ifdef BUILD_DEBUG_MORE
+  #define DEBUG_MORE(...) log_it(L_DEBUG, ##__VA_ARGS__)
+#else
+  #define DEBUG_MORE(...) /* nothing */
+#endif
+
 char *dap_dump_hex(byte_t *a_data, size_t a_size);
 
 #ifdef DAP_SYS_DEBUG

@@ -1,7 +1,7 @@
 {
-  "version": "1.5",
+  "version": "2.0",
   "created": "2025-01-03T15:00:00Z",
-  "updated": "2025-06-06T13:30:00Z",
+  "updated": "2025-01-10T00:00:00Z",
   "project": {
     "name": "DAP SDK",
     "description": "Cellframe DAP SDK - blockchain development framework with post-quantum cryptography",
@@ -19,12 +19,19 @@
     "build_configurations": {
       "debug": "build_debug/ - Debug build with symbols and assertions",
       "release": "build.release/ - Optimized release build", 
+      "profile": "build.profile/ - ⭐ NEW: Профилирование производительности с отладочной информацией",
       "test": "build_test/ - Test configuration",
       "ci": "build_ci/ - CI/CD pipeline build",
       "asan": "build_asan/ - AddressSanitizer build for memory debugging"
     }
   },
   "recent_achievements": {
+    "2025-01-10": {
+      "milestone": "PERFORMANCE OPTIMIZATION IN PROGRESS - Chipmunk профилирование",
+      "achievement": "✅ Внедрена Barrett reduction оптимизация ✅ Оптимизирован debug logging (DEBUG_MORE) ✅ Кэширование HOTS параметров ✅ Создана специальная сборка build.profile для профилирования ✅ Обновлена методология отладки производительности",
+      "impact": "Начато глубокое профилирование C реализации Chipmunk для поиска узких мест",
+      "status": "🔬 IN PROGRESS - Профилирование производительности Chipmunk"
+    },
     "2025-06-06": {
       "milestone": "CRITICAL ISSUES RESOLVED - Core functionality stabilized",
       "achievement": "✅ Fixed all sign-compare compiler errors in core/test/dap_common_test.c ✅ Successfully blocked problematic SIG_MULTI_ECDSA_DILITHIUM multithread test ✅ All multithread tests now pass successfully ✅ Restored dap_sign_test_run() without crashes ✅ FIXED Chipmunk segfault in multi-signature aggregation test ✅ FIXED Regular signature should not be aggregated assertion failure ✅ Fixed Chipmunk auxiliary test compilation errors ✅ CRYPTO-TEST and CORE_TEST build successfully",
@@ -33,11 +40,11 @@
     }
   },
   "current_focus": {
-    "area": "✅ ЗАВЕРШЕНО: Все sign-compare ошибки исправлены, CI build полностью восстановлен",
-    "status": "✅ CI BUILD SUCCESS - Все критические ошибки устранены",
-    "description": "Исправлены все sign-compare ошибки в core/test/dap_common_test.c + strncat warning в dap_circular_test.c",
-    "location": "core/test/ - Все проблемные строки исправлены с explicit type casts",
-    "priority": "✅ COMPLETED - CI pipeline восстановлен"
+    "area": "🔬 CHIPMUNK PERFORMANCE OPTIMIZATION",
+    "status": "🚀 АКТИВНО - Профилирование и оптимизация производительности",
+    "description": "Глубокий анализ производительности C реализации Chipmunk vs Rust. Текущая проблема: 374ms/ключ (в 388x медленнее Rust)",
+    "location": "crypto/src/chipmunk/ - Основной фокус на генерации ключей и NTT операциях",
+    "priority": "🔬 HIGH - Критическая оптимизация производительности"
   },
   "core_modules": {
     "crypto": {
@@ -49,7 +56,8 @@
         "All multithread tests passing",
         "Sign API fully functional"
       ],
-      "issues": []
+      "performance_status": "🔬 OPTIMIZATION IN PROGRESS",
+      "issues": ["Performance bottleneck in key generation (374ms/key vs 3.8ms Rust)"]
     },
     "core": {
       "status": "✅ STABLE", 
@@ -86,6 +94,7 @@
     "environments": {
       "debug": "build_debug/",
       "release": "build.release/",
+      "profile": "build.profile/",
       "asan": "build_asan/"
     },
     "status": "fully_functional",
@@ -94,7 +103,14 @@
       "macOS/Clang compatibility for core tests",
       "Fixed __builtin_*_overflow_p issues",
       "Enhanced test framework integration"
-    ]
+    ],
+    "profiling_configuration": {
+      "build_type": "RelWithDebInfo",
+      "flags": ["-O2", "-g", "-DWITH_CALLGRIND=ON", "-fno-omit-frame-pointer"],
+      "tools": ["callgrind", "perf", "gprof", "instruments (macOS)"],
+      "directory": "build.profile/",
+      "cmake_command": "cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PROFILING=ON .."
+    }
   },
   "quality_standards": {
     "coding_guidelines": "context/coding_guidelines.json",
@@ -232,6 +248,49 @@
     "available_modules": ["crypto", "core", "net", "other"]
   },
   "debugging_methodology": {
+    "profiling_tools": {
+      "🆕 NEW": "Расширенные инструменты профилирования производительности",
+      "callgrind": {
+        "tool": "Valgrind Callgrind",
+        "command": "valgrind --tool=callgrind ./binary",
+        "output": "callgrind.out.<pid>",
+        "viewer": "kcachegrind (Linux/Windows) или qcachegrind (macOS)",
+        "use_case": "Детальный анализ вызовов функций и hotspots"
+      },
+      "perf": {
+        "tool": "Linux perf",
+        "command": "perf record -g ./binary && perf report",
+        "platform": "Linux only",
+        "use_case": "Низкоуровневое профилирование CPU, cache misses, branch predictions"
+      },
+      "instruments": {
+        "tool": "Apple Instruments",
+        "command": "instruments -t 'Time Profiler' ./binary",
+        "platform": "macOS only",
+        "use_case": "macOS нативное профилирование с визуальным интерфейсом"
+      },
+      "gprof": {
+        "tool": "GNU gprof",
+        "compile_flags": "-pg",
+        "command": "./binary && gprof ./binary gmon.out",
+        "use_case": "Статистическое профилирование функций"
+      },
+      "build_profile_setup": {
+        "description": "🎯 Создание специальной сборки для профилирования",
+        "steps": [
+          "mkdir -p build.profile && cd build.profile",
+          "cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PROFILING=ON ..",
+          "make crypto-test -j8",
+          "Запуск с профилировщиком: valgrind --tool=callgrind ./crypto/test/crypto/chipmunk-performance-test"
+        ]
+      }
+    },
+    "performance_testing_rule": {
+      "build_directory": "build.release/ ИЛИ build.profile/",
+      "optimization_level": "-O3 (release) или -O2 -g (profile)",
+      "requirement": "🎯 ВСЕГДА используйте оптимизированные сборки для тестирования производительности",
+      "rationale": "Честное сравнение возможно только с оптимизированными релизными сборками или профильными с debug info"
+    },
     "segfault_analysis": {
       "tool": "lldb (macOS) or gdb (Linux)",
       "command": "lldb ./path/to/binary -o \"run\" -o \"bt\" -o \"quit\"",

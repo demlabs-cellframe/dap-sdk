@@ -148,6 +148,14 @@ if(ANDROID)
 endif()
 
 
+# Option to enable extended debug logging
+option(BUILD_DEBUG_MORE "Enable extended debug logging with DEBUG_MORE macro" OFF)
+
+if(BUILD_DEBUG_MORE)
+    message("[+] Extended debug logging enabled (DEBUG_MORE macro)")
+    add_definitions("-DBUILD_DEBUG_MORE")
+endif()
+
 # Option to enable full cppcheck analysis
 option(ENABLE_CPPCHECK_ANALYSIS "Enable full cppcheck static analysis" OFF)
 

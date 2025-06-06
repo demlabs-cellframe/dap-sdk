@@ -630,7 +630,7 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
         
         // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
         int32_t l_signed = (int32_t)l_raw;
-        a_key->v0.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        a_key->v0.coeffs[i] = chipmunk_barrett_reduce((chipmunk_barrett_reduce(l_signed) + CHIPMUNK_Q));
     }
     
     // Read v1 polynomial (CHIPMUNK_N * 4 bytes)
@@ -643,7 +643,7 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
         
         // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
         int32_t l_signed = (int32_t)l_raw;
-        a_key->v1.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        a_key->v1.coeffs[i] = chipmunk_barrett_reduce((chipmunk_barrett_reduce(l_signed) + CHIPMUNK_Q));
     }
     
     return CHIPMUNK_ERROR_SUCCESS;

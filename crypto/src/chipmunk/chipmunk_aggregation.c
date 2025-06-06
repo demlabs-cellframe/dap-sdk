@@ -19,7 +19,7 @@ static bool s_debug_more = false;
 
 // Вспомогательная функция для редукции коэффициента по модулю q
 static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
-    int32_t t = coeff % CHIPMUNK_Q;
+    int32_t t = chipmunk_barrett_reduce(coeff);
     if (t > CHIPMUNK_Q_OVER_TWO) {
         t -= CHIPMUNK_Q;
     } else if (t < -CHIPMUNK_Q_OVER_TWO) {
@@ -545,15 +545,15 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         if (i < verify_randomizers.count) {
             for (int j = 0; j < CHIPMUNK_N; j++) {
                 int32_t rand_coeff = (int32_t)verify_randomizers.randomizers[i].coeffs[j];
-                temp_v0.coeffs[j] = (temp_v0.coeffs[j] * rand_coeff) % CHIPMUNK_Q;
-                temp_v1.coeffs[j] = (temp_v1.coeffs[j] * rand_coeff) % CHIPMUNK_Q;
+                temp_v0.coeffs[j] = chipmunk_barrett_reduce(temp_v0.coeffs[j] * rand_coeff);
+                temp_v1.coeffs[j] = chipmunk_barrett_reduce(temp_v1.coeffs[j] * rand_coeff);
             }
         }
         
         // Добавляем к агрегированному ключу
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            v0_agg.coeffs[j] = (v0_agg.coeffs[j] + temp_v0.coeffs[j]) % CHIPMUNK_Q;
-            v1_agg.coeffs[j] = (v1_agg.coeffs[j] + temp_v1.coeffs[j]) % CHIPMUNK_Q;
+            v0_agg.coeffs[j] = chipmunk_barrett_reduce(v0_agg.coeffs[j] + temp_v0.coeffs[j]);
+            v1_agg.coeffs[j] = chipmunk_barrett_reduce(v1_agg.coeffs[j] + temp_v1.coeffs[j]);
         }
     }
     
@@ -587,13 +587,13 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
     
     // H(m) * v0_agg
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t temp = ((int64_t)challenge_poly_verify.coeffs[i] * (int64_t)v0_agg.coeffs[i]) % CHIPMUNK_Q;
+        int64_t temp = chipmunk_barrett_reduce((int64_t)challenge_poly_verify.coeffs[i] * (int64_t)v0_agg.coeffs[i]);
         right_side.coeffs[i] = (int32_t)temp;
     }
     
     // + v1_agg
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        right_side.coeffs[i] = (right_side.coeffs[i] + v1_agg.coeffs[i]) % CHIPMUNK_Q;
+        right_side.coeffs[i] = chipmunk_barrett_reduce(right_side.coeffs[i] + v1_agg.coeffs[i]);
     }
     
     // 3. Проверяем равенство (упрощенная версия)
@@ -738,15 +738,15 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
         // Генерируем batch coefficient для этой подписи
         uint32_t batch_coeff = 1;
         for (int i = 0; i < 4; i++) {
-            batch_coeff = (batch_coeff * 256 + batch_randomness[(sig_idx * 4 + i) % 32]) % CHIPMUNK_Q;
+            batch_coeff = chipmunk_barrett_reduce(batch_coeff * 256 + batch_randomness[(sig_idx * 4 + i) % 32]);
         }
         if (batch_coeff == 0) batch_coeff = 1; // Избегаем нулевого коэффициента
         
         // Добавляем левую часть: batch_coeff * Σ(a_i * σ_i)
         for (int w = 0; w < CHIPMUNK_W; w++) {
             for (int i = 0; i < CHIPMUNK_N; i++) {
-                int64_t temp = ((int64_t)batch_coeff * (int64_t)multi_sig->aggregated_hots.sigma[w].coeffs[i]) % CHIPMUNK_Q;
-                aggregated_left_side[w].coeffs[i] = (aggregated_left_side[w].coeffs[i] + (int32_t)temp) % CHIPMUNK_Q;
+                            int64_t temp = chipmunk_barrett_reduce((int64_t)batch_coeff * (int64_t)multi_sig->aggregated_hots.sigma[w].coeffs[i]);
+            aggregated_left_side[w].coeffs[i] = chipmunk_barrett_reduce(aggregated_left_side[w].coeffs[i] + (int32_t)temp);
             }
         }
         
@@ -773,9 +773,9 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
         
         // batch_coeff * H(m) * v0
         for (int i = 0; i < CHIPMUNK_N; i++) {
-            int64_t temp1 = ((int64_t)challenge_poly.coeffs[i] * (int64_t)v0_simple.coeffs[i]) % CHIPMUNK_Q;
-            int64_t temp2 = ((int64_t)batch_coeff * temp1) % CHIPMUNK_Q;
-            aggregated_right_side.coeffs[i] = (aggregated_right_side.coeffs[i] + (int32_t)temp2) % CHIPMUNK_Q;
+            int64_t temp1 = chipmunk_barrett_reduce((int64_t)challenge_poly.coeffs[i] * (int64_t)v0_simple.coeffs[i]);
+            int64_t temp2 = chipmunk_barrett_reduce((int64_t)batch_coeff * temp1);
+            aggregated_right_side.coeffs[i] = chipmunk_barrett_reduce(aggregated_right_side.coeffs[i] + (int32_t)temp2);
         }
     }
     

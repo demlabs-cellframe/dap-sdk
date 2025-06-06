@@ -81,6 +81,14 @@ typedef struct {
 int chipmunk_hots_setup(chipmunk_hots_params_t *a_params);
 
 /**
+ * @brief Get cached HOTS parameters (performance optimization)
+ * 
+ * @param a_params Output parameters structure
+ * @return 0 on success, negative on error
+ */
+int chipmunk_hots_get_cached_params(chipmunk_hots_params_t *a_params);
+
+/**
  * @brief Generate HOTS key pair
  * 
  * @param a_seed Seed for key generation (32 bytes)

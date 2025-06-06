@@ -69,10 +69,10 @@ static int test_performance_variable_signers(size_t num_signers)
         hots_public_keys[i].v0 = private_keys[i].pk.v0;
         hots_public_keys[i].v1 = private_keys[i].pk.v1;
         
-        // Generate HOTS keys
+        // **ОПТИМИЗАЦИЯ**: Используем кэшированные HOTS параметры
         chipmunk_hots_params_t hots_params;
-        if (chipmunk_hots_setup(&hots_params) != 0) {
-            log_it(L_ERROR, "ERROR: Failed to setup HOTS params for signer %zu", i);
+        if (chipmunk_hots_get_cached_params(&hots_params) != 0) {
+            log_it(L_ERROR, "ERROR: Failed to get cached HOTS params for signer %zu", i);
             goto cleanup;
         }
         

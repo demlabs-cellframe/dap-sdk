@@ -389,7 +389,7 @@ static int test_progressive_scale(void) {
     // Test scales: optimized for unit testing, max 1000 (blockchain shard size)
     size_t test_scales[] = {
         3,      // Baseline small test
-        5,      // Small group  
+        5,      // Small group
         10,     // Medium group
         16,     // Previous static limit (legacy compatibility)
         32,     // Small organization

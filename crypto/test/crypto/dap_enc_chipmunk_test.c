@@ -1278,13 +1278,13 @@ void chipmunk_print_test_stats(const chipmunk_test_suite_stats_t *stats) {
     log_it(L_NOTICE, " ");  // Use space instead of empty string
     log_it(L_NOTICE, "=== CHIPMUNK TEST SUITE STATISTICS ===");
     log_it(L_NOTICE, "Tests Executed:  %d", stats->total_tests);
-    log_it(L_NOTICE, "Tests Passed:    %d", stats->passed_tests);  
+    log_it(L_NOTICE, "Tests Passed:    %d", stats->passed_tests);
     log_it(L_NOTICE, "Tests Failed:    %d", stats->failed_tests);
     log_it(L_NOTICE, "Success Rate:    %.1f%%", 
            stats->total_tests > 0 ? (float)stats->passed_tests * 100.0 / stats->total_tests : 0.0);
     log_it(L_NOTICE, "Total Time:      %.3f seconds", stats->total_time_ms / 1000.0);
-    log_it(L_NOTICE, "Peak Memory:     %zu bytes (%.2f MB)",
-           stats->peak_memory_bytes, stats->peak_memory_bytes / (1024.0 * 1024.0));
+        log_it(L_NOTICE, "Peak Memory:     %zu bytes (%.2f MB)", 
+               stats->peak_memory_bytes, stats->peak_memory_bytes / (1024.0 * 1024.0));
     log_it(L_NOTICE, " ");  // Use space instead of empty string
 }
 

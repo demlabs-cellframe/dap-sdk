@@ -371,7 +371,7 @@ int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], u
         l_t &= 0x7FFFFF; 
         
         // Приводим к диапазону [0, q-1]
-        l_t = l_t % CHIPMUNK_Q;
+        l_t = chipmunk_barrett_reduce(l_t);
         
         // Для полинома A коэффициенты должны быть в диапазоне [0, q-1]
         // согласно алгоритму Chipmunk из статьи

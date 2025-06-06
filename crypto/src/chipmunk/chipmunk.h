@@ -84,6 +84,16 @@ enum chipmunk_error_t {
 // =================ENCODING PARAMETERS FROM ORIGINAL param.rs==================
 #define CHIPMUNK_ENCODING_NORM_BOUND 425     ///< Norm bound for alphas and a_star
 
+// Barrett reduction constants for CHIPMUNK_Q = 3168257
+#define CHIPMUNK_BARRETT_R_BITS 23           ///< R = 2^23 for Barrett reduction
+#define CHIPMUNK_BARRETT_R      8388608      ///< R = 2^23 = 8388608
+#define CHIPMUNK_BARRETT_MU     2            ///< mu = floor(R / q) = floor(8388608 / 3168257) = 2
+
+// Barrett reduction constants for CHIPMUNK_HVC_Q = 202753
+#define CHIPMUNK_HVC_BARRETT_R_BITS 18       ///< R = 2^18 for HVC Barrett reduction
+#define CHIPMUNK_HVC_BARRETT_R      262144   ///< R = 2^18 = 262144
+#define CHIPMUNK_HVC_BARRETT_MU     1        ///< mu = floor(R / q) = floor(262144 / 202753) = 1
+
 // Key and signature sizes (updated for correct parameters)
 #define CHIPMUNK_PUBLIC_KEY_SIZE  (32 + CHIPMUNK_N*4*2) // rho_seed + v0 + v1
 #define CHIPMUNK_PRIVATE_KEY_SIZE (32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE) // key_seed + tr + public_key
@@ -233,4 +243,46 @@ int chipmunk_signature_to_bytes(uint8_t *a_output, const chipmunk_signature_t *a
  * @param a_input Input buffer containing serialized signature (CHIPMUNK_SIGNATURE_SIZE bytes)
  * @return CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
-int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_input); 
+int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_input);
+
+/**
+ * @brief Barrett reduction for CHIPMUNK_Q modulus
+ * 
+ * Efficiently computes a % CHIPMUNK_Q using Barrett reduction algorithm.
+ * This is much faster than division-based modular reduction.
+ * 
+ * @param a Input value to reduce (must be < 2^32)
+ * @return a % CHIPMUNK_Q
+ */
+static inline int32_t chipmunk_barrett_reduce(int64_t a) {
+    // Barrett reduction: a % q ≈ a - q * floor(a * mu / R)
+    // where mu = floor(R / q) and R = 2^k
+    int64_t t = ((a * CHIPMUNK_BARRETT_MU) >> CHIPMUNK_BARRETT_R_BITS);
+    int32_t result = (int32_t)(a - t * CHIPMUNK_Q);
+    
+    // Handle potential overflow: ensure result is in [0, q)
+    if (result >= CHIPMUNK_Q) result -= CHIPMUNK_Q;
+    if (result < 0) result += CHIPMUNK_Q;
+    
+    return result;
+}
+
+/**
+ * @brief Barrett reduction for CHIPMUNK_HVC_Q modulus
+ * 
+ * Efficiently computes a % CHIPMUNK_HVC_Q using Barrett reduction algorithm.
+ * 
+ * @param a Input value to reduce (must be < 2^32)
+ * @return a % CHIPMUNK_HVC_Q
+ */
+static inline int32_t chipmunk_hvc_barrett_reduce(int64_t a) {
+    // Barrett reduction for HVC modulus
+    int64_t t = ((a * CHIPMUNK_HVC_BARRETT_MU) >> CHIPMUNK_HVC_BARRETT_R_BITS);
+    int32_t result = (int32_t)(a - t * CHIPMUNK_HVC_Q);
+    
+    // Handle potential overflow: ensure result is in [0, q)
+    if (result >= CHIPMUNK_HVC_Q) result -= CHIPMUNK_HVC_Q;
+    if (result < 0) result += CHIPMUNK_HVC_Q;
+    
+    return result;
+} 

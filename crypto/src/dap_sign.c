@@ -734,7 +734,7 @@ bool dap_sign_is_aggregated(dap_sign_t *a_sign)
             if (a_sign->header.sign_pkey_size == 0 && 
                 a_sign->header.sign_size >= sizeof(uint32_t)) {
                 // This looks like an aggregated signature
-                return true;
+            return true;
             }
             
             // Regular Chipmunk signature has public key data

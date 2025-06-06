@@ -125,7 +125,7 @@ int chipmunk_hvc_hasher_init(chipmunk_hvc_hasher_t *a_hasher, const uint8_t a_se
         }
     }
 
-    log_it(L_DEBUG, "HVC hasher initialized");
+    DEBUG_MORE("HVC hasher initialized");
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -167,7 +167,7 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    log_it(L_DEBUG, "Creating Merkle tree with %zu leaves", a_leaf_count);
+    DEBUG_MORE("Creating Merkle tree with %zu leaves", a_leaf_count);
 
     // Initialize tree structure fields - ВАЖНО: обнуляем указатели сначала
     memset(a_tree, 0, sizeof(chipmunk_tree_t));
@@ -252,7 +252,7 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
     
     DAP_DEL_MULTY(all_nodes);
 
-    log_it(L_DEBUG, "Merkle tree created successfully");
+    DEBUG_MORE("Merkle tree created successfully");
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -305,7 +305,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
 
-    log_it(L_DEBUG, "Generating proof for index %zu in tree with %zu leaves", a_index, a_tree->leaf_count);
+    DEBUG_MORE( "Generating proof for index %zu in tree with %zu leaves", a_index, a_tree->leaf_count);
 
     // Original Rust: path.len() = `tree height - 1`, the missing elements being the root
     size_t path_length = a_tree->height - 1;
@@ -336,7 +336,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     }
     temp_count++;
     
-    log_it(L_DEBUG, "Added leaf level: index %zu, using leaves %zu,%zu", 
+    DEBUG_MORE( "Added leaf level: index %zu, using leaves %zu,%zu", 
            a_index, a_index % 2 == 0 ? a_index : a_index - 1, a_index % 2 == 0 ? a_index + 1 : a_index);
 
     // Original Rust: convert_index_to_last_level(index, HEIGHT)
@@ -347,7 +347,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     // parent_index(index) = (index - 1) >> 1
     size_t current_node = (leaf_index_in_tree - 1) >> 1;
     
-    log_it(L_DEBUG, "Starting from non-leaf node %zu (parent of leaf_in_tree %zu)", current_node, leaf_index_in_tree);
+    DEBUG_MORE( "Starting from non-leaf node %zu (parent of leaf_in_tree %zu)", current_node, leaf_index_in_tree);
 
     // Original Rust: Iterate from the bottom layer after the leaves, to the top
     // while current_node != 0
@@ -356,7 +356,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     while (current_node != 0 && loop_counter < max_iterations) {
         loop_counter++;
         
-        log_it(L_DEBUG, "Loop iteration %d, current_node=%zu", loop_counter, current_node);
+        DEBUG_MORE( "Loop iteration %d, current_node=%zu", loop_counter, current_node);
         
         // Original Rust: sibling_index(current_node)
         size_t sibling_node;
@@ -382,7 +382,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
         }
         temp_count++;
         
-        log_it(L_DEBUG, "Level %zu: current_node=%zu, sibling=%zu, is_left=%s", 
+        DEBUG_MORE( "Level %zu: current_node=%zu, sibling=%zu, is_left=%s", 
                temp_count - 1, current_node, sibling_node, (current_node % 2 == 1) ? "true" : "false");
         
         // Original Rust: current_node = parent_index(current_node).unwrap();
@@ -397,7 +397,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
         memcpy(&a_path->nodes[i], &temp_nodes[reverse_index], sizeof(chipmunk_path_node_t));
     }
 
-    log_it(L_DEBUG, "Generated proof with %zu levels (reversed from bottom-to-top to top-to-bottom)", temp_count);
+    DEBUG_MORE( "Generated proof with %zu levels (reversed from bottom-to-top to top-to-bottom)", temp_count);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -412,7 +412,7 @@ bool chipmunk_path_verify(const chipmunk_path_t *a_path,
         return false;
     }
 
-    log_it(L_DEBUG, "Verifying path for index %zu with path_length %zu", a_path->index, a_path->path_length);
+    DEBUG_MORE( "Verifying path for index %zu with path_length %zu", a_path->index, a_path->path_length);
 
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем логику из оригинального Rust кода
     // Original Rust: check that the first two elements hashes to root
@@ -429,9 +429,9 @@ bool chipmunk_path_verify(const chipmunk_path_t *a_path,
     }
 
     // Debug: Compare first few coefficients
-    log_it(L_DEBUG, "Expected root first 4 coeffs: %d %d %d %d", 
+    DEBUG_MORE( "Expected root first 4 coeffs: %d %d %d %d", 
            a_root->coeffs[0], a_root->coeffs[1], a_root->coeffs[2], a_root->coeffs[3]);
-    log_it(L_DEBUG, "Computed root first 4 coeffs: %d %d %d %d", 
+    DEBUG_MORE( "Computed root first 4 coeffs: %d %d %d %d", 
            l_computed_root.coeffs[0], l_computed_root.coeffs[1], l_computed_root.coeffs[2], l_computed_root.coeffs[3]);
 
     // Проверяем, что хеш первых двух элементов равен root
@@ -445,7 +445,7 @@ bool chipmunk_path_verify(const chipmunk_path_t *a_path,
                 matching_coeffs++;
             }
         }
-        log_it(L_DEBUG, "Matching coefficients: %d/%d", matching_coeffs, CHIPMUNK_N);
+        DEBUG_MORE( "Matching coefficients: %d/%d", matching_coeffs, CHIPMUNK_N);
         
         return false;
     }
@@ -455,7 +455,7 @@ bool chipmunk_path_verify(const chipmunk_path_t *a_path,
     // for i in 1..nodes.len(): hasher.decom_then_hash(&left, &right) == parent_node
     // Для сейчас принимаем, если первый уровень корректен
     
-    log_it(L_DEBUG, "Path verification successful - root hash matches");
+    DEBUG_MORE( "Path verification successful - root hash matches");
     return true;
 }
 
@@ -519,7 +519,7 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
         }
     }
     
-    log_it(L_DEBUG, "Converted HOTS pk to HVC poly via digest (first 4 coeffs: %d %d %d %d)", 
+    DEBUG_MORE( "Converted HOTS pk to HVC poly via digest (first 4 coeffs: %d %d %d %d)", 
            a_hvc_poly->coeffs[0], a_hvc_poly->coeffs[1], a_hvc_poly->coeffs[2], a_hvc_poly->coeffs[3]);
 
     return CHIPMUNK_ERROR_SUCCESS;

@@ -85,7 +85,7 @@ int chipmunk_poly_add(chipmunk_poly_t *r, const chipmunk_poly_t *a, const chipmu
     for (int i = 0; i < CHIPMUNK_N; i++) {
         // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
         int64_t l_temp = (int64_t)a->coeffs[i] + (int64_t)b->coeffs[i];
-        r->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
+        r->coeffs[i] = chipmunk_barrett_reduce(l_temp);
         
         // Приводим к положительному представлению сначала
         if (r->coeffs[i] < 0) {
@@ -118,7 +118,7 @@ int chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, con
     for (int i = 0; i < CHIPMUNK_N; i++) {
         // **ИСПРАВЛЕНО**: используем центрированное представление как в Rust
         int64_t l_temp = (int64_t)a_a->coeffs[i] - (int64_t)a_b->coeffs[i];
-        a_result->coeffs[i] = (int32_t)(l_temp % CHIPMUNK_Q);
+        a_result->coeffs[i] = chipmunk_barrett_reduce(l_temp);
         
         // Приводим к положительному представлению сначала
         if (a_result->coeffs[i] < 0) {
@@ -139,24 +139,24 @@ int chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, con
  * @brief Multiply two polynomials in NTT form
  */
 int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b) {
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function entry");
+    DEBUG_MORE("chipmunk_poly_pointwise: Function entry");
     
     if (!a_result || !a_a || !a_b) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_poly_pointwise");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Pointers validated, calling chipmunk_ntt_pointwise_montgomery");
-    log_it(L_DEBUG, "Starting pointwise multiplication in NTT domain");
+    DEBUG_MORE("chipmunk_poly_pointwise: Pointers validated, calling chipmunk_ntt_pointwise_montgomery");
+    DEBUG_MORE("Starting pointwise multiplication in NTT domain");
     int result = chipmunk_ntt_pointwise_montgomery(a_result->coeffs, a_a->coeffs, a_b->coeffs);
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: chipmunk_ntt_pointwise_montgomery returned %d", result);
+    DEBUG_MORE("chipmunk_poly_pointwise: chipmunk_ntt_pointwise_montgomery returned %d", result);
     
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed pointwise multiplication in NTT domain");
         return result;
     }
     
-    log_it(L_DEBUG, "chipmunk_poly_pointwise: Function exit with success");
+    DEBUG_MORE("chipmunk_poly_pointwise: Function exit with success");
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -312,7 +312,7 @@ void chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_w
         }
     }
     
-    log_it(L_DEBUG, "Created hint with %d nonzero bits out of %d", l_hint_count, CHIPMUNK_N);
+    DEBUG_MORE("Created hint with %d nonzero bits out of %d", l_hint_count, CHIPMUNK_N);
 }
 
 /**
@@ -353,7 +353,7 @@ int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound) {
             
             // Выводим детальную информацию о превышающих норму коэффициентах
             if (l_count_exceeding <= 5) {  // Ограничиваем количество выводимых сообщений
-                log_it(L_DEBUG, "Coefficient at index %d exceeds bound: %d (bound: %d)", 
+                DEBUG_MORE("Coefficient at index %d exceeds bound: %d (bound: %d)", 
                        l_i, l_t, a_bound);
             }
         }
@@ -365,7 +365,7 @@ int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound) {
         return 1;  // Norm exceeded
     }
     
-    log_it(L_DEBUG, "Polynomial norm check passed: all coefficients within bound %d, max value: %d", 
+    DEBUG_MORE("Polynomial norm check passed: all coefficients within bound %d, max value: %d", 
            a_bound, l_max_val);
     return 0;  // Norm within bounds
 }
@@ -473,7 +473,7 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
         log_it(L_WARNING, "Could not generate full challenge polynomial: got %d/%d coefficients in %d attempts", 
                l_coeffs_set, CHIPMUNK_ALPHA_H, l_attempts);
     } else {
-        log_it(L_DEBUG, "Generated full challenge polynomial with %d coefficients in %d attempts", 
+        DEBUG_MORE("Generated full challenge polynomial with %d coefficients in %d attempts", 
                l_coeffs_set, l_attempts);
     }
 
@@ -641,7 +641,7 @@ void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
         
         // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем точную нормализацию как в оригинальном Rust
         // Rust normalize() функция: центрированное представление [-q/2, q/2]
-        int32_t l_result = (int32_t)(l_temp % CHIPMUNK_Q);
+        int32_t l_result = chipmunk_barrett_reduce(l_temp);
         if (l_result < 0) {
             l_result += CHIPMUNK_Q;
         }

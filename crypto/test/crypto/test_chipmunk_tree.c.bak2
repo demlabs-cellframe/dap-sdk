@@ -1,0 +1,445 @@
+/*
+ * Test for Chipmunk Merkle Tree implementation
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include "dap_common.h"
+#include "chipmunk_tree.h"
+#include "chipmunk_hots.h"
+
+#define LOG_TAG "test_chipmunk_tree"
+
+static void print_test_result(const char *test_name, bool result) {
+    if (result) {
+        log_it(L_INFO, "🧪 %-30s: ✅ PASS", test_name);
+    } else {
+        log_it(L_ERROR, "🧪 %-30s: ❌ FAIL", test_name);
+    }
+}
+
+/**
+ * @brief Test HVC hasher initialization
+ */
+static bool test_hvc_hasher_init() {
+    chipmunk_hvc_hasher_t l_hasher;
+    uint8_t l_seed[32] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                          17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+
+    int l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_seed);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize HVC hasher: %d", l_ret);
+        return false;
+    }
+
+    // Check that seed was stored
+    if (memcmp(l_hasher.seed, l_seed, 32) != 0) {
+        log_it(L_ERROR, "   ❌ Seed not stored correctly");
+        return false;
+    }
+
+    // Check that matrix was generated (non-zero)
+    bool l_has_nonzero = false;
+    for (int i = 0; i < CHIPMUNK_HVC_WIDTH && !l_has_nonzero; i++) {
+        for (int j = 0; j < CHIPMUNK_N && !l_has_nonzero; j++) {
+            if (l_hasher.matrix_a[i].coeffs[j] != 0) {
+                l_has_nonzero = true;
+            }
+        }
+    }
+
+    if (!l_has_nonzero) {
+        log_it(L_ERROR, "   ❌ Matrix appears to be all zeros");
+        return false;
+    }
+
+    log_it(L_INFO, "   ✅ HVC hasher initialized with non-zero matrix");
+    return true;
+}
+
+/**
+ * @brief Test HVC hash function
+ */
+static bool test_hvc_hash() {
+    chipmunk_hvc_hasher_t l_hasher;
+    uint8_t l_seed[32] = {0};
+    
+    // Initialize hasher
+    int l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_seed);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize hasher\n");
+        return false;
+    }
+
+    // Create test polynomials
+    chipmunk_hvc_poly_t l_left, l_right, l_result;
+    memset(&l_left, 0, sizeof(l_left));
+    memset(&l_right, 0, sizeof(l_right));
+    
+    // Set some test values
+    l_left.coeffs[0] = 100;
+    l_left.coeffs[1] = 200;
+    l_right.coeffs[0] = 50;
+    l_right.coeffs[1] = 75;
+
+    // Test hash function
+    l_ret = chipmunk_hvc_hash_decom_then_hash(&l_hasher, &l_left, &l_right, &l_result);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Hash function failed: %d\n", l_ret);
+        return false;
+    }
+
+    // Check that result is not all zeros
+    bool l_has_nonzero = false;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_result.coeffs[i] != 0) {
+            l_has_nonzero = true;
+            break;
+        }
+    }
+
+    if (!l_has_nonzero) {
+        log_it(L_ERROR, "   ❌ Hash result is all zeros\n");
+        return false;
+    }
+
+    log_it(L_NOTICE, "   ✅ Hash function produces non-zero output\n");
+    log_it(L_NOTICE, "   📊 First result coeffs: %d, %d, %d, %d\n", 
+           l_result.coeffs[0], l_result.coeffs[1], l_result.coeffs[2], l_result.coeffs[3]);
+    return true;
+}
+
+/**
+ * @brief Test tree construction
+ */
+static bool test_tree_construction() {
+    chipmunk_hvc_hasher_t l_hasher;
+    uint8_t l_seed[32] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                          17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+
+    // Initialize hasher
+    int l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_seed);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize hasher\n");
+        return false;
+    }
+
+    // Create test leaf nodes
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+        memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
+        // Set unique values for each leaf
+        l_leaf_nodes[i].coeffs[0] = (int32_t)(i + 1);
+        l_leaf_nodes[i].coeffs[1] = (int32_t)((i + 1) * 10);
+        l_leaf_nodes[i].coeffs[2] = (int32_t)((i + 1) * 100);
+    }
+
+    // Create tree
+    chipmunk_tree_t l_tree;
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to create tree: %d\n", l_ret);
+        return false;
+    }
+
+    // Get root
+    const chipmunk_hvc_poly_t* l_root = chipmunk_tree_root(&l_tree);
+    if (!l_root) {
+        log_it(L_ERROR, "   ❌ Failed to get tree root\n");
+        return false;
+    }
+
+    // Check that root is not all zeros
+    bool l_has_nonzero = false;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_root->coeffs[i] != 0) {
+            l_has_nonzero = true;
+            break;
+        }
+    }
+
+    if (!l_has_nonzero) {
+        log_it(L_ERROR, "   ❌ Tree root is all zeros\n");
+        return false;
+    }
+
+    log_it(L_NOTICE, "   ✅ Tree constructed with %zu leaves\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    log_it(L_NOTICE, "   📊 Root coeffs: %d, %d, %d, %d\n", 
+           l_root->coeffs[0], l_root->coeffs[1], l_root->coeffs[2], l_root->coeffs[3]);
+    return true;
+}
+
+/**
+ * @brief Test proof generation and verification
+ */
+static bool test_proof_generation() {
+    chipmunk_hvc_hasher_t l_hasher;
+    uint8_t l_seed[32] = {42}; // Simple seed
+    
+    // Initialize hasher
+    int l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_seed);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize hasher\n");
+        return false;
+    }
+
+    // Create diverse leaf nodes
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+        memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
+        // Create more diverse values
+        for (int j = 0; j < 4; j++) {
+            l_leaf_nodes[i].coeffs[j] = (int32_t)((i + 1) * (j + 1) * 123);
+        }
+    }
+
+    // Create tree
+    chipmunk_tree_t l_tree;
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to create tree\n");
+        return false;
+    }
+
+    const chipmunk_hvc_poly_t* l_root = chipmunk_tree_root(&l_tree);
+
+    // Test proof generation for multiple indices
+    for (size_t test_idx = 0; test_idx < 4; test_idx++) {
+        chipmunk_path_t l_path;
+        l_ret = chipmunk_tree_gen_proof(&l_tree, test_idx, &l_path);
+        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "   ❌ Failed to generate proof for index %zu: %d\n", test_idx, l_ret);
+            return false;
+        }
+
+        // Verify proof
+        bool l_verify_result = chipmunk_path_verify(&l_path, l_root, &l_hasher);
+        if (!l_verify_result) {
+            log_it(L_ERROR, "   ❌ Proof verification failed for index %zu\n", test_idx);
+            return false;
+        }
+
+        log_it(L_NOTICE, "   ✅ Proof for index %zu verified successfully\n", test_idx);
+    }
+
+    return true;
+}
+
+/**
+ * @brief Test HOTS public key to HVC conversion
+ */
+static bool test_hots_pk_conversion() {
+    // Create a test HOTS public key
+    chipmunk_public_key_t l_hots_pk;
+    memset(&l_hots_pk, 0, sizeof(l_hots_pk));
+    
+    // Set some test values
+    for (int i = 0; i < 10; i++) {
+        l_hots_pk.v0.coeffs[i] = i * 1000;
+        l_hots_pk.v1.coeffs[i] = i * 2000;
+    }
+
+    // Convert to HVC polynomial
+    chipmunk_hvc_poly_t l_hvc_poly;
+    int l_ret = chipmunk_hots_pk_to_hvc_poly(&l_hots_pk, &l_hvc_poly);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to convert HOTS PK to HVC: %d\n", l_ret);
+        return false;
+    }
+
+    // Check that conversion produced valid HVC polynomial (within symmetric range)
+    bool l_valid_conversion = true;
+    int32_t half_q = CHIPMUNK_HVC_Q / 2;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_hvc_poly.coeffs[i] < -half_q || l_hvc_poly.coeffs[i] >= half_q) {
+            log_it(L_ERROR, "   ❌ Invalid HVC coefficient at index %d: %d (must be -%d <= coeff < %d)\n", 
+                   i, l_hvc_poly.coeffs[i], half_q, half_q);
+            l_valid_conversion = false;
+            break;
+        }
+    }
+
+    if (!l_valid_conversion) {
+        return false;
+    }
+
+    // Check that conversion is deterministic (same input produces same output)
+    chipmunk_hvc_poly_t l_hvc_poly2;
+    int l_ret2 = chipmunk_hots_pk_to_hvc_poly(&l_hots_pk, &l_hvc_poly2);
+    if (l_ret2 != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Second conversion failed: %d\n", l_ret2);
+        return false;
+    }
+
+    bool l_deterministic = true;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (l_hvc_poly.coeffs[i] != l_hvc_poly2.coeffs[i]) {
+            log_it(L_ERROR, "   ❌ Conversion not deterministic at index %d: %d vs %d\n", 
+                   i, l_hvc_poly.coeffs[i], l_hvc_poly2.coeffs[i]);
+            l_deterministic = false;
+            break;
+        }
+    }
+
+    if (!l_deterministic) {
+        return false;
+    }
+
+    log_it(L_NOTICE, "   ✅ HOTS PK to HVC conversion successful\n");
+    log_it(L_NOTICE, "   📊 First converted coeffs: %d, %d, %d, %d\n", 
+           l_hvc_poly.coeffs[0], l_hvc_poly.coeffs[1], l_hvc_poly.coeffs[2], l_hvc_poly.coeffs[3]);
+    return true;
+}
+
+/**
+ * @brief Integration test with real HOTS keys
+ */
+static bool test_integration_with_hots() {
+    log_it(L_NOTICE, "   🔧 Generating HOTS keys for tree integration test...\n");
+    
+    // Initialize Chipmunk
+    int l_ret = chipmunk_init();
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize Chipmunk\n");
+        return false;
+    }
+
+    // Initialize hasher
+    chipmunk_hvc_hasher_t l_hasher;
+    uint8_t l_hasher_seed[32] = {100, 101, 102, 103, 104, 105, 106, 107, 
+                                 108, 109, 110, 111, 112, 113, 114, 115,
+                                 116, 117, 118, 119, 120, 121, 122, 123,
+                                 124, 125, 126, 127, 128, 129, 130, 131};
+    
+    l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_hasher_seed);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to initialize HVC hasher\n");
+        return false;
+    }
+
+    // Generate HOTS keys and convert to HVC polynomials
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+        uint8_t l_hots_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
+        uint8_t l_hots_sk_bytes[CHIPMUNK_PRIVATE_KEY_SIZE];
+        
+        // Generate HOTS keypair
+        l_ret = chipmunk_keypair(l_hots_pk_bytes, sizeof(l_hots_pk_bytes),
+                                 l_hots_sk_bytes, sizeof(l_hots_sk_bytes));
+        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "   ❌ Failed to generate HOTS keypair %zu: %d\n", i, l_ret);
+            return false;
+        }
+
+        // Deserialize public key
+        chipmunk_public_key_t l_hots_pk;
+        l_ret = chipmunk_public_key_from_bytes(&l_hots_pk, l_hots_pk_bytes);
+        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "   ❌ Failed to deserialize HOTS public key %zu: %d\n", i, l_ret);
+            return false;
+        }
+
+        // Convert to HVC polynomial
+        l_ret = chipmunk_hots_pk_to_hvc_poly(&l_hots_pk, &l_leaf_nodes[i]);
+        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "   ❌ Failed to convert HOTS PK %zu to HVC: %d\n", i, l_ret);
+            return false;
+        }
+    }
+
+    log_it(L_NOTICE, "   ✅ Generated %zu HOTS keys and converted to HVC polynomials\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+
+    // Create Merkle tree with real HOTS public keys
+    chipmunk_tree_t l_tree;
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to create tree with HOTS keys: %d\n", l_ret);
+        return false;
+    }
+
+    const chipmunk_hvc_poly_t* l_root = chipmunk_tree_root(&l_tree);
+    log_it(L_NOTICE, "   ✅ Created Merkle tree with HOTS public keys\n");
+    log_it(L_NOTICE, "   📊 Tree root coeffs: %d, %d, %d, %d\n", 
+           l_root->coeffs[0], l_root->coeffs[1], l_root->coeffs[2], l_root->coeffs[3]);
+
+    // Test proof generation for middle index
+    size_t l_test_index = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT / 2;
+    chipmunk_path_t l_path;
+    l_ret = chipmunk_tree_gen_proof(&l_tree, l_test_index, &l_path);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "   ❌ Failed to generate proof for HOTS key at index %zu\n", l_test_index);
+        return false;
+    }
+
+    // Verify proof
+    bool l_verify_result = chipmunk_path_verify(&l_path, l_root, &l_hasher);
+    if (!l_verify_result) {
+        log_it(L_ERROR, "   ❌ Failed to verify proof for HOTS key at index %zu\n", l_test_index);
+        return false;
+    }
+
+    log_it(L_NOTICE, "   ✅ Successfully verified membership proof for HOTS key at index %zu\n", l_test_index);
+    return true;
+}
+
+int main() {
+    // Initialize logging with clean format for unit tests
+    dap_log_level_set(L_INFO);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
+    
+    log_it(L_NOTICE, "\n🌳 === Chipmunk Merkle Tree Tests ===\n");
+    
+    clock_t l_start_time = clock();
+    
+    bool l_all_passed = true;
+    
+    // Run all tests
+    bool l_test_result;
+    l_test_result = test_hvc_hasher_init();
+    print_test_result("HVC Hasher Init", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    l_test_result = test_hvc_hash();
+    print_test_result("HVC Hash Function", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    l_test_result = test_tree_construction();
+    print_test_result("Tree Construction", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    l_test_result = test_proof_generation();
+    print_test_result("Proof Generation", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    l_test_result = test_hots_pk_conversion();
+    print_test_result("HOTS PK Conversion", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    l_test_result = test_integration_with_hots();
+    print_test_result("HOTS Integration", l_test_result);
+    l_all_passed &= l_test_result;
+    
+    clock_t l_end_time = clock();
+    double l_elapsed = ((double)(l_end_time - l_start_time)) / CLOCKS_PER_SEC;
+    
+    log_it(L_NOTICE, "\n📊 === Test Summary ===");
+    log_it(L_NOTICE, "⏱️  Total time: %.3f seconds", l_elapsed);
+    log_it(L_NOTICE, "🌳 Tree height: %d levels", CHIPMUNK_TREE_HEIGHT_DEFAULT);
+    log_it(L_NOTICE, "🍃 Leaf count: %zu nodes", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    log_it(L_NOTICE, "🔗 HVC modulus: %d", CHIPMUNK_HVC_Q);
+    log_it(L_NOTICE, "📏 HVC width: %d", CHIPMUNK_HVC_WIDTH);
+    
+    if (l_all_passed) {
+        log_it(L_NOTICE, "\n🎉 ALL TESTS PASSED! Merkle Tree implementation is working correctly.");
+        return 0;
+    } else {
+        log_it(L_ERROR, "\n💥 SOME TESTS FAILED! Please check the implementation.");
+        return 1;
+    }
+} 
