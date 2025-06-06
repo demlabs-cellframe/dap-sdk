@@ -289,6 +289,22 @@ static int test_large_scale_performance(size_t num_signers)
     double aggregation_time = get_time_ms() - aggregation_timer;
     log_it(L_NOTICE, "   ✅ Signature aggregation: %.3f seconds", aggregation_time);
     
+    // Calculate signature and key sizes for distribution/storage analysis
+    size_t multi_sig_size = sizeof(chipmunk_multi_signature_t);
+    size_t single_pubkey_size = sizeof(chipmunk_public_key_t);
+    size_t total_pubkeys_size = num_signers * single_pubkey_size;
+    size_t total_distributable_size = multi_sig_size + total_pubkeys_size;
+    
+    char multi_sig_str[64], pubkeys_str[64], total_dist_str[64];
+    format_memory_size(multi_sig_size, multi_sig_str, sizeof(multi_sig_str));
+    format_memory_size(total_pubkeys_size, pubkeys_str, sizeof(pubkeys_str));
+    format_memory_size(total_distributable_size, total_dist_str, sizeof(total_dist_str));
+    
+    log_it(L_INFO, "   📦 Multi-signature size: %s", multi_sig_str);
+    log_it(L_INFO, "   🔑 Total public keys size: %s (%zu keys × %zu bytes)", 
+           pubkeys_str, num_signers, single_pubkey_size);
+    log_it(L_INFO, "   📋 Total distributable payload: %s", total_dist_str);
+    
     // Phase 5: Verification
     log_it(L_INFO, "   🔍 Phase 5: Multi-signature verification...");
     double verification_timer = get_time_ms();
@@ -336,6 +352,9 @@ static int test_large_scale_performance(size_t num_signers)
     log_it(L_NOTICE, "   🔍 Verification: %.3f s", verification_time);
     log_it(L_NOTICE, "   📊 Overall throughput: %.1f participants/sec", total_rate);
     log_it(L_NOTICE, "   💾 Memory usage: %s", memory_str);
+    log_it(L_NOTICE, "   📦 Multi-signature size: %s", multi_sig_str);
+    log_it(L_NOTICE, "   🔑 Public keys total: %s (%zu participants)", pubkeys_str, num_signers);
+    log_it(L_NOTICE, "   📋 Distributable payload: %s (signature + all pubkeys)", total_dist_str);
     log_it(L_NOTICE, " ");  // Use space instead of empty string
     
     // Cleanup
