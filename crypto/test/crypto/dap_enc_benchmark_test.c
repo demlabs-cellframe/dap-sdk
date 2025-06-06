@@ -34,6 +34,7 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
 {
     dap_enc_key_t **l_alice_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times);
     dap_enc_key_t **l_bob_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times, l_alice_keys);
+    size_t *l_ciphertext_sizes = DAP_NEW_Z_COUNT_RET_IF_FAIL(size_t, a_times, l_alice_keys, l_bob_keys);
 
     int l_t1 = get_cur_time_msec();
 
@@ -48,46 +49,28 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         l_bob_keys[i] = dap_enc_key_new(a_key_type);
-        l_bob_keys[i]->pub_key_data_size = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, (void**)&l_bob_keys[i]->pub_key_data);
-        dap_assert_PIF(l_bob_keys[i]->pub_key_data_size, "Bob shared key gen");
+        l_ciphertext_sizes[i] = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, (void**)&l_bob_keys[i]->pub_key_data);
+        dap_assert_PIF(l_ciphertext_sizes[i], "Bob shared key gen");
     }
     l_t2 = get_cur_time_msec();
     *a_bob_shared = l_t2 - l_t1;
 
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
-        l_alice_keys[i]->gen_alice_shared_key(l_alice_keys[i], l_alice_keys[i]->priv_key_data, l_bob_keys[i]->pub_key_data_size, l_bob_keys[i]->pub_key_data);
+        l_alice_keys[i]->gen_alice_shared_key(l_alice_keys[i], l_alice_keys[i]->priv_key_data, l_ciphertext_sizes[i], l_bob_keys[i]->pub_key_data);
     }
     l_t2 = get_cur_time_msec();
     *a_alice_shared = l_t2 - l_t1;
 
     for(int i = 0; i < a_times; ++i) {
-        // Debug output for KYBER512 key comparison
-        if (a_key_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
-            printf("DEBUG: Alice shared_key_size=%zu, Bob shared_key_size=%zu\n", 
-                   l_alice_keys[i]->shared_key_size, l_bob_keys[i]->shared_key_size);
-            printf("DEBUG: Alice shared_key=%p, Bob shared_key=%p\n", 
-                   l_alice_keys[i]->shared_key, l_bob_keys[i]->shared_key);
-            if (l_alice_keys[i]->shared_key && l_bob_keys[i]->shared_key) {
-                printf("DEBUG: First 8 bytes Alice: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                       l_alice_keys[i]->shared_key[0], l_alice_keys[i]->shared_key[1], 
-                       l_alice_keys[i]->shared_key[2], l_alice_keys[i]->shared_key[3],
-                       l_alice_keys[i]->shared_key[4], l_alice_keys[i]->shared_key[5], 
-                       l_alice_keys[i]->shared_key[6], l_alice_keys[i]->shared_key[7]);
-                printf("DEBUG: First 8 bytes Bob:   %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                       l_bob_keys[i]->shared_key[0], l_bob_keys[i]->shared_key[1], 
-                       l_bob_keys[i]->shared_key[2], l_bob_keys[i]->shared_key[3],
-                       l_bob_keys[i]->shared_key[4], l_bob_keys[i]->shared_key[5], 
-                       l_bob_keys[i]->shared_key[6], l_bob_keys[i]->shared_key[7]);
-            }
-        }
+
         
-        int l_cmp = memcmp(l_alice_keys[i]->shared_key, l_bob_keys[i]->shared_key, l_alice_keys[i]->shared_key_size);
+        int l_cmp = memcmp(l_alice_keys[i]->priv_key_data, l_bob_keys[i]->priv_key_data, l_alice_keys[i]->priv_key_data_size);
         dap_assert_PIF(!l_cmp, "Session keys equals");
         dap_enc_key_delete(l_alice_keys[i]);
         dap_enc_key_delete(l_bob_keys[i]);
     }
-    DAP_DEL_MULTY(l_alice_keys, l_bob_keys);
+    DAP_DEL_MULTY(l_alice_keys, l_bob_keys, l_ciphertext_sizes);
 }
 
 static void s_transfer_test_benchmark(const char *a_name, dap_enc_key_type_t a_key_type, int a_times) {
