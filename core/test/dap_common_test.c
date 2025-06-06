@@ -846,7 +846,7 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED SHORT and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG LONG");
-    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF((unsigned long long)dap_sub(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == (unsigned long long)dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG LONG");
 
 // MUL
     // char
@@ -858,9 +858,9 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_mul(*(signed char*)l_a, *(char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(char*)l_b), "MUL SIGNED CHAR and CHAR");
     dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(char*)l_b), "MUL UNSIGNED CHAR and CHAR");
     dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(char*)l_b), "MUL UNSIGNED SHORT and CHAR");
-    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(char*)l_b), "MUL UNSIGNED INT and CHAR");
-    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG and CHAR");
-    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG LONG and CHAR");
+    dap_assert_PIF((unsigned int)dap_mul(*(unsigned int*)l_a, *(char*)l_b) == (unsigned int)dap_mul_builtin(*(unsigned int*)l_a, *(char*)l_b), "MUL UNSIGNED INT and CHAR");
+    dap_assert_PIF((unsigned long)dap_mul(*(unsigned long*)l_a, *(char*)l_b) == (unsigned long)dap_mul_builtin(*(unsigned long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG and CHAR");
+    dap_assert_PIF((unsigned long long)dap_mul(*(unsigned long long*)l_a, *(char*)l_b) == (unsigned long long)dap_mul_builtin(*(unsigned long long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG LONG and CHAR");
     // short
     dap_assert_PIF(dap_mul(*(char*)l_a, *(short*)l_b) == dap_mul_builtin(*(char*)l_a, *(short*)l_b), "MUL CHAR and SHORT");
     dap_assert_PIF(dap_mul(*(short*)l_a, *(short*)l_b) == dap_mul_builtin(*(short*)l_a, *(short*)l_b), "MUL SHORT and SHORT");
@@ -870,9 +870,9 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_mul(*(signed char*)l_a, *(short*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(short*)l_b), "MUL SIGNED CHAR and SHORT");
     dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(short*)l_b), "MUL UNSIGNED CHAR and SHORT");
     dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(short*)l_b), "MUL UNSIGNED SHORT and SHORT");
-    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(short*)l_b), "MUL UNSIGNED INT and SHORT");
-    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG and SHORT");
-    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG LONG and SHORT");
+    dap_assert_PIF((unsigned int)dap_mul(*(unsigned int*)l_a, *(short*)l_b) == (unsigned int)dap_mul_builtin(*(unsigned int*)l_a, *(short*)l_b), "MUL UNSIGNED INT and SHORT");
+    dap_assert_PIF((unsigned long)dap_mul(*(unsigned long*)l_a, *(short*)l_b) == (unsigned long)dap_mul_builtin(*(unsigned long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG and SHORT");
+    dap_assert_PIF((unsigned long long)dap_mul(*(unsigned long long*)l_a, *(short*)l_b) == (unsigned long long)dap_mul_builtin(*(unsigned long long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG LONG and SHORT");
     // int
     dap_assert_PIF(dap_mul(*(char*)l_a, *(int*)l_b) == dap_mul_builtin(*(char*)l_a, *(int*)l_b), "MUL CHAR and INT");
     dap_assert_PIF(dap_mul(*(short*)l_a, *(int*)l_b) == dap_mul_builtin(*(short*)l_a, *(int*)l_b), "MUL SHORT and INT");

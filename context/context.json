@@ -4,11 +4,25 @@
   "updated": "2025-06-06T13:30:00Z",
   "project": {
     "name": "DAP SDK",
-    "description": "Distributed Applications Platform Software Development Kit",
+    "description": "Cellframe DAP SDK - blockchain development framework with post-quantum cryptography",
     "version": "latest",
     "status": "active_development",
     "primary_languages": ["C", "C++"],
-    "architecture": "modular"
+    "architecture": "modular",
+    "key_features": [
+      "Post-quantum cryptography (Chipmunk signatures, Kyber KEM, MSRLN)",
+      "Cross-platform support (Linux, macOS, Windows)",
+      "Enhanced logging system with multiple levels",
+      "Comprehensive test framework",
+      "CMake build system with multiple configurations"
+    ],
+    "build_configurations": {
+      "debug": "build_debug/ - Debug build with symbols and assertions",
+      "release": "build.release/ - Optimized release build", 
+      "test": "build_test/ - Test configuration",
+      "ci": "build_ci/ - CI/CD pipeline build",
+      "asan": "build_asan/ - AddressSanitizer build for memory debugging"
+    }
   },
   "recent_achievements": {
     "2025-06-06": {
@@ -103,7 +117,10 @@
       "Устанавливайте уровень логирования в зависимости от потребности",
       "Восстанавливайте настройки после каждого теста",
       "Используйте dap_log_set_simple_for_tests() для быстрой настройки"
-    ]
+    ],
+    "crypto_tests": "crypto/test/crypto/crypto-test",
+    "core_tests": "core/test/",
+    "benchmark_tests": "crypto/test/crypto/dap_enc_benchmark_test.c"
   },
   "context_management": {
     "structure": "Modular context system with on-demand loading",
@@ -179,7 +196,10 @@
         "dap_log_set_format()",
         "dap_log_get_format()",
         "dap_log_set_simple_for_tests()"
-      ]
+      ],
+      "levels": ["DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL"],
+      "usage": "Use dap_log_it() for structured logging",
+      "configuration": "Set via environment variables or config files"
     },
     "test_framework": {
       "status": "✅ Enhanced",
@@ -195,5 +215,85 @@
     "load_full_context": "./context/scripts/load_full_context.sh",
     "load_specific_module": "./context/scripts/load_module.sh <module_name>",
     "available_modules": ["crypto", "core", "net", "other"]
+  },
+  "debugging_methodology": {
+    "segfault_analysis": {
+      "tool": "lldb (macOS) or gdb (Linux)",
+      "command": "lldb ./path/to/binary -o \"run\" -o \"bt\" -o \"quit\"",
+      "description": "Get stack trace immediately when program crashes",
+      "example": "lldb ./crypto/test/crypto/crypto-test -o \"run\" -o \"bt\" -o \"quit\"",
+      "output_analysis": "Look for frame numbers, function names, and line numbers in stack trace"
+    },
+    "partial_output_capture": {
+      "method": "Run program in background and kill after timeout",
+      "command": "./program & PID=$!; sleep 3; kill $PID; wait $PID 2>/dev/null",
+      "use_case": "When program hangs or crashes, capture output before crash"
+    },
+    "memory_debugging": {
+      "asan_build": "Use build_asan/ for AddressSanitizer",
+      "valgrind": "valgrind --tool=memcheck ./binary (Linux only)"
+    }
+  },
+  "crypto_modules": {
+    "chipmunk": {
+      "status": "Production ready",
+      "description": "Post-quantum signature algorithm",
+      "location": "crypto/src/chipmunk/"
+    },
+    "kyber": {
+      "status": "✅ FIXED - union conflicts resolved",
+      "description": "NIST Kyber KEM implementation", 
+      "location": "crypto/src/Kyber/",
+      "key_fixes": [
+        "Fixed union conflicts in dap_enc_key_t structure",
+        "Separated shared_key from pub_key_data storage",
+        "Updated benchmark tests for KEM compatibility",
+        "Fixed benchmark test logic for proper KEM protocol"
+      ]
+    },
+    "msrln": {
+      "status": "✅ FIXED - benchmark test logic corrected",
+      "description": "Microsoft Research lattice-based cryptography",
+      "location": "crypto/src/msrln/",
+      "key_fixes": [
+        "Fixed s_transfer_test function for KEM compatibility",
+        "Added proper ciphertext storage and cleanup",
+        "Corrected gen_alice_shared_key parameter passing"
+      ]
+    },
+    "multisign": {
+      "status": "🔍 NEXT TASK - Memory allocation error and NULL pointer dereference",
+      "description": "Multi-signature algorithm implementation",
+      "location": "crypto/src/dap_enc_multisign.c",
+      "issue_details": {
+        "crash_location": "dap_enc_multisign.c:394 in dap_enc_sig_multisign_verify_sign",
+        "crash_type": "EXC_BAD_ACCESS (code=1, address=0x8) - NULL pointer in memmove",
+        "root_cause": "Memory allocation errors in dap_enc_sig_multisign_forming_keys:112",
+        "error_count": "5 consecutive 'Memory allocation error' messages",
+        "stack_trace": "main → dap_enc_benchmark_tests_run → s_sign_verify_tests_run → s_sign_verify_test_becnhmark → s_sign_verify_test → dap_enc_sig_multisign_verify_sign"
+      },
+      "debugging_approach": [
+        "Investigate memory allocation failure in dap_enc_sig_multisign_forming_keys",
+        "Check for proper memory cleanup and null pointer validation",
+        "Verify multisign key generation and verification logic"
+      ]
+    }
+  },
+  "common_issues": {
+    "sign_compare_warnings": {
+      "solution": "Add explicit type casts: (unsigned int)expression",
+      "compiler_flag": "-Werror=sign-compare",
+      "locations": "core/test/dap_common_test.c - lines with dap_mul comparisons"
+    },
+    "union_conflicts": {
+      "description": "dap_enc_key_t union fields overlap causing data corruption",
+      "affected_fields": ["pub_key_data vs shared_key", "pub_key_data_size vs shared_key_size"],
+      "solution": "Use appropriate field for algorithm type (KEM vs traditional encryption)"
+    }
+  },
+  "logging_system": {
+    "levels": ["DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL"],
+    "usage": "Use dap_log_it() for structured logging",
+    "configuration": "Set via environment variables or config files"
   }
 }
