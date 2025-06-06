@@ -83,3 +83,10 @@ debug/
 # Context working files
 context/.local/
 
+build.*/
+gmon.out
+profile_*
+test_*
+!test_*.c
+!test_*/*.c
+
