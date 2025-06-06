@@ -79,7 +79,8 @@ int main(void) {
     // Initialize logging - check environment variable for debug level
     dap_log_level_set(L_INFO);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+   
     // Initialize Chipmunk module
     dap_enc_chipmunk_init();
     

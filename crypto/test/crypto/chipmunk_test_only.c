@@ -571,6 +571,8 @@ int main(void)
         printf("🔧 Debug output enabled");
     }
     
+        dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+
     printf("🚀 Starting Chipmunk multi-signature aggregation tests...\n");
     
     timer_t overall_timer;
