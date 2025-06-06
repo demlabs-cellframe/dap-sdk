@@ -7,6 +7,7 @@
 #include <errno.h>
 
 #include "dap_common.h"
+#include "dap_time.h"  // Use core timing functions
 #include "dap_enc_chipmunk.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_hots.h"
@@ -18,20 +19,9 @@
 // Debug control flag
 static bool s_debug_more = false;
 
-// Timing utilities
-typedef struct {
-    struct timeval start;
-    struct timeval end;
-} timer_t;
-
-static void timer_start(timer_t *timer) {
-    gettimeofday(&timer->start, NULL);
-}
-
-static double timer_end(timer_t *timer) {
-    gettimeofday(&timer->end, NULL);
-    return (timer->end.tv_sec - timer->start.tv_sec) + 
-           (timer->end.tv_usec - timer->start.tv_usec) / 1000000.0;
+// Use dap_time.h functions instead of custom timer_t
+static inline double get_time_ms(void) {
+    return dap_nanotime_now() / 1000000.0;  // Convert nanoseconds to milliseconds
 }
 
 /**
@@ -39,8 +29,7 @@ static double timer_end(timer_t *timer) {
  */
 static int test_performance_variable_signers(size_t num_signers)
 {
-    timer_t total_timer, keygen_timer, tree_timer, signing_timer, aggregation_timer, verification_timer;
-    timer_start(&total_timer);
+    double total_start = get_time_ms();
     
     log_it(L_INFO, "🚀 Performance test for %zu signers", num_signers);
     
@@ -66,7 +55,7 @@ static int test_performance_variable_signers(size_t num_signers)
     
     // Key generation phase
     debug_if(s_debug_more, L_INFO, "Generating keys for %zu signers...", num_signers);
-    timer_start(&keygen_timer);
+    double keygen_start = get_time_ms();
     
     for (size_t i = 0; i < num_signers; i++) {
         int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
@@ -104,13 +93,13 @@ static int test_performance_variable_signers(size_t num_signers)
         }
     }
     
-    double keygen_time = timer_end(&keygen_timer);
+    double keygen_time = get_time_ms() - keygen_start;
     log_it(L_INFO, "   ⏱️ Key generation: %.3f seconds (%.3f ms per signer)", 
            keygen_time, keygen_time * 1000.0 / num_signers);
     
     // Tree construction phase
     debug_if(s_debug_more, L_INFO, "Building Merkle tree...");
-    timer_start(&tree_timer);
+    double tree_start = get_time_ms();
     
     chipmunk_tree_t tree;
     chipmunk_hvc_hasher_t hasher;
@@ -150,12 +139,12 @@ static int test_performance_variable_signers(size_t num_signers)
         goto cleanup;
     }
     
-    double tree_time = timer_end(&tree_timer);
+    double tree_time = get_time_ms() - tree_start;
     log_it(L_INFO, "   ⏱️ Tree construction: %.3f seconds", tree_time);
     
     // Individual signature creation phase
     debug_if(s_debug_more, L_INFO, "Creating individual signatures...");
-    timer_start(&signing_timer);
+    double signing_start = get_time_ms();
     
     chipmunk_individual_sig_t *individual_sigs = DAP_NEW_Z_COUNT(chipmunk_individual_sig_t, num_signers);
     if (!individual_sigs) {
@@ -184,13 +173,13 @@ static int test_performance_variable_signers(size_t num_signers)
         }
     }
     
-    double signing_time = timer_end(&signing_timer);
+    double signing_time = get_time_ms() - signing_start;
     log_it(L_INFO, "   ⏱️ Individual signing: %.3f seconds (%.3f ms per signature)", 
            signing_time, signing_time * 1000.0 / num_signers);
     
     // Aggregation phase
     debug_if(s_debug_more, L_INFO, "Aggregating signatures...");
-    timer_start(&aggregation_timer);
+    double aggregation_start = get_time_ms();
     
     chipmunk_multi_signature_t multi_sig;
     ret = chipmunk_aggregate_signatures_with_tree(
@@ -205,16 +194,16 @@ static int test_performance_variable_signers(size_t num_signers)
         goto cleanup;
     }
     
-    double aggregation_time = timer_end(&aggregation_timer);
+    double aggregation_time = get_time_ms() - aggregation_start;
     log_it(L_INFO, "   ⏱️ Aggregation: %.3f seconds", aggregation_time);
     
     // Verification phase
     debug_if(s_debug_more, L_INFO, "Verifying aggregated signature...");
-    timer_start(&verification_timer);
+    double verification_start = get_time_ms();
     
     ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
     
-    double verification_time = timer_end(&verification_timer);
+    double verification_time = get_time_ms() - verification_start;
     log_it(L_INFO, "   ⏱️ Verification: %.3f seconds", verification_time);
     
     if (ret != 1) {
@@ -232,7 +221,7 @@ static int test_performance_variable_signers(size_t num_signers)
     chipmunk_multi_signature_free(&multi_sig);
     DAP_DEL_MULTY(individual_sigs);
     
-    double total_time = timer_end(&total_timer);
+    double total_time = get_time_ms() - total_start;
     
     // Performance summary
     log_it(L_INFO, " ");
@@ -286,8 +275,7 @@ int main(int argc, char *argv[])
         }
     }
     
-    timer_t overall_timer;
-    timer_start(&overall_timer);
+    double overall_start = get_time_ms();
     
     int overall_result = 0;
     size_t successful_tests = 0;
@@ -308,7 +296,7 @@ int main(int argc, char *argv[])
         }
     }
     
-    double overall_time = timer_end(&overall_timer);
+    double overall_time = get_time_ms() - overall_start;
     
     log_it(L_INFO, "═══════════════════════════════════════════════════");
     log_it(L_INFO, "🏁 Overall Results:");

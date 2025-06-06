@@ -8,6 +8,7 @@
 #include <errno.h>
 
 #include "dap_common.h"
+#include "dap_time.h"  // Use core timing functions
 #include "dap_enc_chipmunk.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_hots.h"
@@ -19,20 +20,9 @@
 // Debug control flag
 static bool s_debug_more = false;
 
-// Timing utilities (renamed to avoid conflict with system timer_t)
-typedef struct {
-    struct timeval start;
-    struct timeval end;
-} chipmunk_timer_t;
-
-static void timer_start(chipmunk_timer_t *timer) {
-    gettimeofday(&timer->start, NULL);
-}
-
-static double timer_end(chipmunk_timer_t *timer) {
-    gettimeofday(&timer->end, NULL);
-    return (timer->end.tv_sec - timer->start.tv_sec) + 
-           (timer->end.tv_usec - timer->start.tv_usec) / 1000000.0;
+// Use dap_time.h functions instead of custom timer_t
+static inline double get_time_ms(void) {
+    return dap_nanotime_now() / 1000000.0;  // Convert nanoseconds to milliseconds
 }
 
 /**
@@ -80,8 +70,7 @@ static void format_memory_size(size_t bytes, char *buffer, size_t buffer_size) {
  */
 static int test_large_scale_performance(size_t num_signers)
 {
-    chipmunk_timer_t total_timer, keygen_timer, tree_timer, signing_timer, aggregation_timer, verification_timer;
-    timer_start(&total_timer);
+    double total_timer = get_time_ms();
     
     // Memory usage estimation
     size_t estimated_memory = calculate_memory_usage(num_signers);
@@ -136,7 +125,7 @@ static int test_large_scale_performance(size_t num_signers)
     
     // Phase 1: Key Generation
     log_it(L_INFO, "   🔑 Phase 1: Key generation...");
-    timer_start(&keygen_timer);
+    double keygen_timer = get_time_ms();
     
     size_t progress_interval = (num_signers > 1000) ? (num_signers / 20) : 0; // 5% intervals for large tests
     
@@ -171,23 +160,23 @@ static int test_large_scale_performance(size_t num_signers)
         
         // Progress indicator for large numbers
         if (progress_interval > 0 && (i + 1) % progress_interval == 0) {
-            double elapsed = timer_end(&keygen_timer);
+            double elapsed = get_time_ms() - keygen_timer;
             double rate = (i + 1) / elapsed;
             double eta = (num_signers - i - 1) / rate;
             
             log_it(L_INFO, "   📊 Keygen progress: %zu/%zu (%.1f%%) - Rate: %.1f keys/sec - ETA: %.1f sec", 
                    i + 1, num_signers, (float)(i + 1) * 100.0 / num_signers, rate, eta);
-            timer_start(&keygen_timer); // Restart timer for rate calculation
+            keygen_timer = get_time_ms(); // Restart timer for rate calculation
         }
     }
     
-    double keygen_time = timer_end(&keygen_timer);
+    double keygen_time = get_time_ms() - keygen_timer;
     log_it(L_NOTICE, "   ✅ Key generation: %.3f seconds (%.3f ms per signer, %.1f keys/sec)", 
            keygen_time, keygen_time * 1000.0 / num_signers, num_signers / keygen_time);
     
     // Phase 2: Tree Construction
     log_it(L_INFO, "   🌳 Phase 2: Merkle tree construction...");
-    timer_start(&tree_timer);
+    double tree_timer = get_time_ms();
     
     chipmunk_tree_t tree;
     chipmunk_hvc_hasher_t hasher;
@@ -235,13 +224,13 @@ static int test_large_scale_performance(size_t num_signers)
     char tree_memory_str[64];
     format_memory_size(tree_memory_usage, tree_memory_str, sizeof(tree_memory_str));
     
-    double tree_time = timer_end(&tree_timer);
+    double tree_time = get_time_ms() - tree_timer;
     log_it(L_NOTICE, "   ✅ Tree construction: %.3f seconds - Height: %u - Memory: %s", 
            tree_time, tree_height, tree_memory_str);
     
     // Phase 3: Individual Signature Creation
     log_it(L_INFO, "   ✍️ Phase 3: Individual signature creation...");
-    timer_start(&signing_timer);
+    double signing_timer = get_time_ms();
     
     chipmunk_individual_sig_t *individual_sigs = DAP_NEW_Z_COUNT(chipmunk_individual_sig_t, num_signers);
     if (!individual_sigs) {
@@ -265,23 +254,23 @@ static int test_large_scale_performance(size_t num_signers)
         
         // Progress indicator for large numbers
         if (progress_interval > 0 && (i + 1) % progress_interval == 0) {
-            double elapsed = timer_end(&signing_timer);
+            double elapsed = get_time_ms() - signing_timer;
             double rate = (i + 1) / elapsed;
             double eta = (num_signers - i - 1) / rate;
             
             log_it(L_INFO, "   📊 Signing progress: %zu/%zu (%.1f%%) - Rate: %.1f sigs/sec - ETA: %.1f sec", 
                    i + 1, num_signers, (float)(i + 1) * 100.0 / num_signers, rate, eta);
-            timer_start(&signing_timer);
+            signing_timer = get_time_ms();
         }
     }
     
-    double signing_time = timer_end(&signing_timer);
+    double signing_time = get_time_ms() - signing_timer;
     log_it(L_NOTICE, "   ✅ Individual signing: %.3f seconds (%.3f ms per signature, %.1f sigs/sec)", 
            signing_time, signing_time * 1000.0 / num_signers, num_signers / signing_time);
     
     // Phase 4: Signature Aggregation
     log_it(L_INFO, "   🔗 Phase 4: Signature aggregation...");
-    timer_start(&aggregation_timer);
+    double aggregation_timer = get_time_ms();
     
     chipmunk_multi_signature_t multi_sig;
     ret = chipmunk_aggregate_signatures_with_tree(
@@ -296,16 +285,16 @@ static int test_large_scale_performance(size_t num_signers)
         goto cleanup;
     }
     
-    double aggregation_time = timer_end(&aggregation_timer);
+    double aggregation_time = get_time_ms() - aggregation_timer;
     log_it(L_NOTICE, "   ✅ Signature aggregation: %.3f seconds", aggregation_time);
     
     // Phase 5: Verification
     log_it(L_INFO, "   🔍 Phase 5: Multi-signature verification...");
-    timer_start(&verification_timer);
+    double verification_timer = get_time_ms();
     
     ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
     
-    double verification_time = timer_end(&verification_timer);
+    double verification_time = get_time_ms() - verification_timer;
     
     if (ret != 1) {
         log_it(L_ERROR, "ERROR: Multi-signature verification failed, result: %d", ret);
@@ -328,7 +317,7 @@ static int test_large_scale_performance(size_t num_signers)
     log_it(L_INFO, "   ✅ Wrong message verification correctly failed");
     
     // Total performance summary
-    double total_time = timer_end(&total_timer);
+    double total_time = get_time_ms() - total_timer;
     
     // Calculate throughput metrics
     double keygen_rate = num_signers / keygen_time;

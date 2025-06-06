@@ -3,8 +3,12 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #include "dap_common.h"
+#include "dap_time.h"  // Use core timing functions
 #include "dap_enc_chipmunk.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_hots.h"
@@ -16,20 +20,9 @@
 // Debug control flag
 static bool s_debug_more = false;
 
-// Timing utilities
-typedef struct {
-    struct timeval start;
-    struct timeval end;
-} timer_t;
-
-static void timer_start(timer_t *timer) {
-    gettimeofday(&timer->start, NULL);
-}
-
-static double timer_end(timer_t *timer) {
-    gettimeofday(&timer->end, NULL);
-    return (timer->end.tv_sec - timer->start.tv_sec) + 
-           (timer->end.tv_usec - timer->start.tv_usec) / 1000000.0;
+// Use dap_time.h functions instead of custom timer_t
+static inline double get_time_ms(void) {
+    return dap_nanotime_now() / 1000000.0;  // Convert nanoseconds to milliseconds
 }
 
 /**
@@ -37,8 +30,7 @@ static double timer_end(timer_t *timer) {
  */
 static int test_multi_signature_aggregation(void)
 {
-    timer_t total_timer, keygen_timer, aggregation_timer, verification_timer;
-    timer_start(&total_timer);
+    double start_time = get_time_ms();
     
     debug_if(s_debug_more, L_INFO, "=== Multi-Signature Aggregation Test ===");
     
@@ -53,7 +45,6 @@ static int test_multi_signature_aggregation(void)
     chipmunk_hots_sk_t hots_secret_keys[num_signers];
     
     debug_if(s_debug_more, L_INFO, "Generating keys for %zu signers...", num_signers);
-    timer_start(&keygen_timer);
     
     for (size_t i = 0; i < num_signers; i++) {
         int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
@@ -87,7 +78,7 @@ static int test_multi_signature_aggregation(void)
         debug_if(s_debug_more, L_INFO, "Generated keypair for signer %zu", i);
     }
     
-    double keygen_time = timer_end(&keygen_timer);
+    double keygen_time = get_time_ms() - start_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Key generation time: %.3f seconds (%.3f ms per signer)", 
              keygen_time, keygen_time * 1000.0 / num_signers);
     
@@ -130,7 +121,6 @@ static int test_multi_signature_aggregation(void)
     chipmunk_individual_sig_t individual_sigs[num_signers];
     
     debug_if(s_debug_more, L_INFO, "Creating individual signatures...");
-    timer_start(&aggregation_timer);
     
     for (size_t i = 0; i < num_signers; i++) {
         ret = chipmunk_create_individual_signature(
@@ -164,17 +154,16 @@ static int test_multi_signature_aggregation(void)
         return -6;
     }
     
-    double aggregation_time = timer_end(&aggregation_timer);
+    double aggregation_time = get_time_ms() - start_time - keygen_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Aggregation time: %.3f seconds", aggregation_time);
     debug_if(s_debug_more, L_INFO, "Successfully aggregated %zu signatures", num_signers);
     
     // Проверяем агрегированную подпись
     debug_if(s_debug_more, L_INFO, "Verifying aggregated signature...");
-    timer_start(&verification_timer);
     
     ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
     
-    double verification_time = timer_end(&verification_timer);
+    double verification_time = get_time_ms() - start_time - keygen_time - aggregation_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Verification time: %.3f seconds", verification_time);
     
     if (ret != 1) {
@@ -202,7 +191,7 @@ static int test_multi_signature_aggregation(void)
     }
     chipmunk_multi_signature_free(&multi_sig);
     
-    double total_time = timer_end(&total_timer);
+    double total_time = get_time_ms() - start_time;
     
     // Always show performance summary for 3-signer test
     printf("✅ 3-signer multi-signature test PASSED");
@@ -220,8 +209,7 @@ static int test_multi_signature_aggregation(void)
  */
 static int test_large_multi_signature_aggregation(void)
 {
-    timer_t total_timer, keygen_timer, aggregation_timer, verification_timer;
-    timer_start(&total_timer);
+    double start_time = get_time_ms();
     
     debug_if(s_debug_more, L_INFO, "=== Large Multi-Signature Aggregation Test (5 signers) ===");
     
@@ -236,7 +224,6 @@ static int test_large_multi_signature_aggregation(void)
     chipmunk_hots_sk_t hots_secret_keys[num_signers];
     
     debug_if(s_debug_more, L_INFO, "Generating keys for %zu signers...", num_signers);
-    timer_start(&keygen_timer);
     
     for (size_t i = 0; i < num_signers; i++) {
         int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
@@ -270,7 +257,7 @@ static int test_large_multi_signature_aggregation(void)
         debug_if(s_debug_more, L_INFO, "Generated keypair for signer %zu", i);
     }
     
-    double keygen_time = timer_end(&keygen_timer);
+    double keygen_time = get_time_ms() - start_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Key generation time: %.3f seconds (%.3f ms per signer)", 
              keygen_time, keygen_time * 1000.0 / num_signers);
     
@@ -313,7 +300,6 @@ static int test_large_multi_signature_aggregation(void)
     chipmunk_individual_sig_t individual_sigs[num_signers];
     
     debug_if(s_debug_more, L_INFO, "Creating individual signatures...");
-    timer_start(&aggregation_timer);
     
     for (size_t i = 0; i < num_signers; i++) {
         ret = chipmunk_create_individual_signature(
@@ -347,17 +333,16 @@ static int test_large_multi_signature_aggregation(void)
         return -6;
     }
     
-    double aggregation_time = timer_end(&aggregation_timer);
+    double aggregation_time = get_time_ms() - start_time - keygen_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Aggregation time: %.3f seconds", aggregation_time);
     debug_if(s_debug_more, L_INFO, "Successfully aggregated %zu signatures", num_signers);
     
     // Проверяем агрегированную подпись
     debug_if(s_debug_more, L_INFO, "Verifying aggregated signature...");
-    timer_start(&verification_timer);
     
     ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
     
-    double verification_time = timer_end(&verification_timer);
+    double verification_time = get_time_ms() - start_time - keygen_time - aggregation_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Verification time: %.3f seconds", verification_time);
     
     if (ret != 1) {
@@ -385,7 +370,7 @@ static int test_large_multi_signature_aggregation(void)
     }
     chipmunk_multi_signature_free(&multi_sig);
     
-    double total_time = timer_end(&total_timer);
+    double total_time = get_time_ms() - start_time;
     
     // Always show performance summary for 5-signer test
     printf("✅ 5-signer multi-signature test PASSED");
@@ -404,8 +389,7 @@ static int test_large_multi_signature_aggregation(void)
  */
 static int test_batch_verification(void)
 {
-    timer_t total_timer, batch_timer;
-    timer_start(&total_timer);
+    double start_time = get_time_ms();
     
     debug_if(s_debug_more, L_INFO, "=== Batch Verification Test ===");
     
@@ -417,7 +401,6 @@ static int test_batch_verification(void)
     char batch_messages[num_batches][64];
     
     debug_if(s_debug_more, L_INFO, "Creating %zu multi-signatures with %zu signers each...", num_batches, signers_per_batch);
-    timer_start(&batch_timer);
     
     for (size_t batch = 0; batch < num_batches; batch++) {
         debug_if(s_debug_more, L_INFO, "\\nProcessing batch %zu...", batch);
@@ -521,11 +504,10 @@ static int test_batch_verification(void)
         }
     }
     
-    double batch_creation_time = timer_end(&batch_timer);
+    double batch_creation_time = get_time_ms() - start_time;
     debug_if(s_debug_more, L_INFO, "⏱️ Batch creation time: %.3f seconds", batch_creation_time);
     
     debug_if(s_debug_more, L_INFO, "\\nVerifying all multi-signatures in batch...");
-    timer_start(&batch_timer);
     
     // Verify each multi-signature
     for (size_t batch = 0; batch < num_batches; batch++) {
@@ -539,8 +521,8 @@ static int test_batch_verification(void)
         debug_if(s_debug_more, L_INFO, "Batch %zu verification: PASSED", batch);
     }
     
-    double batch_verification_time = timer_end(&batch_timer);
-    double total_time = timer_end(&total_timer);
+    double batch_verification_time = get_time_ms() - start_time - batch_creation_time;
+    double total_time = get_time_ms() - start_time;
     
     // Cleanup all multi-signatures
     for (size_t batch = 0; batch < num_batches; batch++) {
@@ -575,37 +557,30 @@ int main(void)
 
     printf("🚀 Starting Chipmunk multi-signature aggregation tests...\n");
     
-    timer_t overall_timer;
-    timer_start(&overall_timer);
-    
-    int result = 0;
     double overall_time;
     
     // Test 1: 3-signer multi-signature
     int test1_result = test_multi_signature_aggregation();
     if (test1_result != 0) {
-        result = test1_result;
         goto cleanup;
     }
     
     // Test 2: 5-signer multi-signature
     int test2_result = test_large_multi_signature_aggregation();
     if (test2_result != 0) {
-        result = test2_result;
         goto cleanup;
     }
     
     // Test 3: Batch verification
     int test3_result = test_batch_verification();
     if (test3_result != 0) {
-        result = test3_result;
         goto cleanup;
     }
 
 cleanup:
-    overall_time = timer_end(&overall_timer);
+    overall_time = get_time_ms();
     
-    if (result == 0) {
+    if (test1_result == 0 && test2_result == 0 && test3_result == 0) {
         printf("\n🎉 ALL TESTS PASSED SUCCESSFULLY!");
         printf("✅ 3-signer multi-signature: PASSED");
         printf("✅ 5-signer multi-signature: PASSED");
@@ -613,9 +588,9 @@ cleanup:
         printf("\n⏱️ Overall test time: %.3f seconds", overall_time);
         printf("\n🏆 Chipmunk multi-signature scheme is fully functional!");
     } else {
-        printf("\n❌ Tests FAILED with code: %d", result);
+        printf("\n❌ Tests FAILED with code: %d", test1_result != 0 ? test1_result : test2_result != 0 ? test2_result : test3_result);
         printf("⏱️ Test time before failure: %.3f seconds", overall_time);
     }
     
-    return result;
+    return test1_result != 0 ? test1_result : test2_result != 0 ? test2_result : test3_result;
 } 
