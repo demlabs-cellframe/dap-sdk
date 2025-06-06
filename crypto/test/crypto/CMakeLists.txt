@@ -47,6 +47,9 @@ add_executable(chipmunk-test-only chipmunk_test_only.c)
 # Add large-scale performance test
 add_executable(chipmunk-large-scale-test chipmunk_large_scale_test.c)
 
+# Add performance test
+add_executable(chipmunk-performance-test chipmunk_performance_test.c)
+
 # Add deterministic key test
 add_executable(test_deterministic_keys test_deterministic_keys.c)
 
@@ -63,6 +66,7 @@ target_link_libraries(chipmunk_ntt_debug_simple dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_tree_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test-only dap_crypto dap_core m)
 target_link_libraries(chipmunk-large-scale-test dap_crypto dap_core m)
+target_link_libraries(chipmunk-performance-test dap_crypto dap_core m)
 target_link_libraries(test_deterministic_keys dap_crypto dap_core m)
 target_link_libraries(test-sign-api-only dap_test dap_core dap_crypto m)
 
@@ -105,6 +109,11 @@ target_include_directories(chipmunk-large-scale-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
 )
+target_include_directories(chipmunk-performance-test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+)
 target_include_directories(test_deterministic_keys PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
@@ -133,4 +142,19 @@ add_test(
 add_test(
     NAME chipmunk-tree-test
     COMMAND chipmunk_tree_test
+)
+
+add_test(
+    NAME chipmunk-performance-test
+    COMMAND chipmunk-performance-test
+)
+
+add_test(
+    NAME chipmunk-test-only
+    COMMAND chipmunk-test-only
+)
+
+add_test(
+    NAME test-deterministic-keys
+    COMMAND test_deterministic_keys
 )

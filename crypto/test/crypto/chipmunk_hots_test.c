@@ -36,10 +36,13 @@
 // DAP includes
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_enc_chipmunk.h"
 
-// Chipmunk includes
+// Chipmunk includes  
 #include "chipmunk_hots.h"
 #include "chipmunk.h"
+
+#define LOG_TAG "chipmunk_hots_test"
 
 // Test message
 static const char *TEST_MESSAGE = "Hello, Chipmunk HOTS!";
@@ -48,18 +51,18 @@ static const char *TEST_MESSAGE = "Hello, Chipmunk HOTS!";
  * @brief Test basic HOTS functionality
  */
 static int test_hots_basic(void) {
-    printf("Setting up HOTS parameters...\n");
+    log_it(L_INFO, "Setting up HOTS parameters...");
     
     chipmunk_hots_params_t l_params;
     int l_result = chipmunk_hots_setup(&l_params);
     if (l_result != 0) {
-        printf("❌ HOTS setup failed with code %d\n", l_result);
+        log_it(L_ERROR, "❌ HOTS setup failed with code %d", l_result);
         return -1;
     }
-    printf("✓ HOTS setup successful\n");
+    log_it(L_INFO, "✓ HOTS setup successful");
     
     // Generate keys
-    printf("Generating HOTS keys...\n");
+    log_it(L_INFO, "Generating HOTS keys...");
     uint8_t l_seed[32];
     // Use fixed seed for reproducible results
     memset(l_seed, 0x42, 32);
@@ -69,46 +72,46 @@ static int test_hots_basic(void) {
     
     l_result = chipmunk_hots_keygen(l_seed, 0, &l_params, &l_pk, &l_sk);
     if (l_result != 0) {
-        printf("❌ HOTS keygen failed with code %d\n", l_result);
+        log_it(L_ERROR, "❌ HOTS keygen failed with code %d", l_result);
         return -1;
     }
-    printf("✓ HOTS key generation successful\n");
+    log_it(L_INFO, "✓ HOTS key generation successful");
     
     // Print some debug info about keys
-    printf("Debug: pk.v0 first coeffs: %d %d %d %d\n", 
+    debug_if(true, L_DEBUG, "Debug: pk.v0 first coeffs: %d %d %d %d", 
            l_pk.v0.coeffs[0], l_pk.v0.coeffs[1], l_pk.v0.coeffs[2], l_pk.v0.coeffs[3]);
-    printf("Debug: pk.v1 first coeffs: %d %d %d %d\n", 
+    debug_if(true, L_DEBUG, "Debug: pk.v1 first coeffs: %d %d %d %d", 
            l_pk.v1.coeffs[0], l_pk.v1.coeffs[1], l_pk.v1.coeffs[2], l_pk.v1.coeffs[3]);
     
     // Sign message
-    printf("Signing test message...\n");
+    log_it(L_INFO, "Signing test message...");
     const char *l_test_message = "Hello, HOTS!";
     chipmunk_hots_signature_t l_signature;
     
     l_result = chipmunk_hots_sign(&l_sk, (const uint8_t*)l_test_message, 
                                   strlen(l_test_message), &l_signature);
     if (l_result != 0) {
-        printf("❌ HOTS signing failed with code %d\n", l_result);
+        log_it(L_ERROR, "❌ HOTS signing failed with code %d", l_result);
         return -1;
     }
-    printf("✓ HOTS signing successful\n");
+    log_it(L_INFO, "✓ HOTS signing successful");
     
     // Print signature debug info
-    printf("Debug: signature[0] first coeffs: %d %d %d %d\n", 
+    debug_if(true, L_DEBUG, "Debug: signature[0] first coeffs: %d %d %d %d", 
            l_signature.sigma[0].coeffs[0], l_signature.sigma[0].coeffs[1], 
            l_signature.sigma[0].coeffs[2], l_signature.sigma[0].coeffs[3]);
     
     // Verify signature
-    printf("Verifying signature...\n");
+    log_it(L_INFO, "Verifying signature...");
     l_result = chipmunk_hots_verify(&l_pk, (const uint8_t*)l_test_message, 
                                    strlen(l_test_message), &l_signature, &l_params);
-    printf("Verification result: %d\n", l_result);
+    debug_if(true, L_DEBUG, "Verification result: %d", l_result);
     
     if (l_result == 0) {
-        printf("✓ HOTS verification successful\n");
+        log_it(L_INFO, "✓ HOTS verification successful");
         return 0;
     } else {
-        printf("❌ HOTS verification failed with error code %d\n", l_result);
+        log_it(L_ERROR, "❌ HOTS verification failed with error code %d", l_result);
         return -1;
     }
 }
@@ -117,12 +120,12 @@ static int test_hots_basic(void) {
  * @brief Test multiple HOTS keys
  */
 static int test_hots_multiple_keys(void) {
-    printf("Testing multiple HOTS keys...\n");
+    log_it(L_INFO, "Testing multiple HOTS keys...");
     
     // Setup parameters
     chipmunk_hots_params_t l_params;
     if (chipmunk_hots_setup(&l_params) != 0) {
-        printf("❌ HOTS setup failed\n");
+        log_it(L_ERROR, "❌ HOTS setup failed");
         return -1;
     }
     
@@ -137,24 +140,24 @@ static int test_hots_multiple_keys(void) {
         chipmunk_hots_sk_t l_sk;
         
         if (chipmunk_hots_keygen(l_seed, l_counter, &l_params, &l_pk, &l_sk) != 0) {
-            printf("❌ HOTS key generation failed for counter %u\n", l_counter);
+            log_it(L_ERROR, "❌ HOTS key generation failed for counter %u", l_counter);
             return -1;
         }
         
         chipmunk_hots_signature_t l_signature;
         if (chipmunk_hots_sign(&l_sk, (const uint8_t*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_signature) != 0) {
-            printf("❌ HOTS signing failed for counter %u\n", l_counter);
+            log_it(L_ERROR, "❌ HOTS signing failed for counter %u", l_counter);
             return -1;
         }
         
         int l_verify_result = chipmunk_hots_verify(&l_pk, (const uint8_t*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_signature, &l_params);
         if (l_verify_result != 0) {
-            printf("❌ HOTS verification failed for counter %u\n", l_counter);
+            log_it(L_ERROR, "❌ HOTS verification failed for counter %u", l_counter);
             return -1;
         }
     }
     
-    printf("✓ Multiple HOTS keys test successful\n");
+    log_it(L_INFO, "✓ Multiple HOTS keys test successful");
     return 0;
 }
 
@@ -162,11 +165,21 @@ static int test_hots_multiple_keys(void) {
  * @brief Main test function
  */
 int main() {
-    printf("=== CHIPMUNK HOTS TEST ===\n\n");
+    // Initialize logging with clean format for unit tests
+    dap_log_level_set(L_INFO);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
+    
+    // Initialize Chipmunk module
+    dap_enc_chipmunk_init();
+    
+    log_it(L_NOTICE, "🔬 CHIPMUNK HOTS UNIT TESTS");
+    log_it(L_NOTICE, "Homomorphic One-Time Signatures verification");
+    log_it(L_NOTICE, " ");
     
     // Initialize DAP with fixed parameters instead of random
     if (dap_common_init("chipmunk-hots-test", NULL) != 0) {
-        printf("❌ DAP initialization failed\n");
+        log_it(L_ERROR, "❌ DAP initialization failed");
         return 1;
     }
     
@@ -175,35 +188,37 @@ int main() {
     
     // Test 1: Basic HOTS functionality
     l_total_tests++;
-    printf("Testing basic HOTS functionality...\n");
+    log_it(L_INFO, "Testing basic HOTS functionality...");
     
     if (test_hots_basic() == 0) {
-        printf("✓ Basic HOTS test passed\n");
+        log_it(L_NOTICE, "✓ Basic HOTS test passed");
         l_tests_passed++;
     } else {
-        printf("❌ Basic HOTS test failed\n");
+        log_it(L_ERROR, "❌ Basic HOTS test failed");
     }
     
     // Test 2: Multiple HOTS keys
     l_total_tests++;
-    printf("\nTesting multiple HOTS keys...\n");
+    log_it(L_INFO, " ");
+    log_it(L_INFO, "Testing multiple HOTS keys...");
     
     if (test_hots_multiple_keys() == 0) {
-        printf("✓ Multiple keys HOTS test passed\n");
+        log_it(L_NOTICE, "✓ Multiple keys HOTS test passed");
         l_tests_passed++;
     } else {
-        printf("❌ Multiple keys HOTS test failed\n");
+        log_it(L_ERROR, "❌ Multiple keys HOTS test failed");
     }
     
     // Print summary
-    printf("\n=== TEST SUMMARY ===\n");
-    printf("Tests passed: %d/%d\n", l_tests_passed, l_total_tests);
+    log_it(L_NOTICE, " ");
+    log_it(L_NOTICE, "=== TEST SUMMARY ===");
+    log_it(L_NOTICE, "Tests passed: %d/%d", l_tests_passed, l_total_tests);
     
     if (l_tests_passed == l_total_tests) {
-        printf("🎉 ALL HOTS TESTS PASSED! 🎉\n");
+        log_it(L_NOTICE, "🎉 ALL HOTS TESTS PASSED! 🎉");
         return 0;
     } else {
-        printf("💥 SOME HOTS TESTS FAILED! 💥\n");
+        log_it(L_ERROR, "💥 SOME HOTS TESTS FAILED! 💥");
         return 1;
     }
 } 

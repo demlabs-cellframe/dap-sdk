@@ -386,18 +386,18 @@ static int test_progressive_scale(void) {
     log_it(L_NOTICE, "🚀 PROGRESSIVE SCALE TESTING");
     log_it(L_NOTICE, " ");  // Use space instead of empty string
     
-    // Test scales: start small, gradually increase with dynamic allocation
+    // Test scales: optimized for unit testing, max 1000 (blockchain shard size)
     size_t test_scales[] = {
         3,      // Baseline small test
-        5,      // Small group
+        5,      // Small group  
         10,     // Medium group
-        16,     // Previous static limit
-        32,     // Dynamic: Small organization
-        64,     // Dynamic: Medium organization
-        128,    // Dynamic: Large organization
-        256,    // Dynamic: Very large organization
-        512,    // Dynamic: Blockchain validator set
-        1024    // Dynamic: Large blockchain network
+        16,     // Previous static limit (legacy compatibility)
+        32,     // Small organization
+        64,     // Medium organization  
+        128,    // Large organization
+        256,    // Very large organization
+        512,    // Blockchain validator set
+        1000    // Max blockchain shard size (unit test limit)
     };
     
     size_t num_tests = sizeof(test_scales) / sizeof(test_scales[0]);
@@ -418,10 +418,10 @@ static int test_progressive_scale(void) {
         log_it(L_NOTICE, "✅ SUCCESS at scale %zu participants", scale);
         log_it(L_NOTICE, " ");  // Use space instead of empty string
         
-        // Short pause between tests for system stability
-        if (scale >= 1000) {
-            log_it(L_INFO, "⏸️ Pausing 2 seconds for system stability...");
-            sleep(2);
+        // Short pause between larger tests for system stability  
+        if (scale >= 512) {
+            log_it(L_INFO, "⏸️ Pausing 1 second for system stability...");
+            sleep(1);
         }
     }
     
@@ -442,7 +442,7 @@ int main(int argc, char *argv[]) {
     dap_enc_chipmunk_init();
     
     log_it(L_NOTICE, "🚀 CHIPMUNK LARGE-SCALE MULTI-SIGNATURE TESTING");
-    log_it(L_NOTICE, "Target: Up to %d participants", CHIPMUNK_TREE_MAX_PARTICIPANTS);
+    log_it(L_NOTICE, "Unit test range: Up to 1000 participants (blockchain shard size)");
     log_it(L_NOTICE, " ");  // Use space instead of empty string
     
     int result = 0;

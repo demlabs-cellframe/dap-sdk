@@ -248,6 +248,14 @@ cleanup:
 
 int main(int argc, char *argv[])
 {
+    // Initialize logging with clean format for unit tests
+    dap_log_level_set(L_INFO);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
+    
+    // Initialize Chipmunk module
+    dap_enc_chipmunk_init();
+    
     // Allow enabling debug output via environment variable or command line
     char *debug_env = getenv("CHIPMUNK_DEBUG");
     if (debug_env && (strcmp(debug_env, "1") == 0 || strcmp(debug_env, "true") == 0)) {
@@ -256,8 +264,9 @@ int main(int argc, char *argv[])
         log_it(L_INFO, "🔧 Debug output enabled");
     }
     
-    log_it(L_INFO, "🔬 Chipmunk Multi-Signature Performance Testing");
-    log_it(L_INFO, " ");
+    log_it(L_NOTICE, "🔬 CHIPMUNK PERFORMANCE TESTING");
+    log_it(L_NOTICE, "Unit test range: Up to 100 participants (optimal for benchmarks)");
+    log_it(L_NOTICE, " ");
     
     // Default test sizes
     size_t test_sizes[] = {3, 5, 10, 50, 100};
