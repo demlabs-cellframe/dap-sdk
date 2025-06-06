@@ -46,7 +46,7 @@
 
 #define LOG_TAG "dap_client_http"
 
-#define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB максимальный размер ответа
+#define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB maximum response size
 
 // Static variables
 static bool s_debug_more = false;
@@ -54,9 +54,24 @@ static uint64_t s_client_timeout_ms;
 static uint64_t s_client_timeout_read_after_connect_ms;
 static uint32_t s_max_attempts = 5;
 
+#define DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT (1024 * 1024) // 1MB
+static size_t s_streaming_threshold = DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT;
+
+// Smart streaming with optimal buffering constants
+// Strategy: Start small → Smart decision → One expansion if needed → Zero further reallocs
+#define DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE (128 * 1024) // 128KB optimal for streaming (headers + max TCP window)
+#define DAP_CLIENT_HTTP_MAX_HEADERS_SIZE (16 * 1024)       // 16KB max for headers
+
 #ifndef DAP_NET_CLIENT_NO_SSL
 static WOLFSSL_CTX *s_ctx;
 #endif
+
+// Streaming mode states
+typedef enum {
+    DAP_HTTP_STREAMING_UNDETERMINED = 0,  // Not yet determined
+    DAP_HTTP_STREAMING_ENABLED = 1,       // Streaming mode active
+    DAP_HTTP_STREAMING_DISABLED = 2       // Normal accumulation mode
+} dap_http_streaming_mode_t;
 
 // Callback-only context structure for async API
 typedef struct dap_client_http_async_context {
@@ -66,10 +81,9 @@ typedef struct dap_client_http_async_context {
     dap_client_http_callback_started_t started_callback;
     dap_client_http_callback_progress_t progress_callback;
     void *user_arg;
-    size_t total_size;
-    size_t downloaded_size;
+    size_t streamed_body_size;  // Track streamed body data
     uint8_t redirect_count;  // Redirect counter
-    bool is_redirect_request; // Flag to indicate this is a redirect request
+    dap_http_streaming_mode_t streaming_mode;   // Streaming mode state (once determined, fixed)
 } dap_client_http_async_context_t;
 
 // Forward declarations
@@ -104,6 +118,8 @@ static void s_client_http_request_async_impl(
         bool a_follow_redirects);
 
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size);
+static size_t s_parse_chunk_size_line(const char *a_line, size_t a_line_len);
+static bool s_process_chunked_data(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx, dap_events_socket_t *a_es);
 
 /**
  * @brief Extract HTTP status code from response
@@ -112,6 +128,158 @@ http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size)
     char l_ver[16] = { '\0' };
     int l_err = 0, l_ret = sscanf((char*)a_response, "%[^ ] %d", l_ver, &l_err);
     return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (http_status_code_t)l_err : 0;
+}
+
+/**
+ * @brief Parse chunk size from hex line (e.g. "1a3\r\n" -> 419)
+ * @param a_line Line containing hex chunk size
+ * @param a_line_len Length of the line
+ * @return Chunk size in bytes, or SIZE_MAX on error
+ */
+static size_t s_parse_chunk_size_line(const char *a_line, size_t a_line_len) {
+    if (!a_line || a_line_len < 3) // At least "0\r\n"
+        return SIZE_MAX;
+    
+    // Find end of hex number (before \r\n or ;)
+    size_t l_hex_len = 0;
+    for (size_t i = 0; i < a_line_len && l_hex_len == 0; i++) {
+        if (a_line[i] == '\r' || a_line[i] == '\n' || a_line[i] == ';') {
+            l_hex_len = i;
+        }
+    }
+    
+    if (l_hex_len == 0 || l_hex_len > 16) // Sanity check
+        return SIZE_MAX;
+    
+    // Parse hex number
+    char l_hex_str[17] = {0};
+    strncpy(l_hex_str, a_line, l_hex_len);
+    
+    char *l_endptr = NULL;
+    unsigned long l_size = strtoul(l_hex_str, &l_endptr, 16);
+    
+    if (l_endptr == l_hex_str || *l_endptr != '\0') {
+        log_it(L_WARNING, "Invalid chunk size hex: '%s'", l_hex_str);
+        return SIZE_MAX;
+    }
+    
+    return (size_t)l_size;
+}
+
+/**
+ * @brief Process chunked transfer encoded data
+ * @param a_client_http HTTP client
+ * @param a_ctx Async context (may be NULL)
+ * @param a_es Event socket
+ * @return true if processing complete, false if more data needed
+ */
+static bool s_process_chunked_data(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx, dap_events_socket_t *a_es)
+{
+    if (!a_client_http->is_chunked)
+        return false;
+
+    uint8_t *l_data = a_client_http->response + a_client_http->header_length;
+    size_t l_data_size = a_client_http->response_size - a_client_http->header_length;
+    size_t l_processed = 0;
+
+    while (l_processed < l_data_size) {
+        if (a_client_http->is_reading_chunk_size) {
+            // Look for CRLF to find end of chunk size line
+            const char *l_crlf = NULL;
+            if (l_data_size > 1) {
+                for (size_t i = l_processed; i < l_data_size - 1; i++) {
+                    if (l_data[i] == '\r' && l_data[i + 1] == '\n') {
+                        l_crlf = (const char *)(l_data + i);
+                        break;
+                    }
+                }
+            }
+            
+            if (!l_crlf) {
+                // Need more data to complete chunk size line
+                break;
+            }
+            
+            // Parse chunk size
+            size_t l_size_line_len = l_crlf - (const char *)(l_data + l_processed) + 2;
+            size_t l_chunk_size = s_parse_chunk_size_line((const char *)(l_data + l_processed), l_size_line_len);
+            
+            if (l_chunk_size == SIZE_MAX) {
+                log_it(L_ERROR, "Failed to parse chunk size");
+                if (a_ctx && a_ctx->error_callback) {
+                    a_ctx->error_callback(DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR, a_ctx->user_arg);
+                    a_client_http->were_callbacks_called = true;
+                }
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return false;
+            }
+            
+            l_processed += l_size_line_len;
+            a_client_http->current_chunk_size = l_chunk_size;
+            a_client_http->current_chunk_read = 0;
+            a_client_http->is_reading_chunk_size = false;
+            
+            if (l_chunk_size == 0) {
+                // Last chunk - look for final CRLF
+                if (l_processed + 1 < l_data_size && l_processed < l_data_size &&
+                    l_data[l_processed] == '\r' && l_data[l_processed + 1] == '\n') {
+                    // Chunked transfer complete
+                    if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                        // Streaming complete
+                        a_client_http->were_callbacks_called = true;
+                        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    }
+                    return true;
+                }
+                break; // Need more data for final CRLF
+            }
+        } else {
+            // Reading chunk data
+            size_t l_chunk_remaining = a_client_http->current_chunk_size - a_client_http->current_chunk_read;
+            size_t l_data_remaining = l_data_size - l_processed;
+            size_t l_to_read = dap_min(l_chunk_remaining, l_data_remaining);
+            
+            if (l_to_read > 0) {
+                // Send data to streaming callback if enabled
+                if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED && a_ctx->progress_callback && l_to_read > 0) {
+                    a_ctx->progress_callback(
+                        l_data + l_processed,
+                        l_to_read,
+                        SIZE_MAX, // Total size unknown in chunked mode (prevents division by zero)
+                        a_ctx->user_arg
+                    );
+                    a_ctx->streamed_body_size += l_to_read;
+                }
+                
+                l_processed += l_to_read;
+                a_client_http->current_chunk_read += l_to_read;
+            }
+            
+            // Check if chunk is complete
+            if (a_client_http->current_chunk_read >= a_client_http->current_chunk_size) {
+                // Look for trailing CRLF
+                if (l_processed + 1 < l_data_size && l_processed < l_data_size &&
+                    l_data[l_processed] == '\r' && l_data[l_processed + 1] == '\n') {
+                    l_processed += 2;
+                    a_client_http->is_reading_chunk_size = true;
+                } else {
+                    // Need more data for trailing CRLF
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Compact buffer by removing processed data
+    if (l_processed > 0) {
+        size_t l_remaining = l_data_size - l_processed;
+        if (l_remaining > 0) {
+            memmove(l_data, l_data + l_processed, l_remaining);
+        }
+        a_client_http->response_size = a_client_http->header_length + l_remaining;
+    }
+    
+    return false; // Need more data
 }
 
 /**
@@ -157,6 +325,11 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
     a_client_http->header_length = 0;
     a_client_http->content_length = 0;
     a_client_http->is_header_read = false;
+    
+    a_client_http->is_chunked = false;
+    a_client_http->is_reading_chunk_size = false;
+    a_client_http->current_chunk_size = 0;
+    a_client_http->current_chunk_read = 0;
     
     // Clear response headers
     while(a_client_http->response_headers) {
@@ -358,6 +531,8 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             l_redirect_ctx->user_arg = l_orig_ctx->user_arg;
             l_redirect_ctx->started_callback = l_orig_ctx->started_callback;
             l_redirect_ctx->progress_callback = l_orig_ctx->progress_callback;
+            l_redirect_ctx->streaming_mode = l_orig_ctx->streaming_mode;
+            l_redirect_ctx->streamed_body_size = l_orig_ctx->streamed_body_size;
         } else {
             // Original request was sync
             l_redirect_ctx->response_callback = a_client_http->response_callback_full;
@@ -543,8 +718,10 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->cookie = dap_strdup(a_cookie);
     l_client_http->request_custom_headers = dap_strdup(a_custom_headers);
 
-    // Start with initial buffer size
+    // Always start with small buffer - smart streaming decision will be made later
+    // If streaming is determined necessary, we'll expand to optimal size then
     l_client_http->response_size_max = 4096;
+    
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, l_client_http->response_size_max);
     if (!l_client_http->response) {
         *a_error_code = ENOMEM;
@@ -836,6 +1013,14 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
                    
             l_client_http->timer = NULL;
             
+            dap_client_http_async_context_t *l_ctx = NULL;
+            if (l_client_http->error_callback == s_async_error_callback) {
+                l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+                if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                    log_it(L_WARNING, "Streaming timeout after %zu bytes received", l_ctx->streamed_body_size);
+                }
+            }
+            
             if(l_client_http->error_callback) {
                 l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
                 l_client_http->were_callbacks_called = true;
@@ -881,6 +1066,15 @@ static bool s_timer_timeout_check(void * a_arg)
             l_client_http->timer = NULL;
             log_it(L_WARNING,"Connecting timeout for request http://%s:%u/%s, possible network problems or host is down",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+            
+            dap_client_http_async_context_t *l_ctx = NULL;
+            if (l_client_http->error_callback == s_async_error_callback) {
+                l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+                if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                    log_it(L_DEBUG, "Connection timeout for streaming request");
+                }
+            }
+            
             if(l_client_http->error_callback) {
                 l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
                 l_client_http->were_callbacks_called = true;
@@ -948,29 +1142,62 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     
     l_client_http->ts_last_read = time(NULL);
     
+    // Get async context if available (for streaming and other features)
+    dap_client_http_async_context_t *l_ctx = NULL;
+    if (l_client_http->error_callback == s_async_error_callback) {
+        l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+    }
+    
     // Check if we need to expand buffer
     size_t l_available_space = l_client_http->response_size_max - l_client_http->response_size;
     size_t l_available_in_socket = a_es->buf_in_size;
     
     if(l_available_space < l_available_in_socket) {
-        // Need to expand buffer
-        size_t l_new_size = l_client_http->response_size + l_available_in_socket + 4096; // Add extra 4KB
-        
-        // Limit maximum buffer size to prevent memory exhaustion
-        if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
-            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
-        }
-        
-        uint8_t *l_new_response = DAP_REALLOC(l_client_http->response, l_new_size);
-        if(!l_new_response) {
-            m_http_error_exit(ENOMEM, "Can't expand response buffer from %zu to %zu bytes", 
-                              l_client_http->response_size_max, l_new_size);
-        }
-        
-        l_client_http->response = l_new_response;
-        l_client_http->response_size_max = l_new_size;
-        if(s_debug_more) {
-            log_it(L_DEBUG, "Expanded response buffer to %zu bytes", l_new_size);
+        // Check if we're in streaming mode with optimal buffer (should not need expansion)
+        if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED &&
+            l_client_http->response_size_max >= DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE) {
+            // Streaming buffer already at optimal size - no reallocation needed!
+        } else {
+            // Need to expand buffer
+            size_t l_new_size;
+            
+            if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                // Streaming mode - expand to optimal size (backup expansion, shouldn't normally happen)
+                l_new_size = DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE;
+                if(s_debug_more) {
+                    log_it(L_DEBUG, "Late expansion to optimal streaming buffer: %zu bytes", l_new_size);
+                }
+            } else {
+                // Standard accumulation mode OR streaming not yet determined - aggressive expansion
+                l_new_size = l_client_http->response_size + l_available_in_socket + 4096;
+            }
+            
+            // Apply size limits
+            if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+                if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                    m_http_error_exit(DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT, 
+                                     "Streaming buffer size exceeds limit of %zu bytes (requested: %zu)", 
+                                     (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
+                } else {
+                    m_http_error_exit(-413, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", 
+                                     (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
+                }
+            }
+            
+            uint8_t *l_old_response = l_client_http->response;
+            uint8_t *l_new_response = DAP_REALLOC(l_old_response, l_new_size);
+            if(!l_new_response) {
+                // Important: don't free old buffer here - it will be freed in m_http_error_exit
+                m_http_error_exit(ENOMEM, "Can't expand response buffer from %zu to %zu bytes", 
+                                  l_client_http->response_size_max, l_new_size);
+            }
+            
+            l_client_http->response = l_new_response;
+            l_client_http->response_size_max = l_new_size;
+            if(s_debug_more) {
+                log_it(L_DEBUG, "Expanded response buffer to %zu bytes (%s mode)", 
+                       l_new_size, (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) ? "streaming" : "accumulation");
+            }
         }
     }
     
@@ -1006,6 +1233,14 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         if (l_crlf) {
             l_client_http->header_length = l_crlf - (char*)l_client_http->response + 4;
             l_client_http->is_header_read = true;
+            
+            // Validate header size for potential streaming mode
+            // Check progress_callback instead of streaming_mode since mode is determined later
+            if (l_ctx && l_ctx->progress_callback && 
+                l_client_http->header_length > DAP_CLIENT_HTTP_MAX_HEADERS_SIZE) {
+                m_http_error_exit(-414, "HTTP headers too large for streaming mode: %zu bytes (max: %d)", 
+                                 l_client_http->header_length, DAP_CLIENT_HTTP_MAX_HEADERS_SIZE);
+            }
         }
     }
     
@@ -1040,16 +1275,27 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             l_line_start = l_line_end + 2;
         }
         
-        // Extract Content-Length from parsed headers
-        dap_http_header_t *l_content_len_hdr = dap_http_header_find(l_client_http->response_headers, "Content-Length");
-        if(l_content_len_hdr) {
-            char *l_endptr = NULL;
-            long l_content_len = strtol(l_content_len_hdr->value, &l_endptr, 10);
-            if(l_endptr != l_content_len_hdr->value && *l_endptr == '\0' && l_content_len >= 0) {
-                l_client_http->content_length = (size_t)l_content_len;
-            } else {
-                log_it(L_WARNING, "Invalid Content-Length header value: %s", l_content_len_hdr->value);
-                l_client_http->content_length = 0;
+        // Check for chunked transfer encoding first
+        dap_http_header_t *l_transfer_encoding = dap_http_header_find(l_client_http->response_headers, "Transfer-Encoding");
+        if (l_transfer_encoding && strstr(l_transfer_encoding->value, "chunked")) {
+            l_client_http->is_chunked = true;
+            l_client_http->is_reading_chunk_size = true;
+            l_client_http->current_chunk_size = 0;
+            l_client_http->current_chunk_read = 0;
+            l_client_http->content_length = 0; // Not used in chunked mode
+            log_it(L_DEBUG, "Chunked transfer encoding detected");
+        } else {
+            // Extract Content-Length from parsed headers
+            dap_http_header_t *l_content_len_hdr = dap_http_header_find(l_client_http->response_headers, "Content-Length");
+            if(l_content_len_hdr) {
+                char *l_endptr = NULL;
+                long l_content_len = strtol(l_content_len_hdr->value, &l_endptr, 10);
+                if(l_endptr != l_content_len_hdr->value && *l_endptr == '\0' && l_content_len >= 0) {
+                    l_client_http->content_length = (size_t)l_content_len;
+                } else {
+                    log_it(L_WARNING, "Invalid Content-Length header value: %s", l_content_len_hdr->value);
+                    l_client_http->content_length = 0;
+                }
             }
         }
         
@@ -1106,12 +1352,142 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 m_http_error_exit(-302, "HTTP %d redirect but no Location header found", l_status_code);
             }
         }
+        
+        // SMART STREAMING LOGIC: Check multiple criteria for streaming decision
+        // Fixed race conditions and consistency issues from original implementation
+        if (l_ctx && l_ctx->progress_callback && l_ctx->streaming_mode == DAP_HTTP_STREAMING_UNDETERMINED) {
+            bool l_size_trigger = false;
+            bool l_mime_trigger = false;
+            bool l_chunked_trigger = false;
+            
+            // Check by content size (only if Content-Length is known)
+            if (l_client_http->content_length > 0 && 
+                l_client_http->content_length > s_streaming_threshold) {
+                l_size_trigger = true;
+            }
+            
+            // For chunked encoding, always enable streaming if progress callback exists
+            if (l_client_http->is_chunked) {
+                l_chunked_trigger = true;
+            }
+            
+            // Check by MIME type for binary/large content
+            dap_http_header_t *l_content_type = dap_http_header_find(l_client_http->response_headers, "Content-Type");
+            if (l_content_type) {
+                const char *l_mime = l_content_type->value;
+                if (strstr(l_mime, "application/octet-stream") ||
+                    strstr(l_mime, "application/zip") ||
+                    strstr(l_mime, "application/gzip") ||
+                    strstr(l_mime, "application/pdf") ||
+                    strstr(l_mime, "video/") ||
+                    strstr(l_mime, "audio/") ||
+                    strstr(l_mime, "image/")) {
+                    l_mime_trigger = true;
+                }
+            }
+            
+            // Make streaming decision based on criteria
+            bool l_should_stream = l_size_trigger || l_mime_trigger || l_chunked_trigger;
+            l_ctx->streaming_mode = l_should_stream ? DAP_HTTP_STREAMING_ENABLED : DAP_HTTP_STREAMING_DISABLED;
+            
+            // If streaming enabled, expand buffer to optimal size NOW (one-time operation)
+            if (l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED && 
+                l_client_http->response_size_max < DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE) {
+                
+                size_t l_new_size = DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE;
+                uint8_t *l_old_response = l_client_http->response;
+                uint8_t *l_new_response = DAP_REALLOC(l_old_response, l_new_size);
+                if (l_new_response) {
+                    l_client_http->response = l_new_response;
+                    l_client_http->response_size_max = l_new_size;
+                    log_it(L_DEBUG, "Streaming enabled for %s, expanded buffer to %zu bytes", 
+                           l_client_http->uplink_addr, l_new_size);
+                } else {
+                    // On error old buffer remains valid - continue operation
+                    log_it(L_WARNING, "Failed to expand buffer for streaming, continuing with %zu bytes", 
+                           l_client_http->response_size_max);
+                }
+            }
+        }
     }
-
+    
     // process data
-    if(l_client_http->content_length) {
+    if(l_client_http->content_length || l_client_http->is_chunked) {
         l_client_http->is_header_read = false;
 
+        // Handle chunked transfer encoding
+        if (l_client_http->is_chunked) {
+            bool l_chunked_complete = s_process_chunked_data(l_client_http, l_ctx, a_es);
+            if (l_chunked_complete) {
+                // Chunked transfer finished
+                if (!l_ctx || l_ctx->streaming_mode != DAP_HTTP_STREAMING_ENABLED) {
+                    // Non-streaming mode - call response callback with accumulated data
+                    size_t l_body_size = l_client_http->response_size - l_client_http->header_length;
+                    http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
+                    
+                    if(l_client_http->response_callback_full) {
+                        l_client_http->response_callback_full(
+                                l_client_http->response + l_client_http->header_length,
+                                l_body_size,
+                                l_client_http->response_headers,
+                                l_client_http->callbacks_arg, 
+                                l_status_code);
+                    } else if(l_client_http->response_callback) {
+                        l_client_http->response_callback(
+                                l_client_http->response + l_client_http->header_length,
+                                l_body_size,
+                                l_client_http->callbacks_arg, 
+                                l_status_code);
+                    }
+                    l_client_http->were_callbacks_called = true;
+                    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                }
+                // For streaming mode, callbacks were already called in s_process_chunked_data
+            }
+            return; // Don't process further in chunked mode
+        }
+
+        // Handle streaming mode (non-chunked)
+        if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED && l_ctx->progress_callback) {
+            // In streaming mode, send data directly to progress callback without accumulation
+            size_t l_body_received = l_client_http->response_size - l_client_http->header_length;
+            
+            if (l_body_received > 0) {
+                // Send current chunk directly from buffer to progress callback (no copying)
+                void *l_body_data = l_client_http->response + l_client_http->header_length;
+                l_ctx->progress_callback(
+                    l_body_data,
+                    l_body_received,
+                    l_client_http->content_length,
+                    l_ctx->user_arg
+                );
+                
+                // Update total streamed size
+                l_ctx->streamed_body_size += l_body_received;
+                
+                // Reset response buffer keeping only headers
+                l_client_http->response_size = l_client_http->header_length;
+            }
+            
+            // Check if all data received (either by Content-Length or when no more data expected)
+            bool l_streaming_complete = false;
+            if (l_client_http->content_length > 0) {
+                // With known Content-Length
+                l_streaming_complete = (l_ctx->streamed_body_size >= l_client_http->content_length);
+            } else {
+                // Without Content-Length - check for connection close or empty read
+                l_streaming_complete = (l_body_received == 0 && a_es->buf_in_size == 0);
+            }
+            
+            if (l_streaming_complete) {
+                // Streaming complete - no need to call response callbacks
+                l_client_http->were_callbacks_called = true;
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            }
+            return;
+        }
+        
+        // Standard mode - accumulate data and wait for completion
         // received not enough data
         if ( l_client_http->content_length > l_client_http->response_size - l_client_http->header_length )
             return;
@@ -1138,8 +1514,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     l_status_code);
         }
         
-        l_client_http->response_size -= l_client_http->header_length;
-        l_client_http->response_size -= l_client_http->content_length;
+        // In standard mode all data processed, just reset state
+        l_client_http->response_size = 0;
         l_client_http->header_length = 0;
         l_client_http->content_length = 0;
         l_client_http->were_callbacks_called = true;
@@ -1151,9 +1527,9 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
 
 
 /**
- * @brief s_http_stream_error
- * @param a_es
- * @param a_errno
+ * @brief s_http_error - Enhanced error handler with streaming support
+ * @param a_es Event socket
+ * @param a_errno Error code
  */
 static void s_http_error(dap_events_socket_t * a_es, int a_errno)
 {
@@ -1167,11 +1543,46 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
     dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
 
     if(!l_client_http) {
-        log_it(L_ERROR, "s_http_write: l_client_http is NULL!");
+        log_it(L_ERROR, "s_http_error: l_client_http is NULL!");
         return;
     }
-    if(l_client_http->error_callback)
-        l_client_http->error_callback(a_errno, l_client_http->callbacks_arg);
+    
+    dap_client_http_async_context_t *l_ctx = NULL;
+    if (l_client_http->error_callback == s_async_error_callback) {
+        l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+    }
+    
+    if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+        // Special handling for interrupted streaming
+        log_it(L_WARNING, "Streaming interrupted after %zu bytes (%s mode: %s)",
+               l_ctx->streamed_body_size,
+               l_client_http->is_chunked ? "chunked" : "content-length",
+               l_client_http->is_chunked ? "unknown total" : 
+               (l_client_http->content_length > 0 ? "known total" : "unknown total"));
+        
+        // Calculate completion percentage if possible
+        if (!l_client_http->is_chunked && l_client_http->content_length > 0) {
+            double l_completion = (double)l_ctx->streamed_body_size * 100.0 / l_client_http->content_length;
+            log_it(L_INFO, "Streaming completion: %.1f%% (%zu of %zu bytes)",
+                   l_completion, l_ctx->streamed_body_size, l_client_http->content_length);
+        }
+        
+        if(l_client_http->error_callback) {
+            int l_error_code = (a_errno == ETIMEDOUT) ? DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT : 
+                                                        DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED;
+            l_client_http->error_callback(l_error_code, l_client_http->callbacks_arg);
+        }
+    } else if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_UNDETERMINED) {
+        log_it(L_DEBUG, "Error occurred before streaming mode was determined");
+        // Call error callback with original error code
+        if(l_client_http->error_callback)
+            l_client_http->error_callback(a_errno, l_client_http->callbacks_arg);
+    } else {
+        log_it(L_DEBUG, "Error in accumulation mode (no streaming active)");
+        // Call error callback with original error code
+        if(l_client_http->error_callback)
+            l_client_http->error_callback(a_errno, l_client_http->callbacks_arg);
+    }
 
     l_client_http->were_callbacks_called = true;
 
@@ -1195,13 +1606,26 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
         log_it(L_WARNING, "For some reasons internal object is NULL");
         return;
     }
+    dap_client_http_async_context_t *l_ctx = NULL;
+    if (l_client_http->error_callback == s_async_error_callback) {
+        l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+    }
+    
     if (! l_client_http->were_callbacks_called){
+        // Enhanced disconnect handling with streaming awareness
+        
         size_t l_response_size = l_client_http->response_size> l_client_http->header_length ?
                     l_client_http->response_size - l_client_http->header_length: 0;
+        
         if (l_client_http->content_length){
-            log_it(L_WARNING, "Remote server disconnected before he sends all data: %zd data in buffer when expected %zd",
-               l_client_http->response_size, l_client_http->content_length);
-            l_client_http->error_callback(-6, l_client_http->callbacks_arg); // -666 means remote server disconnected before he sends all
+            if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                log_it(L_WARNING, "Streaming disconnected: received %zu bytes, expected %zu total, streamed %zu",
+                       l_response_size, l_client_http->content_length, l_ctx->streamed_body_size);
+            } else {
+                log_it(L_WARNING, "Remote server disconnected before he sends all data: %zd data in buffer when expected %zd",
+                       l_client_http->response_size, l_client_http->content_length);
+            }
+            l_client_http->error_callback(-6, l_client_http->callbacks_arg); // -6 means remote server disconnected before he sends all
         }else if (l_response_size){
             log_it(L_INFO, "Remote server replied without no content length but we have the response %zd bytes size",
                l_response_size);
@@ -1210,8 +1634,23 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
             http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
             
             // Call appropriate callback
-            if(l_client_http->response_callback_full) {
-                // Call full callback with headers
+            if (l_ctx) {
+                // For async context, check streaming mode
+                if (l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+                    // In streaming mode, this is unexpected data - call async error callback
+                    log_it(L_WARNING, "Streaming disconnected with unexpected response data: %zu bytes", l_response_size);
+                    s_async_error_callback(-10, l_client_http->callbacks_arg);
+                } else {
+                    // For non-streaming async context, use the wrapper callback that will free the context
+                    s_async_response_callback(
+                            l_client_http->response + l_client_http->header_length,
+                            l_response_size,
+                            l_client_http->response_headers,
+                            l_client_http->callbacks_arg, 
+                            l_status_code);
+                }
+            } else if(l_client_http->response_callback_full) {
+                // Call full callback with headers (non-async context)
                 l_client_http->response_callback_full(
                         l_client_http->response + l_client_http->header_length,
                         l_response_size,
@@ -1219,7 +1658,7 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
                         l_client_http->callbacks_arg, 
                         l_status_code);
             } else if(l_client_http->response_callback) {
-                // Call simple callback without headers
+                // Call simple callback without headers (non-async context)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_response_size,
@@ -1601,11 +2040,12 @@ void dap_client_http_request_simple_async(
     );
 }
 
-int dap_client_http_set_timeouts(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms) {
+int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms, size_t a_streaming_threshold_bytes) {
     if ( s_client_timeout_ms != 0 )
-        return log_it(L_ERROR, "HTTP client timeouts are already set"), -1;
+        return log_it(L_ERROR, "HTTP client parameters are already set"), -1;
     s_client_timeout_ms = a_timeout_ms;
     s_client_timeout_read_after_connect_ms = a_timeout_read_after_connect_ms;
+    s_streaming_threshold = a_streaming_threshold_bytes;
     return 0;
 }
 
@@ -1620,6 +2060,7 @@ int dap_client_http_init()
     if ( s_client_timeout_ms == 0 ) {
         s_client_timeout_ms = dap_config_get_item_uint32_default(g_config, "dap_client", "timeout", 20) * 1000;
         s_client_timeout_read_after_connect_ms = (time_t) dap_config_get_item_uint64_default(g_config, "dap_client", "timeout_read_after_connect", 5) * 1000;
+        s_streaming_threshold = dap_config_get_item_uint32_default(g_config, "dap_client", "streaming_threshold", DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT);
     }
 #ifndef DAP_NET_CLIENT_NO_SSL
     wolfSSL_Init();
