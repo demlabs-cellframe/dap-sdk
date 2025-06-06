@@ -176,8 +176,9 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
     // Copy leaf nodes - check for self-assignment to avoid undefined behavior
     if (a_tree->leaf_nodes != a_leaf_nodes) {
         size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
-        if (copy_size > sizeof(a_tree->leaf_nodes)) {
-            copy_size = sizeof(a_tree->leaf_nodes);
+        size_t max_copy_size = a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
+        if (copy_size > max_copy_size) {
+            copy_size = max_copy_size;
         }
         memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
     }
@@ -250,8 +251,22 @@ int chipmunk_tree_init(chipmunk_tree_t *a_tree, const chipmunk_hvc_hasher_t *a_h
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    // Initialize all leaf nodes to zero
-    memset(a_tree->leaf_nodes, 0, sizeof(a_tree->leaf_nodes));
+    // Initialize tree structure with default parameters
+    a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
+    a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT;
+    a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
+    
+    // Allocate memory for tree nodes
+    a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
+    a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
+    
+    if (!a_tree->leaf_nodes || !a_tree->non_leaf_nodes) {
+        log_it(L_ERROR, "Failed to allocate memory for tree nodes");
+        if (a_tree->leaf_nodes) DAP_DEL_MULTY(a_tree->leaf_nodes);
+        if (a_tree->non_leaf_nodes) DAP_DEL_MULTY(a_tree->non_leaf_nodes);
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+
     return chipmunk_tree_new_with_leaf_nodes(a_tree, a_tree->leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, a_hasher);
 }
 
@@ -275,6 +290,15 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
 
+    // Allocate memory for path nodes (height - 1 levels)
+    size_t path_length = CHIPMUNK_TREE_HEIGHT_DEFAULT - 1;
+    a_path->nodes = DAP_NEW_Z_COUNT(chipmunk_path_node_t, path_length);
+    if (!a_path->nodes) {
+        log_it(L_ERROR, "Failed to allocate memory for path nodes");
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+    
+    a_path->path_length = path_length;
     a_path->index = a_index;
 
     // Level 0: Root children
@@ -450,13 +474,18 @@ void chipmunk_tree_free(chipmunk_tree_t *a_tree) {
         return;
     }
     
-    // For current implementation with static arrays, just clear
-    // In future dynamic implementation, would free allocated memory
-    chipmunk_tree_clear(a_tree);
+    // Free dynamically allocated memory
+    if (a_tree->leaf_nodes) {
+        DAP_DEL_MULTY(a_tree->leaf_nodes);
+        a_tree->leaf_nodes = NULL;
+    }
+    if (a_tree->non_leaf_nodes) {
+        DAP_DEL_MULTY(a_tree->non_leaf_nodes);
+        a_tree->non_leaf_nodes = NULL;
+    }
     
-    // Note: In dynamic implementation, would do:
-    // if (a_tree->leaf_nodes) free(a_tree->leaf_nodes);
-    // if (a_tree->non_leaf_nodes) free(a_tree->non_leaf_nodes);
+    // Clear structure
+    chipmunk_tree_clear(a_tree);
 }
 
 /**
@@ -484,20 +513,16 @@ int chipmunk_tree_init_with_size(chipmunk_tree_t *a_tree,
     a_tree->leaf_count = leaf_count;
     a_tree->non_leaf_count = non_leaf_count;
     
-    // For current implementation, use static arrays with bounds checking
-    // In future dynamic implementation, would allocate here
-    if (leaf_count > CHIPMUNK_TREE_LEAF_COUNT_DEFAULT) {
-        log_it(L_WARNING, "Participant count %zu exceeds current static limit %d", 
-               a_participant_count, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
-        // Fall back to maximum static size for now
-        a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT;
-        a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
-        a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
-    }
+    // Allocate memory for tree nodes
+    a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
+    a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
     
-    // Initialize all nodes to zero
-    memset(a_tree->leaf_nodes, 0, sizeof(a_tree->leaf_nodes));
-    memset(a_tree->non_leaf_nodes, 0, sizeof(a_tree->non_leaf_nodes));
+    if (!a_tree->leaf_nodes || !a_tree->non_leaf_nodes) {
+        log_it(L_ERROR, "Failed to allocate memory for tree nodes");
+        if (a_tree->leaf_nodes) DAP_DEL_MULTY(a_tree->leaf_nodes);
+        if (a_tree->non_leaf_nodes) DAP_DEL_MULTY(a_tree->non_leaf_nodes);
+        return CHIPMUNK_ERROR_MEMORY;
+    }
     
     log_it(L_INFO, "Initialized tree for %zu participants (height=%u, capacity=%zu)", 
            a_participant_count, a_tree->height, a_tree->leaf_count);
@@ -513,10 +538,12 @@ void chipmunk_path_free(chipmunk_path_t *a_path) {
         return;
     }
     
-    // For current implementation with static arrays, just clear
-    // In future dynamic implementation, would free allocated memory
-    chipmunk_path_clear(a_path);
+    // Free dynamically allocated memory
+    if (a_path->nodes) {
+        DAP_DEL_MULTY(a_path->nodes);
+        a_path->nodes = NULL;
+    }
     
-    // Note: In dynamic implementation, would do:
-    // if (a_path->nodes) free(a_path->nodes);
+    // Clear structure
+    chipmunk_path_clear(a_path);
 } 
