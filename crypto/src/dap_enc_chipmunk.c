@@ -267,10 +267,68 @@ dap_enc_key_t *dap_enc_chipmunk_key_generate(
 {
     (void) kex_buf; (void) kex_size; // Unused
     (void) key_n; (void) key_n_size; // Unused
-    (void) seed; (void) seed_size;   // Currently unused, could implement deterministic key generation
-
-    // For now, just generate a new random key regardless of seed
-    return dap_enc_chipmunk_key_new();
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_generate: seed=%p, seed_size=%zu", seed, seed_size);
+    
+    // Если seed не предоставлен или имеет неправильный размер, используем случайную генерацию
+    if (!seed || seed_size < 32) {
+        debug_if(s_debug_more, L_DEBUG, "No valid seed provided, using random key generation");
+        return dap_enc_chipmunk_key_new();
+    }
+    
+    // Используем детерминированную генерацию с предоставленным seed
+    debug_if(s_debug_more, L_DEBUG, "Using deterministic key generation with provided seed");
+    
+    // Создаем структуру ключа
+    dap_enc_key_t *l_key = DAP_NEW_Z(dap_enc_key_t);
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to allocate dap_enc_key_t structure");
+        return NULL;
+    }
+    
+    // Настраиваем ключ
+    l_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+    l_key->dec_na = 0;
+    l_key->enc_na = 0;
+    l_key->sign_get = dap_enc_chipmunk_get_sign;
+    l_key->sign_verify = dap_enc_chipmunk_verify_sign;
+    l_key->priv_key_data_size = CHIPMUNK_PRIVATE_KEY_SIZE;
+    l_key->pub_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
+    
+    // Выделяем память для ключей
+    l_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, l_key->priv_key_data_size);
+    l_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, l_key->pub_key_data_size);
+    
+    if (!l_key->priv_key_data || !l_key->pub_key_data) {
+        log_it(L_ERROR, "Failed to allocate memory for key data");
+        if (l_key->priv_key_data) DAP_DELETE(l_key->priv_key_data);
+        if (l_key->pub_key_data) DAP_DELETE(l_key->pub_key_data);
+        DAP_DELETE(l_key);
+        return NULL;
+    }
+    
+    // Используем первые 32 байта seed'а для детерминированной генерации
+    uint8_t l_key_seed[32];
+    memcpy(l_key_seed, seed, 32);
+    
+    debug_if(s_debug_more, L_DEBUG, "Calling chipmunk_keypair_from_seed with seed %02x%02x%02x%02x...", 
+             l_key_seed[0], l_key_seed[1], l_key_seed[2], l_key_seed[3]);
+    
+    // Генерируем ключи детерминированно
+    int ret = chipmunk_keypair_from_seed(l_key_seed,
+                                         l_key->pub_key_data, l_key->pub_key_data_size,
+                                         l_key->priv_key_data, l_key->priv_key_data_size);
+    
+    if (ret != 0) {
+        log_it(L_ERROR, "chipmunk_keypair_from_seed failed with error %d", ret);
+        DAP_DELETE(l_key->priv_key_data);
+        DAP_DELETE(l_key->pub_key_data);
+        DAP_DELETE(l_key);
+        return NULL;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Successfully generated deterministic Chipmunk keypair");
+    return l_key;
 }
 
 // Get signature size
