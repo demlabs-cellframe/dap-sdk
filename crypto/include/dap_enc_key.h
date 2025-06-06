@@ -116,6 +116,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
     DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
     DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
+    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK=0x0108,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 99,
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
@@ -131,7 +132,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
 #endif
 } dap_enc_key_type_t;
 
@@ -201,17 +202,26 @@ typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *all
 typedef struct dap_enc_key {
     union{
         size_t priv_key_data_size;
-        size_t shared_key_size;
+        size_t key_pvt_size;
     };
     //unsigned char * priv_key_data; // can be shared key in assymetric alghoritms
     union{
         void * priv_key_data; // can be shared key in assymetric alghoritms or secret key in signature alghoritms
-        byte_t * shared_key;
+        byte_t * key_pvt;
     };
 
-    size_t pub_key_data_size;
+    union{
+        size_t pub_key_size;
+        size_t pub_key_data_size;
+        size_t key_pub_size;
+        size_t shared_key_size;
+    };
     //unsigned char * pub_key_data; // can be null if enc symmetric
-    void * pub_key_data; // can be null if enc symmetric
+    union{
+        void * pub_key_data; // can be null if enc symmetric
+        byte_t * key_pub;
+        byte_t * shared_key;
+    };
 
     time_t last_used_timestamp;
     dap_enc_key_type_t type;

@@ -202,13 +202,13 @@ dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data,
  */
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
 {
-    if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
+    if (a_cert->enc_key->pub_key_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
         if (!l_sign_item) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
-        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size);
+        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_size);
         DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
         return 0;
     } else {
@@ -471,7 +471,7 @@ dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
 int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->pub_key_data &&
-                           a_cert->enc_key->pub_key_data_size && a_out_hash , -1);
+                           a_cert->enc_key->pub_key_size && a_out_hash , -1);
     return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_out_hash);
 }
 
@@ -525,7 +525,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
     dap_string_append_printf(l_ret, "Signature type: %s\n",
                              dap_sign_type_to_str(dap_sign_type_from_key_type(a_cert->enc_key->type)));
     dap_string_append_printf(l_ret, "Private key size: %zu\n", a_cert->enc_key->priv_key_data_size);
-    dap_string_append_printf(l_ret, "Public key size: %zu\n", a_cert->enc_key->pub_key_data_size);
+    dap_string_append_printf(l_ret, "Public key size: %zu\n", a_cert->enc_key->pub_key_size);
     size_t l_meta_items_cnt = dap_binary_tree_count(a_cert->metadata);
     dap_string_append_printf(l_ret, "Metadata section count: %zu\n", l_meta_items_cnt);
     dap_string_append_printf(l_ret, "Certificates signatures chain size: %zu\n", dap_cert_count_cert_sign (a_cert));

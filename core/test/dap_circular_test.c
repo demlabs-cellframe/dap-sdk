@@ -186,7 +186,7 @@ void dap_circular_load_test()
 
         count_write_bytes = rand() % strlen(digits);
         dap_cbuf_push(cb, (void*)digits, count_write_bytes);
-        strncat(expectedBuffer, digits, count_write_bytes);
+        snprintf(expectedBuffer + strlen(expectedBuffer), sizeof(expectedBuffer) - strlen(expectedBuffer), "%.*s", count_write_bytes, digits);
         count_writed_bytes += count_write_bytes;
     } while (--iterations);
     count_writed_bytes -= count_write_bytes; // last bytes will not be writed

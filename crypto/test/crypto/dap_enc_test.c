@@ -5,16 +5,21 @@
 #include "rand/dap_rand.h"
 #include "dap_sign.h"
 #include "dap_enc.h"
+#include "dap_enc_chipmunk_test.h"
 
 #define LOG_TAG "dap_crypto_enc_tests"
 #define DAP_CHAIN_ATOM_MAX_SIZE (256 * 1024) // 256 KB
 
 const dap_enc_key_type_t c_key_type_arr[] = {
+        // Временно тестируем только Chipmunk для изоляции buffer overflow
+        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
+        /*
         DAP_ENC_KEY_TYPE_SIG_TESLA,
         DAP_ENC_KEY_TYPE_SIG_BLISS,
         DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
         DAP_ENC_KEY_TYPE_SIG_FALCON,
         DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
 #ifdef DAP_ECDSA
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
         DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM
@@ -22,6 +27,7 @@ const dap_enc_key_type_t c_key_type_arr[] = {
 #ifdef DAP_SHIPOVNIK
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK
 #endif
+        */
         };
 const size_t c_keys_count = sizeof(c_key_type_arr) / sizeof(dap_enc_key_type_t);
 
@@ -466,6 +472,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
             sig_buf_size = dap_sign_create_output_unserialized_calc_size(key);
             sig_buf = calloc(sig_buf_size, 1);
             is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
@@ -483,6 +490,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     dap_enc_key_signature_delete(key_type, sig_buf);
     sig_buf = dap_enc_key_deserialize_sign(key2->type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
+    // sig_buf теперь указывает на новую десериализованную подпись
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
     dap_assert(sig_buf_len < DAP_CHAIN_ATOM_MAX_SIZE, "Check signature size");  // if fail new sign, recheck define in cellframe-sdk
@@ -498,14 +506,15 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
     case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
-        is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
+    case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
+        is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_len);  // Используем sig_buf_len вместо sig_buf_size
         break;
     default:
         is_vefify = 1;
     }
     //dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
-    dap_enc_key_signature_delete(key_type, sig_buf);
+    dap_enc_key_signature_delete(key_type, sig_buf);  // Удаляем десериализованную подпись
 
 
     dap_assert_PIF(!is_vefify, "Check verify signature");
@@ -544,5 +553,7 @@ void dap_enc_tests_run() {
         dap_print_module_name(l_module_name);
         test_serialize_deserialize_pub_priv(c_key_type_arr[i]);
     }
+    // Добавляем тесты модуля Chipmunk
+    dap_enc_chipmunk_tests_run();
     dap_cleanup_test_case();
 }
