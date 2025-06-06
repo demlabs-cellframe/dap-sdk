@@ -15,6 +15,7 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
 endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
+target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CORE_TESTS)
 target_link_libraries(core_test dap_test dap_core pthread)
 
 if (DAP_USE_RPMALLOC)
