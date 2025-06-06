@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "dap_common.h"
 #include "dap_enc_chipmunk.h"
 #include "dap_enc_chipmunk_test.h"
@@ -74,8 +76,8 @@ int test_chipmunk_signature_only(void) {
  * @return int Exit code (0 - success)
  */
 int main(void) {
-    // Initialize logging
-    dap_log_level_set(L_DEBUG);
+    // Initialize logging - check environment variable for debug level
+        dap_log_level_set(L_DEBUG);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     
     // Initialize Chipmunk module

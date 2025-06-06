@@ -266,7 +266,7 @@ static void s_sign_verify_test_becnhmark(const char *a_name, dap_enc_key_type_t 
 static void s_transfer_tests_run(int a_times)
 {
     dap_init_test_case();
-    s_transfer_test_benchmark("NEWHOPE", DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM, a_times);
+    // NEWHOPE removed - obsolete algorithm
     s_transfer_test_benchmark("KYBER512", DAP_ENC_KEY_TYPE_KEM_KYBER512, a_times);
     s_transfer_test_benchmark("MSRLN", DAP_ENC_KEY_TYPE_MSRLN, a_times);
     dap_cleanup_test_case();

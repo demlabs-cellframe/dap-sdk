@@ -494,12 +494,18 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
  * @return 0 on success, negative on error
  */
 int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, size_t a_message_len) {
+    static int call_count = 0;
+    call_count++;
+    
     if (!a_poly || !a_message) {
         log_it(L_ERROR, "NULL parameters in chipmunk_poly_from_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    printf("🔍 FROM_HASH: Processing message length %zu\\n", a_message_len);
+    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: ограничиваем отладочный вывод
+    if (call_count <= 10 || call_count % 1000 == 0) {
+        printf("🔍 FROM_HASH: Call #%d - Processing message length %zu\n", call_count, a_message_len);
+    }
     
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: точно следуем оригинальному Rust коду!
     // 1. Hash message with SHA256
@@ -509,8 +515,10 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     uint8_t l_seed[32];
     memcpy(l_seed, &l_hash_out, 32);
     
-    printf("🔍 FROM_HASH: SHA256 seed = 0x%02x%02x%02x%02x\\n", 
-           l_seed[0], l_seed[1], l_seed[2], l_seed[3]);
+    if (call_count <= 5) {
+        printf("🔍 FROM_HASH: SHA256 seed = 0x%02x%02x%02x%02x\n", 
+               l_seed[0], l_seed[1], l_seed[2], l_seed[3]);
+    }
     
     // 2. Use seed to create ChaCha20Rng (simplified deterministic version)
     // Initialize to zero
@@ -532,7 +540,9 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     int l_max_iterations = CHIPMUNK_N * 10; // Safety limit
     int l_iteration = 0;
     
-    printf("🔍 FROM_HASH: Generating ternary polynomial with weight %d\\n", CHIPMUNK_ALPHA_H);
+    if (call_count <= 5) {
+        printf("🔍 FROM_HASH: Generating ternary polynomial with weight %d\n", CHIPMUNK_ALPHA_H);
+    }
     
     while (l_weight_set < CHIPMUNK_ALPHA_H && l_iteration < l_max_iterations) {
         l_rng_state = l_a * l_rng_state + l_c;
@@ -553,13 +563,21 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
         l_iteration++;
     }
     
-    printf("🔍 FROM_HASH: Generated %d ternary coefficients (target: %d)\\n", 
-           l_weight_set, CHIPMUNK_ALPHA_H);
-    printf("🔍 FROM_HASH: First coeffs: %d %d %d %d\\n", 
-           a_poly->coeffs[0], a_poly->coeffs[1], a_poly->coeffs[2], a_poly->coeffs[3]);
+    if (call_count <= 5) {
+        printf("🔍 FROM_HASH: Generated %d ternary coefficients (target: %d)\n", 
+               l_weight_set, CHIPMUNK_ALPHA_H);
+        printf("🔍 FROM_HASH: First coeffs: %d %d %d %d\n", 
+               a_poly->coeffs[0], a_poly->coeffs[1], a_poly->coeffs[2], a_poly->coeffs[3]);
+    }
     
     if (l_weight_set != CHIPMUNK_ALPHA_H) {
         log_it(L_WARNING, "Generated weight %d differs from target %d", l_weight_set, CHIPMUNK_ALPHA_H);
+    }
+    
+    // **КРИТИЧЕСКОЕ ОГРАНИЧЕНИЕ**: останавливаем процесс при слишком большом количестве вызовов
+    if (call_count > 10000) {
+        printf("🚨 КРИТИЧЕСКАЯ ОШИБКА: слишком много вызовов chipmunk_poly_from_hash (%d)! Возможен бесконечный цикл!\n", call_count);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
     }
     
     return 0;

@@ -127,12 +127,12 @@ static bool test_tree_construction() {
 
     // Create test leaf nodes
     chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
         // Set unique values for each leaf
-        l_leaf_nodes[i].coeffs[0] = i + 1;
-        l_leaf_nodes[i].coeffs[1] = (i + 1) * 10;
-        l_leaf_nodes[i].coeffs[2] = (i + 1) * 100;
+        l_leaf_nodes[i].coeffs[0] = (int32_t)(i + 1);
+        l_leaf_nodes[i].coeffs[1] = (int32_t)((i + 1) * 10);
+        l_leaf_nodes[i].coeffs[2] = (int32_t)((i + 1) * 100);
     }
 
     // Create tree
@@ -165,7 +165,7 @@ static bool test_tree_construction() {
         return false;
     }
 
-    printf("   ✅ Tree constructed with %d leaves\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    printf("   ✅ Tree constructed with %zu leaves\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
     printf("   📊 Root coeffs: %d, %d, %d, %d\n", 
            l_root->coeffs[0], l_root->coeffs[1], l_root->coeffs[2], l_root->coeffs[3]);
     return true;
@@ -187,11 +187,11 @@ static bool test_proof_generation() {
 
     // Create diverse leaf nodes
     chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
         // Create more diverse values
         for (int j = 0; j < 4; j++) {
-            l_leaf_nodes[i].coeffs[j] = (i + 1) * (j + 1) * 123;
+            l_leaf_nodes[i].coeffs[j] = (int32_t)((i + 1) * (j + 1) * 123);
         }
     }
 
@@ -303,7 +303,7 @@ static bool test_integration_with_hots() {
     // Generate HOTS keys and convert to HVC polynomials
     chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
     
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
+    for (size_t i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         uint8_t l_hots_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
         uint8_t l_hots_sk_bytes[CHIPMUNK_PRIVATE_KEY_SIZE];
         
@@ -311,7 +311,7 @@ static bool test_integration_with_hots() {
         l_ret = chipmunk_keypair(l_hots_pk_bytes, sizeof(l_hots_pk_bytes),
                                  l_hots_sk_bytes, sizeof(l_hots_sk_bytes));
         if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            printf("   ❌ Failed to generate HOTS keypair %d: %d\n", i, l_ret);
+            printf("   ❌ Failed to generate HOTS keypair %zu: %d\n", i, l_ret);
             return false;
         }
 
@@ -319,19 +319,19 @@ static bool test_integration_with_hots() {
         chipmunk_public_key_t l_hots_pk;
         l_ret = chipmunk_public_key_from_bytes(&l_hots_pk, l_hots_pk_bytes);
         if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            printf("   ❌ Failed to deserialize HOTS public key %d: %d\n", i, l_ret);
+            printf("   ❌ Failed to deserialize HOTS public key %zu: %d\n", i, l_ret);
             return false;
         }
 
         // Convert to HVC polynomial
         l_ret = chipmunk_hots_pk_to_hvc_poly(&l_hots_pk, &l_leaf_nodes[i]);
         if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            printf("   ❌ Failed to convert HOTS PK %d to HVC: %d\n", i, l_ret);
+            printf("   ❌ Failed to convert HOTS PK %zu to HVC: %d\n", i, l_ret);
             return false;
         }
     }
 
-    printf("   ✅ Generated %d HOTS keys and converted to HVC polynomials\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    printf("   ✅ Generated %zu HOTS keys and converted to HVC polynomials\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
 
     // Create Merkle tree with real HOTS public keys
     chipmunk_tree_t l_tree;
@@ -406,7 +406,7 @@ int main() {
     printf("\n📊 === Test Summary ===\n");
     printf("⏱️  Total time: %.3f seconds\n", l_elapsed);
     printf("🌳 Tree height: %d levels\n", CHIPMUNK_TREE_HEIGHT_DEFAULT);
-    printf("🍃 Leaf count: %d nodes\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    printf("🍃 Leaf count: %zu nodes\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
     printf("🔗 HVC modulus: %d\n", CHIPMUNK_HVC_Q);
     printf("📏 HVC width: %d\n", CHIPMUNK_HVC_WIDTH);
     
