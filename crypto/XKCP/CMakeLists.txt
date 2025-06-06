@@ -85,9 +85,9 @@ function(copy_source_files target_dir)
         execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${BUILD_FILE} ${target_dir}/)
     endforeach()
 
-    execute_process(COMMAND ${CMAKE_COMMAND} -E copy 
-                    ${CMAKE_CURRENT_SOURCE_DIR}/Makefile
-                    ${target_dir}/Makefile)
+    # Generate Makefile dynamically in build directory (instead of copying from sources)
+    set(MAKEFILE_CONTENT "XKCBpath = support/XKCBuild\n\ninclude $(XKCBpath)/src/Main.makefile")
+    file(WRITE ${target_dir}/Makefile "${MAKEFILE_CONTENT}")
                     
     execute_process(COMMAND ${CMAKE_COMMAND} -E copy 
                     ${CMAKE_CURRENT_SOURCE_DIR}/Makefile.build
