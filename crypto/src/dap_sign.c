@@ -589,7 +589,7 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
         return;
     }
     dap_chain_hash_fast_t l_hash_pkey;
-    json_object_object_add(a_json_out,"type",json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
+    json_object_object_add(a_json_out,"sign_type",json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
