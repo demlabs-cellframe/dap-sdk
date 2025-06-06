@@ -302,8 +302,9 @@ const chipmunk_hvc_poly_t* chipmunk_tree_root(const chipmunk_tree_t *a_tree) {
  * @brief Generate membership proof - ПОЛНЫЙ ПЕРЕПИСАТЬ по оригинальному Rust алгоритму
  */
 int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipmunk_path_t *a_path) {
-    if (!a_tree || !a_path || a_index >= CHIPMUNK_TREE_LEAF_COUNT_DEFAULT) {
-        log_it(L_ERROR, "Invalid parameters in chipmunk_tree_gen_proof");
+    if (!a_tree || !a_path || a_index >= a_tree->leaf_count) {
+        log_it(L_ERROR, "Invalid parameters in chipmunk_tree_gen_proof: tree=%p, path=%p, index=%zu, leaf_count=%zu", 
+               a_tree, a_path, a_index, a_tree ? a_tree->leaf_count : 0);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
 

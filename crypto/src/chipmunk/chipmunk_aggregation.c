@@ -222,8 +222,8 @@ int chipmunk_create_individual_signature(const uint8_t *message,
         return -1;
     }
 
-    // Validate leaf index
-    if (leaf_index >= CHIPMUNK_TREE_LEAVES) {
+    // Validate leaf index against actual tree size
+    if (leaf_index >= tree->leaf_count) {
         return -2;
     }
 

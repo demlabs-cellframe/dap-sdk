@@ -414,9 +414,10 @@ static int test_progressive_scale(void) {
  * @brief Entry point for large-scale testing
  */
 int main(int argc, char *argv[]) {
-    // Initialize logging
+    // Initialize logging with clean format for unit tests
     dap_log_level_set(L_INFO);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output without timestamps/modules
     
     // Initialize Chipmunk module
     dap_enc_chipmunk_init();

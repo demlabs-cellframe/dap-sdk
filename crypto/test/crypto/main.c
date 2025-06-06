@@ -15,6 +15,7 @@ int main(void) {
     // switch off debug info from library
     dap_log_level_set(L_WARNING);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output for unit tests
     
     int l_ret = 0;
     const int l_times = 5;
