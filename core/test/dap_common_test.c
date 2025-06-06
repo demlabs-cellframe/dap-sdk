@@ -381,8 +381,8 @@ static void s_test_overflow()
         "Check signed char ADD overflow");
     dap_assert(l_unsigned_char == dap_add(l_unsigned_char, (unsigned char)1) && l_unsigned_char == dap_add_builtin(l_unsigned_char, (unsigned char)1), "Check unsigned char ADD overflow");
     dap_assert(l_unsigned_short == dap_add(l_unsigned_short, (unsigned short)1) && l_unsigned_short == dap_add_builtin(l_unsigned_short, (unsigned short)1), "Check unsigned short ADD overflow");
-    dap_assert(l_unsigned_int == dap_add(l_unsigned_int, (unsigned int)1) && l_unsigned_int == dap_add_builtin(l_unsigned_int, (unsigned int)1), "Check unsigned int ADD overflow");
-    dap_assert(l_unsigned_long == dap_add(l_unsigned_long, (unsigned long)1) && l_unsigned_long == dap_add_builtin(l_unsigned_long, (unsigned long)1), "Check unsigned long ADD overflow");
+    dap_assert((unsigned int)l_unsigned_int == (unsigned int)dap_add(l_unsigned_int, (unsigned int)1) && (unsigned int)l_unsigned_int == (unsigned int)dap_add_builtin(l_unsigned_int, (unsigned int)1), "Check unsigned int ADD overflow");
+    dap_assert((unsigned long)l_unsigned_long == (unsigned long)dap_add(l_unsigned_long, (unsigned long)1) && (unsigned long)l_unsigned_long == (unsigned long)dap_add_builtin(l_unsigned_long, (unsigned long)1), "Check unsigned long ADD overflow");
     dap_assert((unsigned long long)l_unsigned_long_long == (unsigned long long)dap_add(l_unsigned_long_long, (unsigned long long)1) && (unsigned long long)l_unsigned_long_long == (unsigned long long)dap_add_builtin(l_unsigned_long_long, (unsigned long long)1), "Check unsigned long long ADD overflow");
 
     l_char = dap_minval(l_char);
