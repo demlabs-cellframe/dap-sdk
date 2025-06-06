@@ -1969,7 +1969,7 @@ static int test_simple_tree_verification(void) {
     }
     
     // Создаем простое дерево с тестовыми данными
-    chipmunk_tree_t tree;
+    chipmunk_tree_t tree = {0};  // ВАЖНО: инициализируем структуру нулями
     chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
     
     // Заполняем листья простыми тестовыми данными

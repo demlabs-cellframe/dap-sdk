@@ -42,18 +42,18 @@ int test_chipmunk_signature_only(void) {
     log_it(L_NOTICE, "Создаем подпись...");
     int l_sign_res = l_key->sign_get(l_key, (uint8_t*)test_data, test_data_size, l_sign, l_sign_size);
     
-    if (l_sign_res <= 0) {
+    if (l_sign_res != 0) {
         log_it(L_ERROR, "Не удалось создать подпись, код ошибки: %d", l_sign_res);
         DAP_DELETE(l_sign);
         dap_enc_key_delete(l_key);
         return -1;
     }
     
-    log_it(L_NOTICE, "Подпись успешно создана, размер: %d", l_sign_res);
+    log_it(L_NOTICE, "Подпись успешно создана (код ошибки: 0)");
     
     // Проверяем подпись
     log_it(L_NOTICE, "Проверяем подпись...");
-    int l_verify_res = l_key->sign_verify(l_key, (uint8_t*)test_data, test_data_size, l_sign, l_sign_res);
+    int l_verify_res = l_key->sign_verify(l_key, (uint8_t*)test_data, test_data_size, l_sign, l_sign_size);
     
     if (l_verify_res != 0) {
         log_it(L_ERROR, "Проверка подписи не удалась, код ошибки: %d", l_verify_res);
