@@ -361,7 +361,10 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
         return;
     dap_worker_t * l_worker= a_client_pvt->worker;
     assert(l_worker);
-    assert(l_worker->_inheritor);
+    // Only assert _inheritor for streaming stages that need stream worker
+    if (a_client_pvt->stage >= STAGE_STREAM_SESSION) {
+        assert(l_worker->_inheritor);
+    }
     //bool l_is_unref = false;
     dap_client_stage_status_t l_stage_status = a_client_pvt->stage_status;
     dap_client_stage_t l_stage = a_client_pvt->stage;
@@ -542,8 +545,14 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     // new added, whether it is necessary?
                     a_client_pvt->stream->session->key = a_client_pvt->stream_key;
-                    a_client_pvt->stream_worker = DAP_STREAM_WORKER(l_worker);
-                    a_client_pvt->stream->stream_worker = a_client_pvt->stream_worker;
+                    if (l_worker->_inheritor) {
+                        a_client_pvt->stream_worker = DAP_STREAM_WORKER(l_worker);
+                        a_client_pvt->stream->stream_worker = a_client_pvt->stream_worker;
+                    } else {
+                        log_it(L_WARNING, "Stream worker not initialized, stream functionality may be limited");
+                        a_client_pvt->stream_worker = NULL;
+                        a_client_pvt->stream->stream_worker = NULL;
+                    }
 
                     // connect
                 #ifdef DAP_EVENTS_CAPS_IOCP

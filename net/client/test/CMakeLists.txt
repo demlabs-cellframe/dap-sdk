@@ -1,16 +1,8 @@
 project(dap_client_test)
 
+add_executable(${PROJECT_NAME} test_http_redirect.c)
 
-if ( NOT ( TARGET dap_test ) )
-    add_subdirectory(libdap-test)
-endif()
-
-file(GLOB DAP_CLIENT_TEST_SOURCES *.c)
-file(GLOB DAP_CLIENT_TEST_HEADERS *.h)
-
-add_executable(${PROJECT_NAME} ${DAP_CLIENT_TEST_SOURCES} ${DAP_CLIENT_TEST_HEADERS})
-
-target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto dap_io ev)
+target_link_libraries(${PROJECT_NAME} dap_core dap_client dap_test dap_io dap_http_common)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)

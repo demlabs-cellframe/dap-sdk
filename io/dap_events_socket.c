@@ -1181,8 +1181,9 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 }
 
 /**
- * @brief dap_events_socket_remove Removes the client from the list
- * @param sc Connection instance
+ * @brief dap_events_socket_remove_and_delete_unsafe
+ * @param a_es
+ * @param a_preserve_inheritor
  */
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor )
 {
@@ -1664,6 +1665,10 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_preserve_inheritor)
 {
     dap_return_if_fail(a_esocket);
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Deleting esocket "DAP_FORMAT_ESOCKET_UUID" type %s", 
+             a_esocket->uuid, dap_events_socket_get_type_str(a_esocket));
+    
 #ifndef DAP_EVENTS_CAPS_IOCP
     dap_events_socket_descriptor_close(a_esocket);
 #endif
@@ -2074,23 +2079,25 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
 
 /**
  * @brief dap_events_socket_pop_from_buf_in
- * @param a_essc
- * @param a_data
- * @param a_data_size
- * @return
+ * @param a_es Event socket instance
+ * @param a_data Output buffer to copy data to
+ * @param a_data_size Maximum size to read
+ * @return Number of bytes actually copied
  */
 size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data, size_t a_data_size)
 {
-    if ( a_data_size < a_es->buf_in_size)
+    dap_return_val_if_pass_err(!a_es || !a_data || !a_data_size || !a_es->buf_in || !a_es->buf_in_size,
+                                0, "Sanity check error");
+    
+    if ( a_data_size < a_es->buf_in_size )
     {
         memcpy(a_data, a_es->buf_in, a_data_size);
-        memmove(a_es->buf_in, a_es->buf_in + a_data_size, a_es->buf_in_size - a_data_size);
+        memmove(a_es->buf_in, a_es->buf_in + a_data_size, a_es->buf_in_size -= a_data_size);
     } else {
-        if ( a_data_size > a_es->buf_in_size )
-            a_data_size = a_es->buf_in_size;
-        memcpy(a_data, a_es->buf_in, a_data_size);
-    }
-    a_es->buf_in_size -= a_data_size;
+        memcpy(a_data, a_es->buf_in, a_es->buf_in_size);
+        a_data_size = a_es->buf_in_size;
+        a_es->buf_in_size = 0;
+    }    
     return a_data_size;
 }
 
