@@ -207,3 +207,12 @@ if(CPPCHECK)
 else()
     message(WARNING "cppcheck not found, lint target unavailable")
 endif()
+
+# Детализированный профилировщик
+add_executable(profile-detailed-breakdown profile_detailed_breakdown.c)
+target_link_libraries(profile-detailed-breakdown dap_core dap_crypto m)
+target_include_directories(profile-detailed-breakdown PRIVATE core/include crypto/include crypto/src/chipmunk)
+
+add_executable(hots-detailed-profiler hots_detailed_profiler.c)
+target_link_libraries(hots-detailed-profiler dap_core dap_crypto m)
+target_include_directories(hots-detailed-profiler PRIVATE core/include crypto/include crypto/src/chipmunk)

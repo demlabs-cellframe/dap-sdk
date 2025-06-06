@@ -611,9 +611,10 @@ void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем обычное умножение по модулю как в оригинальном Rust!
     // В оригинальном Rust коде НЕ используется Montgomery умножение в NTT операциях
     // Rust: ((a as i64) * (b as i64) % modulus as i64) as i32
+    // **ОПТИМИЗАЦИЯ #2**: Barrett reduction вместо % для 2-4x ускорения
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_temp = ((int64_t)a_poly1->coeffs[i] * (int64_t)a_poly2->coeffs[i]) % (int64_t)CHIPMUNK_Q;
-        a_result->coeffs[i] = (int32_t)l_temp;
+        int64_t l_temp = (int64_t)a_poly1->coeffs[i] * (int64_t)a_poly2->coeffs[i];
+        a_result->coeffs[i] = chipmunk_barrett_reduce(l_temp);
         
         // Ensure positive representation
         if (a_result->coeffs[i] < 0) {

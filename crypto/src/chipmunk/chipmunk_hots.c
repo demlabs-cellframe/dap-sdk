@@ -221,13 +221,10 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
     }
     
-    // Initialize public key in time domain
-    memset(&a_pk->v0, 0, sizeof(a_pk->v0));
-    memset(&a_pk->v1, 0, sizeof(a_pk->v1));
-    
-    chipmunk_poly_t l_v0_time_sum, l_v1_time_sum;
-    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
-    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+    // **PHASE 1 OPTIMIZATION**: Аккумулируем в NTT домене, затем одно inverse NTT
+    chipmunk_poly_t l_v0_ntt_sum, l_v1_ntt_sum;
+    memset(&l_v0_ntt_sum, 0, sizeof(l_v0_ntt_sum));
+    memset(&l_v1_ntt_sum, 0, sizeof(l_v1_ntt_sum));
     
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         // a[i] * s0[i] - ALL in NTT domain
@@ -242,38 +239,26 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
         DEBUG_MORE( "  After a[%d] * s1[%d]: term_v1_ntt[0-3] = %d %d %d %d", i, i,
                l_term_v1_ntt.coeffs[0], l_term_v1_ntt.coeffs[1], l_term_v1_ntt.coeffs[2], l_term_v1_ntt.coeffs[3]);
         
-        // Convert to time domain for accumulation
-        // Original Rust: pk.v0 += (&(a * s0)).into(); - .into() means converting to time domain!
-        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
-        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
-        
-        chipmunk_invntt(l_term_v0_time.coeffs);
-        chipmunk_invntt(l_term_v1_time.coeffs);
-        
-        DEBUG_MORE( "  After invNTT term_v0_time[0-3] = %d %d %d %d",
-               l_term_v0_time.coeffs[0], l_term_v0_time.coeffs[1], l_term_v0_time.coeffs[2], l_term_v0_time.coeffs[3]);
-        DEBUG_MORE( "  After invNTT term_v1_time[0-3] = %d %d %d %d",
-               l_term_v1_time.coeffs[0], l_term_v1_time.coeffs[1], l_term_v1_time.coeffs[2], l_term_v1_time.coeffs[3]);
-        
-        // Accumulate in time domain
+        // **OPTIMIZATION**: Аккумулируем в NTT домене (избегаем inverse NTT в цикле)
         if (i == 0) {
-            l_v0_time_sum = l_term_v0_time;
-            l_v1_time_sum = l_term_v1_time;
+            l_v0_ntt_sum = l_term_v0_ntt;
+            l_v1_ntt_sum = l_term_v1_ntt;
         } else {
-            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
-            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+            chipmunk_poly_add_ntt(&l_v0_ntt_sum, &l_v0_ntt_sum, &l_term_v0_ntt);
+            chipmunk_poly_add_ntt(&l_v1_ntt_sum, &l_v1_ntt_sum, &l_term_v1_ntt);
         }
         
-        DEBUG_MORE( "  After addition: v0_time_sum[0-3] = %d %d %d %d",
-               l_v0_time_sum.coeffs[0], l_v0_time_sum.coeffs[1], l_v0_time_sum.coeffs[2], l_v0_time_sum.coeffs[3]);
-        DEBUG_MORE( "  After addition: v1_time_sum[0-3] = %d %d %d %d",
-               l_v1_time_sum.coeffs[0], l_v1_time_sum.coeffs[1], l_v1_time_sum.coeffs[2], l_v1_time_sum.coeffs[3]);
+        DEBUG_MORE( "  After NTT addition: v0_ntt_sum[0-3] = %d %d %d %d",
+               l_v0_ntt_sum.coeffs[0], l_v0_ntt_sum.coeffs[1], l_v0_ntt_sum.coeffs[2], l_v0_ntt_sum.coeffs[3]);
+        DEBUG_MORE( "  After NTT addition: v1_ntt_sum[0-3] = %d %d %d %d",
+               l_v1_ntt_sum.coeffs[0], l_v1_ntt_sum.coeffs[1], l_v1_ntt_sum.coeffs[2], l_v1_ntt_sum.coeffs[3]);
     }
     
-    // Initialize public key in time domain
-    // Original Rust: HotsPK { v0: HOTSPoly, v1: HOTSPoly } - this is time domain
-    a_pk->v0 = l_v0_time_sum;
-    a_pk->v1 = l_v1_time_sum;
+    // **OPTIMIZATION**: Только ОДНО inverse NTT в конце вместо CHIPMUNK_GAMMA раз
+    a_pk->v0 = l_v0_ntt_sum;
+    a_pk->v1 = l_v1_ntt_sum;
+    chipmunk_invntt(a_pk->v0.coeffs);
+    chipmunk_invntt(a_pk->v1.coeffs);
     
     DEBUG_MORE( "✓ Public key computed and stored in time domain (CORRECTED METHOD)");
     DEBUG_MORE( "  v0 (time) first coeffs: %d %d %d %d",
