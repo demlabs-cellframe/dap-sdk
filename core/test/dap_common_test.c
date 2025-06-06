@@ -383,7 +383,7 @@ static void s_test_overflow()
     dap_assert(l_unsigned_short == dap_add(l_unsigned_short, (unsigned short)1) && l_unsigned_short == dap_add_builtin(l_unsigned_short, (unsigned short)1), "Check unsigned short ADD overflow");
     dap_assert(l_unsigned_int == dap_add(l_unsigned_int, (unsigned int)1) && l_unsigned_int == dap_add_builtin(l_unsigned_int, (unsigned int)1), "Check unsigned int ADD overflow");
     dap_assert(l_unsigned_long == dap_add(l_unsigned_long, (unsigned long)1) && l_unsigned_long == dap_add_builtin(l_unsigned_long, (unsigned long)1), "Check unsigned long ADD overflow");
-    dap_assert(l_unsigned_long_long == dap_add(l_unsigned_long_long, (unsigned long long)1) && l_unsigned_long_long == dap_add_builtin(l_unsigned_long_long, (unsigned long long)1), "Check unsigned long long ADD overflow");
+    dap_assert((unsigned long long)l_unsigned_long_long == (unsigned long long)dap_add(l_unsigned_long_long, (unsigned long long)1) && (unsigned long long)l_unsigned_long_long == (unsigned long long)dap_add_builtin(l_unsigned_long_long, (unsigned long long)1), "Check unsigned long long ADD overflow");
 
     l_char = dap_minval(l_char);
     l_short = dap_minval(l_short);
@@ -429,9 +429,9 @@ static void s_test_overflow()
         "Check signed char SUB overflow");
     dap_assert(l_unsigned_char == dap_sub(l_unsigned_char, (unsigned char)1) && l_unsigned_char == dap_sub_builtin(l_unsigned_char, (unsigned char)1), "Check unsigned char SUB overflow");
     dap_assert(l_unsigned_short == dap_sub(l_unsigned_short, (unsigned short)1) && l_unsigned_short == dap_sub_builtin(l_unsigned_short, (unsigned short)1), "Check unsigned short SUB overflow");
-    dap_assert(l_unsigned_int == dap_sub(l_unsigned_int, (unsigned int)1) && l_unsigned_int == dap_sub_builtin(l_unsigned_int, (unsigned int)1), "Check unsigned int SUB overflow");
-    dap_assert(l_unsigned_long == dap_sub(l_unsigned_long, (unsigned long)1) && l_unsigned_long == dap_sub_builtin(l_unsigned_long, (unsigned long)1), "Check unsigned long SUB overflow");
-    dap_assert(l_unsigned_long_long == dap_sub(l_unsigned_long_long, (unsigned long long)1) && l_unsigned_long_long == dap_sub_builtin(l_unsigned_long_long, (unsigned long long)1), "Check unsigned long long SUB overflow");
+    dap_assert((unsigned int)l_unsigned_int == (unsigned int)dap_sub(l_unsigned_int, (unsigned int)1) && (unsigned int)l_unsigned_int == (unsigned int)dap_sub_builtin(l_unsigned_int, (unsigned int)1), "Check unsigned int SUB overflow");
+    dap_assert((unsigned long)l_unsigned_long == (unsigned long)dap_sub(l_unsigned_long, (unsigned long)1) && (unsigned long)l_unsigned_long == (unsigned long)dap_sub_builtin(l_unsigned_long, (unsigned long)1), "Check unsigned long SUB overflow");
+    dap_assert((unsigned long long)l_unsigned_long_long == (unsigned long long)dap_sub(l_unsigned_long_long, (unsigned long long)1) && (unsigned long long)l_unsigned_long_long == (unsigned long long)dap_sub_builtin(l_unsigned_long_long, (unsigned long long)1), "Check unsigned long long SUB overflow");
 
 // MUL
     l_char = dap_maxval(l_char) / 3 + 1;
@@ -548,9 +548,9 @@ static void s_test_overflow()
         "Check unsigned short MUL overflow");
     dap_assert(
         0 == dap_mul(l_unsigned_int, (unsigned int)0) &&
-        l_unsigned_int == dap_mul(l_unsigned_int, (unsigned int)1) &&
-        l_unsigned_int * 2 == dap_mul(l_unsigned_int, (unsigned int)2) &&
-        l_unsigned_int == dap_mul(l_unsigned_int, (unsigned int)3) &&
+        (unsigned int)l_unsigned_int == (unsigned int)dap_mul(l_unsigned_int, (unsigned int)1) &&
+        (unsigned int)(l_unsigned_int * 2) == (unsigned int)dap_mul(l_unsigned_int, (unsigned int)2) &&
+        (unsigned int)l_unsigned_int == (unsigned int)dap_mul(l_unsigned_int, (unsigned int)3) &&
         0 == dap_mul_builtin(l_unsigned_int, (unsigned int)0) &&
         l_unsigned_int == dap_mul_builtin(l_unsigned_int, (unsigned int)1) &&
         l_unsigned_int * 2 == dap_mul_builtin(l_unsigned_int, (unsigned int)2) &&
@@ -558,9 +558,9 @@ static void s_test_overflow()
         "Check unsigned int MUL overflow");
     dap_assert(
         0 == dap_mul(l_unsigned_long, (unsigned long)0) &&
-        l_unsigned_long == dap_mul(l_unsigned_long, (unsigned long)1) &&
-        l_unsigned_long * 2 == dap_mul(l_unsigned_long, (unsigned long)2) &&
-        l_unsigned_long == dap_mul(l_unsigned_long, (unsigned long)3) &&
+        (unsigned long)l_unsigned_long == (unsigned long)dap_mul(l_unsigned_long, (unsigned long)1) &&
+        (unsigned long)(l_unsigned_long * 2) == (unsigned long)dap_mul(l_unsigned_long, (unsigned long)2) &&
+        (unsigned long)l_unsigned_long == (unsigned long)dap_mul(l_unsigned_long, (unsigned long)3) &&
         0 == dap_mul_builtin(l_unsigned_long, (unsigned long)0) &&
         l_unsigned_long == dap_mul_builtin(l_unsigned_long, (unsigned long)1) &&
         l_unsigned_long * 2 == dap_mul_builtin(l_unsigned_long, (unsigned long)2) &&
