@@ -689,16 +689,16 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback = dap_enc_chipmunk_key_generate_callback,
         .delete_callback = dap_enc_chipmunk_key_delete,
 
-        .ser_sign = NULL,
+        .ser_sign = dap_enc_chipmunk_write_signature,
         .ser_priv_key = dap_enc_chipmunk_write_private_key,
         .ser_pub_key = dap_enc_chipmunk_write_public_key,
         .ser_priv_key_size = dap_enc_chipmunk_ser_private_key_size,
         .ser_pub_key_size = dap_enc_chipmunk_ser_public_key_size,
 
-        .deser_sign = NULL,
+        .deser_sign = dap_enc_chipmunk_read_signature,
         .deser_priv_key = dap_enc_chipmunk_read_private_key,
         .deser_pub_key = dap_enc_chipmunk_read_public_key,
-        .deser_sign_size = NULL,
+        .deser_sign_size = dap_enc_chipmunk_deser_sig_size,
         .deser_pub_key_size = dap_enc_chipmunk_deser_public_key_size,
         .deser_priv_key_size = dap_enc_chipmunk_deser_private_key_size,
 

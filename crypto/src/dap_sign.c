@@ -81,6 +81,7 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_type.type = SIG_TYPE_DILITHIUM; break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_type.type = SIG_TYPE_FALCON; break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
@@ -108,6 +109,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
         case SIG_TYPE_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
         case SIG_TYPE_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+        case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM;
@@ -137,6 +139,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_DILITHIUM: return "sig_dil";
         case SIG_TYPE_FALCON: return "sig_falcon";
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
+        case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return "sig_ecdsa";
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return "sig_multi_ecdsa_dil";
@@ -172,6 +175,8 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_FALCON;
     } else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
          l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
+         l_sign_type.type = SIG_TYPE_CHIPMUNK;
 #ifdef DAP_ECDSA
     } else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
          l_sign_type.type = SIG_TYPE_ECDSA;
@@ -226,6 +231,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
@@ -486,6 +492,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:

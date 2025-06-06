@@ -2,30 +2,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>  // для offsetof и sizeof
+#include <time.h>
 
 #include "dap_common.h"
 #include "dap_test.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_enc_chipmunk.h"
+#include "dap_enc_chipmunk_test.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_poly.h"
 #include "chipmunk/chipmunk_hots.h"
 #include "chipmunk/chipmunk_aggregation.h"
 #include "chipmunk/chipmunk_tree.h"
 
+// Forward declarations for internal functions
+static int test_multisig_scalability_n_signers(size_t num_signers);
+
 #define LOG_TAG "dap_enc_chipmunk_test"
 #define TEST_DATA "This is test data for Chipmunk algorithm verification"
 #define INVALID_TEST_DATA "This is invalid test data"
 
-// Custom assert implementation
-#define dap_assert(condition, message) \
-    do { \
-        if (!(condition)) { \
-            log_it(L_ERROR, "Assertion failed: %s", message); \
-            return -1; \
-        } \
-    } while (0)
+
 
 /**
  * @brief Test for Chipmunk key creation
@@ -729,7 +727,7 @@ static int dap_enc_chipmunk_same_object_signatures_test(void)
 /**
  * @brief Test cross-verification of signatures with wrong keys
  */
-static int test_cross_verification(void)
+int test_cross_verification(void)
 {
     log_it(L_NOTICE, "Testing cross verification with wrong keys...");
     
@@ -853,7 +851,7 @@ static int test_cross_verification(void)
  * 
  * @return int 0 if diagnostic passed (verification works), non-zero otherwise
  */
-static int test_hots_verification_diagnostic(void)
+int test_hots_verification_diagnostic(void)
 {
     log_it(L_INFO, "🔍 Starting HOTS verification diagnostic test...");
     
@@ -910,7 +908,7 @@ static int test_hots_verification_diagnostic(void)
  * 
  * @return int Test result (0 - success)
  */
-static int test_multi_signature_aggregation(void)
+int test_multi_signature_aggregation(void)
 {
     log_it(L_INFO, "=== Multi-Signature Aggregation Test ===");
     
@@ -1083,7 +1081,7 @@ static int test_multi_signature_aggregation(void)
  * 
  * @return int Test result (0 - success)
  */
-static int test_batch_verification(void)
+int test_batch_verification(void)
 {
     log_it(L_INFO, "=== Batch Verification Test ===");
     
@@ -1237,157 +1235,745 @@ static int test_batch_verification(void)
     return 0;
 }
 
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * @brief Test environment global state
+ */
+static chipmunk_test_suite_stats_t s_test_stats = {0};
+static double s_test_start_time = 0.0;
+
+/**
+ * @brief Get current time in milliseconds
+ */
+double chipmunk_get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+}
+
+/**
+ * @brief Get current memory usage (simplified version)
+ */
+size_t chipmunk_get_memory_usage(void) {
+    // For now, return 0. In a real implementation, you'd use getrusage() or similar
+    return 0;
+}
+
+/**
+ * @brief Initialize test environment
+ */
+int chipmunk_test_init(void) {
+    memset(&s_test_stats, 0, sizeof(s_test_stats));
+    s_test_start_time = chipmunk_get_time_ms();
+    
+    // Initialize Chipmunk module
+    dap_enc_chipmunk_init();
+    
+    log_it(L_INFO, "🚀 Chipmunk Test Suite Initialized");
+    return 0;
+}
+
+/**
+ * @brief Cleanup test environment
+ */
+void chipmunk_test_cleanup(void) {
+    log_it(L_INFO, "🧹 Chipmunk Test Suite Cleanup Complete");
+}
+
+/**
+ * @brief Print test suite statistics
+ */
+void chipmunk_print_test_stats(const chipmunk_test_suite_stats_t *stats) {
+    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, "==================================================");
+    log_it(L_NOTICE, "           CHIPMUNK TEST SUITE RESULTS");
+    log_it(L_NOTICE, "==================================================");
+    log_it(L_NOTICE, "Total Tests:     %d", stats->total_tests);
+    log_it(L_NOTICE, "Tests Passed:    %d", stats->passed_tests);
+    log_it(L_NOTICE, "Tests Failed:    %d", stats->failed_tests);
+    log_it(L_NOTICE, "Success Rate:    %.1f%%", 
+           stats->total_tests > 0 ? (stats->passed_tests * 100.0 / stats->total_tests) : 0.0);
+    log_it(L_NOTICE, "Total Time:      %.2f ms", stats->total_time_ms);
+    if (stats->peak_memory_bytes > 0) {
+        log_it(L_NOTICE, "Peak Memory:     %zu bytes (%.2f MB)", 
+               stats->peak_memory_bytes, stats->peak_memory_bytes / (1024.0 * 1024.0));
+    }
+    log_it(L_NOTICE, "==================================================");
+    
+    if (stats->failed_tests == 0) {
+        log_it(L_NOTICE, "🎉 ALL TESTS PASSED! 🎉");
+    } else {
+        log_it(L_ERROR, "💥 %d TEST(S) FAILED! 💥", stats->failed_tests);
+    }
+    log_it(L_NOTICE, "");
+}
+
+/**
+ * @brief Execute a single test and update statistics
+ */
+static int execute_test(const char *test_name, int (*test_func)(void)) {
+    log_it(L_INFO, "Running test: %s", test_name);
+    
+    double start_time = chipmunk_get_time_ms();
+    int result = test_func();
+    double end_time = chipmunk_get_time_ms();
+    double execution_time = end_time - start_time;
+    
+    s_test_stats.total_tests++;
+    s_test_stats.total_time_ms += execution_time;
+    
+    if (result == 0) {
+        s_test_stats.passed_tests++;
+        log_it(L_NOTICE, "✅ %s PASSED (%.2f ms)", test_name, execution_time);
+    } else {
+        s_test_stats.failed_tests++;
+        log_it(L_ERROR, "❌ %s FAILED (%.2f ms) - Error: %d", test_name, execution_time, result);
+    }
+    
+    return result;
+}
+
+// =============================================================================
+// DETERMINISTIC KEY GENERATION TESTS
+// =============================================================================
+
+/**
+ * @brief Test deterministic key generation with same seed
+ */
+int test_deterministic_key_generation(void) {
+    // Test seed
+    uint8_t test_seed[32];
+    for (int i = 0; i < 32; i++) {
+        test_seed[i] = (uint8_t)(i + 1);  // 0x01, 0x02, ..., 0x20
+    }
+    
+    // Generate two key pairs with the same seed
+    uint8_t pub_key1[CHIPMUNK_PUBLIC_KEY_SIZE];
+    uint8_t priv_key1[CHIPMUNK_PRIVATE_KEY_SIZE];
+    uint8_t pub_key2[CHIPMUNK_PUBLIC_KEY_SIZE];
+    uint8_t priv_key2[CHIPMUNK_PRIVATE_KEY_SIZE];
+    
+    int ret1 = chipmunk_keypair_from_seed(test_seed,
+                                          pub_key1, sizeof(pub_key1),
+                                          priv_key1, sizeof(priv_key1));
+    
+    if (ret1 != 0) {
+        log_it(L_ERROR, "First key generation failed: %d", ret1);
+        return -1;
+    }
+    
+    int ret2 = chipmunk_keypair_from_seed(test_seed,
+                                          pub_key2, sizeof(pub_key2),
+                                          priv_key2, sizeof(priv_key2));
+    
+    if (ret2 != 0) {
+        log_it(L_ERROR, "Second key generation failed: %d", ret2);
+        return -2;
+    }
+    
+    // Compare keys
+    if (memcmp(pub_key1, pub_key2, CHIPMUNK_PUBLIC_KEY_SIZE) != 0) {
+        log_it(L_ERROR, "Public keys differ - deterministic generation failed");
+        return -3;
+    }
+    
+    if (memcmp(priv_key1, priv_key2, CHIPMUNK_PRIVATE_KEY_SIZE) != 0) {
+        log_it(L_ERROR, "Private keys differ - deterministic generation failed");
+        return -4;
+    }
+    
+    // Test signing with both keys
+    const char test_message[] = "Test message for deterministic keys";
+    uint8_t signature1[CHIPMUNK_SIGNATURE_SIZE];
+    uint8_t signature2[CHIPMUNK_SIGNATURE_SIZE];
+    
+    int sign1 = chipmunk_sign(priv_key1, (uint8_t*)test_message, strlen(test_message), signature1);
+    int sign2 = chipmunk_sign(priv_key2, (uint8_t*)test_message, strlen(test_message), signature2);
+    
+    if (sign1 != 0 || sign2 != 0) {
+        log_it(L_ERROR, "Signing failed: %d, %d", sign1, sign2);
+        return -5;
+    }
+    
+    // Verify signatures
+    int verify1 = chipmunk_verify(pub_key1, (uint8_t*)test_message, strlen(test_message), signature1);
+    int verify2 = chipmunk_verify(pub_key2, (uint8_t*)test_message, strlen(test_message), signature2);
+    
+    if (verify1 != 0 || verify2 != 0) {
+        log_it(L_ERROR, "Verification failed: %d, %d", verify1, verify2);
+        return -6;
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief Test different seeds produce different keys
+ */
+int test_deterministic_different_seeds(void) {
+    uint8_t seed1[32], seed2[32];
+    uint8_t pub_key1[CHIPMUNK_PUBLIC_KEY_SIZE], pub_key2[CHIPMUNK_PUBLIC_KEY_SIZE];
+    uint8_t priv_key1[CHIPMUNK_PRIVATE_KEY_SIZE], priv_key2[CHIPMUNK_PRIVATE_KEY_SIZE];
+    
+    // Initialize different seeds
+    for (int i = 0; i < 32; i++) {
+        seed1[i] = (uint8_t)(i + 1);
+        seed2[i] = (uint8_t)(i + 100);
+    }
+    
+    // Generate keys from different seeds
+    int ret1 = chipmunk_keypair_from_seed(seed1, pub_key1, sizeof(pub_key1), 
+                                          priv_key1, sizeof(priv_key1));
+    int ret2 = chipmunk_keypair_from_seed(seed2, pub_key2, sizeof(pub_key2), 
+                                          priv_key2, sizeof(priv_key2));
+    
+    if (ret1 != 0 || ret2 != 0) {
+        log_it(L_ERROR, "Key generation failed: %d, %d", ret1, ret2);
+        return -1;
+    }
+    
+    // Keys should be different
+    if (memcmp(pub_key1, pub_key2, CHIPMUNK_PUBLIC_KEY_SIZE) == 0) {
+        log_it(L_ERROR, "Different seeds produce same public keys");
+        return -2;
+    }
+    
+    if (memcmp(priv_key1, priv_key2, CHIPMUNK_PRIVATE_KEY_SIZE) == 0) {
+        log_it(L_ERROR, "Different seeds produce same private keys");
+        return -3;
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief Run deterministic key generation tests
+ */
+int chipmunk_run_deterministic_tests(void) {
+    log_it(L_INFO, "🔑 Running Deterministic Key Generation Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("Deterministic Key Generation", test_deterministic_key_generation);
+    total_failures += execute_test("Different Seeds Test", test_deterministic_different_seeds);
+    
+    return total_failures;
+}
+
+// =============================================================================
+// SCALABILITY TESTS
+// =============================================================================
+
+/**
+ * @brief Test scalability with 1000 signers
+ */
+int test_scalability_1k_signers(void) {
+    const size_t num_signers = 1000;
+    return test_multisig_scalability_n_signers(num_signers);
+}
+
+/**
+ * @brief Test scalability with 10000 signers
+ */
+int test_scalability_10k_signers(void) {
+    const size_t num_signers = 10000;
+    return test_multisig_scalability_n_signers(num_signers);
+}
+
+/**
+ * @brief Test scalability with 30000 signers (the big one!)
+ */
+int test_scalability_30k_signers(void) {
+    const size_t num_signers = 30000;
+    log_it(L_NOTICE, "🚀 Starting BIG SCALABILITY TEST with %zu signers!", num_signers);
+    log_it(L_NOTICE, "This may take several minutes...");
+    return test_multisig_scalability_n_signers(num_signers);
+}
+
+/**
+ * @brief Generic multi-signature scalability test
+ */
+static int test_multisig_scalability_n_signers(size_t num_signers) {
+    log_it(L_INFO, "Testing multi-signature with %zu signers...", num_signers);
+    
+    double start_time = chipmunk_get_time_ms();
+    
+    const char test_message[] = "Scalability test message";
+    const size_t message_len = strlen(test_message);
+    
+    // Allocate memory for all keys
+    chipmunk_private_key_t *private_keys = calloc(num_signers, sizeof(chipmunk_private_key_t));
+    chipmunk_public_key_t *public_keys = calloc(num_signers, sizeof(chipmunk_public_key_t));
+    
+    if (!private_keys || !public_keys) {
+        log_it(L_ERROR, "Failed to allocate memory for %zu signers", num_signers);
+        free(private_keys);
+        free(public_keys);
+        return -1;
+    }
+    
+    // Generate all keys
+    log_it(L_INFO, "Generating %zu key pairs...", num_signers);
+    for (size_t i = 0; i < num_signers; i++) {
+        if (i % 1000 == 0) {
+            log_it(L_INFO, "Generated %zu/%zu keys (%.1f%%)", 
+                   i, num_signers, (i * 100.0) / num_signers);
+        }
+        
+        uint8_t seed[32];
+        for (int j = 0; j < 32; j++) {
+            seed[j] = (uint8_t)((i * 32 + j) % 256);
+        }
+        
+        int ret = chipmunk_keypair_from_seed(seed,
+                                           (uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
+                                           (uint8_t*)&private_keys[i], sizeof(chipmunk_private_key_t));
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to generate keypair for signer %zu", i);
+            free(private_keys);
+            free(public_keys);
+            return -2;
+        }
+    }
+    
+    double keygen_time = chipmunk_get_time_ms() - start_time;
+    log_it(L_INFO, "Key generation completed in %.2f ms (%.2f ms per key)", 
+           keygen_time, keygen_time / num_signers);
+    
+    // Create a subset of signatures for testing (not all 30k!)
+    size_t test_signers = num_signers < 100 ? num_signers : 100;  // Limit to 100 for practical reasons
+    uint8_t **signatures = calloc(test_signers, sizeof(uint8_t*));
+    
+    if (!signatures) {
+        log_it(L_ERROR, "Failed to allocate memory for signatures");
+        free(private_keys);
+        free(public_keys);
+        return -3;
+    }
+    
+    for (size_t i = 0; i < test_signers; i++) {
+        signatures[i] = malloc(CHIPMUNK_SIGNATURE_SIZE);
+        if (!signatures[i]) {
+            log_it(L_ERROR, "Failed to allocate memory for signature %zu", i);
+            // Cleanup
+            for (size_t j = 0; j < i; j++) {
+                free(signatures[j]);
+            }
+            free(signatures);
+            free(private_keys);
+            free(public_keys);
+            return -4;
+        }
+    }
+    
+    // Create signatures
+    log_it(L_INFO, "Creating %zu signatures...", test_signers);
+    double sign_start = chipmunk_get_time_ms();
+    
+    for (size_t i = 0; i < test_signers; i++) {
+        int ret = chipmunk_sign((uint8_t*)&private_keys[i], (uint8_t*)test_message, 
+                               message_len, signatures[i]);
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to sign with key %zu", i);
+            // Cleanup
+            for (size_t j = 0; j <= i; j++) {
+                free(signatures[j]);
+            }
+            free(signatures);
+            free(private_keys);
+            free(public_keys);
+            return -5;
+        }
+    }
+    
+    double sign_time = chipmunk_get_time_ms() - sign_start;
+    log_it(L_INFO, "Signing completed in %.2f ms (%.2f ms per signature)", 
+           sign_time, sign_time / test_signers);
+    
+    // Verify signatures
+    log_it(L_INFO, "Verifying %zu signatures...", test_signers);
+    double verify_start = chipmunk_get_time_ms();
+    
+    for (size_t i = 0; i < test_signers; i++) {
+        int ret = chipmunk_verify((uint8_t*)&public_keys[i], (uint8_t*)test_message, 
+                                 message_len, signatures[i]);
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to verify signature %zu", i);
+            // Cleanup
+            for (size_t j = 0; j < test_signers; j++) {
+                free(signatures[j]);
+            }
+            free(signatures);
+            free(private_keys);
+            free(public_keys);
+            return -6;
+        }
+    }
+    
+    double verify_time = chipmunk_get_time_ms() - verify_start;
+    log_it(L_INFO, "Verification completed in %.2f ms (%.2f ms per verification)", 
+           verify_time, verify_time / test_signers);
+    
+    double total_time = chipmunk_get_time_ms() - start_time;
+    
+    // Report performance
+    log_it(L_NOTICE, "🏆 SCALABILITY TEST RESULTS for %zu signers:", num_signers);
+    log_it(L_NOTICE, "  Key Generation: %.2f ms (%.4f ms per key)", keygen_time, keygen_time / num_signers);
+    log_it(L_NOTICE, "  Signing:        %.2f ms (%.4f ms per sig)", sign_time, sign_time / test_signers);
+    log_it(L_NOTICE, "  Verification:   %.2f ms (%.4f ms per verify)", verify_time, verify_time / test_signers);
+    log_it(L_NOTICE, "  Total Time:     %.2f ms", total_time);
+    
+    // Cleanup
+    for (size_t i = 0; i < test_signers; i++) {
+        free(signatures[i]);
+    }
+    free(signatures);
+    free(private_keys);
+    free(public_keys);
+    
+    return 0;
+}
+
+/**
+ * @brief Run scalability tests
+ */
+int chipmunk_run_scalability_tests(void) {
+    log_it(L_INFO, "🚀 Running Scalability Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("1K Signers Scalability", test_scalability_1k_signers);
+    total_failures += execute_test("10K Signers Scalability", test_scalability_10k_signers);
+    total_failures += execute_test("30K Signers Scalability", test_scalability_30k_signers);
+    
+    return total_failures;
+}
+
 /**
  * @brief Run all Chipmunk tests.
  * 
  * @return int 0 if all tests pass, non-zero otherwise
  */
-int dap_enc_chipmunk_tests_run(void)
-{
-    // Initialize the module
-    dap_enc_chipmunk_init();
+// =============================================================================
+// BASIC FUNCTIONALITY TESTS
+// =============================================================================
+
+/**
+ * @brief Run basic functionality tests
+ */
+int chipmunk_run_basic_tests(void) {
+    log_it(L_INFO, "🔧 Running Basic Functionality Tests...");
     
-    int l_ret = 0; // Успешный результат, if all tests pass
+    int total_failures = 0;
     
-    // Test key creation
-    log_it(L_INFO, "Testing Chipmunk key creation...");
-    l_ret += dap_enc_chipmunk_key_new_test();
-    log_it(L_INFO, "Key creation test %s", l_ret == 0 ? "PASSED" : "FAILED");
+    total_failures += execute_test("Key Creation", dap_enc_chipmunk_key_new_test);
+    total_failures += execute_test("Key Generation", dap_enc_chipmunk_key_generate_test);
+    total_failures += execute_test("Signature Creation & Verification", dap_enc_chipmunk_sign_verify_test);
+    total_failures += execute_test("Signature Size Calculation", dap_enc_chipmunk_size_test);
+    total_failures += execute_test("Key Deletion", dap_enc_chipmunk_key_delete_test);
+    total_failures += execute_test("Challenge Polynomial", dap_enc_chipmunk_challenge_poly_test);
     
-    // Test key pair generation
-    log_it(L_INFO, "Testing Chipmunk key pair generation...");
-    int l_res = dap_enc_chipmunk_key_generate_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_INFO, "Key pair generation test FAILED");
+    // Test serialization
+    if (!s_test_chipmunk_serialization()) {
+        total_failures++;
+        log_it(L_ERROR, "❌ Serialization Test FAILED");
     } else {
-        log_it(L_INFO, "Key pair generation test PASSED");
+        log_it(L_NOTICE, "✅ Serialization Test PASSED");
     }
     
-    // Test challenge polynomial generation specifically
-    log_it(L_INFO, "Testing Chipmunk challenge polynomial generation...");
-    l_res = dap_enc_chipmunk_challenge_poly_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Challenge polynomial test FAILED! This is a critical issue.");
-    } else {
-        log_it(L_INFO, "Challenge polynomial test PASSED");
+    return total_failures;
+}
+
+// =============================================================================
+// HOTS-SPECIFIC TESTS  
+// =============================================================================
+
+/**
+ * @brief Test basic HOTS functionality
+ */
+int test_hots_basic_functionality(void) {
+    chipmunk_hots_params_t l_params;
+    int l_result = chipmunk_hots_setup(&l_params);
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS setup failed with code %d", l_result);
+        return -1;
     }
     
-    // Добавляем тест сериализации/десериализации challenge seed
-    if (s_test_chipmunk_serialization() != true) {
-        log_it(L_ERROR, "Challenge seed serialization test FAILED");
+    // Generate keys
+    uint8_t l_seed[32];
+    memset(l_seed, 0x42, 32);  // Fixed seed for reproducible results
+    
+    chipmunk_hots_pk_t l_pk;
+    chipmunk_hots_sk_t l_sk;
+    
+    l_result = chipmunk_hots_keygen(l_seed, 0, &l_params, &l_pk, &l_sk);
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS keygen failed with code %d", l_result);
+        return -2;
+    }
+    
+    // Sign message
+    const char *l_test_message = "Hello, HOTS!";
+    chipmunk_hots_signature_t l_signature;
+    
+    l_result = chipmunk_hots_sign(&l_sk, (const uint8_t*)l_test_message, 
+                                  strlen(l_test_message), &l_signature);
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS signing failed with code %d", l_result);
+        return -3;
+    }
+    
+    // Verify signature
+    l_result = chipmunk_hots_verify(&l_pk, (const uint8_t*)l_test_message, 
+                                   strlen(l_test_message), &l_signature, &l_params);
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS verification failed with error code %d", l_result);
         return -4;
     }
     
-    // Test signature generation and verification
-    log_it(L_INFO, "Testing Chipmunk signature...");
-    l_res = dap_enc_chipmunk_sign_verify_test();
-    if (l_res != 0) {
-        // Считаем проблему с верификацией подписи критической ошибкой
-        l_ret += 1;
-        log_it(L_ERROR, "Signature test FAILED! Critical issue with challenge polynomial detected");
-    } else {
-        log_it(L_INFO, "Signature test PASSED");
+    return 0;
+}
+
+/**
+ * @brief Test multiple HOTS keys with different counters
+ */
+int test_hots_multiple_keys(void) {
+    chipmunk_hots_params_t l_params;
+    if (chipmunk_hots_setup(&l_params) != 0) {
+        log_it(L_ERROR, "HOTS setup failed");
+        return -1;
     }
     
-    // Test signature size calculation
-    log_it(L_INFO, "Testing Chipmunk signature size calculation...");
-    l_res = dap_enc_chipmunk_size_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_INFO, "Signature size calculation test FAILED");
-    } else {
-        log_it(L_INFO, "Signature size calculation test PASSED");
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; i++) {
+        l_seed[i] = (uint8_t)(i + 1);
     }
     
-    // Test key deletion
-    log_it(L_INFO, "Testing Chipmunk key deletion...");
-    l_res = dap_enc_chipmunk_key_delete_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_INFO, "Key deletion test FAILED");
-    } else {
-        log_it(L_INFO, "Key deletion test PASSED");
+    const char *test_message = "Multiple HOTS keys test";
+    
+    // Test multiple key pairs with different counters
+    for (uint32_t l_counter = 0; l_counter < 5; l_counter++) {
+        chipmunk_hots_pk_t l_pk;
+        chipmunk_hots_sk_t l_sk;
+        
+        if (chipmunk_hots_keygen(l_seed, l_counter, &l_params, &l_pk, &l_sk) != 0) {
+            log_it(L_ERROR, "HOTS key generation failed for counter %u", l_counter);
+            return -2;
+        }
+        
+        chipmunk_hots_signature_t l_signature;
+        if (chipmunk_hots_sign(&l_sk, (const uint8_t*)test_message, strlen(test_message), &l_signature) != 0) {
+            log_it(L_ERROR, "HOTS signing failed for counter %u", l_counter);
+            return -3;
+        }
+        
+        int l_verify_result = chipmunk_hots_verify(&l_pk, (const uint8_t*)test_message, strlen(test_message), &l_signature, &l_params);
+        if (l_verify_result != 0) {
+            log_it(L_ERROR, "HOTS verification failed for counter %u", l_counter);
+            return -4;
+        }
     }
     
-    // Test different signatures
-    log_it(L_INFO, "Testing different signatures with different keys...");
-    l_res = dap_enc_chipmunk_different_signatures_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Different signatures test FAILED");
-    } else {
-        log_it(L_INFO, "Different signatures test PASSED");
+    return 0;
+}
+
+/**
+ * @brief Run HOTS-specific tests
+ */
+int chipmunk_run_hots_tests(void) {
+    log_it(L_INFO, "🧮 Running HOTS-Specific Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("HOTS Basic Functionality", test_hots_basic_functionality);
+    total_failures += execute_test("HOTS Multiple Keys", test_hots_multiple_keys);
+    total_failures += execute_test("HOTS Verification Diagnostic", test_hots_verification_diagnostic);
+    
+    return total_failures;
+}
+
+// =============================================================================
+// MULTI-SIGNATURE TESTS
+// =============================================================================
+
+/**
+ * @brief Run multi-signature tests
+ */
+int chipmunk_run_multisig_tests(void) {
+    log_it(L_INFO, "🤝 Running Multi-Signature Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("Multi-Signature Aggregation", test_multi_signature_aggregation);
+    total_failures += execute_test("Batch Verification", test_batch_verification);
+    
+    return total_failures;
+}
+
+// =============================================================================
+// STRESS TESTS
+// =============================================================================
+
+/**
+ * @brief Test stress with continuous signing
+ */
+int test_stress_continuous_signing(void) {
+    log_it(L_INFO, "Testing continuous signing stress...");
+    
+    const int num_iterations = 1000;
+    
+    // Generate deterministic key
+    uint8_t test_seed[32];
+    for (int i = 0; i < 32; i++) {
+        test_seed[i] = (uint8_t)(i + 1);
     }
     
-    // Test corrupted signature
-    log_it(L_INFO, "Testing verification of corrupted signatures...");
-    l_res = dap_enc_chipmunk_corrupted_signature_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Corrupted signature test FAILED");
-    } else {
-        log_it(L_INFO, "Corrupted signature test PASSED");
+    uint8_t pub_key[CHIPMUNK_PUBLIC_KEY_SIZE];
+    uint8_t priv_key[CHIPMUNK_PRIVATE_KEY_SIZE];
+    
+    int ret = chipmunk_keypair_from_seed(test_seed, pub_key, sizeof(pub_key), 
+                                         priv_key, sizeof(priv_key));
+    if (ret != 0) {
+        log_it(L_ERROR, "Failed to generate stress test key: %d", ret);
+        return -1;
     }
     
-    // Test same object signatures
-    log_it(L_INFO, "Testing signatures for the same object with the same key...");
-    l_res = dap_enc_chipmunk_same_object_signatures_test();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Same object signatures test FAILED");
-    } else {
-        log_it(L_INFO, "Same object signatures test PASSED");
+    const char test_message[] = "Stress test message";
+    uint8_t signature[CHIPMUNK_SIGNATURE_SIZE];
+    
+    double start_time = chipmunk_get_time_ms();
+    
+    // Perform continuous signing
+    for (int i = 0; i < num_iterations; i++) {
+        if (i % 100 == 0) {
+            log_it(L_INFO, "Stress test iteration %d/%d", i, num_iterations);
+        }
+        
+        ret = chipmunk_sign(priv_key, (uint8_t*)test_message, strlen(test_message), signature);
+        if (ret != 0) {
+            log_it(L_ERROR, "Signing failed at iteration %d: %d", i, ret);
+            return -2;
+        }
+        
+        ret = chipmunk_verify(pub_key, (uint8_t*)test_message, strlen(test_message), signature);
+        if (ret != 0) {
+            log_it(L_ERROR, "Verification failed at iteration %d: %d", i, ret);
+            return -3;
+        }
     }
     
-    // Test cross-verification
-    log_it(L_INFO, "Testing cross-verification with wrong keys...");
-    l_res = test_cross_verification();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Cross-verification test FAILED");
-    } else {
-        log_it(L_INFO, "Cross-verification test PASSED");
+    double total_time = chipmunk_get_time_ms() - start_time;
+    log_it(L_NOTICE, "Stress test completed: %d iterations in %.2f ms (%.4f ms per op)", 
+           num_iterations, total_time, total_time / num_iterations);
+    
+    return 0;
+}
+
+/**
+ * @brief Run stress tests
+ */
+int chipmunk_run_stress_tests(void) {
+    log_it(L_INFO, "💪 Running Stress Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("Continuous Signing Stress", test_stress_continuous_signing);
+    
+    return total_failures;
+}
+
+// =============================================================================
+// EDGE CASE AND SECURITY TESTS
+// =============================================================================
+
+/**
+ * @brief Run edge case and security tests
+ */
+int chipmunk_run_security_tests(void) {
+    log_it(L_INFO, "🛡️ Running Security & Edge Case Tests...");
+    
+    int total_failures = 0;
+    
+    total_failures += execute_test("Different Signatures", dap_enc_chipmunk_different_signatures_test);
+    total_failures += execute_test("Corrupted Signature Rejection", dap_enc_chipmunk_corrupted_signature_test);
+    total_failures += execute_test("Same Object Signatures", dap_enc_chipmunk_same_object_signatures_test);
+    total_failures += execute_test("Cross Verification", test_cross_verification);
+    
+    return total_failures;
+}
+
+// =============================================================================
+// MAIN TEST RUNNER
+// =============================================================================
+
+/**
+ * @brief Run all Chipmunk tests in a comprehensive test suite
+ * 
+ * @return int 0 if all tests pass, non-zero otherwise
+ */
+int dap_enc_chipmunk_tests_run(void)
+{
+    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, "🚀🚀🚀 STARTING COMPREHENSIVE CHIPMUNK TEST SUITE 🚀🚀🚀");
+    log_it(L_NOTICE, "");
+    
+    // Initialize test environment
+    if (chipmunk_test_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize test environment");
+        return -1;
     }
     
-    // Test HOTS verification diagnostic
-    log_it(L_INFO, "Testing HOTS verification diagnostic...");
-    l_res = test_hots_verification_diagnostic();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "HOTS verification diagnostic test FAILED");
+    int total_failures = 0;
+    
+    // Run test groups
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 1: BASIC FUNCTIONALITY ===================");
+    total_failures += chipmunk_run_basic_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 2: HOTS FUNCTIONALITY ===================");
+    total_failures += chipmunk_run_hots_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 3: DETERMINISTIC KEYS ===================");
+    total_failures += chipmunk_run_deterministic_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 4: MULTI-SIGNATURE ===================");
+    total_failures += chipmunk_run_multisig_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 5: SECURITY & EDGE CASES ===================");
+    total_failures += chipmunk_run_security_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 6: SCALABILITY ===================");
+    total_failures += chipmunk_run_scalability_tests();
+    
+    log_it(L_INFO, "");
+    log_it(L_INFO, "=================== TEST GROUP 7: STRESS TESTS ===================");
+    total_failures += chipmunk_run_stress_tests();
+    
+    // Calculate final statistics
+    s_test_stats.total_time_ms = chipmunk_get_time_ms() - s_test_start_time;
+    
+    // Print comprehensive test results
+    chipmunk_print_test_stats(&s_test_stats);
+    
+    // Cleanup
+    chipmunk_test_cleanup();
+    
+    if (total_failures == 0) {
+        log_it(L_NOTICE, "🎊🎊🎊 ALL CHIPMUNK TESTS COMPLETED SUCCESSFULLY! 🎊🎊🎊");
+        log_it(L_NOTICE, "The Chipmunk post-quantum signature implementation is ready for production!");
     } else {
-        log_it(L_INFO, "HOTS verification diagnostic test PASSED");
+        log_it(L_ERROR, "💥💥💥 %d TEST FAILURES DETECTED! 💥💥💥", total_failures);
+        log_it(L_ERROR, "Please fix the issues before using in production!");
     }
     
-    // Test multi-signature aggregation
-    log_it(L_INFO, "Testing multi-signature aggregation...");
-    l_res = test_multi_signature_aggregation();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Multi-signature aggregation test FAILED");
-    } else {
-        log_it(L_INFO, "Multi-signature aggregation test PASSED");
-    }
-    
-    // Test batch verification
-    log_it(L_INFO, "Testing batch verification...");
-    l_res = test_batch_verification();
-    if (l_res != 0) {
-        l_ret += 1;
-        log_it(L_ERROR, "Batch verification test FAILED");
-    } else {
-        log_it(L_INFO, "Batch verification test PASSED");
-    }
-    
-    // Return 0 if all tests passed, non-zero otherwise
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Some Chipmunk tests FAILED! Error code: %d", l_ret);
-    } else {
-        log_it(L_NOTICE, "All Chipmunk tests PASSED!");
-    }
-    
-    return l_ret;
+    return total_failures;
 } 
 

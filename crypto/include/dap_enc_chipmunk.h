@@ -38,13 +38,20 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
 size_t dap_enc_chipmunk_calc_signature_size(void);
 
 /**
+ * @brief Get size of Chipmunk signature for deserialization callback
+ * @param[in] a_key Key object (unused)
+ * @return Size of the signature in bytes
+ */
+uint64_t dap_enc_chipmunk_deser_sig_size(const void *a_key);
+
+/**
  * @brief Sign data with Chipmunk algorithm
  * @param[in] key Key object
  * @param[in] data Data to sign
  * @param[in] data_size Size of data
  * @param[out] signature Buffer for signature
  * @param[in] signature_size Size of signature buffer
- * @return Size of created signature or negative error code
+ * @return 0 on success or negative error code
  */
 int dap_enc_chipmunk_get_sign(dap_enc_key_t *key, const void *data, const size_t data_size, 
                            void *signature, const size_t signature_size);
@@ -87,6 +94,10 @@ void* dap_enc_chipmunk_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 void* dap_enc_chipmunk_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 uint64_t dap_enc_chipmunk_deser_private_key_size(const void *unused);
 uint64_t dap_enc_chipmunk_deser_public_key_size(const void *unused);
+
+// Signature serialization/deserialization functions
+uint8_t *dap_enc_chipmunk_write_signature(const void *a_sign, size_t *a_sign_len);
+uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen);
 
 #ifdef __cplusplus
 }

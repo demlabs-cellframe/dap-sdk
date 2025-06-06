@@ -337,6 +337,13 @@ size_t dap_enc_chipmunk_calc_signature_size(void)
     return CHIPMUNK_SIGNATURE_SIZE;
 }
 
+// Get signature size for callback (accepts key parameter)
+uint64_t dap_enc_chipmunk_deser_sig_size(const void *a_key)
+{
+    (void)a_key; // Unused parameter
+    return CHIPMUNK_SIGNATURE_SIZE;
+}
+
 // Sign data using Chipmunk algorithm
 int dap_enc_chipmunk_get_sign(dap_enc_key_t *a_key, const void *a_data, const size_t a_data_size, void *a_signature,
                            const size_t a_signature_size)
@@ -426,7 +433,7 @@ int dap_enc_chipmunk_get_sign(dap_enc_key_t *a_key, const void *a_data, const si
             DAP_DELETE(l_tmp_signature);
             
             // Успешное подписание
-            return CHIPMUNK_SIGNATURE_SIZE;
+            return 0;
         }
         
         log_it(L_DEBUG, "Chipmunk signature creation failed with code %d, attempt %d of %d", 
@@ -721,4 +728,40 @@ uint64_t dap_enc_chipmunk_deser_public_key_size(const void *unused)
 {
     (void)unused;
     return CHIPMUNK_PUBLIC_KEY_SIZE;
-} 
+}
+
+// Signature serialization/deserialization functions
+uint8_t *dap_enc_chipmunk_write_signature(const void *a_sign, size_t *a_sign_len)
+{
+    if (!a_sign || !a_sign_len) {
+        log_it(L_ERROR, "Invalid parameters for signature serialization");
+        return NULL;
+    }
+    
+    *a_sign_len = CHIPMUNK_SIGNATURE_SIZE;
+    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_sign_len);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation failed for signature serialization");
+        return NULL;
+    }
+    
+    memcpy(l_buf, a_sign, *a_sign_len);
+    return l_buf;
+}
+
+uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf || a_buflen != CHIPMUNK_SIGNATURE_SIZE) {
+        log_it(L_ERROR, "Invalid buffer for signature deserialization");
+        return NULL;
+    }
+    
+    uint8_t *l_sign = DAP_NEW_SIZE(uint8_t, a_buflen);
+    if (!l_sign) {
+        log_it(L_ERROR, "Memory allocation failed for signature deserialization");
+        return NULL;
+    }
+    
+    memcpy(l_sign, a_buf, a_buflen);
+    return l_sign;
+}
