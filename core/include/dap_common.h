@@ -613,6 +613,8 @@ extern "C" {
     })
 #else
     #ifdef DAP_CORE_TESTS
+        #if defined(__has_builtin) && __has_builtin(__builtin_add_overflow_p)
+        // GCC-style builtin functions (Linux)
         #define dap_add_builtin(a,b)                            \
         ({                                                      \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
@@ -639,9 +641,41 @@ extern "C" {
             }                                                   \
             (_a);                                                 \
         })
+        #else
+        // macOS/Clang compatible version using __builtin_*_overflow
+        #define dap_add_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __typeof__(a) _result;                              \
+            if (!__builtin_add_overflow(_a, _b, &_result)) {    \
+                (_a = _result);                                 \
+            }                                                   \
+            (_a);                                                 \
+        })
+
+        #define dap_sub_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __typeof__(a) _result;                              \
+            if (!__builtin_sub_overflow(_a, _b, &_result)) {    \
+                (_a = _result);                                 \
+            }                                                   \
+            (_a);                                                 \
+        })
+
+        #define dap_mul_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __typeof__(a) _result;                              \
+            if (!__builtin_mul_overflow(_a, _b, &_result)) {    \
+                (_a = _result);                                 \
+            }                                                   \
+            (_a);                                                 \
+        })
+        #endif
     #endif
     
-    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
+    #if !defined(DAP_CORE_TESTS) && ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
         #define dap_add(a,b)                                \
         ({                                                          \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -739,44 +773,6 @@ extern "C" {
                 (a_negative != b_negative && a_b_hight == a_min_high && a_b_delta_low > a_min_low) \
             )) { (_a *= _b); } \
             (_a); \
-        })
-    #else
-        #define dap_add(a,b)                                \
-        ({                                                          \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-            if (!( \
-                (((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) - (DAP_HUGE_NATURAL_TYPE)_b) || \
-                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) - (DAP_HUGE_NATURAL_TYPE)_b)) \
-            )) { (_a += _b); } \
-            (_a); \
-        })
-    
-        #define dap_sub(a,b)                                \
-        ({                                                          \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-            if (!( \
-                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) || \
-                ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) \
-            )) { (_a -= _b); } \
-            (_a); \
-        })
-        
-        #define dap_mul(a,b)                                \
-        ({                                                  \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-            if (!( \
-                /*_a positive*/\
-                ((DAP_HUGE_NATURAL_TYPE)_a > 0 && ( \
-                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
-                    ((DAP_HUGE_NATURAL_TYPE)_b < 0 && ((DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))))\
-                ) || \
-                /*_a negative*/\
-                (_a <= 0 && ( \
-                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
-                    (_a != 0 && (DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))) \
-                ) \
-            )) { (_a *= _b); } \
-            _a; \
         })
     #endif
 #endif
@@ -1167,3 +1163,17 @@ dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a
 #define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
 
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+
+/**
+ * @brief Log format control functions
+ */
+typedef enum {
+    DAP_LOG_FORMAT_DEFAULT    = 0,    // Full format: [time][level][tag:func:line] message
+    DAP_LOG_FORMAT_SIMPLE     = 1,    // Simple format: [level] message (for unit tests)
+    DAP_LOG_FORMAT_NO_TIME    = 2,    // No time: [level][tag:func:line] message
+    DAP_LOG_FORMAT_NO_PREFIX  = 3     // Clean: message only
+} dap_log_format_t;
+
+void dap_log_set_format(dap_log_format_t a_format);
+dap_log_format_t dap_log_get_format(void);
+void dap_log_set_simple_for_tests(bool a_enable);

@@ -27,6 +27,7 @@
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_enc_base58.h"
+#include "hash/sha2-256/dap_sha2_256.h"
 
 #define LOG_TAG "dap_hash"
 
@@ -77,4 +78,15 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
 int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t *a_hash)
 {
     return dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash) && dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
+}
+
+/**
+ * @brief Compute SHA2-256 hash
+ * @param[out] a_output Output buffer (must be 32 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_inlen Input length
+ * @return Returns 0 on success, negative error code on failure
+ */
+int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
+    return dap_sha2_256(a_output, a_input, a_inlen);
 }

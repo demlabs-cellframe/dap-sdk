@@ -83,6 +83,9 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
 uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out_len);
 void *dap_enc_sig_multisign_read_signature(const uint8_t *a_sign, size_t a_sign_len);
 
+uint64_t dap_enc_sig_multisign_ser_priv_key_size(const void *a_priv_key);
+uint64_t dap_enc_sig_multisign_ser_pub_key_size(const void *a_pub_key);
+
 DAP_STATIC_INLINE uint64_t dap_enc_sig_multisign_deser_sig_size(UNUSED_ARG const void *a_in)
 {
     return sizeof(dap_multi_sign_t);

@@ -157,6 +157,9 @@ static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
+// Log format control
+static dap_log_format_t s_log_format = DAP_LOG_FORMAT_DEFAULT;
+
 static void print_it_stdout (unsigned a_off, const char *a_fmt, va_list va);
 static void print_it_stderr (unsigned a_off, const char *a_fmt, va_list va);
 static void print_it_fd (unsigned a_off, const char *a_fmt, va_list va);
@@ -288,6 +291,29 @@ void dap_set_log_tag_width(size_t a_width) {
     snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
 }
 
+/**
+ * @brief dap_log_set_format Sets the logging format
+ * @param[in] a_format Log format type
+ */
+void dap_log_set_format(dap_log_format_t a_format) {
+    s_log_format = a_format;
+}
+
+/**
+ * @brief dap_log_get_format Gets the current logging format
+ * @return Current log format type
+ */
+dap_log_format_t dap_log_get_format(void) {
+    return s_log_format;
+}
+
+/**
+ * @brief dap_log_set_simple_for_tests Sets simple format for unit tests
+ * @param[in] a_enable true to enable simple format, false for default
+ */
+void dap_log_set_simple_for_tests(bool a_enable) {
+    s_log_format = a_enable ? DAP_LOG_FORMAT_SIMPLE : DAP_LOG_FORMAT_DEFAULT;
+}
 
 /**
  * @brief dap_del_z_all
@@ -466,18 +492,49 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     }
 #endif
     char s_format[LOG_FORMAT_LEN];
-    unsigned offset = s_ansi_seq_color_len[a_ll];
-    memcpy(s_format, s_ansi_seq_color[a_ll], offset);
-    offset += s_update_log_time(s_format + offset);
-    offset += func_name
-            ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
-            : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+    unsigned offset = 0;
+    
+    // Add color prefix if needed (not for simple or no_prefix formats)
+    if (s_log_format != DAP_LOG_FORMAT_SIMPLE && s_log_format != DAP_LOG_FORMAT_NO_PREFIX) {
+        offset = s_ansi_seq_color_len[a_ll];
+        memcpy(s_format, s_ansi_seq_color[a_ll], offset);
+    }
+    
+    // Format message based on selected format
+    switch (s_log_format) {
+        case DAP_LOG_FORMAT_DEFAULT:
+            // Full format: [time][level][tag:func:line] message
+            offset += s_update_log_time(s_format + offset);
+            offset += func_name
+                    ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
+                    : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+            break;
+            
+        case DAP_LOG_FORMAT_SIMPLE:
+            // Simple format for unit tests: [level] message (with colors)
+            offset += snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s%s%s %s\n", 
+                    s_ansi_seq_color[a_ll], s_log_level_tag[a_ll], "\x1b[0m", a_fmt);
+            break;
+            
+        case DAP_LOG_FORMAT_NO_TIME:
+            // No time: [level][tag:func:line] message
+            offset += func_name
+                    ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
+                    : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+            break;
+            
+        case DAP_LOG_FORMAT_NO_PREFIX:
+            // Clean: message only
+            offset += snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s\n", a_fmt);
+            break;
+    }
+    
     if (offset >= LOG_FORMAT_LEN) {
         dap_strncpy(s_format + LOG_FORMAT_LEN - 5, "...\n", 5);
     }
     va_list va;
     va_start(va, a_fmt);
-    print_it(s_ansi_seq_color_len[a_ll], s_format, va);
+    print_it(s_log_format == DAP_LOG_FORMAT_SIMPLE ? 0 : s_ansi_seq_color_len[a_ll], s_format, va);
     va_end(va);
 }
 

@@ -4,13 +4,18 @@
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_multithread_test.h"
 #include "dap_enc_ringct20_test.h"
+#include "dap_enc_chipmunk_test.h"
+#include "dap_sign_test.h"
 #include "rand/dap_rand.h"
 #include "dap_common.h"
+
+#define LOG_TAG "crypto_test"
 
 int main(void) {
     // switch off debug info from library
     dap_log_level_set(L_WARNING);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);  // Clean output for unit tests
     
     int l_ret = 0;
     const int l_times = 5;
@@ -38,5 +43,14 @@ int main(void) {
     dap_enc_ringct20_tests_run(l_times);
     dap_enc_benchmark_tests_run(l_times);
     dap_enc_multithread_tests_run(l_times);
-    return 0;
+    
+    // Run Chipmunk signature tests
+    l_ret += dap_enc_chipmunk_tests_run();
+    log_it(L_NOTICE, "Chipmunk tests result: %s", l_ret == 0 ? "PASSED" : "FAILED");
+    
+    // Run universal signature API tests
+    dap_sign_test_run();
+    log_it(L_NOTICE, "Universal signature API tests completed");
+    
+    return l_ret;
 }
