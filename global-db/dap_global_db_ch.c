@@ -224,11 +224,17 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         dap_hash_fast_t l_sign_hash;
         if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
            dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
-        log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%zu signer_addr=%s",
+        const size_t c_dap_hex_str_len = 15;
+        char l_value_str[c_dap_hex_str_len + 1];
+        dap_bin2hex(l_value_str, a_obj->value, a_obj->value_len <= c_dap_hex_str_len / 2 ? a_obj->value_len : (c_dap_hex_str_len - 3) / 2);
+        if (a_obj->value_len > c_dap_hex_str_len / 2)
+            strcpy(l_value_str + c_dap_hex_str_len - 3, "...");
+        log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\", key=\"%s\""
+                " timestamp=\"%s\", value_len=%zu, signer_addr=%s, value=\"%s\"",
                     dap_store_obj_get_type(a_obj),
                         a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,
-                            a_obj->sign ? dap_stream_node_addr_to_str_static(l_signer_addr) : "UNSIGNED");
+                            a_obj->sign ? dap_stream_node_addr_to_str_static(l_signer_addr) : "UNSIGNED",
+                                l_value_str);
     }
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_obj->group);
     if (!l_cluster) {

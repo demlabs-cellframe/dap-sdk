@@ -20,6 +20,7 @@
     You should have received a copy of the GNU General Public License
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include <stddef.h>
 #include <string.h>
 #include "dap_common.h"
 #include "dap_config.h"
@@ -396,7 +397,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                                                                     a_obj->group, a_obj->key);
         l_ret = -17;
         break;
-    case -1:        // Existed obj is older
+    case -1:       // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with type '%c' and group %s and key %s",
                                                                                         l_obj_type, a_obj->group, a_obj->key);
         break;

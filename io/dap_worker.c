@@ -1527,21 +1527,27 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #elif defined ( DAP_EVENTS_CAPS_POLL)
                         l_es_selected = a_context->poll_esocket[nn];
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
-                        struct kevent * l_kevent_selected = &a_context->kqueue_events_selected[n];
+                        struct kevent * l_kevent_selected = &a_context->kqueue_events_selected[nn];
                         if ( l_kevent_selected->filter == EVFILT_USER){ // If we have USER event it sends little different pointer
                             dap_events_socket_w_data_t * l_es_w_data = (dap_events_socket_w_data_t *) l_kevent_selected->udata;
-                            l_es_selected = l_es_w_data->esocket;
-                        }else{
+                            l_es_selected = l_es_w_data ? l_es_w_data->esocket : NULL;
+                            // Clean up l_es_w_data if it's not the same as the cached data - JUST LLM proposed, not tested
+                            //if (l_es_w_data && l_es_selected && l_es_w_data != &l_es_selected->kqueue_event_catched_data)
+                            //    DAP_DELETE(l_es_w_data);
+                         }else{
                             l_es_selected = (dap_events_socket_t*) l_kevent_selected->udata;
                         }
 #else
 #error "No selection esockets left to proc implemenetation"
 #endif
-                        if(l_es_selected == NULL || l_es_selected == l_cur ){
-                            if(l_es_selected == NULL)
-                                log_it(L_CRITICAL,"NULL esocket found when cleaning selected list");
-                            else if(g_debug_reactor)
-                                log_it(L_INFO,"Duplicate esockets removed from selected event list");
+                        if (!l_es_selected || l_es_selected == l_cur) {
+                            if (g_debug_reactor) {
+                                if (!l_es_selected)
+                                    log_it(L_ATT,"NULL esocket found when cleaning selected list at index %zd/%zd", nn, l_sockets_max);
+                                else 
+                                    log_it(L_ATT,"Duplicate esockets %" DAP_FORMAT_SOCKET " removed from selected event list at index %zd/%zd",
+                                                                                             l_es_selected->socket, nn, l_sockets_max);
+                            }
                             n=nn; // TODO here we need to make smth like poll() array compressing.
                                   // Here we expect thats event duplicates goes together in it. If not - we lose some events between.
                         }
