@@ -182,6 +182,214 @@ DAP_STATIC_INLINE bool dap_sign_is_use_pkey_hash(dap_sign_t *a_sign)
     return  a_sign && DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
 }
 
+// === Extended Signature Operations API ===
+
+/**
+ * @brief Types of signature aggregation algorithms
+ */
+typedef enum dap_sign_aggregation_type {
+    DAP_SIGN_AGGREGATION_TYPE_NONE = 0,
+    DAP_SIGN_AGGREGATION_TYPE_TREE_BASED,     // Tree-based aggregation (Chipmunk, ring signatures)
+    DAP_SIGN_AGGREGATION_TYPE_LINEAR,         // Linear aggregation (BLS-style)
+    DAP_SIGN_AGGREGATION_TYPE_RING,          // Ring signatures
+    DAP_SIGN_AGGREGATION_TYPE_THRESHOLD,     // Threshold signatures
+    DAP_SIGN_AGGREGATION_TYPE_MULTI_SCHEME   // Multi-scheme aggregation
+} dap_sign_aggregation_type_t;
+
+/**
+ * @brief Context for batch signature verification
+ */
+typedef struct dap_sign_batch_verify_ctx {
+    dap_sign_type_t signature_type;               // Type of signatures in batch
+    uint32_t max_signatures;                      // Maximum number of signatures
+    uint32_t signatures_count;                    // Current number of signatures
+    dap_sign_t **signatures;                      // Array of signatures
+    void **messages;                              // Array of messages
+    size_t *message_sizes;                        // Array of message sizes
+    dap_pkey_t **public_keys;                     // Array of public keys (optional)
+} dap_sign_batch_verify_ctx_t;
+
+/**
+ * @brief Aggregation parameters for different algorithms
+ */
+typedef struct dap_sign_aggregation_params {
+    dap_sign_aggregation_type_t aggregation_type;
+    union {
+        struct {
+            uint32_t *signer_indices;             // For tree-based aggregation
+            uint32_t tree_depth;                  // Tree depth hint
+        } tree_params;
+        struct {
+            uint32_t threshold;                   // For threshold signatures
+            uint32_t total_participants;
+        } threshold_params;
+        struct {
+            uint32_t ring_size;                   // For ring signatures
+            bool hide_signer_identity;
+        } ring_params;
+    };
+} dap_sign_aggregation_params_t;
+
+/**
+ * @brief Performance statistics for signature operations
+ */
+typedef struct dap_sign_performance_stats {
+    double aggregation_time_ms;                   // Time for aggregation
+    double verification_time_ms;                  // Time for verification
+    double batch_verification_time_ms;            // Time for batch verification
+    uint32_t signatures_processed;                // Number of signatures processed
+    double throughput_sigs_per_sec;               // Signatures per second
+    size_t memory_usage_bytes;                    // Memory usage
+} dap_sign_performance_stats_t;
+
+// === Core Extended Signature Functions ===
+
+/**
+ * @brief Aggregate multiple signatures into a single signature
+ * @param a_signatures Array of signatures to aggregate
+ * @param a_signatures_count Number of signatures
+ * @param a_params Aggregation parameters (algorithm-specific)
+ * @return Aggregated signature or NULL on error (works only for aggregation-capable signature types)
+ */
+dap_sign_t *dap_sign_aggregate_signatures(
+    dap_sign_t **a_signatures,
+    uint32_t a_signatures_count,
+    const dap_sign_aggregation_params_t *a_params
+);
+
+/**
+ * @brief Verify an aggregated signature against multiple messages
+ * @param a_aggregated_sign Aggregated signature to verify
+ * @param a_messages Array of messages that were signed
+ * @param a_message_sizes Array of message sizes
+ * @param a_public_keys Array of public keys for verification (optional)
+ * @param a_signers_count Number of signers
+ * @return 0 on success, negative on error (works only for aggregation-capable signature types)
+ */
+int dap_sign_verify_aggregated(
+    dap_sign_t *a_aggregated_sign,
+    const void **a_messages,
+    const size_t *a_message_sizes,
+    dap_pkey_t **a_public_keys,
+    uint32_t a_signers_count
+);
+
+// === Batch Verification Functions ===
+
+/**
+ * @brief Create a new batch verification context
+ * @param a_signature_type Type of signatures in the batch
+ * @param a_max_signatures Maximum number of signatures
+ * @return New context or NULL on error
+ */
+dap_sign_batch_verify_ctx_t *dap_sign_batch_verify_ctx_new(
+    dap_sign_type_t a_signature_type,
+    uint32_t a_max_signatures
+);
+
+/**
+ * @brief Free a batch verification context
+ * @param a_ctx Context to free
+ */
+void dap_sign_batch_verify_ctx_free(dap_sign_batch_verify_ctx_t *a_ctx);
+
+/**
+ * @brief Add a signature to the batch verification context
+ * @param a_ctx Batch verification context
+ * @param a_signature Signature to add
+ * @param a_message Message that was signed
+ * @param a_message_size Size of the message
+ * @param a_public_key Public key for verification (optional)
+ * @return 0 on success, negative on error
+ */
+int dap_sign_batch_verify_add_signature(
+    dap_sign_batch_verify_ctx_t *a_ctx,
+    dap_sign_t *a_signature,
+    const void *a_message,
+    size_t a_message_size,
+    dap_pkey_t *a_public_key
+);
+
+/**
+ * @brief Execute batch verification of all signatures in the context
+ * @param a_ctx Batch verification context
+ * @return 0 if all signatures valid, negative on error
+ */
+int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx);
+
+// === Extended Signature Query Functions ===
+
+/**
+ * @brief Check if a signature type supports aggregation
+ * @param a_signature_type Signature type to check
+ * @return true if aggregation is supported
+ */
+bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type);
+
+/**
+ * @brief Check if a signature type supports batch verification
+ * @param a_signature_type Signature type to check
+ * @return true if batch verification is supported
+ */
+bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type);
+
+/**
+ * @brief Get supported aggregation types for a signature algorithm
+ * @param a_signature_type Signature type
+ * @param a_aggregation_types Output array of supported aggregation types
+ * @param a_max_types Maximum number of types to return
+ * @return Number of supported aggregation types
+ */
+uint32_t dap_sign_get_supported_aggregation_types(
+    dap_sign_type_t a_signature_type,
+    dap_sign_aggregation_type_t *a_aggregation_types,
+    uint32_t a_max_types
+);
+
+/**
+ * @brief Check if a signature is aggregated (contains multiple signatures)
+ * @param a_sign Signature to check
+ * @return true if signature is aggregated
+ */
+bool dap_sign_is_aggregated(dap_sign_t *a_sign);
+
+/**
+ * @brief Get the number of signatures in an aggregated signature
+ * @param a_sign Aggregated signature
+ * @return Number of signatures or 1 for regular signatures, 0 on error
+ */
+uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign);
+
+// === Performance Benchmarking ===
+
+/**
+ * @brief Benchmark aggregation performance for a specific algorithm
+ * @param a_signature_type Type of signatures to benchmark
+ * @param a_aggregation_type Type of aggregation to benchmark
+ * @param a_signatures_count Number of signatures to benchmark
+ * @param a_stats Output statistics
+ * @return 0 on success, negative on error
+ */
+int dap_sign_benchmark_aggregation(
+    dap_sign_type_t a_signature_type,
+    dap_sign_aggregation_type_t a_aggregation_type,
+    uint32_t a_signatures_count,
+    dap_sign_performance_stats_t *a_stats
+);
+
+/**
+ * @brief Benchmark batch verification performance
+ * @param a_signature_type Type of signatures to benchmark
+ * @param a_signatures_count Number of signatures to benchmark
+ * @param a_stats Output statistics
+ * @return 0 on success, negative on error
+ */
+int dap_sign_benchmark_batch_verification(
+    dap_sign_type_t a_signature_type,
+    uint32_t a_signatures_count,
+    dap_sign_performance_stats_t *a_stats
+);
+
 #ifdef __cplusplus
 }
 #endif

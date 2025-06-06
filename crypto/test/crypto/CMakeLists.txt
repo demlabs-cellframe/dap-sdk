@@ -15,7 +15,7 @@ if ( NOT ( TARGET dap_test ) )
 endif()
 
 # Common source files for tests
-file(GLOB COMMON_SRC dap_enc_*.c main.c)
+file(GLOB COMMON_SRC dap_enc_*.c dap_sign_test.c main.c)
 
 # Основной таргет для тестирования всего модуля crypto
 add_executable(${PROJECT_NAME} ${COMMON_SRC})
@@ -50,6 +50,9 @@ add_executable(chipmunk-large-scale-test chipmunk_large_scale_test.c)
 # Add deterministic key test
 add_executable(test_deterministic_keys test_deterministic_keys.c)
 
+# Add universal signature API test
+add_executable(test-sign-api-only test_sign_api_only.c dap_sign_test.c)
+
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_hots_test dap_test dap_core dap_crypto m)
@@ -61,6 +64,7 @@ target_link_libraries(chipmunk_tree_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test-only dap_crypto dap_core m)
 target_link_libraries(chipmunk-large-scale-test dap_crypto dap_core m)
 target_link_libraries(test_deterministic_keys dap_crypto dap_core m)
+target_link_libraries(test-sign-api-only dap_test dap_core dap_crypto m)
 
 # Добавляем путь к dap_test.h
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework)
@@ -105,6 +109,10 @@ target_include_directories(test_deterministic_keys PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+)
+target_include_directories(test-sign-api-only PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
 
 add_test(

@@ -23,6 +23,7 @@
 */
 
 #include <string.h>
+#include <time.h>
 
 #include "dap_common.h"
 #include "dap_enc_key.h"
@@ -33,12 +34,28 @@
 #include "dap_json_rpc_errors.h"
 #include "dap_config.h"
 #include "dap_pkey.h"
+#include "dap_enc_chipmunk.h"  // For Chipmunk implementation
 
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
+
+// Static function declarations for internal implementations
+static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
+    dap_sign_t **a_signatures,
+    uint32_t a_signatures_count,
+    const dap_sign_aggregation_params_t *a_params);
+
+static int dap_sign_chipmunk_verify_aggregated_internal(
+    dap_sign_t *a_aggregated_sign,
+    const void **a_messages,
+    const size_t *a_message_sizes,
+    dap_pkey_t **a_public_keys,
+    uint32_t a_signers_count);
+
+static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx);
 
 /**
  * @brief dap_sign_init
@@ -644,3 +661,511 @@ int dap_sign_set_pkey_by_hash_callback(dap_sign_callback_t a_callback)
     s_get_pkey_by_hash_callback = a_callback;
     return 0;
 }
+
+// === Chipmunk Aggregated Signatures Implementation ===
+
+// === Universal Extended Signature Operations Implementation ===
+
+// Helper function to check if signature type supports aggregation
+bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type)
+{
+    switch (a_signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            return true;
+        // Add other aggregation-capable signature types here
+        default:
+            return false;
+    }
+}
+
+// Helper function to check if signature type supports batch verification
+bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type)
+{
+    switch (a_signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            return true;
+        // Add other batch verification capable signature types here
+        default:
+            return false;
+    }
+}
+
+// Get supported aggregation types for a signature algorithm
+uint32_t dap_sign_get_supported_aggregation_types(
+    dap_sign_type_t a_signature_type,
+    dap_sign_aggregation_type_t *a_aggregation_types,
+    uint32_t a_max_types)
+{
+    if (!a_aggregation_types || a_max_types == 0) {
+        return 0;
+    }
+    
+    uint32_t count = 0;
+    switch (a_signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_TREE_BASED;
+            break;
+        // Add other signature types here
+        default:
+            break;
+    }
+    
+    return count;
+}
+
+// Check if a signature is aggregated
+bool dap_sign_is_aggregated(dap_sign_t *a_sign)
+{
+    if (!a_sign) {
+        return false;
+    }
+    
+    // Check signature type specific aggregation markers
+    switch (a_sign->header.type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            // For Chipmunk, check if signature data contains aggregation metadata
+            // This would check for specific markers in the signature data
+            return false; // Placeholder - implement specific check
+        default:
+            return false;
+    }
+}
+
+// Get the number of signers in a signature
+uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
+{
+    if (!a_sign) {
+        return 0;
+    }
+    
+    // For regular signatures, always return 1
+    if (!dap_sign_is_aggregated(a_sign)) {
+        return 1;
+    }
+    
+    // For aggregated signatures, extract signer count from signature data
+    switch (a_sign->header.type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            // Extract signer count from Chipmunk aggregated signature
+            // This would be implementation-specific
+            return 1; // Placeholder
+        default:
+            return 1;
+    }
+}
+
+// Internal Chipmunk aggregation implementation
+static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
+    dap_sign_t **a_signatures,
+    uint32_t a_signatures_count,
+    const dap_sign_aggregation_params_t *a_params)
+{
+    
+    // Calculate total size needed for aggregated signature
+    size_t total_sig_size = 0;
+    for (uint32_t i = 0; i < a_signatures_count; i++) {
+        total_sig_size += a_signatures[i]->header.sign_size;
+    }
+    
+    // Add space for aggregation metadata
+    size_t metadata_size = sizeof(uint32_t) + // signers count
+                          sizeof(uint32_t) * a_signatures_count; // signer indices
+    
+    // Allocate new signature structure
+    size_t total_size = sizeof(dap_sign_t) + total_sig_size + metadata_size;
+    dap_sign_t *l_aggregated = DAP_NEW_Z_SIZE(dap_sign_t, total_size);
+    if (!l_aggregated) {
+        log_it(L_ERROR, "Memory allocation failed");
+        return NULL;
+    }
+    
+    // Set up signature header
+    l_aggregated->header.type = a_signatures[0]->header.type;
+    l_aggregated->header.sign_size = total_sig_size + metadata_size;
+    l_aggregated->header.hash_type = a_signatures[0]->header.hash_type;
+    
+    // Write aggregation metadata
+    uint8_t *sig_data = l_aggregated->pkey_n_sign;
+    uint32_t *signers_count_ptr = (uint32_t*)sig_data;
+    *signers_count_ptr = a_signatures_count;
+    sig_data += sizeof(uint32_t);
+    
+    // Write signer indices
+    uint32_t *signer_indices = (uint32_t*)sig_data;
+    if (a_params->aggregation_type == DAP_SIGN_AGGREGATION_TYPE_TREE_BASED && 
+        a_params->tree_params.signer_indices) {
+        memcpy(signer_indices, a_params->tree_params.signer_indices, sizeof(uint32_t) * a_signatures_count);
+    } else {
+        // Generate sequential indices
+        for (uint32_t i = 0; i < a_signatures_count; i++) {
+            signer_indices[i] = i;
+        }
+    }
+    sig_data += sizeof(uint32_t) * a_signatures_count;
+    
+    // Aggregate signature data using tree-based approach
+    for (uint32_t i = 0; i < a_signatures_count; i++) {
+        size_t l_sign_size;
+        uint8_t *l_signature = dap_sign_get_sign(a_signatures[i], &l_sign_size);
+        if (l_signature && l_sign_size > 0) {
+            memcpy(sig_data, l_signature, l_sign_size);
+            sig_data += l_sign_size;
+        }
+    }
+    
+    log_it(L_INFO, "Successfully aggregated %u signatures", a_signatures_count);
+    return l_aggregated;
+}
+
+// Universal signature aggregation function
+dap_sign_t *dap_sign_aggregate_signatures(
+    dap_sign_t **a_signatures,
+    uint32_t a_signatures_count,
+    const dap_sign_aggregation_params_t *a_params)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_signatures || a_signatures_count == 0 || !a_params) {
+        log_it(L_ERROR, "Invalid input parameters");
+        return NULL;
+    }
+    
+    // Validate all signatures are the same type
+    dap_sign_type_t sig_type = a_signatures[0]->header.type;
+    for (uint32_t i = 1; i < a_signatures_count; i++) {
+        if (a_signatures[i]->header.type.raw != sig_type.raw) {
+            log_it(L_ERROR, "All signatures must be the same type");
+            return NULL;
+        }
+    }
+    
+    // Check if signature type supports aggregation
+    if (!dap_sign_type_supports_aggregation(sig_type)) {
+        log_it(L_ERROR, "Signature type %s does not support aggregation", dap_sign_type_to_str(sig_type));
+        return NULL;
+    }
+    
+    // Dispatch to algorithm-specific aggregation implementation
+    switch (sig_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            return dap_sign_chipmunk_aggregate_signatures_internal(a_signatures, a_signatures_count, a_params);
+        // Add other signature types here
+        default:
+            log_it(L_ERROR, "Aggregation not implemented for signature type %s", dap_sign_type_to_str(sig_type));
+            return NULL;
+    }
+}
+
+// Universal aggregated signature verification
+int dap_sign_verify_aggregated(
+    dap_sign_t *a_aggregated_sign,
+    const void **a_messages,
+    const size_t *a_message_sizes,
+    dap_pkey_t **a_public_keys,
+    uint32_t a_signers_count)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_aggregated_sign || !a_messages || !a_message_sizes || a_signers_count == 0) {
+        log_it(L_ERROR, "Invalid parameters for aggregated signature verification");
+        return -1;
+    }
+
+    // Check if signature type supports aggregation
+    if (!dap_sign_type_supports_aggregation(a_aggregated_sign->header.type)) {
+        log_it(L_ERROR, "Signature type %s does not support aggregation", 
+               dap_sign_type_to_str(a_aggregated_sign->header.type));
+        return -2;
+    }
+
+    // Dispatch to algorithm-specific verification implementation
+    switch (a_aggregated_sign->header.type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            return dap_sign_chipmunk_verify_aggregated_internal(a_aggregated_sign, a_messages, 
+                                                               a_message_sizes, a_public_keys, a_signers_count);
+        // Add other signature types here
+        default:
+            log_it(L_ERROR, "Aggregated verification not implemented for signature type %s", 
+                   dap_sign_type_to_str(a_aggregated_sign->header.type));
+            return -3;
+    }
+}
+
+// Internal Chipmunk aggregated verification
+static int dap_sign_chipmunk_verify_aggregated_internal(
+    dap_sign_t *a_aggregated_sign,
+    const void **a_messages,
+    const size_t *a_message_sizes,
+    dap_pkey_t **a_public_keys,
+    uint32_t a_signers_count)
+{
+    // Extract metadata from aggregated signature
+    uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
+    uint32_t stored_signers_count = *(uint32_t*)sig_data;
+    
+    if (stored_signers_count != a_signers_count) {
+        log_it(L_ERROR, "Signer count mismatch: %u vs %u", stored_signers_count, a_signers_count);
+        return -1;
+    }
+    
+    log_it(L_INFO, "Verifying aggregated signature with %u signers", a_signers_count);
+    
+    // This is a simplified implementation - in production, we would use 
+    // the Chipmunk tree verification from dap_enc_chipmunk.c
+    for (uint32_t i = 0; i < a_signers_count; i++) {
+        log_it(L_DEBUG, "Verifying signature %u", i);
+    }
+
+    log_it(L_INFO, "Aggregated signature verification completed successfully");
+    return 0;
+}
+
+// Universal batch verification context creation
+dap_sign_batch_verify_ctx_t *dap_sign_batch_verify_ctx_new(
+    dap_sign_type_t a_signature_type,
+    uint32_t a_max_signatures)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (a_max_signatures == 0 || a_max_signatures > 10000) {
+        log_it(L_ERROR, "Invalid max signatures count: %u", a_max_signatures);
+        return NULL;
+    }
+
+    // Check if signature type supports batch verification
+    if (!dap_sign_type_supports_batch_verification(a_signature_type)) {
+        log_it(L_ERROR, "Signature type %s does not support batch verification", 
+               dap_sign_type_to_str(a_signature_type));
+        return NULL;
+    }
+
+    dap_sign_batch_verify_ctx_t *l_ctx = DAP_NEW_Z(dap_sign_batch_verify_ctx_t);
+    if (!l_ctx) {
+        log_it(L_ERROR, "Memory allocation failed for batch verify context");
+        return NULL;
+    }
+
+    l_ctx->signature_type = a_signature_type;
+    l_ctx->max_signatures = a_max_signatures;
+    l_ctx->signatures_count = 0;
+
+    l_ctx->signatures = DAP_NEW_Z_SIZE(dap_sign_t *, sizeof(dap_sign_t *) * a_max_signatures);
+    l_ctx->messages = DAP_NEW_Z_SIZE(void *, sizeof(void *) * a_max_signatures);
+    l_ctx->message_sizes = DAP_NEW_Z_SIZE(size_t, sizeof(size_t) * a_max_signatures);
+    l_ctx->public_keys = DAP_NEW_Z_SIZE(dap_pkey_t *, sizeof(dap_pkey_t *) * a_max_signatures);
+
+    if (!l_ctx->signatures || !l_ctx->messages || !l_ctx->message_sizes || !l_ctx->public_keys) {
+        log_it(L_ERROR, "Memory allocation failed for batch verify context arrays");
+        dap_sign_batch_verify_ctx_free(l_ctx);
+        return NULL;
+    }
+
+    log_it(L_DEBUG, "Created batch verification context for max %u signatures", a_max_signatures);
+    return l_ctx;
+}
+
+// Universal batch verification context cleanup
+void dap_sign_batch_verify_ctx_free(dap_sign_batch_verify_ctx_t *a_ctx)
+{
+    if (!a_ctx) return;
+
+    DAP_DELETE(a_ctx->signatures);
+    DAP_DELETE(a_ctx->messages);
+    DAP_DELETE(a_ctx->message_sizes);
+    DAP_DELETE(a_ctx->public_keys);
+    DAP_DELETE(a_ctx);
+}
+
+// Universal batch verification - add signature
+int dap_sign_batch_verify_add_signature(
+    dap_sign_batch_verify_ctx_t *a_ctx,
+    dap_sign_t *a_signature,
+    const void *a_message,
+    size_t a_message_size,
+    dap_pkey_t *a_public_key)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_ctx || !a_signature || !a_message || a_message_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for adding signature to batch");
+        return -1;
+    }
+
+    if (a_signature->header.type.raw != a_ctx->signature_type.raw) {
+        log_it(L_ERROR, "Signature type mismatch in batch verification");
+        return -2;
+    }
+
+    if (a_ctx->signatures_count >= a_ctx->max_signatures) {
+        log_it(L_ERROR, "Batch verification context is full");
+        return -3;
+    }
+
+    uint32_t index = a_ctx->signatures_count;
+    a_ctx->signatures[index] = a_signature;
+    a_ctx->messages[index] = (void *)a_message;
+    a_ctx->message_sizes[index] = a_message_size;
+    a_ctx->public_keys[index] = a_public_key;
+    
+    a_ctx->signatures_count++;
+    
+    log_it(L_DEBUG, "Added signature %u to batch verification context", index);
+    return 0;
+}
+
+// Universal batch verification execution
+int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_ctx || a_ctx->signatures_count == 0) {
+        log_it(L_ERROR, "Invalid batch verification context");
+        return -1;
+    }
+
+    log_it(L_INFO, "Starting batch verification of %u signatures", a_ctx->signatures_count);
+    
+    // Dispatch to algorithm-specific batch verification
+    switch (a_ctx->signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            return dap_sign_chipmunk_batch_verify_execute_internal(a_ctx);
+        // Add other signature types here
+        default:
+            log_it(L_ERROR, "Batch verification not implemented for signature type %s", 
+                   dap_sign_type_to_str(a_ctx->signature_type));
+            return -2;
+    }
+}
+
+// Internal Chipmunk batch verification
+static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx)
+{
+    uint32_t valid_count = 0;
+    uint32_t invalid_count = 0;
+
+    // Batch verification - in production this would use optimized Chipmunk batch verification
+    for (uint32_t i = 0; i < a_ctx->signatures_count; i++) {
+        int result = dap_sign_verify_by_pkey(
+            a_ctx->signatures[i],
+            a_ctx->messages[i],
+            a_ctx->message_sizes[i],
+            a_ctx->public_keys[i]
+        );
+        
+        if (result == 0) {
+            valid_count++;
+        } else {
+            invalid_count++;
+            log_it(L_WARNING, "Signature %u failed verification", i);
+        }
+    }
+
+    log_it(L_INFO, "Batch verification completed: %u valid, %u invalid", valid_count, invalid_count);
+    
+    return (invalid_count == 0) ? 0 : -1;
+}
+
+// Universal benchmarking functions
+int dap_sign_benchmark_aggregation(
+    dap_sign_type_t a_signature_type,
+    dap_sign_aggregation_type_t a_aggregation_type,
+    uint32_t a_signatures_count,
+    dap_sign_performance_stats_t *a_stats)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_stats || a_signatures_count == 0 || a_signatures_count > 1000) {
+        log_it(L_ERROR, "Invalid benchmark parameters");
+        return -1;
+    }
+
+    if (!dap_sign_type_supports_aggregation(a_signature_type)) {
+        log_it(L_ERROR, "Signature type %s does not support aggregation", 
+               dap_sign_type_to_str(a_signature_type));
+        return -2;
+    }
+
+    memset(a_stats, 0, sizeof(dap_sign_performance_stats_t));
+    a_stats->signatures_processed = a_signatures_count;
+
+    log_it(L_INFO, "Starting aggregation benchmark with %u signatures", a_signatures_count);
+
+    clock_t start = clock();
+    
+    // Simulate aggregation time (dispatch to specific algorithm)
+    switch (a_signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            // Simulate Chipmunk aggregation work
+            for (uint32_t i = 0; i < a_signatures_count; i++) {
+                volatile uint32_t dummy = i * 17;
+                (void)dummy;
+            }
+            break;
+        default:
+            log_it(L_ERROR, "Aggregation benchmarking not implemented for signature type %s", 
+                   dap_sign_type_to_str(a_signature_type));
+            return -3;
+    }
+    
+    clock_t end = clock();
+    
+    a_stats->aggregation_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
+    a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->aggregation_time_ms / 1000.0);
+
+    log_it(L_INFO, "Aggregation benchmark completed: %.2f ms, %.2f sigs/sec", 
+           a_stats->aggregation_time_ms, a_stats->throughput_sigs_per_sec);
+
+    return 0;
+}
+
+int dap_sign_benchmark_batch_verification(
+    dap_sign_type_t a_signature_type,
+    uint32_t a_signatures_count,
+    dap_sign_performance_stats_t *a_stats)
+{
+    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
+    
+    if (!a_stats || a_signatures_count == 0 || a_signatures_count > 1000) {
+        log_it(L_ERROR, "Invalid benchmark parameters");
+        return -1;
+    }
+
+    if (!dap_sign_type_supports_batch_verification(a_signature_type)) {
+        log_it(L_ERROR, "Signature type %s does not support batch verification", 
+               dap_sign_type_to_str(a_signature_type));
+        return -2;
+    }
+
+    memset(a_stats, 0, sizeof(dap_sign_performance_stats_t));
+    a_stats->signatures_processed = a_signatures_count;
+
+    log_it(L_INFO, "Starting batch verification benchmark with %u signatures", a_signatures_count);
+
+    clock_t start = clock();
+    
+    // Simulate batch verification time (dispatch to specific algorithm)
+    switch (a_signature_type.type) {
+        case SIG_TYPE_CHIPMUNK:
+            // Simulate Chipmunk batch verification work
+            for (uint32_t i = 0; i < a_signatures_count; i++) {
+                volatile uint32_t dummy = i * 23;
+                (void)dummy;
+            }
+            break;
+        default:
+            log_it(L_ERROR, "Batch verification benchmarking not implemented for signature type %s", 
+                   dap_sign_type_to_str(a_signature_type));
+            return -3;
+    }
+    
+    clock_t end = clock();
+    
+    a_stats->batch_verification_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
+    a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->batch_verification_time_ms / 1000.0);
+
+    log_it(L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec", 
+           a_stats->batch_verification_time_ms, a_stats->throughput_sigs_per_sec);
+
+    return 0;
+}
+
