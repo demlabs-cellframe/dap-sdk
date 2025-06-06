@@ -235,7 +235,7 @@ static int test_performance_variable_signers(size_t num_signers)
     double total_time = timer_end(&total_timer);
     
     // Performance summary
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     log_it(L_INFO, "📊 Performance Summary for %zu signers:", num_signers);
     log_it(L_INFO, "   ⏱️ Total time: %.3f seconds", total_time);
     log_it(L_INFO, "   📈 Throughput: %.1f signatures/second", num_signers / total_time);
@@ -246,7 +246,7 @@ static int test_performance_variable_signers(size_t num_signers)
     log_it(L_INFO, "      • Aggregation: %.3f ms total", aggregation_time * 1000.0);
     log_it(L_INFO, "      • Verification: %.3f ms total", verification_time * 1000.0);
     
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     
 cleanup:
     DAP_DEL_MULTY(private_keys);
@@ -268,7 +268,7 @@ int main(int argc, char *argv[])
     }
     
     log_it(L_INFO, "🔬 Chipmunk Multi-Signature Performance Testing");
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     
     // Default test sizes
     size_t test_sizes[] = {3, 5, 10, 50, 100};
@@ -316,11 +316,11 @@ int main(int argc, char *argv[])
     log_it(L_INFO, "   ⏱️ Total test time: %.3f seconds", overall_time);
     
     if (successful_tests == num_tests) {
-        log_it(L_INFO, "");
+        log_it(L_INFO, " ");
         log_it(L_INFO, "🎉 ALL PERFORMANCE TESTS PASSED!");
         log_it(L_INFO, "🚀 Chipmunk multi-signature scheme is ready for production use.");
     } else {
-        log_it(L_ERROR, "");
+        log_it(L_ERROR, " ");
         log_it(L_ERROR, "❌ Some tests failed. Please check the implementation.");
     }
     

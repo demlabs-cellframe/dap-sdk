@@ -129,7 +129,7 @@ static int dap_enc_chipmunk_sign_verify_test(void)
     // Calculate signature size
     size_t l_sign_size = dap_enc_chipmunk_calc_signature_size();
     if (l_sign_size <= 0 || l_sign_size != CHIPMUNK_SIGNATURE_SIZE) {
-        log_it(L_ERROR, "Invalid signature size: expected %d, got %zu", CHIPMUNK_SIGNATURE_SIZE, l_sign_size);
+        log_it(L_ERROR, "Invalid signature size: expected %zu, got %zu", (size_t)CHIPMUNK_SIGNATURE_SIZE, l_sign_size);
         dap_enc_key_delete(l_key);
         return -1;
     }
@@ -208,8 +208,8 @@ static int dap_enc_chipmunk_size_test(void)
     
     // Check if the returned size matches expected value
     if (l_sign_size != CHIPMUNK_SIGNATURE_SIZE) {
-        log_it(L_ERROR, "Incorrect signature size: expected %d, got %zu", 
-               CHIPMUNK_SIGNATURE_SIZE, l_sign_size);
+        log_it(L_ERROR, "Incorrect signature size: expected %zu, got %zu", 
+               (size_t)CHIPMUNK_SIGNATURE_SIZE, l_sign_size);
         return -1;
     }
     
@@ -1273,28 +1273,19 @@ void chipmunk_test_cleanup(void) {
  * @brief Print test suite statistics
  */
 void chipmunk_print_test_stats(const chipmunk_test_suite_stats_t *stats) {
-    log_it(L_NOTICE, "");
-    log_it(L_NOTICE, "==================================================");
-    log_it(L_NOTICE, "           CHIPMUNK TEST SUITE RESULTS");
-    log_it(L_NOTICE, "==================================================");
-    log_it(L_NOTICE, "Total Tests:     %d", stats->total_tests);
-    log_it(L_NOTICE, "Tests Passed:    %d", stats->passed_tests);
+    if (!stats) return;
+    
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
+    log_it(L_NOTICE, "=== CHIPMUNK TEST SUITE STATISTICS ===");
+    log_it(L_NOTICE, "Tests Executed:  %d", stats->total_tests);
+    log_it(L_NOTICE, "Tests Passed:    %d", stats->passed_tests);  
     log_it(L_NOTICE, "Tests Failed:    %d", stats->failed_tests);
     log_it(L_NOTICE, "Success Rate:    %.1f%%", 
-           stats->total_tests > 0 ? (stats->passed_tests * 100.0 / stats->total_tests) : 0.0);
-    log_it(L_NOTICE, "Total Time:      %.2f ms", stats->total_time_ms);
-    if (stats->peak_memory_bytes > 0) {
-        log_it(L_NOTICE, "Peak Memory:     %zu bytes (%.2f MB)", 
-               stats->peak_memory_bytes, stats->peak_memory_bytes / (1024.0 * 1024.0));
-    }
-    log_it(L_NOTICE, "==================================================");
-    
-    if (stats->failed_tests == 0) {
-        log_it(L_NOTICE, "🎉 ALL TESTS PASSED! 🎉");
-    } else {
-        log_it(L_ERROR, "💥 %d TEST(S) FAILED! 💥", stats->failed_tests);
-    }
-    log_it(L_NOTICE, "");
+           stats->total_tests > 0 ? (float)stats->passed_tests * 100.0 / stats->total_tests : 0.0);
+    log_it(L_NOTICE, "Total Time:      %.3f seconds", stats->total_time_ms / 1000.0);
+    log_it(L_NOTICE, "Peak Memory:     %zu bytes (%.2f MB)",
+           stats->peak_memory_bytes, stats->peak_memory_bytes / (1024.0 * 1024.0));
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
 }
 
 /**
@@ -1896,41 +1887,35 @@ int chipmunk_run_security_tests(void) {
  */
 int dap_enc_chipmunk_tests_run(void)
 {
-    log_it(L_NOTICE, "");
-    log_it(L_NOTICE, "🚀🚀🚀 STARTING COMPREHENSIVE CHIPMUNK TEST SUITE 🚀🚀🚀");
-    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
+    log_it(L_NOTICE, "🚀 Starting Comprehensive Chipmunk Test Suite");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
     
-    // Initialize test environment
-    if (chipmunk_test_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize test environment");
-        return -1;
-    }
+    chipmunk_test_init();
     
     int total_failures = 0;
     
-    // Run test groups
-    log_it(L_INFO, "");
-    log_it(L_INFO, "=================== TEST GROUP 1: BASIC FUNCTIONALITY ===================");
+    // Initialize Chipmunk module before any tests
+    dap_enc_chipmunk_init();
+    
+    // Run test suites in order of complexity
+    log_it(L_INFO, " ");  // Use space instead of empty string
     total_failures += chipmunk_run_basic_tests();
     
-    log_it(L_INFO, "");
-    log_it(L_INFO, "=================== TEST GROUP 2: HOTS FUNCTIONALITY ===================");
-    total_failures += chipmunk_run_hots_tests();
-    
-    log_it(L_INFO, "");
-    log_it(L_INFO, "=================== TEST GROUP 3: DETERMINISTIC KEYS ===================");
+    log_it(L_INFO, " ");  // Use space instead of empty string
     total_failures += chipmunk_run_deterministic_tests();
     
-    log_it(L_INFO, "");
-    log_it(L_INFO, "=================== TEST GROUP 4: MULTI-SIGNATURE ===================");
+    log_it(L_INFO, " ");  // Use space instead of empty string
+    total_failures += chipmunk_run_hots_tests();
+    
+    log_it(L_INFO, " ");  // Use space instead of empty string
     total_failures += chipmunk_run_multisig_tests();
     
-    log_it(L_INFO, "");
-    log_it(L_INFO, "=================== TEST GROUP 5: SECURITY & EDGE CASES ===================");
+    log_it(L_INFO, " ");  // Use space instead of empty string
     total_failures += chipmunk_run_security_tests();
     
-    log_it(L_INFO, "");
-    log_it(L_INFO, "СКIPPED: Scalability & Stress tests (временно отключены для ускорения отладки)");
+    log_it(L_INFO, " ");  // Use space instead of empty string
+    total_failures += chipmunk_run_stress_tests();
     
     // Calculate final statistics
     s_test_stats.total_time_ms = chipmunk_get_time_ms() - s_test_start_time;

@@ -335,7 +335,7 @@ static int test_large_scale_performance(size_t num_signers)
     double signing_rate = num_signers / signing_time;
     double total_rate = num_signers / total_time;
     
-    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
     log_it(L_NOTICE, "🎯 PERFORMANCE SUMMARY for %zu participants:", num_signers);
     log_it(L_NOTICE, "   ⏱️ Total time: %.3f seconds (%.3f ms per participant)", 
            total_time, total_time * 1000.0 / num_signers);
@@ -346,7 +346,7 @@ static int test_large_scale_performance(size_t num_signers)
     log_it(L_NOTICE, "   🔍 Verification: %.3f s", verification_time);
     log_it(L_NOTICE, "   📊 Overall throughput: %.1f participants/sec", total_rate);
     log_it(L_NOTICE, "   💾 Memory usage: %s", memory_str);
-    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
     
     // Cleanup
     for (size_t i = 0; i < num_signers; i++) {
@@ -375,7 +375,7 @@ cleanup_keys:
  */
 static int test_progressive_scale(void) {
     log_it(L_NOTICE, "🚀 PROGRESSIVE SCALE TESTING");
-    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
     
     // Test scales: start small, gradually increase with dynamic allocation
     size_t test_scales[] = {
@@ -407,7 +407,7 @@ static int test_progressive_scale(void) {
         }
         
         log_it(L_NOTICE, "✅ SUCCESS at scale %zu participants", scale);
-        log_it(L_NOTICE, "");
+        log_it(L_NOTICE, " ");  // Use space instead of empty string
         
         // Short pause between tests for system stability
         if (scale >= 1000) {
@@ -433,7 +433,7 @@ int main(int argc, char *argv[]) {
     
     log_it(L_NOTICE, "🚀 CHIPMUNK LARGE-SCALE MULTI-SIGNATURE TESTING");
     log_it(L_NOTICE, "Target: Up to %d participants", CHIPMUNK_TREE_MAX_PARTICIPANTS);
-    log_it(L_NOTICE, "");
+    log_it(L_NOTICE, " ");  // Use space instead of empty string
     
     int result = 0;
     
