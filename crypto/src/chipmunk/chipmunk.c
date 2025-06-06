@@ -308,7 +308,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
  */
 int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message, 
                   size_t a_message_len, uint8_t *a_signature) {
-    log_it(L_INFO, "Starting Chipmunk HOTS signature generation");
+    debug_if(s_debug_more, L_DEBUG , "Starting Chipmunk HOTS signature generation");
     
     if (!a_private_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_sign");
@@ -418,7 +418,7 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
     secure_clean(&l_hots_sk, sizeof(l_hots_sk));
     secure_clean(&l_hots_sig, sizeof(l_hots_sig));
     
-    log_it(L_INFO, "HOTS signature successfully generated");
+    debug_if(s_debug_more, L_DEBUG, "HOTS signature successfully generated");
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
