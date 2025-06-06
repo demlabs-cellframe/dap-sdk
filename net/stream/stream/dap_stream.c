@@ -45,7 +45,7 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_session.h"
 #include "dap_events_socket.h"
-
+#include "dap_enc_base64.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
@@ -412,7 +412,8 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
-
+    s_stream_delete_from_list(a_stream);
+    a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
@@ -428,7 +429,6 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-    s_stream_delete_from_list(a_stream);
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
@@ -445,10 +445,9 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     assert (a_esocket);
 
     dap_stream_t *l_stm = DAP_STREAM(a_esocket);
-    a_esocket->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_esocket->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -557,6 +556,8 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNU
  */
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
+    if (!a_esocket->is_initalized)
+        return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     dap_stream_add_to_list(l_stream);
@@ -660,10 +661,9 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     dap_stream_t *l_stm = DAP_STREAM(a_http_client);
     if (!l_stm)
         return;
-    a_http_client->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_http_client->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -671,7 +671,7 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  * @param a_stream
  * @return
  */
-size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
+size_t dap_stream_data_proc_read(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
     byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
@@ -695,7 +695,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
             ++l_pos;
     }
     debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
-              l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
+                                                                l_processed_size, a_stream->esocket->buf_in_size );
     return l_processed_size;
 }
 
@@ -827,7 +827,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
         dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         if (a_stream->keepalive_timer) {
-            a_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_DELAY;
+            a_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_DELAY * 1000;
             dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
         }
     } break;
@@ -908,8 +908,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if (!l_es) {
-        if(s_debug)
-            log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
+        debug_if(s_debug, L_INFO, "Keepalive for sock uuid %016" DAP_UINT64_FORMAT_x " removed", *l_es_uuid);
         DAP_DELETE(l_es_uuid);
         return false; // Socket is removed from worker
     }
@@ -920,13 +919,12 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         l_stream->is_active = false;
         return true;
     }
-    if (s_debug)
-        log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
+    debug_if(s_debug, L_DEBUG, "Keepalive for sock fd %" DAP_FORMAT_SOCKET " uuid 0x%016" DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
     dap_stream_pkt_hdr_t l_pkt = {};
     l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
     memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
     dap_events_socket_write_unsafe( l_es, &l_pkt, sizeof(l_pkt));
-    l_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_HEARTBEAT;
+    l_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_HEARTBEAT * 1000;
     return true;
 }
 

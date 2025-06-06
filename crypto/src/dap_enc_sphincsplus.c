@@ -241,7 +241,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_public_key(const void* a_public_key, size
     sphincsplus_public_key_t *l_public_key = (sphincsplus_public_key_t *)a_public_key;
 // func work
     sphincsplus_set_params(&l_public_key->params);
-    uint64_t l_public_length = dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_public_key->params);
+    uint64_t l_public_length = dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
     uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_public_key_size(a_public_key);
     uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),

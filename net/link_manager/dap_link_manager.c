@@ -598,12 +598,13 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
 
     if (l_link->active_clusters){
         dap_cluster_link_delete_from_all(l_link->active_clusters, &l_link->addr);
-        if (l_link->is_uplink && l_link->link_manager->callbacks.link_count_changed){
-            for(dap_list_t *it=l_link->uplink.associated_nets;it;it=it->next){
-                dap_managed_net_t *l_net = it->data;
-                l_link->link_manager->callbacks.link_count_changed(l_net->id);
-            }
-        } 
+        if (l_link->is_uplink && l_link->link_manager->callbacks.link_count_changed)
+            l_link->link_manager->callbacks.link_count_changed();
+        for ( dap_list_t *it = l_link->uplink.associated_nets; it; it=it->next ) {
+            dap_managed_net_t *l_net = it->data;
+            if (l_net->active)
+                l_net->uplinks--;
+        }
     }
         
     assert(l_link->active_clusters == NULL);
@@ -721,16 +722,12 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
  */
 void s_links_request(dap_link_manager_t *a_link_manager)
 {
-// func work
     // dynamic link work
     dap_list_t *l_item = NULL;
     DL_FOREACH(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (l_net->active ) {
-            l_net->uplinks = dap_link_manager_links_count(l_net->id);
-            if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num)
-                    a_link_manager->callbacks.link_request(l_net->id);
-        }
+        if (l_net->active && l_net->uplinks < l_net->min_links_num && a_link_manager->callbacks.link_request)
+            a_link_manager->callbacks.link_request(l_net->id);
     }
 }
 
@@ -797,6 +794,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
                     return NULL;
                 }
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);
+            l_net->uplinks++;
         }
     }
     return l_link;

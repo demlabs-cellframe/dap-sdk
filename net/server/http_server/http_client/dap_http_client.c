@@ -572,7 +572,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     if (!l_http_client)
         return false;
-    if (l_http_client->reply_status_code != Http_Status_OK || l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
+    if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
         l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return false;

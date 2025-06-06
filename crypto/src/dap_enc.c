@@ -154,7 +154,7 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,
         break;
     case DAP_ENC_DATA_TYPE_B64:
     case DAP_ENC_DATA_TYPE_B64_URLSAFE: {
-        char *l_tmp_buf = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_DECODE_SIZE(a_buf_in_size));
+        char *l_tmp_buf = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_DECODE_SIZE(a_buf_in_size) + 1);
         size_t l_tmp_size = dap_enc_base64_decode(a_buf_in, a_buf_in_size, l_tmp_buf, a_data_type_in);
         l_ret = a_key->dec_na(a_key, l_tmp_buf, l_tmp_size, a_buf_out, a_buf_out_size_max);
         DAP_DELETE(l_tmp_buf);

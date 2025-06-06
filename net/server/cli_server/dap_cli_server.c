@@ -448,8 +448,16 @@ static void *s_cli_cmd_exec(void *a_arg) {
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n"
-                                            "Processing-Time: %zu\r\n\r\n"
-                                            "%s", dap_strlen(l_ret), dap_nanotime_now() - l_arg->time_start, l_ret);
+                                            "Processing-Time: %zu\r\n"
+                                            "Node-Type: %s\r\n"
+                                            "Node-Version: %s\r\n\r\n"
+                                            "%s", 
+                                            dap_strlen(l_ret), 
+                                            dap_nanotime_now() - l_arg->time_start, 
+                                            dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false)
+                                                ? "Public" : "Private", 
+                                            "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 
+                                             l_ret);
     DAP_DELETE(l_ret);
     dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination and output optimizations

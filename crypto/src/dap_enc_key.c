@@ -648,6 +648,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
 
         .delete_callback =                  dap_enc_sig_multisign_key_delete,
+        .del_sign =                         dap_multi_sign_delete,
         .del_pub_key =                      NULL,
         .del_priv_key =                     NULL,
 
