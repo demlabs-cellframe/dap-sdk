@@ -78,7 +78,7 @@ static int dap_enc_chipmunk_key_generate_test(void)
     // Make sure keys public keys differ
     int l_ret = 0;
     if (l_key1->pub_key_data_size != l_key2->pub_key_data_size) {
-        log_it(L_ERROR, "Different public key sizes: %"DAP_UINT64_FORMAT_U" vs %"DAP_UINT64_FORMAT_U"",
+        log_it(L_ERROR, "Different public key sizes: %zu vs %zu",
                l_key1->pub_key_data_size, l_key2->pub_key_data_size);
         l_ret = -2;
     } else {
@@ -91,7 +91,7 @@ static int dap_enc_chipmunk_key_generate_test(void)
     
     // Make sure private keys differ
     if (l_key1->priv_key_data_size != l_key2->priv_key_data_size) {
-        log_it(L_ERROR, "Different private key sizes: %"DAP_UINT64_FORMAT_U" vs %"DAP_UINT64_FORMAT_U"",
+        log_it(L_ERROR, "Different private key sizes: %zu vs %zu",
                l_key1->priv_key_data_size, l_key2->priv_key_data_size);
         l_ret = -4;
     } else {

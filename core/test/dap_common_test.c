@@ -1,4 +1,5 @@
 #include "dap_common_test.h"
+#include <math.h>
 
 
 #define LOG_TAG "dap_common_test"
