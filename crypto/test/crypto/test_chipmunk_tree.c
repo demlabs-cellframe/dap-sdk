@@ -126,8 +126,8 @@ static bool test_tree_construction() {
     }
 
     // Create test leaf nodes
-    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT; i++) {
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
         // Set unique values for each leaf
         l_leaf_nodes[i].coeffs[0] = i + 1;
@@ -137,7 +137,8 @@ static bool test_tree_construction() {
 
     // Create tree
     chipmunk_tree_t l_tree;
-    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, &l_hasher);
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
         printf("   ❌ Failed to create tree: %d\n", l_ret);
         return false;
@@ -164,7 +165,7 @@ static bool test_tree_construction() {
         return false;
     }
 
-    printf("   ✅ Tree constructed with %d leaves\n", CHIPMUNK_TREE_LEAF_COUNT);
+    printf("   ✅ Tree constructed with %d leaves\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
     printf("   📊 Root coeffs: %d, %d, %d, %d\n", 
            l_root->coeffs[0], l_root->coeffs[1], l_root->coeffs[2], l_root->coeffs[3]);
     return true;
@@ -185,8 +186,8 @@ static bool test_proof_generation() {
     }
 
     // Create diverse leaf nodes
-    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT; i++) {
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         memset(&l_leaf_nodes[i], 0, sizeof(chipmunk_hvc_poly_t));
         // Create more diverse values
         for (int j = 0; j < 4; j++) {
@@ -196,7 +197,8 @@ static bool test_proof_generation() {
 
     // Create tree
     chipmunk_tree_t l_tree;
-    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, &l_hasher);
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
         printf("   ❌ Failed to create tree\n");
         return false;
@@ -299,9 +301,9 @@ static bool test_integration_with_hots() {
     }
 
     // Generate HOTS keys and convert to HVC polynomials
-    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
+    chipmunk_hvc_poly_t l_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
     
-    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT; i++) {
+    for (int i = 0; i < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; i++) {
         uint8_t l_hots_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
         uint8_t l_hots_sk_bytes[CHIPMUNK_PRIVATE_KEY_SIZE];
         
@@ -329,11 +331,12 @@ static bool test_integration_with_hots() {
         }
     }
 
-    printf("   ✅ Generated %d HOTS keys and converted to HVC polynomials\n", CHIPMUNK_TREE_LEAF_COUNT);
+    printf("   ✅ Generated %d HOTS keys and converted to HVC polynomials\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
 
     // Create Merkle tree with real HOTS public keys
     chipmunk_tree_t l_tree;
-    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, &l_hasher);
+    memset(&l_tree, 0, sizeof(l_tree)); // Initialize structure
+    l_ret = chipmunk_tree_new_with_leaf_nodes(&l_tree, l_leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &l_hasher);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
         printf("   ❌ Failed to create tree with HOTS keys: %d\n", l_ret);
         return false;
@@ -345,7 +348,7 @@ static bool test_integration_with_hots() {
            l_root->coeffs[0], l_root->coeffs[1], l_root->coeffs[2], l_root->coeffs[3]);
 
     // Test proof generation for middle index
-    size_t l_test_index = CHIPMUNK_TREE_LEAF_COUNT / 2;
+    size_t l_test_index = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT / 2;
     chipmunk_path_t l_path;
     l_ret = chipmunk_tree_gen_proof(&l_tree, l_test_index, &l_path);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
@@ -402,8 +405,8 @@ int main() {
     
     printf("\n📊 === Test Summary ===\n");
     printf("⏱️  Total time: %.3f seconds\n", l_elapsed);
-    printf("🌳 Tree height: %d levels\n", CHIPMUNK_TREE_HEIGHT);
-    printf("🍃 Leaf count: %d nodes\n", CHIPMUNK_TREE_LEAF_COUNT);
+    printf("🌳 Tree height: %d levels\n", CHIPMUNK_TREE_HEIGHT_DEFAULT);
+    printf("🍃 Leaf count: %d nodes\n", CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
     printf("🔗 HVC modulus: %d\n", CHIPMUNK_HVC_Q);
     printf("📏 HVC width: %d\n", CHIPMUNK_HVC_WIDTH);
     

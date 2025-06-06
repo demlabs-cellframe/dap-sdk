@@ -173,6 +173,27 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
     a_tree->leaf_count = a_leaf_count;
     a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
 
+    // Allocate memory for tree nodes if not already allocated
+    if (!a_tree->leaf_nodes) {
+        a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
+        if (!a_tree->leaf_nodes) {
+            log_it(L_ERROR, "Failed to allocate memory for leaf nodes");
+            return CHIPMUNK_ERROR_MEMORY;
+        }
+    }
+    
+    if (!a_tree->non_leaf_nodes) {
+        a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
+        if (!a_tree->non_leaf_nodes) {
+            log_it(L_ERROR, "Failed to allocate memory for non-leaf nodes");
+            if (a_tree->leaf_nodes) {
+                DAP_DEL_MULTY(a_tree->leaf_nodes);
+                a_tree->leaf_nodes = NULL;
+            }
+            return CHIPMUNK_ERROR_MEMORY;
+        }
+    }
+
     // Copy leaf nodes - check for self-assignment to avoid undefined behavior
     if (a_tree->leaf_nodes != a_leaf_nodes) {
         size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);

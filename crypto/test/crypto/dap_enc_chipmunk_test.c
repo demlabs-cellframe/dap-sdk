@@ -959,6 +959,7 @@ int test_multi_signature_aggregation(void)
     
     // Создаем Merkle деревья для каждого участника
     chipmunk_tree_t trees[num_signers];
+    memset(trees, 0, sizeof(trees)); // Инициализируем массив деревьев
     chipmunk_hvc_hasher_t hasher;
     
     // Инициализируем hasher с тестовым seed
@@ -1138,6 +1139,7 @@ int test_batch_verification(void)
         
         // Создаем деревья и индивидуальные подписи
         chipmunk_tree_t trees[signers_per_batch];
+        memset(trees, 0, sizeof(trees)); // Инициализируем массив деревьев
         chipmunk_individual_sig_t individual_sigs[signers_per_batch];
         
         // Создаем hasher для этого батча
