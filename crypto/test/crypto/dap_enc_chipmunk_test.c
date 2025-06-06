@@ -150,13 +150,13 @@ static int dap_enc_chipmunk_sign_verify_test(void)
     log_it(L_INFO, "Signing test message with Chipmunk algorithm");
     int l_sign_result = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
     
-    // Check if signing was successful
-    if (l_sign_result <= 0) {
+    // Check if signing was successful (0 = success, negative = error in DAP standard)
+    if (l_sign_result != 0) {
         log_it(L_ERROR, "Chipmunk sign failed, error code: %d", l_sign_result);
         l_result = -2;
         // Не возвращаем сразу ошибку, чтобы проверить еще некоторые тестовые случаи
     } else {
-        log_it(L_DEBUG, "Chipmunk sign succeeded, signature size: %d", l_sign_result);
+        log_it(L_DEBUG, "Chipmunk sign succeeded (error code: 0)");
         
         // Verify signature
         log_it(L_INFO, "Verifying Chipmunk signature");
