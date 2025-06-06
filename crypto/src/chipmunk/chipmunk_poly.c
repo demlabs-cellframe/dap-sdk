@@ -420,19 +420,27 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
     memset(l_positions, 0, sizeof(l_positions));
     memset(l_signs, 0, sizeof(l_signs));
 
-    // Generate positions and signs deterministically from hash
+    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем расширенную энтропию
+    // Создаем расширенный hash для большей энтропии
+    uint8_t extended_hash[256];
+    for (size_t i = 0; i < 256; i++) {
+        extended_hash[i] = hash[i % hash_len] ^ (uint8_t)(i + 1);
+    }
+
+    // Generate positions and signs deterministically from extended hash
     int l_coeffs_set = 0;
     int l_hash_offset = 0;
     
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Строгие ограничения на количество попыток
-    const int MAX_ATTEMPTS = MIN(hash_len * 8, 2000);  // Максимум 2000 попыток
+    // Используем больше попыток и расширенный hash
+    const int MAX_ATTEMPTS = 1000;
     int l_attempts = 0;
     
-    while (l_coeffs_set < CHIPMUNK_ALPHA_H && l_attempts < MAX_ATTEMPTS && l_hash_offset < (int)(hash_len - 2)) {
+    while (l_coeffs_set < CHIPMUNK_ALPHA_H && l_attempts < MAX_ATTEMPTS) {
         l_attempts++;
         
-        // Get position from 2 bytes of hash
-        uint16_t l_pos = ((uint16_t)hash[l_hash_offset] | ((uint16_t)hash[l_hash_offset + 1] << 8)) % CHIPMUNK_N;
+        // Get position from 2 bytes of extended hash  
+        uint16_t l_pos = ((uint16_t)extended_hash[l_hash_offset] | 
+                         ((uint16_t)extended_hash[(l_hash_offset + 1) % 256] << 8)) % CHIPMUNK_N;
         
         // Check if this position is already used
         bool l_already_used = false;
@@ -446,16 +454,12 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
         if (!l_already_used) {
             l_positions[l_coeffs_set] = l_pos;
             // Get sign from next byte (bit 0)
-            l_signs[l_coeffs_set] = (hash[(l_hash_offset + 2) % hash_len] & 1) ? 1 : -1;
+            l_signs[l_coeffs_set] = (extended_hash[(l_hash_offset + 2) % 256] & 1) ? 1 : -1;
             l_coeffs_set++;
         }
         
-        l_hash_offset++;
-        
-        // Prevent infinite loop by cycling through hash
-        if (l_hash_offset >= (int)hash_len - 2) {
-            l_hash_offset = 0;  // Wrap around
-        }
+        // Move through extended hash more efficiently
+        l_hash_offset = (l_hash_offset + 3) % 256;
     }
 
     // Set coefficients in polynomial
@@ -468,11 +472,11 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
     if (l_coeffs_set < CHIPMUNK_ALPHA_H) {
         log_it(L_WARNING, "Could not generate full challenge polynomial: got %d/%d coefficients in %d attempts", 
                l_coeffs_set, CHIPMUNK_ALPHA_H, l_attempts);
-        // Продолжаем с частичным полиномом для совместимости
+    } else {
+        log_it(L_DEBUG, "Generated full challenge polynomial with %d coefficients in %d attempts", 
+               l_coeffs_set, l_attempts);
     }
 
-    log_it(L_DEBUG, "Generated challenge polynomial with %d non-zero coefficients in %d attempts", 
-           l_coeffs_set, l_attempts);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 

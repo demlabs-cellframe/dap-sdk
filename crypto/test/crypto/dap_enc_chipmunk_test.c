@@ -411,7 +411,7 @@ static int dap_enc_chipmunk_different_signatures_test(void)
     int l_ret1 = dap_enc_chipmunk_get_sign(l_key1, l_message1, l_message1_len, l_sign1_key1, l_sign_size);
     int l_ret2 = dap_enc_chipmunk_get_sign(l_key2, l_message2, l_message2_len, l_sign2_key2, l_sign_size);
     
-    if (l_ret1 <= 0 || l_ret2 <= 0) {
+    if (l_ret1 != 0 || l_ret2 != 0) {
         log_it(L_ERROR, "Failed to sign messages, error codes: %d, %d", l_ret1, l_ret2);
         dap_enc_key_delete(l_key1);
         dap_enc_key_delete(l_key2);
@@ -507,7 +507,7 @@ static int dap_enc_chipmunk_corrupted_signature_test(void)
     
     // Создаем подпись
     int l_ret = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
-    if (l_ret <= 0) {
+    if (l_ret != 0) {
         log_it(L_ERROR, "Failed to sign message, error code: %d", l_ret);
         dap_enc_key_delete(l_key);
         DAP_DELETE(l_sign);
@@ -670,7 +670,7 @@ static int dap_enc_chipmunk_same_object_signatures_test(void)
     int l_ret1 = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign1, l_sign_size);
     int l_ret2 = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign2, l_sign_size);
     
-    if (l_ret1 <= 0 || l_ret2 <= 0) {
+    if (l_ret1 != 0 || l_ret2 != 0) {
         log_it(L_ERROR, "Failed to sign message, error codes: %d, %d", l_ret1, l_ret2);
         dap_enc_key_delete(l_key);
         DAP_DELETE(l_sign1);
@@ -756,7 +756,7 @@ int test_cross_verification(void)
     
     // Подписываем сообщение первым ключом
     int l_ret1 = dap_enc_chipmunk_get_sign(l_key1, l_message, l_message_len, l_sign1, l_sign_size);
-    if (l_ret1 <= 0) {
+    if (l_ret1 != 0) {
         log_it(L_ERROR, "Failed to sign message with first key, error code: %d", l_ret1);
         DAP_DELETE(l_sign1);
         dap_enc_key_delete(l_key1);
@@ -803,7 +803,7 @@ int test_cross_verification(void)
     
     // Подписываем сообщение вторым ключом
     int l_ret2 = dap_enc_chipmunk_get_sign(l_key2, l_message, l_message_len, l_sign2, l_sign_size);
-    if (l_ret2 <= 0) {
+    if (l_ret2 != 0) {
         log_it(L_ERROR, "Failed to sign message with second key, error code: %d", l_ret2);
         DAP_DELETE(l_sign1);
         DAP_DELETE(l_sign2);
@@ -949,9 +949,8 @@ int test_multi_signature_aggregation(void)
         log_it(L_DEBUG, "Generated keypair for signer %zu", i);
     }
     
-    // Создаем Merkle деревья для каждого участника
-    chipmunk_tree_t trees[num_signers];
-    memset(trees, 0, sizeof(trees)); // Инициализируем массив деревьев
+    // Создаем общее Merkle дерево для всех участников
+    chipmunk_tree_t shared_tree;
     chipmunk_hvc_hasher_t hasher;
     
     // Инициализируем hasher с тестовым seed
@@ -963,38 +962,29 @@ int test_multi_signature_aggregation(void)
         return -2;
     }
     
+    // Создаем массив листьев для всех участников
+    chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
+    memset(leaf_nodes, 0, sizeof(leaf_nodes));
+    
     for (size_t i = 0; i < num_signers; i++) {
-        // Инициализируем пустое дерево
-        int ret = chipmunk_tree_init(&trees[i], &hasher);
-        if (ret != 0) {
-            log_it(L_ERROR, "Failed to initialize tree for signer %zu", i);
-            return -3;
-        }
-        
         // Конвертируем HOTS public key в HVC poly для дерева
-        chipmunk_hvc_poly_t hvc_poly;
-        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &hvc_poly);
+        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
         if (ret != 0) {
             log_it(L_ERROR, "Failed to convert HOTS pk to HVC poly for signer %zu", i);
             return -4;
         }
         
-        // Создаем дерево с одним листом (массив из CHIPMUNK_TREE_LEAF_COUNT_DEFAULT листов)
-        chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
-        leaf_nodes[0] = hvc_poly;  // Первый лист - наш ключ
-        // Остальные листы остаются нулевыми (дерево частично заполнено)
-        for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; j++) {
-            memset(&leaf_nodes[j], 0, sizeof(chipmunk_hvc_poly_t));
-        }
-        
-        ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &hasher);
-        if (ret != 0) {
-            log_it(L_ERROR, "Failed to create tree with leaf nodes for signer %zu", i);
-            return -5;
-        }
-        
-        log_it(L_DEBUG, "Initialized tree for signer %zu", i);
+        log_it(L_DEBUG, "Converted HOTS key to HVC poly for signer %zu", i);
     }
+    
+    // Создаем общее дерево со всеми участниками
+    ret = chipmunk_tree_new_with_leaf_nodes(&shared_tree, leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &hasher);
+    if (ret != 0) {
+        log_it(L_ERROR, "Failed to create shared tree with leaf nodes");
+        return -5;
+    }
+    
+    log_it(L_INFO, "Created shared Merkle tree for %zu signers", num_signers);
     
     // Создаем индивидуальные подписи
     chipmunk_individual_sig_t individual_sigs[num_signers];
@@ -1005,7 +995,7 @@ int test_multi_signature_aggregation(void)
         int ret = chipmunk_create_individual_signature(
             (uint8_t*)test_message, message_len,
             &hots_secret_keys[i], &hots_public_keys[i],
-            &trees[i], 0,  // leaf_index = 0 (единственный лист)
+            &shared_tree, i,  // leaf_index = i (индекс участника в общем дереве)
             &individual_sigs[i]
         );
         
@@ -1022,9 +1012,10 @@ int test_multi_signature_aggregation(void)
     
     log_it(L_INFO, "Aggregating signatures...");
     
-    ret = chipmunk_aggregate_signatures(
+    ret = chipmunk_aggregate_signatures_with_tree(
         individual_sigs, num_signers,
         (uint8_t*)test_message, message_len,
+        &shared_tree,  // Используем общее дерево
         &multi_sig
     );
     
@@ -1060,9 +1051,9 @@ int test_multi_signature_aggregation(void)
     
     // Cleanup
     for (size_t i = 0; i < num_signers; i++) {
-        chipmunk_tree_clear(&trees[i]);
         chipmunk_individual_signature_free(&individual_sigs[i]);
     }
+    chipmunk_tree_clear(&shared_tree);
     chipmunk_multi_signature_free(&multi_sig);
     
     log_it(L_INFO, "Multi-signature aggregation test COMPLETED successfully");
@@ -1169,9 +1160,10 @@ int test_batch_verification(void)
         }
         
         // Агрегируем подписи для этого батча
-        int ret = chipmunk_aggregate_signatures(
+        int ret = chipmunk_aggregate_signatures_with_tree(
             individual_sigs, signers_per_batch,
             (uint8_t*)message, message_len,
+            &trees[0],  // Используем первое дерево
             &multi_sigs[batch]
         );
         

@@ -66,6 +66,8 @@ else
     echo "No modules directory found"
 fi
 echo
+echo "📋 Note: Chipmunk progress integrated into main progress.json (no separate chipmunk_progress.json)"
+echo
 
 echo "✅ Full context loaded!"
 echo 
@@ -73,5 +75,6 @@ echo "🚀 Quick commands:"
 echo "  Load crypto module:    jq . context/modules/crypto.json"
 echo "  Load core module:      jq . context/modules/core.json" 
 echo "  Load net module:       jq . context/modules/net.json"
-echo "  Current task progress: jq '.overall_progress.percentage' context/.local/progress.json"
-echo "  Chipmunk files:        jq '.components.chipmunk.key_files[]' context/modules/crypto.json" 
+echo "  Current task progress: jq '.overall_progress' context/.local/progress.json"
+echo "  Chipmunk status:       jq '.project_integration' context/.local/progress.json"
+echo "  Technical architecture: jq '.technical_architecture' context/.local/progress.json" 

@@ -79,6 +79,10 @@ static void dap_enc_chipmunk_key_new_callback(dap_enc_key_t *key)
         new_key->priv_key_data = NULL;
         new_key->pub_key_data = NULL;
         DAP_DELETE(new_key);
+    } else {
+        // Initialize key with NULL values if creation failed
+        memset(key, 0, sizeof(dap_enc_key_t));
+        key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
     }
 }
 
@@ -104,6 +108,10 @@ static void dap_enc_chipmunk_key_generate_callback(dap_enc_key_t *key, const voi
         new_key->priv_key_data = NULL;
         new_key->pub_key_data = NULL;
         DAP_DELETE(new_key);
+    } else {
+        // Initialize key with NULL values if creation failed
+        memset(key, 0, sizeof(dap_enc_key_t));
+        key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
     }
 }
 

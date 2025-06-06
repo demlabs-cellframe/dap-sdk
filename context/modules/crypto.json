@@ -7,10 +7,10 @@
   "components": {
     "chipmunk": {
       "path": "crypto/src/chipmunk/",
-      "description": "Lattice-based multi-signature scheme - PRODUCTION READY",
-      "status": "production_ready",
-      "completion_date": "2025-06-06",
-      "current_task": "optimization_and_scale_testing",
+      "description": "Lattice-based multi-signature scheme - CRITICAL INTEGRATION ISSUES",
+      "status": "critical_issues",
+      "completion_date": "BLOCKED",
+      "current_task": "fix_integration_failures",
       "achieved_milestones": [
         "✅ Full DAP crypto framework integration",
         "✅ Deterministic key generation from seed",
