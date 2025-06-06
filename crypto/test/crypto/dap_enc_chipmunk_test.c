@@ -35,15 +35,7 @@ static int dap_enc_chipmunk_key_new_test(void)
     // Initialize cryptography module
     dap_enc_chipmunk_init();
     
-    // ДОБАВЛЯЕМ ДИАГНОСТИКУ РАЗМЕРОВ СТРУКТУР
-    log_it(L_NOTICE, "=== STRUCTURE SIZE DIAGNOSTICS IN TEST ===");
-    log_it(L_NOTICE, "sizeof(chipmunk_poly_t) = %zu (expected %d)", 
-           sizeof(chipmunk_poly_t), CHIPMUNK_N * 4);
-    log_it(L_NOTICE, "sizeof(chipmunk_public_key_t) = %zu (expected %d)", 
-           sizeof(chipmunk_public_key_t), CHIPMUNK_PUBLIC_KEY_SIZE);
-    log_it(L_NOTICE, "sizeof(chipmunk_private_key_t) = %zu (expected %d)", 
-           sizeof(chipmunk_private_key_t), CHIPMUNK_PRIVATE_KEY_SIZE);
-    log_it(L_NOTICE, "=================================");
+
     
     // Create a new key
     dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK);

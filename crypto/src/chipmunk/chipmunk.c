@@ -51,7 +51,7 @@
 #define CHIPMUNK_ETA 2  // Error distribution parameter η
 
 // Флаг для расширенного логирования
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 static volatile int g_initialized = 0;
 
@@ -90,46 +90,24 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
                     uint8_t *a_private_key, size_t a_private_key_size) {
     debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting HOTS key generation");
     
-    // CRITICAL DEBUG: Check memory corruption BEFORE allocating anything
-    debug_if(s_debug_more, L_INFO, "=== MEMORY CORRUPTION CHECK ===");
-    debug_if(s_debug_more, L_INFO, "chipmunk_keypair called with:");
-    debug_if(s_debug_more, L_INFO, "  a_public_key = %p, a_public_key_size = %zu", a_public_key, a_public_key_size);
-    debug_if(s_debug_more, L_INFO, "  a_private_key = %p, a_private_key_size = %zu", a_private_key, a_private_key_size);
-    
-    // Check if sizes are reasonable
+    // Check for corruption and parameter validation
     if (a_public_key_size > 100000 || a_private_key_size > 100000) {
         log_it(L_ERROR, "CORRUPTION: Sizes are too large! pub=%zu, priv=%zu", 
                a_public_key_size, a_private_key_size);
         return -1;
     }
     
-    // Check expected sizes
     if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
-        log_it(L_ERROR, "CORRUPTION: Public key size mismatch! Expected %d, got %zu", 
+        log_it(L_ERROR, "Public key size mismatch! Expected %d, got %zu", 
                CHIPMUNK_PUBLIC_KEY_SIZE, a_public_key_size);
         return -1;
     }
     
     if (a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "CORRUPTION: Private key size mismatch! Expected %d, got %zu", 
+        log_it(L_ERROR, "Private key size mismatch! Expected %d, got %zu", 
                CHIPMUNK_PRIVATE_KEY_SIZE, a_private_key_size);
         return -1;
     }
-    
-    debug_if(s_debug_more, L_INFO, "✅ Size check passed - continuing with key generation");
-    debug_if(s_debug_more, L_INFO, "===============================");
-    
-    // ДОБАВЛЯЕМ ДИАГНОСТИКУ РАЗМЕРОВ СТРУКТУР
-    debug_if(s_debug_more, L_INFO, "=== CHIPMUNK STRUCTURE SIZES ===");
-    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_poly_t) = %zu (expected %d)", 
-           sizeof(chipmunk_poly_t), CHIPMUNK_N * 4);
-    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_public_key_t) = %zu (expected %d)", 
-           sizeof(chipmunk_public_key_t), CHIPMUNK_PUBLIC_KEY_SIZE);
-    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_private_key_t) = %zu (expected %d)", 
-           sizeof(chipmunk_private_key_t), CHIPMUNK_PRIVATE_KEY_SIZE);
-    debug_if(s_debug_more, L_INFO, "=================================");
-    
-    log_it(L_DEBUG, "=== STRUCTURE SIZE DIAGNOSTICS ===");
     
     // Проверка параметров
     if (!a_public_key || !a_private_key) {
@@ -137,16 +115,8 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE ||
-        a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Invalid key buffer sizes in chipmunk_keypair: pub %zu (expected %d), priv %zu (expected %d)",
-               a_public_key_size, CHIPMUNK_PUBLIC_KEY_SIZE,
-               a_private_key_size, CHIPMUNK_PRIVATE_KEY_SIZE);
-        return CHIPMUNK_ERROR_INVALID_SIZE;
-    }
-    
     // **ИСПРАВЛЕНИЕ STACK OVERFLOW**: выделяем большие структуры в куче вместо стека
-    log_it(L_DEBUG, "Allocating memory for key structures to prevent stack overflow");
+    debug_if(s_debug_more, L_DEBUG, "Allocating memory for key structures to prevent stack overflow");
     
     // Выделяем память для больших структур в куче
     chipmunk_private_key_t *l_sk = DAP_NEW_Z(chipmunk_private_key_t);
@@ -463,7 +433,7 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
  */
 int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message, 
                     size_t a_message_len, const uint8_t *a_signature) {
-    log_it(L_INFO, "Starting HOTS signature verification");
+    debug_if(s_debug_more, L_DEBUG, "Starting HOTS signature verification");
     
     if (!a_public_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_verify");
@@ -517,11 +487,11 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
                                         &l_hots_sig, &l_hots_params);
     
     if (l_result != 0) {  // Стандартное C соглашение: 0 для успеха, отрицательное для ошибки
-        log_it(L_ERROR, "HOTS signature verification failed: %d", l_result);
+        debug_if(s_debug_more, L_DEBUG, "HOTS signature verification failed: %d", l_result);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
     
-    log_it(L_INFO, "HOTS signature verified successfully");
+    debug_if(s_debug_more, L_DEBUG, "HOTS signature verified successfully");
     return CHIPMUNK_ERROR_SUCCESS;
 }
 

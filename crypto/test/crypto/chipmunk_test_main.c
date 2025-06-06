@@ -77,7 +77,7 @@ int test_chipmunk_signature_only(void) {
  */
 int main(void) {
     // Initialize logging - check environment variable for debug level
-        dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_INFO);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     
     // Initialize Chipmunk module
