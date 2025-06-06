@@ -102,6 +102,7 @@ size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_bob_key, const void
     *a_cypher_msg = l_cypher_msg;
     a_bob_key->shared_key = l_shared_key;
     a_bob_key->shared_key_size = CRYPTO_BYTES;
+    printf("DEBUG Bob kyber: Setting shared_key_size=%zu (CRYPTO_BYTES=%d)\n", a_bob_key->shared_key_size, CRYPTO_BYTES);
     return CRYPTO_CIPHERTEXTBYTES;
 }
 
@@ -128,5 +129,6 @@ size_t dap_enc_kyber512_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_
     DAP_DEL_Z(a_alice_key->shared_key);
     a_alice_key->shared_key = l_shared_key;
     a_alice_key->shared_key_size = CRYPTO_BYTES;
+    printf("DEBUG Alice kyber: Setting shared_key_size=%zu (CRYPTO_BYTES=%d)\n", a_alice_key->shared_key_size, CRYPTO_BYTES);
     return a_alice_key->shared_key_size;
 }
