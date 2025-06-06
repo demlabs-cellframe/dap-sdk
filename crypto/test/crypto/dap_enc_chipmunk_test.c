@@ -887,11 +887,11 @@ int test_hots_verification_diagnostic(void)
                                               &l_signature, &l_params);
     
     if (l_verify_result == 0) {
-        log_it(L_NOTICE, "✅ HOTS verification PASSED! Bug appears to be fixed!");
+        log_it(L_NOTICE, "✅ HOTS verification PASSED!");
         return 0;
     } else {
         log_it(L_ERROR, "❌ HOTS verification FAILED with error code: %d", l_verify_result);
-        log_it(L_ERROR, "This confirms the HOTS verification equation bug is still present");
+        log_it(L_ERROR, "This confirms the HOTS verification equation problem is present");
         return -4;
     }
 }

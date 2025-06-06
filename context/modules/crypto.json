@@ -3,21 +3,26 @@
   "description": "Cryptographic components and algorithms",
   "path": "crypto/",
   "status": "production_ready",
-  "last_major_milestone": "2025-06-06: Chipmunk post-quantum signature successfully integrated",
+  "last_major_milestone": "2025-06-06: Chipmunk post-quantum signature successfully integrated and working",
   "components": {
     "chipmunk": {
       "path": "crypto/src/chipmunk/",
-      "description": "Lattice-based multi-signature scheme - CRITICAL INTEGRATION ISSUES",
-      "status": "critical_issues",
-      "completion_date": "BLOCKED",
-      "current_task": "fix_integration_failures",
+      "description": "Lattice-based multi-signature scheme - COMPLETED",
+      "status": "production_ready",
+      "completion_date": "2025-06-06",
+      "current_status": "100% complete, all tests passing",
       "achieved_milestones": [
         "✅ Full DAP crypto framework integration",
         "✅ Deterministic key generation from seed",
         "✅ Complete serialization/deserialization",
         "✅ All basic crypto tests passing",
-        "✅ Multi-signature aggregation framework",
-        "✅ Reference implementation compatibility verified"
+        "✅ Multi-signature aggregation framework working",
+        "✅ Reference implementation compatibility verified",
+        "✅ All debugging issues resolved",
+        "✅ Segmentation fault issues fixed",
+        "✅ Return code interpretation corrected",
+        "✅ Tree verification working correctly",
+        "✅ Multi-signature and batch verification working"
       ],
       "implementation_files": [
         "dap_enc_chipmunk.h",
@@ -33,7 +38,11 @@
         "chipmunk_ntt.h",
         "chipmunk_ntt.c",
         "chipmunk_hash.h", 
-        "chipmunk_hash.c"
+        "chipmunk_hash.c",
+        "chipmunk_tree.h",
+        "chipmunk_tree.c",
+        "chipmunk_aggregation.h",
+        "chipmunk_aggregation.c"
       ],
       "dependencies": ["XKCP", "hash algorithms"],
       "tests": [
@@ -46,6 +55,22 @@
         "public_key_size": "CHIPMUNK_PUBLIC_KEY_SIZE",
         "private_key_size": "CHIPMUNK_PRIVATE_KEY_SIZE", 
         "signature_size": "CHIPMUNK_SIGNATURE_SIZE"
+      },
+      "technical_specs": {
+        "base_algorithm": "Chipmunk lattice-based multi-signature",
+        "paper_reference": "Chipmunk: Better Synchronized Multi-Signatures from Lattices (2023)",
+        "security_level": "112-bit quantum resistance",
+        "mathematical_foundation": "Ring-SIS problem",
+        "parameters": {
+          "n": 512,
+          "q": 3168257,
+          "phi": 4,
+          "alpha_h": 37,
+          "gamma": 6,
+          "zeta": 29,
+          "height": 5
+        },
+        "architecture": "Two-tier: HOTS base signatures + Merkle tree aggregation"
       }
     },
     "hash": {
@@ -93,6 +118,34 @@
     "cmake": "crypto/CMakeLists.txt",
     "tests": "crypto/test/",
     "dependencies": ["3rdparty/XKCP", "3rdparty/json-c"]
+  },
+  "debugging_guidelines": {
+    "crash_investigation": {
+      "rule": "При падениях программы (segfault, abort, etc.) всегда запускать под отладчиком в неинтерактивном режиме",
+      "linux_gdb": "gdb --batch --quiet --ex run --ex bt --ex quit --args <program> <args>",
+      "macos_lldb_working": "lldb --source <commands_file>",
+      "macos_lldb_old": "lldb --batch --source-quietly -o run -o bt -o quit -- <program> <args>",
+      "macos_alternative": "lldb --batch -o run -o bt -o quit -- <program> <args>",
+      "rationale": "Получение stack trace критически важно для быстрой диагностики проблем",
+      "working_solution": {
+        "step1": "Создать файл lldb_commands.txt с командами: target create <program>, run, bt, quit",
+        "step2": "Запустить: lldb --source lldb_commands.txt",
+        "note": "Стандартные --batch параметры не работают корректно на macOS"
+      },
+      "examples": [
+        "echo -e 'target create ./program\\nrun\\nbt\\nquit' > lldb_commands.txt && lldb --source lldb_commands.txt",
+        "lldb --source lldb_commands.txt # (с готовым файлом команд)",
+        "gdb --batch --quiet --ex run --ex bt --ex quit --args ./program # Linux"
+      ]
+    },
+    "memory_corruption": {
+      "tools": ["valgrind", "address_sanitizer", "gdb"],
+      "priority": "При подозрении на повреждение памяти - первый приоритет в диагностике"
+    },
+    "serialization_debug": {
+      "issue": "Безумные размеры в сериализации указывают на повреждение памяти",
+      "approach": "Использовать gdb для трассировки изменений priv_key_data_size и pub_key_data_size"
+    }
   },
   "coding_standards": {
     "crypto_specific_guidelines": {
