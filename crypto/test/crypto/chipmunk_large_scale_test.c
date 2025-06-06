@@ -70,6 +70,7 @@ static void format_memory_size(size_t bytes, char *buffer, size_t buffer_size) {
  */
 static int test_large_scale_performance(size_t num_signers)
 {
+    int ret = 0;  // Initialize ret to avoid uninitialized variable warning
     double total_timer = get_time_ms();
     
     // Memory usage estimation
@@ -184,7 +185,7 @@ static int test_large_scale_performance(size_t num_signers)
     // Initialize hasher with test seed
     uint8_t hasher_seed[32] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
                               17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
-    int ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
+    ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
     if (ret != 0) {
         log_it(L_ERROR, "ERROR: Failed to initialize HVC hasher");
         goto cleanup;
