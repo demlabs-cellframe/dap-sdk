@@ -500,7 +500,9 @@ void dap_enc_chipmunk_private_key_delete(void *a_priv_key)
 
 void dap_enc_chipmunk_signature_delete(void *a_signature)
 {
-    if (a_signature) {
-        DAP_DELETE(a_signature);
-    }
+    // Note: This callback should only clean up the CONTENTS of the signature,
+    // not the signature buffer itself. The main dap_enc_key_signature_delete()
+    // function will handle freeing the buffer with DAP_DEL_Z().
+    // For Chipmunk, the signature is a simple binary blob, so no internal cleanup needed.
+    (void)a_signature; // Suppress unused parameter warning
 }

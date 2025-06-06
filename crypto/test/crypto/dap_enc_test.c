@@ -490,6 +490,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     dap_enc_key_signature_delete(key_type, sig_buf);
     sig_buf = dap_enc_key_deserialize_sign(key2->type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
+    // sig_buf теперь указывает на новую десериализованную подпись
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
     dap_assert(sig_buf_len < DAP_CHAIN_ATOM_MAX_SIZE, "Check signature size");  // if fail new sign, recheck define in cellframe-sdk
@@ -506,14 +507,14 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
-        is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
+        is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_len);  // Используем sig_buf_len вместо sig_buf_size
         break;
     default:
         is_vefify = 1;
     }
     //dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
-    dap_enc_key_signature_delete(key_type, sig_buf);
+    dap_enc_key_signature_delete(key_type, sig_buf);  // Удаляем десериализованную подпись
 
 
     dap_assert_PIF(!is_vefify, "Check verify signature");
