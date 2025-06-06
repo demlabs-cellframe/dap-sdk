@@ -5,6 +5,7 @@
 #include <assert.h>
 #include "dap_common.h"
 #include "dap_hash.h"
+#include "rand/dap_rand.h"  // Для randombytes
 
 #define LOG_TAG "chipmunk_aggregation"
 
@@ -726,7 +727,7 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
     
     // Генерируем случайные коэффициенты для линейной комбинации
     uint8_t batch_randomness[32];
-    dap_random_bytes(batch_randomness, 32);
+    randombytes(batch_randomness, 32);
     
     // Для каждой подписи в batch
     for (size_t sig_idx = 0; sig_idx < context->signature_count; sig_idx++) {
