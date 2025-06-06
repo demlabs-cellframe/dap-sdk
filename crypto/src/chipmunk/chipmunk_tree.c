@@ -168,6 +168,11 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
 
     log_it(L_DEBUG, "Creating Merkle tree with %zu leaves", a_leaf_count);
 
+    // Initialize tree structure fields for compatibility
+    a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
+    a_tree->leaf_count = a_leaf_count;
+    a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
+
     // Copy leaf nodes - check for self-assignment to avoid undefined behavior
     if (a_tree->leaf_nodes != a_leaf_nodes) {
         size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
@@ -370,4 +375,148 @@ void chipmunk_path_clear(chipmunk_path_t *a_path) {
     if (a_path) {
         memset(a_path, 0, sizeof(*a_path));
     }
+}
+
+// =================LARGE-SCALE SUPPORT FUNCTIONS=================
+
+/**
+ * @brief Calculate required tree height for given participant count
+ */
+uint32_t chipmunk_tree_calculate_height(size_t a_participant_count) {
+    if (a_participant_count <= 1) {
+        return CHIPMUNK_TREE_HEIGHT_MIN;
+    }
+    
+    // Find minimum height where 2^(height-1) >= participant_count
+    uint32_t height = CHIPMUNK_TREE_HEIGHT_MIN;
+    size_t capacity = 1UL << (height - 1);
+    
+    while (capacity < a_participant_count && height < CHIPMUNK_TREE_HEIGHT_MAX) {
+        height++;
+        capacity = 1UL << (height - 1);
+    }
+    
+    return height;
+}
+
+/**
+ * @brief Validate participant count
+ */
+bool chipmunk_tree_validate_participant_count(size_t a_participant_count) {
+    if (a_participant_count == 0 || a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
+        return false;
+    }
+    
+    // Check if we can calculate a valid height
+    uint32_t required_height = chipmunk_tree_calculate_height(a_participant_count);
+    return required_height <= CHIPMUNK_TREE_HEIGHT_MAX;
+}
+
+/**
+ * @brief Get tree statistics for monitoring large-scale operations
+ */
+int chipmunk_tree_get_stats(const chipmunk_tree_t *a_tree,
+                             uint32_t *a_height,
+                             size_t *a_leaf_count, 
+                             size_t *a_memory_usage) {
+    if (!a_tree) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    if (a_height) {
+        *a_height = a_tree->height;
+    }
+    
+    if (a_leaf_count) {
+        *a_leaf_count = a_tree->leaf_count;
+    }
+    
+    if (a_memory_usage) {
+        size_t tree_memory = 0;
+        tree_memory += a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
+        tree_memory += a_tree->non_leaf_count * sizeof(chipmunk_hvc_poly_t);
+        tree_memory += sizeof(chipmunk_tree_t);
+        *a_memory_usage = tree_memory;
+    }
+    
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+/**
+ * @brief Free tree resources (dynamic allocation support)
+ */
+void chipmunk_tree_free(chipmunk_tree_t *a_tree) {
+    if (!a_tree) {
+        return;
+    }
+    
+    // For current implementation with static arrays, just clear
+    // In future dynamic implementation, would free allocated memory
+    chipmunk_tree_clear(a_tree);
+    
+    // Note: In dynamic implementation, would do:
+    // if (a_tree->leaf_nodes) free(a_tree->leaf_nodes);
+    // if (a_tree->non_leaf_nodes) free(a_tree->non_leaf_nodes);
+}
+
+/**
+ * @brief Initialize tree with specific participant count
+ */
+int chipmunk_tree_init_with_size(chipmunk_tree_t *a_tree, 
+                                  size_t a_participant_count,
+                                  const chipmunk_hvc_hasher_t *a_hasher) {
+    if (!a_tree || !a_hasher) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    if (!chipmunk_tree_validate_participant_count(a_participant_count)) {
+        log_it(L_ERROR, "Invalid participant count: %zu", a_participant_count);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
+    
+    // Calculate required tree dimensions
+    uint32_t height = chipmunk_tree_calculate_height(a_participant_count);
+    size_t leaf_count = 1UL << (height - 1);
+    size_t non_leaf_count = leaf_count - 1;
+    
+    // Initialize tree structure
+    a_tree->height = height;
+    a_tree->leaf_count = leaf_count;
+    a_tree->non_leaf_count = non_leaf_count;
+    
+    // For current implementation, use static arrays with bounds checking
+    // In future dynamic implementation, would allocate here
+    if (leaf_count > CHIPMUNK_TREE_LEAF_COUNT_DEFAULT) {
+        log_it(L_WARNING, "Participant count %zu exceeds current static limit %d", 
+               a_participant_count, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+        // Fall back to maximum static size for now
+        a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT;
+        a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
+        a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
+    }
+    
+    // Initialize all nodes to zero
+    memset(a_tree->leaf_nodes, 0, sizeof(a_tree->leaf_nodes));
+    memset(a_tree->non_leaf_nodes, 0, sizeof(a_tree->non_leaf_nodes));
+    
+    log_it(L_INFO, "Initialized tree for %zu participants (height=%u, capacity=%zu)", 
+           a_participant_count, a_tree->height, a_tree->leaf_count);
+    
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+/**
+ * @brief Free path resources
+ */
+void chipmunk_path_free(chipmunk_path_t *a_path) {
+    if (!a_path) {
+        return;
+    }
+    
+    // For current implementation with static arrays, just clear
+    // In future dynamic implementation, would free allocated memory
+    chipmunk_path_clear(a_path);
+    
+    // Note: In dynamic implementation, would do:
+    // if (a_path->nodes) free(a_path->nodes);
 } 

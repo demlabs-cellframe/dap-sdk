@@ -90,20 +90,44 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
                     uint8_t *a_private_key, size_t a_private_key_size) {
     debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting HOTS key generation");
     
+    // CRITICAL DEBUG: Check memory corruption BEFORE allocating anything
+    debug_if(s_debug_more, L_INFO, "=== MEMORY CORRUPTION CHECK ===");
+    debug_if(s_debug_more, L_INFO, "chipmunk_keypair called with:");
+    debug_if(s_debug_more, L_INFO, "  a_public_key = %p, a_public_key_size = %zu", a_public_key, a_public_key_size);
+    debug_if(s_debug_more, L_INFO, "  a_private_key = %p, a_private_key_size = %zu", a_private_key, a_private_key_size);
+    
+    // Check if sizes are reasonable
+    if (a_public_key_size > 100000 || a_private_key_size > 100000) {
+        log_it(L_ERROR, "CORRUPTION: Sizes are too large! pub=%zu, priv=%zu", 
+               a_public_key_size, a_private_key_size);
+        return -1;
+    }
+    
+    // Check expected sizes
+    if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR, "CORRUPTION: Public key size mismatch! Expected %d, got %zu", 
+               CHIPMUNK_PUBLIC_KEY_SIZE, a_public_key_size);
+        return -1;
+    }
+    
+    if (a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "CORRUPTION: Private key size mismatch! Expected %d, got %zu", 
+               CHIPMUNK_PRIVATE_KEY_SIZE, a_private_key_size);
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_INFO, "✅ Size check passed - continuing with key generation");
+    debug_if(s_debug_more, L_INFO, "===============================");
+    
     // ДОБАВЛЯЕМ ДИАГНОСТИКУ РАЗМЕРОВ СТРУКТУР
-    printf("=== CHIPMUNK STRUCTURE SIZES ===\n");
-    printf("sizeof(chipmunk_poly_t) = %zu (expected %d)\n", 
+    debug_if(s_debug_more, L_INFO, "=== CHIPMUNK STRUCTURE SIZES ===");
+    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_poly_t) = %zu (expected %d)", 
            sizeof(chipmunk_poly_t), CHIPMUNK_N * 4);
-    printf("sizeof(chipmunk_public_key_t) = %zu (expected %d)\n", 
+    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_public_key_t) = %zu (expected %d)", 
            sizeof(chipmunk_public_key_t), CHIPMUNK_PUBLIC_KEY_SIZE);
-    printf("sizeof(chipmunk_private_key_t) = %zu (expected %d)\n", 
+    debug_if(s_debug_more, L_INFO, "sizeof(chipmunk_private_key_t) = %zu (expected %d)", 
            sizeof(chipmunk_private_key_t), CHIPMUNK_PRIVATE_KEY_SIZE);
-    printf("offsetof(chipmunk_private_key_t, tr) = %zu\n", 
-           offsetof(chipmunk_private_key_t, tr));
-    printf("offsetof(chipmunk_private_key_t, pk) = %zu\n", 
-           offsetof(chipmunk_private_key_t, pk));
-    printf("=================================\n");
-    fflush(stdout);
+    debug_if(s_debug_more, L_INFO, "=================================");
     
     log_it(L_DEBUG, "=== STRUCTURE SIZE DIAGNOSTICS ===");
     
@@ -121,10 +145,43 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
         return CHIPMUNK_ERROR_INVALID_SIZE;
     }
     
+    // **ИСПРАВЛЕНИЕ STACK OVERFLOW**: выделяем большие структуры в куче вместо стека
+    log_it(L_DEBUG, "Allocating memory for key structures to prevent stack overflow");
+    
+    // Выделяем память для больших структур в куче
+    chipmunk_private_key_t *l_sk = DAP_NEW_Z(chipmunk_private_key_t);
+    chipmunk_public_key_t *l_pk = DAP_NEW_Z(chipmunk_public_key_t);
+    uint8_t *l_pk_bytes = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
+    chipmunk_hots_params_t *l_hots_params = DAP_NEW_Z(chipmunk_hots_params_t);
+    chipmunk_hots_pk_t *l_hots_pk = DAP_NEW_Z(chipmunk_hots_pk_t);
+    chipmunk_hots_sk_t *l_hots_sk = DAP_NEW_Z(chipmunk_hots_sk_t);
+    
+    // Проверяем успешное выделение памяти
+    if (!l_sk || !l_pk || !l_pk_bytes || !l_hots_params || !l_hots_pk || !l_hots_sk) {
+        log_it(L_ERROR, "Failed to allocate memory for key structures");
+        // Освобождаем частично выделенную память
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
+        return CHIPMUNK_ERROR_INIT_FAILED;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Successfully allocated ~52KB memory for key structures in heap");
+    
     // Генерируем основной seed для ключей
     uint8_t l_key_seed[32];
     if (randombytes(l_key_seed, 32) != 0) {
         log_it(L_ERROR, "Failed to generate random key seed");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return CHIPMUNK_ERROR_INIT_FAILED;
     }
     
@@ -132,80 +189,129 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     uint8_t l_rho_seed[32];
     if (randombytes(l_rho_seed, 32) != 0) {
         log_it(L_ERROR, "Failed to generate rho seed");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return CHIPMUNK_ERROR_INIT_FAILED;
     }
     
     // Генерируем HOTS параметры из rho_seed (как при подписи/верификации!)
-    chipmunk_hots_params_t l_hots_params = {0};
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_rho_seed, i) != 0) {
+        if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
             log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
+            // Освобождаем память перед возвратом
+            DAP_DEL_Z(l_sk);
+            DAP_DEL_Z(l_pk);
+            DAP_DEL_Z(l_pk_bytes);
+            DAP_DEL_Z(l_hots_params);
+            DAP_DEL_Z(l_hots_pk);
+            DAP_DEL_Z(l_hots_sk);
             return CHIPMUNK_ERROR_HASH_FAILED;
         }
         // Преобразуем в NTT домен
-        chipmunk_poly_ntt(&l_hots_params.a[i]);
+        chipmunk_poly_ntt(&l_hots_params->a[i]);
     }
     
-    // Генерируем полноценные HOTS ключи
-    chipmunk_hots_pk_t l_hots_pk = {0};
-    chipmunk_hots_sk_t l_hots_sk = {0};
-    
-    if (chipmunk_hots_keygen(l_key_seed, 0, &l_hots_params, &l_hots_pk, &l_hots_sk) != 0) {
+    if (chipmunk_hots_keygen(l_key_seed, 0, l_hots_params, l_hots_pk, l_hots_sk) != 0) {
         log_it(L_ERROR, "Failed to generate HOTS keys");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return CHIPMUNK_ERROR_INTERNAL;
     }
     
-    // Создаем структуры для новых ключей
-    chipmunk_private_key_t l_sk = {0};
-    chipmunk_public_key_t l_pk = {0};
-    
     // Копируем key_seed в приватный ключ
-    memcpy(l_sk.key_seed, l_key_seed, 32);
+    memcpy(l_sk->key_seed, l_key_seed, 32);
     
     // Копируем rho_seed в публичный ключ
-    memcpy(l_pk.rho_seed, l_rho_seed, 32);
+    memcpy(l_pk->rho_seed, l_rho_seed, 32);
     
     // Копируем v0 и v1 из HOTS ключей
-    memcpy(&l_pk.v0, &l_hots_pk.v0, sizeof(chipmunk_poly_t));
-    memcpy(&l_pk.v1, &l_hots_pk.v1, sizeof(chipmunk_poly_t));
+    memcpy(&l_pk->v0, &l_hots_pk->v0, sizeof(chipmunk_poly_t));
+    memcpy(&l_pk->v1, &l_hots_pk->v1, sizeof(chipmunk_poly_t));
     
     // Сохраняем публичный ключ в приватном ключе
-    memcpy(&l_sk.pk, &l_pk, sizeof(l_pk));
+    memcpy(&l_sk->pk, l_pk, sizeof(*l_pk));
     
     // Вычисляем хеш публичного ключа для коммитмента
-    uint8_t l_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
-    int result = chipmunk_public_key_to_bytes(l_pk_bytes, &l_pk);
+    int result = chipmunk_public_key_to_bytes(l_pk_bytes, l_pk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return result;
     }
     
     // Используем SHA3-384 для tr (48 байт)
-    result = dap_chipmunk_hash_sha3_384(l_sk.tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
+    result = dap_chipmunk_hash_sha3_384(l_sk->tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to compute public key hash");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return result;
     }
     
     // Сериализуем ключи для вывода
-    result = chipmunk_private_key_to_bytes(a_private_key, &l_sk);
+    result = chipmunk_private_key_to_bytes(a_private_key, l_sk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize private key");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return result;
     }
     
-    result = chipmunk_public_key_to_bytes(a_public_key, &l_pk);
+    result = chipmunk_public_key_to_bytes(a_public_key, l_pk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
+        // Освобождаем память перед возвратом
+        DAP_DEL_Z(l_sk);
+        DAP_DEL_Z(l_pk);
+        DAP_DEL_Z(l_pk_bytes);
+        DAP_DEL_Z(l_hots_params);
+        DAP_DEL_Z(l_hots_pk);
+        DAP_DEL_Z(l_hots_sk);
         return result;
     }
     
     debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk HOTS keypair");
     
     // Очищаем секретные данные
-    secure_clean(&l_hots_sk, sizeof(l_hots_sk));
-    secure_clean(&l_sk, sizeof(l_sk));
+    secure_clean(l_hots_sk, sizeof(*l_hots_sk));
+    secure_clean(l_sk, sizeof(*l_sk));
     secure_clean(l_key_seed, sizeof(l_key_seed));
+    
+    // **КРИТИЧЕСКИ ВАЖНО**: освобождаем выделенную память
+    DAP_DEL_Z(l_sk);
+    DAP_DEL_Z(l_pk);
+    DAP_DEL_Z(l_pk_bytes);
+    DAP_DEL_Z(l_hots_params);
+    DAP_DEL_Z(l_hots_pk);
+    DAP_DEL_Z(l_hots_sk);
+    
+    debug_if(s_debug_more, L_DEBUG, "Freed allocated memory and completed key generation");
     
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -420,18 +526,18 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     size_t l_offset = 0;
     size_t l_expected_size = 32 + (CHIPMUNK_N * 4 * 2); // rho_seed + v0 + v1
     
-    printf("=== chipmunk_public_key_to_bytes DEBUG ===\n");
-    printf("Expected size: %zu (should be %d)\n", l_expected_size, CHIPMUNK_PUBLIC_KEY_SIZE);
-    printf("Output buffer: %p\n", a_output);
-    printf("CHIPMUNK_N = %d\n", CHIPMUNK_N);
+    debug_if(s_debug_more, L_INFO, "=== chipmunk_public_key_to_bytes DEBUG ===");
+    debug_if(s_debug_more, L_INFO, "Expected size: %zu (should be %d)", l_expected_size, CHIPMUNK_PUBLIC_KEY_SIZE);
+    debug_if(s_debug_more, L_INFO, "Output buffer: %p", a_output);
+    debug_if(s_debug_more, L_INFO, "CHIPMUNK_N = %d", CHIPMUNK_N);
     
     // Write rho_seed (32 bytes)
-    printf("Writing rho_seed at offset %zu\n", l_offset);
+    debug_if(s_debug_more, L_INFO, "Writing rho_seed at offset %zu", l_offset);
     memcpy(a_output + l_offset, a_key->rho_seed, 32);
     l_offset += 32;
     
     // Write v0 polynomial (CHIPMUNK_N * 4 bytes)
-    printf("Writing v0 polynomial at offset %zu (size %d)\n", l_offset, CHIPMUNK_N * 4);
+    debug_if(s_debug_more, L_INFO, "Writing v0 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int32_t l_coeff = a_key->v0.coeffs[i];
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
@@ -442,7 +548,7 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     }
     
     // Write v1 polynomial (CHIPMUNK_N * 4 bytes)
-    printf("Writing v1 polynomial at offset %zu (size %d)\n", l_offset, CHIPMUNK_N * 4);
+    debug_if(s_debug_more, L_INFO, "Writing v1 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int32_t l_coeff = a_key->v1.coeffs[i];
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
@@ -452,8 +558,8 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
         l_offset += 4;
     }
     
-    printf("Total bytes written: %zu\n", l_offset);
-    printf("===========================================\n");
+    debug_if(s_debug_more, L_INFO, "Total bytes written: %zu", l_offset);
+    debug_if(s_debug_more, L_INFO, "===========================================");
     
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -470,27 +576,27 @@ int chipmunk_private_key_to_bytes(uint8_t *a_output, const chipmunk_private_key_
     size_t l_offset = 0;
     size_t l_total_size = 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE;
     
-    printf("=== chipmunk_private_key_to_bytes DEBUG ===\n");
-    printf("Expected total size: %zu\n", l_total_size);
-    printf("Output buffer pointer: %p\n", a_output);
+    debug_if(s_debug_more, L_INFO, "=== chipmunk_private_key_to_bytes DEBUG ===");
+    debug_if(s_debug_more, L_INFO, "Expected total size: %zu", l_total_size);
+    debug_if(s_debug_more, L_INFO, "Output buffer pointer: %p", a_output);
     
     // Write key_seed (32 bytes)
-    printf("Writing key_seed at offset %zu\n", l_offset);
+    debug_if(s_debug_more, L_INFO, "Writing key_seed at offset %zu", l_offset);
     memcpy(a_output + l_offset, a_key->key_seed, 32);
     l_offset += 32;
     
     // Write tr (48 bytes)
-    printf("Writing tr at offset %zu\n", l_offset);
+    debug_if(s_debug_more, L_INFO, "Writing tr at offset %zu", l_offset);
     memcpy(a_output + l_offset, a_key->tr, 48);
     l_offset += 48;
     
     // Write public key
-    printf("Writing public key at offset %zu\n", l_offset);
-    printf("Calling chipmunk_public_key_to_bytes with buffer at %p\n", a_output + l_offset);
+    debug_if(s_debug_more, L_INFO, "Writing public key at offset %zu", l_offset);
+    debug_if(s_debug_more, L_INFO, "Calling chipmunk_public_key_to_bytes with buffer at %p", a_output + l_offset);
     int result = chipmunk_public_key_to_bytes(a_output + l_offset, &a_key->pk);
     
-    printf("chipmunk_public_key_to_bytes returned %d\n", result);
-    printf("===========================================\n");
+    debug_if(s_debug_more, L_INFO, "chipmunk_public_key_to_bytes returned %d", result);
+    debug_if(s_debug_more, L_INFO, "===========================================");
     
     return result;
 }

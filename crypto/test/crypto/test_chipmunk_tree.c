@@ -12,7 +12,11 @@
 #define LOG_TAG "test_chipmunk_tree"
 
 static void print_test_result(const char *test_name, bool result) {
-    printf("🧪 %-30s: %s\n", test_name, result ? "✅ PASS" : "❌ FAIL");
+    if (result) {
+        log_it(L_INFO, "🧪 %-30s: ✅ PASS", test_name);
+    } else {
+        log_it(L_ERROR, "🧪 %-30s: ❌ FAIL", test_name);
+    }
 }
 
 /**
@@ -25,13 +29,13 @@ static bool test_hvc_hasher_init() {
 
     int l_ret = chipmunk_hvc_hasher_init(&l_hasher, l_seed);
     if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        printf("   ❌ Failed to initialize HVC hasher: %d\n", l_ret);
+        log_it(L_ERROR, "   ❌ Failed to initialize HVC hasher: %d", l_ret);
         return false;
     }
 
     // Check that seed was stored
     if (memcmp(l_hasher.seed, l_seed, 32) != 0) {
-        printf("   ❌ Seed not stored correctly\n");
+        log_it(L_ERROR, "   ❌ Seed not stored correctly");
         return false;
     }
 
@@ -46,11 +50,11 @@ static bool test_hvc_hasher_init() {
     }
 
     if (!l_has_nonzero) {
-        printf("   ❌ Matrix appears to be all zeros\n");
+        log_it(L_ERROR, "   ❌ Matrix appears to be all zeros");
         return false;
     }
 
-    printf("   ✅ HVC hasher initialized with non-zero matrix\n");
+    log_it(L_INFO, "   ✅ HVC hasher initialized with non-zero matrix");
     return true;
 }
 

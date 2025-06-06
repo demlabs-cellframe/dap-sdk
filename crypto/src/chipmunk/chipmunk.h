@@ -57,7 +57,7 @@ enum chipmunk_error_t {
 #define CHIPMUNK_N           512             ///< Ring dimension (polynomial degree)
 #define CHIPMUNK_SEC_PARAM   112             ///< Security parameter
 #define CHIPMUNK_ALPHA       16              ///< Non-zero entries in randomizer
-#define CHIPMUNK_HEIGHT      5               ///< Height of the tree
+#define CHIPMUNK_HEIGHT      16              ///< Height of the tree (supports up to 32,768 participants)
 #define CHIPMUNK_ZETA        29              ///< Base of decomposition: coefficients in [-zeta, zeta]
 #define CHIPMUNK_TWO_ZETA_PLUS_ONE 59        ///< Arity: 2 * zeta + 1
 

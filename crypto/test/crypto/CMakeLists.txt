@@ -44,6 +44,9 @@ add_executable(chipmunk_tree_test test_chipmunk_tree.c)
 # Add chipmunk standalone test
 add_executable(chipmunk-test-only chipmunk_test_only.c)
 
+# Add large-scale performance test
+add_executable(chipmunk-large-scale-test chipmunk_large_scale_test.c)
+
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_hots_test dap_test dap_core dap_crypto m)
@@ -53,6 +56,7 @@ target_link_libraries(chipmunk_invntt_fix_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_ntt_debug_simple dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_tree_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test-only dap_crypto dap_core m)
+target_link_libraries(chipmunk-large-scale-test dap_crypto dap_core m)
 
 # Добавляем путь к dap_test.h
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework)
@@ -88,6 +92,11 @@ target_include_directories(chipmunk_tree_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
 target_include_directories(chipmunk-test-only PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+target_include_directories(chipmunk-large-scale-test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+)
 
 add_test(
     NAME crypto-test

@@ -59,7 +59,7 @@ static int test_multi_signature_aggregation(void)
         int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
                                    (uint8_t*)&private_keys[i], sizeof(chipmunk_private_key_t));
         if (ret != 0) {
-            printf("ERROR: Failed to generate keypair for signer %zu", i);
+            log_it(L_ERROR, "ERROR: Failed to generate keypair for signer %zu", i);
             return -1;
         }
         
@@ -70,7 +70,7 @@ static int test_multi_signature_aggregation(void)
         // Генерируем HOTS ключи
         chipmunk_hots_params_t hots_params;
         if (chipmunk_hots_setup(&hots_params) != 0) {
-            printf("ERROR: Failed to setup HOTS params for signer %zu", i);
+            log_it(L_ERROR, "ERROR: Failed to setup HOTS params for signer %zu", i);
             return -1;
         }
         
@@ -80,7 +80,7 @@ static int test_multi_signature_aggregation(void)
         
         if (chipmunk_hots_keygen(hots_seed, counter, &hots_params, 
                                 &hots_public_keys[i], &hots_secret_keys[i]) != 0) {
-            printf("ERROR: Failed to generate HOTS keys for signer %zu", i);
+            log_it(L_ERROR, "ERROR: Failed to generate HOTS keys for signer %zu", i);
             return -1;
         }
         
@@ -100,7 +100,7 @@ static int test_multi_signature_aggregation(void)
                               17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
     int ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
     if (ret != 0) {
-        printf("ERROR: Failed to initialize HVC hasher");
+        log_it(L_ERROR, "ERROR: Failed to initialize HVC hasher");
         return -2;
     }
     
@@ -112,7 +112,7 @@ static int test_multi_signature_aggregation(void)
     for (size_t i = 0; i < num_signers; i++) {
         ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
         if (ret != 0) {
-            printf("ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
+            log_it(L_ERROR, "ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
             return -3;
         }
     }
@@ -120,7 +120,7 @@ static int test_multi_signature_aggregation(void)
     // Создаем дерево со всеми участниками
     ret = chipmunk_tree_new_with_leaf_nodes(&tree, leaf_nodes, num_signers, &hasher);
     if (ret != 0) {
-        printf("ERROR: Failed to create shared tree");
+        log_it(L_ERROR, "ERROR: Failed to create shared tree");
         return -4;
     }
     

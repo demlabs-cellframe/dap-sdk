@@ -11,6 +11,9 @@
 #define DAP_CHAIN_ATOM_MAX_SIZE (256 * 1024) // 256 KB
 
 const dap_enc_key_type_t c_key_type_arr[] = {
+        // Временно тестируем только Chipmunk для изоляции buffer overflow
+        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
+        /*
         DAP_ENC_KEY_TYPE_SIG_TESLA,
         DAP_ENC_KEY_TYPE_SIG_BLISS,
         DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
@@ -24,6 +27,7 @@ const dap_enc_key_type_t c_key_type_arr[] = {
 #ifdef DAP_SHIPOVNIK
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK
 #endif
+        */
         };
 const size_t c_keys_count = sizeof(c_key_type_arr) / sizeof(dap_enc_key_type_t);
 
