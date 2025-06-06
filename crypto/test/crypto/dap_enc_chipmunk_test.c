@@ -1073,8 +1073,8 @@ int test_batch_verification(void)
     const size_t num_batches = 3;
     const size_t signers_per_batch = 2;
     
-    // Массивы тестовых сообщений
-    const char* test_messages[num_batches] = {
+    // Массивы тестовых сообщений (C89 compatible)
+    static const char* test_messages[] = {
         "First batch transaction",
         "Second batch transaction", 
         "Third batch transaction"

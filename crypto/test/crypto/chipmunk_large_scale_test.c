@@ -19,17 +19,17 @@
 // Debug control flag
 static bool s_debug_more = false;
 
-// Timing utilities
+// Timing utilities (renamed to avoid conflict with system timer_t)
 typedef struct {
     struct timeval start;
     struct timeval end;
-} timer_t;
+} chipmunk_timer_t;
 
-static void timer_start(timer_t *timer) {
+static void timer_start(chipmunk_timer_t *timer) {
     gettimeofday(&timer->start, NULL);
 }
 
-static double timer_end(timer_t *timer) {
+static double timer_end(chipmunk_timer_t *timer) {
     gettimeofday(&timer->end, NULL);
     return (timer->end.tv_sec - timer->start.tv_sec) + 
            (timer->end.tv_usec - timer->start.tv_usec) / 1000000.0;
@@ -80,7 +80,7 @@ static void format_memory_size(size_t bytes, char *buffer, size_t buffer_size) {
  */
 static int test_large_scale_performance(size_t num_signers)
 {
-    timer_t total_timer, keygen_timer, tree_timer, signing_timer, aggregation_timer, verification_timer;
+    chipmunk_timer_t total_timer, keygen_timer, tree_timer, signing_timer, aggregation_timer, verification_timer;
     timer_start(&total_timer);
     
     // Memory usage estimation
