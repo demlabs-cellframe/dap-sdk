@@ -173,9 +173,11 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
     memset(a_tree, 0, sizeof(chipmunk_tree_t));
     
     // Calculate dynamic tree dimensions based on actual leaf count
-    a_tree->leaf_count = a_leaf_count;
     a_tree->height = chipmunk_tree_calculate_height(a_leaf_count);
-    a_tree->non_leaf_count = a_leaf_count - 1; // For binary tree: non_leaf_count = leaf_count - 1
+    // For complete binary tree, we need power-of-2 leaves
+    size_t tree_capacity = 1UL << (a_tree->height - 1);
+    a_tree->leaf_count = tree_capacity; // Use full tree capacity, not just a_leaf_count
+    a_tree->non_leaf_count = tree_capacity - 1; // For complete binary tree: non_leaf_count = leaf_count - 1
 
     // Allocate memory for tree nodes - теперь указатели точно NULL
     a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
@@ -192,14 +194,18 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
         return CHIPMUNK_ERROR_MEMORY;
     }
 
-    // Copy leaf nodes - check for self-assignment to avoid undefined behavior
-    if (a_tree->leaf_nodes != a_leaf_nodes) {
-        size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
-        size_t max_copy_size = a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
-        if (copy_size > max_copy_size) {
-            copy_size = max_copy_size;
-        }
-        memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
+    // Copy actual leaf nodes and pad with zeros for unused slots
+    size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
+    if (copy_size > a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t)) {
+        copy_size = a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
+    }
+    memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
+    
+    // Zero out unused leaf slots for complete binary tree
+    if (a_leaf_count < a_tree->leaf_count) {
+        size_t unused_start = a_leaf_count;
+        size_t unused_count = a_tree->leaf_count - a_leaf_count;
+        memset(&a_tree->leaf_nodes[unused_start], 0, unused_count * sizeof(chipmunk_hvc_poly_t));
     }
 
     // Build tree bottom-up using dynamic algorithm
