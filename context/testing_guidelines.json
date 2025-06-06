@@ -1,0 +1,158 @@
+{
+  "version": "1.0",
+  "created": "2025-06-06T13:30:00Z",
+  "title": "DAP SDK Testing Guidelines",
+  "description": "Comprehensive guidelines for writing and maintaining tests in DAP SDK",
+  
+  "logging_rules": {
+    "unit_tests": {
+      "mandatory_format": "DAP_LOG_FORMAT_NO_PREFIX",
+      "rule": "🔴 ОБЯЗАТЕЛЬНО: Всегда используйте NO_PREFIX формат для чистого вывода в unit тестах",
+      "setup_code": "dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);",
+      "rationale": "Обеспечивает читаемый вывод без лишних префиксов времени/модулей для лучшего UX разработки",
+      "example": {
+        "correct": "Test message",
+        "incorrect": "[06/06/25-13:20:30] [INF] [test_module] Test message"
+      }
+    },
+    "integration_tests": {
+      "recommended_format": "DAP_LOG_FORMAT_SIMPLE",
+      "setup_code": "dap_log_set_format(DAP_LOG_FORMAT_SIMPLE);",
+      "rationale": "Минимальная информация о уровне логирования для отладки"
+    },
+    "performance_tests": {
+      "recommended_format": "DAP_LOG_FORMAT_NO_PREFIX",
+      "setup_code": "dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);",
+      "rationale": "Чистый вывод для измерения производительности без лишних накладных расходов"
+    }
+  },
+  
+  "test_structure": {
+    "initialization_template": {
+      "required_steps": [
+        "dap_common_init(\"test_name\", NULL);",
+        "dap_log_level_set(L_DEBUG);",
+        "dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);",
+        "dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);"
+      ],
+      "description": "Стандартная инициализация для unit тестов"
+    },
+    "cleanup_template": {
+      "required_steps": [
+        "dap_log_set_format(original_format);",
+        "dap_log_level_set(original_level);",
+        "dap_common_deinit();"
+      ],
+      "description": "Обязательная очистка после тестов"
+    },
+    "test_function_pattern": {
+      "naming": "static void s_test_<functionality>()",
+      "structure": [
+        "Save original settings",
+        "Setup test environment",
+        "Run test logic with assertions",
+        "Restore original settings"
+      ]
+    }
+  },
+  
+  "assertion_guidelines": {
+    "preferred_macro": "dap_assert(condition, \"Descriptive message\")",
+    "message_style": "English for technical assertions, Russian for user-facing messages",
+    "examples": {
+      "good": "dap_assert(result == 0, \"Signature verification should succeed\")",
+      "bad": "assert(result == 0)"
+    }
+  },
+  
+  "performance_testing": {
+    "timing_approach": "Use clock() for micro-benchmarks",
+    "iteration_count": "1000 iterations for meaningful measurements",
+    "comparison_rule": "New implementation should not be >2x slower than baseline",
+    "logging_format": "DAP_LOG_FORMAT_NO_PREFIX for clean output"
+  },
+  
+  "module_specific_rules": {
+    "crypto_tests": {
+      "key_generation": "Always use deterministic seeds for reproducible tests",
+      "signature_tests": "Test both valid and invalid signatures",
+      "performance": "Measure key generation, signing, and verification separately"
+    },
+    "core_tests": {
+      "memory_management": "Test for memory leaks using valgrind-compatible patterns",
+      "cross_platform": "Ensure tests work on all supported platforms",
+      "builtin_functions": "Use DAP wrapper macros instead of direct __builtin_* calls"
+    },
+    "net_tests": {
+      "timeout_handling": "Always include timeout tests for network operations",
+      "error_simulation": "Test error conditions and recovery paths"
+    }
+  },
+  
+  "file_organization": {
+    "test_files": {
+      "naming": "<module>_test.c and <module>_test.h",
+      "location": "<module>/test/ directory",
+      "main_function": "<module>_test_run()"
+    },
+    "test_data": {
+      "location": "<module>/test/data/ if needed",
+      "format": "Binary files for test vectors, JSON for configuration"
+    }
+  },
+  
+  "common_patterns": {
+    "save_restore_settings": {
+      "pattern": "Save original -> Modify -> Test -> Restore",
+      "code_example": "dap_log_format_t original = dap_log_get_format();"
+    },
+    "test_module_header": {
+      "required": "dap_print_module_name(\"module_name\");",
+      "description": "Provides clear section separation in test output"
+    },
+    "error_testing": {
+      "approach": "Test both success and failure paths",
+      "assertion_style": "Verify expected error codes and messages"
+    }
+  },
+  
+  "best_practices": {
+    "do": [
+      "Always use NO_PREFIX format for unit tests",
+      "Save and restore original settings",
+      "Use descriptive assertion messages",
+      "Test both success and error paths",
+      "Include performance measurements for crypto operations",
+      "Use deterministic test data when possible"
+    ],
+    "dont": [
+      "Use timestamps in unit test logs",
+      "Leave test environment modified after test completion",
+      "Use bare assert() without descriptive messages",
+      "Skip testing error conditions",
+      "Hardcode platform-specific assumptions"
+    ]
+  },
+  
+  "examples": {
+    "minimal_test": {
+      "description": "Простейший unit test с правильной настройкой логирования",
+      "code": [
+        "#include \"../include/dap_common.h\"",
+        "",
+        "void simple_test_run() {",
+        "    dap_common_init(\"simple_test\", NULL);",
+        "    dap_log_level_set(L_DEBUG);",
+        "    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);",
+        "    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);",
+        "    ",
+        "    // Test logic here",
+        "    dap_assert(1 == 1, \"Basic assertion test\");",
+        "    log_it(L_INFO, \"Test completed successfully\");",
+        "    ",
+        "    dap_common_deinit();",
+        "}"
+      ]
+    }
+  }
+} 

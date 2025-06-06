@@ -46,9 +46,9 @@ void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex
 
     //int32_t type = 2;
     key->priv_key_data_size = sizeof(dilithium_private_key_t);
-    key->pub_key_data_size = sizeof(dilithium_public_key_t);
+    key->pub_key_size = sizeof(dilithium_public_key_t);
     key->priv_key_data = malloc(key->priv_key_data_size);
-    key->pub_key_data = malloc(key->pub_key_data_size);
+    key->pub_key_data = malloc(key->pub_key_size);
 
     retcode = dilithium_crypto_sign_keypair(
             (dilithium_public_key_t *) key->pub_key_data,
@@ -95,7 +95,7 @@ void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *a_key)
 
     a_key->pub_key_data = NULL;
     a_key->priv_key_data = NULL;
-    a_key->pub_key_data_size = 0;
+    a_key->pub_key_size = 0;
     a_key->priv_key_data_size = 0;
 }
 

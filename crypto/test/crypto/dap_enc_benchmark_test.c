@@ -34,6 +34,8 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
 {
     dap_enc_key_t **l_alice_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times);
     dap_enc_key_t **l_bob_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times, l_alice_keys);
+    void **l_ciphertexts = DAP_NEW_Z_COUNT_RET_IF_FAIL(void*, a_times, l_alice_keys, l_bob_keys);
+    size_t *l_ciphertext_sizes = DAP_NEW_Z_COUNT_RET_IF_FAIL(size_t, a_times, l_alice_keys, l_bob_keys, l_ciphertexts);
 
     int l_t1 = get_cur_time_msec();
 
@@ -48,26 +50,52 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         l_bob_keys[i] = dap_enc_key_new(a_key_type);
-        l_bob_keys[i]->pub_key_data_size = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, (void**)&l_bob_keys[i]->pub_key_data);
-        dap_assert_PIF(l_bob_keys[i]->pub_key_data_size, "Bob shared key gen");
+        l_ciphertext_sizes[i] = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, &l_ciphertexts[i]);
+        dap_assert_PIF(l_ciphertext_sizes[i], "Bob shared key gen");
     }
     l_t2 = get_cur_time_msec();
     *a_bob_shared = l_t2 - l_t1;
 
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
-        l_alice_keys[i]->gen_alice_shared_key(l_alice_keys[i], l_alice_keys[i]->priv_key_data, l_bob_keys[i]->pub_key_data_size, l_bob_keys[i]->pub_key_data);
+        l_alice_keys[i]->gen_alice_shared_key(l_alice_keys[i], l_alice_keys[i]->priv_key_data, l_ciphertext_sizes[i], (uint8_t*)l_ciphertexts[i]);
     }
     l_t2 = get_cur_time_msec();
     *a_alice_shared = l_t2 - l_t1;
 
     for(int i = 0; i < a_times; ++i) {
-        int l_cmp = memcmp(l_alice_keys[i]->shared_key, l_bob_keys[i]->shared_key, l_alice_keys[i]->shared_key_size);
+        // For KEM algorithms (like MSRLN, KYBER), shared secrets are stored in shared_key field, not priv_key_data
+        void *alice_shared = NULL;
+        void *bob_shared = NULL;
+        size_t shared_size = 0;
+        
+        if (a_key_type == DAP_ENC_KEY_TYPE_MSRLN || a_key_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
+            // For KEM: use shared_key field
+            alice_shared = l_alice_keys[i]->shared_key;
+            bob_shared = l_bob_keys[i]->shared_key;
+            shared_size = l_alice_keys[i]->shared_key_size;
+        } else {
+            // For traditional encryption: use priv_key_data
+            alice_shared = l_alice_keys[i]->priv_key_data;
+            bob_shared = l_bob_keys[i]->priv_key_data;
+            shared_size = l_alice_keys[i]->priv_key_data_size;
+        }
+        
+
+        
+        dap_assert_PIF(alice_shared && bob_shared, "Both shared secrets are valid");
+        dap_assert_PIF(shared_size > 0, "Shared secret size is valid");
+        
+        int l_cmp = memcmp(alice_shared, bob_shared, shared_size);
         dap_assert_PIF(!l_cmp, "Session keys equals");
         dap_enc_key_delete(l_alice_keys[i]);
         dap_enc_key_delete(l_bob_keys[i]);
     }
-    DAP_DEL_MULTY(l_alice_keys, l_bob_keys);
+    // Cleanup ciphertexts
+    for(int i = 0; i < a_times; ++i) {
+        DAP_DELETE(l_ciphertexts[i]);
+    }
+    DAP_DEL_MULTY(l_alice_keys, l_bob_keys, l_ciphertexts, l_ciphertext_sizes);
 }
 
 static void s_transfer_test_benchmark(const char *a_name, dap_enc_key_type_t a_key_type, int a_times) {
@@ -266,7 +294,7 @@ static void s_sign_verify_test_becnhmark(const char *a_name, dap_enc_key_type_t 
 static void s_transfer_tests_run(int a_times)
 {
     dap_init_test_case();
-    s_transfer_test_benchmark("NEWHOPE", DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM, a_times);
+    // NEWHOPE removed - obsolete algorithm
     s_transfer_test_benchmark("KYBER512", DAP_ENC_KEY_TYPE_KEM_KYBER512, a_times);
     s_transfer_test_benchmark("MSRLN", DAP_ENC_KEY_TYPE_MSRLN, a_times);
     dap_cleanup_test_case();

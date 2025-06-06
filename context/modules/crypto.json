@@ -1,0 +1,219 @@
+{
+  "module": "crypto",
+  "description": "Cryptographic components and algorithms",
+  "path": "crypto/",
+  "status": "production_ready",
+  "last_major_milestone": "2025-06-06: Chipmunk post-quantum signature successfully integrated and working",
+  "components": {
+    "chipmunk": {
+      "path": "crypto/src/chipmunk/",
+      "description": "Lattice-based multi-signature scheme - COMPLETED",
+      "status": "production_ready",
+      "completion_date": "2025-06-06",
+      "current_status": "100% complete, all tests passing",
+      "achieved_milestones": [
+        "✅ Full DAP crypto framework integration",
+        "✅ Deterministic key generation from seed",
+        "✅ Complete serialization/deserialization",
+        "✅ All basic crypto tests passing",
+        "✅ Multi-signature aggregation framework working",
+        "✅ Reference implementation compatibility verified",
+        "✅ All debugging issues resolved",
+        "✅ Segmentation fault issues fixed",
+        "✅ Return code interpretation corrected",
+        "✅ Tree verification working correctly",
+        "✅ Multi-signature and batch verification working"
+      ],
+      "implementation_files": [
+        "dap_enc_chipmunk.h",
+        "dap_enc_chipmunk.c"
+      ],
+      "core_algorithm_files": [
+        "chipmunk.h",
+        "chipmunk.c", 
+        "chipmunk_hots.h",
+        "chipmunk_hots.c",
+        "chipmunk_poly.h",
+        "chipmunk_poly.c",
+        "chipmunk_ntt.h",
+        "chipmunk_ntt.c",
+        "chipmunk_hash.h", 
+        "chipmunk_hash.c",
+        "chipmunk_tree.h",
+        "chipmunk_tree.c",
+        "chipmunk_aggregation.h",
+        "chipmunk_aggregation.c"
+      ],
+      "dependencies": ["XKCP", "hash algorithms"],
+      "tests": [
+        "crypto/test/crypto/chipmunk_hots_test.c",
+        "crypto/test/crypto/dap_enc_chipmunk_test.c",
+        "Integrated in main crypto-test suite"
+      ],
+      "key_type": "DAP_ENC_KEY_TYPE_SIG_CHIPMUNK (0x0108)",
+      "constants": {
+        "public_key_size": "CHIPMUNK_PUBLIC_KEY_SIZE",
+        "private_key_size": "CHIPMUNK_PRIVATE_KEY_SIZE", 
+        "signature_size": "CHIPMUNK_SIGNATURE_SIZE"
+      },
+      "technical_specs": {
+        "base_algorithm": "Chipmunk lattice-based multi-signature",
+        "paper_reference": "Chipmunk: Better Synchronized Multi-Signatures from Lattices (2023)",
+        "security_level": "112-bit quantum resistance",
+        "mathematical_foundation": "Ring-SIS problem",
+        "parameters": {
+          "n": 512,
+          "q": 3168257,
+          "phi": 4,
+          "alpha_h": 37,
+          "gamma": 6,
+          "zeta": 29,
+          "height": 5
+        },
+        "architecture": "Two-tier: HOTS base signatures + Merkle tree aggregation"
+      }
+    },
+    "hash": {
+      "path": "crypto/src/hash/",
+      "description": "Hash function implementations",
+      "components": ["sha2-256", "sha3", "XKCP"],
+      "status": "stable"
+    },
+    "kyber": {
+      "path": "crypto/src/Kyber/",
+      "description": "Post-quantum key encapsulation",
+      "variants": ["kyber512", "kyber768", "kyber1024"],
+      "status": "implemented"
+    },
+    "falcon": {
+      "path": "crypto/src/falcon/",
+      "description": "Lattice-based digital signatures",
+      "status": "implemented"
+    },
+    "sphincsplus": {
+      "path": "crypto/src/sphincsplus/",
+      "description": "Hash-based signatures",
+      "status": "implemented"
+    },
+    "bliss": {
+      "path": "crypto/src/sig_bliss/",
+      "description": "Bimodal Lattice Signature Scheme",
+      "status": "implemented"
+    },
+    "dilithium": {
+      "path": "crypto/src/sig_dilithium/",
+      "description": "Lattice-based digital signatures",
+      "status": "implemented"
+    }
+  },
+  "integration": {
+    "dap_framework": "crypto/include/dap_enc_*.h",
+    "key_types": [
+      "DAP_ENC_KEY_TYPE_SIG_CHIPMUNK",
+      "DAP_ENC_KEY_TYPE_KYBER512",
+      "DAP_ENC_KEY_TYPE_FALCON"
+    ]
+  },
+  "build_system": {
+    "cmake": "crypto/CMakeLists.txt",
+    "tests": "crypto/test/",
+    "dependencies": ["3rdparty/XKCP", "3rdparty/json-c"]
+  },
+  "debugging_guidelines": {
+    "crash_investigation": {
+      "rule": "При падениях программы (segfault, abort, etc.) всегда запускать под отладчиком в неинтерактивном режиме",
+      "linux_gdb": "gdb --batch --quiet --ex run --ex bt --ex quit --args <program> <args>",
+      "macos_lldb_working": "lldb --source <commands_file>",
+      "macos_lldb_old": "lldb --batch --source-quietly -o run -o bt -o quit -- <program> <args>",
+      "macos_alternative": "lldb --batch -o run -o bt -o quit -- <program> <args>",
+      "rationale": "Получение stack trace критически важно для быстрой диагностики проблем",
+      "working_solution": {
+        "step1": "Создать файл lldb_commands.txt с командами: target create <program>, run, bt, quit",
+        "step2": "Запустить: lldb --source lldb_commands.txt",
+        "note": "Стандартные --batch параметры не работают корректно на macOS"
+      },
+      "examples": [
+        "echo -e 'target create ./program\\nrun\\nbt\\nquit' > lldb_commands.txt && lldb --source lldb_commands.txt",
+        "lldb --source lldb_commands.txt # (с готовым файлом команд)",
+        "gdb --batch --quiet --ex run --ex bt --ex quit --args ./program # Linux"
+      ]
+    },
+    "memory_corruption": {
+      "tools": ["valgrind", "address_sanitizer", "gdb"],
+      "priority": "При подозрении на повреждение памяти - первый приоритет в диагностике"
+    },
+    "serialization_debug": {
+      "issue": "Безумные размеры в сериализации указывают на повреждение памяти",
+      "approach": "Использовать gdb для трассировки изменений priv_key_data_size и pub_key_data_size"
+    }
+  },
+  "coding_standards": {
+    "crypto_specific_guidelines": {
+      "last_updated": "2025-06-06",
+      "based_on_chipmunk_integration": "Proven patterns from successful Chipmunk implementation",
+      "signature_algorithm_integration": {
+        "callback_registration": {
+          "description": "All crypto algorithms must register callbacks in s_callbacks[] array in dap_enc_key.c",
+          "required_callbacks": [
+            "new_callback - Key generation from random seed",
+            "new_generate_callback - Key generation with parameters", 
+            "delete_callback - Memory cleanup",
+            "sign_get - Create digital signature",
+            "sign_verify - Verify digital signature",
+            "ser_sign / deser_sign - Signature serialization",
+            "ser_priv_key / deser_priv_key - Private key serialization", 
+            "ser_pub_key / deser_pub_key - Public key serialization",
+            "deser_sign_size - Calculate signature size for unserialized output",
+            "deser_priv_key_size - Private key size calculation",
+            "deser_pub_key_size - Public key size calculation"
+          ],
+          "example_location": "crypto/src/dap_enc_key.c [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK] entry",
+          "critical_note": "Missing any callback will cause runtime crashes in main crypto test suite"
+        },
+        "signature_function_conventions": {
+          "sign_get_return": "Must return 0 on successful signature creation, negative error code on failure",
+          "sign_verify_return": "Must return 0 on successful verification, negative error code on failure",
+          "size_calculation": "Must implement deser_sign_size callback for dap_sign_create_output_unserialized_calc_size()",
+          "memory_management": "All signature data must be managed through DAP_NEW/DAP_DELETE macros"
+        },
+        "switch_statement_coverage": {
+          "description": "All switch statements handling signature types must include new algorithm case",
+          "mandatory_locations": [
+            "dap_sign.c: dap_sign_type_from_key_type() - Map key type to signature type",
+            "dap_sign.c: dap_sign_type_to_key_type() - Map signature type to key type",
+            "dap_sign.c: dap_sign_type_to_str() - String representation",
+            "dap_sign.c: dap_sign_type_from_str() - Parse from string",
+            "dap_sign.c: dap_sign_create_output() - Signature creation dispatcher",
+            "dap_sign.c: signature verification switch - Verification dispatcher",
+            "dap_enc_test.c: test_serialize_deserialize_pub_priv() - Integration test"
+          ],
+          "requirement": "Missing any switch case will cause 'missing support' runtime errors"
+        },
+        "deterministic_key_generation": {
+          "requirement": "All signature algorithms should support both random and seed-based key generation",
+          "pattern": "algorithm_keypair() for random, algorithm_keypair_from_seed() for deterministic",
+          "use_case": "Deterministic keys enable reproducible testing and wallet key derivation"
+        }
+      },
+      "testing_requirements": {
+        "integration_testing": {
+          "main_suite": "Must pass all tests in crypto/test/crypto/crypto-test executable",
+          "coverage": "Algorithm must work with existing DAP encryption framework without modifications"
+        },
+        "unit_testing": {
+          "algorithm_specific": "Separate test files for algorithm internals (e.g., chipmunk_hots_test.c)",
+          "dap_integration": "Dedicated integration test (e.g., dap_enc_chipmunk_test.c)"
+        },
+        "serialization_testing": {
+          "requirement": "Must support full serialize/deserialize cycle for keys and signatures",
+          "test_coverage": "Both binary serialization and DAP protocol serialization"
+        }
+      },
+      "performance_guidelines": {
+        "memory_efficiency": "Minimize heap allocations in signature operations",
+        "security_practices": "Use secure memory clearing for private keys",
+        "debugging_support": "Include conditional debug logging for troubleshooting integration issues"
+      }
+    }
+  }
+} 
