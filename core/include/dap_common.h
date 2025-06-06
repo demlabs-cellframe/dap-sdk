@@ -641,6 +641,11 @@ extern "C" {
             }                                                   \
             (_a);                                                 \
         })
+
+        // Define test versions of dap_add/sub/mul that use builtin functions
+        #define dap_add(a,b) dap_add_builtin(a,b)
+        #define dap_sub(a,b) dap_sub_builtin(a,b)
+        #define dap_mul(a,b) dap_mul_builtin(a,b)
         #else
         // macOS/Clang compatible version using __builtin_*_overflow
         #define dap_add_builtin(a,b)                            \
@@ -672,10 +677,15 @@ extern "C" {
             }                                                   \
             (_a);                                                 \
         })
+
+        // Define test versions of dap_add/sub/mul that use builtin functions
+        #define dap_add(a,b) dap_add_builtin(a,b)
+        #define dap_sub(a,b) dap_sub_builtin(a,b)
+        #define dap_mul(a,b) dap_mul_builtin(a,b)
         #endif
     #endif
     
-    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
+    #if !defined(DAP_CORE_TESTS) && ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
         #define dap_add(a,b)                                \
         ({                                                          \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
