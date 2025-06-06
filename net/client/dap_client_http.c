@@ -511,37 +511,35 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
         // Close current connection
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         
-        // Create redirect context for async request
-        dap_client_http_async_context_t *l_redirect_ctx = DAP_NEW_Z(dap_client_http_async_context_t);
-        if(!l_redirect_ctx) {
-            log_it(L_ERROR, "Failed to allocate redirect context");
-            DAP_DELETE(l_new_path);
-            return false;
-        }
-        
         // Check if this was an async request originally
         bool l_is_async = (a_client_http->error_callback == s_async_error_callback);
+        dap_client_http_async_context_t *l_redirect_ctx = NULL;
         
         if (l_is_async && a_client_http->callbacks_arg) {
-            // Original request was async, extract real callbacks from context
-            dap_client_http_async_context_t *l_orig_ctx = (dap_client_http_async_context_t *)a_client_http->callbacks_arg;
-            l_redirect_ctx->response_callback = l_orig_ctx->response_callback;
-            l_redirect_ctx->simple_response_callback = l_orig_ctx->simple_response_callback;
-            l_redirect_ctx->error_callback = l_orig_ctx->error_callback;
-            l_redirect_ctx->user_arg = l_orig_ctx->user_arg;
-            l_redirect_ctx->started_callback = l_orig_ctx->started_callback;
-            l_redirect_ctx->progress_callback = l_orig_ctx->progress_callback;
-            l_redirect_ctx->streaming_mode = l_orig_ctx->streaming_mode;
-            l_redirect_ctx->streamed_body_size = l_orig_ctx->streamed_body_size;
+            // Reuse existing async context - much more efficient than allocating new one
+            l_redirect_ctx = (dap_client_http_async_context_t *)a_client_http->callbacks_arg;
+            
+            // Reset redirect-specific fields for new request
+            l_redirect_ctx->streamed_body_size = 0;  // New request, reset streamed data counter
+            l_redirect_ctx->streaming_mode = DAP_HTTP_STREAMING_UNDETERMINED;  // Re-determine for new server
+            l_redirect_ctx->redirect_count = a_client_http->redirect_count + 1;
+            
+            // All callbacks and user_arg remain the same - no copying needed!
         } else {
-            // Original request was sync
+            // Original request was sync - need to create new async context
+            l_redirect_ctx = DAP_NEW_Z(dap_client_http_async_context_t);
+            if(!l_redirect_ctx) {
+                log_it(L_ERROR, "Failed to allocate redirect context");
+                DAP_DELETE(l_new_path);
+                return false;
+            }
+            
             l_redirect_ctx->response_callback = a_client_http->response_callback_full;
             l_redirect_ctx->simple_response_callback = a_client_http->response_callback;
             l_redirect_ctx->error_callback = a_client_http->error_callback;
             l_redirect_ctx->user_arg = a_client_http->callbacks_arg;
+            l_redirect_ctx->redirect_count = a_client_http->redirect_count + 1;
         }
-        
-        l_redirect_ctx->redirect_count = a_client_http->redirect_count + 1;
         
         // Make async request with redirect context
         s_client_http_request_async_impl(
@@ -907,6 +905,14 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     }
 
     log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_client_http->uplink_addr, l_client_http->uplink_port, a_esocket->socket);
+    
+    // Clean up existing timer to prevent leak
+    if (l_client_http->timer) {
+        DAP_DEL_Z(l_client_http->timer->callback_arg);
+        dap_timerfd_delete_unsafe(l_client_http->timer);
+        l_client_http->timer = NULL;
+    }
+    
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
@@ -1790,6 +1796,13 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
     a_esocket->flags |= DAP_SOCK_CONNECTING;
     a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
     a_esocket->callbacks.connected_callback = s_http_connected;
+    // Clean up existing timer to prevent leak (similar to s_http_connected)
+    if (l_client_http->timer) {
+        DAP_DEL_Z(l_client_http->timer->callback_arg);
+        dap_timerfd_delete_unsafe(l_client_http->timer);
+        l_client_http->timer = NULL;
+    }
+    
     dap_events_socket_handle_t * l_ev_socket_handler = DAP_NEW_Z(dap_events_socket_handle_t);
     l_ev_socket_handler->esocket = a_esocket;
     l_ev_socket_handler->esocket_uuid = a_esocket->uuid;
