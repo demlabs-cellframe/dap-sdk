@@ -98,10 +98,10 @@ size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_bob_key, const void
         return 0;
     }
 // post func work, change in args only after all pass
-    DAP_DEL_MULTY(a_bob_key->key_pub, *a_cypher_msg);
+    DAP_DEL_MULTY(a_bob_key->shared_key, *a_cypher_msg);
     *a_cypher_msg = l_cypher_msg;
-    a_bob_key->key_pub = l_shared_key;
-    a_bob_key->key_pub_size = CRYPTO_BYTES;
+    a_bob_key->shared_key = l_shared_key;
+    a_bob_key->shared_key_size = CRYPTO_BYTES;
     return CRYPTO_CIPHERTEXTBYTES;
 }
 

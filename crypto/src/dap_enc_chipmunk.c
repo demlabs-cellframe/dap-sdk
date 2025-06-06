@@ -482,3 +482,25 @@ uint8_t *dap_enc_chipmunk_read_signature(const uint8_t *a_buf, size_t a_buflen)
     memcpy(l_sign, a_buf, a_buflen);
     return l_sign;
 }
+
+// Delete functions for memory cleanup
+void dap_enc_chipmunk_public_key_delete(void *a_pub_key)
+{
+    if (a_pub_key) {
+        DAP_DELETE(a_pub_key);
+    }
+}
+
+void dap_enc_chipmunk_private_key_delete(void *a_priv_key)
+{
+    if (a_priv_key) {
+        DAP_DELETE(a_priv_key);
+    }
+}
+
+void dap_enc_chipmunk_signature_delete(void *a_signature)
+{
+    if (a_signature) {
+        DAP_DELETE(a_signature);
+    }
+}

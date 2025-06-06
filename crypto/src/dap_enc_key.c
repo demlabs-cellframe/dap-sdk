@@ -711,9 +711,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_pub_key_size = dap_enc_chipmunk_deser_public_key_size,
         .deser_priv_key_size = dap_enc_chipmunk_deser_private_key_size,
 
-        .del_sign = NULL,
-        .del_pub_key = NULL,
-        .del_priv_key = NULL
+        .del_sign = dap_enc_chipmunk_signature_delete,
+        .del_pub_key = dap_enc_chipmunk_public_key_delete,
+        .del_priv_key = dap_enc_chipmunk_private_key_delete
     },
 
 };
