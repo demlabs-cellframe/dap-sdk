@@ -171,9 +171,11 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
 
     // Initialize tree structure fields - ВАЖНО: обнуляем указатели сначала
     memset(a_tree, 0, sizeof(chipmunk_tree_t));
-    a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
+    
+    // Calculate dynamic tree dimensions based on actual leaf count
     a_tree->leaf_count = a_leaf_count;
-    a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
+    a_tree->height = chipmunk_tree_calculate_height(a_leaf_count);
+    a_tree->non_leaf_count = a_leaf_count - 1; // For binary tree: non_leaf_count = leaf_count - 1
 
     // Allocate memory for tree nodes - теперь указатели точно NULL
     a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
@@ -200,60 +202,49 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
         memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
     }
 
-    // Build tree bottom-up
-    // Level 3: hash pairs of leaves to get level 3 non-leaf nodes
-    for (int i = 0; i < 8; i++) {
-        int l_node_idx = 7 + i;  // non-leaf indices 7-14
-        int l_left_leaf = i * 2;
-        int l_right_leaf = i * 2 + 1;
+    // Build tree bottom-up using dynamic algorithm
+    // This is a complete binary tree construction for any leaf count
+    
+    // Create a working array combining leaf and non-leaf nodes for easier indexing
+    // In a complete binary tree with n leaves, we have (n-1) internal nodes
+    // Total nodes = leaves + internal = n + (n-1) = 2n-1
+    
+    size_t total_nodes = a_tree->leaf_count * 2 - 1;
+    chipmunk_hvc_poly_t *all_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, total_nodes);
+    if (!all_nodes) {
+        log_it(L_ERROR, "Failed to allocate working array for tree construction");
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+    
+    // Copy leaf nodes to the end of working array (heap indexing style)
+    size_t leaf_start_index = a_tree->leaf_count - 1;
+    for (size_t i = 0; i < a_tree->leaf_count; i++) {
+        memcpy(&all_nodes[leaf_start_index + i], &a_tree->leaf_nodes[i], sizeof(chipmunk_hvc_poly_t));
+    }
+    
+    // Build internal nodes bottom-up
+    for (int i = (int)leaf_start_index - 1; i >= 0; i--) {
+        size_t left_child = 2 * i + 1;
+        size_t right_child = 2 * i + 2;
         
-        int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                       &a_tree->leaf_nodes[l_left_leaf],
-                                                       &a_tree->leaf_nodes[l_right_leaf],
-                                                       &a_tree->non_leaf_nodes[l_node_idx]);
-        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            return l_ret;
+        if (left_child < total_nodes && right_child < total_nodes) {
+            int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
+                                                           &all_nodes[left_child],
+                                                           &all_nodes[right_child],
+                                                           &all_nodes[i]);
+            if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+                DAP_DEL_MULTY(all_nodes);
+                return l_ret;
+            }
         }
     }
-
-    // Level 2: hash pairs from level 3
-    for (int i = 0; i < 4; i++) {
-        int l_node_idx = 3 + i;  // non-leaf indices 3-6
-        int l_left_child = 7 + i * 2;
-        int l_right_child = 7 + i * 2 + 1;
-        
-        int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                       &a_tree->non_leaf_nodes[l_left_child],
-                                                       &a_tree->non_leaf_nodes[l_right_child],
-                                                       &a_tree->non_leaf_nodes[l_node_idx]);
-        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            return l_ret;
-        }
+    
+    // Copy internal nodes to non_leaf_nodes array
+    for (size_t i = 0; i < a_tree->non_leaf_count; i++) {
+        memcpy(&a_tree->non_leaf_nodes[i], &all_nodes[i], sizeof(chipmunk_hvc_poly_t));
     }
-
-    // Level 1: hash pairs from level 2
-    for (int i = 0; i < 2; i++) {
-        int l_node_idx = 1 + i;  // non-leaf indices 1-2
-        int l_left_child = 3 + i * 2;
-        int l_right_child = 3 + i * 2 + 1;
-        
-        int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                       &a_tree->non_leaf_nodes[l_left_child],
-                                                       &a_tree->non_leaf_nodes[l_right_child],
-                                                       &a_tree->non_leaf_nodes[l_node_idx]);
-        if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-            return l_ret;
-        }
-    }
-
-    // Level 0: root (index 0)
-    int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                   &a_tree->non_leaf_nodes[1],
-                                                   &a_tree->non_leaf_nodes[2],
-                                                   &a_tree->non_leaf_nodes[0]);
-    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        return l_ret;
-    }
+    
+    DAP_DEL_MULTY(all_nodes);
 
     log_it(L_DEBUG, "Merkle tree created successfully");
     return CHIPMUNK_ERROR_SUCCESS;
@@ -311,7 +302,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     log_it(L_DEBUG, "Generating proof for index %zu in tree with %zu leaves", a_index, a_tree->leaf_count);
 
     // Original Rust: path.len() = `tree height - 1`, the missing elements being the root
-    size_t path_length = CHIPMUNK_TREE_HEIGHT_DEFAULT - 1;
+    size_t path_length = a_tree->height - 1;
     a_path->nodes = DAP_NEW_Z_COUNT(chipmunk_path_node_t, path_length);
     if (!a_path->nodes) {
         log_it(L_ERROR, "Failed to allocate memory for path nodes");
@@ -322,7 +313,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     a_path->index = a_index;
 
     // Temporary array to store nodes from bottom to top (будем реверсировать в конце)
-    chipmunk_path_node_t temp_nodes[CHIPMUNK_TREE_HEIGHT_DEFAULT - 1];
+    chipmunk_path_node_t temp_nodes[CHIPMUNK_TREE_HEIGHT_MAX - 1]; // используем максимум для статического размера
     size_t temp_count = 0;
 
     // Original Rust: Step 1 - Add leaf level
@@ -344,7 +335,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
 
     // Original Rust: convert_index_to_last_level(index, HEIGHT)
     // index + (1 << (tree_height - 1)) - 1
-    size_t leaf_index_in_tree = a_index + ((1 << (CHIPMUNK_TREE_HEIGHT_DEFAULT - 1)) - 1);
+    size_t leaf_index_in_tree = a_index + ((1 << (a_tree->height - 1)) - 1);
     
     // Original Rust: let mut current_node = parent_index(leaf_index_in_tree).unwrap();
     // parent_index(index) = (index - 1) >> 1
@@ -355,7 +346,7 @@ int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipm
     // Original Rust: Iterate from the bottom layer after the leaves, to the top
     // while current_node != 0
     int loop_counter = 0; // ЗАЩИТА ОТ ЗАЦИКЛИВАНИЯ
-    int max_iterations = CHIPMUNK_TREE_HEIGHT_DEFAULT + 5; // высота + запас
+    int max_iterations = a_tree->height + 5; // динамическая высота + запас
     while (current_node != 0 && loop_counter < max_iterations) {
         loop_counter++;
         

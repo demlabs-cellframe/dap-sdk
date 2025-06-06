@@ -250,7 +250,8 @@ static bool test_hots_pk_conversion() {
         return false;
     }
 
-    // Check that conversion produced valid HVC polynomial (within symmetric range)
+    // Check that conversion produces valid HVC polynomial with symmetric range coefficients
+    // The conversion function uses cryptographic hashing, so we expect symmetric range [-CHIPMUNK_HVC_Q/2, CHIPMUNK_HVC_Q/2)
     bool l_valid_conversion = true;
     int32_t half_q = CHIPMUNK_HVC_Q / 2;
     for (int i = 0; i < CHIPMUNK_N; i++) {
