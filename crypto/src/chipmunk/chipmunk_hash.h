@@ -27,6 +27,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
+// Подключаем secp256k1 headers для быстрого SHA2-256
+#include "../../3rdparty/secp256k1/src/hash.h"
+#include "../../3rdparty/secp256k1/src/hash_impl.h"
 
 /**
  * @brief Initialize hash functions for Chipmunk
@@ -117,5 +120,40 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
  * @return Returns 0 on success, -1 for NULL pointers, -2 for overflow, -3 for memory allocation failure
  */
 int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
+
+/**
+ * @brief Compute SHA2-256 hash using optimized secp256k1 implementation
+ * @param[out] a_output Output buffer (32 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_input_len Input data length
+ * @return 0 on success
+ */
+static inline int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input, size_t a_input_len) {
+    if (!a_output || !a_input) {
+        return -1;  // NULL parameter error
+    }
+    
+    secp256k1_sha256 l_hasher;
+    secp256k1_sha256_initialize(&l_hasher);
+    secp256k1_sha256_write(&l_hasher, a_input, a_input_len);
+    secp256k1_sha256_finalize(&l_hasher, a_output);
+    
+    return 0;  // Success
+}
+
+/**
+ * @brief 🚀 PHASE 1 OPTIMIZED: Stack-based polynomial sampling с loop unrolling
+ * @param a_poly Output polynomial coefficients array
+ * @param a_seed Input seed (must be 32 bytes)
+ * @param a_nonce Nonce value
+ * @return Returns 0 on success, negative error code on failure
+ * @note Target speedup: 1.5-2x для polynomial generation
+ */
+int dap_chipmunk_hash_sample_poly_optimized(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
+
+// 🚀 PHASE 1: Enable hash optimizations by default
+#ifndef CHIPMUNK_USE_HASH_OPTIMIZATIONS
+#define CHIPMUNK_USE_HASH_OPTIMIZATIONS 1
+#endif
 
 #endif // _CHIPMUNK_HASH_H_ 

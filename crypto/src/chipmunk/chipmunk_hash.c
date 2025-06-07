@@ -29,29 +29,12 @@
 // Добавляем SHA2-256 из secp256k1 с правильными путями
 #include "../../3rdparty/secp256k1/src/hash.h"
 #include "../../3rdparty/secp256k1/src/hash_impl.h"
+#include "SimpleFIPS202.h"
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"
 
-/**
- * @brief Compute SHA2-256 hash using DAP wrapper
- * @param[out] a_output Output buffer (32 bytes)
- * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return Returns 0 on success, negative error code on failure
- */
-static int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    int l_result = dap_hash_sha2_256(a_output, a_input, a_inlen);
-    if (l_result != 0) {
-        return CHIPMUNK_ERROR_HASH_FAILED;
-    }
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
+// dap_chipmunk_hash_sha2_256 теперь реализована как static inline в заголовочном файле
 
 /**
  * @brief Initialize hash functions for Chipmunk
@@ -211,6 +194,19 @@ int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, si
 }
 
 /**
+ * @brief Hash matrix to point for Chipmunk protocol
+ */
+int dap_chipmunk_hash_to_point(uint8_t a_point[32], const uint8_t *a_matrix, size_t a_matrix_size) {
+    if (!a_point || !a_matrix || a_matrix_size == 0) {
+        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_point");
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // Use SHA3-256 for matrix-to-point conversion (keeps original behavior)
+    return dap_chipmunk_hash_sha3_256(a_point, a_matrix, a_matrix_size);
+}
+
+/**
  * @brief Generate random polynomial based on seed and nonce
  * 
  * @return Returns 0 on success, negative values on error:
@@ -220,6 +216,88 @@ int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, si
  */
 int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) 
 {
+#ifdef CHIPMUNK_USE_HASH_OPTIMIZATIONS
+    // 🚀 PHASE 1 OPTIMIZED VERSION: Stack allocation + loop unrolling
+    if (!a_poly || !a_seed) {
+        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_poly");
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // 🚀 PHASE 1 OPTIMIZATION: Stack allocation вместо heap
+    uint8_t l_buf[34] = {0}; // 32 bytes seed + 2 bytes nonce (stack)
+    
+    // Копируем seed
+    memcpy(l_buf, a_seed, 32);
+    
+    // Добавляем nonce в младшем порядке байтов
+    l_buf[32] = a_nonce & 0xff;
+    l_buf[33] = (a_nonce >> 8) & 0xff;
+    
+    // 🚀 PHASE 1 OPTIMIZATION: Stack allocation для небольших polynomial
+    const size_t l_total_bytes = CHIPMUNK_N * 3;
+    uint8_t l_sample_bytes[CHIPMUNK_N * 3];  // Stack allocation
+    
+    // Получаем данные через standard SHAKE128 (используем существующую функцию)
+    int l_result = dap_chipmunk_hash_shake128(l_sample_bytes, l_total_bytes, l_buf, sizeof(l_buf));
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "SHAKE128 failed in dap_chipmunk_hash_sample_poly with error %d", l_result);
+        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+        return l_result;
+    }
+    
+    // 🚀 PHASE 1 OPTIMIZATION: Loop unrolling для processing coefficients
+    const int32_t l_gamma1 = 1 << 17; // 131072
+    const uint32_t l_range = 2 * l_gamma1 + 1; // 262145
+    
+    // Unroll loop по 4 coefficient за раз
+    int i = 0, j = 0;
+    for (; i < CHIPMUNK_N - 3; i += 4, j += 12) {
+        // Process 4 coefficients simultaneously
+        
+        // Coefficient 0
+        uint32_t l_t0 = ((uint32_t)l_sample_bytes[j]) | 
+                        (((uint32_t)l_sample_bytes[j + 1]) << 8) | 
+                        (((uint32_t)l_sample_bytes[j + 2]) << 16);
+        l_t0 &= 0x7FFFFF;
+        a_poly[i] = (int32_t)(l_t0 % l_range) - l_gamma1;
+        
+        // Coefficient 1
+        uint32_t l_t1 = ((uint32_t)l_sample_bytes[j + 3]) | 
+                        (((uint32_t)l_sample_bytes[j + 4]) << 8) | 
+                        (((uint32_t)l_sample_bytes[j + 5]) << 16);
+        l_t1 &= 0x7FFFFF;
+        a_poly[i + 1] = (int32_t)(l_t1 % l_range) - l_gamma1;
+        
+        // Coefficient 2
+        uint32_t l_t2 = ((uint32_t)l_sample_bytes[j + 6]) | 
+                        (((uint32_t)l_sample_bytes[j + 7]) << 8) | 
+                        (((uint32_t)l_sample_bytes[j + 8]) << 16);
+        l_t2 &= 0x7FFFFF;
+        a_poly[i + 2] = (int32_t)(l_t2 % l_range) - l_gamma1;
+        
+        // Coefficient 3
+        uint32_t l_t3 = ((uint32_t)l_sample_bytes[j + 9]) | 
+                        (((uint32_t)l_sample_bytes[j + 10]) << 8) | 
+                        (((uint32_t)l_sample_bytes[j + 11]) << 16);
+        l_t3 &= 0x7FFFFF;
+        a_poly[i + 3] = (int32_t)(l_t3 % l_range) - l_gamma1;
+    }
+    
+    // Process remaining coefficients
+    for (; i < CHIPMUNK_N; i++, j += 3) {
+        uint32_t l_t = ((uint32_t)l_sample_bytes[j]) | 
+                      (((uint32_t)l_sample_bytes[j + 1]) << 8) | 
+                      (((uint32_t)l_sample_bytes[j + 2]) << 16);
+        l_t &= 0x7FFFFF;
+        a_poly[i] = (int32_t)(l_t % l_range) - l_gamma1;
+    }
+    
+    // Security: clear stack
+    memset(l_sample_bytes, 0, l_total_bytes);
+    
+    return CHIPMUNK_ERROR_SUCCESS;
+#else
+    // STANDARD VERSION: Heap allocation (original code)
     if (!a_poly || !a_seed) {
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_poly");
         return CHIPMUNK_ERROR_NULL_PARAM;
@@ -292,18 +370,7 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
     DAP_DELETE(l_sample_bytes);
     
     return CHIPMUNK_ERROR_SUCCESS;  // Успешное выполнение
-}
-
-/**
- * @brief Generate point from hash
- */
-int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) 
-{
-    if (!a_output || !a_input) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_point");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    return dap_chipmunk_hash_sha3_256(a_output, a_input, a_inlen);
+#endif
 }
 
 /**
@@ -383,4 +450,8 @@ int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], u
     DAP_DELETE(l_sample_bytes);
     
     return CHIPMUNK_ERROR_SUCCESS;  // Успешное выполнение
-} 
+}
+
+// ========================================
+// 🚀 PHASE 1 HASH OPTIMIZATION COMPLETE
+// ======================================== 

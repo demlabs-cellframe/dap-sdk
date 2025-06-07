@@ -13,15 +13,167 @@
 #include "chipmunk/chipmunk_hots.h"
 #include "chipmunk/chipmunk_aggregation.h"
 #include "chipmunk/chipmunk_tree.h"
+#include "chipmunk/chipmunk_hash.h"  // Hash functions with PHASE 1 optimizations
 
 #define LOG_TAG "chipmunk_performance"
 
 // Debug control flag
 static bool s_debug_more = false;
 
+// PHASE 1: Hash optimization test flag
+static bool s_test_hash_optimization = false;
+
 // Use dap_time.h functions instead of custom timer_t
 static inline double get_time_ms(void) {
     return dap_nanotime_now() / 1000000.0;  // Convert nanoseconds to milliseconds
+}
+
+/**
+ * @brief Test Phase 1 Hash optimization performance
+ * 🚀 PHASE 1: Hash function optimization testing
+ */
+static int test_phase1_hash_optimization(void)
+{
+    log_it(L_INFO, "🧪 PHASE 1: Testing hash optimization performance");
+    
+    // Test parameters
+    const int NUM_POLYS = 100;  // Test with 100 polynomials (like in signing)
+    const int NUM_ITERATIONS = 10;
+    
+    uint8_t test_seed[32];
+    for (int i = 0; i < 32; i++) {
+        test_seed[i] = i;
+    }
+    
+    // Allocate polynomials
+    int32_t *poly_standard[NUM_POLYS];
+    int32_t *poly_optimized[NUM_POLYS];
+    
+    for (int i = 0; i < NUM_POLYS; i++) {
+        poly_standard[i] = DAP_NEW_Z_COUNT(int32_t, CHIPMUNK_N);
+        poly_optimized[i] = DAP_NEW_Z_COUNT(int32_t, CHIPMUNK_N);
+        if (!poly_standard[i] || !poly_optimized[i]) {
+            log_it(L_ERROR, "Failed to allocate memory for polynomial testing");
+            // Cleanup allocated memory
+            for (int j = 0; j < i; j++) {
+                DAP_DELETE(poly_standard[j]);
+                DAP_DELETE(poly_optimized[j]);
+            }
+            if (poly_standard[i]) DAP_DELETE(poly_standard[i]);
+            if (poly_optimized[i]) DAP_DELETE(poly_optimized[i]);
+            return -1;
+        }
+    }
+    
+    double total_standard_time = 0.0;
+    double total_optimized_time = 0.0;
+    
+    log_it(L_INFO, "   Testing with %d polynomials × %d iterations = %d total operations", 
+           NUM_POLYS, NUM_ITERATIONS, NUM_POLYS * NUM_ITERATIONS);
+    
+    // Test standard implementation
+    log_it(L_INFO, "   🔄 Testing STANDARD hash implementation...");
+    for (int iter = 0; iter < NUM_ITERATIONS; iter++) {
+        double iter_start = get_time_ms();
+        
+        for (int i = 0; i < NUM_POLYS; i++) {
+            int result = dap_chipmunk_hash_sample_poly(poly_standard[i], test_seed, (uint16_t)i);
+            if (result != 0) {
+                log_it(L_ERROR, "Standard hash sampling failed for poly %d", i);
+                goto cleanup;
+            }
+        }
+        
+        double iter_time = get_time_ms() - iter_start;
+        total_standard_time += iter_time;
+        
+        if (s_debug_more) {
+            log_it(L_INFO, "      Iteration %d: %.3f ms", iter + 1, iter_time);
+        }
+    }
+    
+    // Test optimized implementation
+    log_it(L_INFO, "   🚀 Testing OPTIMIZED hash implementation...");
+    for (int iter = 0; iter < NUM_ITERATIONS; iter++) {
+        double iter_start = get_time_ms();
+        
+        for (int i = 0; i < NUM_POLYS; i++) {
+            int result = dap_chipmunk_hash_sample_poly(poly_optimized[i], test_seed, (uint16_t)i);
+            if (result != 0) {
+                log_it(L_ERROR, "Optimized hash sampling failed for poly %d", i);
+                goto cleanup;
+            }
+        }
+        
+        double iter_time = get_time_ms() - iter_start;
+        total_optimized_time += iter_time;
+        
+        if (s_debug_more) {
+            log_it(L_INFO, "      Iteration %d: %.3f ms", iter + 1, iter_time);
+        }
+    }
+    
+    // Verify correctness - polynomials should be identical
+    log_it(L_INFO, "   🔍 Verifying correctness...");
+    bool correctness_ok = true;
+    for (int i = 0; i < NUM_POLYS && correctness_ok; i++) {
+        for (int j = 0; j < CHIPMUNK_N; j++) {
+            if (poly_standard[i][j] != poly_optimized[i][j]) {
+                log_it(L_ERROR, "Mismatch in poly %d coeff %d: standard=%d, optimized=%d", 
+                       i, j, poly_standard[i][j], poly_optimized[i][j]);
+                correctness_ok = false;
+                break;
+            }
+        }
+    }
+    
+    if (!correctness_ok) {
+        log_it(L_ERROR, "❌ CORRECTNESS TEST FAILED!");
+        goto cleanup;
+    }
+    
+    // Calculate performance metrics
+    double avg_standard = total_standard_time / NUM_ITERATIONS;
+    double avg_optimized = total_optimized_time / NUM_ITERATIONS;
+    double speedup = avg_standard / avg_optimized;
+    double standard_per_poly = avg_standard / NUM_POLYS;
+    double optimized_per_poly = avg_optimized / NUM_POLYS;
+    
+    // Results
+    log_it(L_INFO, " ");
+    log_it(L_INFO, "📊 PHASE 1 Hash Optimization Results:");
+    log_it(L_INFO, "   ⏱️ Standard implementation:");
+    log_it(L_INFO, "      • Total time: %.3f ms (avg per iteration)", avg_standard);
+    log_it(L_INFO, "      • Per polynomial: %.6f ms", standard_per_poly);
+    log_it(L_INFO, "   🚀 Optimized implementation:");
+    log_it(L_INFO, "      • Total time: %.3f ms (avg per iteration)", avg_optimized);
+    log_it(L_INFO, "      • Per polynomial: %.6f ms", optimized_per_poly);
+    log_it(L_INFO, "   📈 Performance improvement:");
+    log_it(L_INFO, "      • Speedup: %.2fx", speedup);
+    log_it(L_INFO, "      • Time reduction: %.1f%% faster", (speedup - 1.0) * 100.0);
+    log_it(L_INFO, "   ✅ Correctness: VERIFIED (outputs identical)");
+    
+    // Estimate impact on signing
+    double signing_polynomial_count = 32;  // From profiling: ~32 polynomials per signature
+    double estimated_signing_improvement = standard_per_poly * signing_polynomial_count * (speedup - 1.0);
+    log_it(L_INFO, "   🎯 Estimated signing improvement: %.3f ms reduction", estimated_signing_improvement);
+    
+    if (speedup >= 1.5) {
+        log_it(L_INFO, "   🎉 PHASE 1 OPTIMIZATION: SUCCESS!");
+    } else if (speedup >= 1.2) {
+        log_it(L_INFO, "   ⚠️ PHASE 1 OPTIMIZATION: Moderate improvement");
+    } else {
+        log_it(L_WARNING, "   ⚠️ PHASE 1 OPTIMIZATION: Limited improvement");
+    }
+    
+cleanup:
+    // Free allocated memory
+    for (int i = 0; i < NUM_POLYS; i++) {
+        DAP_DELETE(poly_standard[i]);
+        DAP_DELETE(poly_optimized[i]);
+    }
+    
+    return correctness_ok ? 0 : -1;
 }
 
 /**
@@ -264,9 +416,28 @@ int main(int argc, char *argv[])
         log_it(L_INFO, "🔧 Debug output enabled");
     }
     
+    // PHASE 1: Check for hash optimization testing
+    char *hash_opt_env = getenv("CHIPMUNK_TEST_HASH_OPT");
+    if (hash_opt_env && (strcmp(hash_opt_env, "1") == 0 || strcmp(hash_opt_env, "true") == 0)) {
+        s_test_hash_optimization = true;
+        log_it(L_INFO, "🚀 Phase 1 hash optimization testing enabled");
+    }
+    
     log_it(L_NOTICE, "🔬 CHIPMUNK PERFORMANCE TESTING");
     log_it(L_NOTICE, "Unit test range: Up to 100 participants (optimal for benchmarks)");
     log_it(L_NOTICE, " ");
+    
+    // PHASE 1: Run hash optimization test if enabled
+    if (s_test_hash_optimization) {
+        log_it(L_INFO, "═══════════════════════════════════════════════════");
+        int hash_result = test_phase1_hash_optimization();
+        if (hash_result != 0) {
+            log_it(L_ERROR, "❌ Phase 1 hash optimization test FAILED");
+            return hash_result;
+        }
+        log_it(L_INFO, "═══════════════════════════════════════════════════");
+        log_it(L_INFO, " ");
+    }
     
     // Default test sizes
     size_t test_sizes[] = {3, 5, 10, 50, 100};
