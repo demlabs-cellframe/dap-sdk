@@ -12,16 +12,17 @@
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_hots.h"
 #include "chipmunk/chipmunk_aggregation.h"
-#include "chipmunk/chipmunk_tree.h"
+#include "chipmunk/chipmunk_tree.h" 
 #include "chipmunk/chipmunk_hash.h"  // Hash functions with PHASE 1 optimizations
+#include "chipmunk/chipmunk_ntt.h"   // **PHASE 4**: Standard NTT functions
+#include "chipmunk_ntt_optimized.h"  // **PHASE 4**: Include NTT optimizations
 
 #define LOG_TAG "chipmunk_performance"
 
-// Debug control flag
+// Global flags for testing modes
 static bool s_debug_more = false;
-
-// PHASE 1: Hash optimization test flag
 static bool s_test_hash_optimization = false;
+static bool s_test_ntt_optimization = false;  // **PHASE 4**: Add NTT optimization flag
 
 // Use dap_time.h functions instead of custom timer_t
 static inline double get_time_ms(void) {
@@ -398,6 +399,163 @@ cleanup:
     return (ret == 1) ? 0 : -1;
 }
 
+/**
+ * @brief **PHASE 4**: Test NTT/InvNTT optimization performance and correctness
+ * 
+ * Based on profiling data showing NTT/InvNTT operations consume 73.9% of total time:
+ * - InvNTT operations: 37.5% of total time (top bottleneck)
+ * - NTT operations: 36.4% of total time
+ * 
+ * This test validates both performance improvement and correctness
+ */
+static int test_phase4_ntt_optimization(void)
+{
+    log_it(L_INFO, "🧪 PHASE 4: Testing NTT/InvNTT SIMD optimization performance");
+    log_it(L_INFO, "   Target: 73.9%% of execution time (NTT: 36.4%% + InvNTT: 37.5%%)");
+    log_it(L_INFO, "   Testing with 1000 NTT/InvNTT pairs for statistical significance");
+    
+    const int NUM_ITERATIONS = 1000;
+    const int NUM_POLYNOMIALS = 100;  // Test 100 polynomials per iteration
+    
+    // Allocate test data
+    int32_t *test_poly_standard = DAP_NEW_Z_COUNT(int32_t, CHIPMUNK_N);
+    int32_t *test_poly_optimized = DAP_NEW_Z_COUNT(int32_t, CHIPMUNK_N);
+    int32_t *original_poly = DAP_NEW_Z_COUNT(int32_t, CHIPMUNK_N);
+    
+    if (!test_poly_standard || !test_poly_optimized || !original_poly) {
+        log_it(L_ERROR, "Failed to allocate memory for Phase 4 testing");
+        DAP_DEL_MULTY(test_poly_standard);
+        DAP_DEL_MULTY(test_poly_optimized);
+        DAP_DEL_MULTY(original_poly);
+        return -1;
+    }
+    
+    // Generate random test polynomial
+    uint8_t test_seed[32];
+    dap_chipmunk_hash_to_seed(test_seed, (uint8_t*)"phase4_ntt_test", 15);
+    
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        original_poly[i] = (int32_t)(test_seed[i % 32] * 1000) % CHIPMUNK_Q;
+        if (original_poly[i] > CHIPMUNK_Q / 2) {
+            original_poly[i] -= CHIPMUNK_Q;
+        }
+    }
+    
+    log_it(L_INFO, "   🔄 Testing STANDARD NTT/InvNTT implementation...");
+    
+    // Test standard implementation
+    double standard_total_time = 0.0;
+    for (int iter = 0; iter < NUM_ITERATIONS; iter++) {
+        double iter_time = 0.0;
+        
+        for (int poly = 0; poly < NUM_POLYNOMIALS; poly++) {
+            // Copy original data
+            memcpy(test_poly_standard, original_poly, CHIPMUNK_N * sizeof(int32_t));
+            
+            double start_time = get_time_ms();
+            
+            // Standard NTT forward + inverse cycle
+            chipmunk_ntt(test_poly_standard);
+            chipmunk_invntt(test_poly_standard);
+            
+            double end_time = get_time_ms();
+            iter_time += (end_time - start_time);
+        }
+        
+        standard_total_time += iter_time;
+    }
+    
+    double standard_avg_time = standard_total_time / NUM_ITERATIONS;
+    double standard_per_poly_time = standard_avg_time / NUM_POLYNOMIALS;
+    
+    log_it(L_INFO, "   🚀 Testing OPTIMIZED NTT/InvNTT implementation...");
+    
+    // Test optimized implementation  
+    double optimized_total_time = 0.0;
+    for (int iter = 0; iter < NUM_ITERATIONS; iter++) {
+        double iter_time = 0.0;
+        
+        for (int poly = 0; poly < NUM_POLYNOMIALS; poly++) {
+            // Copy original data
+            memcpy(test_poly_optimized, original_poly, CHIPMUNK_N * sizeof(int32_t));
+            
+            double start_time = get_time_ms();
+            
+            // Optimized NTT forward + inverse cycle
+            chipmunk_ntt_phase4(test_poly_optimized);
+            chipmunk_invntt_phase4(test_poly_optimized);
+            
+            double end_time = get_time_ms();
+            iter_time += (end_time - start_time);
+        }
+        
+        optimized_total_time += iter_time;
+    }
+    
+    double optimized_avg_time = optimized_total_time / NUM_ITERATIONS;
+    double optimized_per_poly_time = optimized_avg_time / NUM_POLYNOMIALS;
+    
+    log_it(L_INFO, "   🔍 Verifying correctness...");
+    
+    // Correctness verification
+    memcpy(test_poly_standard, original_poly, CHIPMUNK_N * sizeof(int32_t));
+    memcpy(test_poly_optimized, original_poly, CHIPMUNK_N * sizeof(int32_t));
+    
+    chipmunk_ntt(test_poly_standard);
+    chipmunk_invntt(test_poly_standard);
+    
+    chipmunk_ntt_phase4(test_poly_optimized);
+    chipmunk_invntt_phase4(test_poly_optimized);
+    
+    bool correctness_verified = true;
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        if (test_poly_standard[i] != test_poly_optimized[i]) {
+            correctness_verified = false;
+            log_it(L_ERROR, "   ❌ Mismatch at index %d: standard=%d, optimized=%d", 
+                   i, test_poly_standard[i], test_poly_optimized[i]);
+            break;
+        }
+    }
+    
+    // Calculate performance metrics
+    double speedup_factor = (standard_avg_time > 0.0) ? (standard_avg_time / optimized_avg_time) : 0.0;
+    double time_reduction_percent = ((standard_avg_time - optimized_avg_time) / standard_avg_time) * 100.0;
+    double estimated_overall_improvement = time_reduction_percent * 0.739; // 73.9% of total time
+    
+    log_it(L_INFO, " ");
+    log_it(L_INFO, "📊 PHASE 4 NTT/InvNTT Optimization Results:");
+    log_it(L_INFO, "   ⏱️ Standard implementation:");
+    log_it(L_INFO, "      • Total time: %.3f ms (avg per iteration)", standard_avg_time);
+    log_it(L_INFO, "      • Per polynomial: %.6f ms", standard_per_poly_time);
+    log_it(L_INFO, "   🚀 Optimized implementation:");
+    log_it(L_INFO, "      • Total time: %.3f ms (avg per iteration)", optimized_avg_time);  
+    log_it(L_INFO, "      • Per polynomial: %.6f ms", optimized_per_poly_time);
+    log_it(L_INFO, "   📈 Performance improvement:");
+    log_it(L_INFO, "      • Speedup: %.2fx", speedup_factor);
+    log_it(L_INFO, "      • Time reduction: %.1f%% faster", time_reduction_percent);
+    log_it(L_INFO, "   ✅ Correctness: %s", correctness_verified ? "VERIFIED (outputs identical)" : "❌ FAILED");
+    log_it(L_INFO, "   🎯 Estimated overall signing improvement: %.1f%% faster", estimated_overall_improvement);
+    
+    // Performance evaluation
+    if (speedup_factor >= 1.5) {
+        log_it(L_INFO, "   🎉 PHASE 4 OPTIMIZATION: Excellent improvement (≥1.5x speedup)");
+    } else if (speedup_factor >= 1.2) {
+        log_it(L_INFO, "   ✅ PHASE 4 OPTIMIZATION: Good improvement (≥1.2x speedup)");
+    } else if (speedup_factor >= 1.05) {
+        log_it(L_INFO, "   📈 PHASE 4 OPTIMIZATION: Modest improvement (≥1.05x speedup)");
+    } else {
+        log_it(L_INFO, "   ⚠️ PHASE 4 OPTIMIZATION: Limited improvement (<1.05x speedup)");
+    }
+    
+    // Cleanup
+    DAP_DEL_MULTY(test_poly_standard);
+    DAP_DEL_MULTY(test_poly_optimized);
+    DAP_DEL_MULTY(original_poly);
+    
+    // Return success if correctness verified, regardless of performance
+    return correctness_verified ? 0 : -1;
+}
+
 int main(int argc, char *argv[])
 {
     // Initialize logging with clean format for unit tests
@@ -423,6 +581,13 @@ int main(int argc, char *argv[])
         log_it(L_INFO, "🚀 Phase 1 hash optimization testing enabled");
     }
     
+    // **PHASE 4**: Check for NTT optimization testing
+    char *ntt_opt_env = getenv("CHIPMUNK_TEST_NTT_OPT");
+    if (ntt_opt_env && (strcmp(ntt_opt_env, "1") == 0 || strcmp(ntt_opt_env, "true") == 0)) {
+        s_test_ntt_optimization = true;
+        log_it(L_INFO, "🚀 Phase 4 NTT optimization testing enabled");
+    }
+    
     log_it(L_NOTICE, "🔬 CHIPMUNK PERFORMANCE TESTING");
     log_it(L_NOTICE, "Unit test range: Up to 100 participants (optimal for benchmarks)");
     log_it(L_NOTICE, " ");
@@ -434,6 +599,18 @@ int main(int argc, char *argv[])
         if (hash_result != 0) {
             log_it(L_ERROR, "❌ Phase 1 hash optimization test FAILED");
             return hash_result;
+        }
+        log_it(L_INFO, "═══════════════════════════════════════════════════");
+        log_it(L_INFO, " ");
+    }
+    
+    // **PHASE 4**: Run NTT optimization test if enabled
+    if (s_test_ntt_optimization) {
+        log_it(L_INFO, "═══════════════════════════════════════════════════");
+        int ntt_result = test_phase4_ntt_optimization();
+        if (ntt_result != 0) {
+            log_it(L_ERROR, "❌ Phase 4 NTT optimization test FAILED");
+            return ntt_result;
         }
         log_it(L_INFO, "═══════════════════════════════════════════════════");
         log_it(L_INFO, " ");

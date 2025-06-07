@@ -1,0 +1,193 @@
+{
+  "timestamp": "2025-06-07T22:57:38.681681",
+  "session": "Day 3 Afternoon - Memory Access Pattern Analysis",
+  "objectives": [
+    "Analyze memory access patterns in SIMD vs scalar NTT",
+    "Document VTune remote setup for Linux systems",
+    "Correlate memory patterns with performance characteristics",
+    "Develop memory-aware optimization guidelines"
+  ],
+  "macos_analysis": {
+    "./day3_real_ntt_test": {
+      "memory_metrics": {
+        "max_rss_bytes": 1146880,
+        "avg_shared_memory": 0,
+        "avg_unshared_data": 0,
+        "page_reclaims": 234,
+        "page_faults": 21
+      },
+      "system_memory_delta": {
+        "Pages free": 0,
+        "Pages active": 4440,
+        "Pages inactive": -11116,
+        "Pages speculative": 736,
+        "Pages throttled": 0,
+        "Pages wired down": 4805,
+        "Pages purgeable": 0,
+        "\"Translation faults\"": 1277,
+        "Pages copy-on-write": 312,
+        "Pages zero filled": 621,
+        "Pages reactivated": 47424,
+        "Pages purged": 11,
+        "File-backed pages": 743,
+        "Anonymous pages": -6683,
+        "Pages stored in compressor": 2344,
+        "Pages occupied by compressor": 1210,
+        "Decompressions": 5,
+        "Compressions": 2379,
+        "Pageins": 24,
+        "Pageouts": 0,
+        "Swapins": 0,
+        "Swapouts": 0
+      },
+      "analysis_notes": [
+        "Peak memory usage: 1.09 MB",
+        "Low memory usage - compute-bound rather than memory-bound",
+        "Low page fault count - good memory locality"
+      ]
+    }
+  },
+  "vtune_remote_setup": {
+    "overview": "VTune remote profiling allows collecting data on Linux target and viewing on any host",
+    "requirements": {
+      "target_system": "Linux with SSH access",
+      "host_system": "Any system with VTune GUI (Windows/Linux/macOS)",
+      "network": "SSH connectivity between host and target"
+    },
+    "installation_steps": {
+      "1_install_vtune_on_host": {
+        "description": "Install Intel oneAPI toolkit with VTune on host system",
+        "commands": [
+          "wget https://registrationcenter-download.intel.com/akdlm/irc_nas/18674/l_BaseKit_p_2022.2.0.262.sh",
+          "sudo sh ./l_BaseKit_p_2022.2.0.262.sh"
+        ]
+      },
+      "2_setup_target_collectors": {
+        "description": "Deploy VTune collectors to Linux target system",
+        "commands": [
+          "scp /opt/intel/oneapi/vtune/latest/target/linux/vtune_profiler_target_x86_64.tgz user@target:/tmp/",
+          "ssh user@target 'cd /tmp && tar -zxvf vtune_profiler_target_x86_64.tgz'"
+        ]
+      },
+      "3_configure_ssh_keys": {
+        "description": "Setup passwordless SSH for seamless profiling",
+        "commands": [
+          "ssh-keygen -t rsa -b 4096",
+          "ssh-copy-id user@target",
+          "ssh user@target 'echo test' # verify passwordless access"
+        ]
+      },
+      "4_install_sampling_drivers": {
+        "description": "Install VTune sampling drivers on target (requires root)",
+        "commands": [
+          "ssh user@target 'cd /tmp/vtune_profiler_*/sepdk/src && sudo ./build-driver'",
+          "ssh user@target 'cd /tmp/vtune_profiler_*/sepdk/src && sudo ./insmod-sep'"
+        ]
+      }
+    },
+    "remote_analysis_workflow": {
+      "1_gui_setup": "Launch vtune-gui on host, configure Remote Linux target",
+      "2_target_config": "Specify target hostname, SSH credentials, and collector paths",
+      "3_analysis_selection": "Choose Memory Access or Microarchitecture Exploration analysis",
+      "4_data_collection": "VTune automatically connects, deploys, collects data on target",
+      "5_results_analysis": "Results transferred back to host for GUI analysis"
+    },
+    "memory_analysis_types": {
+      "memory_access": {
+        "description": "Analyzes cache misses, memory bandwidth, NUMA effects",
+        "use_case": "Perfect for analyzing SIMD vs scalar memory patterns",
+        "key_metrics": [
+          "L1/L2/L3 cache miss rates",
+          "Memory bandwidth utilization",
+          "TLB misses"
+        ]
+      },
+      "microarchitecture_exploration": {
+        "description": "Low-level CPU pipeline analysis",
+        "use_case": "Understanding SIMD execution efficiency",
+        "key_metrics": [
+          "Pipeline stalls",
+          "Branch prediction",
+          "Instruction throughput"
+        ]
+      }
+    },
+    "alternative_approaches": {
+      "perf_on_linux": {
+        "description": "Use Linux perf for basic memory analysis",
+        "commands": [
+          "perf stat -e cache-misses,cache-references ./application",
+          "perf record -e mem-loads,mem-stores ./application",
+          "perf report --stdio"
+        ]
+      },
+      "macos_instruments": {
+        "description": "Use Instruments on macOS for detailed memory analysis",
+        "workflow": "Not applicable for our Linux-targeted code"
+      }
+    }
+  },
+  "memory_insights": {
+    "day2_findings": {
+      "simd_regression_25_37_percent": "Likely due to memory access overhead in simple operations",
+      "size_dependency_improvement": "Larger datasets better amortize SIMD setup costs"
+    },
+    "day3_findings": {
+      "ntt_simd_improvement_0_3_percent": "Complex algorithms mask memory overhead with computation",
+      "correctness_maintained": "Proper Barrett reduction prevents numerical errors"
+    },
+    "memory_hypotheses": {
+      "simd_memory_overhead": {
+        "description": "SIMD operations may have different cache behavior",
+        "evidence": "Consistent pattern across different data sizes",
+        "next_steps": "Profile L1/L2/L3 cache miss rates"
+      },
+      "vectorization_benefits": {
+        "description": "Benefits appear in computation-heavy operations",
+        "evidence": "NTT operations show improvement, pointwise operations don't",
+        "next_steps": "Analyze computation-to-memory-access ratio"
+      },
+      "apple_silicon_characteristics": {
+        "description": "Apple M1 NEON may have specific memory access patterns",
+        "evidence": "Results differ from typical x86 SIMD patterns",
+        "next_steps": "Compare with Intel/AMD SIMD performance"
+      }
+    }
+  },
+  "optimization_guidelines": {
+    "simd_decision_framework": {
+      "use_simd_when": [
+        "Operation complexity > memory access overhead",
+        "Data reuse patterns favor vectorization",
+        "Computation density is high (complex math per memory access)",
+        "Working set fits in L1/L2 cache"
+      ],
+      "avoid_simd_when": [
+        "Simple pointwise operations with no reuse",
+        "Memory bandwidth is the bottleneck",
+        "Working set exceeds cache hierarchy",
+        "Setup overhead > computation benefit"
+      ]
+    },
+    "memory_optimization_strategies": {
+      "data_layout": "Structure data for sequential access patterns",
+      "cache_blocking": "Tile algorithms to fit cache hierarchy",
+      "prefetching": "Use software prefetching for predictable access patterns",
+      "alignment": "Ensure SIMD-width alignment for optimal memory access"
+    },
+    "validation_methodology": {
+      "test_hierarchy": [
+        "1. Correctness validation",
+        "2. Synthetic microbenchmarks",
+        "3. Realistic workload testing",
+        "4. Memory access pattern analysis"
+      ],
+      "metrics_to_track": [
+        "Cache miss rates",
+        "Memory bandwidth utilization",
+        "Instructions per cycle",
+        "Branch prediction accuracy"
+      ]
+    }
+  }
+}

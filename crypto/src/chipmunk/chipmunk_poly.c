@@ -47,7 +47,7 @@
 #endif
 
 // Флаг для расширенного логирования
-static bool s_debug_more = true;
+static bool s_debug_more = false; // **ИСПРАВЛЕНИЕ PHASE 0**: отключаем логирование для ускорения
 
 /**
  * @brief Transform polynomial to NTT form
@@ -440,7 +440,7 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
         
         // Get position from 2 bytes of extended hash  
         uint16_t l_pos = ((uint16_t)extended_hash[l_hash_offset] | 
-                         ((uint16_t)extended_hash[(l_hash_offset + 1) % 256] << 8)) % CHIPMUNK_N;
+                         ((uint16_t)extended_hash[(l_hash_offset + 1) % 256] << 8)) % CHIPMUNK_N; // Индекс массива - оставляем %
         
         // Check if this position is already used
         bool l_already_used = false;
@@ -514,19 +514,13 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     */
     
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: точно следуем оригинальному Rust коду!
-    // 1. Hash message with SHA256
-    dap_hash_fast_t l_hash_out;
-    dap_hash_fast(a_message, a_message_len, &l_hash_out);
-    
+    // 1. Hash message with SHA256 (ИСПРАВЛЕНО: используем быстрый secp256k1 вместо медленного dap_hash_fast!)
     uint8_t l_seed[32];
-    memcpy(l_seed, &l_hash_out, 32);
-    
-    /*
-    if (call_count <= 5) {
-        printf("🔍 FROM_HASH: SHA256 seed = 0x%02x%02x%02x%02x\n", 
-               l_seed[0], l_seed[1], l_seed[2], l_seed[3]);
+    int l_hash_result = dap_chipmunk_hash_sha2_256(l_seed, a_message, a_message_len);
+    if (l_hash_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "SHA2-256 hash failed in chipmunk_poly_from_hash");
+        return l_hash_result;
     }
-    */
     
     // 2. Use seed to create ChaCha20Rng (simplified deterministic version)
     // Initialize to zero
@@ -558,7 +552,7 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
         l_rng_state = l_a * l_rng_state + l_c;
         uint32_t l_tmp = l_rng_state;
         
-        uint32_t l_index = l_tmp % CHIPMUNK_N;
+        uint32_t l_index = l_tmp % CHIPMUNK_N; // Это не модульная арифметика, а индекс массива - оставляем %
         l_tmp >>= 9;
         
         if (a_poly->coeffs[l_index] == 0) {

@@ -1,0 +1,167 @@
+{
+  "week1_profiling_study": {
+    "focus": "Intel VTune Profiler comprehensive study",
+    "start_date": "2024-12-20",
+    "duration": "7 days intensive study",
+    "goal": "Master advanced CPU performance analysis beyond basic timing measurements",
+    
+    "day_by_day_plan": {
+      "day_1": {
+        "topic": "VTune Basics and Setup",
+        "study_objectives": [
+          "Install VTune and understand UI/CLI interfaces",
+          "Learn analysis types: Hotspots, Threading, Memory Access",
+          "Understand CPU performance counter concepts"
+        ],
+        "practical_exercise": "Profile simple C program to understand VTune workflow",
+        "deliverable": "Working VTune installation with first analysis completed",
+        "time_allocation": "4 hours study + 2 hours hands-on"
+      },
+      
+      "day_2": {
+        "topic": "Hotspot Analysis Deep Dive",
+        "study_objectives": [
+          "Advanced hotspot analysis techniques",
+          "Understanding CPU utilization metrics",
+          "Function-level and instruction-level analysis"
+        ],
+        "practical_exercise": "Profile Chipmunk NTT functions with hotspot analysis",
+        "deliverable": "Detailed hotspot analysis of chipmunk_ntt vs chipmunk_ntt_optimized",
+        "time_allocation": "3 hours study + 3 hours Chipmunk analysis"
+      },
+      
+      "day_3": {
+        "topic": "Micro-architectural Analysis",
+        "study_objectives": [
+          "CPU pipeline analysis and bottlenecks",
+          "Branch prediction and cache miss analysis",
+          "Instruction throughput and latency metrics"
+        ],
+        "practical_exercise": "Analyze SIMD optimization micro-architectural impact",
+        "deliverable": "Micro-architectural comparison: scalar vs SIMD NTT implementation",
+        "time_allocation": "4 hours study + 2 hours analysis"
+      },
+      
+      "day_4": {
+        "topic": "Memory Access Analysis",
+        "study_objectives": [
+          "Cache hierarchy analysis techniques",
+          "Memory bandwidth utilization",
+          "NUMA and memory latency analysis"
+        ],
+        "practical_exercise": "Analyze memory access patterns in Barrett reduction",
+        "deliverable": "Memory access optimization recommendations for NTT",
+        "time_allocation": "3 hours study + 3 hours memory analysis"
+      },
+      
+      "day_5": {
+        "topic": "Advanced Performance Counters",
+        "study_objectives": [
+          "Custom performance counter selection",
+          "SIMD-specific performance metrics",
+          "Energy and thermal analysis"
+        ],
+        "practical_exercise": "Create custom counter set for crypto performance analysis",
+        "deliverable": "Crypto-optimized VTune analysis configuration",
+        "time_allocation": "3 hours study + 3 hours configuration"
+      },
+      
+      "day_6": {
+        "topic": "Statistical Analysis and Automation",
+        "study_objectives": [
+          "VTune command-line automation",
+          "Statistical significance in performance measurements",
+          "Automated report generation"
+        ],
+        "practical_exercise": "Automate VTune analysis for Chipmunk performance regression detection",
+        "deliverable": "Automated VTune profiling script for Chipmunk",
+        "time_allocation": "2 hours study + 4 hours automation"
+      },
+      
+      "day_7": {
+        "topic": "Integration and Knowledge Synthesis",
+        "study_objectives": [
+          "Integrate VTune with existing development workflow",
+          "Compare VTune insights with previous basic profiling",
+          "Extract actionable optimization insights"
+        ],
+        "practical_exercise": "Complete analysis of Phase 4 SIMD optimization effectiveness",
+        "deliverable": "Comprehensive VTune-based analysis report of SIMD optimization",
+        "time_allocation": "6 hours comprehensive analysis and reporting"
+      }
+    },
+    
+    "practical_applications": {
+      "chipmunk_analysis_targets": [
+        "chipmunk_ntt() vs chipmunk_ntt_optimized() performance comparison",
+        "Barrett reduction vectorization effectiveness analysis",
+        "Memory access pattern optimization in NTT butterfly operations",
+        "Branch prediction impact of conditional SIMD compilation",
+        "Cache utilization in 512-element NTT arrays"
+      ],
+      
+      "expected_insights": [
+        "Precise quantification of SIMD optimization impact",
+        "Identification of remaining micro-bottlenecks",
+        "Memory optimization opportunities",
+        "CPU pipeline utilization improvements",
+        "Statistical confidence in performance measurements"
+      ]
+    },
+    
+    "learning_resources": {
+      "primary_documentation": [
+        "Intel VTune Profiler User Guide",
+        "Intel Architecture Optimization Reference Manual",
+        "CPU performance counter documentation"
+      ],
+      
+      "hands_on_tutorials": [
+        "VTune command-line interface tutorial",
+        "Micro-architectural analysis case studies",
+        "SIMD optimization profiling examples"
+      ],
+      
+      "validation_materials": [
+        "Performance analysis best practices",
+        "Statistical methods for performance measurement",
+        "Automated profiling setup guides"
+      ]
+    },
+    
+    "daily_reflection_template": {
+      "what_learned": "Key technical concepts mastered today",
+      "practical_insights": "Insights gained from Chipmunk analysis",
+      "challenges_encountered": "Technical difficulties and solutions",
+      "application_ideas": "Ideas for applying to future optimization work",
+      "next_day_preparation": "Setup and preparation for tomorrow's learning"
+    },
+    
+    "success_criteria": {
+      "technical_mastery": [
+        "Able to identify performance bottlenecks at instruction level",
+        "Understanding of CPU pipeline impact of optimizations",
+        "Capability to design custom performance measurement setups"
+      ],
+      
+      "practical_application": [
+        "Quantified SIMD optimization impact with statistical confidence",
+        "Identified specific micro-optimization opportunities",
+        "Created automated profiling workflow for future use"
+      ],
+      
+      "knowledge_integration": [
+        "Documented learnings in new decision documentation system",
+        "Applied advanced profiling to enhance previous basic analysis",
+        "Established foundation for Week 2 ARM Streamline study"
+      ]
+    },
+    
+    "integration_with_development_workflow": {
+      "tools_setup": "Configure VTune for Chipmunk project structure",
+      "automation_scripts": "Create reusable profiling scripts",
+      "documentation_integration": "Use new decision logging system for all learning",
+      "baseline_establishment": "Create detailed performance baseline for future comparison"
+    }
+  }
+} 

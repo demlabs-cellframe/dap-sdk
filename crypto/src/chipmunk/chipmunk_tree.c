@@ -38,11 +38,8 @@
  * @return Reduced coefficient in range [0, HVC_MODULUS)
  */
 static int32_t s_hvc_mod_reduce(int64_t a_coeff) {
-    int32_t l_result = (int32_t)(a_coeff % CHIPMUNK_HVC_Q);
-    if (l_result < 0) {
-        l_result += CHIPMUNK_HVC_Q;
-    }
-    return l_result;
+    // **ИСПРАВЛЕНИЕ PHASE 0**: Barrett reduction вместо медленной % операции
+    return chipmunk_hvc_barrett_reduce(a_coeff);
 }
 
 /**
@@ -121,7 +118,7 @@ int chipmunk_hvc_hasher_init(chipmunk_hvc_hasher_t *a_hasher, const uint8_t a_se
         for (int j = 0; j < CHIPMUNK_N; j++) {
             // Simple deterministic generation
             uint32_t l_value = ((uint32_t)a_seed[0] + i * 1000 + j) * 1664525 + 1013904223;
-            a_hasher->matrix_a[i].coeffs[j] = l_value % CHIPMUNK_HVC_Q;
+            a_hasher->matrix_a[i].coeffs[j] = chipmunk_hvc_barrett_reduce(l_value);
         }
     }
 
@@ -144,10 +141,7 @@ int chipmunk_hvc_hash_decom_then_hash(const chipmunk_hvc_hasher_t *a_hasher,
     // Simplified hash: result = left + right (coefficient-wise)
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int64_t l_sum = (int64_t)a_left->coeffs[i] + (int64_t)a_right->coeffs[i];
-        a_result->coeffs[i] = (int32_t)(l_sum % CHIPMUNK_HVC_Q);
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_HVC_Q;
-        }
+        a_result->coeffs[i] = chipmunk_hvc_barrett_reduce(l_sum);
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
@@ -490,16 +484,14 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     
     // Копируем v0
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t normalized_coeff = a_hots_pk->v0.coeffs[i] % CHIPMUNK_HVC_Q;
-        if (normalized_coeff < 0) normalized_coeff += CHIPMUNK_HVC_Q;
+        int32_t normalized_coeff = chipmunk_hvc_barrett_reduce(a_hots_pk->v0.coeffs[i]);
         memcpy(&combined_input[offset], &normalized_coeff, sizeof(int32_t));
         offset += sizeof(int32_t);
     }
     
     // Копируем v1
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t normalized_coeff = a_hots_pk->v1.coeffs[i] % CHIPMUNK_HVC_Q;
-        if (normalized_coeff < 0) normalized_coeff += CHIPMUNK_HVC_Q;
+        int32_t normalized_coeff = chipmunk_hvc_barrett_reduce(a_hots_pk->v1.coeffs[i]);
         memcpy(&combined_input[offset], &normalized_coeff, sizeof(int32_t));
         offset += sizeof(int32_t);
     }
@@ -513,7 +505,7 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     for (int i = 0; i < CHIPMUNK_N; i++) {
         // Генерируем псевдослучайные коэффициенты из hash
         seed = seed * 1103515245U + 12345U; // LCG
-        a_hvc_poly->coeffs[i] = (int32_t)(seed % CHIPMUNK_HVC_Q);
+        a_hvc_poly->coeffs[i] = chipmunk_hvc_barrett_reduce(seed);
         if (a_hvc_poly->coeffs[i] > CHIPMUNK_HVC_Q/2) {
             a_hvc_poly->coeffs[i] -= CHIPMUNK_HVC_Q;
         }

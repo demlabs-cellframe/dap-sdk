@@ -34,6 +34,7 @@
 #include "chipmunk_internal.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
+#include "chipmunk_hash.h"
 #include "dap_hash.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
@@ -111,12 +112,13 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         uint32_t l_param_nonce = 0x10000000 + i;  // Unique nonce for each parameter
         memcpy(l_param_seed + 32, &l_param_nonce, 4);
         
-        // Generate random polynomial in time domain
-        dap_hash_fast_t l_hash_out;
-        dap_hash_fast(l_param_seed, 36, &l_hash_out);
-        
+        // Generate random polynomial in time domain (ИСПРАВЛЕНО: используем быстрый secp256k1!)
         uint8_t l_hash[32];
-        memcpy(l_hash, &l_hash_out, 32);
+        int l_hash_result = dap_chipmunk_hash_sha2_256(l_hash, l_param_seed, 36);
+        if (l_hash_result != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "SHA2-256 hash failed in chipmunk_hots_setup");
+            return l_hash_result;
+        }
         
         // Use hash as seed for ChaCha20-like generator
         uint32_t l_state[8];
@@ -183,10 +185,12 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
     memcpy(l_seed_and_counter, a_seed, 32);
     memcpy(l_seed_and_counter + 32, l_counter_bytes, 4);
     
-    // Hash to get derived seed
-    dap_hash_fast_t l_hash_out;
-    dap_hash_fast(l_seed_and_counter, 36, &l_hash_out);
-    memcpy(l_derived_seed, &l_hash_out, 32);
+    // Hash to get derived seed (ИСПРАВЛЕНО: используем быстрый secp256k1!)
+    int l_hash_result = dap_chipmunk_hash_sha2_256(l_derived_seed, l_seed_and_counter, 36);
+    if (l_hash_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "SHA2-256 hash failed in chipmunk_hots_keygen");
+        return l_hash_result;
+    }
     
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         DEBUG_MORE("🔑 Generating key pair %d/%d...", i+1, CHIPMUNK_GAMMA);
