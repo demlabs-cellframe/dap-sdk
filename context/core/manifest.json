@@ -1,0 +1,281 @@
+{
+  "name": "Smart Layered Context",
+  "version": "3.0",
+  "architecture_version": "chipmunk_optimization_completed",
+  "created": "2025-01-10T20:45:00Z",
+  "updated": "2025-01-14T18:00:00Z",
+  "project": "Chipmunk Performance Optimization (Phase 0 - ЗАВЕРШЕН ✅)",
+  "previous_project": "Smart Layered Context v2.1.2 (отложен)",
+  "status": "УСПЕШНО ЗАВЕРШЕН - ГОТОВ ДЛЯ PRODUCTION",
+  
+  "navigation_system": {
+    "file_role": "ROOT_MANIFEST",
+    "description": "🗺️ Корневой навигатор - отсюда можно добраться до любого файла системы",
+    "cursor_ide_note": "Оптимизировано для использования в Cursor IDE через промпты",
+    "recovery_instructions": {
+      "if_ai_lost_context": [
+        "Этот файл - корневой манифест системы Smart Layered Context",
+        "Отсюда можно восстановить полный контекст любой задачи", 
+        "Следуйте ссылкам в секции 'context_map' для загрузки нужных модулей",
+        "Для текущей задачи: current_task → tasks/active.json или context.reflection/.context/tasks/",
+        "В Cursor IDE: просто попросите ИИ загрузить этот файл и объяснить структуру"
+      ]
+    },
+    
+    "navigation_tree": {
+      "current_location": "📍 core/manifest.json (ROOT)",
+      "parent": null,
+      "children": {
+        "core_files": [
+          "core/standards.json",
+          "core/project.json"
+        ],
+        "modules": [
+          "modules/ai_ml/prompt_engineering.json",
+          "modules/ai_ml/fine_tuning_workflow.json", 
+          "modules/ai_ml/ai_agent_development.json",
+          "modules/languages/python/python_development.json",
+          "modules/languages/javascript/javascript_development.json",
+          "modules/languages/c/c_development.json",
+          "modules/methodologies/obsidian_workflow.json",
+          "modules/methodologies/documentation_systems.json",
+          "modules/methodologies/context_systems_development.json",
+          "modules/tools/obsidian_workflow.json",
+          "modules/projects/dap_sdk_project.json"
+        ],
+        "tasks": [
+          "tasks/active.json",
+          "context.reflection/.context/tasks/current_meta_task.json"
+        ],
+        "documentation": [
+          "README.md",
+          "USAGE_GUIDE.md",
+          "NAVIGATION_DEMO.md"
+        ]
+      }
+    },
+    
+    "quick_recovery_paths": {
+      "lost_in_ai_ml": "📂 modules/ai_ml/ → core/manifest.json → восстановить полный контекст",
+      "lost_in_languages": "📂 modules/languages/ → core/manifest.json → восстановить полный контекст", 
+      "lost_in_tasks": "📂 tasks/ или context.reflection/ → core/manifest.json → восстановить полный контекст",
+      "lost_anywhere": "🏠 Любой .json файл содержит navigation_system → core/manifest.json",
+      "cursor_ide_recovery": "🎨 В Cursor: попросите ИИ загрузить core/manifest.json для восстановления"
+    }
+  },
+  
+  "context_map": {
+    "core_layer": {
+      "description": "Always loaded - essential project information",
+      "files": [
+        "core/standards.json",
+        "core/project.json"
+      ],
+      "auto_load": true,
+      "size_estimate": "~15KB total",
+      "navigation_links": {
+        "standards": "core/standards.json - coding standards и best practices",
+        "project": "core/project.json - project overview и architecture"
+      }
+    },
+    "current_task": {
+      "source": "context.reflection/.context/tasks/current_meta_task.json",
+      "description": "Current active task with progress tracking",
+      "auto_load_when": "user starts work session",
+      "fallback": "tasks/templates/task_template.json",
+      "navigation_links": {
+        "active_tasks": "context.reflection/.context/tasks/ - current system development",
+        "task_templates": "tasks/templates/ - task creation templates"
+      }
+    },
+    "modules": {
+      "description": "Load on demand based on work context",
+      "available": {
+        "ai_ml": {
+          "description": "🤖 AI/ML Development Templates",
+          "files": {
+            "prompt_engineering": "modules/ai_ml/prompt_engineering.json",
+            "fine_tuning": "modules/ai_ml/fine_tuning_workflow.json", 
+            "ai_agents": "modules/ai_ml/ai_agent_development.json"
+          },
+          "keywords": ["ai", "ml", "llm", "prompt", "fine-tuning", "agents", "artificial intelligence"]
+        },
+        "languages": {
+          "description": "💻 Programming Language Templates",
+          "files": {
+            "python": "modules/languages/python/python_development.json",
+            "javascript": "modules/languages/javascript/javascript_development.json",
+            "c_cpp": "modules/languages/c/c_development.json"
+          },
+          "keywords": ["python", "javascript", "c", "cpp", "programming", "development"]
+        },
+        "methodologies": {
+          "description": "📋 Development Methodologies",
+          "files": {
+            "obsidian": "modules/methodologies/obsidian_workflow.json",
+            "documentation": "modules/methodologies/documentation_systems.json",
+            "context_systems": "modules/methodologies/context_systems_development.json",
+            "performance_optimization": "modules/methodologies/performance_optimization.json"
+          },
+          "keywords": ["methodology", "workflow", "documentation", "obsidian", "context", "performance", "optimization", "profiling"]
+        },
+        "tools": {
+          "description": "🛠️ Development Tools",
+          "files": {
+            "obsidian_workflow": "modules/tools/obsidian_workflow.json"
+          },
+          "keywords": ["tools", "workflow", "automation"]
+        },
+        "projects": {
+          "description": "🏗️ Specific Project Templates",
+          "files": {
+            "dap_sdk": "modules/projects/dap_sdk_project.json",
+            "cryptography": "modules/projects/cryptography_project.json"
+          },
+          "keywords": ["project", "dap", "sdk", "cellframe", "blockchain", "crypto", "cryptography"]
+        }
+      }
+    }
+  },
+  
+  "smart_suggestions": {
+    "work_patterns": {
+      "ai_ml_development": {
+        "description": "AI/ML разработка и исследования",
+        "keywords": ["ai", "ml", "llm", "prompt", "fine-tuning", "agents", "neural", "model"],
+        "suggested_modules": ["modules/ai_ml/prompt_engineering.json", "modules/ai_ml/fine_tuning_workflow.json"],
+        "suggested_tools": ["tools/scripts/slc_cli.py"],
+        "priority": "high"
+      },
+      "prompt_engineering": {
+        "description": "Разработка и оптимизация промптов",
+        "keywords": ["prompt", "llm", "gpt", "claude", "optimization", "conversation", "chatbot"],
+        "suggested_modules": ["modules/ai_ml/prompt_engineering.json"],
+        "suggested_tools": ["tools/scripts/slc_cli.py create ai_ml/prompt_engineering.json"],
+        "priority": "critical"
+      },
+      "python_development": {
+        "description": "Python разработка (AI/ML, web, blockchain)",
+        "keywords": ["python", "django", "fastapi", "pytorch", "tensorflow", "cellframe"],
+        "suggested_modules": ["modules/languages/python/python_development.json"],
+        "suggested_tools": ["tools/scripts/slc_cli.py create languages/python/python_development.json"],
+        "priority": "high"
+      },
+      "knowledge_management": {
+        "description": "Организация знаний и документации",
+        "keywords": ["obsidian", "documentation", "knowledge", "notes", "wiki", "markdown"],
+        "suggested_modules": ["modules/methodologies/obsidian_workflow.json", "modules/methodologies/documentation_systems.json"],
+        "suggested_tools": ["tools/scripts/slc_cli.py create tools/obsidian_workflow.json"],
+        "priority": "medium"
+      }
+    }
+  },
+  
+  "system_status": {
+    "version": "2.1.2",
+    "release_date": "2025-01-14",
+    "template_count": 11,
+    "categories": 5,
+    "cli_available": true,
+    "health_check": "python3 tools/scripts/slc_cli.py validate"
+  },
+  
+  "recovery_procedures": {
+    "context_lost": {
+      "step_1": "Найти любой .json файл в системе",
+      "step_2": "Найти секцию 'navigation_system' → 'recovery_path'", 
+      "step_3": "Следовать ссылке на core/manifest.json (этот файл)",
+      "step_4": "Использовать context_map для загрузки нужных модулей",
+      "step_5": "Проверить current_task для текущей работы"
+    },
+    "quick_commands": {
+      "validate_system": "python3 tools/scripts/slc_cli.py validate",
+      "list_templates": "python3 tools/scripts/slc_cli.py list",
+      "search_templates": "python3 tools/scripts/slc_cli.py search KEYWORD",
+      "get_template_info": "python3 tools/scripts/slc_cli.py info TEMPLATE_PATH",
+      "create_project": "python3 tools/scripts/slc_cli.py create TEMPLATE_PATH PROJECT_NAME"
+    }
+  },
+  
+  "navigation_hints": {
+    "need_ai_ml": "🤖 For AI/ML work: modules/ai_ml/",
+    "need_languages": "💻 For language-specific: modules/languages/",
+    "need_methodology": "📋 For workflows: modules/methodologies/",
+    "need_current_task": "📋 For current progress: context.reflection/.context/tasks/",
+    "need_tools": "🛠️ For automation: tools/scripts/slc_cli.py",
+    "need_standards": "📐 For coding standards: core/standards.json",
+    "need_project_overview": "🏗️ For project info: core/project.json"
+  },
+  
+  "intelligent_loading": {
+    "user_query_analysis": {
+      "ai_ml_related": {
+        "patterns": ["ai", "ml", "llm", "prompt", "fine-tuning", "agent", "chatbot", "gpt", "claude"],
+        "auto_suggest": ["modules/ai_ml/prompt_engineering.json", "modules/ai_ml/ai_agent_development.json"],
+        "explanation": "Detected AI/ML work, suggesting AI/ML modules"
+      },
+      "python_related": {
+        "patterns": ["python", "django", "fastapi", "pytorch", "tensorflow", "pandas", "cellframe"],
+        "auto_suggest": ["modules/languages/python/python_development.json"],
+        "explanation": "Detected Python work, suggesting Python development module"
+      },
+      "javascript_related": {
+        "patterns": ["javascript", "react", "vue", "node", "web3", "ethereum", "frontend"],
+        "auto_suggest": ["modules/languages/javascript/javascript_development.json"],
+        "explanation": "Detected JavaScript work, suggesting JavaScript development module"
+      },
+      "documentation_related": {
+        "patterns": ["documentation", "docs", "markdown", "wiki", "obsidian", "knowledge"],
+        "auto_suggest": ["modules/methodologies/documentation_systems.json", "modules/methodologies/obsidian_workflow.json"],
+        "explanation": "Detected documentation work, suggesting documentation modules"
+      }
+    }
+  },
+  
+  "deployment_info": {
+    "ready_for_deployment": true,
+    "deployment_script": "tools/deployment/prepare_release.sh",
+    "cli_tool": "tools/scripts/slc_cli.py",
+    "deployment_docs": [
+      "README.md",
+      "USAGE_GUIDE.md", 
+      "DEPLOYMENT.md"
+    ]
+  },
+  
+  "usage_stats": {
+    "most_used_modules": ["ai_ml", "languages", "methodologies"],
+    "typical_workflow": [
+      "Load core context (manifest + standards + project)",
+      "Search templates: slc_cli.py search KEYWORD",
+      "Get template info: slc_cli.py info TEMPLATE_PATH", 
+      "Create project: slc_cli.py create TEMPLATE_PATH PROJECT_NAME"
+    ],
+    "optimization_hint": "Use CLI for efficient template management"
+  },
+  
+  "ai_optimization": {
+    "context_loading_strategy": {
+      "always_load": [
+        "core/manifest.json (this file)",
+        "core/standards.json", 
+        "core/project.json"
+      ],
+      "load_on_ai_work": ["modules/ai_ml/*.json"],
+      "load_on_language_work": ["modules/languages/{language}/*.json"],
+      "load_on_methodology_work": ["modules/methodologies/*.json"],
+      "load_rarely": ["docs/*.md", "tools/templates/*"]
+    },
+    "memory_optimization": {
+      "core_files_size": "~15KB total",
+      "module_files_size": "~15-25KB each",
+      "recommendation": "Load core + 1-2 modules maximum per session"
+    },
+    "session_patterns": {
+      "ai_development": "manifest + standards + project + ai_ml modules",
+      "language_development": "manifest + standards + project + language module",
+      "documentation_work": "manifest + standards + project + methodology modules",
+      "new_project": "manifest + appropriate template module"
+    }
+  }
+} 

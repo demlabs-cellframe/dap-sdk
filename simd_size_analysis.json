@@ -1,0 +1,1632 @@
+{
+  "timestamp": "2025-06-07T22:43:28.139296",
+  "analysis_type": "SIMD_SIZE_DEPENDENCY",
+  "tests": {
+    "64": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.3678162097930908,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002958059310913086,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0024046897888183594,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0025391578674316406,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0026009082794189453,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0024340152740478516,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.00234222412109375,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0026578903198242188,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002235889434814453,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 64,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023849010467529297,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.210676908493042,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0029039382934570312,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0022878646850585938,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025968551635742188,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025472640991210938,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002299070358276367,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0023081302642822266,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002317190170288086,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0021970272064208984,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 64,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002105712890625,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 64 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "128": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.1925029754638672,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0029370784759521484,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.003016948699951172,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002583026885986328,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002621889114379883,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0021848678588867188,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002074003219604492,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002125263214111328,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0030090808868408203,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 128,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002886056900024414,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.1930370330810547,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002748250961303711,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002577066421508789,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002490997314453125,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0024979114532470703,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0032019615173339844,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002615690231323242,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0028181076049804688,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0026960372924804688,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 128,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0023131370544433594,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 128 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "256": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.20827388763427734,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0027358531951904297,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0024607181549072266,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002258777618408203,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0021491050720214844,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0020112991333007812,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002151966094970703,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0022935867309570312,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0021996498107910156,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 256,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002035856246948242,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.19097495079040527,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002804994583129883,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0026209354400634766,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025310516357421875,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025510787963867188,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0026099681854248047,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0022449493408203125,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0021266937255859375,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0028638839721679688,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 256,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002615213394165039,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 256 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "512": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.20988702774047852,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.003164052963256836,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002499103546142578,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0037848949432373047,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.004068136215209961,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0025758743286132812,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0027458667755126953,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.00397801399230957,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002526998519897461,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 512,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0024619102478027344,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.1948249340057373,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0026030540466308594,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0024378299713134766,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0024611949920654297,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0023009777069091797,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002232074737548828,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002916097640991211,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002959012985229492,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.00249481201171875,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 512,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002753019332885742,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 512 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "1024": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.19737005233764648,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002604961395263672,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023741722106933594,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0026628971099853516,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023589134216308594,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0022792816162109375,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002547025680541992,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002501964569091797,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002270936965942383,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 1024,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023338794708251953,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.19381237030029297,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0030298233032226562,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002606630325317383,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002332925796508789,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002300262451171875,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002763986587524414,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025031566619873047,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002414226531982422,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025200843811035156,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 1024,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0023279190063476562,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 1024 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "2048": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.1924731731414795,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0025818347930908203,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002413034439086914,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023140907287597656,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002190828323364258,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002176046371459961,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002131223678588867,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0019462108612060547,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0019278526306152344,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 2048,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0025320053100585938,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.19437384605407715,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0030379295349121094,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002499818801879883,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0024318695068359375,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025739669799804688,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002279043197631836,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0020406246185302734,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002154111862182617,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0022928714752197266,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 2048,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0024569034576416016,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 2048 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: scalar\n"
+        }
+      ]
+    },
+    "4096": {
+      "simd": [
+        {
+          "iteration": 0,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.19581985473632812,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 1,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0024428367614746094,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 2,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0028409957885742188,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 3,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002627134323120117,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 4,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002368927001953125,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 5,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002332925796508789,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 6,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0023517608642578125,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 7,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.002179861068725586,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: simd\n"
+        },
+        {
+          "iteration": 8,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0020112991333007812,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        },
+        {
+          "iteration": 9,
+          "size": 4096,
+          "test_type": "simd",
+          "times": {
+            "wallclock_time_s": 0.0022389888763427734,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: simd\n"
+        }
+      ],
+      "scalar": [
+        {
+          "iteration": 0,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.1944870948791504,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 1,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0025739669799804688,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0,
+            "ops_per_sec": 1000000000.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: 1000000000\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 2,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0021648406982421875,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 3,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002295970916748047,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 4,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002454996109008789,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 5,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0020437240600585938,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 6,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0021140575408935547,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 7,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0026590824127197266,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 8,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.002146005630493164,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        },
+        {
+          "iteration": 9,
+          "size": 4096,
+          "test_type": "scalar",
+          "times": {
+            "wallclock_time_s": 0.0020558834075927734,
+            "total_time_ms": 0.0,
+            "avg_per_op_us": 0.0
+          },
+          "output": "Performance Results:\n- Data size: 4096 elements\n- Iterations: 1000\n- Total time: 0.00 ms\n- Average time per operation: 0.00 \u03bcs\n- Operations per second: inf\n- Test type: scalar\n"
+        }
+      ]
+    }
+  },
+  "analysis": {
+    "64": {},
+    "128": {},
+    "256": {},
+    "512": {},
+    "1024": {},
+    "2048": {
+      "size": 2048,
+      "simd_ops_per_sec": {
+        "mean": 1000000000.0,
+        "stdev": 0,
+        "count": 1
+      },
+      "scalar_ops_per_sec": {
+        "mean": 1000000000.0,
+        "stdev": 0,
+        "count": 1
+      },
+      "performance_ratio": 1.0,
+      "simd_advantage": 0.0
+    },
+    "4096": {
+      "size": 4096,
+      "simd_ops_per_sec": {
+        "mean": 1000000000.0,
+        "stdev": 0,
+        "count": 1
+      },
+      "scalar_ops_per_sec": {
+        "mean": 1000000000.0,
+        "stdev": 0,
+        "count": 1
+      },
+      "performance_ratio": 1.0,
+      "simd_advantage": 0.0
+    }
+  }
+}
