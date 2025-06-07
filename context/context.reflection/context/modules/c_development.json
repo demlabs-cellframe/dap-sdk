@@ -1,0 +1,223 @@
+{
+  "type": "universal_template_module",
+  "domain": "c_cpp_development",
+  "version": "2.0",
+  "created": "2025-01-14T13:00:00Z",
+  "updated": "2025-01-14T13:00:00Z",
+  "template_source": "Основано на анализе DAP SDK (Cellframe DAP SDK)",
+  
+  "template_info": {
+    "name": "C/C++ Development Template",
+    "description": "Универсальный шаблон для разработки на C/C++ с акцентом на системное программирование, криптографию и высокопроизводительные вычисления",
+    "target_projects": [
+      "Системное программирование",
+      "Криптографические библиотеки",
+      "Blockchain/Cryptocurrency проекты",
+      "Встроенные системы",
+      "Высокопроизводительные вычисления",
+      "Кроссплатформенные приложения"
+    ],
+    "applicability": "95% C/C++ проектов с минимальной кастомизацией"
+  },
+  
+  "project_architecture": {
+    "language_standards": {
+      "c_standard": "C99/C11 - современные стандарты C",
+      "cpp_standard": "C++11/C++14/C++17 - в зависимости от проекта", 
+      "compatibility": "Кроссплатформенность: Linux, macOS, Windows",
+      "coding_style": "Консистентный стиль, документированные соглашения"
+    },
+    
+    "build_system": {
+      "primary": "CMake - предпочтительная система сборки",
+      "alternatives": ["Make", "Autotools", "Meson", "SCons"],
+      "configurations": {
+        "debug": "Отладочная сборка с символами отладки",
+        "release": "Оптимизированная релизная сборка",
+        "test": "Сборка для тестирования",
+        "asan": "AddressSanitizer для обнаружения ошибок памяти",
+        "profile": "Сборка для профилирования производительности"
+      }
+    },
+    
+    "directory_structure": {
+      "src/": "Исходный код проекта",
+      "include/": "Заголовочные файлы (публичные API)",
+      "lib/": "Статические и динамические библиотеки",
+      "test/": "Тесты и тестовые данные",
+      "docs/": "Документация проекта",
+      "build*/": "Директории сборки (gitignore)",
+      "third_party/": "Внешние зависимости",
+      "tools/": "Утилиты и вспомогательные скрипты"
+    }
+  },
+  
+  "development_practices": {
+    "memory_management": {
+      "allocation": "Четкие правила выделения/освобождения памяти",
+      "error_handling": "Консистентная обработка ошибок",
+      "resource_management": "RAII принципы где применимо",
+      "leak_detection": "Инструменты для обнаружения утечек памяти",
+      "security": "Зануление чувствительных данных перед освобождением"
+    },
+    
+    "error_handling": {
+      "return_codes": "Стандартизированные коды возврата",
+      "error_propagation": "Четкое распространение ошибок",
+      "logging": "Структурированное логирование ошибок",
+      "recovery": "Стратегии восстановления после ошибок"
+    },
+    
+    "performance_optimization": {
+      "profiling": "Регулярное профилирование производительности",
+      "algorithms": "Выбор оптимальных алгоритмов и структур данных",
+      "compiler_optimization": "Использование флагов оптимизации компилятора",
+      "platform_specific": "Платформо-специфичные оптимизации (SIMD, etc.)",
+      "memory_layout": "Оптимизация расположения данных в памяти"
+    },
+    
+    "security_practices": {
+      "secure_coding": "Безопасные практики программирования",
+      "input_validation": "Тщательная валидация входных данных",
+      "buffer_safety": "Защита от переполнения буферов",
+      "constant_time": "Константное время для криптографических операций",
+      "side_channel": "Защита от атак по побочным каналам"
+    }
+  },
+  
+  "testing_framework": {
+    "unit_testing": {
+      "frameworks": ["CUnit", "Check", "Criterion", "Custom framework"],
+      "coverage": "Стремление к высокому покрытию тестами",
+      "automation": "Автоматический запуск тестов при сборке"
+    },
+    
+    "integration_testing": {
+      "strategy": "Тестирование взаимодействия компонентов",
+      "scenarios": "Реальные сценарии использования",
+      "performance": "Тесты производительности и нагрузки"
+    },
+    
+    "static_analysis": {
+      "tools": ["Clang Static Analyzer", "PVS-Studio", "Coverity"],
+      "automation": "Интеграция в процесс сборки",
+      "warnings": "Строгий режим предупреждений компилятора"
+    }
+  },
+  
+  "dependencies_management": {
+    "philosophy": "Минимизация внешних зависимостей",
+    "strategies": {
+      "bundling": "Включение зависимостей в проект",
+      "git_submodules": "Использование git submodules",
+      "package_managers": ["Conan", "vcpkg", "Hunter"],
+      "system_packages": "Использование системных пакетов где возможно"
+    },
+    
+    "security_considerations": {
+      "vulnerability_scanning": "Регулярное сканирование зависимостей",
+      "version_pinning": "Закрепление версий критических зависимостей",
+      "source_review": "Проверка исходного кода критических зависимостей"
+    }
+  },
+  
+  "development_tools": {
+    "compilers": {
+      "gcc": "GNU Compiler Collection",
+      "clang": "LLVM Clang compiler",
+      "msvc": "Microsoft Visual C++ (Windows)",
+      "cross_compilation": "Кросс-компиляция для различных платформ"
+    },
+    
+    "debuggers": {
+      "gdb": "GNU Debugger",
+      "lldb": "LLVM Debugger", 
+      "valgrind": "Анализ памяти и производительности",
+      "sanitizers": "AddressSanitizer, MemorySanitizer, ThreadSanitizer"
+    },
+    
+    "profilers": {
+      "perf": "Linux performance analysis",
+      "callgrind": "Профилирование вызовов функций",
+      "instruments": "Xcode Instruments (macOS)",
+      "vtune": "Intel VTune Profiler"
+    }
+  },
+  
+  "platform_specifics": {
+    "linux": {
+      "build_requirements": "GCC/Clang, Make, CMake",
+      "system_integration": "Системные вызовы Linux",
+      "package_management": "Интеграция с apt, yum, pacman"
+    },
+    
+    "macos": {
+      "build_requirements": "Xcode Command Line Tools",
+      "frameworks": "Использование macOS frameworks",
+      "package_management": "Homebrew интеграция"
+    },
+    
+    "windows": {
+      "build_requirements": "Visual Studio, MSYS2, или MinGW",
+      "apis": "Win32 API, Windows-специфичные особенности",
+      "deployment": "Windows installer, DLL management"
+    }
+  },
+  
+  "cryptography_specifics": {
+    "note": "Основано на опыте DAP SDK с пост-квантовой криптографией",
+    
+    "algorithms": {
+      "post_quantum": {
+        "priority": "Высокий приоритет для криптографических проектов",
+        "examples": ["Lattice-based schemes", "Hash-based signatures", "Code-based crypto"],
+        "implementation": "Константное время, защита от side-channel атак"
+      },
+      
+      "classical": {
+        "status": "Для совместимости, но с планами миграции",
+        "examples": ["RSA", "ECDSA", "AES"],
+        "deprecation_strategy": "Постепенный переход на пост-квантовые аналоги"
+      }
+    },
+    
+    "implementation_guidelines": {
+      "constant_time": "Все криптографические операции в константном времени",
+      "secure_memory": "Безопасное управление криптографическими ключами",
+      "random_generation": "Криптографически стойкая генерация случайных чисел",
+      "side_channel_protection": "Защита от атак по побочным каналам"
+    }
+  },
+  
+  "customization_guide": {
+    "step_1": "Обновите project.json с информацией о вашем C проекте",
+    "step_2": "Настройте стандарты кодирования в standards.json",
+    "step_3": "Выберите подходящую систему сборки и настройте CMakeLists.txt",
+    "step_4": "Настройте тестовый фреймворк под ваши нужды",
+    "step_5": "Адаптируйте структуру директорий под специфику проекта",
+    "step_6": "Настройте CI/CD pipeline для автоматической сборки и тестирования",
+    
+    "domain_adaptations": {
+      "embedded_systems": "Добавьте конфигурации для целевых микроконтроллеров",
+      "cryptography": "Усильте focus на безопасности и пост-квантовых алгоритмах",
+      "high_performance": "Добавьте SIMD оптимизации и профилирование",
+      "cross_platform": "Настройте сборку для всех целевых платформ"
+    }
+  },
+  
+  "template_removal_notes": [
+    "Удалите эту секцию template_removal_notes после кастомизации",
+    "Замените все [PLACEHOLDER] значения на реальные данные проекта",
+    "Адаптируйте cryptography_specifics только для криптографических проектов",
+    "Упростите dependency_management для небольших проектов",
+    "Настройте testing_framework в соответствии с размером проекта"
+  ],
+  
+  "success_metrics": {
+    "setup_time": "< 20 минут для настройки базового C проекта",
+    "build_success": "Успешная сборка на всех целевых платформах",
+    "test_coverage": "> 80% покрытие кода тестами",
+    "performance": "Соответствие требованиям производительности",
+    "security": "Прохождение security audit для криптографических проектов"
+  }
+} 

@@ -1,0 +1,307 @@
+{
+  "type": "specialized_template_module",
+  "domain": "dap_sdk_project",
+  "version": "2.0",
+  "created": "2025-01-14T13:15:00Z",
+  "updated": "2025-01-14T13:15:00Z",
+  "template_source": "Дамп контекста DAP SDK (.dumps/dap-sdk.17816.0/)",
+  
+  "template_info": {
+    "name": "DAP SDK Project Template",
+    "description": "Специализированный шаблон для разработки в рамках проекта Cellframe DAP SDK - пост-квантовая криптографическая платформа",
+    "target_project": "Cellframe DAP SDK (Decentralized Application Platform)",
+    "applicability": "100% для DAP SDK и его компонентов",
+    "customization_level": "Высоко специализированный"
+  },
+  
+  "project_identity": {
+    "full_name": "Cellframe DAP SDK",
+    "description": "Decentralized Application Platform Software Development Kit with quantum-resistant cryptography",
+    "primary_languages": ["C", "C++"],
+    "architecture": "Modular post-quantum blockchain platform",
+    "license": "Cellframe License",
+    "target_platforms": ["Linux", "macOS", "Windows"]
+  },
+  
+  "core_philosophy": {
+    "post_quantum_priority": {
+      "rule": "Пост-квантовые алгоритмы ВСЕГДА имеют приоритет",
+      "rationale": "Готовность к квантовой угрозе важнее текущей производительности",
+      "policy": "Chipmunk, Kyber, MSRLN - основные алгоритмы для production"
+    },
+    "security_first": "Безопасность превыше производительности",
+    "no_openssl_policy": "Строгая политика 'НЕТ OpenSSL' - используем только DAP SDK криптографию",
+    "quantum_resistance": "Все новые компоненты должны быть квантово-устойчивыми"
+  },
+  
+  "current_development_focus": {
+    "primary_task": "Chipmunk Performance Optimization",
+    "current_phase": "PHASE 2 - VECTORIZATION OPTIMIZATIONS",
+    "progress": "25% - готовая архитектура для Phase 3",
+    "priority": "HIGH",
+    "description": "Оптимизация производительности пост-квантового алгоритма Chipmunk при сохранении криптографической стойкости",
+    
+    "optimization_roadmap": {
+      "completed_phases": [
+        "PHASE 1: Hash function optimization (secp256k1_sha256)",
+        "Static inline critical functions",
+        "DEBUG_MORE disabled by default",
+        "NTT vectorization infrastructure",
+        "Manual Barrett reduction implementation"
+      ],
+      "current_phase_details": {
+        "focus": "Vectorization optimizations for NTT operations",
+        "target_improvement": "2-3x performance boost",
+        "key_components": ["NTT s1: 20.1%", "NTT s0: 19.4%", "InvNTT v0: 15.8%"]
+      },
+      "next_phase": "PHASE 3: Aggressive SIMD optimization",
+      "future_targets": ["3-5x performance boost", "AVX2/NEON vectorization", "cache optimization"]
+    }
+  },
+  
+  "module_architecture": {
+    "crypto": {
+      "description": "Криптографические компоненты и алгоритмы",
+      "status": "✅ STABLE - 100% PASS, Chipmunk production ready",
+      "priority": "CRITICAL",
+      "algorithms": {
+        "post_quantum": {
+          "chipmunk": "Lattice-based multi-signature scheme - PRIMARY FOCUS",
+          "kyber": "Post-quantum key encapsulation mechanism",
+          "dilithium": "Lattice-based digital signatures",
+          "falcon": "Lattice-based signatures",
+          "msrln": "Microsoft Research lattice-based cryptography",
+          "sphincsplus": "Hash-based signatures"
+        },
+        "classical_deprecated": {
+          "ecdsa": "For compatibility only - marked deprecated",
+          "rsa": "For compatibility only - marked deprecated"
+        }
+      }
+    },
+    
+    "core": {
+      "description": "Основные компоненты фреймворка",
+      "status": "✅ STABLE - 100% PASS",
+      "components": ["Framework core", "Memory management", "Threading", "Utilities"]
+    },
+    
+    "net": {
+      "description": "Сетевые и коммуникационные компоненты",
+      "status": "⚠️ WARNINGS - функционально стабилен",
+      "components": ["HTTP server", "JSON-RPC", "P2P networking", "Encryption services"]
+    },
+    
+    "global_db": {
+      "description": "Система баз данных",
+      "status": "⚠️ PARTIAL - SQLite OK, PostgreSQL needs dependency",
+      "components": ["SQLite backend", "PostgreSQL backend", "Data serialization"]
+    },
+    
+    "io": {
+      "description": "Ввод/вывод и события",
+      "status": "⚠️ WARNINGS - core functionality working",
+      "components": ["Event system", "File I/O", "Network I/O"]
+    }
+  },
+  
+  "build_configurations": {
+    "primary_platform": "macOS darwin 24.5.0",
+    "build_system": "CMake",
+    "configurations": {
+      "debug": {
+        "path": "build_debug/",
+        "description": "Debug build with symbols",
+        "usage": "Development and debugging"
+      },
+      "release": {
+        "path": "build.release/",
+        "description": "Optimized release build", 
+        "usage": "Performance testing and production"
+      },
+      "test": {
+        "path": "build_test/",
+        "description": "Test configuration",
+        "usage": "Running test suites"
+      },
+      "ci": {
+        "path": "build_ci/",
+        "description": "CI/CD pipeline build",
+        "usage": "Continuous integration"
+      },
+      "asan": {
+        "path": "build_asan/",
+        "description": "AddressSanitizer build",
+        "usage": "Memory error detection"
+      }
+    }
+  },
+  
+  "performance_context": {
+    "chipmunk_baseline": {
+      "environment": "Apple Silicon M-series, release builds",
+      "metrics": {
+        "key_generation": "413ms per signer",
+        "signing": "41ms per signature", 
+        "throughput": "1.0 signatures/second"
+      },
+      "bottlenecks": {
+        "ntt_operations": "55.3% of total runtime",
+        "top_functions": [
+          "NTT s1: 20.1%",
+          "NTT s0: 19.4%",
+          "InvNTT v0: 15.8%"
+        ]
+      }
+    },
+    
+    "optimization_strategy": {
+      "profiling_approach": {
+        "macos": "Release builds + integrated micro-benchmarks",
+        "linux": "Callgrind profiling with RelWithDebInfo builds"
+      },
+      "target_improvements": {
+        "phase_2": "2-3x performance boost via vectorization",
+        "phase_3": "3-5x performance boost via aggressive SIMD"
+      }
+    }
+  },
+  
+  "testing_framework": {
+    "test_suites": ["crypto-test", "core-test", "net-test"],
+    "framework": "Custom DAP test framework",
+    "current_status": {
+      "crypto_module": "✅ 100% PASS RATE",
+      "core_module": "✅ 100% PASS RATE", 
+      "net_module": "⚠️ WARNINGS - но функционально стабилен",
+      "global_db": "⚠️ PARTIAL - SQLite проходит, PostgreSQL нужна зависимость",
+      "io_module": "⚠️ WARNINGS - core функциональность работает"
+    },
+    
+    "performance_testing": {
+      "implementation": "crypto/test/crypto/chipmunk_microbench.c",
+      "purpose": "Performance regression testing",
+      "status": "✅ ACTIVE"
+    }
+  },
+  
+  "development_environment": {
+    "supported_platforms": ["macOS", "Linux", "Windows"],
+    "primary_development": "macOS darwin 24.5.0",
+    "required_tools": {
+      "build": ["CMake", "GCC/Clang", "Make"],
+      "crypto": ["XKCP (Keccak)", "json-c"],
+      "testing": ["Custom DAP test framework"],
+      "profiling": ["Instruments (macOS)", "Callgrind (Linux)"]
+    }
+  },
+  
+  "cryptographic_standards": {
+    "hash_functions": {
+      "primary": "secp256k1_sha256 - optimized version integrated from secp256k1",
+      "secondary": "SHA3/Keccak via XKCP",
+      "performance": "secp256k1_sha256 significantly faster than dap_hash_fast"
+    },
+    
+    "memory_security": {
+      "allocation": "DAP_NEW*/DAP_DELETE macros",
+      "cleanup": "Always zero sensitive memory before freeing",
+      "comparison": "Constant-time comparison for sensitive data"
+    },
+    
+    "random_generation": {
+      "policy": "Use DAP SDK random functions, not system rand()",
+      "implementation": "crypto/src/rand/",
+      "quality": "Cryptographically secure random number generation"
+    }
+  },
+  
+  "deployment_readiness": {
+    "overall_status": "✅ CORE DEPLOYMENT READY",
+    "components": {
+      "core_crypto": "✅ PRODUCTION READY",
+      "chipmunk_specific": "✅ PRODUCTION READY - 100% test pass rate",
+      "database": "✅ READY (SQLite), ⚠️ PostgreSQL needs dependency",
+      "networking": "✅ READY (warnings only)"
+    }
+  },
+  
+  "development_workflow": {
+    "daily_development": {
+      "build_validation": "Multiple configuration testing",
+      "performance_monitoring": "Continuous performance regression testing",
+      "security_validation": "Regular security audits of crypto implementations"
+    },
+    
+    "code_review_focus": [
+      "Post-quantum algorithm correctness",
+      "Constant-time implementation verification",
+      "Memory security validation",
+      "Performance impact assessment"
+    ],
+    
+    "optimization_cycle": [
+      "Profile with release builds + micro-benchmarks",
+      "Identify bottlenecks in crypto operations",
+      "Implement vectorization/SIMD optimizations",
+      "Validate cryptographic correctness",
+      "Measure performance improvements"
+    ]
+  },
+  
+  "current_milestones": {
+    "immediate": [
+      "Complete Chipmunk SIMD optimization (Phase 3)",
+      "Achieve target performance improvements",
+      "Document optimization results"
+    ],
+    "short_term": [
+      "Finalize all crypto algorithm optimizations",
+      "Complete integration testing",
+      "Prepare production documentation"
+    ],
+    "long_term": [
+      "Full post-quantum crypto suite deployment",
+      "Platform-specific optimizations",
+      "Security audit completion"
+    ]
+  },
+  
+  "team_guidelines": {
+    "crypto_development": {
+      "priority": "Post-quantum algorithms have absolute priority",
+      "testing": "All algorithms must pass 100% test suite",
+      "performance": "Profile before and after any crypto changes",
+      "security": "Constant-time implementation required"
+    },
+    
+    "code_integration": {
+      "callbacks": "All crypto algorithms must register full callback sets",
+      "serialization": "Implement all ser/deser functions consistently",
+      "documentation": "Document all performance-critical changes"
+    },
+    
+    "platform_support": {
+      "primary": "macOS development with cross-platform validation",
+      "testing": "Validate on all target platforms before merge",
+      "optimization": "Platform-specific optimizations welcome but optional"
+    }
+  },
+  
+  "context_loading_strategy": {
+    "for_crypto_work": ["crypto.json", "chipmunk performance data"],
+    "for_core_development": ["core.json", "build configurations"],
+    "for_networking": ["net.json", "protocol specifications"],
+    "for_database": ["global-db.json", "schema definitions"],
+    "for_performance": ["performance profiles", "optimization roadmap"],
+    "for_security": ["crypto standards", "security audit results"]
+  },
+  
+  "success_metrics": {
+    "crypto_performance": "Chipmunk optimization targets achieved",
+    "test_coverage": "100% pass rate on all crypto tests",
+    "security_validation": "Security audit passed",
+    "cross_platform": "Successful builds on Linux, macOS, Windows",
+    "production_readiness": "Core crypto components deployment ready"
+  }
+} 

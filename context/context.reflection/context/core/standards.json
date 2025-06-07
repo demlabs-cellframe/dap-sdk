@@ -1,0 +1,247 @@
+{
+  "version": "2.0",
+  "created": "2025-01-14T12:00:00Z",
+  "updated": "2025-01-14T12:00:00Z",
+  "description": "Универсальные стандарты разработки для проектов, использующих Smart Layered Context",
+  
+  "coding_guidelines": {
+    "general_principles": {
+      "code_style": "Следовать принятым в проекте конвенциям для обеспечения консистентности",
+      "naming_conventions": {
+        "functions": "Использовать принятые в языке/проекте соглашения об именовании",
+        "variables": "Описательные имена переменных",
+        "constants": "UPPER_CASE для констант",
+        "types": "Соответствующие языку соглашения для типов",
+        "modules": "Логичная иерархия именования модулей"
+      },
+      "file_organization": {
+        "headers": "Четкое разделение публичных и приватных интерфейсов",
+        "implementation": "Логичная организация исходных файлов",
+        "tests": "Тесты рядом с тестируемым кодом или в отдельной структуре",
+        "documentation": "Документация рядом с соответствующим кодом"
+      }
+    },
+    
+    "memory_management": {
+      "allocation": {
+        "rule": "Использовать принятые в проекте методы управления памятью",
+        "best_practices": ["Проверка успешности аллокации", "Симметричные операции выделения/освобождения"],
+        "rationale": "Предотвращение утечек памяти и повышение надежности"
+      },
+      "deallocation": {
+        "rule": "Всегда освобождать выделенную память",
+        "safety": "Обнулять указатели после освобождения памяти",
+        "patterns": "Использовать RAII или аналогичные паттерны где применимо"
+      },
+      "strings": {
+        "rule": "Безопасная работа со строками",
+        "safety": "Всегда проверять границы массивов и успешность операций"
+      }
+    },
+    
+    "error_handling": {
+      "return_codes": {
+        "success": "Четко определенные коды успешного выполнения",
+        "errors": "Информативные коды ошибок",
+        "validation": "Всегда проверять входные параметры"
+      },
+      "logging": {
+        "levels": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        "usage": "Использовать подходящий уровень логирования для разных типов сообщений",
+        "format": "Структурированное и информативное логирование"
+      }
+    },
+    
+    "security_practices": {
+      "input_validation": {
+        "rule": "Всегда валидировать входные данные",
+        "practices": ["Проверка границ", "Санитизация данных", "Проверка типов"]
+      },
+      "sensitive_data": {
+        "handling": "Безопасная обработка чувствительных данных",
+        "storage": "Минимизация времени хранения чувствительной информации в памяти",
+        "transmission": "Защищенная передача конфиденциальных данных"
+      }
+    }
+  },
+  
+  "project_standards": {
+    "documentation": {
+      "code_documentation": {
+        "functions": "Документировать все публичные функции",
+        "parameters": "Описывать все параметры и возвращаемые значения",
+        "examples": "Предоставлять примеры использования для сложных API"
+      },
+      "project_documentation": {
+        "readme": "Поддерживать актуальный README с инструкциями по сборке",
+        "changelog": "Документировать значительные изменения и исправления",
+        "api_docs": "Генерировать документацию API из комментариев в коде"
+      }
+    },
+    
+    "testing_standards": {
+      "unit_tests": {
+        "coverage": "Все новые функции должны иметь юнит-тесты",
+        "framework": "Использовать принятый в проекте фреймворк тестирования",
+        "naming": "Описательные имена тестов"
+      },
+      "integration_tests": {
+        "system_tests": "Тестировать полные рабочие сценарии",
+        "performance_tests": "Включать тесты производительности где уместно",
+        "regression_tests": "Предотвращать регрессии через автоматизированное тестирование"
+      }
+    },
+    
+    "build_system": {
+      "structure": {
+        "organization": "Логичная организация файлов сборки",
+        "targets": "Создавать подходящие цели для библиотек и исполняемых файлов",
+        "dependencies": "Правильно объявлять все зависимости"
+      },
+      "configurations": {
+        "debug": "Отладочная сборка с символами и подробным логированием",
+        "release": "Оптимизированная сборка для продакшена",
+        "test": "Тестовая сборка с расширенными возможностями тестирования"
+      }
+    },
+    
+    "version_control": {
+      "commits": {
+        "messages": "Использовать ясные, описательные сообщения коммитов",
+        "scope": "Держать коммиты сфокусированными на одном логическом изменении",
+        "format": "Следовать принятому в проекте формату коммитов"
+      },
+      "branches": {
+        "naming": "Использовать описательные имена веток",
+        "workflow": "Использовать feature-ветки для разработки"
+      }
+    }
+  },
+  
+  "code_templates": {
+    "header_file_template": {
+      "description": "Стандартный шаблон для заголовочных файлов",
+      "template": [
+        "#ifndef PROJECT_MODULE_COMPONENT_H",
+        "#define PROJECT_MODULE_COMPONENT_H",
+        "",
+        "#include \"common.h\"",
+        "",
+        "/**",
+        " * @brief Краткое описание компонента",
+        " * @details Подробное описание при необходимости",
+        " */",
+        "",
+        "// Публичные определения типов",
+        "typedef struct component {",
+        "    // Члены структуры",
+        "} component_t;",
+        "",
+        "// Объявления публичных функций",
+        "/**",
+        " * @brief Краткое описание функции",
+        " * @param param1 Описание параметра 1",
+        " * @param param2 Описание параметра 2",
+        " * @return Описание возвращаемого значения",
+        " */",
+        "int component_function(param1_type param1, param2_type param2);",
+        "",
+        "#endif // PROJECT_MODULE_COMPONENT_H"
+      ]
+    },
+    
+    "source_file_template": {
+      "description": "Стандартный шаблон для исходных файлов",
+      "template": [
+        "#include \"module_component.h\"",
+        "#include \"common.h\"",
+        "",
+        "#define LOG_TAG \"module_component\"",
+        "",
+        "// Объявления приватных/статических функций",
+        "static int helper_function(void);",
+        "",
+        "// Реализации публичных функций",
+        "int component_function(param1_type param1, param2_type param2)",
+        "{",
+        "    // Валидация входных данных",
+        "    if (!param1) {",
+        "        log_error(\"Invalid parameter: param1 is NULL\");",
+        "        return -1;",
+        "    }",
+        "    ",
+        "    // Реализация функции",
+        "    int result = 0;",
+        "    ",
+        "    // Обработка ошибок и очистка",
+        "    return result;",
+        "}",
+        "",
+        "// Реализации приватных функций",
+        "static int helper_function(void)",
+        "{",
+        "    // Реализация",
+        "    return 0;",
+        "}"
+      ]
+    },
+    
+    "test_file_template": {
+      "description": "Стандартный шаблон для тестовых файлов",
+      "template": [
+        "#include \"test_framework.h\"",
+        "#include \"module_component.h\"",
+        "",
+        "void test_component_basic_functionality(void)",
+        "{",
+        "    // Настройка теста",
+        "    component_t *component = NULL;",
+        "    ",
+        "    // Выполнение теста",
+        "    int result = component_function(valid_param1, valid_param2);",
+        "    ",
+        "    // Проверки",
+        "    assert_equal(expected_result, result);",
+        "    ",
+        "    // Очистка",
+        "    cleanup_component(component);",
+        "}",
+        "",
+        "void test_component_error_handling(void)",
+        "{",
+        "    // Тест обработки ошибок",
+        "    int result = component_function(NULL, valid_param);",
+        "    assert_equal(-1, result);",
+        "}",
+        "",
+        "void run_component_tests(void)",
+        "{",
+        "    test_component_basic_functionality();",
+        "    test_component_error_handling();",
+        "    printf(\"All component tests passed\\n\");",
+        "}"
+      ]
+    }
+  },
+  
+  "best_practices": {
+    "code_quality": {
+      "readability": "Код должен быть самодокументированным",
+      "maintainability": "Писать код, который легко поддерживать",
+      "performance": "Оптимизировать только после профилирования",
+      "security": "Всегда учитывать безопасность при проектировании"
+    },
+    
+    "collaboration": {
+      "code_review": "Все изменения должны проходить код-ревью",
+      "knowledge_sharing": "Документировать архитектурные решения",
+      "communication": "Четко коммуницировать изменения в API"
+    },
+    
+    "deployment": {
+      "testing": "Тщательно тестировать перед релизом",
+      "documentation": "Обновлять документацию с каждым релизом",
+      "backwards_compatibility": "Поддерживать обратную совместимость где возможно"
+    }
+  }
+} 

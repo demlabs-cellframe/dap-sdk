@@ -1,0 +1,214 @@
+{
+  "version": "2.0",
+  "architecture_version": "smart_layered_context",
+  "created": "2025-01-14T12:00:00Z",
+  "updated": "2025-01-14T12:00:00Z",
+  "project": "Smart Layered Context v2.0 - Self Development",
+  
+  "context_map": {
+    "core_layer": {
+      "description": "Always loaded - essential project information",
+      "files": [
+        "core/standards.json",
+        "core/project.json"
+      ],
+      "auto_load": true,
+      "size_estimate": "~15KB total"
+    },
+    "current_task": {
+      "source": "tasks/active.json",
+      "description": "Current active task with progress tracking",
+      "auto_load_when": "user starts work session",
+      "fallback": "tasks/templates/task_template.json"
+    },
+    "modules": {
+      "description": "Load on demand based on work context",
+      "available": {
+        "crypto": {
+          "file": "modules/crypto.json",
+          "description": "Криптографические компоненты (Chipmunk, ECDSA, etc.)",
+          "keywords": ["crypto", "chipmunk", "signature", "encryption", "ecdsa"]
+        },
+        "core": {
+          "file": "modules/core.json", 
+          "description": "Основные компоненты фреймворка",
+          "keywords": ["core", "framework", "api", "structure"]
+        },
+        "net": {
+          "file": "modules/net.json",
+          "description": "Сетевые и коммуникационные компоненты",
+          "keywords": ["network", "http", "server", "client", "communication"]
+        },
+        "build": {
+          "file": "modules/build.json",
+          "description": "Система сборки, тесты и профилирование",
+          "keywords": ["build", "cmake", "test", "performance", "profiling"]
+        }
+      }
+    }
+  },
+  
+  "smart_suggestions": {
+    "work_patterns": {
+      "crypto_development": {
+        "description": "Работа с криптографическими алгоритмами",
+        "keywords": ["chipmunk", "crypto", "signature", "encryption", "hash", "ecdsa", "post-quantum"],
+        "suggested_modules": ["modules/crypto.json"],
+        "suggested_tools": ["tools/scripts/crypto_test.sh"],
+        "priority": "high"
+      },
+      "performance_optimization": {
+        "description": "Анализ и оптимизация производительности",
+        "keywords": ["performance", "optimization", "benchmark", "profiling", "speed", "simd"],
+        "suggested_modules": ["modules/build.json", "modules/crypto.json"],
+        "suggested_tools": ["tools/scripts/performance_test.sh"],
+        "priority": "high"
+      },
+      "chipmunk_work": {
+        "description": "Специфическая работа с алгоритмом Chipmunk",
+        "keywords": ["chipmunk", "lattice", "post-quantum", "multi-signature", "hots"],
+        "suggested_modules": ["modules/crypto.json", "tasks/active.json"],
+        "suggested_tools": ["tools/scripts/chipmunk_debug.sh"],
+        "priority": "critical"
+      },
+      "network_development": {
+        "description": "Разработка сетевых возможностей",
+        "keywords": ["network", "http", "server", "client", "communication", "protocol"],
+        "suggested_modules": ["modules/net.json"],
+        "suggested_tools": ["tools/scripts/net_test.sh"],
+        "priority": "medium"
+      },
+      "core_framework": {
+        "description": "Разработка основного фреймворка",
+        "keywords": ["core", "framework", "api", "structure", "architecture"],
+        "suggested_modules": ["modules/core.json"],
+        "suggested_tools": ["tools/scripts/core_test.sh"],
+        "priority": "medium"
+      }
+    }
+  },
+  
+  "navigation_hints": {
+    "need_crypto_info": "💡 For crypto work, load: context/modules/crypto.json",
+    "need_chipmunk_details": "💡 For Chipmunk specifics, load: context/modules/crypto.json + context/tasks/active.json",
+    "need_task_progress": "💡 For current progress, load: context/tasks/active.json", 
+    "need_build_info": "💡 For build system info, load: context/modules/build.json",
+    "need_standards": "💡 For coding standards, already loaded in core/standards.json",
+    "need_deployment": "💡 For deployment, load: context/tools/deployment/",
+    "working_with_network": "💡 For network components, load: context/modules/net.json",
+    "performance_analysis": "💡 For performance work, load: context/modules/build.json + context/modules/crypto.json"
+  },
+  
+  "intelligent_loading": {
+    "user_query_analysis": {
+      "chipmunk_related": {
+        "patterns": ["chipmunk", "post-quantum", "lattice", "multi-signature", "hots"],
+        "auto_suggest": ["modules/crypto.json", "tasks/active.json"],
+        "explanation": "Detected Chipmunk work, suggesting crypto module and current task"
+      },
+      "crypto_related": {
+        "patterns": ["crypto", "signature", "encryption", "hash", "ecdsa"],
+        "auto_suggest": ["modules/crypto.json"],
+        "explanation": "Detected crypto-related work, suggesting crypto module"
+      },
+      "performance_related": {
+        "patterns": ["performance", "optimization", "speed", "benchmark", "profiling", "simd"],
+        "auto_suggest": ["modules/build.json", "tasks/active.json"],
+        "explanation": "Detected performance work, suggesting build config and current task"
+      },
+      "debugging_related": {
+        "patterns": ["debug", "error", "crash", "segfault", "memory", "gdb", "lldb"],
+        "auto_suggest": ["modules/build.json", "tools/scripts/debug_helper.sh"],
+        "explanation": "Detected debugging work, suggesting build tools and debug helpers"
+      }
+    }
+  },
+  
+  "version_synchronization": {
+    "current_context_version": "2.0",
+    "required_minimum_versions": {
+      "core/standards.json": "2.0",
+      "core/project.json": "2.0", 
+      "tasks/active.json": "2.0",
+      "modules/crypto.json": "2.0",
+      "modules/build.json": "2.0"
+    },
+    "compatibility_check": "Auto-verify all loaded files have compatible versions"
+  },
+  
+  "deployment_info": {
+    "ready_for_deployment": true,
+    "deployment_script": "tools/deployment/deploy_new_context.sh",
+    "archive_creator": "tools/deployment/create_context_archive.sh",
+    "deployment_docs": "docs/user_guide.md",
+    "migration_script": "tools/deployment/migrate_from_old.sh"
+  },
+  
+  "usage_stats": {
+    "most_used_modules": ["crypto", "build"],
+    "typical_workflow": [
+      "Load core context (manifest + standards + project)",
+      "Load current task (80% of sessions)", 
+      "Load crypto module (90% of sessions - Chipmunk focus)",
+      "Load build module (70% of sessions - performance focus)"
+    ],
+    "optimization_hint": "Pre-load crypto.json for Chipmunk optimization work"
+  },
+  
+  "quick_commands": {
+    "load_basic": "Load core/standards.json + core/project.json",
+    "load_chipmunk_work": "Load basic + modules/crypto.json + tasks/active.json",
+    "load_crypto_work": "Load basic + modules/crypto.json + tasks/active.json", 
+    "load_performance_work": "Load basic + modules/build.json + tasks/active.json",
+    "load_network_work": "Load basic + modules/net.json",
+    "load_full_context": "Load all available context files",
+    "create_new_task": "tools/scripts/new_task.sh",
+    "deploy_to_new_project": "tools/deployment/deploy_new_context.sh"
+  },
+  
+  "ai_optimization": {
+    "context_loading_strategy": {
+      "always_load": [
+        "this file (core/manifest.json)",
+        "core/standards.json", 
+        "core/project.json"
+      ],
+      "load_on_crypto_work": ["modules/crypto.json"],
+      "load_on_chipmunk_work": ["modules/crypto.json", "tasks/active.json"],
+      "load_on_performance_work": ["modules/build.json", "tasks/active.json"],
+      "load_rarely": ["docs/*.md", "tools/templates/*"]
+    },
+    "memory_optimization": {
+      "core_files_size": "~15KB total",
+      "module_files_size": "~10KB each",
+      "task_files_size": "~20KB each", 
+      "recommendation": "Load core + 1-2 modules maximum per session"
+    },
+    "session_patterns": {
+      "chipmunk_optimization": "manifest + standards + project + crypto + active_task",
+      "general_crypto": "manifest + standards + project + crypto",
+      "performance_analysis": "manifest + standards + project + build + crypto + active_task",
+      "new_development": "manifest + standards + project + appropriate_module"
+    }
+  },
+  
+  "migration_info": {
+    "from_old_structure": {
+      "old_context.json": "Split into core/project.json + tasks/active.json",
+      "old_coding_guidelines.json": "Merged into core/standards.json",
+      "old_project_standards.json": "Merged into core/standards.json", 
+      "old_code_templates.json": "Merged into core/standards.json",
+      "old_.local/progress.json": "Moved to tasks/active.json",
+      "old_index.json": "Replaced with this manifest.json",
+      "old_structure.json": "Deprecated, information moved to architecture docs"
+    },
+    "migration_completed": false,
+    "migration_script": "tools/deployment/migrate_from_old.sh"
+  },
+  
+  "current_focus": {
+    "project_phase": "Chipmunk Performance Optimization",
+    "primary_modules": ["crypto", "build"],
+    "active_task_hint": "Check tasks/active.json for current Chipmunk optimization progress"
+  }
+} 

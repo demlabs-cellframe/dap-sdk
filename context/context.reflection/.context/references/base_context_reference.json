@@ -1,0 +1,110 @@
+{
+  "version": "2.0",
+  "type": "reference_index",
+  "architecture_version": "smart_layered_context_meta",
+  "created": "2025-01-14T12:00:00Z",
+  "updated": "2025-01-14T12:00:00Z",
+  
+  "description": "Индекс ссылок на основные компоненты проекта Smart Layered Context",
+  
+  "base_project_root": "../../",
+  
+  "core_files": {
+    "manifest": {
+      "path": "../../core/manifest.json",
+      "description": "Основной манифест проекта SLC",
+      "load_priority": "always",
+      "contains": ["architecture", "smart_suggestions", "navigation_hints"]
+    },
+    "project": {
+      "path": "../../core/project.json", 
+      "description": "Информация о проекте SLC",
+      "load_priority": "always",
+      "contains": ["project_info", "technologies", "current_focus"]
+    },
+    "standards": {
+      "path": "../../core/standards.json",
+      "description": "Стандарты разработки SLC",
+      "load_priority": "always",
+      "contains": ["coding_standards", "best_practices", "architecture_principles"]
+    }
+  },
+  
+  "module_files": {
+    "crypto": {
+      "path": "../../modules/crypto.json",
+      "description": "Криптографические компоненты (в контексте SLC это не актуально)",
+      "load_priority": "never",
+      "reason": "SLC не содержит криптографии"
+    },
+    "build": {
+      "path": "../../modules/build.json", 
+      "description": "Система сборки (для SLC - архивация и развертывание)",
+      "load_priority": "on_deployment_work",
+      "contains": ["deployment_scripts", "archive_creation"]
+    },
+    "core": {
+      "path": "../../modules/core.json",
+      "description": "Основные компоненты системы SLC",
+      "load_priority": "on_architecture_work",
+      "contains": ["core_architecture", "smart_loading", "context_management"]
+    }
+  },
+  
+  "tool_files": {
+    "smart_context_loader": {
+      "path": "../../tools/scripts/smart_context_loader.sh",
+      "description": "Основной скрипт загрузки контекста",
+      "type": "script",
+      "purpose": "context_loading"
+    },
+    "new_task": {
+      "path": "../../tools/scripts/new_task.sh",
+      "description": "Скрипт создания задач",
+      "type": "script", 
+      "purpose": "task_management"
+    },
+    "deploy_new_context": {
+      "path": "../../tools/deployment/deploy_new_context.sh",
+      "description": "Скрипт развертывания контекста",
+      "type": "script",
+      "purpose": "deployment"
+    }
+  },
+  
+  "documentation_files": {
+    "readme": {
+      "path": "../../README.md",
+      "description": "Основное описание проекта",
+      "type": "documentation"
+    },
+    "usage_guide": {
+      "path": "../../USAGE_GUIDE.md",
+      "description": "Руководство по использованию",
+      "type": "documentation"
+    },
+    "deployment_guide": {
+      "path": "../../README_DEPLOYMENT.md",
+      "description": "Руководство по развертыванию",
+      "type": "documentation"
+    }
+  },
+  
+  "differential_approach": {
+    "principle": "Ссылаться на основные файлы, а не дублировать их содержимое",
+    "implementation": "Использовать поле 'path' для указания на оригинальные файлы",
+    "advantages": [
+      "Нет дублирования информации",
+      "Автоматическая актуальность данных",
+      "Меньший размер контекста",
+      "Единая точка правды"
+    ]
+  },
+  
+  "usage_instructions": {
+    "loading_base_context": "Загружайте эти ссылки вместе с дифференциальным контекстом",
+    "resolving_references": "Всегда указывайте путь к оригинальному файлу при работе",
+    "avoiding_duplication": "Никогда не копируйте содержимое основных файлов",
+    "version_sync": "Следите за синхронизацией версий между основным проектом и контекстом"
+  }
+} 

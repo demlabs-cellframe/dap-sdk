@@ -1,0 +1,81 @@
+{
+  "version": "2.0",
+  "type": "differential_context",
+  "architecture_version": "smart_layered_context_meta",
+  "created": "2025-01-14T12:00:00Z",
+  "updated": "2025-01-14T12:00:00Z",
+  
+  "description": "Мета-контекст для работы с проектом Smart Layered Context",
+  "purpose": "Хранение контекста работы над улучшением самой системы SLC",
+  
+  "reference_system": {
+    "base_project_files": {
+      "manifest": "../../core/manifest.json",
+      "project": "../../core/project.json", 
+      "standards": "../../core/standards.json"
+    },
+    "inheritance_policy": "inherit_and_extend",
+    "conflict_resolution": "differential_takes_priority"
+  },
+  
+  "differential_context": {
+    "focus_areas": [
+      "self_referential_development",
+      "differential_context_system",
+      "meta_programming_approaches",
+      "context_versioning"
+    ],
+    
+    "work_patterns": {
+      "meta_development": {
+        "description": "Работа над самой системой Smart Layered Context",
+        "keywords": ["meta", "self-development", "architecture", "improvement"],
+        "suggested_modules": ["modules/development.json", "modules/meta_context.json"],
+        "priority": "critical"
+      },
+      
+      "differential_context_work": {
+        "description": "Работа с дифференциальной системой контекста",
+        "keywords": ["differential", "reference", "context-diff", "inheritance"],
+        "suggested_modules": ["modules/differential_system.json"],
+        "priority": "high"
+      },
+      
+      "architecture_improvements": {
+        "description": "Улучшение архитектуры системы",
+        "keywords": ["architecture", "design", "structure", "optimization"],
+        "suggested_modules": ["modules/architecture.json"],
+        "priority": "high"
+      }
+    }
+  },
+  
+  "meta_features": {
+    "self_awareness": "Система осознает, что работает сама с собой",
+    "circular_reference_handling": "Безопасная обработка циклических ссылок",
+    "version_synchronization": "Автоматическая синхронизация версий с основным проектом",
+    "differential_storage": "Хранение только различий, не дублирования"
+  },
+  
+  "loading_strategy": {
+    "always_load": [
+      "this file (differential_manifest.json)",
+      "references/base_context_reference.json"
+    ],
+    "load_on_meta_work": [
+      "modules/development.json",
+      "modules/meta_context.json"
+    ],
+    "load_on_architecture_work": [
+      "modules/architecture.json",
+      "modules/differential_system.json"
+    ]
+  },
+  
+  "quality_control": {
+    "no_duplication_rule": "Никогда не дублировать информацию из основных файлов",
+    "reference_verification": "Всегда проверять актуальность ссылок",
+    "version_consistency": "Поддерживать консистентность версий",
+    "circular_dependency_check": "Проверять на циклические зависимости"
+  }
+} 
