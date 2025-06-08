@@ -1998,6 +1998,49 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
 }
 
 /**
+ * @brief Ensure sufficient space in output buffer and return write position
+ * @param a_es Event socket
+ * @param a_required_size Required additional space
+ * @return Pointer to write position in buffer, or NULL on error
+ */
+static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es, size_t a_required_size)
+{
+    static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
+    byte_t *l_buf_out;
+    
+    if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
+        a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_required_size);
+        if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
+            log_it(L_ERROR, "Can't increase capacity: OOM!");
+            return NULL;
+        }
+        a_es->buf_out = l_buf_out;
+        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", 
+                 a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+    } else if ((a_es->buf_out_size + a_required_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
+        a_es->buf_out_size_max = l_basic_buf_size;
+        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+                 a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+    }
+    
+    return a_es->buf_out + a_es->buf_out_size;
+}
+
+/**
+ * @brief Finalize write operation - update buffer size and set flags
+ * @param a_es Event socket
+ * @param a_bytes_written Number of bytes written
+ */
+static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, size_t a_bytes_written)
+{
+    a_es->buf_out_size += a_bytes_written;
+    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
+             a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
+    dap_events_socket_set_writable_unsafe(a_es, true);
+}
+
+/**
  * @brief dap_events_socket_write Write data to the client
  * @param a_es Esocket instance
  * @param a_data Pointer to data
@@ -2014,29 +2057,18 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         debug_if(g_debug_reactor, L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
         return 0;
     }
+    
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (a_es->type == DESCRIPTOR_TYPE_QUEUE)
         return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
 #endif
-    static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
-    byte_t *l_buf_out;
-    if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
-        a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
-        if (!( l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max) ))
-            return log_it(L_ERROR, "Can't increase capacity: OOM!"), 0;
-        a_es->buf_out = l_buf_out;
-        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
-        a_es->buf_out_size_max = l_basic_buf_size;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
-               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    }
-    memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
-    a_es->buf_out_size += a_data_size;
-    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
-             a_data_size, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
-    dap_events_socket_set_writable_unsafe(a_es, true);
+
+    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
+    if (!l_write_pos)
+        return 0;
+    
+    memcpy(l_write_pos, a_data, a_data_size);
+    s_events_socket_finalize_write(a_es, a_data_size);
     return a_data_size;
 }
 
@@ -2048,33 +2080,44 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
  */
 ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...)
 {
-    if(!a_es->buf_out){
-        log_it(L_ERROR,"Can't write formatted data to NULL buffer output");
-        return 0;
+    dap_return_val_if_fail(a_es && a_es->buf_out && a_format, -1);
+    if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        debug_if(g_debug_reactor, L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
+        return -1;
     }
-
+    
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    ssize_t l_ret = vsnprintf(NULL, 0, a_format, ap);
+    
+    // Определяем точный размер форматированной строки
+    int l_data_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
-    if (l_ret < 0) {
+    
+    if (l_data_size < 0) {
+        log_it(L_ERROR, "Can't determine formatted data size for '%s'", a_format);
         va_end(ap_copy);
-        log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
-        return l_ret;
+        return -1;
     }
-    size_t l_buf_size = l_ret + 1;
-    char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    
+    // Подготавливаем место в буфере
+    byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, l_data_size);
+    if (!l_write_pos) {
         va_end(ap_copy);
-        return 0;
+        return -1;
     }
-    vsprintf(l_buf, a_format, ap_copy);
+    
+    // Форматируем НАПРЯМУЮ в буфер event socket'а
+    int l_actual_size = vsnprintf((char *)l_write_pos, l_data_size + 1, a_format, ap_copy);
     va_end(ap_copy);
-    l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size - 1);
-    DAP_DELETE(l_buf);
-    return l_ret;
+    
+    if (l_actual_size != l_data_size) {
+        log_it(L_ERROR, "Formatted data size mismatch: expected %d, got %d", l_data_size, l_actual_size);
+        return -1;
+    }
+    
+    s_events_socket_finalize_write(a_es, l_data_size);
+    return l_data_size;
 }
 
 /**
