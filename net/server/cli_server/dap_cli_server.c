@@ -237,7 +237,7 @@ int json_commands(const char * a_name) {
             "ledger",
             "tx_create",
             "tx_create_json",
-            "json_datum_mempool_put",
+            "mempool_add",
             "tx_verify",
             "tx_cond_create",
             "tx_cond_remove",
