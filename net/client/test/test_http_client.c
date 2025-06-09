@@ -972,18 +972,10 @@ void test_http_client()
     
     // Cleanup (attempt graceful shutdown)
     printf("\nShutting down test environment...\n");
-    dap_client_http_deinit();
-    dap_events_deinit();
-    
-    // Allow time for cleanup
-    printf("Waiting for cleanup to complete...\n");
-    sleep(1);
-    
     // Force exit since SDK deinit routines may not stop all threads
     printf("Test suite completed. Exiting.\n");
     fflush(stdout);
     fflush(stderr);
-    
     // Exit with appropriate code based on test results
     int exit_code = (g_test_state.tests_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
     exit(exit_code);

@@ -296,7 +296,7 @@ int dap_events_socket_init( void )
         fprintf(l_mq_msg_max, "%d", DAP_QUEUE_MAX_MSGS);
         fclose(l_mq_msg_max);
     } else {
-        log_it(L_ERROR, "Сan't open /proc/sys/fs/mqueue/msg_max file for writing, errno=%d", errno);
+        log_it(L_ERROR, "Can't open /proc/sys/fs/mqueue/msg_max file for writing, errno=%d", errno);
     }
 #endif
     dap_timerfd_init();
@@ -2090,7 +2090,7 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
     
-    // Определяем точный размер форматированной строки
+    // Determine exact size of formatted string
     int l_data_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
     
@@ -2100,14 +2100,14 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
         return -1;
     }
     
-    // Подготавливаем место в буфере
+    // Prepare space in buffer
     byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, l_data_size);
     if (!l_write_pos) {
         va_end(ap_copy);
         return -1;
     }
     
-    // Форматируем НАПРЯМУЮ в буфер event socket'а
+    // Format DIRECTLY into event socket buffer
     int l_actual_size = vsnprintf((char *)l_write_pos, l_data_size + 1, a_format, ap_copy);
     va_end(ap_copy);
     
