@@ -853,6 +853,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 } break;
             // TODO define condition for invalid socket with other descriptor types
             case DESCRIPTOR_TYPE_QUEUE:
+            case DESCRIPTOR_TYPE_QUEUE_RING:
             case DESCRIPTOR_TYPE_PIPE:
             case DESCRIPTOR_TYPE_EVENT:
             case DESCRIPTOR_TYPE_FILE:
@@ -1070,6 +1071,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     } break;
                     case DESCRIPTOR_TYPE_QUEUE:
                         dap_events_socket_queue_proc_input_unsafe(l_cur);
+                        dap_events_socket_set_writable_unsafe(l_cur, false);
+                        continue;
+                    case DESCRIPTOR_TYPE_QUEUE_RING:
+                        dap_events_socket_queue_ring_proc_input_unsafe(l_cur);
                         dap_events_socket_set_writable_unsafe(l_cur, false);
                         continue;
                     case DESCRIPTOR_TYPE_EVENT:
@@ -1493,7 +1498,7 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
         // Check & add
         bool l_is_error=false;
         int l_errno=0;
-        if (a_esocket->type == DESCRIPTOR_TYPE_EVENT || a_esocket->type == DESCRIPTOR_TYPE_QUEUE ){
+        if (a_esocket->type == DESCRIPTOR_TYPE_EVENT || a_esocket->type == DESCRIPTOR_TYPE_QUEUE || a_esocket->type == DESCRIPTOR_TYPE_QUEUE_RING ){
             // Do nothing
         }else{
             EV_SET(l_event, a_esocket->socket, l_filter,l_flags| EV_ADD,l_fflags,a_esocket->kqueue_data,a_esocket);

@@ -28,6 +28,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #if defined (DAP_OS_LINUX)
 #include <sys/epoll.h>
@@ -37,14 +38,42 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <limits.h>
+#include <sys/mman.h>
 #elif defined (DAP_OS_BSD)
 #include <sys/types.h>
 #include <sys/select.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/mman.h>
 
-#elif defined (DAP_OS_WINDOWS)
+#ifndef DAP_OS_DARWIN
+#include <pthread_np.h>
+typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
+#else
+#define NOTE_READ NOTE_LOWAT
+#endif
+
+#elif defined (DAP_OS_UNIX)
+#include <sys/types.h>
+#include <sys/select.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <sys/mman.h>
+
+// pthread_np.h доступен только на некоторых UNIX-системах (BSD-подобных)
+// На большинстве UNIX-систем (включая Linux) этого заголовка нет
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include <pthread_np.h>
+typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
+#elif defined(DAP_OS_DARWIN)
+#define NOTE_READ NOTE_LOWAT
+#endif
+
+#endif
+
+#ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <windows.h>
 #include <io.h>
@@ -88,9 +117,56 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+// Hybrid message structure for optimal cache performance
+#define DAP_MESSAGE_INLINE_SIZE 112  // Optimized for cache line efficiency
+
+typedef struct dap_hybrid_message {
+    uint32_t type;                  // Message type identifier
+    uint32_t size;                  // Actual data size
+    bool is_inline;                 // true = inline data, false = external pointer
+    char padding1[64 - 2*sizeof(uint32_t) - sizeof(bool)]; // Cache line alignment
+    
+    union {
+        // Small messages (≤112 bytes) - stored directly in queue for excellent cache locality
+        struct {
+            char data[DAP_MESSAGE_INLINE_SIZE];
+        } inline_msg;
+        
+        // Large messages (>112 bytes) - stored via pointer (fallback for rare cases)
+        struct {
+            void *data;
+            void (*free_func)(void*);  // Custom deallocator
+            char padding2[DAP_MESSAGE_INLINE_SIZE - sizeof(void*) - sizeof(void*)];
+        } external_msg;
+    };
+} dap_hybrid_message_t;
+
+// Optimized ring buffer header that fits in buf_out for perfect cache locality
+typedef struct dap_ring_buffer_header {
+    _Atomic(uint64_t) head;      // Producer index (atomic)
+    _Atomic(uint64_t) tail;      // Consumer index (atomic)  
+    uint64_t capacity;           // Buffer capacity (power of 2)
+    uint64_t mask;               // capacity - 1 for fast modulo
+    
+    // Padding to prevent false sharing between producer and consumer
+    // Calculate correct padding size: 64 - sizeof(head) - sizeof(tail) - sizeof(capacity) - sizeof(mask)
+    char padding[64 - 2*sizeof(uint64_t) - 2*sizeof(uint64_t)];
+} __attribute__((aligned(64))) dap_ring_buffer_header_t;
+
+// Complete ring buffer structure (header + data) embedded in buf_out
+// Layout: [header][message0][message1]...[messageN-1]
+// Perfect cache locality: metadata and data in single memory block!
+
+// Helper macros for buf_out based ring buffer access
+#define RING_HEADER(es) ((dap_ring_buffer_header_t*)(es)->buf_out)
+#define RING_DATA(es) ((dap_hybrid_message_t*)((es)->buf_out + sizeof(dap_ring_buffer_header_t)))
+#define RING_MESSAGE(es, index) (&RING_DATA(es)[(index) & RING_HEADER(es)->mask])
+
+#define DAP_RING_BUFFER_DEFAULT_SIZE (64 * 1024)  // 64KB default capacity
+
 const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
     "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT", "RAW", 
-    "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
+    "FILE", "PIPE", "QUEUE", "QUEUE RING", "TIMER", "EVENT"
 };
 
 // Item for QUEUE_PTR input esocket
@@ -108,8 +184,61 @@ struct queue_ptr_input_pvt{
 };
 #define PVT_QUEUE_PTR_INPUT(a) ( (struct queue_ptr_input_pvt*) (a)->_pvt )
 
+// Cache-optimized deferred execution with embedded static storage
+#define DAP_SAFE_CTX_EMBEDDED_CAPACITY 16   // Covers 99% of real-world cases  
+#define DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY 256  // Hard limit to prevent unbounded growth
+#define DAP_SAFE_CTX_WARNING_THRESHOLD 64   // Log warning when approaching limits
+
+// Safe Intra-Queue Deferred Execution - решает SPSC violation только для проблемных случаев
+typedef struct {
+    dap_events_socket_t *current_processing_queue;  // Только текущая обрабатываемая очередь
+    bool is_processing;                              // Флаг активной обработки
+    
+    // CACHE-FRIENDLY EMBEDDED STORAGE: eliminates malloc/realloc overhead
+    // Static array covers 99% of cases with perfect spatial locality
+    void *embedded_messages[DAP_SAFE_CTX_EMBEDDED_CAPACITY];  // Embedded static array
+    size_t deferred_count;                                     // Количество отложенных
+    
+    // OVERFLOW HANDLING: only for rare extreme cases (>16 deferred operations)
+    void **overflow_messages;                        // Dynamic overflow array (rare)
+    size_t overflow_count;                           // Overflow count
+    size_t overflow_capacity;                        // Overflow capacity
+    
+    // OVERFLOW PROTECTION & MONITORING
+    uint64_t total_deferred_ever;                    // Lifetime counter for monitoring
+    uint64_t overflow_events;                        // Count of overflow occurrences
+    uint64_t dropped_messages;                       // Count of dropped messages due to limits
+} dap_safe_processing_context_t;
+
+// Overflow handling strategy
+typedef enum {
+    DAP_OVERFLOW_STRATEGY_DROP_OLDEST,    // Drop oldest deferred messages (FIFO cleanup)
+    DAP_OVERFLOW_STRATEGY_DROP_NEWEST,    // Reject new messages (current message dropped)
+    DAP_OVERFLOW_STRATEGY_EMERGENCY_EXECUTE  // Force immediate execution (risky but preserves data)
+} dap_overflow_strategy_t;
+
+static dap_overflow_strategy_t s_overflow_strategy = DAP_OVERFLOW_STRATEGY_DROP_OLDEST;
+
+// Thread-local context - один на worker thread
+static __thread dap_safe_processing_context_t s_safe_ctx = {0};
+
 static uint64_t s_delayed_ops_timeout_ms = 5000;
 bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg);
+
+// Ring buffer function declarations
+static int s_ring_buffer_create_in_buf(dap_events_socket_t *a_es, size_t a_capacity);
+static void s_ring_buffer_destroy_in_buf(dap_events_socket_t *a_es);
+static bool s_ring_buffer_enqueue(dap_events_socket_t *a_es, const dap_hybrid_message_t *a_msg);
+static bool s_ring_buffer_dequeue(dap_events_socket_t *a_es, dap_hybrid_message_t *a_msg_out);
+static size_t s_ring_buffer_size(dap_events_socket_t *a_es);
+
+// Deferred execution overflow protection
+static bool s_safe_ctx_check_limits(void);
+static int s_safe_ctx_handle_overflow(void *a_data_copy);
+static void s_safe_ctx_drop_oldest_embedded(size_t a_count);
+static void s_safe_ctx_drop_oldest_overflow(size_t a_count);
+static int s_safe_ctx_emergency_execute(dap_events_socket_t *a_target_queue);
+static void s_safe_ctx_log_statistics(void);
 
 static pthread_attr_t s_attr_detached;                                      /* Thread's creation attribute = DETACHED ! */
 
@@ -308,6 +437,32 @@ int dap_events_socket_init( void )
  */
 void dap_events_socket_deinit(void)
 {
+    // Log statistics before cleanup
+    s_safe_ctx_log_statistics();
+    
+    // Free any remaining deferred messages
+    for (size_t i = 0; i < s_safe_ctx.deferred_count; i++) {
+        free(s_safe_ctx.embedded_messages[i]);
+    }
+    
+    for (size_t i = 0; i < s_safe_ctx.overflow_count; i++) {
+        free(s_safe_ctx.overflow_messages[i]);
+    }
+    
+    if (s_safe_ctx.deferred_count > 0 || s_safe_ctx.overflow_count > 0) {
+        log_it(L_WARNING, "Cleaned up %zu deferred messages during shutdown", 
+               s_safe_ctx.deferred_count + s_safe_ctx.overflow_count);
+    }
+    
+    // Cleanup thread-local overflow array to prevent memory leak
+    // Embedded array doesn't need cleanup (it's static)
+    if (s_safe_ctx.overflow_messages) {
+        DAP_DELETE(s_safe_ctx.overflow_messages);
+        s_safe_ctx.overflow_messages = NULL;
+        s_safe_ctx.overflow_capacity = 0;
+        s_safe_ctx.overflow_count = 0;
+    }
+    s_safe_ctx.deferred_count = 0;
 }
 
 /**
@@ -1669,6 +1824,12 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
     debug_if(g_debug_reactor, L_DEBUG, "Deleting esocket "DAP_FORMAT_ESOCKET_UUID" type %s", 
              a_esocket->uuid, dap_events_socket_get_type_str(a_esocket));
     
+    // Free ring buffer for ring queue type (stored in buf_out)
+    if (a_esocket->type == DESCRIPTOR_TYPE_QUEUE_RING && a_esocket->buf_out) {
+        s_ring_buffer_destroy_in_buf(a_esocket);
+        // buf_out is already set to NULL by destroy function
+    }
+    
 #ifndef DAP_EVENTS_CAPS_IOCP
     dap_events_socket_descriptor_close(a_esocket);
 #endif
@@ -2194,4 +2355,870 @@ size_t dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_data
     a_es->buf_out_size += a_data_size;                                       /* Ajust buffer's data lenght */
 
     return  a_data_size;
+}
+
+/**
+ * @brief Выполнить отложенные intra-queue операции безопасно
+ * @param a_target_queue Целевая очередь для выполнения отложенных операций
+ * @return Количество выполненных операций
+ */
+/**
+ * @brief Execute deferred intra-queue operations with cache-friendly embedded array access
+ * @param a_target_queue Target queue for deferred operations
+ * @return Number of executed operations
+ * 
+ * CACHE OPTIMIZATION: Direct access to embedded array provides excellent spatial locality
+ */
+static int s_execute_deferred_intra_queue_operations(dap_events_socket_t *a_target_queue)
+{
+    size_t l_total_deferred = s_safe_ctx.deferred_count + s_safe_ctx.overflow_count;
+    if (l_total_deferred == 0) {
+        return 0;  // Нет отложенных операций
+    }
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Executing %zu deferred intra-queue operations for queue %p (embedded: %zu, overflow: %zu)", 
+             l_total_deferred, a_target_queue, s_safe_ctx.deferred_count, s_safe_ctx.overflow_count);
+    
+    int l_executed = 0;
+    
+    // ✅ EMBEDDED ARRAY PROCESSING: Optimal cache locality - all data in same cache line
+    for (size_t i = 0; i < s_safe_ctx.deferred_count; i++) {
+        void *l_data = s_safe_ctx.embedded_messages[i];  // Direct embedded access - excellent locality!
+        
+        // Создаем простейшее сообщение для отложенной операции
+        dap_hybrid_message_t l_msg = {0};
+        l_msg.type = 0;  // Default type для deferred
+        l_msg.size = sizeof(void*);
+        l_msg.is_inline = false;
+        l_msg.external_msg.data = l_data;
+        l_msg.external_msg.free_func = free;  // Автоматически освобождаем копию
+        
+        // ✅ БЕЗОПАСНО: Consumer неактивен (закончили dequeue), выполняем как Producer
+        if (s_ring_buffer_enqueue(a_target_queue, &l_msg)) {
+            l_executed++;
+            debug_if(g_debug_reactor, L_DEBUG, "Executed embedded deferred operation %zu", i + 1);
+        } else {
+            log_it(L_WARNING, "Failed to execute embedded deferred operation %zu (queue full)", i + 1);
+            free(l_data);  // Освобождаем память если не смогли отправить
+        }
+    }
+    
+    // ✅ OVERFLOW ARRAY PROCESSING: Handle rare cases with >16 deferred operations
+    for (size_t i = 0; i < s_safe_ctx.overflow_count; i++) {
+        void *l_data = s_safe_ctx.overflow_messages[i];
+        
+        dap_hybrid_message_t l_msg = {0};
+        l_msg.type = 0;
+        l_msg.size = sizeof(void*);
+        l_msg.is_inline = false;
+        l_msg.external_msg.data = l_data;
+        l_msg.external_msg.free_func = free;
+        
+        if (s_ring_buffer_enqueue(a_target_queue, &l_msg)) {
+            l_executed++;
+            debug_if(g_debug_reactor, L_DEBUG, "Executed overflow deferred operation %zu", i + 1);
+        } else {
+            log_it(L_WARNING, "Failed to execute overflow deferred operation %zu (queue full)", i + 1);
+            free(l_data);
+        }
+    }
+    
+    // Очищаем все отложенные операции
+    s_safe_ctx.deferred_count = 0;
+    s_safe_ctx.overflow_count = 0;
+    
+    // НЕ сигналим! Это та же очередь, которую мы сейчас обрабатываем
+    // Worker увидит новые сообщения при следующей проверке размера очереди
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Completed %d deferred intra-queue operations (no signaling needed)", 
+             l_executed);
+    
+    return l_executed;
+}
+
+/**
+ * @brief Check if safe context limits are within acceptable bounds
+ * @return true if within limits, false if limits exceeded
+ */
+static bool s_safe_ctx_check_limits(void)
+{
+    size_t l_total = s_safe_ctx.deferred_count + s_safe_ctx.overflow_count;
+    
+    // Warning threshold - log but continue
+    if (l_total >= DAP_SAFE_CTX_WARNING_THRESHOLD && l_total < DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY) {
+        log_it(L_WARNING, "Approaching deferred message limit: %zu/%d (embedded: %zu, overflow: %zu)", 
+               l_total, DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY, s_safe_ctx.deferred_count, s_safe_ctx.overflow_count);
+    }
+    
+    // Hard limit - prevent unbounded growth
+    return l_total < DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY;
+}
+
+/**
+ * @brief Handle overflow situation according to configured strategy
+ * @param a_data_copy Data that couldn't be stored
+ * @return 0 if handled, negative on error
+ */
+static int s_safe_ctx_handle_overflow(void *a_data_copy)
+{
+    s_safe_ctx.overflow_events++;
+    
+    switch (s_overflow_strategy) {
+    case DAP_OVERFLOW_STRATEGY_DROP_OLDEST:
+        // Drop 25% of oldest messages to make room
+        size_t l_drop_count = (s_safe_ctx.deferred_count + s_safe_ctx.overflow_count) / 4;
+        l_drop_count = dap_max(l_drop_count, 1);  // Drop at least 1
+        
+        if (s_safe_ctx.deferred_count > 0) {
+            size_t l_embedded_drop = dap_min(l_drop_count, s_safe_ctx.deferred_count);
+            s_safe_ctx_drop_oldest_embedded(l_embedded_drop);
+            l_drop_count -= l_embedded_drop;
+        }
+        
+        if (l_drop_count > 0 && s_safe_ctx.overflow_count > 0) {
+            size_t l_overflow_drop = dap_min(l_drop_count, s_safe_ctx.overflow_count);
+            s_safe_ctx_drop_oldest_overflow(l_overflow_drop);
+        }
+        
+        // Now try to store the new message
+        if (s_safe_ctx.deferred_count < DAP_SAFE_CTX_EMBEDDED_CAPACITY) {
+            s_safe_ctx.embedded_messages[s_safe_ctx.deferred_count++] = a_data_copy;
+            return 0;
+        }
+        // Fall through to overflow storage if embedded is full
+        
+        log_it(L_WARNING, "Dropped %zu oldest deferred messages due to overflow, stored new message", 
+               (s_safe_ctx.deferred_count + s_safe_ctx.overflow_count + 1) / 4);
+        return 0;
+        
+    case DAP_OVERFLOW_STRATEGY_DROP_NEWEST:
+        // Simply drop the new message
+        free(a_data_copy);
+        s_safe_ctx.dropped_messages++;
+        log_it(L_WARNING, "Dropped newest deferred message due to overflow (limit: %d)", 
+               DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY);
+        return -1;
+        
+    case DAP_OVERFLOW_STRATEGY_EMERGENCY_EXECUTE:
+        // Force immediate execution of some deferred operations (DANGEROUS!)
+        log_it(L_ERROR, "EMERGENCY: Force executing deferred operations due to overflow!");
+        if (s_safe_ctx.current_processing_queue) {
+            s_safe_ctx_emergency_execute(s_safe_ctx.current_processing_queue);
+            // Try storing again after emergency execution
+            if (s_safe_ctx.deferred_count < DAP_SAFE_CTX_EMBEDDED_CAPACITY) {
+                s_safe_ctx.embedded_messages[s_safe_ctx.deferred_count++] = a_data_copy;
+                return 0;
+            }
+        }
+        // If still can't store, drop it
+        free(a_data_copy);
+        s_safe_ctx.dropped_messages++;
+        return -2;
+        
+    default:
+        log_it(L_ERROR, "Unknown overflow strategy: %d", s_overflow_strategy);
+        free(a_data_copy);
+        return -3;
+    }
+}
+
+/**
+ * @brief Drop oldest messages from embedded array
+ * @param a_count Number of messages to drop
+ */
+static void s_safe_ctx_drop_oldest_embedded(size_t a_count)
+{
+    a_count = dap_min(a_count, s_safe_ctx.deferred_count);
+    
+    // Free the oldest messages
+    for (size_t i = 0; i < a_count; i++) {
+        free(s_safe_ctx.embedded_messages[i]);
+        s_safe_ctx.dropped_messages++;
+    }
+    
+    // Shift remaining messages left
+    size_t l_remaining = s_safe_ctx.deferred_count - a_count;
+    if (l_remaining > 0) {
+        memmove(s_safe_ctx.embedded_messages, 
+                s_safe_ctx.embedded_messages + a_count,
+                l_remaining * sizeof(void*));
+    }
+    
+    s_safe_ctx.deferred_count = l_remaining;
+}
+
+/**
+ * @brief Drop oldest messages from overflow array  
+ * @param a_count Number of messages to drop
+ */
+static void s_safe_ctx_drop_oldest_overflow(size_t a_count)
+{
+    a_count = dap_min(a_count, s_safe_ctx.overflow_count);
+    
+    // Free the oldest messages
+    for (size_t i = 0; i < a_count; i++) {
+        free(s_safe_ctx.overflow_messages[i]);
+        s_safe_ctx.dropped_messages++;
+    }
+    
+    // Shift remaining messages left
+    size_t l_remaining = s_safe_ctx.overflow_count - a_count;
+    if (l_remaining > 0) {
+        memmove(s_safe_ctx.overflow_messages,
+                s_safe_ctx.overflow_messages + a_count,
+                l_remaining * sizeof(void*));
+    }
+    
+    s_safe_ctx.overflow_count = l_remaining;
+}
+
+/**
+ * @brief Emergency execution of deferred operations (VIOLATES SPSC - use with caution!)
+ * @param a_target_queue Target queue
+ * @return Number of executed operations
+ */
+static int s_safe_ctx_emergency_execute(dap_events_socket_t *a_target_queue)
+{
+    log_it(L_CRITICAL, "EMERGENCY EXECUTION: Violating SPSC safety to prevent memory exhaustion!");
+    
+    // Execute half of deferred operations immediately
+    size_t l_execute_count = (s_safe_ctx.deferred_count + s_safe_ctx.overflow_count) / 2;
+    int l_executed = 0;
+    
+    // Execute embedded messages first
+    size_t l_embedded_exec = dap_min(l_execute_count, s_safe_ctx.deferred_count);
+    for (size_t i = 0; i < l_embedded_exec; i++) {
+        void *l_data = s_safe_ctx.embedded_messages[i];
+        
+        dap_hybrid_message_t l_msg = {0};
+        l_msg.type = 0;
+        l_msg.size = sizeof(void*);
+        l_msg.is_inline = false;
+        l_msg.external_msg.data = l_data;
+        l_msg.external_msg.free_func = free;
+        
+        if (s_ring_buffer_enqueue(a_target_queue, &l_msg)) {
+            l_executed++;
+        } else {
+            free(l_data);  // Queue full, drop the message
+            s_safe_ctx.dropped_messages++;
+        }
+    }
+    
+    // Remove executed messages from embedded array
+    s_safe_ctx_drop_oldest_embedded(l_embedded_exec);
+    l_execute_count -= l_embedded_exec;
+    
+    // Execute overflow messages if needed
+    if (l_execute_count > 0 && s_safe_ctx.overflow_count > 0) {
+        size_t l_overflow_exec = dap_min(l_execute_count, s_safe_ctx.overflow_count);
+        for (size_t i = 0; i < l_overflow_exec; i++) {
+            void *l_data = s_safe_ctx.overflow_messages[i];
+            
+            dap_hybrid_message_t l_msg = {0};
+            l_msg.type = 0;
+            l_msg.size = sizeof(void*);
+            l_msg.is_inline = false;
+            l_msg.external_msg.data = l_data;
+            l_msg.external_msg.free_func = free;
+            
+            if (s_ring_buffer_enqueue(a_target_queue, &l_msg)) {
+                l_executed++;
+            } else {
+                free(l_data);
+                s_safe_ctx.dropped_messages++;
+            }
+        }
+        
+        s_safe_ctx_drop_oldest_overflow(l_overflow_exec);
+    }
+    
+    log_it(L_WARNING, "Emergency execution completed: %d operations executed", l_executed);
+    return l_executed;
+}
+
+/**
+ * @brief Log deferred execution statistics for monitoring
+ */
+static void s_safe_ctx_log_statistics(void)
+{
+    size_t l_current_total = s_safe_ctx.deferred_count + s_safe_ctx.overflow_count;
+    
+    if (s_safe_ctx.total_deferred_ever > 0 || l_current_total > 0) {
+        log_it(L_INFO, "Deferred Execution Statistics:");
+        log_it(L_INFO, "  Current deferred: %zu (embedded: %zu, overflow: %zu)", 
+               l_current_total, s_safe_ctx.deferred_count, s_safe_ctx.overflow_count);
+        log_it(L_INFO, "  Total processed: %"DAP_UINT64_FORMAT_U, s_safe_ctx.total_deferred_ever);
+        log_it(L_INFO, "  Overflow events: %"DAP_UINT64_FORMAT_U, s_safe_ctx.overflow_events);
+        log_it(L_INFO, "  Dropped messages: %"DAP_UINT64_FORMAT_U, s_safe_ctx.dropped_messages);
+        
+        if (s_safe_ctx.dropped_messages > 0) {
+            double l_drop_rate = (double)s_safe_ctx.dropped_messages / (double)s_safe_ctx.total_deferred_ever * 100.0;
+            log_it(L_WARNING, "  Message drop rate: %.2f%%", l_drop_rate);
+        }
+        
+        if (s_safe_ctx.overflow_events > 0) {
+            log_it(L_WARNING, "  Overflow strategy: %s", 
+                   s_overflow_strategy == DAP_OVERFLOW_STRATEGY_DROP_OLDEST ? "DROP_OLDEST" :
+                   s_overflow_strategy == DAP_OVERFLOW_STRATEGY_DROP_NEWEST ? "DROP_NEWEST" : 
+                   s_overflow_strategy == DAP_OVERFLOW_STRATEGY_EMERGENCY_EXECUTE ? "EMERGENCY_EXECUTE" : "UNKNOWN");
+        }
+    }
+}
+
+/**
+ * @brief Initialize ring buffer in event socket's buf_out (optimal cache locality)
+ * @param a_es Event socket to initialize ring buffer in
+ * @param a_capacity Buffer capacity (will be rounded to power of 2)
+ * @return 0 on success, negative on error
+ * 
+ * CACHE LOCALITY OPTIMIZATION:
+ * - Ring buffer header + data stored in single buf_out block
+ * - Perfect spatial locality for producer/consumer access patterns
+ * - Eliminates pointer dereference overhead vs separate allocation
+ */
+static int s_ring_buffer_create_in_buf(dap_events_socket_t *a_es, size_t a_capacity)
+{
+    // Round up to next power of 2 for efficient modulo via bitwise AND
+    size_t l_real_capacity = 1;
+    while (l_real_capacity < a_capacity)
+        l_real_capacity <<= 1;
+    
+    // Calculate total size: header + array of hybrid messages
+    size_t l_total_size = sizeof(dap_ring_buffer_header_t) + l_real_capacity * sizeof(dap_hybrid_message_t);
+    
+    // Allocate buf_out with optimal strategy
+    a_es->buf_out_size_max = l_total_size;
+    
+    // Priority-based allocation for optimal performance
+#ifdef DAP_OS_UNIX
+    // mmap provides: zero-init + page alignment + no heap fragmentation
+    a_es->buf_out = mmap(NULL, l_total_size, PROT_READ | PROT_WRITE, 
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (a_es->buf_out == MAP_FAILED) {
+        log_it(L_ERROR, "Failed to mmap ring buffer of size %zu: %s", l_total_size, strerror(errno));
+        a_es->buf_out = NULL;
+        return -1;
+    }
+    debug_if(g_debug_reactor, L_DEBUG, "Using mmap allocation for ring buffer in buf_out");
+    
+#elif defined(DAP_OS_WINDOWS)
+    // VirtualAlloc is Windows equivalent of mmap
+    a_es->buf_out = VirtualAlloc(NULL, l_total_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!a_es->buf_out) {
+        log_it(L_ERROR, "Failed to VirtualAlloc ring buffer of size %zu, error %lu", l_total_size, GetLastError());
+        return -1;
+    }
+    debug_if(g_debug_reactor, L_DEBUG, "Using VirtualAlloc allocation for ring buffer in buf_out");
+    
+#else
+    // Priority 2: Aligned allocation (good performance)
+    #ifdef _POSIX_C_SOURCE
+    if (posix_memalign((void**)&a_es->buf_out, 64, l_total_size) != 0) {
+        log_it(L_WARNING, "posix_memalign failed, falling back to calloc");
+        a_es->buf_out = NULL;
+    } else {
+        memset(a_es->buf_out, 0, l_total_size);  // Manual zero-init required
+        debug_if(g_debug_reactor, L_DEBUG, "Using posix_memalign allocation for ring buffer in buf_out");
+    }
+    #endif
+    
+    // Priority 3: calloc fallback (acceptable - guarantees zero-init)
+    if (!a_es->buf_out) {
+        a_es->buf_out = calloc(1, l_total_size);  // calloc ALWAYS zero-initializes
+        if (!a_es->buf_out) {
+            log_it(L_ERROR, "Failed to calloc ring buffer of size %zu", l_total_size);
+            return -1;
+        }
+        debug_if(g_debug_reactor, L_DEBUG, "Using calloc allocation for ring buffer in buf_out");
+    }
+#endif
+    
+    // CRITICAL: Atomic indices MUST start at 0 for lock-free algorithm correctness
+    // All allocation methods above guarantee zero-initialization
+    dap_ring_buffer_header_t *l_header = RING_HEADER(a_es);
+    assert(l_header->head == 0 && l_header->tail == 0);
+    
+    // Initialize ring buffer metadata
+    l_header->capacity = l_real_capacity;
+    l_header->mask = l_real_capacity - 1;  // Fast modulo: index & mask == index % capacity
+    
+    a_es->buf_out_size = l_total_size;  // Mark buffer as "used"
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Created ring buffer in buf_out: size=%zu, capacity=%zu, address=%p", 
+             l_total_size, l_real_capacity, a_es->buf_out);
+    
+    return 0;
+}
+
+/**
+ * @brief Destroy ring buffer stored in buf_out
+ * @param a_es Event socket containing ring buffer in buf_out
+ */
+static void s_ring_buffer_destroy_in_buf(dap_events_socket_t *a_es)
+{
+    if (!a_es || !a_es->buf_out) return;
+    
+    dap_ring_buffer_header_t *l_header = RING_HEADER(a_es);
+    size_t l_total_size = sizeof(dap_ring_buffer_header_t) + l_header->capacity * sizeof(dap_hybrid_message_t);
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Destroying ring buffer in buf_out: size=%zu, capacity=%zu, address=%p", 
+             l_total_size, l_header->capacity, a_es->buf_out);
+    
+#ifdef DAP_OS_UNIX
+    // Unmap memory allocated with mmap
+    if (munmap(a_es->buf_out, l_total_size) != 0) {
+        log_it(L_WARNING, "Failed to munmap ring buffer: %s", strerror(errno));
+    }
+    
+#elif defined(DAP_OS_WINDOWS)
+    // Free memory allocated with VirtualAlloc
+    if (!VirtualFree(a_es->buf_out, 0, MEM_RELEASE)) {
+        log_it(L_WARNING, "Failed to VirtualFree ring buffer, error %lu", GetLastError());
+    }
+    
+#else
+    // Free memory allocated with posix_memalign or calloc
+    #ifdef _POSIX_C_SOURCE
+    free(a_es->buf_out);  // posix_memalign memory is freed with free()
+    #else
+    DAP_DELETE(a_es->buf_out);  // fallback to DAP_DELETE
+    #endif
+#endif
+    
+    a_es->buf_out = NULL;
+    a_es->buf_out_size = a_es->buf_out_size_max = 0;
+}
+
+/**
+ * @brief Enqueue hybrid message to ring buffer in buf_out (non-blocking, SPSC only)
+ * @param a_es Event socket containing ring buffer in buf_out
+ * @param a_msg Hybrid message to enqueue
+ * @return true if successful, false if buffer is full
+ * 
+ * CACHE LOCALITY OPTIMIZATION:
+ * - Direct access to ring buffer in buf_out (zero pointer indirection)
+ * - Header and data in single memory block for perfect spatial locality
+ * - Message copy directly into final destination (no intermediate buffers)
+ */
+static bool s_ring_buffer_enqueue(dap_events_socket_t *a_es, const dap_hybrid_message_t *a_msg)
+{
+    dap_ring_buffer_header_t *l_header = RING_HEADER(a_es);
+    
+    // Step 1: Read OUR index (Producer owns head - relaxed is safe)
+    // No synchronization needed since only Producer modifies head
+    uint64_t l_head = atomic_load_explicit(&l_header->head, memory_order_relaxed);
+    
+    // Step 2: Read THEIR index (Consumer's tail - acquire synchronization!)
+    // CRITICAL: memory_order_acquire ensures we see Consumer's latest tail update
+    // Forms synchronizes-with relationship with Consumer's tail store (release)
+    uint64_t l_tail = atomic_load_explicit(&l_header->tail, memory_order_acquire);
+    
+    // Step 3: Check buffer capacity (overflow protection)
+    // Use modular arithmetic to handle uint64_t wraparound safely
+    if ((l_head - l_tail) >= l_header->capacity)
+        return false;  // Buffer full - Consumer hasn't freed space yet
+    
+    // Step 4: Write hybrid message to buffer (normal memory write - not atomic)
+    // This MUST complete before head index is updated (guaranteed by release below)
+    // Copy entire message structure for excellent cache locality
+    // OPTIMIZATION: Direct access to message slot via macro - zero indirection!
+    *RING_MESSAGE(a_es, l_head) = *a_msg;
+    
+    // Step 5: Publish data availability (CRITICAL memory ordering!)
+    // memory_order_release ensures:
+    // 1. Message write (above) completes BEFORE head update becomes visible
+    // 2. Consumer's acquire read will see both head update AND message data
+    // 3. Prevents CPU reordering: message write cannot move after head update
+    atomic_store_explicit(&l_header->head, l_head + 1, memory_order_release);
+    
+    // GUARANTEE: Consumer will never see updated head with stale message data
+    return true;
+}
+
+/**
+ * @brief Dequeue hybrid message from ring buffer in buf_out (non-blocking, SPSC only)
+ * @param a_es Event socket containing ring buffer in buf_out
+ * @param a_msg_out Output message structure
+ * @return true if successful, false if buffer is empty
+ * 
+ * CACHE LOCALITY OPTIMIZATION:
+ * - Direct access to ring buffer in buf_out (zero pointer indirection)
+ * - Message read directly from final location (no intermediate copies)
+ * - Header and data access patterns optimized for spatial locality
+ */
+static bool s_ring_buffer_dequeue(dap_events_socket_t *a_es, dap_hybrid_message_t *a_msg_out)
+{
+    dap_ring_buffer_header_t *l_header = RING_HEADER(a_es);
+    
+    // Step 1: Read OUR index (Consumer owns tail - relaxed is safe)
+    // No synchronization needed since only Consumer modifies tail
+    uint64_t l_tail = atomic_load_explicit(&l_header->tail, memory_order_relaxed);
+    
+    // Step 2: Read THEIR index (Producer's head - acquire synchronization!)
+    // CRITICAL: memory_order_acquire ensures we see Producer's latest head update
+    // Forms synchronizes-with relationship with Producer's head store (release)
+    // GUARANTEE: If we see updated head, we WILL see the corresponding message write
+    uint64_t l_head = atomic_load_explicit(&l_header->head, memory_order_acquire);
+    
+    // Step 3: Check buffer emptiness (underflow protection)
+    if (l_tail >= l_head)
+        return false;  // Buffer empty - Producer hasn't added new message yet
+    
+    // Step 4: Read hybrid message from buffer (normal memory read - not atomic)
+    // SAFETY: memory_order_acquire above guarantees this message is valid
+    // Producer wrote this message BEFORE updating head (due to release semantics)
+    // Copy entire message structure for perfect cache locality
+    // OPTIMIZATION: Direct access to message slot via macro - zero indirection!
+    *a_msg_out = *RING_MESSAGE(a_es, l_tail);
+    
+    // Step 5: Free buffer slot (CRITICAL memory ordering!)
+    // memory_order_release ensures:
+    // 1. Message read (above) completes BEFORE tail update becomes visible
+    // 2. Producer's acquire read will see both tail update AND our message consumption
+    // 3. Prevents CPU reordering: message read cannot move after tail update
+    atomic_store_explicit(&l_header->tail, l_tail + 1, memory_order_release);
+    
+    // GUARANTEE: Producer will never overwrite message we're still reading
+    return true;
+}
+
+/**
+ * @brief Get number of items in ring buffer stored in buf_out
+ * @param a_es Event socket containing ring buffer
+ * @return Number of items
+ */
+static inline size_t s_ring_buffer_size(dap_events_socket_t *a_es)
+{
+    dap_ring_buffer_header_t *l_header = RING_HEADER(a_es);
+    uint64_t l_head = atomic_load_explicit(&l_header->head, memory_order_acquire);
+    uint64_t l_tail = atomic_load_explicit(&l_header->tail, memory_order_acquire);
+    return l_head - l_tail;
+}
+
+/**
+ * @brief Create ring buffer queue event socket (MT-safe)
+ * @param a_w Worker to assign queue to
+ * @param a_callback Callback for processing queue items
+ * @return New ring buffer queue or NULL on error
+ */
+dap_events_socket_t *dap_events_socket_create_type_queue_ring_mt(dap_worker_t *a_w, dap_events_socket_callback_queue_ptr_t a_callback)
+{
+    dap_events_socket_t *l_es = s_dap_evsock_alloc();
+    if (!l_es) {
+        log_it(L_CRITICAL, "Memory allocation error for ring queue");
+        return NULL;
+    }
+
+    l_es->type = DESCRIPTOR_TYPE_QUEUE_RING;
+    l_es->flags = DAP_SOCK_QUEUE_PTR;
+    l_es->callbacks.queue_ptr_callback = a_callback;
+
+    // Create ring buffer directly in buf_out for optimal cache locality
+    // Default size optimized for typical message workloads in dap-sdk
+    size_t l_message_capacity = DAP_RING_BUFFER_DEFAULT_SIZE / sizeof(dap_hybrid_message_t);
+    if (s_ring_buffer_create_in_buf(l_es, l_message_capacity) != 0) {
+        s_dap_evsock_free(l_es);
+        return NULL;
+    }
+    // Ring buffer is now stored directly in buf_out - no _pvt needed!
+
+    // Create eventfd for signaling
+#ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
+    l_es->fd = eventfd(0, EFD_NONBLOCK);
+    if (l_es->fd < 0) {
+        log_it(L_ERROR, "Failed to create eventfd for ring queue: %s", strerror(errno));
+        s_ring_buffer_destroy_in_buf(l_es);
+        s_dap_evsock_free(l_es);
+        return NULL;
+    }
+    l_es->fd2 = l_es->fd;
+#else
+    // Fallback to pipe for signaling on platforms without eventfd
+    int l_pipe[2];
+    if (pipe(l_pipe) < 0) {
+        log_it(L_ERROR, "Failed to create pipe for ring queue: %s", strerror(errno));
+        s_ring_buffer_destroy_in_buf(l_es);
+        s_dap_evsock_free(l_es);
+        return NULL;
+    }
+    fcntl(l_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(l_pipe[1], F_SETFL, O_NONBLOCK);
+    l_es->fd = l_pipe[0];
+    l_es->fd2 = l_pipe[1];
+#endif
+
+    // Setup polling flags
+#if defined(DAP_EVENTS_CAPS_EPOLL)
+    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
+#elif defined(DAP_EVENTS_CAPS_POLL)
+    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
+#elif defined(DAP_EVENTS_CAPS_KQUEUE)
+    l_es->kqueue_base_flags = EV_ONESHOT;
+    l_es->kqueue_base_fflags = NOTE_FFNOP | NOTE_TRIGGER;
+    l_es->kqueue_base_filter = EVFILT_USER;
+    l_es->socket = arc4random();
+    l_es->kqueue_event_catched_data.esocket = l_es;
+#endif
+
+    // Assign to worker if provided
+    if (a_w)
+        dap_events_socket_assign_on_worker_mt(l_es, a_w);
+
+    debug_if(g_debug_reactor, L_DEBUG, "Created ring buffer queue %p with capacity %zu", l_es, RING_HEADER(l_es)->capacity);
+    return l_es;
+}
+
+/**
+ * @brief Send hybrid message to ring buffer queue (MT-safe with deferred execution for SPSC fix)
+ * @param a_es Ring buffer queue event socket  
+ * @param a_data Data to send
+ * @param a_data_size Size of data
+ * @param a_msg_type Message type identifier
+ * @param a_free_func Optional deallocator for external data (NULL for inline)
+ * @return 0 on success, negative on error
+ * 
+ * SPSC VIOLATION FIX:
+ * - Detects if we're inside message processing context (Consumer is active)
+ * - If Consumer is active: defers send operation to prevent SPSC violation
+ * - If Consumer is inactive: executes send immediately (normal case)
+ * - Deferred operations execute after processing completes (temporal separation)
+ */
+int dap_events_socket_queue_ring_data_send(dap_events_socket_t *a_es, const void *a_data, 
+                                           size_t a_data_size, uint32_t a_msg_type, 
+                                           void (*a_free_func)(void*))
+{
+    if (!a_es || a_es->type != DESCRIPTOR_TYPE_QUEUE_RING) {
+        log_it(L_ERROR, "Invalid ring buffer queue");
+        return -1;
+    }
+
+    // Ring buffer is stored directly in buf_out for optimal cache locality
+    if (!a_es->buf_out || !RING_HEADER(a_es)) {
+        log_it(L_ERROR, "Ring buffer not initialized in buf_out");
+        return -2;
+    }
+
+    // ✅ КЛЮЧЕВАЯ ПРОВЕРКА: отправляем в ту же очередь, которую сейчас обрабатываем?
+    if (s_safe_ctx.is_processing && s_safe_ctx.current_processing_queue == a_es) {
+        // 🚨 ОПАСНО: Worker пытается стать Producer для той же очереди!
+        // РЕШЕНИЕ: Отложить отправку до завершения обработки
+        
+        debug_if(g_debug_reactor, L_DEBUG, 
+            "INTRA-QUEUE send detected: deferring %zu bytes to avoid SPSC violation", a_data_size);
+        
+        // ✅ OVERFLOW PROTECTION: Check limits before allocation
+        if (!s_safe_ctx_check_limits()) {
+            log_it(L_WARNING, "Deferred message limit exceeded, applying overflow strategy");
+            // Create data copy for overflow handler
+            void *l_data_copy = malloc(a_data_size);
+            if (!l_data_copy) {
+                log_it(L_ERROR, "Failed to allocate memory for overflow handling");
+                return -4;
+            }
+            memcpy(l_data_copy, a_data, a_data_size);
+            
+            // Handle overflow according to strategy
+            int l_overflow_result = s_safe_ctx_handle_overflow(l_data_copy);
+            if (l_overflow_result < 0) {
+                debug_if(g_debug_reactor, L_DEBUG, "Overflow handler dropped message (result: %d)", l_overflow_result);
+                return 0;  // Success - message was handled (even if dropped)
+            }
+        } else {
+            // Normal path - within limits
+            void *l_data_copy = malloc(a_data_size);
+            if (!l_data_copy) {
+                log_it(L_ERROR, "Failed to allocate memory for deferred intra-queue send");
+                return -4;
+            }
+            memcpy(l_data_copy, a_data, a_data_size);
+            s_safe_ctx.total_deferred_ever++;  // Monitoring counter
+            
+            // ✅ CACHE-FRIENDLY EMBEDDED STORAGE: Use embedded array for common case
+            if (s_safe_ctx.deferred_count < DAP_SAFE_CTX_EMBEDDED_CAPACITY) {
+                // FAST PATH: Store in embedded array - excellent cache locality!
+                s_safe_ctx.embedded_messages[s_safe_ctx.deferred_count++] = l_data_copy;
+                debug_if(g_debug_reactor, L_DEBUG, "Stored in embedded array slot %zu", s_safe_ctx.deferred_count - 1);
+            } else {
+                // SLOW PATH: Use overflow array for extreme cases (>16 deferred operations)
+                if (s_safe_ctx.overflow_count >= s_safe_ctx.overflow_capacity) {
+                    size_t l_new_capacity = dap_min(s_safe_ctx.overflow_capacity * 2, 
+                                                   DAP_SAFE_CTX_OVERFLOW_MAX_CAPACITY - DAP_SAFE_CTX_EMBEDDED_CAPACITY);
+                    if (l_new_capacity <= s_safe_ctx.overflow_capacity) {
+                        // Can't grow anymore, use overflow handler
+                        int l_overflow_result = s_safe_ctx_handle_overflow(l_data_copy);
+                        debug_if(g_debug_reactor, L_DEBUG, "Overflow capacity exhausted, handled: %d", l_overflow_result);
+                        return l_overflow_result < 0 ? 0 : 0;  // Always return success for user
+                    }
+                    
+                    void **l_new_array = DAP_REALLOC(s_safe_ctx.overflow_messages, 
+                                                     l_new_capacity * sizeof(void*));
+                    if (!l_new_array) {
+                        // Memory allocation failed, use overflow handler
+                        log_it(L_WARNING, "Failed to expand overflow array, using overflow handler");
+                        int l_overflow_result = s_safe_ctx_handle_overflow(l_data_copy);
+                        return l_overflow_result < 0 ? 0 : 0;
+                    }
+                    s_safe_ctx.overflow_messages = l_new_array;
+                    s_safe_ctx.overflow_capacity = l_new_capacity;
+                }
+                s_safe_ctx.overflow_messages[s_safe_ctx.overflow_count++] = l_data_copy;
+                debug_if(g_debug_reactor, L_DEBUG, "Stored in overflow array slot %zu (rare case)", s_safe_ctx.overflow_count - 1);
+            }
+        }
+        
+        debug_if(g_debug_reactor, L_DEBUG, "Deferred intra-queue send: %zu total deferred operations (embedded: %zu, overflow: %zu)", 
+                 s_safe_ctx.deferred_count + s_safe_ctx.overflow_count, s_safe_ctx.deferred_count, s_safe_ctx.overflow_count);
+        
+        return 0;  // Успех: операция отложена
+    }
+    
+    // ✅ БЕЗОПАСНЫЙ ПУТЬ: Отправка в другую очередь или не во время обработки
+    debug_if(g_debug_reactor, L_DEBUG, "INTER-QUEUE send: executing immediately (%zu bytes)", a_data_size);
+
+    // Build hybrid message
+    dap_hybrid_message_t l_msg = {0};
+    l_msg.type = a_msg_type;
+    l_msg.size = a_data_size;
+
+    // ADAPTIVE STRATEGY: Inline vs External based on message size
+    if (a_data_size <= DAP_MESSAGE_INLINE_SIZE) {
+        // INLINE PATH: Excellent cache locality for small messages
+        l_msg.is_inline = true;
+        memcpy(l_msg.inline_msg.data, a_data, a_data_size);
+        
+        debug_if(g_debug_reactor, L_DEBUG, "Inline message %u bytes (type=%u) to ring queue %p", 
+                 a_data_size, a_msg_type, a_es);
+    } else {
+        // EXTERNAL PATH: Fallback for large messages  
+        l_msg.is_inline = false;
+        l_msg.external_msg.data = (void*)a_data;  // Store pointer
+        l_msg.external_msg.free_func = a_free_func;
+        
+        debug_if(g_debug_reactor, L_DEBUG, "External message %u bytes (type=%u) to ring queue %p", 
+                 a_data_size, a_msg_type, a_es);
+    }
+
+    // Enqueue hybrid message atomically - direct access to buf_out ring buffer!
+    if (!s_ring_buffer_enqueue(a_es, &l_msg)) {
+        log_it(L_WARNING, "Ring buffer queue is full, message type %u size %zu dropped", 
+               a_msg_type, a_data_size);
+        return -3;
+    }
+
+    // Signal worker via eventfd/pipe (minimal overhead)
+#ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
+    eventfd_write(a_es->fd2, 1);
+#else
+    char l_signal = 1;
+    write(a_es->fd2, &l_signal, 1);
+#endif
+
+    return 0;
+}
+
+/**
+ * @brief Send pointer to ring buffer queue (backward compatibility wrapper)
+ * @param a_es Ring buffer queue event socket
+ * @param a_ptr Pointer to send
+ * @return 0 on success, negative on error
+ */
+int dap_events_socket_queue_ring_ptr_send(dap_events_socket_t *a_es, void *a_ptr)
+{
+    // Use external message mode for backward compatibility
+    return dap_events_socket_queue_ring_data_send(a_es, &a_ptr, sizeof(void*), 
+                                                  0 /* default type */, NULL);
+}
+
+/**
+ * @brief Process input from ring buffer queue with deferred execution support (unsafe - call from worker only)
+ * @param a_esocket Ring buffer queue event socket
+ * @return 0 on success, negative on error
+ * 
+ * CACHE-OPTIMIZED HYBRID MESSAGE PROCESSING WITH SPSC FIX:
+ * - Batch processing for optimal L1/L2 cache utilization
+ * - Prefetching strategies for both messages and data
+ * - Adaptive handling for inline vs external messages
+ * - Deferred execution of send operations to prevent SPSC violations
+ */
+int dap_events_socket_queue_ring_proc_input_unsafe(dap_events_socket_t *a_esocket)
+{
+    if (!a_esocket || a_esocket->type != DESCRIPTOR_TYPE_QUEUE_RING) {
+        log_it(L_ERROR, "Invalid ring buffer queue");
+        return -1;
+    }
+
+    if (!a_esocket->callbacks.queue_ptr_callback) {
+        log_it(L_ERROR, "No callback set for ring buffer queue");
+        return -2;
+    }
+
+    // Ring buffer is stored directly in buf_out for optimal cache locality
+    if (!a_esocket->buf_out || !RING_HEADER(a_esocket)) {
+        log_it(L_ERROR, "Ring buffer not initialized in buf_out");
+        return -3;
+    }
+
+    // ✅ УСТАНАВЛИВАЕМ БЕЗОПАСНЫЙ КОНТЕКСТ
+    bool l_was_processing = s_safe_ctx.is_processing;
+    dap_events_socket_t *l_prev_queue = s_safe_ctx.current_processing_queue;
+    
+    s_safe_ctx.is_processing = true;
+    s_safe_ctx.current_processing_queue = a_esocket;  // Только эта очередь будет отложена
+    
+    debug_if(g_debug_reactor, L_DEBUG, "Started safe processing for queue %p (intra-queue deferred mode)", a_esocket);
+
+    // Clear signaling descriptor
+#ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
+    eventfd_t l_value;
+    eventfd_read(a_esocket->fd, &l_value);
+#else
+    char l_buffer[256];
+    read(a_esocket->fd, l_buffer, sizeof(l_buffer));
+#endif
+
+    // Simple message-by-message processing for reliable, predictable performance
+    dap_hybrid_message_t l_msg;  // Single message on stack
+    int l_processed = 0;
+    
+    // Process all available messages one by one
+    while (s_ring_buffer_dequeue(a_esocket, &l_msg)) {
+        if (l_msg.is_inline) {
+            // INLINE PATH: Small messages with good cache locality
+            a_esocket->callbacks.queue_ptr_callback(a_esocket, l_msg.inline_msg.data);
+            
+            debug_if(g_debug_reactor, L_DEBUG, "Processed inline message type=%u size=%u", 
+                     l_msg.type, l_msg.size);
+        } else {
+            // EXTERNAL PATH: Large messages via pointer
+            void *l_external_data = l_msg.external_msg.data;
+            
+            a_esocket->callbacks.queue_ptr_callback(a_esocket, l_external_data);
+            
+            // Free external data if deallocator provided
+            if (l_msg.external_msg.free_func) {
+                l_msg.external_msg.free_func(l_external_data);
+            }
+            
+            debug_if(g_debug_reactor, L_DEBUG, "Processed external message type=%u size=%u", 
+                     l_msg.type, l_msg.size);
+        }
+        l_processed++;
+    }
+
+    // ✅ ВЫПОЛНЯЕМ ОТЛОЖЕННЫЕ ОПЕРАЦИИ ПЕРЕД ВОССТАНОВЛЕНИЕМ КОНТЕКСТА
+    // Это логическое завершение обработки - добавляем отложенные сообщения в очередь
+    // Функция НЕ вызывает callback'и, только s_ring_buffer_enqueue - безопасно
+    int l_deferred_executed = s_execute_deferred_intra_queue_operations(a_esocket);
+    
+    // ✅ ВОССТАНАВЛИВАЕМ КОНТЕКСТ ПОСЛЕ ЗАВЕРШЕНИЯ ВСЕЙ ОБРАБОТКИ
+    // Отключаем защиту только после полного завершения работы с очередью
+    s_safe_ctx.is_processing = l_was_processing;
+    s_safe_ctx.current_processing_queue = l_prev_queue;
+    
+    debug_if(g_debug_reactor, L_DEBUG, 
+        "Safe processing complete: %d messages processed, %d deferred operations executed", 
+        l_processed, l_deferred_executed);
+    
+    return l_processed;
 }

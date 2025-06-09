@@ -212,6 +212,7 @@ typedef enum {
     DESCRIPTOR_TYPE_FILE,
     DESCRIPTOR_TYPE_PIPE,
     DESCRIPTOR_TYPE_QUEUE,
+    DESCRIPTOR_TYPE_QUEUE_RING,
     /* all above are readable/writeable */
     DESCRIPTOR_TYPE_TIMER,
     DESCRIPTOR_TYPE_EVENT,
@@ -497,6 +498,19 @@ DAP_STATIC_INLINE int dap_sendto(SOCKET s, u_short port, void* buf_out, size_t b
 }
 #endif
 
+// Ring buffer queue functions (hybrid data/pointer implementation)
+dap_events_socket_t * dap_events_socket_create_type_queue_ring_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
+
+// Hybrid message API - adaptive inline/external strategy for optimal cache performance
+int dap_events_socket_queue_ring_data_send(dap_events_socket_t * a_es, const void * a_data, 
+                                           size_t a_data_size, uint32_t a_msg_type, 
+                                           void (*a_free_func)(void*));
+
+// Backward compatibility wrapper for pointer-only queues
+int dap_events_socket_queue_ring_ptr_send(dap_events_socket_t * a_es, void * a_ptr);
+
+// Internal processing function (worker thread only)
+int dap_events_socket_queue_ring_proc_input_unsafe(dap_events_socket_t * a_esocket);
 
 #ifdef __cplusplus
 }
