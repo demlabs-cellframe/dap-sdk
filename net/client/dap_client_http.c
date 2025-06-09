@@ -360,7 +360,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
                             a_client_http->request && a_client_http->request_size;
     
     dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
-        a_client_http->method, a_client_http->path,
+        a_client_http->method, a_client_http->path ? a_client_http->path : "",
         l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
         a_client_http->uplink_addr,
         l_request_headers,
@@ -396,9 +396,11 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
     }
     
     // Update path - always store without leading slash
-    DAP_DELETE(a_client_http->path);
-    a_client_http->path = dap_strdup(a_new_path + (int)(a_new_path[0] == '/'));
-    
+    if (a_new_path) {
+        DAP_DELETE(a_client_http->path);
+        a_client_http->path = dap_strdup(a_new_path + (int)(a_new_path[0] == '/'));
+    }
+
     // Increment redirect counter
     a_client_http->redirect_count++;
 }
@@ -677,7 +679,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->es = l_ev_socket;
     l_client_http->method = dap_strdup(a_method);
-    l_client_http->path = dap_strdup(a_path + (int)(a_path[0] == '/'));
+    l_client_http->path = a_path ? dap_strdup(a_path + (int)(a_path[0] == '/')) : NULL;
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
     // Set callbacks BEFORE adding to worker (critical for thread safety)
@@ -944,7 +946,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
         assert(l_client_http);
         if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
-                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
                    
             l_client_http->timer = NULL;
             
@@ -1000,7 +1002,7 @@ static bool s_timer_timeout_check(void * a_arg)
             dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
             l_client_http->timer = NULL;
             log_it(L_WARNING,"Connecting timeout for request http://%s:%u/%s, possible network problems or host is down",
-                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
             
             dap_client_http_async_context_t *l_ctx = NULL;
             if (l_client_http->error_callback == s_async_error_callback) {
@@ -1643,14 +1645,7 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
         dap_http_header_remove(&a_client_http->response_headers, a_client_http->response_headers);
     }
     
-    DAP_DEL_Z(a_client_http->method);
-    DAP_DEL_Z(a_client_http->request_content_type);
-    DAP_DEL_Z(a_client_http->cookie);
-    DAP_DEL_Z(a_client_http->response);
-    DAP_DEL_Z(a_client_http->path);
-    DAP_DEL_Z(a_client_http->request);
-    DAP_DEL_Z(a_client_http->request_custom_headers);
-    DAP_DEL_Z(a_client_http);
+    DAP_DEL_MULTY(a_client_http->method, a_client_http->path, a_client_http->request_content_type, a_client_http->cookie, a_client_http->request, a_client_http->request_custom_headers, a_client_http->response, a_client_http);
 }
 
 
