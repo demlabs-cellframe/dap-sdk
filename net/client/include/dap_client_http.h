@@ -41,7 +41,7 @@ typedef void (*dap_client_http_callback_full_t)(void *a_body, size_t a_body_size
 
 // Callback-only API - no return value, fully async
 typedef void (*dap_client_http_callback_started_t)(void *a_arg); // Called when request starts
-typedef void (*dap_client_http_callback_progress_t)(size_t a_downloaded, size_t a_total, void *a_arg); // Progress callback
+typedef void (*dap_client_http_callback_progress_t)(void *a_data, size_t a_data_size, size_t a_total, void *a_arg); // Streaming callback with data
 
 typedef struct dap_client_http {
     // TODO move unnessassary fields to dap_client_http_pvt privat structure
@@ -63,6 +63,12 @@ typedef struct dap_client_http {
     size_t header_length;
     size_t content_length;
     time_t ts_last_read;
+    
+    // Chunked transfer encoding support
+    bool is_chunked;                    // Transfer-Encoding: chunked detected
+    bool is_reading_chunk_size;         // Currently reading chunk size line
+    size_t current_chunk_size;          // Size of current chunk being read
+    size_t current_chunk_read;          // Bytes read from current chunk
     uint8_t *response;
     size_t response_size;
     size_t response_size_max;
@@ -72,6 +78,28 @@ typedef struct dap_client_http {
     uint8_t redirect_count;                      // Current redirect count
     bool follow_redirects;                       // Whether to follow redirects automatically
 #define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
+
+// Special error codes for streaming operations  
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED  (-1001)  // Streaming was interrupted
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT      (-1002)  // Timeout during streaming
+#define DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR    (-1003)  // Error parsing chunked data
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT    (-1004)  // Streaming size limit exceeded
+
+// Intelligent streaming decision based on content analysis + efficient memory usage
+//
+// Logic: Start small (4KB) → Analyze headers → Smart decision → One-time expansion if needed
+// 
+// Streaming enabled when:
+//   - Content-Length > 1MB threshold, OR
+//   - Binary MIME type (video/audio/image/zip/pdf/etc), OR  
+//   - Chunked transfer encoding
+//
+// Buffer strategy:
+//   - All requests start with 4KB buffer (no waste for small files)
+//   - If streaming enabled → ONE realloc to 128KB optimal size
+//   - Then zero further reallocations during streaming
+//
+
 
     // Request args
     char uplink_addr[DAP_HOSTADDR_STRLEN];
@@ -91,7 +119,7 @@ typedef struct dap_client_http {
 
 #define DAP_CLIENT_HTTP(a) (a ? (dap_client_http_t *) (a)->_inheritor : NULL)
 
-int dap_client_http_set_timeouts(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms);
+int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms, size_t a_streaming_threshold_bytes);
 int dap_client_http_init();
 void dap_client_http_deinit();
 
