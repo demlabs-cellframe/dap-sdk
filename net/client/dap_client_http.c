@@ -117,6 +117,7 @@ static void s_client_http_request_async_impl(
         bool a_is_https,
         bool a_follow_redirects);
 
+static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_client_http);
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size);
 static size_t s_parse_chunk_size_line(const char *a_line, size_t a_line_len);
 static bool s_process_chunked_data(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx, dap_events_socket_t *a_es);
@@ -314,6 +315,64 @@ static int s_parse_response_header(dap_client_http_t *a_client_http, const char 
 }
 
 /**
+ * @brief Send HTTP request with properly formatted headers
+ * @param a_es Event socket to send request on
+ * @param a_client_http HTTP client context
+ * @return 0 on success, -1 on error
+ */
+static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_client_http)
+{
+    if (!a_es || !a_client_http) {
+        log_it(L_ERROR, "Invalid arguments in s_send_http_request");
+        return -1;
+    }
+
+    char l_request_headers[1024] = { [0]='\0' };
+    int l_offset = 0;
+    size_t l_offset2 = sizeof(l_request_headers);
+    
+    // Handle POST-specific headers
+    if(a_client_http->request && (dap_strcmp(a_client_http->method, "POST") == 0 || 
+                                  dap_strcmp(a_client_http->method, "POST_ENC") == 0)) {
+        l_offset += a_client_http->request_content_type
+                ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", a_client_http->request_content_type)
+                : 0;
+
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
+                            a_client_http->request_size);
+    } else if(!dap_strcmp(a_client_http->method, "GET")) {
+        // Add User-Agent for GET requests
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
+    }
+    
+    // Add custom headers (for all methods)
+    if(a_client_http->request_custom_headers) {
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", a_client_http->request_custom_headers);
+    }
+
+    // Setup cookie header (for all methods)
+    if(a_client_http->cookie) {
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", a_client_http->cookie);
+    }
+
+    bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
+    bool l_post_with_body = (!dap_strcmp(a_client_http->method, "POST") || !dap_strcmp(a_client_http->method, "POST_ENC")) && 
+                            a_client_http->request && a_client_http->request_size;
+    
+    dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
+        a_client_http->method, a_client_http->path,
+        l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
+        a_client_http->uplink_addr,
+        l_request_headers,
+        l_post_with_body ? (char*)a_client_http->request : "");
+    
+    debug_if(s_debug_more && l_post_with_body, L_DEBUG, "Sent %s request with %zu bytes body", 
+             a_client_http->method, a_client_http->request_size);
+    
+    return 0;
+}
+
+/**
  * @brief Reset HTTP client state for redirect
  * @param a_client_http HTTP client to reset
  * @param a_new_path New path for request
@@ -433,43 +492,7 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
         s_client_http_reset_for_redirect(a_client_http, l_new_path);
         
         // Send new request on the same connection
-        char l_request_headers[1024] = { [0]='\0' };
-        int l_offset = 0;
-        size_t l_offset2 = sizeof(l_request_headers);
-        
-        if(a_client_http->request && (dap_strcmp(a_client_http->method, "POST") == 0 || 
-                                      dap_strcmp(a_client_http->method, "POST_ENC") == 0)) {
-            l_offset += a_client_http->request_content_type
-                    ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", a_client_http->request_content_type)
-                    : 0;
-
-            l_offset += a_client_http->request_custom_headers
-                    ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", a_client_http->request_custom_headers)
-                    : 0;
-
-            l_offset += a_client_http->cookie
-                    ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", a_client_http->cookie)
-                    : 0;
-
-            l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
-                                a_client_http->request_size);
-        } else if(!dap_strcmp(a_client_http->method, "GET")) {
-            l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-            l_offset += a_client_http->request_custom_headers
-                    ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", a_client_http->request_custom_headers)
-                    : 0;
-            l_offset += a_client_http->cookie
-                    ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", a_client_http->cookie)
-                    : 0;
-        }
-        
-        bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
-        dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-            a_client_http->method, 
-            a_client_http->path,  // Use stored path (always without leading slash)
-            l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
-            a_client_http->uplink_addr,
-            l_request_headers);
+        s_send_http_request(a_es, a_client_http);
 
         // No need to delete l_new_path - it's just a pointer now
         
@@ -895,37 +918,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         return;
     }
 
-    char l_request_headers[1024] = { [0]='\0' };
-    int l_offset = 0;
-    size_t l_offset2 = sizeof(l_request_headers);
-    if(l_client_http->request && (dap_strcmp(l_client_http->method, "POST") == 0 || dap_strcmp(l_client_http->method, "POST_ENC") == 0)) {
-        //log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
-
-        l_offset += l_client_http->request_content_type
-                ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
-                : 0;
-
-        // Add custom headers
-        l_offset += l_client_http->request_custom_headers
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
-                : 0;
-
-        // Setup cookie header
-        l_offset += l_client_http->cookie
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
-                : 0;
-
-        // Set request size as Content-Length header
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
-                                l_client_http->request_size);
-    }
-
-    bool l_get = !dap_strcmp(l_client_http->method, "GET") && l_client_http->request && l_client_http->request_size;
-    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-        l_client_http->method, l_client_http->path,
-        l_get ? "?" : "", l_get ? (char*)l_client_http->request : "",
-        l_client_http->uplink_addr,
-        l_request_headers);
+    // Send HTTP request with properly formatted headers
+    s_send_http_request(a_esocket, l_client_http);
 }
 
 /**
