@@ -24,7 +24,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include "dap_common.h"
 
 typedef struct dap_proc_thread dap_proc_thread_t;
@@ -56,7 +55,7 @@ typedef struct dap_proc_thread {
     pthread_mutex_t queue_lock;                                             /* To coordinate access to the queuee's entries */
     pthread_cond_t queue_event;                                             /* Conditional variable for waiting thread event queue */
     dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];             /* List of the queue' entries in array of list according of priority numbers */
-    atomic_uint_fast64_t proc_queue_size;                                   /* Thread's load factor (atomic for thread-safe reads) */
+    atomic_uint proc_queue_size;                                   /* Thread's load factor (atomic for thread-safe reads) */
     dap_context_t *context;
 } dap_proc_thread_t;
 
