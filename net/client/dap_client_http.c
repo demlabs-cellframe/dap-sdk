@@ -336,9 +336,9 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
         dap_http_header_remove(&a_client_http->response_headers, a_client_http->response_headers);
     }
     
-    // Update path
+    // Update path - always store without leading slash
     DAP_DELETE(a_client_http->path);
-    a_client_http->path = dap_strdup(a_new_path);
+    a_client_http->path = dap_strdup(a_new_path + (int)(a_new_path[0] == '/'));
     
     // Increment redirect counter
     a_client_http->redirect_count++;
@@ -353,81 +353,72 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
  */
 static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, const char *a_location_value)
 {
-    // Parse new URL
+    // Parse new URL efficiently without temporary copies or dynamic allocation
     char l_new_addr[DAP_HOSTADDR_STRLEN] = {0};
     uint16_t l_new_port = a_client_http->uplink_port;
-    char *l_new_path = NULL;
+    const char *l_new_path = NULL;          // Use pointer instead of allocated string
     bool l_is_https = a_client_http->is_over_ssl;
     
-    // Check if it's absolute URL
+    // Check URL type and parse accordingly
+    const char *l_url_start = NULL;
+    
     if(strncmp(a_location_value, "http://", 7) == 0) {
-        char l_url_copy[1024] = {0};
-        dap_strncpy(l_url_copy, a_location_value + 7, sizeof(l_url_copy) - 1);
-        
-        char *l_path_start = strchr(l_url_copy, '/');
-        if(l_path_start) {
-            l_new_path = dap_strdup(l_path_start);
-            *l_path_start = '\0';
-        } else {
-            l_new_path = dap_strdup("/");
-        }
-        
-        char *l_port_start = strchr(l_url_copy, ':');
-        if(l_port_start) {
-            *l_port_start = '\0';
-            char *l_endptr = NULL;
-            long l_port = strtol(l_port_start + 1, &l_endptr, 10);
-            if(l_endptr != l_port_start + 1 && (*l_endptr == '\0' || *l_endptr == '/') && 
-               l_port > 0 && l_port <= 65535) {
-                l_new_port = (uint16_t)l_port;
-            } else {
-                log_it(L_WARNING, "Invalid port in redirect URL: %s", l_port_start + 1);
-                l_new_port = 80;
-            }
-        } else {
-            l_new_port = 80;
-        }
-        
-        dap_strncpy(l_new_addr, l_url_copy, DAP_HOSTADDR_STRLEN);
+        l_url_start = a_location_value + 7;
         l_is_https = false;
+        l_new_port = 80;  // Default HTTP port
     } else if(strncmp(a_location_value, "https://", 8) == 0) {
-        char l_url_copy[1024] = {0};
-        dap_strncpy(l_url_copy, a_location_value + 8, sizeof(l_url_copy) - 1);
+        l_url_start = a_location_value + 8;
+        l_is_https = true;
+        l_new_port = 443;  // Default HTTPS port
+    } else {
+        // Relative path - use same host and path as-is (slash will be added in HTTP request)
+        dap_strncpy(l_new_addr, a_client_http->uplink_addr, DAP_HOSTADDR_STRLEN);
+        l_new_path = a_location_value;  // Direct pointer, no allocation
+    }
+    
+    // Parse absolute URL (HTTP/HTTPS) without copying
+    if(l_url_start) {
+        // Find delimiters in the URL string
+        const char *l_path_start = strchr(l_url_start, '/');
+        const char *l_port_start = strchr(l_url_start, ':');
         
-        char *l_path_start = strchr(l_url_copy, '/');
-        if(l_path_start) {
-            l_new_path = dap_strdup(l_path_start);
-            *l_path_start = '\0';
+        // Determine host end position
+        const char *l_host_end;
+        if(l_port_start && (!l_path_start || l_port_start < l_path_start)) {
+            l_host_end = l_port_start;
+        } else if(l_path_start) {
+            l_host_end = l_path_start;
         } else {
-            l_new_path = dap_strdup("/");
+            l_host_end = l_url_start + strlen(l_url_start);
         }
         
-        char *l_port_start = strchr(l_url_copy, ':');
-        if(l_port_start) {
-            *l_port_start = '\0';
+        // Extract hostname directly
+        size_t l_host_len = l_host_end - l_url_start;
+        if(l_host_len >= DAP_HOSTADDR_STRLEN) {
+            log_it(L_WARNING, "Hostname too long in redirect URL, truncating");
+            l_host_len = DAP_HOSTADDR_STRLEN - 1;
+        }
+        memcpy(l_new_addr, l_url_start, l_host_len);
+        l_new_addr[l_host_len] = '\0';
+        
+        // Parse port if present
+        if(l_port_start && (!l_path_start || l_port_start < l_path_start)) {
+            const char *l_port_str = l_port_start + 1;
+            const char *l_port_end = l_path_start ? l_path_start : (l_port_str + strlen(l_port_str));
+            
             char *l_endptr = NULL;
-            long l_port = strtol(l_port_start + 1, &l_endptr, 10);
-            if(l_endptr != l_port_start + 1 && (*l_endptr == '\0' || *l_endptr == '/') && 
+            long l_port = strtol(l_port_str, &l_endptr, 10);
+            if(l_endptr > l_port_str && (l_endptr == l_port_end || *l_endptr == '/') && 
                l_port > 0 && l_port <= 65535) {
                 l_new_port = (uint16_t)l_port;
             } else {
-                log_it(L_WARNING, "Invalid port in redirect URL: %s", l_port_start + 1);
-                l_new_port = 443;
+                log_it(L_WARNING, "Invalid port in redirect URL, using default");
+                // l_new_port already set to default above
             }
-        } else {
-            l_new_port = 443;
         }
         
-        dap_strncpy(l_new_addr, l_url_copy, DAP_HOSTADDR_STRLEN);
-        l_is_https = true;
-    } else if(a_location_value[0] == '/') {
-        // Relative path - use same host
-        dap_strncpy(l_new_addr, a_client_http->uplink_addr, DAP_HOSTADDR_STRLEN);
-        l_new_path = dap_strdup(a_location_value);
-    } else {
-        // Relative URL without leading slash
-        dap_strncpy(l_new_addr, a_client_http->uplink_addr, DAP_HOSTADDR_STRLEN);
-        l_new_path = dap_strdup_printf("/%s", a_location_value);
+        // Set path pointer (no allocation)
+        l_new_path = l_path_start ? l_path_start : "/";
     }
     
     // Check if we can reuse the connection
@@ -472,35 +463,15 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
                     : 0;
         }
         
-        // Prepare GET query string if needed
-        char l_get_str[1024] = {0};
-        if(!dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size) {
-            snprintf(l_get_str, sizeof(l_get_str), "?%s", (char*)a_client_http->request);
-        }
-        
-        // Build and send request
-        char *l_out_buf = NULL;
-        int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                                    a_client_http->method, l_new_path, l_get_str,
-                                    a_client_http->uplink_addr, l_request_headers);
-        
-        if(!l_out_buf || l_header_size == -1){
-            log_it(L_ERROR, "Can't create headers string for redirect");
-            DAP_DELETE(l_new_path);
-            return false;
-        }
-        
-        ssize_t l_out_buf_size = l_header_size;
-        if (a_client_http->request && a_client_http->request_size){
-            l_out_buf_size += a_client_http->request_size + 1;
-            char *l_out_new = DAP_REALLOC_RET_VAL_IF_FAIL(l_out_buf, l_out_buf_size, false, l_out_buf);
-            l_out_buf = l_out_new;
-            memcpy(l_out_buf + l_header_size, a_client_http->request, a_client_http->request_size);
-        }
-        a_es->buf_in_size = 0;
-        dap_events_socket_write_unsafe(a_es, l_out_buf, l_out_buf_size);
-        DAP_DEL_Z(l_out_buf);
-        DAP_DELETE(l_new_path);
+        bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
+        dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+            a_client_http->method, 
+            a_client_http->path,  // Use stored path (always without leading slash)
+            l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
+            a_client_http->uplink_addr,
+            l_request_headers);
+
+        // No need to delete l_new_path - it's just a pointer now
         
         return true;
     } else {
@@ -530,7 +501,6 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             l_redirect_ctx = DAP_NEW_Z(dap_client_http_async_context_t);
             if(!l_redirect_ctx) {
                 log_it(L_ERROR, "Failed to allocate redirect context");
-                DAP_DELETE(l_new_path);
                 return false;
             }
             
@@ -541,14 +511,14 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             l_redirect_ctx->redirect_count = a_client_http->redirect_count + 1;
         }
         
-        // Make async request with redirect context
+        // Make async request with redirect context (l_new_path will be normalized in the new client)
         s_client_http_request_async_impl(
             a_client_http->worker,
             l_new_addr,
             l_new_port,
             a_client_http->method,
             a_client_http->request_content_type,
-            l_new_path,
+            l_new_path,  // Path will be normalized in s_client_http_create_and_connect
             a_client_http->request,
             a_client_http->request_size,
             a_client_http->cookie,
@@ -557,8 +527,6 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             l_is_https,
             false
         );
-        
-        DAP_DELETE(l_new_path);
         
         // Mark callbacks as called to prevent calling them in delete callback
         a_client_http->were_callbacks_called = true;
@@ -686,7 +654,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->es = l_ev_socket;
     l_client_http->method = dap_strdup(a_method);
-    l_client_http->path = dap_strdup(a_path);
+    l_client_http->path = dap_strdup(a_path + (int)(a_path[0] == '/'));
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
     // Set callbacks BEFORE adding to worker (critical for thread safety)
@@ -952,45 +920,12 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
                                 l_client_http->request_size);
     }
 
-    // adding string for GET request
-    char l_get_str[l_client_http->request_size + 2];
-    l_get_str[0] = '\0';
-    if(! dap_strcmp(l_client_http->method, "GET") ) {
-        // We hide our request and mask them as possible
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-        l_offset += l_client_http->request_custom_headers
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
-                : 0;
-        l_offset += l_client_http->cookie
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
-                : 0;
-
-        if ((l_client_http->request && l_client_http->request_size))
-            snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
-    }
-
-    char *l_out_buf = NULL;
-    int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                                                l_client_http->method, l_client_http->path, l_get_str,
-                                                l_client_http->uplink_addr, l_request_headers);
-    
-    if(!l_out_buf || l_header_size == -1){
-        log_it(L_ERROR, "Can't create headers string or memory allocation error.");
-        return;
-    }
-
-    
-    ssize_t l_out_buf_size = l_header_size;
-    if (l_client_http->request && l_client_http->request_size){
-        l_out_buf_size += l_client_http->request_size + 1;
-        char *l_out_new = DAP_REALLOC_RET_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf);
-        l_out_buf = l_out_new;
-        memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
-    }
-        
-
-    dap_events_socket_write_unsafe(a_esocket, l_out_buf, l_out_buf_size);
-    DAP_DEL_Z(l_out_buf);
+    bool l_get = !dap_strcmp(l_client_http->method, "GET") && l_client_http->request && l_client_http->request_size;
+    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+        l_client_http->method, l_client_http->path,
+        l_get ? "?" : "", l_get ? (char*)l_client_http->request : "",
+        l_client_http->uplink_addr,
+        l_request_headers);
 }
 
 /**
