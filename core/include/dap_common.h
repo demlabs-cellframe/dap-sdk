@@ -426,10 +426,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #define DAP_UINT64_FORMAT_X  "llX"
 #define DAP_UINT64_FORMAT_x  "llx"
 #define DAP_UINT64_FORMAT_U  "llu"
+#define DAP_INT64_FORMAT     "lld"
 #elif (__SIZEOF_LONG__ == 8)
 #define DAP_UINT64_FORMAT_X  "lX"
 #define DAP_UINT64_FORMAT_x  "lx"
 #define DAP_UINT64_FORMAT_U  "lu"
+#define DAP_INT64_FORMAT     "ld"
 #else
 #error "DAP_UINT64_FORMAT_* are undefined for your platform"
 #endif
@@ -858,6 +860,10 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
 #define dap_ascii_isprint(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_PRINT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
+
+#define DAP_FLAG_ADD(a, flag) ((a) | (flag))
+#define DAP_FLAG_REMOVE(a, flag) ((a) & ~(flag))
+#define DAP_FLAG_CHECK(a, flag) ((a) & (flag))
 
 static void * ( *const volatile memset_safe ) (void*, int, size_t) = memset;
 

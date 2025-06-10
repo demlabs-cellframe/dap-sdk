@@ -837,6 +837,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 continue;
             }   
             switch (l_cur->type) {
+            case DESCRIPTOR_TYPE_SOCKET_RAW:
             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
             case DESCRIPTOR_TYPE_SOCKET_UDP:
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
@@ -874,6 +875,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             if( l_flag_hup ) {
                 switch (l_cur->type ){
+                case DESCRIPTOR_TYPE_SOCKET_RAW:
                 case DESCRIPTOR_TYPE_SOCKET_UDP:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
@@ -974,20 +976,33 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_errno = errno;
 #endif
                     break;
-                    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+                    case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_must_read_smth = true;
-                        socklen_t l_size = sizeof(l_cur->addr_storage);
                         l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
                                                 l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
-                                                (struct sockaddr *)&l_cur->addr_storage, &l_size);
+                                                (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
 
 #ifdef DAP_OS_WINDOWS
                         l_errno = WSAGetLastError();
 #else
                         l_errno = errno;
 #endif
-                    }
+                    
                     break;
+
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
+                        l_must_read_smth = true;
+                        if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) {
+                            struct iovec iov = { l_cur->buf_in, l_cur->buf_in_size_max - l_cur->buf_in_size };
+                            struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
+                            l_bytes_read = recvmsg(l_cur->fd, &msg, 0);
+                        } else
+                            l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
+                                                    l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
+                                                    (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
+                        l_errno = errno;
+                    break;
+
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
                         l_must_read_smth = true;
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -1060,6 +1075,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_EVENT:
                         dap_events_socket_event_proc_input_unsafe(l_cur);
                     break;
+                    default: break;
                 }
 
                 if (l_must_read_smth){ // Socket/Descriptor read
@@ -1119,6 +1135,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
                 switch (l_cur->type ){
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1209,7 +1226,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
                                               l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
-                                              (struct sockaddr *)&l_cur->addr_storage, sizeof(l_cur->addr_storage));
+                                              (struct sockaddr*)&l_cur->addr_storage, l_cur->addr_size);
 #ifdef DAP_OS_WINDOWS
                         dap_events_socket_set_writable_unsafe(l_cur,false);
                         l_errno = WSAGetLastError();
@@ -1217,6 +1234,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_errno = errno;
 #endif
                     break;
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
+                        if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) { 
+                            struct iovec iov = { l_cur->buf_out, l_cur->buf_out_size_max - l_cur->buf_out_size };
+                            struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
+                            l_bytes_sent = sendmsg(l_cur->fd, &msg, 0);
+                        } else
+                            l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
+                                                  l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
+                                                  (struct sockaddr*)&l_cur->addr_storage, l_cur->addr_size);
+                        l_errno = errno;
+                        break;
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
 #ifndef DAP_NET_CLIENT_NO_SSL
                         WOLFSSL *l_ssl = SSL(l_cur);
@@ -1428,12 +1456,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #else
             int l_errno = errno;
 #endif
-            char l_errbuf[128];
-            l_errbuf[0]=0;
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_ERROR,"Can't update client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
-                   a_esocket->context->epoll_fd, l_errbuf, l_errno);
-            return l_errno;
+            return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
+                a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
         }
     }
 
@@ -1709,15 +1733,9 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
     // remove from epoll
-    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 ) {
-        int l_errno = errno;
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it( L_ERROR,"Can't remove event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE"  \"%s\" (%d)",
-                l_context->epoll_fd, l_errbuf, l_errno);
-        l_ret = l_errno;
-    } //else
-      //  log_it( L_DEBUG,"Removed epoll's event from context #%u", l_context->id );
+    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 )
+        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE" \"%s\" (%d)",
+                l_context->epoll_fd, dap_strerror(errno), errno), -1;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);

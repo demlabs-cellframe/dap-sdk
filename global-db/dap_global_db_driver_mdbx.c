@@ -93,18 +93,19 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group, bool a_with_holes);
+static dap_store_obj_t  *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
-static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes);
+static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
 }
 static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes, false);
 }
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
@@ -377,7 +378,7 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
         return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
-    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE |  MDBX_COALESCE | MDBX_LIFORECLAIM, 0664)) )
+    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE | MDBX_SAFE_NOSYNC, 0664)) )
         return  log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
     /*
@@ -434,20 +435,21 @@ size_t     l_upper_limit_of_db_size = 16;
     /*
     ** Fill the Driver Interface Table
     */
-    a_drv_dpt->apply_store_obj     = s_db_mdbx_apply_store_obj;
-    a_drv_dpt->read_last_store_obj = s_db_mdbx_read_last_store_obj;
-    a_drv_dpt->get_by_hash         = s_db_mdbx_get_by_hash;
-    a_drv_dpt->read_store_obj      = s_db_mdbx_read_store_obj;
-    a_drv_dpt->read_cond_store_obj = s_db_mdbx_read_cond_store_obj;
-    a_drv_dpt->read_hashes         = s_db_mdbx_read_hashes;
-    a_drv_dpt->read_count_store    = s_db_mdbx_read_count_store;
-    a_drv_dpt->get_groups_by_mask  = s_db_mdbx_get_groups_by_mask;
-    a_drv_dpt->is_obj              = s_db_mdbx_is_obj;
-    a_drv_dpt->is_hash             = s_db_mdbx_is_hash;
-    a_drv_dpt->deinit              = s_db_mdbx_deinit;
-    a_drv_dpt->flush               = s_db_mdbx_flush;
-    a_drv_dpt->transaction_start   = s_db_mdbx_txn_start;
-    a_drv_dpt->transaction_end     = s_db_mdbx_txn_end;
+    a_drv_dpt->apply_store_obj             = s_db_mdbx_apply_store_obj;
+    a_drv_dpt->read_last_store_obj         = s_db_mdbx_read_last_store_obj;
+    a_drv_dpt->read_store_obj_by_timestamp = s_db_mdbx_read_store_obj_below_timestamp;
+    a_drv_dpt->get_by_hash                 = s_db_mdbx_get_by_hash;
+    a_drv_dpt->read_store_obj              = s_db_mdbx_read_store_obj;
+    a_drv_dpt->read_cond_store_obj         = s_db_mdbx_read_cond_store_obj;
+    a_drv_dpt->read_hashes                 = s_db_mdbx_read_hashes;
+    a_drv_dpt->read_count_store            = s_db_mdbx_read_count_store;
+    a_drv_dpt->get_groups_by_mask          = s_db_mdbx_get_groups_by_mask;
+    a_drv_dpt->is_obj                      = s_db_mdbx_is_obj;
+    a_drv_dpt->is_hash                     = s_db_mdbx_is_hash;
+    a_drv_dpt->deinit                      = s_db_mdbx_deinit;
+    a_drv_dpt->flush                       = s_db_mdbx_flush;
+    a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
+    a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -680,6 +682,14 @@ ret:
     return l_obj;
 }
 
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
+    dap_return_val_if_fail(a_group, NULL);
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, true, true);
+}
+
+
+
 /*
  *  DESCRIPTION: An action routine to check a presence specified key in the group/table
  *
@@ -829,7 +839,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes)
+static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
 {
     dap_return_val_if_fail(a_group && *a_group, NULL);  /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
@@ -854,17 +864,23 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
              l_data = {};
-    if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND))) {
+    if (a_prev)
+        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST);
+    else
+        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND);
+    if ( MDBX_SUCCESS != rc) {
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
         goto safe_ret;
     }
+    if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+        goto safe_ret;
     size_t l_group_name_len = l_db_ctx->namelen + 1;
     size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
-        log_it(L_CRITICAL, "Can't allocate memory");
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
     if (a_keys_only_read) {
@@ -874,6 +890,8 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     /* Iterate cursor to retrieve records from DB */
     do {
+        if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+            break;
         if (a_keys_only_read) {
             if (l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
                 dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
@@ -890,7 +908,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             }
         }
     } while (l_count_current < l_count_out &&
-                (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))));
+            (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))));
     // cut unused memory
     if (rc == MDBX_NOTFOUND) {
         if (!l_count_current) {

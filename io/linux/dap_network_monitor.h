@@ -22,19 +22,17 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <net/if.h>
 #include <linux/rtnetlink.h>
+#include <netinet/in.h>
 
-#define MAX_IP_STR_LEN 15
-#define DAP_ADRESS_UNDEFINED (uint64_t)-1
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum {
     // like in rtnetlink defines
@@ -50,28 +48,24 @@ typedef struct {
     dap_network_monitor_notification_type_t type;
     union {
         struct {
-            char interface_name[IF_NAMESIZE];
-            char s_ip[MAX_IP_STR_LEN + 1];
-            uint32_t ip; // inet_ntoa(*((struct in_addr *)&ipaddr)) for cast to char*
+            char interface_name[IF_NAMESIZE + 1], s_ip[INET_ADDRSTRLEN];
+            uint32_t ip;
         } addr; // for IP_ADDR_ADD, IP_ADDR_REMOVE
         struct {
-            uint64_t destination_address; // 64 bit for checking -1 like not filled variable
-            char s_destination_address[MAX_IP_STR_LEN + 1];
-            uint64_t gateway_address;
-            char s_gateway_address[MAX_IP_STR_LEN + 1];
-            uint8_t protocol;
-            uint8_t netmask;
+            uint64_t destination_address, gateway_address;
+            char s_destination_address[INET_ADDRSTRLEN], s_gateway_address[INET_ADDRSTRLEN];
+            uint8_t protocol, netmask;
         } route; // for IP_ROUTE_ADD, IP_ROUTE_REMOVE
         struct {
-            char interface_name[IF_NAMESIZE];
-            bool is_up;
-            bool is_running;
+            char interface_name[IF_NAMESIZE + 1];
+            bool is_up, is_running;
         } link; // for RTM_NEWLINK, RTM_DELLINK
     };
 } dap_network_notification_t;
 
+
 typedef void (*dap_network_monitor_notification_callback_t)
-              (const dap_network_notification_t notification);
+              (const dap_network_notification_t *notification);
 
 /**
  * @brief dap_network_monitor_init

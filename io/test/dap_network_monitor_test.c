@@ -20,7 +20,7 @@ static dap_network_notification_t _test_event_cases[COUNT_TEST_EVENT_CASES];
 
 static bool list_events_done[COUNT_TEST_EVENT_CASES] = {0};
 
-void _network_callback(const dap_network_notification_t result)
+void _network_callback(const dap_network_notification_t *result)
 {
     if(result.type == IP_ADDR_ADD || result.type == IP_ADDR_REMOVE)
     {

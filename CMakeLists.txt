@@ -2,52 +2,28 @@ cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
-include(ExternalProject)
-
-add_subdirectory(3rdparty/json-c EXCLUDE_FROM_ALL)
-
-set(JSON-C-CONFIG_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json-c/
-    -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_CURRENT_BINARY_DIR}/deps/
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
-    -DCMAKE_GENERATOR=${CMAKE_GENERATOR})
-
-##TODO: customize for universal platforms
-if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
-    if (ANDROID)
-        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
-            -DANDROID_NATIVE_API_LEVEL=29
-            -DANDROID_ABI=arm64-v8a
-            -DANDROID_PLATFORM=${ANDROID_PLATFORM}
-            -DCMAKE_TOOLCHAIN_FILE=D:/android-sdk/ndk/21.4.7075529/build/cmake/android.toolchain.cmake
-            -G=Ninja)
-    else()
-        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
-    endif()
-elseif(ANDROID)
-    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} -E env PATH=$ENV{PATH}
-        ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
-        -DANDROID_NATIVE_API_LEVEL=${ANDROID_NATIVE_API_LEVEL}
-        -DANDROID_ABI=${ANDROID_ABI}
-        -DANDROID_PLATFORM=${ANDROID_PLATFORM}
-        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
-else()
-    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
-endif()
-
-message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
-
-ExternalProject_Add(dap_json-c_dep
-                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
-                    CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
-
 include(cmake/OS_Detection.cmake)
-if (INSTALL_DAP_SDK)
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
+
+if (NOT DEFINED DAP_VERSION)
+    message(WARNING "DAP_VERSION is not defined")
+    set(DAP_VERSION "0.0.0")
 endif()
 
+if (NOT DEFINED BUILD_TS)
+    message(WARNING "BUILD_TS is not defined")
+    set(BUILD_TS "0")
+endif()
+
+if (NOT DEFINED BUILD_HASH)
+    message(WARNING "BUILD_HASH is not defined")
+    set(BUILD_HASH "0")
+endif()
+
+add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
+add_definitions("-DBUILD_TS=\"${BUILD_TS}\"")
+add_definitions("-DBUILD_HASH=\"${BUILD_HASH}\"")
+
+##################################################
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
@@ -65,7 +41,6 @@ if (CELLFRAME_MODULES MATCHES "avrestream")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
-
     set(DAPSDK_MODULES "core crypto io network-core network-link_manager network-client network-server")
     set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
     if(NOT ANDROID)
@@ -76,7 +51,7 @@ if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
     endif()
 endif()
 
-# We switch off SSL until its not switched on back
+# We switch off SSL until it's switched back on
 if(DAPSDK_MODULES MATCHES "ssl-support")
     add_definitions("-DDAP_NET_CLIENT_SSL")
 else()
@@ -170,4 +145,57 @@ endif()
 
 if(ANDROID)
     include_directories(3rdparty/)
+endif()
+
+
+# Option to enable full cppcheck analysis
+option(ENABLE_CPPCHECK_ANALYSIS "Enable full cppcheck static analysis" OFF)
+
+# Cpp check
+if(ENABLE_CPPCHECK_ANALYSIS)
+    find_program(CPPCHECK cppcheck)
+    if(CPPCHECK)
+        message(STATUS "Found cppcheck: ${CPPCHECK}")
+        add_custom_target(cppcheck_analysis
+            COMMAND ${CPPCHECK}
+                --std=c11
+                --enable=warning,style,performance,portability
+                --quiet
+                --xml
+                --force
+                --suppress=missingIncludeSystem
+                --suppress=*:3rdparty/*
+                --suppress=*:_deps/*
+                ${CMAKE_SOURCE_DIR}/avrestream
+                ${CMAKE_SOURCE_DIR}/core
+                ${CMAKE_SOURCE_DIR}/crypto
+                ${CMAKE_SOURCE_DIR}/examples
+                ${CMAKE_SOURCE_DIR}/global-db
+                ${CMAKE_SOURCE_DIR}/io
+                ${CMAKE_SOURCE_DIR}/net
+                ${CMAKE_SOURCE_DIR}/plugin
+                ${CMAKE_SOURCE_DIR}/test-framework
+                2> ${CMAKE_BINARY_DIR}/cppcheck_report.xml
+            COMMAND cppcheck-htmlreport
+                --file ${CMAKE_BINARY_DIR}/cppcheck_report.xml
+                --report-dir ${CMAKE_BINARY_DIR}/cppcheck_html_report
+                --source-dir ${CMAKE_SOURCE_DIR}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Running full cppcheck static analysis and generating HTML report in ${CMAKE_BINARY_DIR}/cppcheck_html_report"
+        )
+    else()
+        message(WARNING "cppcheck not found, cppcheck_analysis target unavailable")
+    endif()
+endif()
+
+find_program(CPPCHECK cppcheck)
+if(CPPCHECK)
+    message(STATUS "Found cppcheck: ${CPPCHECK}")
+    add_custom_target(lint
+        COMMAND ${CPPCHECK} --enable=warning,style --std=c11 ${CMAKE_SOURCE_DIR}/sources
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running cppcheck on source files"
+    )
+else()
+    message(WARNING "cppcheck not found, lint target unavailable")
 endif()
