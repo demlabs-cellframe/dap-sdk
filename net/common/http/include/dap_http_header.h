@@ -63,7 +63,7 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
 // For debug output
 void dap_http_header_print(dap_http_header_t *a_headers); 
 
-inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
+static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
     if ( !a_method )
         return HTTP_INVALID;
     if ( !strcmp(a_method, "GET") )

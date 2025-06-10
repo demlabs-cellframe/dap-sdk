@@ -51,7 +51,6 @@ typedef struct dap_client_http {
     void *callbacks_arg;
 
     byte_t *request;
-    bool is_enc;
     size_t request_size;
     size_t request_sent_size;
     bool is_over_ssl;

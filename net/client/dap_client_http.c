@@ -327,67 +327,149 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         return -1;
     }
 
-    char l_request_headers[1024];
-    int l_offset = 0;
-    size_t l_offset2 = sizeof(l_request_headers);
+    // Buffer for headers with overflow check
+    char l_request_headers[1024] = {0};
+    int l_headers_offset = 0;
+    size_t l_headers_remain = sizeof(l_request_headers) - 1; // -1 for guaranteed null terminator
     
-    switch ( a_client_http->method ) {
+    // Safe header addition with overflow check
+    #define ADD_HEADER(format, ...) do { \
+        int l_written = snprintf(l_request_headers + l_headers_offset, l_headers_remain, format, ##__VA_ARGS__); \
+        if (l_written < 0 || (size_t)l_written >= l_headers_remain) { \
+            log_it(L_ERROR, "Header buffer overflow in s_send_http_request"); \
+            return -1; \
+        } \
+        l_headers_offset += l_written; \
+        l_headers_remain -= l_written; \
+    } while(0)
+    
+    // Add basic headers based on method
+    switch (a_client_http->method) {
     case HTTP_GET:
-        l_offset += snprintf(l_request_headers, l_offset2, "User-Agent: Mozilla\r\n");
+        ADD_HEADER("User-Agent: Mozilla\r\n");
         break;
     case HTTP_POST:
-        l_offset += a_client_http->request_content_type
-                ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", a_client_http->request_content_type)
-                : 0;
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
-                             a_client_http->request_size);
+        if (a_client_http->request_content_type)
+            ADD_HEADER("Content-Type: %s\r\n", a_client_http->request_content_type);
+        ADD_HEADER("Content-Length: %zu\r\n", a_client_http->request_size);
+        break;
     default:
         return log_it(L_ERROR, "Invalid request type! Probably yet unimplemented"), -1;
     }
 
-    // Add custom headers (for all methods)
+    // Add custom headers
     if (a_client_http->request_custom_headers)
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", a_client_http->request_custom_headers);
+        ADD_HEADER("%s", a_client_http->request_custom_headers);
 
-    // Setup cookie header (for all methods)
+    // Add cookie if present
     if (a_client_http->cookie)
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", a_client_http->cookie);
+        ADD_HEADER("Cookie: %s\r\n", a_client_http->cookie);
+    
+    #undef ADD_HEADER
 
-    /*bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
-    bool l_post_with_body = (!dap_strcmp(a_client_http->method, "POST") || !dap_strcmp(a_client_http->method, "POST_ENC")) && 
-                            a_client_http->request && a_client_http->request_size;*/
-    if ( a_client_http->request && a_client_http->request_size && a_client_http->is_enc ) {
-        int l_size = snprintf(NULL, 0, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-            dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
-            a_client_http->uplink_addr,
-            l_request_headers) + a_client_http->request_size + 1;
+    // Check if request contains binary data
+    bool l_req_enc = false;
+    if (a_client_http->request && a_client_http->request_size) {
+        for (size_t i = 0; i < a_client_http->request_size; i++) {
+            if (!dap_ascii_isprint(a_client_http->request[i]) && !dap_ascii_isspace(a_client_http->request[i])) {
+                l_req_enc = true;
+                break;
+            }
+        }
+    }
+
+    // Process request with binary data (requires special handling)
+    if (l_req_enc) {
+        // Sanity check - since we're dealing with binary data, ensure request is valid
+        if (!a_client_http->request) {
+            log_it(L_ERROR, "Invalid binary request: request is NULL but l_req_enc is true");
+            return -1;
+        }
         
-        char *l_data = DAP_NEW_Z_SIZE(char, l_size + 1);
+        // Calculate buffer size
+        int l_size = snprintf(NULL, 0, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+            dap_http_method_to_str(a_client_http->method), 
+            a_client_http->path ? a_client_http->path : "",
+            a_client_http->uplink_addr,
+            l_request_headers) + 
+            a_client_http->request_size + 
+            ((a_client_http->method == HTTP_GET) ? 1 : 0) + // +1 for '?' in GET request with params
+            1; // +1 for null terminator
+        // Allocate memory for request
+        char *l_data = DAP_NEW_Z_SIZE(char, l_size);
+        if (!l_data) {
+            log_it(L_ERROR, "Failed to allocate buffer for encrypted request");
+            return -1;
+        }
+        
+        // Macro for checking snprintf results
+        #define CHECK_SNPRINTF(result, max_size, error_msg) do { \
+            if ((result) < 0 || (result) >= (max_size)) { \
+                log_it(L_ERROR, "%s", error_msg); \
+                DAP_DELETE(l_data); \
+                return -1; \
+            } \
+        } while(0)
+        
+        // Format request based on method
+        int l_data_offset = 0;
+        int l_ret = 0;
+        
         if (a_client_http->method == HTTP_GET) {
-            l_offset = snprintf(l_data, l_size, "%s /%s?", dap_http_method_to_str(a_client_http->method),
-                a_client_http->path ? a_client_http->path : "");
-            l_offset = (char*)(dap_mempcpy(l_data + l_offset, a_client_http->request, a_client_http->request_size)) - l_data;
-            l_offset += snprintf(l_data + l_offset, l_size - l_offset, "HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                a_client_http->uplink_addr, l_request_headers);
-        } else { //if (a_client_http->method == HTTP_POST) {
-            l_offset = snprintf(l_data, l_size, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
+            // Format GET request beginning
+            l_ret = snprintf(l_data, l_size, "%s /%s%s", 
+                dap_http_method_to_str(a_client_http->method),
+                a_client_http->path ? a_client_http->path : "",
+                a_client_http->request_size > 0 ? "?" : "");
+                
+            CHECK_SNPRINTF(l_ret, l_size, "Buffer overflow in HTTP GET request");
+            l_data_offset += l_ret;
+            
+            // Add binary data (buffer size already verified)
+            l_data_offset = (char*)(dap_mempcpy(l_data + l_data_offset, 
+                                              a_client_http->request, 
+                                              a_client_http->request_size)) - l_data;
+            
+            // Add HTTP/1.1 and headers
+            l_ret = snprintf(l_data + l_data_offset, l_size - l_data_offset, 
+                           " HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                           a_client_http->uplink_addr, l_request_headers);
+            CHECK_SNPRINTF(l_ret, l_size - l_data_offset, "Buffer overflow in HTTP GET headers");
+            l_data_offset += l_ret;
+            
+        } else { // POST and other methods
+            // Format request beginning
+            l_ret = snprintf(l_data, l_size, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                dap_http_method_to_str(a_client_http->method), 
+                a_client_http->path ? a_client_http->path : "",
                 a_client_http->uplink_addr,
                 l_request_headers);
-            l_offset += (char*)(dap_mempcpy(l_data + l_offset, a_client_http->request, a_client_http->request_size)) - l_data;
-            debug_if(s_debug_more, L_MSG, "Complete buf is %s", l_data);
-            dap_events_socket_write_unsafe(a_es, l_data, l_offset);
-            DAP_DELETE(l_data);
+                
+            CHECK_SNPRINTF(l_ret, l_size, "Buffer overflow in HTTP POST request");
+            l_data_offset += l_ret;
+            
+            // Add request body (buffer size already verified)
+            l_data_offset = (char*)(dap_mempcpy(l_data + l_data_offset, 
+                                             a_client_http->request, 
+                                             a_client_http->request_size)) - l_data;
         }
+        
+        debug_if(s_debug_more, L_DEBUG, "Sending binary request (%d bytes)", l_data_offset);
+        dap_events_socket_write_unsafe(a_es, l_data, l_data_offset);
+        DAP_DELETE(l_data);
+        #undef CHECK_SNPRINTF
     } else {
+        // Process text request (can use printf formatting)
         dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
-            dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
-            ( a_client_http->method == HTTP_GET && a_client_http->request ) ? "?" : "",
-            ( a_client_http->method == HTTP_GET && a_client_http->request ) ? (char*)a_client_http->request : "",
+            dap_http_method_to_str(a_client_http->method), 
+            a_client_http->path ? a_client_http->path : "",
+            (a_client_http->method == HTTP_GET && a_client_http->request && a_client_http->request_size > 0) ? "?" : "",
+            (a_client_http->method == HTTP_GET && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "",
             a_client_http->uplink_addr,
             l_request_headers,
-            ( a_client_http->method == HTTP_POST && a_client_http->request ) ? (char*)a_client_http->request : "");
+            (a_client_http->method == HTTP_POST && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "");
     }
+    
     return 0;
 }
 

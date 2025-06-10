@@ -35,7 +35,7 @@ if (UNIX)
 endif()
 
 if(WIN32)
-  target_link_libraries(${PROJECT_NAME} intl iconv
+  target_link_libraries(${PROJECT_NAME} iconv
   kernel32
   user32
   shell32
