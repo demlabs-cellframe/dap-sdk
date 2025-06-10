@@ -106,7 +106,7 @@ static void s_client_http_request_async_impl(
         dap_worker_t * a_worker,
         const char *a_uplink_addr, 
         uint16_t a_uplink_port, 
-        const char * a_method,
+        dap_http_method_t a_method,
         const char* a_request_content_type, 
         const char * a_path, 
         const void *a_request, 
@@ -327,48 +327,67 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         return -1;
     }
 
-    char l_request_headers[1024] = { [0]='\0' };
+    char l_request_headers[1024];
     int l_offset = 0;
     size_t l_offset2 = sizeof(l_request_headers);
     
-    // Handle POST-specific headers
-    if(a_client_http->request && (dap_strcmp(a_client_http->method, "POST") == 0 || 
-                                  dap_strcmp(a_client_http->method, "POST_ENC") == 0)) {
+    switch ( a_client_http->method ) {
+    case HTTP_GET:
+        l_offset += snprintf(l_request_headers, l_offset2, "User-Agent: Mozilla\r\n");
+        break;
+    case HTTP_POST:
         l_offset += a_client_http->request_content_type
                 ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", a_client_http->request_content_type)
                 : 0;
-
         l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
-                            a_client_http->request_size);
-    } else if(!dap_strcmp(a_client_http->method, "GET")) {
-        // Add User-Agent for GET requests
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
+                             a_client_http->request_size);
+    default:
+        return log_it(L_ERROR, "Invalid request type! Probably yet unimplemented"), -1;
     }
-    
+
     // Add custom headers (for all methods)
-    if(a_client_http->request_custom_headers) {
+    if (a_client_http->request_custom_headers)
         l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", a_client_http->request_custom_headers);
-    }
 
     // Setup cookie header (for all methods)
-    if(a_client_http->cookie) {
+    if (a_client_http->cookie)
         l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", a_client_http->cookie);
-    }
 
-    bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
+    /*bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
     bool l_post_with_body = (!dap_strcmp(a_client_http->method, "POST") || !dap_strcmp(a_client_http->method, "POST_ENC")) && 
-                            a_client_http->request && a_client_http->request_size;
-    
-    dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
-        a_client_http->method, a_client_http->path ? a_client_http->path : "",
-        l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
-        a_client_http->uplink_addr,
-        l_request_headers,
-        l_post_with_body ? (char*)a_client_http->request : "");
-    
-    debug_if(s_debug_more && l_post_with_body, L_DEBUG, "Sent %s request with %zu bytes body", 
-             a_client_http->method, a_client_http->request_size);
-    
+                            a_client_http->request && a_client_http->request_size;*/
+    if ( a_client_http->request && a_client_http->request_size && a_client_http->is_enc ) {
+        int l_size = snprintf(NULL, 0, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+            dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
+            a_client_http->uplink_addr,
+            l_request_headers) + a_client_http->request_size + 1;
+        
+        char *l_data = DAP_NEW_Z_SIZE(char, l_size + 1);
+        if (a_client_http->method == HTTP_GET) {
+            l_offset = snprintf(l_data, l_size, "%s /%s?", dap_http_method_to_str(a_client_http->method),
+                a_client_http->path ? a_client_http->path : "");
+            l_offset = (char*)(dap_mempcpy(l_data + l_offset, a_client_http->request, a_client_http->request_size)) - l_data;
+            l_offset += snprintf(l_data + l_offset, l_size - l_offset, "HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                a_client_http->uplink_addr, l_request_headers);
+        } else { //if (a_client_http->method == HTTP_POST) {
+            l_offset = snprintf(l_data, l_size, "%s /%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
+                a_client_http->uplink_addr,
+                l_request_headers);
+            l_offset += (char*)(dap_mempcpy(l_data + l_offset, a_client_http->request, a_client_http->request_size)) - l_data;
+            debug_if(s_debug_more, L_MSG, "Complete buf is %s", l_data);
+            dap_events_socket_write_unsafe(a_es, l_data, l_offset);
+            DAP_DELETE(l_data);
+        }
+    } else {
+        dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
+            dap_http_method_to_str(a_client_http->method), a_client_http->path ? a_client_http->path : "",
+            ( a_client_http->method == HTTP_GET && a_client_http->request ) ? "?" : "",
+            ( a_client_http->method == HTTP_GET && a_client_http->request ) ? (char*)a_client_http->request : "",
+            a_client_http->uplink_addr,
+            l_request_headers,
+            ( a_client_http->method == HTTP_POST && a_client_http->request ) ? (char*)a_client_http->request : "");
+    }
     return 0;
 }
 
@@ -586,7 +605,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     dap_worker_t *a_worker,
     const char *a_uplink_addr,
     uint16_t a_uplink_port,
-    const char *a_method,
+    dap_http_method_t a_method,
     const char *a_request_content_type,
     const char *a_path,
     const void *a_request,
@@ -678,7 +697,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->es = l_ev_socket;
-    l_client_http->method = dap_strdup(a_method);
+    l_client_http->method = a_method;
     l_client_http->path = a_path ? dap_strdup(a_path + (int)(a_path[0] == '/')) : NULL;
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
@@ -1645,7 +1664,8 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
         dap_http_header_remove(&a_client_http->response_headers, a_client_http->response_headers);
     }
     
-    DAP_DEL_MULTY(a_client_http->method, a_client_http->path, a_client_http->request_content_type, a_client_http->cookie, a_client_http->request, a_client_http->request_custom_headers, a_client_http->response, a_client_http);
+    DAP_DEL_MULTY(a_client_http->path, a_client_http->request_content_type, a_client_http->cookie,
+        a_client_http->request, a_client_http->request_custom_headers, a_client_http->response, a_client_http);
 }
 
 
@@ -1686,7 +1706,7 @@ dap_client_http_t * dap_client_http_request_custom (
     
     int l_error_code = 0;
     dap_client_http_t *l_client_http = s_client_http_create_and_connect(
-        a_worker, a_uplink_addr, a_uplink_port, a_method,
+        a_worker, a_uplink_addr, a_uplink_port, dap_http_method_from_str(a_method),
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, a_custom_headers, a_over_ssl, a_error_callback,
         a_response_callback, NULL, a_callbacks_arg, 0, false, &l_error_code
@@ -1784,7 +1804,7 @@ dap_client_http_t *dap_client_http_request_full(dap_worker_t * a_worker,const ch
 {
     int l_error_code = 0;
     dap_client_http_t *l_client_http = s_client_http_create_and_connect(
-        a_worker, a_uplink_addr, a_uplink_port, a_method,
+        a_worker, a_uplink_addr, a_uplink_port, dap_http_method_from_str(a_method),
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, a_custom_headers, false, // not SSL
         a_error_callback,
@@ -1861,7 +1881,7 @@ static void s_client_http_request_async_impl(
         dap_worker_t * a_worker,
         const char *a_uplink_addr, 
         uint16_t a_uplink_port, 
-        const char * a_method,
+        dap_http_method_t a_method,
         const char* a_request_content_type, 
         const char * a_path, 
         const void *a_request, 
@@ -1941,7 +1961,7 @@ void dap_client_http_request_async(
     
     // Call internal implementation
     s_client_http_request_async_impl(
-        a_worker, a_uplink_addr, a_uplink_port, a_method,
+        a_worker, a_uplink_addr, a_uplink_port, dap_http_method_from_str(a_method),
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, l_ctx, a_custom_headers, false, // false for non-SSL
         a_follow_redirects

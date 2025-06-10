@@ -33,6 +33,13 @@ extern "C" {
 #define     DAP_HTTP$SZ_FIELD_NAME  256                             /* Length of the HTTP's header field name */
 #define     DAP_HTTP$SZ_FIELD_VALUE 1024                            /* -- // -- value string */
 
+typedef enum dap_http_method {
+    HTTP_GET,
+    HTTP_POST,
+    // Add more
+    HTTP_INVALID = 0xf
+} dap_http_method_t;
+
 typedef struct dap_http_header{
     char    name[DAP_HTTP$SZ_FIELD_NAME],
             value[DAP_HTTP$SZ_FIELD_VALUE];
@@ -55,6 +62,26 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
 
 // For debug output
 void dap_http_header_print(dap_http_header_t *a_headers); 
+
+inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
+    if ( !a_method )
+        return HTTP_INVALID;
+    if ( !strcmp(a_method, "GET") )
+        return HTTP_GET;
+    else if ( !strcmp(a_method, "POST") )
+        return HTTP_POST;
+    else return HTTP_INVALID;
+    // Add more
+}
+
+static inline const char * dap_http_method_to_str(dap_http_method_t a_method) {
+    static const char * l_methods[] = {
+        [HTTP_GET] = "GET",
+        [HTTP_POST] = "POST"
+    };
+    return l_methods[a_method < HTTP_INVALID ? a_method : HTTP_INVALID];
+    // Add more
+}
 
 #ifdef __cplusplus
 }

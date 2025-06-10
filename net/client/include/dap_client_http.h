@@ -51,6 +51,7 @@ typedef struct dap_client_http {
     void *callbacks_arg;
 
     byte_t *request;
+    bool is_enc;
     size_t request_size;
     size_t request_sent_size;
     bool is_over_ssl;
@@ -104,7 +105,7 @@ typedef struct dap_client_http {
     // Request args
     char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
-    char *method;
+    dap_http_method_t method;
     char *request_content_type;
     char * path;
     char *cookie;
