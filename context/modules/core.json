@@ -1,0 +1,42 @@
+{
+  "module": "core",
+  "description": "Core DAP SDK functionality",
+  "path": "core/",
+  "status": "stable",
+  "components": {
+    "common": {
+      "path": "core/src/common/",
+      "description": "Common utilities and data structures",
+      "key_files": [
+        "dap_common.h",
+        "dap_list.h",
+        "dap_hash.h",
+        "dap_time.h"
+      ],
+      "status": "stable"
+    },
+    "platform": {
+      "description": "Platform-specific implementations",
+      "variants": {
+        "unix": "core/src/unix/",
+        "darwin": "core/src/darwin/",
+        "win32": "core/src/win32/"
+      },
+      "status": "stable"
+    },
+    "tests": {
+      "path": "core/test/",
+      "description": "Core functionality tests",
+      "test_suites": ["uint256_t", "unix"]
+    }
+  },
+  "build_system": {
+    "cmake": "core/CMakeLists.txt",
+    "platform_detection": "automatic",
+    "dependencies": []
+  },
+  "documentation": {
+    "path": "core/docs/",
+    "search_index": "core/docs/search/"
+  }
+} 
