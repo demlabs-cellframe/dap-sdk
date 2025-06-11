@@ -43,6 +43,14 @@ typedef void (*dap_client_http_callback_full_t)(void *a_body, size_t a_body_size
 typedef void (*dap_client_http_callback_started_t)(void *a_arg); // Called when request starts
 typedef void (*dap_client_http_callback_progress_t)(void *a_data, size_t a_data_size, size_t a_total, void *a_arg); // Streaming callback with data
 
+// HTTP parsing state machine
+typedef enum {
+    DAP_HTTP_PARSE_STATUS_LINE = 0,    // Reading status line
+    DAP_HTTP_PARSE_HEADERS = 1,        // Reading headers 
+    DAP_HTTP_PARSE_BODY = 2,           // Reading body
+    DAP_HTTP_PARSE_COMPLETE = 3        // Response complete
+} dap_http_parse_state_t;
+
 typedef struct dap_client_http {
     // TODO move unnessassary fields to dap_client_http_pvt privat structure
     dap_client_http_callback_data_t response_callback;
@@ -60,6 +68,8 @@ typedef struct dap_client_http {
     bool is_header_read;
     bool is_closed_by_timeout;
     bool were_callbacks_called;
+    
+    dap_http_parse_state_t parse_state; // HTTP parsing state machine
     size_t header_length;
     size_t content_length;
     time_t ts_last_read;
@@ -75,6 +85,7 @@ typedef struct dap_client_http {
     
     // Add new fields for headers processing and redirects
     struct dap_http_header *response_headers;   // Parsed response headers
+    http_status_code_t status_code;              // Cached HTTP status code (extracted once)
     uint8_t redirect_count;                      // Current redirect count
     bool follow_redirects;                       // Whether to follow redirects automatically
 #define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
