@@ -1,6 +1,7 @@
 # Prerequisites
 build/*
 debug/*
+crypto/XKCP/Makefile
 .devcontainer/*
 cmake-build-*/
 build_stretch/*
@@ -78,4 +79,7 @@ cmake_install.cmake
 debug/
 .vscode/
 .devcontainer/
+
+# Context working files
+context/.local/
 

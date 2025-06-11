@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "created": "2025-01-03T15:00:00Z",
+  "updated": "2025-06-05T21:30:00Z",
+  "description": "Index of all tasks and contexts in DAP SDK project",
+  "current_task": {
+    "source": ".local/index.json",
+    "description": "Reference to current active task",
+    "status": "Debug build environment ready for development"
+  },
+  "task_data_references": {
+    "context": ".local/context.json",
+    "progress": ".local/progress.json", 
+    "task_index": ".local/index.json"
+  },
+  "project_files": {
+    "code_templates.json": {
+      "description": "Code templates and patterns for DAP SDK development",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "coding_guidelines.json": {
+      "description": "Coding guidelines and best practices",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "project_standards.json": {
+      "description": "Project documentation and quality standards",
+      "auto_load": true,
+      "category": "development_standards"
+    }
+  },
+  "build_system": {
+    "debug_build_ready": true,
+    "directory": "build/",
+    "xkcp_integration": "Fixed and working",
+    "test_suite": ["crypto-test", "chipmunk-test", "chipmunk_hots_test"],
+    "cmake_config": "Debug with comprehensive crypto tests"
+  },
+  "system_info": {
+    "context_management": "Local task data in .local/ directory",
+    "git_policy": ".local/ directory is git-ignored for task isolation",
+    "update_policy": "Task changes require only .local/ file updates"
+  },
+  "directories": {
+    "scripts": "Common scripts for all tasks",
+    "tests": "Common tests and utilities",
+    ".local": "Local files for current tasks (ignored in git)"
+  }
+}
