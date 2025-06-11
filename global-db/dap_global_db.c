@@ -1745,7 +1745,7 @@ static void s_clean_old_obj_gdb_callback() {
             l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         }
     }
-    dap_list_free(l_group_list);
+    dap_list_free_full(l_group_list, NULL);
 }
 
 static int s_gdb_clean_init() {
