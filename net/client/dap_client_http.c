@@ -164,6 +164,12 @@ static size_t s_parse_chunk_size_line(const char *a_line, size_t a_line_len) {
         return SIZE_MAX;
     }
     
+    // Prevent excessive chunk that could overflow overall limits
+    if (l_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+        log_it(L_WARNING, "Chunk size %lu exceeds global response limit %zu", l_size, (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT);
+        return SIZE_MAX;
+    }
+    
     return (size_t)l_size;
 }
 
@@ -1038,6 +1044,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
     if (!l_worker) {
         log_it(L_ERROR, "l_woker is NULL");
+        DAP_DELETE(l_es_uuid_ptr);
         return false;
     }
     assert(l_worker);
@@ -1067,8 +1074,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
 
-            
-            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+            // Set close flag instead of immediate deletion for consistency
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         } else
             return true;
     }else{
@@ -1076,7 +1083,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
     }
 
-    DAP_DEL_Z(l_es_uuid_ptr);
+    DAP_DELETE(l_es_uuid_ptr);
     return false;
 }
 
@@ -1094,6 +1101,7 @@ static bool s_timer_timeout_check(void * a_arg)
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
     if (!l_worker) {
         log_it(L_ERROR, "l_woker is NULL");
+        DAP_DELETE(l_es_uuid);
         return false;
     }
     assert(l_worker);
@@ -1120,7 +1128,8 @@ static bool s_timer_timeout_check(void * a_arg)
             l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
-            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+            // Set close flag instead of immediate deletion for consistency
+            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         }else
             if(s_debug_more)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
@@ -1128,7 +1137,7 @@ static bool s_timer_timeout_check(void * a_arg)
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid);
 
-    DAP_DEL_Z(l_es_uuid);
+    DAP_DELETE(l_es_uuid);
     return false;
 }
 
@@ -1911,7 +1920,8 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
-        dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
+        // Set close flag instead of immediate deletion for consistency
+        a_client_http->es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
     s_client_http_delete(a_client_http);
 }
