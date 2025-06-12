@@ -1111,8 +1111,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
 
-            // Set close flag instead of immediate deletion for consistency
-            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            dap_events_socket_remove_and_delete_unsafe(l_client_http->es, true);
         } else
             return true;
     }else{
@@ -1165,8 +1164,7 @@ static bool s_timer_timeout_check(void * a_arg)
             l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
-            // Set close flag instead of immediate deletion for consistency
-            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            dap_events_socket_remove_and_delete_unsafe(l_client_http->es, true);
         }else
             if(s_debug_more)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
@@ -1703,8 +1701,7 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
-        // Set close flag instead of immediate deletion for consistency
-        a_client_http->es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
     }
     s_client_http_delete(a_client_http);
 }
