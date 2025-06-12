@@ -45,10 +45,9 @@ typedef void (*dap_client_http_callback_progress_t)(void *a_data, size_t a_data_
 
 // HTTP parsing state machine
 typedef enum {
-    DAP_HTTP_PARSE_STATUS_LINE = 0,    // Reading status line
-    DAP_HTTP_PARSE_HEADERS = 1,        // Reading headers 
-    DAP_HTTP_PARSE_BODY = 2,           // Reading body
-    DAP_HTTP_PARSE_COMPLETE = 3        // Response complete
+    DAP_HTTP_PARSE_HEADERS = 0,        // Reading status line and headers 
+    DAP_HTTP_PARSE_BODY = 1,           // Reading body
+    DAP_HTTP_PARSE_COMPLETE = 2        // Response complete
 } dap_http_parse_state_t;
 
 typedef struct dap_client_http {
