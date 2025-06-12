@@ -79,6 +79,9 @@ typedef struct dap_client_http {
     bool is_reading_chunk_size;         // Currently reading chunk size line
     size_t current_chunk_size;          // Size of current chunk being read
     size_t current_chunk_read;          // Bytes read from current chunk
+    uint64_t current_chunk_id;          // Unique ID of current chunk (for integrity)
+    uint64_t next_chunk_id;             // Counter for generating chunk IDs
+    uint8_t chunked_error_count;        // Count of chunked parsing errors
     uint8_t *response;
     size_t response_size;
     size_t response_size_max;
