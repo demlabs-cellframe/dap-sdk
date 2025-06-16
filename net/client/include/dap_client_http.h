@@ -92,11 +92,19 @@ typedef struct dap_client_http {
     bool follow_redirects;                       // Whether to follow redirects automatically
 #define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
 
-// Special error codes for streaming operations  
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED  (-1001)  // Streaming was interrupted
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT      (-1002)  // Timeout during streaming
-#define DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR    (-1003)  // Error parsing chunked data
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT    (-1004)  // Streaming size limit exceeded
+// Special error codes for HTTP client operations
+// Using HTTP status codes where semantically appropriate, custom codes for client-specific errors
+
+// HTTP-based error codes (using standard HTTP status codes)
+#define DAP_CLIENT_HTTP_ERROR_TOO_MANY_REDIRECTS     Http_Status_LoopDetected        // 508 - Loop detected (redirect cycles)
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT      Http_Status_RequestTimeout      // 408 - Request timeout during streaming
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT   Http_Status_PayloadTooLarge     // 413 - Payload too large (size limit exceeded)
+
+// Client-specific error codes (negative values to distinguish from HTTP codes)
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED  (-1001)  // Streaming was interrupted by network error
+#define DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR    (-1002)  // Error parsing chunked transfer encoding
+#define DAP_CLIENT_HTTP_ERROR_CHUNK_INCOMPLETE       (-1003)  // Connection closed in middle of chunk
+#define DAP_CLIENT_HTTP_ERROR_CHUNK_OVERFLOW         (-1004)  // Chunk data overflow detected
 
 // Intelligent streaming decision based on content analysis + efficient memory usage
 //
