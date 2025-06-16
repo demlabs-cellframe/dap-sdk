@@ -136,7 +136,7 @@ static bool s_http_ensure_buffer_space(dap_client_http_t *a_client_http, dap_cli
 static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
 
 // New header parsing functions that work directly with buf_in
-static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
+static int s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
 static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
 
 /**
@@ -1469,12 +1469,31 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     switch (l_client_http->parse_state) {
         case DAP_HTTP_PARSE_HEADERS:
             // NEW: Parse headers directly from buf_in (no copying to response yet)
-            if (!s_http_parse_headers_from_buf_in(a_es, l_client_http, l_ctx)) {
-                return; // Need more data or error occurred
+            {
+                int l_hdr_res = s_http_parse_headers_from_buf_in(a_es, l_client_http, l_ctx);
+                if (l_hdr_res == 0)
+                    return; // need more data
+                if (l_hdr_res < 0)
+                    m_http_error_exit(EMSGSIZE, "Header parsing failed");
             }
             // Headers parsed, now allocate response buffer for body only
             if (!s_http_allocate_body_buffer(l_client_http, l_ctx)) {
                 m_http_error_exit(ENOMEM, "Failed to allocate body buffer");
+            }
+            // Если часть тела уже пришла в buf_in – переносим её в response
+            if (a_es->buf_in_size > 0) {
+                size_t l_space_left = l_client_http->response_size_max - l_client_http->response_size;
+                size_t l_to_copy = dap_min(a_es->buf_in_size, l_space_left);
+
+                if (l_to_copy > 0) {
+                    memcpy(l_client_http->response + l_client_http->response_size, a_es->buf_in, l_to_copy);
+                    l_client_http->response_size += l_to_copy;
+
+                    a_es->buf_in_size -= l_to_copy;
+                    if (a_es->buf_in_size > 0) {
+                        memmove(a_es->buf_in, a_es->buf_in + l_to_copy, a_es->buf_in_size);
+                    }
+                }
             }
             // Buffer allocated, return to process body data on next call
             return;
@@ -2279,20 +2298,22 @@ static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_clien
  * @param a_ctx Async context (may be NULL)
  * @return true if headers parsed, false if need more data
  */
-static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx)
+static int s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx)
 {
     if (a_client_http->parse_state == DAP_HTTP_PARSE_BODY) {
-        return true; // Already parsed
+        return 1; // Already parsed
     }
     
-    // Look for end of headers in buf_in
-    char *l_headers_end = strstr((char*)a_es->buf_in, "\r\n\r\n");
+    // Безопасно ищем маркер конца заголовков независимо от NUL-терминатора
+    char *l_headers_end = (char*)dap_memmem_n(a_es->buf_in, a_es->buf_in_size, "\r\n\r\n", 4);
+
+    // Если маркер не найден, проверяем лимит размера СЕЙЧАС
     if (!l_headers_end) {
         if (a_es->buf_in_size > DAP_CLIENT_HTTP_MAX_HEADERS_SIZE) {
             log_it(L_ERROR, "Headers too large: %zu bytes", a_es->buf_in_size);
-            return false;
+            return -1; // Фатальная ошибка
         }
-        return false; // Need more data
+        return 0; // нужно больше данных
     }
     
     size_t l_headers_length = l_headers_end - (char*)a_es->buf_in + 4;
@@ -2301,7 +2322,7 @@ static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clie
     a_client_http->status_code = s_extract_http_code(a_es->buf_in, l_headers_length);
     if (a_client_http->status_code == 0) {
         log_it(L_ERROR, "Failed to parse status code");
-        return false;
+        return 0;
     }
     
     // Check for redirect early
@@ -2322,7 +2343,8 @@ static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clie
                     l_location_value[l_loc_len] = '\0';
                     
                     log_it(L_INFO, "Redirect to: %s", l_location_value);
-                    return s_process_http_redirect(a_es, a_client_http, l_location_value);
+                    s_process_http_redirect(a_es, a_client_http, l_location_value);
+                    return 0; // redirect handled, текущий сокет скоро закроется
                 }
             }
         }
@@ -2352,7 +2374,16 @@ static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clie
     if (l_transfer_encoding && strstr(l_transfer_encoding->value, "chunked")) {
         a_client_http->is_chunked = true;
         a_client_http->is_reading_chunk_size = true;
-        a_client_http->content_length = 0;
+        a_client_http->content_length = 0; // Протокол запрещает одновременное использование CL+chunked
+
+        // Если сервер прислал Content-Length, игнорируем и удаляем чтобы не путать приложение
+        dap_http_header_t *l_cl_hdr = dap_http_header_find(a_client_http->response_headers, "Content-Length");
+        if (l_cl_hdr) {
+            // Предупреждение, только если значение не 0
+            if (strcmp(l_cl_hdr->value, "0") != 0)
+                log_it(L_WARNING, "Ignoring conflicting Content-Length=%s because Transfer-Encoding: chunked", l_cl_hdr->value);
+            dap_http_header_remove(&a_client_http->response_headers, l_cl_hdr);
+        }
     } else {
         dap_http_header_t *l_content_len = dap_http_header_find(a_client_http->response_headers, "Content-Length");
         if (l_content_len) {
@@ -2406,7 +2437,7 @@ static bool s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clie
     a_es->buf_in_size = l_remaining;
     
     a_client_http->parse_state = DAP_HTTP_PARSE_BODY;
-    return true;
+    return 1;
 }
 
 /**

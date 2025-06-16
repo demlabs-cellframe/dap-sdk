@@ -1153,6 +1153,22 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
         ? 0 : -1;
 }
 
+static inline void *dap_memmem_n(const void *hay, size_t haylen,
+                                 const void *needle, size_t needlelen)
+{
+    if (!hay || !needle || needlelen == 0 || haylen < needlelen)
+        return NULL;
+
+    const uint8_t *h = (const uint8_t *)hay;
+    const uint8_t *n = (const uint8_t *)needle;
+
+    for (size_t i = 0; i <= haylen - needlelen; ++i) {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void *)(h + i);
+    }
+    return NULL;
+}
+
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
 #define DAP_NODE_ADDR_LEN 23
