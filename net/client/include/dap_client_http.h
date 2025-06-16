@@ -59,17 +59,12 @@ typedef struct dap_client_http {
 
     byte_t *request;
     size_t request_size;
-    size_t request_sent_size;
     bool is_over_ssl;
 
-    int socket;
-
-    bool is_header_read;
     bool is_closed_by_timeout;
     bool were_callbacks_called;
     
     dap_http_parse_state_t parse_state; // HTTP parsing state machine
-    size_t header_length;
     size_t content_length;
     time_t ts_last_read;
     

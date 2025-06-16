@@ -631,9 +631,7 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
 {
     // Clear response data
     a_client_http->response_size = 0;
-    a_client_http->header_length = 0;
     a_client_http->content_length = 0;
-    a_client_http->is_header_read = false;
     a_client_http->parse_state = DAP_HTTP_PARSE_HEADERS; // Reset state machine
     a_client_http->status_code = 0; // CRITICAL: Reset cached status code!
     
@@ -2486,7 +2484,6 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     
     a_client_http->response_size_max = l_buffer_size;
     a_client_http->response_size = 0;
-    a_client_http->header_length = 0; // No headers in response buffer anymore!
     
     log_it(L_DEBUG, "Allocated %zu bytes for body (Content-Length: %zu, streaming: %s)", 
            l_buffer_size, a_client_http->content_length,
