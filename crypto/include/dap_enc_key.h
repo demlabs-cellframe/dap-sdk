@@ -201,26 +201,27 @@ typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *all
 
 typedef struct dap_enc_key {
     union{
+        size_t priv_key_size;
         size_t priv_key_data_size;
         size_t key_pvt_size;
+        size_t shared_key_size;
     };
     //unsigned char * priv_key_data; // can be shared key in assymetric alghoritms
     union{
         void * priv_key_data; // can be shared key in assymetric alghoritms or secret key in signature alghoritms
         byte_t * key_pvt;
+        byte_t * shared_key;
     };
 
     union{
         size_t pub_key_size;
         size_t pub_key_data_size;
         size_t key_pub_size;
-        size_t shared_key_size;
     };
     //unsigned char * pub_key_data; // can be null if enc symmetric
     union{
         void * pub_key_data; // can be null if enc symmetric
         byte_t * key_pub;
-        byte_t * shared_key;
     };
 
     time_t last_used_timestamp;
