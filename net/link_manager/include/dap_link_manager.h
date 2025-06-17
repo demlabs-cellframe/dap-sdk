@@ -85,7 +85,6 @@ typedef struct dap_link_manager {
     uint32_t reconnect_delay;   // pause before next connection attempt
     dap_list_t *nets;           // managed nets list
     dap_link_t *links;          // links HASH_TAB
-    pthread_rwlock_t links_lock;
     pthread_rwlock_t nets_lock;
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;

@@ -68,6 +68,7 @@ int dap_proc_thread_loop(dap_context_t *a_context);
 
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
+dap_proc_thread_t *dap_proc_thread_get_current();
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, dap_queue_msg_priority_t a_priority);
 DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg)
 {

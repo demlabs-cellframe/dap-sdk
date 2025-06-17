@@ -34,7 +34,7 @@
 
 static uint32_t s_threads_count = 0;
 static dap_proc_thread_t *s_threads = NULL;
-
+static dap_proc_thread_t *s_proc_thread;
 static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
@@ -48,7 +48,7 @@ static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
 {
     dap_return_val_if_pass(!a_thread || a_thread->context, -1);
-
+    s_proc_thread = a_thread;
     a_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
     a_thread->context->_inheritor = a_thread;
     int l_ret = dap_context_run(a_thread->context, a_cpu_id, DAP_CONTEXT_POLICY_TIMESHARING,
@@ -129,6 +129,10 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
         }
     }
     return &s_threads[l_id_min];
+}
+
+dap_proc_thread_t *dap_proc_thread_get_current() {
+    return s_proc_thread;
 }
 
 size_t dap_proc_thread_get_avg_queue_size()
@@ -226,7 +230,7 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     assert(l_worker_related);
-    l_worker_related->proc_queue_input = l_thread;
+    l_worker_related->proc_queue_input = s_proc_thread = l_thread;
     return 0;
 }
 
