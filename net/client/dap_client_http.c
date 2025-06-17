@@ -2092,7 +2092,7 @@ int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_af
 int dap_client_http_init()
 {
     dap_log_level_set( L_DEBUG );
-    s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more",true);
+    s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more", false);
     s_max_attempts = dap_config_get_item_uint32_default(g_config,"dap_client","max_tries",5);
     if ( s_client_timeout_ms == 0 ) {
         s_client_timeout_ms = dap_config_get_item_uint32_default(g_config, "dap_client", "timeout", 20) * 1000;
@@ -2191,16 +2191,16 @@ static bool s_http_ensure_buffer_space(dap_client_http_t *a_client_http, dap_cli
             log_it(L_DEBUG, "Late expansion to optimal streaming buffer: %zu bytes", l_new_size);
         }
     } else {
-        // Body unknown size: одно расширение до глобального лимита
+        // Body unknown size: single expansion up to global limit
         if (a_client_http->response_size_max <= 8192) {
-            // Первое расширение с 8KB до глобального лимита
+            // First expansion from 8KB to global limit
             l_new_size = DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT;
             if(s_debug_more) {
                 log_it(L_DEBUG, "First expansion from %zu to %zu bytes (unknown body size)", 
                        a_client_http->response_size_max, l_new_size);
             }
         } else {
-            // Уже было расширение - больше не расширяем
+            // Already expanded once - no further expansion allowed
             log_it(L_WARNING, "Buffer already expanded once (%zu bytes), no further expansion allowed", 
                    a_client_http->response_size_max);
             return false;
