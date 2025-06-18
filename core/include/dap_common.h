@@ -1060,7 +1060,9 @@ typedef union dap_maxint_str {
     const char s[INT_DIGITS + 2];
 } dap_maxint_str_t;
 dap_maxint_str_t dap_itoa_(long long i);
+dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
+#define dap_utoa(i) (char*)dap_utoa_(i).s
 
 unsigned dap_gettid();
 
