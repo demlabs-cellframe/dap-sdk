@@ -206,8 +206,9 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
     dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
     DAP_DELETE(l_cmd_str);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
-    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
-    a_request->version = dap_config_get_item_int32_default(g_config, "cli-server", "version", 1);
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(
+        a_cmd->cmd_name, params, l_id_response,
+        dap_config_get_item_int32_default(g_config, "cli-server", "version", 1));
 
     char *request_str = dap_json_rpc_request_to_json_string(a_request);
 

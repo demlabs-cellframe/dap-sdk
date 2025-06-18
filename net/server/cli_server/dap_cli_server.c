@@ -436,7 +436,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %zu\r\n"
+                                            "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
                                             "Processing-Time: %zu\r\n"
                                             "Node-Type: %s\r\n"
                                             "Node-Version: %s\r\n\r\n"
