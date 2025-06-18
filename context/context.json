@@ -333,11 +333,6 @@
       "solution": "Add explicit type casts: (unsigned int)expression",
       "compiler_flag": "-Werror=sign-compare",
       "locations": "core/test/dap_common_test.c - lines with dap_mul comparisons"
-    },
-    "union_conflicts": {
-      "description": "dap_enc_key_t union fields overlap causing data corruption",
-      "affected_fields": ["pub_key_data vs shared_key", "pub_key_data_size vs shared_key_size"],
-      "solution": "Use appropriate field for algorithm type (KEM vs traditional encryption)"
     }
   },
   "logging_system": {

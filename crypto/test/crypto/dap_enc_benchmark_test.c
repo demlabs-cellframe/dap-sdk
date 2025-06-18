@@ -65,23 +65,9 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
 
     for(int i = 0; i < a_times; ++i) {
         // For KEM algorithms (like MSRLN, KYBER), shared secrets are stored in shared_key field, not priv_key_data
-        void *alice_shared = NULL;
-        void *bob_shared = NULL;
-        size_t shared_size = 0;
-        
-        if (a_key_type == DAP_ENC_KEY_TYPE_MSRLN || a_key_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
-            // For KEM: use shared_key field
-            alice_shared = l_alice_keys[i]->shared_key;
-            bob_shared = l_bob_keys[i]->shared_key;
-            shared_size = l_alice_keys[i]->shared_key_size;
-        } else {
-            // For traditional encryption: use priv_key_data
-            alice_shared = l_alice_keys[i]->priv_key_data;
-            bob_shared = l_bob_keys[i]->priv_key_data;
-            shared_size = l_alice_keys[i]->priv_key_data_size;
-        }
-        
-
+        void *alice_shared = l_alice_keys[i]->shared_key;
+        void *bob_shared = l_bob_keys[i]->shared_key;
+        size_t shared_size = l_alice_keys[i]->shared_key_size;
         
         dap_assert_PIF(alice_shared && bob_shared, "Both shared secrets are valid");
         dap_assert_PIF(shared_size > 0, "Shared secret size is valid");

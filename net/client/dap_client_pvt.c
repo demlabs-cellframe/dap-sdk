@@ -987,6 +987,11 @@ static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_d
         size_t l_len = strlen(l_session_id_b64), l_decoded_len;
         l_client_pvt->session_key_id = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64);
         l_decoded_len = dap_enc_base64_decode(l_session_id_b64, l_len, l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64);
+        if (l_decoded_len != DAP_ENC_KS_KEY_ID_SIZE) {
+            log_it(L_WARNING, "ENC: Can't decode Key ID from base64");
+            l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
+            break;
+        }
         log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
         // decode bob message
         l_len = strlen(l_bob_message_b64);
@@ -999,7 +1004,7 @@ static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_d
         }
         // gen alice shared key
         if (!l_client_pvt->session_key_open->gen_alice_shared_key(
-                l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data,
+                l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data, // NOTE: this private key wiil be replaced by shared key in next step
                 l_bob_message_size, (unsigned char*) l_bob_message)) {
             log_it(L_WARNING, "ENC: Can't generate private key from bob message");
             l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
@@ -1007,9 +1012,10 @@ static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_d
         }
         // generate session key
         l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
-                l_client_pvt->session_key_open->priv_key_data, // shared key
-                l_client_pvt->session_key_open->priv_key_data_size,
-                l_client_pvt->session_key_id, l_decoded_len, l_client_pvt->session_key_block_size);
+                l_client_pvt->session_key_open->shared_key,
+                l_client_pvt->session_key_open->shared_key_size,
+                l_client_pvt->session_key_id, DAP_ENC_KS_KEY_ID_SIZE,
+                l_client_pvt->session_key_block_size);
 
         if (l_client_pvt->stage != STAGE_ENC_INIT) { // We are in wrong stage
             l_client_pvt->last_error = ERROR_WRONG_STAGE;

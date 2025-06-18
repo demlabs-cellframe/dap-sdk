@@ -164,7 +164,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             *return_code = Http_Status_BadRequest;
             return;
         }
-        if(l_pkey_exchange_key->gen_bob_shared_key) {
+        if (l_pkey_exchange_key->gen_bob_shared_key) {
             l_pkey_exchange_key->pub_key_data_size = l_pkey_exchange_key->gen_bob_shared_key(l_pkey_exchange_key, alice_msg, l_pkey_exchange_size,
                     &l_pkey_exchange_key->pub_key_data);
         }
@@ -184,9 +184,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                         encrypt_msg, DAP_ENC_DATA_TYPE_B64);
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
-                                               l_pkey_exchange_key->priv_key_data, // shared key
-                                               l_pkey_exchange_key->priv_key_data_size,
-                                               l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
+                                               l_pkey_exchange_key->shared_key,
+                                               l_pkey_exchange_key->shared_key_size,
+                                               l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
+                                               l_block_key_size);
         
         dap_enc_ks_save_in_storage(l_enc_key_ks);
         int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
