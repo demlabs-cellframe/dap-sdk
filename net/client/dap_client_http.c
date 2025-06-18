@@ -1344,23 +1344,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             
             // If redirect occurred, function already returned from s_http_parse_headers_from_buf_in
             
-            // Copy data to response ONLY if NOT in streaming mode
-            if (a_es->buf_in_size > 0 && 
-                (!l_ctx || l_ctx->streaming_mode != DAP_HTTP_STREAMING_ENABLED)) {
-                
-                size_t l_space_left = l_client_http->response_size_max - l_client_http->response_size;
-                size_t l_to_copy = dap_min(a_es->buf_in_size, l_space_left);
-
-                if (l_to_copy > 0) {
-                    memcpy(l_client_http->response + l_client_http->response_size, a_es->buf_in, l_to_copy);
-                    l_client_http->response_size += l_to_copy;
-
-                    a_es->buf_in_size -= l_to_copy;
-                    if (a_es->buf_in_size > 0) {
-                        memmove(a_es->buf_in, a_es->buf_in + l_to_copy, a_es->buf_in_size);
-                    }
-                }
-            }
+            // Headers parsed successfully, body data remains in buf_in for BODY processing
+            // No copying here - let BODY block handle all body data processing
         }
         // FALLTHROUGH
             
@@ -1419,36 +1404,39 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 }
             }
             else {
-                if (l_client_http->response) {
-                    if (l_client_http->response_size > l_client_http->response_size_max) {
-                        m_http_error_exit(EFAULT, "HTTP client buffer corruption detected (size %zu > max %zu)", 
-                                          l_client_http->response_size, l_client_http->response_size_max);
-                    }
+                // Non-streaming accumulation mode: use response buffer
+                if (!l_client_http->response) {
+                    m_http_error_exit(EFAULT, "Response buffer is NULL in non-streaming mode");
+                }
+                
+                if (l_client_http->response_size > l_client_http->response_size_max) {
+                    m_http_error_exit(EFAULT, "HTTP client buffer corruption detected (size %zu > max %zu)", 
+                                      l_client_http->response_size, l_client_http->response_size_max);
+                }
+                
+                if (!s_http_ensure_buffer_space(l_client_http, l_ctx, a_es->buf_in_size)) {
+                    m_http_error_exit(ENOMEM, "Failed to ensure buffer space");
+                }
+                
+                size_t l_max_copy_size = l_client_http->response_size_max - l_client_http->response_size;
+                if (l_max_copy_size > 0) {
+                    size_t l_read_bytes = dap_events_socket_pop_from_buf_in(a_es,
+                            l_client_http->response + l_client_http->response_size,
+                            l_max_copy_size);
                     
-                    if (!s_http_ensure_buffer_space(l_client_http, l_ctx, a_es->buf_in_size)) {
-                        m_http_error_exit(ENOMEM, "Failed to ensure buffer space");
-                    }
-                    
-                    size_t l_max_copy_size = l_client_http->response_size_max - l_client_http->response_size;
-                    if (l_max_copy_size > 0) {
-                        size_t l_read_bytes = dap_events_socket_pop_from_buf_in(a_es,
-                                l_client_http->response + l_client_http->response_size,
-                                l_max_copy_size);
+                    if (l_read_bytes > 0) {
+                        if (l_client_http->response_size + l_read_bytes > l_client_http->response_size_max) {
+                            m_http_error_exit(EOVERFLOW, "Buffer overflow detected! size %zu + read %zu > max %zu", 
+                                              l_client_http->response_size, l_read_bytes, l_client_http->response_size_max);
+                        }
+                        l_client_http->response_size += l_read_bytes;
                         
-                        if (l_read_bytes > 0) {
-                            if (l_client_http->response_size + l_read_bytes > l_client_http->response_size_max) {
-                                m_http_error_exit(EOVERFLOW, "Buffer overflow detected! size %zu + read %zu > max %zu", 
-                                                  l_client_http->response_size, l_read_bytes, l_client_http->response_size_max);
-                            }
-                            l_client_http->response_size += l_read_bytes;
-                            
-                            if (l_ctx && l_ctx->progress_callback) {
-                                l_ctx->progress_callback(
-                                    l_client_http->response + l_client_http->response_size - l_read_bytes,
-                                    l_read_bytes,
-                                    l_client_http->content_length,
-                                    l_ctx->user_arg);
-                            }
+                        if (l_ctx && l_ctx->progress_callback) {
+                            l_ctx->progress_callback(
+                                l_client_http->response + l_client_http->response_size - l_read_bytes,
+                                l_read_bytes,
+                                l_client_http->content_length,
+                                l_ctx->user_arg);
                         }
                     }
                 }
@@ -2168,56 +2156,44 @@ uint64_t dap_client_http_get_read_after_connect_timeout_ms()
  */
 static bool s_http_ensure_buffer_space(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx, size_t a_needed_space)
 {
+    // Zero-copy streaming mode: no buffer management needed
+    if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+        return true; // Always succeed - we work directly with buf_in
+    }
+    
+    // Non-streaming mode: manage response buffer
+    if (!a_client_http->response) {
+        log_it(L_ERROR, "Response buffer is NULL in non-streaming mode");
+        return false;
+    }
+    
     size_t l_available_space = a_client_http->response_size_max - a_client_http->response_size;
     
     if (l_available_space >= a_needed_space) {
         return true; // Already have enough space
     }
     
-    // Check if we're in streaming mode with optimal buffer (should not need expansion)
-    if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED &&
-        a_client_http->response_size_max >= DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE) {
-        // Streaming buffer already at optimal size - no reallocation needed!
-        log_it(L_WARNING, "Streaming buffer full, dropping data (normal for streaming)");
-        return true;
-    }
-    
-    // Calculate new size
+    // Calculate new size for non-streaming mode
     size_t l_new_size;
-    if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
-        // Streaming mode - expand to optimal size (backup expansion, shouldn't normally happen)
-        l_new_size = DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE;
+    if (a_client_http->response_size_max <= 8192) {
+        // First expansion from 8KB to global limit
+        l_new_size = DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT;
         if(s_debug_more) {
-            log_it(L_DEBUG, "Late expansion to optimal streaming buffer: %zu bytes", l_new_size);
+            log_it(L_DEBUG, "First expansion from %zu to %zu bytes (unknown body size)", 
+                   a_client_http->response_size_max, l_new_size);
         }
     } else {
-        // Body unknown size: single expansion up to global limit
-        if (a_client_http->response_size_max <= 8192) {
-            // First expansion from 8KB to global limit
-            l_new_size = DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT;
-            if(s_debug_more) {
-                log_it(L_DEBUG, "First expansion from %zu to %zu bytes (unknown body size)", 
-                       a_client_http->response_size_max, l_new_size);
-            }
-        } else {
-            // Already expanded once - no further expansion allowed
-            log_it(L_WARNING, "Buffer already expanded once (%zu bytes), no further expansion allowed", 
-                   a_client_http->response_size_max);
-            return false;
-        }
+        // Already expanded once - no further expansion allowed
+        log_it(L_WARNING, "Buffer already expanded once (%zu bytes), no further expansion allowed", 
+               a_client_http->response_size_max);
+        return false;
     }
     
-    // Apply size limits
+    // Apply size limits for non-streaming mode
     if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
-        if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
-            log_it(L_ERROR, "Streaming buffer size exceeds limit of %zu bytes (requested: %zu)", 
-                   (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
-            return false;
-        } else {
-            log_it(L_ERROR, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", 
-                   (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
-            return false;
-        }
+        log_it(L_ERROR, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", 
+               (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
+        return false;
     }
     
     uint8_t *l_old_response = a_client_http->response;
@@ -2231,8 +2207,7 @@ static bool s_http_ensure_buffer_space(dap_client_http_t *a_client_http, dap_cli
     a_client_http->response = l_new_response;
     a_client_http->response_size_max = l_new_size;
     if(s_debug_more) {
-        log_it(L_DEBUG, "Expanded response buffer to %zu bytes (%s mode)", 
-               l_new_size, (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) ? "streaming" : "accumulation");
+        log_it(L_DEBUG, "Expanded response buffer to %zu bytes (accumulation mode)", l_new_size);
     }
     
     return true;
@@ -2459,12 +2434,15 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
         a_client_http->response_size_max = 0;
     }
     
-    size_t l_buffer_size;
-    
+    // Zero-copy streaming mode: NO buffer allocation at all!
     if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
-        // Streaming mode: minimal buffer
-        l_buffer_size = DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE;
-    } else if (a_client_http->content_length > 0) {
+        log_it(L_DEBUG, "Zero-copy streaming mode: no response buffer allocated");
+        return true; // Success, but no buffer allocated
+    }
+    
+    // Non-streaming mode: allocate buffer based on content
+    size_t l_buffer_size;
+    if (a_client_http->content_length > 0) {
         // Known size: allocate exactly what we need
         l_buffer_size = a_client_http->content_length;
         if (l_buffer_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
@@ -2485,9 +2463,8 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     a_client_http->response_size_max = l_buffer_size;
     a_client_http->response_size = 0;
     
-    log_it(L_DEBUG, "Allocated %zu bytes for body (Content-Length: %zu, streaming: %s)", 
-           l_buffer_size, a_client_http->content_length,
-           (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) ? "yes" : "no");
+    log_it(L_DEBUG, "Allocated %zu bytes for body (Content-Length: %zu)", 
+           l_buffer_size, a_client_http->content_length);
     
     return true;
 }
