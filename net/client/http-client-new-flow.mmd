@@ -1,0 +1,65 @@
+sequenceDiagram
+    participant App as Application
+    participant Lite as HTTP Lite Client
+    participant Timer as Timer
+    participant Socket as Event Socket
+    participant Server as HTTP Server
+    
+    App->>Lite: dap_http_lite_request_async()
+    Lite->>Lite: s_client_create()
+    Lite->>Lite: s_parse_url()
+    Lite->>Socket: create socket + connect
+    Lite->>Timer: start connection timeout
+    
+    alt Connection Success
+        Socket->>Lite: s_client_connected()
+        Lite->>Timer: reset to read timeout
+        Lite->>Socket: s_send_request()
+        
+        loop Read Response
+            Server->>Socket: HTTP data
+            Socket->>Lite: s_client_read()
+            
+            alt State: HEADERS
+                Lite->>Lite: s_parse_headers()
+                Lite->>Lite: s_determine_response_mode()
+                Note over Lite: Transition to BODY state
+            end
+            
+            alt State: BODY
+                Lite->>Lite: s_process_body()
+                
+                alt Mode: ACCUMULATE
+                    Lite->>Lite: s_accumulate_data()
+                end
+                
+                alt Mode: STREAMING
+                    Lite->>App: stream_cb() (zero-copy)
+                    Lite->>Lite: s_stream_data()
+                end
+                
+                alt Mode: CHUNKED
+                    Lite->>Lite: s_process_chunked()
+                    Lite->>App: stream_cb() (chunked data)
+                end
+            end
+        end
+        
+        Note over Lite: Transition to COMPLETE state
+        Lite->>Lite: s_call_response_callback()
+        Lite->>App: response_cb()
+        
+    else Connection Timeout
+        Timer->>Lite: s_timer_callback()
+        Lite->>Lite: s_call_error_callback()
+        Lite->>App: error_cb(TIMEOUT)
+        
+    else Network Error
+        Socket->>Lite: s_client_error()
+        Lite->>Lite: s_call_error_callback()
+        Lite->>App: error_cb(NETWORK_ERROR)
+    end
+    
+    Lite->>Socket: close
+    Socket->>Lite: s_client_delete()
+    Lite->>Lite: s_client_cleanup()

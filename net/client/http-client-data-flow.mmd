@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant App as Application
+    participant HTTP as HTTP Client
+    participant Timer as Timer Thread
+    participant Socket as Event Socket
+    participant Server as HTTP Server
+    
+    App->>HTTP: dap_client_http_request()
+    HTTP->>Socket: create socket + connect
+    HTTP->>Timer: start connection timeout
+    
+    alt Connection Success
+        Socket->>HTTP: s_http_connected()
+        HTTP->>Timer: cancel connection timer
+        HTTP->>Timer: start read timeout
+        HTTP->>Socket: send HTTP request
+        
+        loop Read Response
+            Server->>Socket: HTTP data
+            Socket->>HTTP: s_http_read()
+            
+            alt Headers Phase
+                HTTP->>HTTP: parse headers
+                HTTP->>HTTP: determine mode
+            else Body Phase - Normal
+                HTTP->>HTTP: accumulate in buffer
+            else Body Phase - Chunked
+                HTTP->>HTTP: process chunks
+            else Body Phase - Streaming
+                HTTP->>App: progress callback (zero-copy)
+            end
+        end
+        
+        HTTP->>App: response callback
+        HTTP->>Socket: close connection
+        
+    else Connection Timeout
+        Timer->>HTTP: s_timer_timeout_check()
+        HTTP->>App: error callback (ETIMEDOUT)
+        
+    else Read Timeout
+        Timer->>HTTP: s_timer_timeout_after_connected_check()
+        HTTP->>App: error callback (ETIMEDOUT)
+        
+    else Network Error
+        Socket->>HTTP: s_http_error()
+        HTTP->>App: error callback
+    end

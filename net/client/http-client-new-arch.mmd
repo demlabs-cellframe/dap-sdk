@@ -1,0 +1,63 @@
+flowchart TB
+    subgraph "Публичный API"
+        A[dap_http_lite_init]
+        B[dap_http_lite_request_async]
+        C[dap_http_lite_request_sync]
+        D[dap_http_lite_close]
+        E[dap_http_lite_deinit]
+    end
+    
+    subgraph "Управление соединением"
+        F[s_client_create]
+        G[s_client_connected]
+        H[s_client_error]
+        I[s_client_delete]
+        J[s_timer_callback]
+    end
+    
+    subgraph "HTTP парсинг (минимальный)"
+        K[s_parse_headers]
+        L[s_determine_response_mode]
+        M[s_process_body]
+    end
+    
+    subgraph "Обработка ответа"
+        N[s_accumulate_data]
+        O[s_stream_data]
+        P[s_process_chunked]
+    end
+    
+    subgraph "Утилиты"
+        Q[s_parse_url]
+        R[s_send_request]
+        S[s_call_response_callback]
+        T[s_call_error_callback]
+    end
+    
+    subgraph "Стейт-машина"
+        U[DAP_HTTP_LITE_STATE_HEADERS]
+        V[DAP_HTTP_LITE_STATE_BODY]
+        W[DAP_HTTP_LITE_STATE_COMPLETE]
+    end
+    
+    B --> F
+    F --> G
+    G --> K
+    K --> L
+    L --> M
+    M --> N
+    M --> O
+    M --> P
+    
+    U --> V
+    V --> W
+    
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#e1f5fe
+    style D fill:#e1f5fe
+    style E fill:#e1f5fe
+    
+    style U fill:#fff3e0
+    style V fill:#fff3e0
+    style W fill:#fff3e0

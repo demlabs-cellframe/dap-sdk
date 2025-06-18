@@ -1,0 +1,45 @@
+stateDiagram-v2
+    [*] --> Connecting : dap_client_http_request()
+    
+    Connecting --> Connected : s_http_connected()
+    Connecting --> SSL_Handshake : s_http_ssl_connected()
+    Connecting --> Error : timeout/network error
+    
+    SSL_Handshake --> Connected : SSL handshake complete
+    SSL_Handshake --> Error : SSL error
+    
+    Connected --> Sending_Request : send HTTP request
+    Sending_Request --> Parse_Headers : s_http_read()
+    
+    Parse_Headers --> Determine_Mode : headers parsed
+    Parse_Headers --> Parse_Headers : need more data
+    Parse_Headers --> Redirect : 3xx status + Location
+    Parse_Headers --> Error : invalid headers
+    
+    Determine_Mode --> Chunked_Mode : chunked encoding
+    Determine_Mode --> Streaming_Mode : large content + progress callback
+    Determine_Mode --> Accumulate_Mode : normal response
+    
+    Chunked_Mode --> Parse_Chunk_Size : read chunk size
+    Parse_Chunk_Size --> Read_Chunk_Data : chunk size parsed
+    Parse_Chunk_Size --> Error : invalid chunk size
+    Read_Chunk_Data --> Parse_Chunk_Size : chunk complete
+    Read_Chunk_Data --> Complete : last chunk (0 size)
+    Read_Chunk_Data --> Error : chunk overflow
+    
+    Streaming_Mode --> Stream_Data : zero-copy streaming
+    Stream_Data --> Stream_Data : progress callback
+    Stream_Data --> Complete : content complete
+    Stream_Data --> Error : stream error
+    
+    Accumulate_Mode --> Read_Body : accumulate in buffer
+    Read_Body --> Read_Body : need more data
+    Read_Body --> Complete : content complete
+    Read_Body --> Error : buffer overflow
+    
+    Redirect --> Connecting : new connection needed
+    Redirect --> Sending_Request : same connection reuse
+    Redirect --> Error : too many redirects
+    
+    Complete --> [*] : response callback
+    Error --> [*] : error callback
