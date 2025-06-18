@@ -351,7 +351,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
 void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_ol->Pointer;
     if (!l_es->worker)
-        return log_it(L_ERROR, "Es %p error: worker unset");
+        return log_it(L_ERROR, "Es %p error: worker unset", l_es);
     dap_events_socket_t *l_sought_es = dap_context_find(a_c, l_es->uuid);
     if ( l_sought_es ) {
         if ( l_sought_es == l_es )

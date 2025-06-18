@@ -43,6 +43,13 @@ typedef void (*dap_client_http_callback_full_t)(void *a_body, size_t a_body_size
 typedef void (*dap_client_http_callback_started_t)(void *a_arg); // Called when request starts
 typedef void (*dap_client_http_callback_progress_t)(void *a_data, size_t a_data_size, size_t a_total, void *a_arg); // Streaming callback with data
 
+// HTTP parsing state machine
+typedef enum {
+    DAP_HTTP_PARSE_HEADERS = 0,        // Reading status line and headers 
+    DAP_HTTP_PARSE_BODY = 1,           // Reading body
+    DAP_HTTP_PARSE_COMPLETE = 2        // Response complete
+} dap_http_parse_state_t;
+
 typedef struct dap_client_http {
     // TODO move unnessassary fields to dap_client_http_pvt privat structure
     dap_client_http_callback_data_t response_callback;
@@ -52,15 +59,12 @@ typedef struct dap_client_http {
 
     byte_t *request;
     size_t request_size;
-    size_t request_sent_size;
     bool is_over_ssl;
 
-    int socket;
-
-    bool is_header_read;
     bool is_closed_by_timeout;
     bool were_callbacks_called;
-    size_t header_length;
+    
+    dap_http_parse_state_t parse_state; // HTTP parsing state machine
     size_t content_length;
     time_t ts_last_read;
     
@@ -69,21 +73,33 @@ typedef struct dap_client_http {
     bool is_reading_chunk_size;         // Currently reading chunk size line
     size_t current_chunk_size;          // Size of current chunk being read
     size_t current_chunk_read;          // Bytes read from current chunk
+    uint64_t current_chunk_id;          // Unique ID of current chunk (for integrity)
+    uint64_t next_chunk_id;             // Counter for generating chunk IDs
+    uint8_t chunked_error_count;        // Count of chunked parsing errors
     uint8_t *response;
     size_t response_size;
     size_t response_size_max;
     
     // Add new fields for headers processing and redirects
     struct dap_http_header *response_headers;   // Parsed response headers
+    http_status_code_t status_code;              // Cached HTTP status code (extracted once)
     uint8_t redirect_count;                      // Current redirect count
     bool follow_redirects;                       // Whether to follow redirects automatically
 #define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
 
-// Special error codes for streaming operations  
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED  (-1001)  // Streaming was interrupted
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT      (-1002)  // Timeout during streaming
-#define DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR    (-1003)  // Error parsing chunked data
-#define DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT    (-1004)  // Streaming size limit exceeded
+// Special error codes for HTTP client operations
+// Using HTTP status codes where semantically appropriate, custom codes for client-specific errors
+
+// HTTP-based error codes (using standard HTTP status codes)
+#define DAP_CLIENT_HTTP_ERROR_TOO_MANY_REDIRECTS     Http_Status_LoopDetected        // 508 - Loop detected (redirect cycles)
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_TIMEOUT      Http_Status_RequestTimeout      // 408 - Request timeout during streaming
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_SIZE_LIMIT   Http_Status_PayloadTooLarge     // 413 - Payload too large (size limit exceeded)
+
+// Client-specific error codes (negative values to distinguish from HTTP codes)
+#define DAP_CLIENT_HTTP_ERROR_STREAMING_INTERRUPTED  (-1001)  // Streaming was interrupted by network error
+#define DAP_CLIENT_HTTP_ERROR_CHUNKED_PARSE_ERROR    (-1002)  // Error parsing chunked transfer encoding
+#define DAP_CLIENT_HTTP_ERROR_CHUNK_INCOMPLETE       (-1003)  // Connection closed in middle of chunk
+#define DAP_CLIENT_HTTP_ERROR_CHUNK_OVERFLOW         (-1004)  // Chunk data overflow detected
 
 // Intelligent streaming decision based on content analysis + efficient memory usage
 //

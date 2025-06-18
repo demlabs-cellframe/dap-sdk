@@ -1281,7 +1281,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
             *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL) };
         }
         ol->op = io_read;
-        WSABUF wsabuf = { .buf = a_es->buf_in + a_es->buf_in_size, .len = a_es->buf_in_size_max - a_es->buf_in_size };
+        WSABUF wsabuf = { .buf = (char*)a_es->buf_in + a_es->buf_in_size, .len = a_es->buf_in_size_max - a_es->buf_in_size };
 
         switch (a_es->type) {
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:

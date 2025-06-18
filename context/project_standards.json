@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "type": "project_standards",
+    "last_updated": "2025-01-05"
+  },
+  "documentation": {
+    "language": "Russian for documentation, English for code",
+    "structure": [
+      "Title",
+      "Description (## Описание)",
+      "Module Structure (## Структура модуля)",
+      "Main Components",
+      "Usage Examples (## Примеры использования)",
+      "Implementation Notes (## Особенности реализации)",
+      "See Also (## См. также)"
+    ],
+    "translation_standards": {
+      "api_functions": "Keep in English",
+      "data_types": "Keep in English",
+      "code_comments": "Translate to target language",
+      "string_literals": "Localize for target language"
+    }
+  },
+  "quality_requirements": {
+    "code_examples": {
+      "must_compile": true,
+      "memory_safe": true,
+      "follow_conventions": true,
+      "include_error_handling": true
+    },
+    "documentation": {
+      "completeness": "100%",
+      "accuracy": "Technical accuracy required",
+      "consistency": "Uniform terminology",
+      "localization": "Cultural adaptation for each language"
+    }
+  }
+}
