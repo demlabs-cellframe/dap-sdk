@@ -535,15 +535,29 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             }
             if (l_dup)
                 continue;
-        } else
+        } else {
             ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_sign_t*, l_signs_count, NULL);
+            if (!ret) {
+                log_it(L_ERROR, "Memory allocation failed for signatures array");
+                *a_signs_count = 0;
+                return NULL;
+            }
+        }
         ret[i++] = l_sign;
         if (*a_signs_count && i == *a_signs_count)
             break;
         if (i == l_signs_count) {
             l_signs_count += l_realloc_count;
             dap_sign_t **l_ret_new = DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(ret, l_signs_count, NULL, ret);
+            if (!l_ret_new) {
+                log_it(L_ERROR, "Memory reallocation failed for signatures array");
+                DAP_DELETE(ret);
+                *a_signs_count = 0;
+                return NULL;
+            }
             ret = l_ret_new;
+            // Zero the new allocated portion
+            memset(ret + i, 0, (l_signs_count - i) * sizeof(dap_sign_t*));
         }
     }
     *a_signs_count = i;
