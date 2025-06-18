@@ -211,9 +211,9 @@ char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_re
 dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
 {
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
-    *request = (dap_json_rpc_request_t) {
-        dap_strdup(a_method), a_params, a_id
-    };
+    request->method = dap_strdup(a_method);
+    request->params = a_params;
+    request->id = a_id;
     return request;
 }
 

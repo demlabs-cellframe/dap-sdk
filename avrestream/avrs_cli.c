@@ -33,7 +33,7 @@
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "avrs_cli"
-static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply);
+static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply, int a_version);
 
 static int s_cli_callback_help(int a_argc, char** a_argv, int a_arg_index, const char * a_cmd_arg, dap_string_t* a_reply);
 static int s_cli_callback_cluster(int a_argc, char** a_argv, int a_arg_index, const char * a_cmd_arg, dap_string_t* a_reply);
@@ -70,7 +70,7 @@ void avrs_cli_deinit()
  * @param a_str_reply
  * @return
  */
-static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply)
+static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply, int a_version)
 {
     enum {
         CMD_HELP,

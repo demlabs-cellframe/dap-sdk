@@ -469,7 +469,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         l_cmd = dap_cli_server_cmd_find_by_alias(cmd_name, &l_append_cmd, &l_ncmd);
         l_finded_by_alias = true;
     }
-    dap_json_rpc_params_t * params = request->params;
+    dap_json_rpc_params_t *params = request->params;
 
     char *str_cmd = dap_json_rpc_params_get(params, 0);
     if (!str_cmd)
@@ -519,11 +519,11 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
             if (json_commands(cmd_name)) {
-                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
             } else {
-                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply, request->version);
             }
         } else if (l_cmd) {
             log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
