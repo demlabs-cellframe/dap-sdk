@@ -228,7 +228,7 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
     DAP_DELETE(request);
 }
 
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
 {
     if (!a_data)
         return NULL;
@@ -252,8 +252,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
             if (json_object_object_get_ex(jobj, "version", &jobj_version))
                 request->version = json_object_get_int64(jobj_version);
             else {
-                log_it(L_DEBUG, "Can't find request version, apply version = 1");
-                request->version = 1;
+                log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+                request->version = a_version_default;
             }
 
             if (json_object_object_get_ex(jobj, "method", &jobj_method))

@@ -54,6 +54,7 @@
 
 static dap_server_t *s_cli_server = NULL;
 static bool s_debug_cli = false;
+static int s_version = 1;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
@@ -176,7 +177,8 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
-    log_it(L_INFO, "CLI server initialized");
+    s_version = dap_config_get_item_int32_default(g_config, "cli-server", "version", s_version);
+    log_it(L_INFO, "CLI server initialized with protocol version %d", s_version);
     return 0;
 }
 
@@ -455,7 +457,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
 }
 
 char *dap_cli_cmd_exec(char *a_req_str) {
-    dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str);
+    dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str, s_version);
     if ( !request )
         return NULL;
     int l_verbose = 0;

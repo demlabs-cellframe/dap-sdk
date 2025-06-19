@@ -69,7 +69,7 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request);
  * @return A pointer to a dap_json_rpc_request_t structure,
  *         or NULL on failure
  */
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default);
 
 /**
  * Convert dap_json_rpc_request_t to JSON string representation.
