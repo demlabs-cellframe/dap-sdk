@@ -24,7 +24,7 @@ int dap_bigint_2scompl_ripple_carry_adder_value_64(dap_bigint_t* a,dap_bigint_t*
 
 
     //Initialize full adder.
-    dap_full_adder_t* ith_limb_full_adder;
+    dap_full_adder_t* ith_limb_full_adder = DAP_NEW_Z(dap_full_adder_t);
     if (dap_initialize_full_adder(ith_limb_full_adder)!=0){
         log_it(L_ERROR, "Adder failed to initialize");
     };
