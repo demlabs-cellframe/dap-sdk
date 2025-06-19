@@ -72,6 +72,11 @@ typedef struct dap_link {
         dap_time_t start_after;
         dap_events_socket_uuid_t es_uuid;
         bool ready;
+        // Unstable link detection
+        uint32_t quick_disconnect_count;
+        dap_time_t quick_disconnect_window_start;
+        dap_time_t last_disconnect_time;
+        dap_time_t last_successful_connect_time;
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;

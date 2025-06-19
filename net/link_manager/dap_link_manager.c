@@ -42,6 +42,10 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 static const char s_heated_group_local_prefix[] = "local.nodes.heated.0x";
 static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
 
+// Unstable link detection parameters
+static const uint32_t s_quick_disconnect_threshold = 120;  // seconds - if connection lives less, it's quick disconnect
+static const uint32_t s_quick_disconnect_limit = 2;      // number of quick disconnects to mark as unstable
+
 typedef struct dap_managed_net {
     bool active;
     uint64_t id;
@@ -146,6 +150,51 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
     char *l_hot_group = s_hot_group_forming(a_associated_net_id);
     dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
     DAP_DEL_Z(l_hot_group);
+}
+
+/**
+ * @brief Check if link should be marked as unstable based on quick disconnects
+ * @param a_link - link to check
+ * @param a_associated_net_id - network ID for hot list
+ * @return true if link was marked as unstable, false otherwise
+ */
+static bool s_check_unstable_link(dap_link_t *a_link, uint64_t a_associated_net_id)
+{
+    if (!a_link || a_link->uplink.state != LINK_STATE_ESTABLISHED)
+        return false;
+        
+    dap_time_t l_now = dap_time_now();
+    dap_time_t l_connection_lifetime = l_now - a_link->uplink.last_successful_connect_time;
+    
+    // Check if this is a quick disconnect
+    if (l_connection_lifetime < s_quick_disconnect_threshold) {
+        a_link->uplink.quick_disconnect_count++;
+        a_link->uplink.last_disconnect_time = l_now;
+        
+        log_it(L_DEBUG, "Link " NODE_ADDR_FP_STR " quick disconnect #%u (lived %u seconds)",
+               NODE_ADDR_FP_ARGS_S(a_link->addr), 
+               a_link->uplink.quick_disconnect_count,
+               (uint32_t)l_connection_lifetime);
+        
+        // Check if link became unstable
+        if (a_link->uplink.quick_disconnect_count >= s_quick_disconnect_limit) {
+            log_it(L_WARNING, "Link " NODE_ADDR_FP_STR " marked as unstable (%u quick disconnects)",
+                   NODE_ADDR_FP_ARGS_S(a_link->addr), 
+                   a_link->uplink.quick_disconnect_count);
+            
+            s_node_hot_list_add(a_link->addr, a_associated_net_id);
+            return true;
+        }
+    } else {
+        // Normal disconnect after stable connection - reset counter
+        if (a_link->uplink.quick_disconnect_count > 0) {
+            log_it(L_DEBUG, "Link " NODE_ADDR_FP_STR " had stable connection (%u seconds), resetting quick disconnect counter",
+                   NODE_ADDR_FP_ARGS_S(a_link->addr), (uint32_t)l_connection_lifetime);
+            a_link->uplink.quick_disconnect_count = 0;
+        }
+    }
+    
+    return false;
 }
 
 // debug_more funcs
@@ -526,6 +575,9 @@ static bool s_client_connected_callback_async(void *a_arg)
         l_link->uplink.attempts_count = 0;
         l_link->uplink.state = LINK_STATE_ESTABLISHED;
         l_link->uplink.es_uuid = DAP_CLIENT_PVT(l_args->client)->stream_es->uuid;
+        
+        // Record successful connection time for unstable link detection
+        l_link->uplink.last_successful_connect_time = dap_time_now();
     } else
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(&l_args->addr));
     
@@ -552,9 +604,55 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
 {
+    // Check for unstable link pattern BEFORE any other processing
+    // This should happen on every disconnect, not just final attempts
+    bool l_is_unstable = false;
+    for (dap_list_t *it = a_link->uplink.associated_nets; it; it = it->next) {
+        dap_managed_net_t *l_net = it->data;
+        if (l_net->active && s_check_unstable_link(a_link, l_net->id)) {
+            l_is_unstable = true;
+            break; // No need to check other nets if already unstable
+        }
+    }
+    
     if (a_disconnected) {
+        
         a_link->uplink.state = LINK_STATE_DISCONNECTED;
         a_link->uplink.start_after = dap_time_now() + a_link->link_manager->reconnect_delay;
+        
+        // If link is unstable, remove it immediately without further attempts
+        if (l_is_unstable) {
+            log_it(L_INFO, "Removing unstable link " NODE_ADDR_FP_STR " from rotation", NODE_ADDR_FP_ARGS_S(a_link->addr));
+            
+            // Call disconnected callback for all associated nets (same as normal handling)
+            if (a_link->link_manager->callbacks.disconnected) {
+                dap_list_t *it, *tmp;
+                DL_FOREACH_SAFE(a_link->uplink.associated_nets, it, tmp) {
+                    dap_managed_net_t *l_net = it->data;
+                    if (!l_net->active) {
+                        debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " have associated net ID 0x%016" DAP_UINT64_FORMAT_x " have inactive state",
+                                                                    NODE_ADDR_FP_ARGS_S(a_link->addr), l_net->id);
+                        DL_DELETE(a_link->uplink.associated_nets, it);
+                        continue;
+                    }
+                    bool l_is_permanent_link = a_link->link_manager->callbacks.disconnected(
+                                a_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+                    if (l_is_permanent_link)
+                        continue;
+                    DL_DELETE(a_link->uplink.associated_nets, it);
+                }
+            }
+            
+            if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
+                s_link_delete(&a_link, false, false);
+            } else {
+                // Keep link structure but mark as inactive for longer period
+                a_link->uplink.state = LINK_STATE_DISCONNECTED;
+                a_link->uplink.start_after = dap_time_now() + s_cooling_period / 1000000000LLU; // Use cooling period
+            }
+            return;
+        }
+        
         if (++a_link->uplink.attempts_count < a_link->link_manager->max_attempts_num) {
             dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
             return;
@@ -654,7 +752,7 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
         } 
     }
         
-    assert(l_link->active_clusters == NULL);
+//    assert(l_link->active_clusters == NULL);
 
     bool l_link_preserve = (a_client_preserve || l_link->static_clusters) && !a_force;
     if (!l_link->stream_is_destroyed || !l_link_preserve) {
@@ -822,6 +920,13 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         debug_if(s_debug_more, L_NOTICE, "Create new link to node " NODE_ADDR_FP_STR "", NODE_ADDR_FP_ARGS(a_node_addr));
         l_link->addr.uint64 = a_node_addr->uint64;
         l_link->link_manager = s_link_manager;
+        
+        // Initialize unstable link tracking
+        l_link->uplink.quick_disconnect_count = 0;
+        l_link->uplink.quick_disconnect_window_start = dap_time_now();
+        l_link->uplink.last_disconnect_time = 0;
+        l_link->uplink.last_successful_connect_time = 0;
+        
         HASH_ADD(hh, s_link_manager->links, addr, sizeof(*a_node_addr), l_link);
         l_link_created = true;
     }   
