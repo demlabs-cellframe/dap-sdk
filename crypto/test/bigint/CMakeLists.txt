@@ -7,31 +7,33 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Include directories
-include_directories(../../include/ ../../../crypto/src/bigint/)
-
 # Find required packages
 set(BOOST_REQUESTED_VERSION 1.65)
 find_package(Boost ${BOOST_REQUESTED_VERSION} COMPONENTS system program_options REQUIRED)
 find_package(GTest REQUIRED)
 
-# Include test directories
-include_directories(${GTEST_INCLUDE_DIRS})
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 # Add all test files
 add_executable(${PROJECT_NAME}
-    bigint_tests.cc
     bigint_logic_tests.cc
     bigint_add_test.cc
+    bigint_test_utilities.cc
+    bigint_test_utilities.h
     prompt_eng_add.cc
+    ../../src/bigint/add.c
+    ../../src/bigint/add_specific_limb_size.c
+    ../../src/bigint/adder_subtractor.c
+    ../../src/bigint/circuit_formalism.c
+    ../../src/bigint/single_bit.c
 )
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
-    dap_core
     dap_crypto
     ${Boost_LIBRARIES}
-    ${GTEST_LIBRARIES}
+    GTest::gtest
+    GTest::gtest_main
     pthread
     m
 )
@@ -39,16 +41,13 @@ target_link_libraries(${PROJECT_NAME}
 # Set include directories for the target
 target_include_directories(${PROJECT_NAME}
     PRIVATE
-    ../../include/
-    ../../../crypto/src/bigint/
+    ../../src/bigint/
     ${GTEST_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
 )
 
-add_test(
-    NAME bigint-test
-    COMMAND bigint_test
-)
+include(GoogleTest)
+gtest_discover_tests(${PROJECT_NAME})
 
 
 

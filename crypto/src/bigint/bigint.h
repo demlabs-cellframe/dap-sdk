@@ -75,7 +75,7 @@ typedef struct dap_bigint {
 
 //This function sets the limb of index limb_index.
 //This function ASSUMES that the user is passing the CORRECT limb_index,
-int dap_set_ith_limb_in_bigint(dap_bigint_t* a, unsigned int limb_index, void* limb_value_pointer){
+static int dap_set_ith_limb_in_bigint(dap_bigint_t* a, unsigned int limb_index, void* limb_value_pointer){
     int limb_size=a->bigint_size;
     switch (limb_size) {
     case 8:
@@ -96,14 +96,14 @@ int dap_set_ith_limb_in_bigint(dap_bigint_t* a, unsigned int limb_index, void* l
 }
 
 //Returns the length of the bigint, in the limb size set in the bigint.
-long dap_get_bigint_limb_count(dap_bigint_t* a){
+static long dap_get_bigint_limb_count(dap_bigint_t* a){
     long limb_count=a->bigint_size/a->limb_size;
     return limb_count;
 }
 
 
 //Returns the length of the larger of the two bigints, IN LIMB COUNT
-long dap_get_bigint_size_max(dap_bigint_t* a,dap_bigint_t* b){
+static long dap_get_bigint_size_max(dap_bigint_t* a,dap_bigint_t* b){
     long limb_count_a=dap_get_bigint_limb_count(a);
     long limb_count_b=dap_get_bigint_limb_count(b);
     return MAX(limb_count_a,limb_count_b);
@@ -114,50 +114,50 @@ long dap_get_bigint_size_max(dap_bigint_t* a,dap_bigint_t* b){
 //This function takes the limb of index "limb_index" from the bigint structure
 //and returns it as a uint64_t value. This value is then used to populate the
 //full adder structure for calculation.
-uint64_t get_val_at_ith_limb_64(dap_bigint_t* a, int limb_index){
+static uint64_t get_val_at_ith_limb_64(dap_bigint_t* a, int limb_index){
 
     uint64_t val_at_ith_limb=a->data.limb_64.body[limb_index];
     return val_at_ith_limb;
 }
 
-uint32_t get_val_at_ith_limb_32(dap_bigint_t* a, int limb_index){
+static uint32_t get_val_at_ith_limb_32(dap_bigint_t* a, int limb_index){
 
     uint32_t val_at_ith_limb=a->data.limb_32.body[limb_index];
     return val_at_ith_limb;
 }
 
-uint16_t get_val_at_ith_limb_16(dap_bigint_t* a, int limb_index){
+static uint16_t get_val_at_ith_limb_16(dap_bigint_t* a, int limb_index){
 
     uint16_t val_at_ith_limb=a->data.limb_16.body[limb_index];
     return val_at_ith_limb;
 }
 
-uint8_t get_val_at_ith_limb_8(dap_bigint_t* a, int limb_index){
+static uint8_t get_val_at_ith_limb_8(dap_bigint_t* a, int limb_index){
 
     uint8_t val_at_ith_limb=a->data.limb_8.body[limb_index];
     return val_at_ith_limb;
 }
 
-int dap_check_2_bigint_limb_size_equal(dap_bigint_t* a, dap_bigint_t* b){
+static int dap_check_2_bigint_limb_size_equal(dap_bigint_t* a, dap_bigint_t* b){
 
     return a->limb_size==b->limb_size;
 }
 
-int dap_check_3_bigint_limb_size_equal(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
+static int dap_check_3_bigint_limb_size_equal(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
 
     return (a->limb_size==b->limb_size)&&(b->limb_size==c->limb_size);
 }
 
-int dap_check_2_bigint_signedness(dap_bigint_t* a, dap_bigint_t* b){
+static int dap_check_2_bigint_signedness(dap_bigint_t* a, dap_bigint_t* b){
     return (a->signedness==b->signedness);
 }
 
-int dap_check_3_bigint_signedness(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
+static int dap_check_3_bigint_signedness(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
     return (a->signedness==b->signedness)&&(b->signedness==c->signedness);
 }
 
 
-int dap_run_2_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b){
+static int dap_run_2_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b){
 
     if(dap_check_2_bigint_limb_size_equal(a,b)){
         return -1;
@@ -171,7 +171,7 @@ int dap_run_2_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b){
 
 }
 
-int dap_run_3_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
+static int dap_run_3_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* c){
 
     if(dap_check_3_bigint_limb_size_equal(a,b,c)){
         return -1;
@@ -188,7 +188,7 @@ int dap_run_3_bigint_security_checks(dap_bigint_t* a, dap_bigint_t* b, dap_bigin
 
 
 
-int dap_limb_bitwise_logical_op_8(uint8_t* a, uint8_t* b, uint8_t* output, int logical_op){
+static int dap_limb_bitwise_logical_op_8(uint8_t* a, uint8_t* b, uint8_t* output, int logical_op){
 
     switch(logical_op){
 
@@ -214,7 +214,7 @@ int dap_limb_bitwise_logical_op_8(uint8_t* a, uint8_t* b, uint8_t* output, int l
 }
 
 
-int dap_bitwise_logical_op_8(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
+static int dap_bitwise_logical_op_8(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
     long output_limb_count=dap_get_bigint_size_max(a,b);
     for(long limb_index=0;limb_index<output_limb_count;limb_index++){
         dap_limb_bitwise_logical_op_8(&(a->data.limb_8.body[limb_index]), &(b->data.limb_8.body[limb_index]), &(output->data.limb_8.body[limb_index]), logical_op);
@@ -223,7 +223,7 @@ int dap_bitwise_logical_op_8(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* out
 }
 
 
-int dap_limb_bitwise_logical_op_16(uint16_t* a, uint16_t* b, uint16_t* output, int logical_op){
+static int dap_limb_bitwise_logical_op_16(uint16_t* a, uint16_t* b, uint16_t* output, int logical_op){
 
     switch(logical_op){
 
@@ -249,7 +249,7 @@ int dap_limb_bitwise_logical_op_16(uint16_t* a, uint16_t* b, uint16_t* output, i
 }
 
 
-int dap_bitwise_logical_op_16(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
+static int dap_bitwise_logical_op_16(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
     long output_limb_count=dap_get_bigint_size_max(a,b);
     for(long limb_index=0;limb_index<output_limb_count;limb_index++){
         dap_limb_bitwise_logical_op_16(&(a->data.limb_16.body[limb_index]), &(b->data.limb_16.body[limb_index]), &(output->data.limb_16.body[limb_index]), logical_op);
@@ -258,7 +258,7 @@ int dap_bitwise_logical_op_16(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* ou
 }
 
 
-int dap_limb_bitwise_logical_op_32(uint32_t* a, uint32_t* b, uint32_t* output, int logical_op){
+static int dap_limb_bitwise_logical_op_32(uint32_t* a, uint32_t* b, uint32_t* output, int logical_op){
 
     switch(logical_op){
 
@@ -283,7 +283,7 @@ int dap_limb_bitwise_logical_op_32(uint32_t* a, uint32_t* b, uint32_t* output, i
 
 }
 
-int dap_bitwise_logical_op_32(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
+static int dap_bitwise_logical_op_32(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
     long output_limb_count=dap_get_bigint_size_max(a,b);
     for(long limb_index=0;limb_index<output_limb_count;limb_index++){
         dap_limb_bitwise_logical_op_32(&(a->data.limb_32.body[limb_index]), &(b->data.limb_32.body[limb_index]), &(output->data.limb_32.body[limb_index]), logical_op);
@@ -292,7 +292,7 @@ int dap_bitwise_logical_op_32(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* ou
 }
 
 
-int dap_limb_bitwise_logical_op_64(uint64_t* a, uint64_t* b, uint64_t* output, int logical_op){
+static int dap_limb_bitwise_logical_op_64(uint64_t* a, uint64_t* b, uint64_t* output, int logical_op){
 
     switch(logical_op){
 
@@ -317,7 +317,7 @@ int dap_limb_bitwise_logical_op_64(uint64_t* a, uint64_t* b, uint64_t* output, i
 
 }
 
-int dap_bitwise_logical_op_64(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
+static int dap_bitwise_logical_op_64(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
     long output_limb_count=dap_get_bigint_size_max(a,b);
     for(long limb_index=0;limb_index<output_limb_count;limb_index++){
         dap_limb_bitwise_logical_op_64(&(a->data.limb_64.body[limb_index]), &(b->data.limb_64.body[limb_index]), &(output->data.limb_64.body[limb_index]), logical_op);
@@ -328,7 +328,7 @@ int dap_bitwise_logical_op_64(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* ou
 
 
 
-int dap_bitwise_logical_op(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
+static int dap_bitwise_logical_op(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* output, int logical_op){
     //Essential security check.
     if (dap_run_3_bigint_security_checks(a,b,output)!=0){
         log_it(L_ERROR, "Incompatible big integer parameters");

@@ -1,4 +1,4 @@
-/*
+
 #include <gtest/gtest.h>
 #include "bigint.h"
 #include "add_specific_limb_size.h"
@@ -237,4 +237,3 @@ TEST_F(BigIntAddTest, NullPointers) {
     delete[] b.data.limb_64.body;
     delete[] sum.data.limb_64.body;
 } 
-*/ 
