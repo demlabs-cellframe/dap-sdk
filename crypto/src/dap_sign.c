@@ -608,10 +608,10 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
              : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
-             json_object_object_add(a_json_out, a_version == 1 ? "public_key_hash" : "pkey_hash", json_object_new_string(l_hash_str));             
+             json_object_object_add(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", json_object_new_string(l_hash_str));             
     }
-    json_object_object_add(a_json_out, a_version == 1 ? "public_key_size" : "pkey_size", json_object_new_uint64(a_sign->header.sign_pkey_size));
-    json_object_object_add(a_json_out, a_version == 1 ? "signature_size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));
+    json_object_object_add(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", json_object_new_uint64(a_sign->header.sign_pkey_size));
+    json_object_object_add(a_json_out, a_version == 1 ? "Signature size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));
 
 }
 
