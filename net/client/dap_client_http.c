@@ -1217,7 +1217,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
                 }
             }
             
-            if(l_client_http->error_callback) {
+            if(!l_client_http->were_callbacks_called && l_client_http->error_callback) {
                 l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
                 l_client_http->were_callbacks_called = true;
             }
