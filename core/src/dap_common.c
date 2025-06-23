@@ -820,6 +820,24 @@ dap_maxint_str_t dap_itoa_(long long i)
     return l_ret;
 }
 
+/**
+ * @brief itoa  The function converts an unsigned integer num to a string equivalent and places the result in a string
+ * @param[in] i number
+ * @return
+ */
+dap_maxint_str_t dap_utoa_(unsigned long long i)
+{
+    /* Room for INT_DIGITS digits, - and '\0' */
+    char buf[INT_DIGITS + 2], *p = buf + INT_DIGITS + 1;
+    do {
+        *--p = '0' + (i % 10);
+        i /= 10;
+    } while (i != 0);
+    dap_maxint_str_t l_ret = { };
+    memcpy(&l_ret, p, (size_t)(buf + sizeof(buf) - p - 1));
+    return l_ret;
+}
+
 #endif
 
 #define BREAK_LATENCY   1
