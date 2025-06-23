@@ -32,6 +32,9 @@
 extern "C" {
 #endif
 
+// Forward declarations
+typedef struct dap_http2_client dap_http2_client_t;
+
 // Client states
 typedef enum {
     DAP_HTTP2_CLIENT_STATE_IDLE,
@@ -55,15 +58,15 @@ typedef enum {
 
 // === CALLBACK TYPES ===
 
-typedef void (*dap_http2_client_response_cb_t)(struct dap_http2_client *a_client,
+typedef void (*dap_http2_client_response_cb_t)(dap_http2_client_t *a_client,
                                                int a_status_code,
                                                const void *a_data,
                                                size_t a_data_size);
 
-typedef void (*dap_http2_client_error_cb_t)(struct dap_http2_client *a_client,
+typedef void (*dap_http2_client_error_cb_t)(dap_http2_client_t *a_client,
                                             dap_http2_client_error_t a_error);
 
-typedef void (*dap_http2_client_progress_cb_t)(struct dap_http2_client *a_client,
+typedef void (*dap_http2_client_progress_cb_t)(dap_http2_client_t *a_client,
                                                size_t a_bytes_received,
                                                size_t a_total_bytes);
 
@@ -107,7 +110,6 @@ typedef struct dap_http2_client_request {
     // Request details
     char *method;
     char *url;
-    char *path;
     char *host;
     uint16_t port;
     bool use_ssl;
@@ -115,15 +117,11 @@ typedef struct dap_http2_client_request {
     // Headers
     char *content_type;
     char *custom_headers;
-    char *cookie;
-    char *user_agent;
     
     // Body
     void *body_data;
     size_t body_size;
     
-    // Options
-    bool follow_redirects;
 } dap_http2_client_request_t;
 
 // === MAIN CLIENT STRUCTURE ===
@@ -131,7 +129,6 @@ typedef struct dap_http2_client_request {
 typedef struct dap_http2_client {
     // === CLIENT STATE ===
     dap_http2_client_state_t state;
-    uint64_t request_id;
     
     // === CONFIGURATION ===
     dap_http2_client_config_t config;
@@ -147,14 +144,7 @@ typedef struct dap_http2_client {
     dap_http2_client_callbacks_t callbacks;
     void *callbacks_arg;
     
-    // === STATISTICS ===
-    time_t ts_request_start;
-    time_t ts_first_byte;
-    time_t ts_complete;
-    
-    // === FLAGS ===
-    bool auto_cleanup;
-} dap_http2_client_t;
+};
 
 // === GLOBAL INITIALIZATION ===
 
@@ -328,20 +318,6 @@ bool dap_http2_client_is_error(const dap_http2_client_t *a_client);
 // === STATISTICS ===
 
 /**
- * @brief Get bytes sent (from session statistics)
- * @param a_client Client instance
- * @return Number of bytes sent
- */
-size_t dap_http2_client_get_bytes_sent(const dap_http2_client_t *a_client);
-
-/**
- * @brief Get bytes received (from session statistics)
- * @param a_client Client instance
- * @return Number of bytes received
- */
-size_t dap_http2_client_get_bytes_received(const dap_http2_client_t *a_client);
-
-/**
  * @brief Get worker from session
  * @param a_client Client instance
  * @return Worker instance or NULL
@@ -361,13 +337,6 @@ bool dap_http2_client_is_async(const dap_http2_client_t *a_client);
  * @return true if cancelled
  */
 bool dap_http2_client_is_cancelled(const dap_http2_client_t *a_client);
-
-/**
- * @brief Get request duration
- * @param a_client Client instance
- * @return Duration in milliseconds
- */
-uint64_t dap_http2_client_get_duration_ms(const dap_http2_client_t *a_client);
 
 // === CONVENIENCE FUNCTIONS ===
 
