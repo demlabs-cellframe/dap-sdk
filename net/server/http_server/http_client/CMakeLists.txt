@@ -12,3 +12,6 @@ endif()
 
 add_library(${PROJECT_NAME} STATIC ${HTTP_SRCS} ${HTTP_HDRS})
 
+# Link with common HTTP module
+target_link_libraries(${PROJECT_NAME} dap_http_common)
+

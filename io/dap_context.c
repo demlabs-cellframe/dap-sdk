@@ -441,7 +441,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 else if (l_cur->pending_write)
                     --l_cur->pending_write; 
                 if ( !l_cur->pending_read && !l_cur->pending_write )
-                    dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));                    
+                    l_cur->context 
+                        ? dap_events_socket_remove_and_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags))
+                        : dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));                    
                 continue;
             }
             switch (l_cur->type) {
