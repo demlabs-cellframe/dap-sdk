@@ -38,7 +38,7 @@ typedef struct dap_json_rpc_request
     int version;
     dap_json_rpc_params_t *params;
     uint64_t id;
-}dap_json_rpc_request_t;
+} dap_json_rpc_request_t;
 
 typedef struct dap_json_rpc_http_request
 {

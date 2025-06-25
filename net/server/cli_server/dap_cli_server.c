@@ -557,8 +557,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
 
     // create response
     dap_json_rpc_response_t* response = reply_body
-            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id)
-            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id);
+            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id, request->version)
+            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id, request->version);
     json_object_put(l_json_arr_reply);
     char* response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
