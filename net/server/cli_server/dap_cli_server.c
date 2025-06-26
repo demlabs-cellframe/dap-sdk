@@ -609,3 +609,8 @@ DAP_INLINE void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array)
     s_allowed_cmd_array = a_cmd_array;
     s_allowed_cmd_control = true;
 }
+
+DAP_INLINE int dap_cli_server_get_version()
+{
+    return s_cli_version;
+}

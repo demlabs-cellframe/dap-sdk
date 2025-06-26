@@ -98,3 +98,4 @@ void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fu
 //void dap_json_rpo_handler_cli_run(const char *a_method, json_object *a_params, json_object **obj_result);
 void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback);
 void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array);
+int dap_cli_server_get_version();
