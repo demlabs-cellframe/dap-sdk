@@ -128,7 +128,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     if (json_object_object_get_ex(jobj, "version", &version_obj))
         response->version = json_object_get_int64(version_obj);
     else {
-        log_it(L_DEBUG, "Can't find response version, apply version 1", 1);
+        log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
     }
 
