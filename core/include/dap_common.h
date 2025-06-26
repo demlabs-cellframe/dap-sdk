@@ -1054,7 +1054,9 @@ typedef union dap_maxint_str {
     const char s[INT_DIGITS + 2];
 } dap_maxint_str_t;
 dap_maxint_str_t dap_itoa_(long long i);
+dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
+#define dap_utoa(i) (char*)dap_utoa_(i).s
 
 unsigned dap_gettid();
 
@@ -1151,6 +1153,22 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
     return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
         || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
         ? 0 : -1;
+}
+
+static inline void *dap_memmem_n(const void *hay, size_t haylen,
+                                 const void *needle, size_t needlelen)
+{
+    if (!hay || !needle || needlelen == 0 || haylen < needlelen)
+        return NULL;
+
+    const uint8_t *h = (const uint8_t *)hay;
+    const uint8_t *n = (const uint8_t *)needle;
+
+    for (size_t i = 0; i <= haylen - needlelen; ++i) {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void *)(h + i);
+    }
+    return NULL;
 }
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
