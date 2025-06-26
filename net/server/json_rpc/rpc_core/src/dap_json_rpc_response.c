@@ -1,4 +1,5 @@
 #include "dap_json_rpc_response.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_response"
 #define INDENTATION_LEVEL "    "
@@ -164,7 +165,7 @@ int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history"
     };
-    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[i]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
             return i+1;
         }
@@ -251,7 +252,8 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
             json_object *j_obj_sum, *j_obj_accepted, *j_obj_rejected, *j_obj_chain, *j_obj_net_name;
             if (json_object_object_get_ex(json_obj_result, "tx_sum", &j_obj_sum) &&
                 json_object_object_get_ex(json_obj_result, "accepted_tx", &j_obj_accepted) &&
-                json_object_object_get_ex(json_obj_result, "rejected_tx", &j_obj_rejected)) {
+                json_object_object_get_ex(json_obj_result, "rejected_tx", &j_obj_rejected)) 
+            {
                 json_object_object_get_ex(json_obj_result, "chain", &j_obj_chain);
                 json_object_object_get_ex(json_obj_result, "network", &j_obj_net_name);
 
@@ -273,7 +275,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     }
 }
 
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
     if (!response) {
         printf("Empty response");
         return -1;

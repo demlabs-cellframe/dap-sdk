@@ -117,7 +117,7 @@ void json_print_value(struct json_object *obj, const char *key, int indent_level
  *         -2 if the JSON object is NULL,
  *         and -3 if the JSON object length is 0.
  */
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name);
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt);
 
 #ifdef __cplusplus
 }
