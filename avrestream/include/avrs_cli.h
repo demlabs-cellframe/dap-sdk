@@ -24,3 +24,6 @@
 
 int avrs_cli_init();
 void avrs_cli_deinit();
+
+// Static function prototype
+static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply, int a_version);
