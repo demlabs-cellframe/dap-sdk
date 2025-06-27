@@ -206,7 +206,7 @@ JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNI
         dap_json_rpc_params_t *params = dap_json_rpc_params_create();
         dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
         DAP_DELETE(l_cmd_str);
-        dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0, 1);
+        dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0, dap_config_get_item_int32_default(g_config, "cli-server", "version", 1));
         char    *req_str = dap_json_rpc_request_to_json_string(a_request),
                 *res = dap_cli_cmd_exec(req_str);
         __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Full command %s", req_str);
