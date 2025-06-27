@@ -122,7 +122,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     }
 #ifdef DAP_OS_WINDOWS
     if (l_ret < a_out_size_max)
-        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
+        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, "%s", l_tz_str);
 #endif
     a_out[l_ret] = '\0';
     return l_ret;

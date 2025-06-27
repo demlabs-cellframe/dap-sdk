@@ -115,6 +115,12 @@ if (DAPSDK_MODULES MATCHES "network-link_manager")
     message("[+] Module 'link manager'")
 endif()
 
+# Common HTTP functionality for client and server
+if (DAPSDK_MODULES MATCHES "network-client" OR DAPSDK_MODULES MATCHES "network-server")
+    add_subdirectory(net/common/http)
+    message("[+] Module 'common http'")
+endif()
+
 # Networking client
 if (DAPSDK_MODULES MATCHES "network-client")
     add_subdirectory(net/client)
