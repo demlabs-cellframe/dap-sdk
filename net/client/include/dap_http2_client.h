@@ -23,31 +23,48 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include "dap_common.h"
 #include "dap_worker.h"
+#include "dap_stream_callbacks.h"
 #include "dap_http2_session.h"
 #include "dap_http2_stream.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// === UID CONSTANTS ===
+#define INVALID_STREAM_UID     0x0000000000000000UL
+#define MIN_VALID_STREAM_UID   0x0000000000000001UL
+#define MAX_WORKERS            256
 
-// Forward declarations
-typedef struct dap_http2_client dap_http2_client_t;
-
-// Client states
+// === EFFICIENT HTTP METHODS ===
 typedef enum {
-    DAP_HTTP2_CLIENT_STATE_IDLE,
-    DAP_HTTP2_CLIENT_STATE_REQUESTING,
-    DAP_HTTP2_CLIENT_STATE_RECEIVING,
-    DAP_HTTP2_CLIENT_STATE_COMPLETE,
-    DAP_HTTP2_CLIENT_STATE_ERROR,
-    DAP_HTTP2_CLIENT_STATE_CANCELLED
+    DAP_HTTP_METHOD_GET = 0,
+    DAP_HTTP_METHOD_POST,
+    DAP_HTTP_METHOD_PUT,
+    DAP_HTTP_METHOD_DELETE,
+    DAP_HTTP_METHOD_HEAD,
+    DAP_HTTP_METHOD_OPTIONS,
+    DAP_HTTP_METHOD_PATCH,
+    DAP_HTTP_METHOD_CONNECT,
+    DAP_HTTP_METHOD_TRACE,
+    DAP_HTTP_METHOD_COUNT  // Must be last - used for array bounds
+} dap_http_method_t;
+
+// Fast method-to-string conversion (array indexing)
+extern const char* const DAP_HTTP_METHOD_STRINGS[DAP_HTTP_METHOD_COUNT];
+
+// === HTTP CLIENT STATES ===
+typedef enum {
+    DAP_HTTP2_CLIENT_STATE_IDLE,           // Клиент создан, но запрос не отправлен
+    DAP_HTTP2_CLIENT_STATE_REQUESTING,     // Запрос отправляется/отправлен
+    DAP_HTTP2_CLIENT_STATE_RECEIVING,      // Получаем ответ
+    DAP_HTTP2_CLIENT_STATE_COMPLETE,       // Ответ получен полностью
+    DAP_HTTP2_CLIENT_STATE_ERROR,          // Ошибка в процессе
+    DAP_HTTP2_CLIENT_STATE_CANCELLED       // Запрос отменён пользователем
 } dap_http2_client_state_t;
 
-// Client error types
+// === HTTP CLIENT ERROR CODES ===
 typedef enum {
-    DAP_HTTP2_CLIENT_ERROR_NONE,
+    DAP_HTTP2_CLIENT_ERROR_NONE = 0,
     DAP_HTTP2_CLIENT_ERROR_INVALID_URL,
     DAP_HTTP2_CLIENT_ERROR_INVALID_METHOD,
     DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED,
@@ -55,6 +72,41 @@ typedef enum {
     DAP_HTTP2_CLIENT_ERROR_CANCELLED,
     DAP_HTTP2_CLIENT_ERROR_INTERNAL
 } dap_http2_client_error_t;
+
+// === EFFICIENT UTILITY FUNCTIONS ===
+
+/**
+ * @brief Fast method to string conversion (O(1) array access)
+ * @param a_method HTTP method enum
+ * @return Method string or NULL if invalid
+ */
+static inline const char* dap_http_method_to_string(dap_http_method_t a_method) {
+    return (a_method < DAP_HTTP_METHOD_COUNT) ? DAP_HTTP_METHOD_STRINGS[a_method] : NULL;
+}
+
+/**
+ * @brief Parse string to HTTP method enum (optimized)
+ * @param a_method_str Method string
+ * @return Method enum or DAP_HTTP_METHOD_COUNT if invalid
+ */
+dap_http_method_t dap_http_method_from_string(const char *a_method_str);
+
+// === UID UTILITIES ===
+static inline uint8_t dap_http2_extract_worker_id(uint64_t stream_uid) {
+    return dap_stream_uid_extract_worker_id(stream_uid);
+}
+
+static inline uint32_t dap_http2_extract_esocket_uid(uint64_t stream_uid) {
+    return dap_stream_uid_extract_esocket_uid(stream_uid);
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Forward declarations
+typedef struct dap_http2_client dap_http2_client_t;
+// NOTE: dap_stream_profile_t is defined in dap_stream_callbacks.h
 
 // === CALLBACK TYPES ===
 
@@ -83,7 +135,6 @@ typedef struct dap_http2_client_config {
     // Timeouts
     uint64_t connect_timeout_ms;
     uint64_t read_timeout_ms;
-    uint64_t total_timeout_ms;
     
     // Limits
     size_t max_response_size;
@@ -108,7 +159,7 @@ typedef struct dap_http2_client_config {
 
 typedef struct dap_http2_client_request {
     // Request details
-    char *method;
+    dap_http_method_t method;        // EFFICIENT: enum instead of string
     char *url;
     char *host;
     uint16_t port;
@@ -127,8 +178,11 @@ typedef struct dap_http2_client_request {
 // === MAIN CLIENT STRUCTURE ===
 
 typedef struct dap_http2_client {
+    // === UID MANAGEMENT ===
+    _Atomic uint64_t stream_uid;              // Composite UID (worker_id + stream_id)
+    
     // === CLIENT STATE ===
-    dap_http2_client_state_t state;
+    _Atomic dap_http2_client_state_t state;
     
     // === CONFIGURATION ===
     dap_http2_client_config_t config;
@@ -136,15 +190,11 @@ typedef struct dap_http2_client {
     // === CURRENT REQUEST ===
     dap_http2_client_request_t *current_request;
     
-    // === NETWORK LAYERS ===
-    dap_http2_session_t *session;
-    dap_http2_stream_t *stream;
-    
     // === CALLBACKS ===
     dap_http2_client_callbacks_t callbacks;
     void *callbacks_arg;
     
-};
+} dap_http2_client_t;
 
 // === GLOBAL INITIALIZATION ===
 
@@ -162,11 +212,21 @@ void dap_http2_client_deinit(void);
 // === CLIENT LIFECYCLE ===
 
 /**
- * @brief Create new HTTP2 client
- * @param a_worker Worker thread to assign client to
+ * @brief Create new HTTP2 client with default timeouts
  * @return New client instance or NULL on error
  */
 dap_http2_client_t *dap_http2_client_create(dap_worker_t *a_worker);
+
+/**
+ * @brief Create new HTTP2 client with custom timeouts
+ * @param a_worker Worker thread
+ * @param a_connect_timeout_ms Connect timeout in milliseconds
+ * @param a_read_timeout_ms Read timeout in milliseconds
+ * @return New client instance or NULL on error
+ */
+dap_http2_client_t *dap_http2_client_create_with_timeouts(dap_worker_t *a_worker,
+                                                          uint64_t a_connect_timeout_ms,
+                                                          uint64_t a_read_timeout_ms);
 
 /**
  * @brief Delete client and cleanup resources
@@ -223,12 +283,23 @@ void dap_http2_client_request_delete(dap_http2_client_request_t *a_request);
 int dap_http2_client_request_set_url(dap_http2_client_request_t *a_request, const char *a_url);
 
 /**
- * @brief Set request method
+ * @brief Set request method (string version)
  * @param a_request Request instance
- * @param a_method HTTP method (GET, POST, etc.)
+ * @param a_method HTTP method string (GET, POST, etc.)
  * @return 0 on success, negative on error
  */
 int dap_http2_client_request_set_method(dap_http2_client_request_t *a_request, const char *a_method);
+
+/**
+ * @brief Set request method (EFFICIENT: enum version)
+ * @param a_request Request instance
+ * @param a_method HTTP method enum
+ */
+static inline void dap_http2_client_request_set_method_enum(dap_http2_client_request_t *a_request, dap_http_method_t a_method) {
+    if (a_request && a_method < DAP_HTTP_METHOD_COUNT) {
+        a_request->method = a_method;
+    }
+}
 
 /**
  * @brief Set request headers
@@ -318,11 +389,11 @@ bool dap_http2_client_is_error(const dap_http2_client_t *a_client);
 // === STATISTICS ===
 
 /**
- * @brief Get worker from session
+ * @brief Get stream UID from client
  * @param a_client Client instance
- * @return Worker instance or NULL
+ * @return Stream UID or INVALID_STREAM_UID if not assigned
  */
-dap_worker_t *dap_http2_client_get_worker(const dap_http2_client_t *a_client);
+uint64_t dap_http2_client_get_stream_uid(const dap_http2_client_t *a_client);
 
 /**
  * @brief Check if client is in async mode (has callbacks)
@@ -337,6 +408,17 @@ bool dap_http2_client_is_async(const dap_http2_client_t *a_client);
  * @return true if cancelled
  */
 bool dap_http2_client_is_cancelled(const dap_http2_client_t *a_client);
+
+// === STREAM INITIALIZATION ===
+
+/**
+ * @brief Create client with stream profile (embedded transitions)
+ * @param a_worker Worker thread
+ * @param a_profile Stream profile with all callbacks
+ * @return New client instance or NULL on error
+ */
+dap_http2_client_t *dap_http2_client_create_with_profile(dap_worker_t *a_worker,
+                                                         const dap_stream_profile_t *a_profile);
 
 // === CONVENIENCE FUNCTIONS ===
 

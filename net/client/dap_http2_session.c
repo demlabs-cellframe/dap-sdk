@@ -40,43 +40,29 @@ static void s_session_ssl_connected_callback(dap_events_socket_t *a_esocket);
 #endif
 
 // Session lifecycle
-dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker)
+dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker, uint64_t a_connect_timeout_ms)
 {
     if (!a_worker) {
         log_it(L_ERROR, "Invalid worker parameter for session creation");
         return NULL;
     }
 
-    // Allocate session structure
-    dap_http2_session_t *l_session = DAP_NEW_Z(dap_http2_session_t);
-    if (!l_session) {
-        log_it(L_CRITICAL, "Failed to allocate memory for HTTP2 session");
-        return NULL;
-    }
-
-    // Initialize session
-    l_session->worker = a_worker;
-    l_session->state = DAP_HTTP2_SESSION_STATE_IDLE;
-    l_session->is_ssl = false;
-    l_session->ts_created = time(NULL);
-    l_session->ts_established = 0;
-    l_session->current_stream = NULL;
-    l_session->next_stream_id = 1;  // Client streams start with odd numbers
-    
-    // Initialize timers to NULL
-    l_session->connect_timer = NULL;
-    l_session->read_timer = NULL;
-    
-    // Initialize callbacks
-    memset(&l_session->callbacks, 0, sizeof(l_session->callbacks));
-    l_session->callbacks_arg = NULL;
-    
-    // Socket will be created later in connect()
-    l_session->es = NULL;
-
-    log_it(L_DEBUG, "Created HTTP2 session %p on worker %u", l_session, a_worker->id);
-    
+    dap_http2_session_t *l_session = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http2_session_t, NULL);
+    *l_session = (dap_http2_session_t){ 
+        .worker = a_worker, 
+        .state = DAP_HTTP2_SESSION_STATE_IDLE, 
+        .ts_created = time(NULL), 
+        .stream_id = 1,
+        .connect_timeout_ms = a_connect_timeout_ms ? a_connect_timeout_ms : 30000
+    };
+    log_it(L_DEBUG, "Created HTTP2 session %p on worker %u (timeout: %llu ms)", 
+           l_session, a_worker->id, l_session->connect_timeout_ms);
     return l_session;
+}
+
+dap_http2_session_t *dap_http2_session_create_default(dap_worker_t *a_worker)
+{
+    return dap_http2_session_create(a_worker, 0); // 0 = use default timeout
 }
 
 int dap_http2_session_connect(dap_http2_session_t *a_session, 
@@ -84,121 +70,86 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
                               uint16_t a_port, 
                               bool a_use_ssl)
 {
-    if (!a_session || !a_addr) {
-        log_it(L_ERROR, "Invalid parameters for session connect");
-        return -EINVAL;
-    }
-
-    if (a_session->state != DAP_HTTP2_SESSION_STATE_IDLE) {
-        log_it(L_ERROR, "Session is not in IDLE state, cannot connect");
-        return -EBUSY;
-    }
-
-    log_it(L_DEBUG, "Connecting HTTP2 session %p to %s:%u (SSL: %s)", 
-           a_session, a_addr, a_port, a_use_ssl ? "yes" : "no");
-
-    // Create socket
+    dap_return_val_if_fail_err( a_session && a_addr,
+        -EINVAL, "Invalid parameters for session connect" );
+    dap_return_val_if_fail_err( a_session->state == DAP_HTTP2_SESSION_STATE_IDLE,
+        -EBUSY, "Session is not in IDLE state, cannot connect" );
+    log_it(L_DEBUG, "Connecting HTTP2 session %p to %s:%u (SSL: %s)",
+                    a_session, a_addr, a_port, a_use_ssl ? "enabled" : "disabled");
+#ifdef DAP_NET_CLIENT_NO_SSL
+    if ( a_use_ssl )
+        return log_it(L_ERROR, "SSL requested but SSL support is disabled"), -ENOTSUP;
+#endif
+    struct sockaddr_storage l_addr_storage = { };
+    if ( dap_net_resolve_host(a_addr, dap_itoa(a_port), false, &l_addr_storage, NULL) < 0 )
+        return log_it(L_ERROR, "Failed to resolve host '%s : %u'", a_addr, a_port), -EHOSTUNREACH;
+    int l_error = 0;
 #ifdef DAP_OS_WINDOWS
-    SOCKET l_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (l_socket == INVALID_SOCKET) {
-        int l_error = WSAGetLastError();
-        log_it(L_ERROR, "Socket create error: %d", l_error);
-        return -l_error;
-    }
+#define m_set_error(a_error) do { a_error = WSAGetLastError(); } while (0)
 #else
-    int l_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (l_socket == -1) {
-        int l_error = errno;
-        log_it(L_ERROR, "Error %d with socket create", l_error);
-        return -l_error;
-    }
+#define m_set_error(a_error) do { a_error = errno; } while (0)
 #endif
 
-    // Set socket non-blocking
+#ifdef DAP_OS_WINDOWS
+    SOCKET l_socket;
+#else
+    int l_socket;
+#endif
+    l_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if ( l_socket == INVALID_SOCKET ) {
+        m_set_error(l_error);
+        return log_it(L_ERROR, "socket() error %d: %s", l_error, dap_strerror(l_error)), -l_error;
+    }
+
 #ifdef DAP_OS_WINDOWS
     u_long l_socket_flags = 1;
-    if (ioctlsocket(l_socket, FIONBIO, &l_socket_flags)) {
-        int l_error = WSAGetLastError();
-        log_it(L_ERROR, "Error setting socket non-blocking: %d", l_error);
-        closesocket(l_socket);
-        return -l_error;
-    }
+    if ( ioctlsocket(l_socket, FIONBIO, &l_socket_flags) ) {
+        l_error = WSAGetLastError();
+        const char *l_fun = "ioctlsocket()"; 
 #else
     int l_socket_flags = fcntl(l_socket, F_GETFL);
-    if (l_socket_flags == -1) {
-        int l_error = errno;
-        log_it(L_ERROR, "Error %d can't get socket flags", l_error);
-        close(l_socket);
-        return -l_error;
-    }
-    if (fcntl(l_socket, F_SETFL, l_socket_flags | O_NONBLOCK) == -1) {
-        int l_error = errno;
-        log_it(L_ERROR, "Error %d can't set socket non-blocking", l_error);
-        close(l_socket);
-        return -l_error;
-    }
+    if ( l_socket_flags == -1 || fcntl(l_socket, F_SETFL, l_socket_flags | O_NONBLOCK) == -1 ) {
+        l_error = errno;
+        const char *l_fun = "fcntl()";
 #endif
-
-    // Setup socket callbacks (will be defined later)
+        closesocket(l_socket);
+        return log_it(L_ERROR, "%s error %d: %s", l_fun, l_error, dap_strerror(l_error)), -l_error;
+    }
     static dap_events_socket_callbacks_t l_session_callbacks = {
-        .connected_callback = s_session_connected_callback,
+        .connected_callback = 
+#ifndef DAP_NET_CLIENT_NO_SSL
+            a_use_ssl ? s_session_ssl_connected_callback : s_session_connected_callback,
+#else
+            s_session_connected_callback,
+#endif
         .read_callback = s_session_read_callback,
         .error_callback = s_session_error_callback,
         .delete_callback = s_session_delete_callback
     };
 
-    // Wrap socket in events socket
     dap_events_socket_t *l_ev_socket = dap_events_socket_wrap_no_add(l_socket, &l_session_callbacks);
-    if (!l_ev_socket) {
-        log_it(L_ERROR, "Failed to wrap socket in events socket");
-#ifdef DAP_OS_WINDOWS
+    if ( !l_ev_socket ) {
         closesocket(l_socket);
-#else
-        close(l_socket);
-#endif
-        return -ENOMEM;
+        return log_it(L_ERROR, "Failed to wrap socket in events socket"), -ENOMEM;
     }
 
-    // Link session to socket
     l_ev_socket->_inheritor = a_session;
     a_session->es = l_ev_socket;
-    a_session->is_ssl = a_use_ssl;
 
-    // Resolve address
-    if (dap_net_resolve_host(a_addr, dap_itoa(a_port), false, 
-                            &l_ev_socket->addr_storage, NULL) < 0) {
-        log_it(L_ERROR, "Failed to resolve host '%s:%u'", a_addr, a_port);
-        dap_events_socket_delete_unsafe(l_ev_socket, true);
-        a_session->es = NULL;
-        return -EHOSTUNREACH;
-    }
-
-    // Set remote address info
+    l_ev_socket->addr_storage = l_addr_storage;
+    a_session->encryption_type = a_use_ssl ? DAP_SESSION_ENCRYPTION_TLS : DAP_SESSION_ENCRYPTION_NONE;
     dap_strncpy(l_ev_socket->remote_addr_str, a_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_port;
-
-    // Setup socket for connection
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
 
-    // Set SSL callback if needed
-    if (a_use_ssl) {
-#ifndef DAP_NET_CLIENT_NO_SSL
-        l_ev_socket->callbacks.connected_callback = s_session_ssl_connected_callback;
-#else
-        log_it(L_ERROR, "SSL requested but SSL support is disabled");
-        dap_events_socket_delete_unsafe(l_ev_socket, true);
-        a_session->es = NULL;
-        return -ENOTSUP;
-#endif
-    }
-
-    // Change session state
     a_session->state = DAP_HTTP2_SESSION_STATE_CONNECTING;
 
-    // Attempt connection
+    // Connection
 #ifdef DAP_EVENTS_CAPS_IOCP
-    // Windows IOCP path
+    // Windows IOCP approach
+    log_it(L_DEBUG, "Connecting to %s:%u", a_addr, a_port);
+    l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_worker_add_events_socket(a_session->worker, l_ev_socket);
     
@@ -216,7 +167,7 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     }
     return 0;
 #else
-    // Unix/Linux path
+    // Unix/Linux approach
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     int l_connect_result = connect(l_socket, (struct sockaddr *)&l_ev_socket->addr_storage, 
                                   sizeof(struct sockaddr_in));
@@ -225,7 +176,7 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
         // Connected immediately
         log_it(L_DEBUG, "Connected immediately to %s:%u", a_addr, a_port);
         dap_worker_add_events_socket(a_session->worker, l_ev_socket);
-        if (a_use_ssl) {
+        if (a_session->encryption_type == DAP_SESSION_ENCRYPTION_TLS) {
 #ifndef DAP_NET_CLIENT_NO_SSL
             s_session_ssl_connected_callback(l_ev_socket);
 #endif
@@ -294,13 +245,7 @@ void dap_http2_session_close(dap_http2_session_t *a_session)
         a_session->connect_timer = NULL;
     }
 
-    if (a_session->read_timer) {
-        if (a_session->read_timer->callback_arg) {
-            DAP_DELETE(a_session->read_timer->callback_arg);
-        }
-        dap_timerfd_delete_unsafe(a_session->read_timer);
-        a_session->read_timer = NULL;
-    }
+    // TODO: Clean up read timer on stream level
 
     // Close socket
     if (a_session->es) {
@@ -320,10 +265,10 @@ void dap_http2_session_delete(dap_http2_session_t *a_session)
     // Close session first
     dap_http2_session_close(a_session);
 
-    // Clean up current stream
-    if (a_session->current_stream) {
-        dap_http2_stream_delete(a_session->current_stream);
-        a_session->current_stream = NULL;
+    // Clean up stream
+    if (a_session->stream) {
+        dap_http2_stream_delete(a_session->stream);
+        a_session->stream = NULL;
     }
 
     // Clean up socket (should already be done in close, but safety)
@@ -338,14 +283,18 @@ void dap_http2_session_delete(dap_http2_session_t *a_session)
 }
 
 // Configuration
-void dap_http2_session_set_timeouts(dap_http2_session_t *a_session,
-                                    uint64_t a_connect_timeout_ms,
-                                    uint64_t a_read_timeout_ms)
+void dap_http2_session_set_connect_timeout(dap_http2_session_t *a_session,
+                                           uint64_t a_connect_timeout_ms)
 {
-    // TODO: Implement timeout configuration
-    UNUSED(a_session);
-    UNUSED(a_connect_timeout_ms);
-    UNUSED(a_read_timeout_ms);
+    if (!a_session) {
+        return;
+    }
+    a_session->connect_timeout_ms = a_connect_timeout_ms;
+}
+
+uint64_t dap_http2_session_get_connect_timeout(const dap_http2_session_t *a_session)
+{
+    return a_session ? a_session->connect_timeout_ms : 0;
 }
 
 void dap_http2_session_set_callbacks(dap_http2_session_t *a_session,
@@ -356,6 +305,21 @@ void dap_http2_session_set_callbacks(dap_http2_session_t *a_session,
     UNUSED(a_session);
     UNUSED(a_callbacks);
     UNUSED(a_callbacks_arg);
+}
+
+int dap_http2_session_upgrade(dap_http2_session_t *a_session,
+                             const dap_session_upgrade_context_t *a_upgrade_context)
+{
+    if (!a_session || !a_upgrade_context) {
+        log_it(L_ERROR, "Invalid parameters for session upgrade");
+        return -1;
+    }
+    
+    // TODO: Implementation - upgrade encryption and callback
+    log_it(L_DEBUG, "Upgrading session %p with encryption type %d", 
+           a_session, a_upgrade_context->encryption_type);
+    UNUSED(a_upgrade_context);
+    return -1;
 }
 
 // Data operations
@@ -390,72 +354,34 @@ bool dap_http2_session_is_error(const dap_http2_session_t *a_session)
     return false;
 }
 
-// Stream association
-void dap_http2_session_set_stream(dap_http2_session_t *a_session, dap_http2_stream_t *a_stream)
+// Single stream management
+dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session)
 {
-    // TODO: Implement stream association
-    UNUSED(a_session);
-    UNUSED(a_stream);
+    if (!a_session) {
+        log_it(L_ERROR, "Session is NULL");
+        return NULL;
+    }
+    
+    if (a_session->stream) {
+        log_it(L_WARNING, "Session already has a stream");
+        return a_session->stream;
+    }
+    
+    // TODO: Implementation - create single stream
+    log_it(L_DEBUG, "Creating single stream for session %p", a_session);
+    a_session->stream_id = 1;
+    return NULL;
 }
 
 dap_http2_stream_t *dap_http2_session_get_stream(const dap_http2_session_t *a_session)
 {
-    // TODO: Implement stream retrieval
-    UNUSED(a_session);
-    return NULL;
+    if (!a_session) {
+        return NULL;
+    }
+    return a_session->stream;
 }
 
-/**
- * @brief dap_http2_session_add_stream
- * @param a_session
- * @param a_stream
- * @return
- */
-int dap_http2_session_add_stream(dap_http2_session_t *a_session, dap_http2_stream_t *a_stream)
-{
-    // TODO: Implement stream addition to session
-    UNUSED(a_session);
-    UNUSED(a_stream);
-    return -1;
-}
 
-/**
- * @brief dap_http2_session_remove_stream
- * @param a_session
- * @param a_stream
- */
-void dap_http2_session_remove_stream(dap_http2_session_t *a_session, dap_http2_stream_t *a_stream)
-{
-    // TODO: Implement stream removal from session
-    UNUSED(a_session);
-    UNUSED(a_stream);
-}
-
-/**
- * @brief dap_http2_session_find_stream
- * @param a_session
- * @param a_stream_id
- * @return
- */
-dap_http2_stream_t *dap_http2_session_find_stream(const dap_http2_session_t *a_session, uint32_t a_stream_id)
-{
-    // TODO: Implement stream search by ID
-    UNUSED(a_session);
-    UNUSED(a_stream_id);
-    return NULL;
-}
-
-/**
- * @brief dap_http2_session_get_streams_count
- * @param a_session
- * @return
- */
-size_t dap_http2_session_get_streams_count(const dap_http2_session_t *a_session)
-{
-    // TODO: Implement streams count retrieval
-    UNUSED(a_session);
-    return 0;
-}
 
 
 
@@ -542,18 +468,7 @@ static void s_session_connected_callback(dap_events_socket_t *a_esocket)
     l_session->state = DAP_HTTP2_SESSION_STATE_CONNECTED;
     l_session->ts_established = time(NULL);
 
-    // Setup read timeout timer
-    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (l_ev_uuid_ptr) {
-        *l_ev_uuid_ptr = a_esocket->uuid;
-        l_session->read_timer = dap_timerfd_start_on_worker(
-            l_session->worker, 60000, // 60 second read timeout
-            s_session_connect_timeout_callback, l_ev_uuid_ptr);
-        if (!l_session->read_timer) {
-            log_it(L_WARNING, "Failed to start read timer");
-            DAP_DELETE(l_ev_uuid_ptr);
-        }
-    }
+    // TODO: Setup read timeout timer on stream level
 
     // Call user callback if set
     if (l_session->callbacks.connected) {
@@ -580,10 +495,7 @@ static void s_session_read_callback(dap_events_socket_t *a_esocket, void *a_data
         l_session->callbacks.data_received(l_session, a_data, a_data_size);
     }
 
-    // Reset read timer
-    if (l_session->read_timer) {
-        dap_timerfd_reset(l_session->read_timer);
-    }
+    // TODO: Reset read timer on stream level
 }
 
 /**
@@ -701,3 +613,38 @@ static void s_session_ssl_connected_callback(dap_events_socket_t *a_esocket)
     s_session_connected_callback(a_esocket);
 }
 #endif 
+
+size_t dap_http2_session_process_data(dap_http2_session_t *a_session, 
+                                      const void *a_data, 
+                                      size_t a_size)
+{
+    // TODO: Process incoming session data
+    UNUSED(a_session);
+    UNUSED(a_data);
+    return a_size;
+}
+
+dap_session_encryption_type_t dap_http2_session_get_encryption_type(const dap_http2_session_t *a_session)
+{
+    return a_session ? a_session->encryption_type : DAP_SESSION_ENCRYPTION_NONE;
+}
+
+dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_http2_session_t *a_session)
+{
+    // TODO: Return upgrade interface for stream communication
+    UNUSED(a_session);
+    return NULL;
+}
+
+const char* dap_http2_session_state_to_str(dap_http2_session_state_t a_state)
+{
+    switch (a_state) {
+        case DAP_HTTP2_SESSION_STATE_IDLE:       return "Idle";
+        case DAP_HTTP2_SESSION_STATE_CONNECTING: return "Connecting";
+        case DAP_HTTP2_SESSION_STATE_CONNECTED:  return "Connected";
+        case DAP_HTTP2_SESSION_STATE_CLOSING:    return "Closing";
+        case DAP_HTTP2_SESSION_STATE_CLOSED:     return "Closed";
+        case DAP_HTTP2_SESSION_STATE_ERROR:      return "Error";
+        default:                                 return "Unknown";
+    }
+} 

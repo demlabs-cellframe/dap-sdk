@@ -28,22 +28,26 @@
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_stream_callbacks.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct dap_http2_stream dap_http2_stream_t;
-
-// Session states
+// Encryption types
 typedef enum {
-    DAP_HTTP2_SESSION_STATE_IDLE,
-    DAP_HTTP2_SESSION_STATE_CONNECTING,
-    DAP_HTTP2_SESSION_STATE_CONNECTED,
-    DAP_HTTP2_SESSION_STATE_CLOSING,
-    DAP_HTTP2_SESSION_STATE_CLOSED,
-    DAP_HTTP2_SESSION_STATE_ERROR
-} dap_http2_session_state_t;
+    DAP_SESSION_ENCRYPTION_NONE,
+    DAP_SESSION_ENCRYPTION_TLS,
+    DAP_SESSION_ENCRYPTION_CUSTOM,
+    DAP_SESSION_ENCRYPTION_TLS_CUSTOM
+} dap_session_encryption_type_t;
+
+// NOTE: Session states are now transport-specific and defined by transport layer
+// For TCP example:
+// #define TCP_SESSION_STATE_IDLE        0
+// #define TCP_SESSION_STATE_CONNECTING  1
+// #define TCP_SESSION_STATE_CONNECTED   2
+// etc.
 
 // Session error types
 typedef enum {
@@ -55,50 +59,73 @@ typedef enum {
     DAP_HTTP2_SESSION_ERROR_RESOLVE
 } dap_http2_session_error_t;
 
-// Session callbacks (define the role!)
-typedef struct dap_http2_session_callbacks {
-    void (*connected)(struct dap_http2_session *a_session);
-    void (*data_received)(struct dap_http2_session *a_session, const void *a_data, size_t a_size);
-    void (*error)(struct dap_http2_session *a_session, dap_http2_session_error_t a_error);
-    void (*closed)(struct dap_http2_session *a_session);
-} dap_http2_session_callbacks_t;
+// NOTE: dap_http2_session_callbacks_t is now defined in dap_stream_callbacks.h
+
+
+
+
 
 // Main session structure (universal for client and server)
 typedef struct dap_http2_session {
     // === CONNECTION MANAGEMENT ===
     dap_events_socket_t *es;              // Contains sockaddr_storage
     dap_worker_t *worker;
-    dap_http2_session_state_t state;
+    dap_session_state_t state;            // Transport-specific state (non-atomic, worker thread only)
     
-    // === SSL FLAG ===
-    bool is_ssl;
+    // === ENCRYPTION (unified) ===
+    dap_session_encryption_type_t encryption_type;
+    void *encryption_context;
     
-    // === UNIVERSAL TIMERS ===
-    dap_timerfd_t *connect_timer;         // NULL for server sessions
-    dap_timerfd_t *read_timer;            // Used by all sessions
+    // === CONNECTION TIMEOUTS ===
+    dap_timerfd_t *connect_timer;             // Connect timeout timer
+    uint64_t connect_timeout_ms;              // Connect timeout value
     
     // === UNIVERSAL SESSION STATE ===
     time_t ts_created;
     time_t ts_established;                // connect() or accept() time
     
     // === SINGLE STREAM MANAGEMENT ===
-    dap_http2_stream_t *current_stream;   // Current active stream
-    uint32_t next_stream_id;              // For stream ID generation
+    dap_http2_stream_t *stream;           // Single stream per session
     
     // === CALLBACKS (define client/server role) ===
     dap_http2_session_callbacks_t callbacks;
-    void *callbacks_arg;
+    void *callbacks_arg;                    // For user callbacks (connected, data_received, etc.)
+    
+    // === FACTORY PATTERN SUPPORT ===
+    void *worker_assignment_context;        // For assigned_to_worker callback only
     
 } dap_http2_session_t;
+
+// Session upgrade interface (minimal)
+typedef struct dap_session_upgrade_context {
+    void (*upgraded_data_callback)(dap_http2_session_t *a_session, const void *a_data, size_t a_size);
+    dap_session_encryption_type_t encryption_type;
+    const void *key_data;
+    size_t key_size;
+    void *callbacks_context;
+} dap_session_upgrade_context_t;
+
+typedef struct dap_session_upgrade_interface {
+    int (*setup_custom_encryption)(dap_http2_session_t *session, const void *key_data, size_t key_size);
+    bool (*is_encrypted)(const dap_http2_session_t *session);
+} dap_session_upgrade_interface_t;
 
 // === SESSION LIFECYCLE ===
 
 /**
  * @brief Create new client session
  * @param a_worker Worker thread to assign session to
+ * @param a_connect_timeout_ms Connect timeout in milliseconds (0 = default)
  * @return New session instance or NULL on error
  */
-dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker);
+dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker, uint64_t a_connect_timeout_ms);
+
+/**
+ * @brief Create new client session with default timeout
+ * @param a_worker Worker thread to assign session to
+ * @return New session instance or NULL on error
+ */
+dap_http2_session_t *dap_http2_session_create_default(dap_worker_t *a_worker);
 
 /**
  * @brief Create server session from accepted socket
@@ -137,14 +164,23 @@ void dap_http2_session_delete(dap_http2_session_t *a_session);
 // === CONFIGURATION ===
 
 /**
- * @brief Set session timeouts by configuring timers directly
+ * @brief Set session connect timeout (client only)
  * @param a_session Session instance
- * @param a_connect_timeout_ms Connect timeout in milliseconds (ignored for server)
- * @param a_read_timeout_ms Read timeout in milliseconds
+ * @param a_connect_timeout_ms Connect timeout in milliseconds
  */
-void dap_http2_session_set_timeouts(dap_http2_session_t *a_session,
-                                    uint64_t a_connect_timeout_ms,
-                                    uint64_t a_read_timeout_ms);
+void dap_http2_session_set_connect_timeout(dap_http2_session_t *a_session,
+                                           uint64_t a_connect_timeout_ms);
+
+/**
+ * @brief Get session connect timeout
+ * @param a_session Session instance
+ * @return Connect timeout in milliseconds
+ */
+uint64_t dap_http2_session_get_connect_timeout(const dap_http2_session_t *a_session);
+
+
+
+
 
 /**
  * @brief Set session callbacks (defines client/server role)
@@ -155,6 +191,17 @@ void dap_http2_session_set_timeouts(dap_http2_session_t *a_session,
 void dap_http2_session_set_callbacks(dap_http2_session_t *a_session,
                                      const dap_http2_session_callbacks_t *a_callbacks,
                                      void *a_callbacks_arg);
+
+/**
+ * @brief Upgrade session with encryption and new data callback
+ * @param a_session Session instance
+ * @param a_upgrade_context Upgrade context with callback and encryption params
+ * @return 0 on success, negative on error
+ */
+int dap_http2_session_upgrade(dap_http2_session_t *a_session,
+                             const dap_session_upgrade_context_t *a_upgrade_context);
+
+
 
 // === DATA OPERATIONS ===
 
@@ -181,11 +228,11 @@ size_t dap_http2_session_process_data(dap_http2_session_t *a_session,
 // === STATE QUERIES ===
 
 /**
- * @brief Get current session state
+ * @brief Get current session state (transport-specific interpretation)
  * @param a_session Session instance
  * @return Current session state
  */
-dap_http2_session_state_t dap_http2_session_get_state(const dap_http2_session_t *a_session);
+dap_session_state_t dap_http2_session_get_state(const dap_http2_session_t *a_session);
 
 /**
  * @brief Check if session is connected
@@ -202,14 +249,14 @@ bool dap_http2_session_is_connected(const dap_http2_session_t *a_session);
 bool dap_http2_session_is_error(const dap_http2_session_t *a_session);
 
 /**
- * @brief Check if session is client mode (has connect_timer)
+ * @brief Check if session is client mode (created without socket)
  * @param a_session Session instance
  * @return true if client mode
  */
 bool dap_http2_session_is_client_mode(const dap_http2_session_t *a_session);
 
 /**
- * @brief Check if session is server mode (no connect_timer)
+ * @brief Check if session is server mode (created from socket)
  * @param a_session Session instance
  * @return true if server mode
  */
@@ -218,25 +265,18 @@ bool dap_http2_session_is_server_mode(const dap_http2_session_t *a_session);
 // === STREAM MANAGEMENT ===
 
 /**
- * @brief Set current stream for session
+ * @brief Create single stream for session
  * @param a_session Session instance
- * @param a_stream Stream to set as current
+ * @return New stream or NULL on error
  */
-void dap_http2_session_set_stream(dap_http2_session_t *a_session, dap_http2_stream_t *a_stream);
+dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session);
 
 /**
- * @brief Get current stream from session
+ * @brief Get stream from session
  * @param a_session Session instance
- * @return Current stream or NULL if none
+ * @return Stream or NULL if none
  */
 dap_http2_stream_t *dap_http2_session_get_stream(const dap_http2_session_t *a_session);
-
-/**
- * @brief Generate next stream ID
- * @param a_session Session instance
- * @return New unique stream ID
- */
-uint32_t dap_http2_session_next_stream_id(dap_http2_session_t *a_session);
 
 // === UTILITY FUNCTIONS ===
 
@@ -265,12 +305,8 @@ uint16_t dap_http2_session_get_remote_port(const dap_http2_session_t *a_session)
  */
 time_t dap_http2_session_get_last_activity(const dap_http2_session_t *a_session);
 
-/**
- * @brief Get session state string representation
- * @param a_state Session state
- * @return State name string
- */
-const char* dap_http2_session_state_to_str(dap_http2_session_state_t a_state);
+// NOTE: State string functions are now transport-specific
+// Each transport should implement its own state_to_str function
 
 /**
  * @brief Get session error string representation
@@ -278,6 +314,31 @@ const char* dap_http2_session_state_to_str(dap_http2_session_state_t a_state);
  * @return Error name string
  */
 const char* dap_http2_session_error_to_str(dap_http2_session_error_t a_error);
+
+
+
+// === ENCRYPTION MANAGEMENT ===
+
+/**
+ * @brief Get current encryption type
+ * @param a_session Session instance
+ * @return Current encryption type
+ */
+dap_session_encryption_type_t dap_http2_session_get_encryption_type(const dap_http2_session_t *a_session);
+
+/**
+ * @brief Get session upgrade interface for Stream communication
+ * @param a_session Session instance
+ * @return Upgrade interface pointer
+ */
+dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_http2_session_t *a_session);
+
+/**
+ * @brief Get session upgrade interface for Stream communication
+ * @param a_session Session instance
+ * @return Upgrade interface pointer
+ */
+dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_http2_session_t *a_session);
 
 #ifdef __cplusplus
 }

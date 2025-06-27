@@ -15,16 +15,27 @@
 /**
  * @brief Create new stream
  */
-dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session,
-                                           dap_http2_protocol_type_t a_initial_protocol)
+dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
 {
-    // TODO: Implementation
-    // - Allocate stream structure
-    // - Initialize with capacity=1 for channels array
-    // - Set session reference
-    // - Set initial protocol
-    // - Initialize all callbacks to NULL
-    return NULL;
+    if (!a_session) {
+        return NULL;
+    }
+    
+    dap_http2_stream_t *l_stream = DAP_NEW_Z(dap_http2_stream_t);
+    if (!l_stream) {
+        return NULL;
+    }
+    
+    // Basic initialization
+    l_stream->session = a_session;
+    l_stream->state = DAP_HTTP2_STREAM_STATE_IDLE;
+    l_stream->stream_id = dap_http2_session_next_stream_id(a_session);
+    
+    // Initialize callbacks to NULL
+    l_stream->read_callback = NULL;
+    l_stream->read_callback_context = NULL;
+    
+    return l_stream;
 }
 
 /**
@@ -32,11 +43,25 @@ dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session,
  */
 void dap_http2_stream_delete(dap_http2_stream_t *a_stream)
 {
-    // TODO: Implementation
-    // - Clear all channels
-    // - Free channels array
-    // - Free receive buffer
-    // - Free stream structure
+    if (!a_stream) {
+        return;
+    }
+    
+    // Clear all channels
+    dap_http2_stream_clear_all_channels(a_stream);
+    
+    // Free receive buffer
+    if (a_stream->receive_buffer) {
+        DAP_DELETE(a_stream->receive_buffer);
+    }
+    
+    // Free handshake handlers
+    if (a_stream->handshake_handlers) {
+        DAP_DELETE(a_stream->handshake_handlers);
+    }
+    
+    // Free stream structure
+    DAP_DELETE(a_stream);
 }
 
 // === MAIN CALLBACK MANAGEMENT ===
@@ -62,153 +87,24 @@ void dap_http2_stream_set_event_callback(dap_http2_stream_t *a_stream,
 }
 
 /**
- * @brief Set channel event callback
+ * @brief Set state changed callback
  */
-void dap_http2_stream_set_channel_event_callback(dap_http2_stream_t *a_stream,
-                                                dap_stream_channel_event_callback_t a_callback,
-                                                void *a_context)
+void dap_http2_stream_set_state_changed_callback(dap_http2_stream_t *a_stream,
+                                                 dap_stream_state_changed_cb_t a_callback,
+                                                 void *a_context)
 {
-    // TODO: Implementation
+    if (!a_stream) {
+        return;
+    }
+    a_stream->state_changed_cb = a_callback;
+    a_stream->state_changed_context = a_context;
 }
 
 // === DYNAMIC CHANNEL MANAGEMENT ===
 
-/**
- * @brief Set channel callback (creates channel if not exists)
- */
-int dap_http2_stream_set_channel_callback(dap_http2_stream_t *a_stream,
-                                         uint8_t a_channel_id,
-                                         dap_stream_channel_callback_t a_callback,
-                                         void *a_context)
-{
-    // TODO: Implementation
-    // - Find existing channel or create new
-    // - Expand channels array if needed
-    // - Set callback and context
-    // - Fire ADDED event
-    return -1;
-}
 
-/**
- * @brief Add multiple channels from array
- */
-int dap_http2_stream_add_channels_array(dap_http2_stream_t *a_stream,
-                                       const dap_stream_channel_config_t *a_configs,
-                                       size_t a_count)
-{
-    // TODO: Implementation
-    // - Calculate total memory needed
-    // - Expand channels array once
-    // - Add all channels in loop
-    // - Fire ADDED events for each
-    return -1;
-}
-
-/**
- * @brief Remove channel callback and cleanup
- */
-int dap_http2_stream_remove_channel_callback(dap_http2_stream_t *a_stream,
-                                           uint8_t a_channel_id)
-{
-    // TODO: Implementation
-    // - Find channel by ID
-    // - Mark as inactive
-    // - Fire REMOVED event
-    // - Clear last_used_channel cache if needed
-    return -1;
-}
-
-/**
- * @brief Clear all channel callbacks and free memory
- */
-void dap_http2_stream_clear_all_channels(dap_http2_stream_t *a_stream)
-{
-    // TODO: Implementation
-    // - Free channels array
-    // - Reset capacity and count
-    // - Clear last_used_channel cache
-    // - Fire CLEARED event
-}
-
-// === CHANNEL QUERIES ===
-
-/**
- * @brief Check if stream has any active channels
- */
-bool dap_http2_stream_has_channels(const dap_http2_stream_t *a_stream)
-{
-    // TODO: Implementation
-    return false;
-}
-
-/**
- * @brief Get count of active channels
- */
-size_t dap_http2_stream_get_active_channels_count(const dap_http2_stream_t *a_stream)
-{
-    // TODO: Implementation
-    return 0;
-}
-
-/**
- * @brief Check if specific channel is active
- */
-bool dap_http2_stream_is_channel_active(const dap_http2_stream_t *a_stream,
-                                       uint8_t a_channel_id)
-{
-    // TODO: Implementation
-    return false;
-}
-
-/**
- * @brief Get list of active channel IDs
- */
-size_t dap_http2_stream_get_active_channels(const dap_http2_stream_t *a_stream,
-                                          uint8_t *a_channels_out,
-                                          size_t a_max_channels)
-{
-    // TODO: Implementation
-    return 0;
-}
-
-// === CHANNEL HELPERS ===
-
-/**
- * @brief Helper to dispatch data to channel (for use in read_callback implementations)
- */
-size_t dap_http2_stream_dispatch_to_channel(dap_http2_stream_t *a_stream,
-                                           uint8_t a_channel_id,
-                                           const void *a_data,
-                                           size_t a_data_size)
-{
-    // TODO: Implementation
-    // - Check last_used_channel cache first
-    // - Find channel by ID
-    // - Call channel callback
-    // - Update last_used_channel cache
-    return 0;
-}
-
-/**
- * @brief Helper to check if stream is in single-stream mode
- */
-bool dap_http2_stream_is_single_stream_mode(const dap_http2_stream_t *a_stream)
-{
-    // TODO: Implementation
-    return true;
-}
 
 // === PROTOCOL SWITCHING ===
-
-/**
- * @brief Switch stream to different protocol mode
- */
-int dap_http2_stream_switch_protocol(dap_http2_stream_t *a_stream,
-                                    dap_http2_protocol_type_t a_new_protocol)
-{
-    // TODO: Implementation
-    return -1;
-}
 
 // === DATA PROCESSING ===
 
@@ -330,17 +226,25 @@ bool dap_http2_stream_is_autonomous(dap_http2_stream_t *a_stream)
 // === UTILITY FUNCTIONS ===
 
 /**
- * @brief Get protocol type string representation
+ * @brief Get current protocol name from active callback
  */
-const char* dap_http2_stream_protocol_to_str(dap_http2_protocol_type_t a_protocol)
+const char* dap_http2_stream_get_protocol_name(const dap_http2_stream_t *a_stream)
 {
-    switch (a_protocol) {
-        case DAP_HTTP2_PROTOCOL_HTTP:       return "HTTP";
-        case DAP_HTTP2_PROTOCOL_WEBSOCKET:  return "WebSocket";
-        case DAP_HTTP2_PROTOCOL_SSE:        return "SSE";
-        case DAP_HTTP2_PROTOCOL_BINARY:     return "Binary";
-        case DAP_HTTP2_PROTOCOL_RAW:        return "Raw";
-        default:                            return "Unknown";
+    if (!a_stream || !a_stream->read_callback) {
+        return "Unknown";
+    }
+    
+    if (a_stream->read_callback == dap_http2_stream_read_callback_http_client ||
+        a_stream->read_callback == dap_http2_stream_read_callback_http_server) {
+        return "HTTP";
+    } else if (a_stream->read_callback == dap_http2_stream_read_callback_websocket) {
+        return "WebSocket";
+    } else if (a_stream->read_callback == dap_http2_stream_read_callback_binary) {
+        return "Binary";
+    } else if (a_stream->read_callback == dap_http2_stream_read_callback_sse) {
+        return "SSE";
+    } else {
+        return "Custom";
     }
 }
 
@@ -383,4 +287,186 @@ void dap_http2_stream_set_websocket_mode(dap_http2_stream_t *a_stream)
 void dap_http2_stream_set_binary_mode(dap_http2_stream_t *a_stream)
 {
     // TODO: Set stream->read_callback = dap_http2_stream_read_callback_binary
+}
+
+// === HANDSHAKE MANAGEMENT ===
+
+int dap_http2_stream_set_handshake_handlers(dap_http2_stream_t *a_stream, 
+                                           const dap_stream_handshake_handlers_t *a_handlers)
+{
+    if (!a_stream || !a_handlers) {
+        return -1;
+    }
+    
+    // Allocate handshake handlers if not exists
+    if (!a_stream->handshake_handlers) {
+        a_stream->handshake_handlers = DAP_NEW_Z(dap_stream_handshake_handlers_t);
+        if (!a_stream->handshake_handlers) {
+            return -1;
+        }
+    }
+    
+    // Copy handlers
+    *a_stream->handshake_handlers = *a_handlers;
+    return 0;
+}
+
+bool dap_http2_stream_has_handshake_handlers(const dap_http2_stream_t *a_stream)
+{
+    return a_stream && a_stream->handshake_handlers;
+}
+
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+
+// === CHANNEL CONTEXT MANAGEMENT ===
+
+dap_stream_channel_context_t* dap_stream_channel_context_create(const dap_stream_channel_template_t *a_template)
+{
+    if (!a_template) {
+        log_it(L_ERROR, "Template is NULL");
+        return NULL;
+    }
+    
+    dap_stream_channel_context_t *l_context = DAP_NEW_Z(dap_stream_channel_context_t);
+    if (!l_context) {
+        log_it(L_ERROR, "Memory allocation failed");
+        return NULL;
+    }
+    
+    // TODO: Copy callbacks from template
+    log_it(L_DEBUG, "Created channel context %p", l_context);
+    return l_context;
+}
+
+void dap_stream_channel_context_delete(dap_stream_channel_context_t *a_context)
+{
+    if (!a_context) {
+        return;
+    }
+    
+    log_it(L_DEBUG, "Deleting channel context %p", a_context);
+    DAP_DELETE(a_context);
+}
+
+void dap_http2_stream_set_channel_context(dap_http2_stream_t *a_stream, dap_stream_channel_context_t *a_context)
+{
+    if (!a_stream) {
+        log_it(L_ERROR, "Stream is NULL");
+        return;
+    }
+    
+    log_it(L_DEBUG, "Setting channel context %p for stream %p", a_context, a_stream);
+    a_stream->channel_context = a_context;
+}
+
+dap_stream_channel_context_t* dap_http2_stream_get_channel_context(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return NULL;
+    }
+    return a_stream->channel_context;
+}
+
+// === EXTERNAL CHANNEL MANAGEMENT ===
+
+int dap_stream_channel_enable_by_uid(uint64_t a_channel_uid, 
+                                    dap_stream_channel_callback_t a_callback,
+                                    void *a_context)
+{
+    // TODO: Implementation - route to worker thread
+    log_it(L_DEBUG, "Enable channel UID %llu", a_channel_uid);
+    UNUSED(a_callback);
+    UNUSED(a_context);
+    return -1;
+}
+
+int dap_stream_channel_disable_by_uid(uint64_t a_channel_uid)
+{
+    // TODO: Implementation - route to worker thread
+    log_it(L_DEBUG, "Disable channel UID %llu", a_channel_uid);
+    return -1;
+}
+
+#endif // DAP_STREAM_CHANNELS_ENABLED 
+
+// === PROTOCOL TRANSITIONS ===
+
+int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
+                                        dap_stream_read_callback_t a_new_callback,
+                                        void *a_new_context)
+{
+    if (!a_stream || !a_new_callback) {
+        log_it(L_ERROR, "Invalid parameters for protocol transition");
+        return -1;
+    }
+    
+    log_it(L_DEBUG, "Transitioning stream %p protocol", a_stream);
+    a_stream->read_callback = a_new_callback;
+    a_stream->read_callback_context = a_new_context;
+    return 0;
+}
+
+int dap_http2_stream_request_session_encryption(dap_http2_stream_t *a_stream,
+                                               dap_session_encryption_type_t a_encryption_type,
+                                               const void *a_key_data,
+                                               size_t a_key_size)
+{
+    if (!a_stream) {
+        log_it(L_ERROR, "Stream is NULL");
+        return -1;
+    }
+    
+    // TODO: Request session encryption upgrade
+    log_it(L_DEBUG, "Requesting session encryption %d for stream %p", a_encryption_type, a_stream);
+    UNUSED(a_key_data);
+    UNUSED(a_key_size);
+    return -1;
+}
+
+// === TIMEOUT MANAGEMENT ===
+
+void dap_http2_stream_set_read_timeout(dap_http2_stream_t *a_stream,
+                                       uint64_t a_read_timeout_ms)
+{
+    if (!a_stream) {
+        return;
+    }
+    a_stream->read_timeout_ms = a_read_timeout_ms;
+}
+
+uint64_t dap_http2_stream_get_read_timeout(const dap_http2_stream_t *a_stream)
+{
+    return a_stream ? a_stream->read_timeout_ms : 0;
+}
+
+int dap_http2_stream_start_read_timer(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->read_timeout_ms) {
+        return -1;
+    }
+    
+    // TODO: Start read timer
+    log_it(L_DEBUG, "Starting read timer for stream %p (%llu ms)", a_stream, a_stream->read_timeout_ms);
+    return -1;
+}
+
+void dap_http2_stream_stop_read_timer(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->read_timer) {
+        return;
+    }
+    
+    // TODO: Stop read timer
+    log_it(L_DEBUG, "Stopping read timer for stream %p", a_stream);
+}
+
+int dap_http2_stream_reset_read_timer(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->read_timer) {
+        return -1;
+    }
+    
+    // TODO: Reset read timer
+    log_it(L_DEBUG, "Resetting read timer for stream %p", a_stream);
+    return -1;
 } 

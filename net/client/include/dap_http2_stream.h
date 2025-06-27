@@ -21,14 +21,14 @@
 
 /**
  * @file dap_http2_stream.h
- * @brief HTTP/2 Stream Layer - HTTP parsing, response processing, buffer management
+ * @brief HTTP/2 Stream Layer - Single stream with channel multiplexing
  * 
  * Responsibilities:
- * - HTTP response parsing (headers, body, chunked transfer)
- * - Protocol-specific data processing (HTTP, WebSocket, SSE, Binary)
- * - Buffer management for stream data
+ * - Single stream per session (replaces multiple streams)
+ * - Channel-based multiplexing for different protocols
+ * - Protocol-specific data processing via channels
+ * - Buffer management for unified stream data
  * - Stream state management and transitions
- * - Dynamic channel-based data processing with callback switching
  */
 
 #pragma once
@@ -36,31 +36,92 @@
 #include "dap_common.h"
 #include "dap_events_socket.h"
 #include "dap_enc_key.h"
+#include "dap_timerfd.h"
+#include "dap_stream_callbacks.h"
 
-typedef struct dap_http2_session dap_http2_session_t;
-typedef struct dap_http2_stream dap_http2_stream_t;
-
-// Stream states
+// Session encryption types
 typedef enum {
-    DAP_HTTP2_STREAM_STATE_IDLE,
-    DAP_HTTP2_STREAM_STATE_REQUEST_SENT,
-    DAP_HTTP2_STREAM_STATE_HEADERS,
-    DAP_HTTP2_STREAM_STATE_BODY,
-    DAP_HTTP2_STREAM_STATE_COMPLETE,
-    DAP_HTTP2_STREAM_STATE_ERROR,
-    DAP_HTTP2_STREAM_STATE_UPGRADED,
-    DAP_HTTP2_STREAM_STATE_CLOSING,
-    DAP_HTTP2_STREAM_STATE_CLOSED
-} dap_http2_stream_state_t;
+    DAP_SESSION_ENCRYPTION_NONE,
+    DAP_SESSION_ENCRYPTION_TLS,
+    DAP_SESSION_ENCRYPTION_CUSTOM,
+    DAP_SESSION_ENCRYPTION_TLS_CUSTOM
+} dap_session_encryption_type_t;
 
-// Protocol types for different processing modes
-typedef enum {
-    DAP_HTTP2_PROTOCOL_HTTP,
-    DAP_HTTP2_PROTOCOL_WEBSOCKET,
-    DAP_HTTP2_PROTOCOL_SSE,
-    DAP_HTTP2_PROTOCOL_BINARY,
-    DAP_HTTP2_PROTOCOL_RAW
-} dap_http2_protocol_type_t;
+// === CHANNEL UID CONSTANTS ===
+#define CHANNEL_UID_WORKER_BITS     8
+#define CHANNEL_UID_ESOCKET_BITS    32  
+#define CHANNEL_UID_RESERVED_BITS   8
+#define CHANNEL_UID_CHANNEL_BITS    16
+
+#define CHANNEL_UID_WORKER_SHIFT    56
+#define CHANNEL_UID_ESOCKET_SHIFT   24
+#define CHANNEL_UID_RESERVED_SHIFT  16
+#define CHANNEL_UID_CHANNEL_SHIFT   0
+
+#define CHANNEL_UID_WORKER_MASK     0xFF00000000000000UL
+#define CHANNEL_UID_ESOCKET_MASK    0x00FFFFFFFF000000UL
+#define CHANNEL_UID_RESERVED_MASK   0x0000000000FF0000UL
+#define CHANNEL_UID_CHANNEL_MASK    0x000000000000FFFFUL
+
+// === CHANNEL UID UTILITIES ===
+static inline uint8_t dap_channel_uid_extract_worker_id(uint64_t channel_uid) {
+    return (uint8_t)(channel_uid >> CHANNEL_UID_WORKER_SHIFT);
+}
+
+static inline uint32_t dap_channel_uid_extract_esocket_uid(uint64_t channel_uid) {
+    return (uint32_t)((channel_uid & CHANNEL_UID_ESOCKET_MASK) >> CHANNEL_UID_ESOCKET_SHIFT);
+}
+
+static inline uint16_t dap_channel_uid_extract_channel_id(uint64_t channel_uid) {
+    return (uint16_t)(channel_uid & CHANNEL_UID_CHANNEL_MASK);
+}
+
+static inline uint64_t dap_channel_uid_compose(uint8_t worker_id, uint32_t esocket_uid, uint16_t channel_id) {
+    return ((uint64_t)worker_id << CHANNEL_UID_WORKER_SHIFT) |
+           ((uint64_t)esocket_uid << CHANNEL_UID_ESOCKET_SHIFT) |
+           ((uint64_t)channel_id << CHANNEL_UID_CHANNEL_SHIFT);
+}
+
+static inline uint64_t dap_channel_uid_to_stream_uid(uint64_t channel_uid) {
+    uint8_t worker_id = dap_channel_uid_extract_worker_id(channel_uid);
+    uint32_t esocket_uid = dap_channel_uid_extract_esocket_uid(channel_uid);
+    return ((uint64_t)worker_id << CHANNEL_UID_WORKER_SHIFT) | 
+           ((uint64_t)esocket_uid << CHANNEL_UID_ESOCKET_SHIFT);
+}
+
+static inline uint64_t dap_stream_get_channel_uid(uint64_t stream_uid, uint16_t channel_id) {
+    uint8_t worker_id = (uint8_t)(stream_uid >> CHANNEL_UID_WORKER_SHIFT);
+    uint32_t esocket_uid = (uint32_t)((stream_uid & CHANNEL_UID_ESOCKET_MASK) >> CHANNEL_UID_ESOCKET_SHIFT);
+    return dap_channel_uid_compose(worker_id, esocket_uid, channel_id);
+}
+
+// === STREAM UID UTILITIES ===
+static inline uint64_t dap_stream_uid_compose(uint8_t worker_id, uint32_t esocket_uid) {
+    return ((uint64_t)worker_id << CHANNEL_UID_WORKER_SHIFT) |
+           ((uint64_t)esocket_uid << CHANNEL_UID_ESOCKET_SHIFT);
+}
+
+static inline uint8_t dap_stream_uid_extract_worker_id(uint64_t stream_uid) {
+    return (uint8_t)(stream_uid >> CHANNEL_UID_WORKER_SHIFT);
+}
+
+static inline uint32_t dap_stream_uid_extract_esocket_uid(uint64_t stream_uid) {
+    return (uint32_t)((stream_uid & CHANNEL_UID_ESOCKET_MASK) >> CHANNEL_UID_ESOCKET_SHIFT);
+}
+
+// NOTE: Stream states are now protocol-specific and defined by each protocol
+// For HTTP example:
+// #define HTTP_STREAM_STATE_IDLE           0
+// #define HTTP_STREAM_STATE_REQUEST_SENT   1
+// #define HTTP_STREAM_STATE_HEADERS        2
+// etc.
+
+// === CHANNEL MULTIPLEXING ===
+// Single stream with channel-based protocol multiplexing:
+// - Channel 0: Reserved for control
+// - Channel 1-N: Application protocols (HTTP, WebSocket, Binary, etc.)
+// - Each channel has its own callback and context
+// - Channels are enabled/disabled dynamically
 
 // HTTP parser state
 typedef enum {
@@ -79,17 +140,19 @@ typedef enum {
 } dap_http2_stream_channel_event_t;
 
 // === CALLBACK TYPES ===
+// NOTE: Basic callback types are defined in dap_stream_callbacks.h
 
 /**
- * @brief Main stream read callback - processes incoming data
+ * @brief Stream state change callback - called when stream state changes
  * @param a_stream Stream instance
- * @param a_data Incoming data buffer
- * @param a_data_size Size of incoming data
- * @return Number of bytes processed
+ * @param a_old_state Previous state (protocol-specific)
+ * @param a_new_state New state (protocol-specific)
+ * @param a_context User context
  */
-typedef size_t (*dap_stream_read_callback_t)(dap_http2_stream_t *a_stream, 
-                                             const void *a_data, 
-                                             size_t a_data_size);
+typedef void (*dap_stream_state_changed_cb_t)(dap_http2_stream_t *a_stream,
+                                              dap_stream_state_t a_old_state,
+                                              dap_stream_state_t a_new_state,
+                                              void *a_context);
 
 /**
  * @brief Channel callback - processes data for specific channel
@@ -105,14 +168,6 @@ typedef size_t (*dap_stream_channel_callback_t)(dap_http2_stream_t *a_stream,
                                                 size_t a_data_size);
 
 /**
- * @brief Stream event callback - handles stream events
- * @param a_stream Stream instance
- * @param a_event Event type
- */
-typedef void (*dap_stream_event_callback_t)(dap_http2_stream_t *a_stream, 
-                                            int a_event);
-
-/**
  * @brief Channel event callback - called when channels are added/removed
  * @param a_stream Stream instance
  * @param a_event Event type
@@ -124,35 +179,44 @@ typedef void (*dap_stream_channel_event_callback_t)(dap_http2_stream_t *a_stream
                                                    uint8_t a_channel_id,
                                                    size_t a_channels_count);
 
-// === CHANNEL STRUCTURES ===
+// Custom protocol handlers (optional - only for protocols with handshake)
+typedef struct dap_stream_handshake_handlers {
+    dap_stream_read_callback_t detect_callback;       // Analyze server response (HEADERS state)
+    dap_stream_read_callback_t handshake_callback;    // Perform key exchange (UPGRADED state)
+    dap_stream_read_callback_t ready_callback;        // Process encrypted data (COMPLETE state)
+} dap_stream_handshake_handlers_t;
 
-/**
- * @brief Internal channel structure
- */
-typedef struct dap_stream_channel {
-    uint8_t channel_id;
-    dap_stream_channel_callback_t callback;
-    void *context;
-    bool is_active;
-} dap_stream_channel_t;
+    // === STREAM PROFILE (for embedded transitions) ===
+    // NOTE: dap_stream_profile_t is now defined in dap_stream_callbacks.h
 
-/**
- * @brief Channel configuration structure for bulk operations
- */
-typedef struct dap_stream_channel_config {
-    uint8_t channel_id;
-    dap_stream_channel_callback_t callback;
-    void *context;
-} dap_stream_channel_config_t;
+// === OPTIONAL CHANNEL API ===
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+
+// === CHANNEL CONTEXT ===
+typedef struct dap_stream_channel_context {
+    dap_stream_channel_callback_t channel_callbacks[256];
+    void *channel_contexts[256];
+} dap_stream_channel_context_t;
+
+// === CHANNEL TEMPLATE ===
+typedef struct dap_stream_channel_template {
+    dap_stream_channel_callback_t callbacks[256];
+    void *contexts[256];
+    uint8_t initial_active_channels[32];
+    size_t initial_active_count;
+} dap_stream_channel_template_t;
+
+#endif // DAP_STREAM_CHANNELS_ENABLED
+
+
 
 // === MAIN STREAM STRUCTURE ===
 
 typedef struct dap_http2_stream {
     // === BASIC STREAM INFO ===
-    uint32_t stream_id;
-    dap_http2_stream_state_t state;
+    _Atomic uint64_t uid;                 // Stream UID (worker_id + stream_id)
+    dap_stream_state_t state;             // Protocol-specific state (non-atomic, worker thread only)
     dap_http2_session_t *session;
-    dap_http2_protocol_type_t current_protocol;
     
     // === UNIFIED BUFFER ===
     uint8_t *receive_buffer;
@@ -160,25 +224,20 @@ typedef struct dap_http2_stream {
     size_t receive_buffer_capacity;
     
     // === MAIN CALLBACK SYSTEM ===
-    // Current active read callback (switches based on protocol/mode)
     dap_stream_read_callback_t read_callback;
     void *read_callback_context;
     
-    // Event callback
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+    // === CHANNEL MULTIPLEXING ===
+    dap_stream_channel_context_t *channel_context;
+#endif
+    
+    // === EVENT CALLBACKS ===
     dap_stream_event_callback_t event_callback;
     void *event_callback_context;
     
-    // === DYNAMIC CHANNEL MANAGEMENT ===
-    dap_stream_channel_t *channels;           // Dynamic array of channels
-    size_t channels_capacity;                 // Array capacity (starts with 1)
-    size_t channels_count;                    // Number of active channels
-    
-    // === OPTIMIZATION ===
-    dap_stream_channel_t *last_used_channel;  // Cache for last used channel (locality of reference)
-    
-    // === CHANNEL EVENTS ===
-    dap_stream_channel_event_callback_t channel_event_callback;
-    void *channel_event_context;
+    dap_stream_state_changed_cb_t state_changed_cb;
+    void *state_changed_context;
     
     // === HTTP PARSER STATE (for HTTP protocol) ===
     dap_http_parser_state_t parser_state;
@@ -187,7 +246,14 @@ typedef struct dap_http2_stream {
     bool is_chunked;
     
     // === STREAM MANAGEMENT ===
-    bool is_autonomous;  // Can exist without client
+    bool is_autonomous;
+    
+    // === APPLICATION TIMEOUTS ===
+    void *read_timer;  // dap_timerfd_t - forward declaration to avoid include
+    uint64_t read_timeout_ms;
+    
+    // === HANDSHAKE HANDLERS ===
+    dap_stream_handshake_handlers_t *handshake_handlers;
     
 } dap_http2_stream_t;
 
@@ -196,17 +262,52 @@ typedef struct dap_http2_stream {
 /**
  * @brief Create new stream
  * @param a_session Parent session
- * @param a_initial_protocol Initial protocol type
  * @return New stream instance or NULL on error
  */
-dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session,
-                                           dap_http2_protocol_type_t a_initial_protocol);
+dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session);
 
 /**
  * @brief Delete stream and cleanup resources
  * @param a_stream Stream to delete
  */
 void dap_http2_stream_delete(dap_http2_stream_t *a_stream);
+
+// === READ TIMEOUT MANAGEMENT (OSI Application Layer) ===
+
+/**
+ * @brief Set stream read timeout
+ * @param a_stream Stream instance
+ * @param a_read_timeout_ms Read timeout in milliseconds
+ */
+void dap_http2_stream_set_read_timeout(dap_http2_stream_t *a_stream,
+                                       uint64_t a_read_timeout_ms);
+
+/**
+ * @brief Get stream read timeout
+ * @param a_stream Stream instance
+ * @return Read timeout in milliseconds
+ */
+uint64_t dap_http2_stream_get_read_timeout(const dap_http2_stream_t *a_stream);
+
+/**
+ * @brief Start read timer
+ * @param a_stream Stream instance
+ * @return 0 on success, negative on error
+ */
+int dap_http2_stream_start_read_timer(dap_http2_stream_t *a_stream);
+
+/**
+ * @brief Stop read timer
+ * @param a_stream Stream instance
+ */
+void dap_http2_stream_stop_read_timer(dap_http2_stream_t *a_stream);
+
+/**
+ * @brief Reset read timer (restart with same timeout)
+ * @param a_stream Stream instance
+ * @return 0 on success, negative on error
+ */
+int dap_http2_stream_reset_read_timer(dap_http2_stream_t *a_stream);
 
 // === MAIN CALLBACK MANAGEMENT ===
 
@@ -231,124 +332,119 @@ void dap_http2_stream_set_event_callback(dap_http2_stream_t *a_stream,
                                         void *a_context);
 
 /**
- * @brief Set channel event callback
+ * @brief Set state change callback
  * @param a_stream Stream instance
- * @param a_callback Channel event callback function
+ * @param a_callback State change callback function
  * @param a_context Callback context
  */
-void dap_http2_stream_set_channel_event_callback(dap_http2_stream_t *a_stream,
-                                                dap_stream_channel_event_callback_t a_callback,
-                                                void *a_context);
+void dap_http2_stream_set_state_changed_callback(dap_http2_stream_t *a_stream,
+                                                 dap_stream_state_changed_cb_t a_callback,
+                                                 void *a_context);
 
-// === DYNAMIC CHANNEL MANAGEMENT ===
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+
+// === CHANNEL CONTEXT MANAGEMENT ===
 
 /**
- * @brief Set channel callback (creates channel if not exists)
- * @param a_stream Stream instance
- * @param a_channel_id Channel identifier (0-255)
- * @param a_callback Channel callback function
- * @param a_context Callback context
- * @return 0 on success, negative on error
+ * @brief Create channel context from template
+ * @param a_template Channel template with callbacks and initial state
+ * @return New channel context or NULL on error
  */
-int dap_http2_stream_set_channel_callback(dap_http2_stream_t *a_stream,
-                                         uint8_t a_channel_id,
-                                         dap_stream_channel_callback_t a_callback,
-                                         void *a_context);
+dap_stream_channel_context_t* dap_stream_channel_context_create(const dap_stream_channel_template_t *a_template);
 
 /**
- * @brief Add multiple channels from array
- * @param a_stream Stream instance
- * @param a_configs Array of channel configurations
- * @param a_count Number of channels to add
- * @return Number of channels successfully added, negative on error
+ * @brief Delete channel context
+ * @param a_context Context to delete
  */
-int dap_http2_stream_add_channels_array(dap_http2_stream_t *a_stream,
-                                       const dap_stream_channel_config_t *a_configs,
-                                       size_t a_count);
+void dap_stream_channel_context_delete(dap_stream_channel_context_t *a_context);
 
 /**
- * @brief Remove channel callback and cleanup
- * @param a_stream Stream instance  
- * @param a_channel_id Channel identifier
- * @return 0 on success, negative on error (-1 if channel not found)
- */
-int dap_http2_stream_remove_channel_callback(dap_http2_stream_t *a_stream,
-                                           uint8_t a_channel_id);
-
-/**
- * @brief Clear all channel callbacks and free memory
+ * @brief Set channel context for stream
  * @param a_stream Stream instance
+ * @param a_context Channel context (ownership transfers to stream)
  */
-void dap_http2_stream_clear_all_channels(dap_http2_stream_t *a_stream);
-
-// === CHANNEL QUERIES ===
+void dap_http2_stream_set_channel_context(dap_http2_stream_t *a_stream, dap_stream_channel_context_t *a_context);
 
 /**
- * @brief Check if stream has any active channels
+ * @brief Get channel context from stream
  * @param a_stream Stream instance
- * @return true if has active channels
+ * @return Channel context or NULL if not set
  */
-bool dap_http2_stream_has_channels(const dap_http2_stream_t *a_stream);
+dap_stream_channel_context_t* dap_http2_stream_get_channel_context(dap_http2_stream_t *a_stream);
+
+// === UNSAFE CHANNEL MANAGEMENT (Worker Thread Only) ===
 
 /**
- * @brief Get count of active channels
- * @param a_stream Stream instance
- * @return Number of active channels
+ * @brief Enable channel (unsafe - worker thread only)
+ * @param a_context Channel context
+ * @param a_channel_id Channel ID to enable
+ * @param a_callback Channel callback
+ * @param a_context_ptr Channel context
  */
-size_t dap_http2_stream_get_active_channels_count(const dap_http2_stream_t *a_stream);
+static inline void dap_stream_channel_enable_unsafe(dap_stream_channel_context_t *a_context, 
+                                                    uint8_t a_channel_id,
+                                                    dap_stream_channel_callback_t a_callback,
+                                                    void *a_context_ptr) {
+    a_context->channel_callbacks[a_channel_id] = a_callback;
+    a_context->channel_contexts[a_channel_id] = a_context_ptr;
+}
 
 /**
- * @brief Check if specific channel is active
- * @param a_stream Stream instance
- * @param a_channel_id Channel identifier  
+ * @brief Disable channel (unsafe - worker thread only)
+ * @param a_context Channel context
+ * @param a_channel_id Channel ID to disable
+ */
+static inline void dap_stream_channel_disable_unsafe(dap_stream_channel_context_t *a_context, 
+                                                     uint8_t a_channel_id) {
+    a_context->channel_callbacks[a_channel_id] = NULL;
+    a_context->channel_contexts[a_channel_id] = NULL;
+}
+
+/**
+ * @brief Check if channel is active
+ * @param a_context Channel context
+ * @param a_channel_id Channel ID to check
  * @return true if channel is active
  */
-bool dap_http2_stream_is_channel_active(const dap_http2_stream_t *a_stream,
-                                       uint8_t a_channel_id);
+static inline bool dap_stream_channel_is_active(const dap_stream_channel_context_t *a_context, 
+                                               uint8_t a_channel_id) {
+    return a_context->channel_callbacks[a_channel_id] != NULL;
+}
+
+// === EXTERNAL CHANNEL MANAGEMENT (Thread-Safe) ===
 
 /**
- * @brief Get list of active channel IDs
- * @param a_stream Stream instance
- * @param a_channels_out Output array for channel IDs (allocated by caller)
- * @param a_max_channels Maximum number of channels to return
- * @return Number of channels written to array
+ * @brief Enable channel externally (thread-safe)
+ * @param a_channel_uid Channel UID
+ * @param a_callback Channel callback
+ * @param a_context Channel context
+ * @return 0 on success, negative on error
  */
-size_t dap_http2_stream_get_active_channels(const dap_http2_stream_t *a_stream,
-                                          uint8_t *a_channels_out,
-                                          size_t a_max_channels);
-
-// === CHANNEL HELPERS (for SDK developers) ===
+int dap_stream_channel_enable_by_uid(uint64_t a_channel_uid, 
+                                    dap_stream_channel_callback_t a_callback,
+                                    void *a_context);
 
 /**
- * @brief Helper to dispatch data to channel (for use in read_callback implementations)
- * @param a_stream Stream instance
- * @param a_channel_id Channel ID extracted from protocol
- * @param a_data Channel data
- * @param a_data_size Data size
- * @return Number of bytes processed by channel, 0 if channel not found
+ * @brief Disable channel externally (thread-safe)
+ * @param a_channel_uid Channel UID
+ * @return 0 on success, negative on error
  */
-size_t dap_http2_stream_dispatch_to_channel(dap_http2_stream_t *a_stream,
-                                           uint8_t a_channel_id,
-                                           const void *a_data,
-                                           size_t a_data_size);
+int dap_stream_channel_disable_by_uid(uint64_t a_channel_uid);
 
-/**
- * @brief Helper to check if stream is in single-stream mode
- * @param a_stream Stream instance
- * @return true if no channels are active (single-stream mode)
- */
-bool dap_http2_stream_is_single_stream_mode(const dap_http2_stream_t *a_stream);
+#endif // DAP_STREAM_CHANNELS_ENABLED
 
 // === PROTOCOL SWITCHING ===
 
 /**
- * @brief Switch stream to different protocol mode
+ * @brief Switch stream protocol by changing read callback
  * @param a_stream Stream instance
- * @param a_new_protocol New protocol type
+ * @param a_new_callback New read callback function
+ * @param a_context New callback context
  * @return 0 on success, negative on error
  */
 int dap_http2_stream_switch_protocol(dap_http2_stream_t *a_stream,
-                                    dap_http2_protocol_type_t a_new_protocol);
+                                    dap_stream_read_callback_t a_new_callback,
+                                    void *a_context);
 
 // === DATA PROCESSING ===
 
@@ -403,19 +499,19 @@ size_t dap_http2_stream_read_callback_sse(dap_http2_stream_t *a_stream,
 // === STATE MANAGEMENT ===
 
 /**
- * @brief Get current stream state
+ * @brief Get current stream state (protocol-specific interpretation)
  * @param a_stream Stream instance
  * @return Current state
  */
-dap_http2_stream_state_t dap_http2_stream_get_state(dap_http2_stream_t *a_stream);
+dap_stream_state_t dap_http2_stream_get_state(dap_http2_stream_t *a_stream);
 
 /**
- * @brief Set stream state
+ * @brief Set stream state (protocol-specific interpretation)
  * @param a_stream Stream instance
  * @param a_state New state
  */
 void dap_http2_stream_set_state(dap_http2_stream_t *a_stream,
-                               dap_http2_stream_state_t a_state);
+                               dap_stream_state_t a_state);
 
 /**
  * @brief Check if stream is in error state
@@ -434,18 +530,14 @@ bool dap_http2_stream_is_autonomous(dap_http2_stream_t *a_stream);
 // === UTILITY FUNCTIONS ===
 
 /**
- * @brief Get protocol type string representation
- * @param a_protocol Protocol type
- * @return Protocol name string
+ * @brief Get current protocol name from active callback
+ * @param a_stream Stream instance
+ * @return Protocol name string ("HTTP", "WebSocket", "Binary", "SSE", "Custom", "Unknown")
  */
-const char* dap_http2_stream_protocol_to_str(dap_http2_protocol_type_t a_protocol);
+const char* dap_http2_stream_get_protocol_name(const dap_http2_stream_t *a_stream);
 
-/**
- * @brief Get state string representation
- * @param a_state Stream state
- * @return State name string
- */
-const char* dap_http2_stream_state_to_str(dap_http2_stream_state_t a_state);
+// NOTE: State string functions are now protocol-specific
+// Each protocol should implement its own state_to_str function
 
 // === CONVENIENCE FUNCTIONS ===
 
@@ -471,4 +563,52 @@ void dap_http2_stream_set_websocket_mode(dap_http2_stream_t *a_stream);
  * @brief Set stream to binary mode with channels
  * @param a_stream Stream instance
  */
-void dap_http2_stream_set_binary_mode(dap_http2_stream_t *a_stream); 
+void dap_http2_stream_set_binary_mode(dap_http2_stream_t *a_stream);
+
+// === HANDSHAKE MANAGEMENT (for custom protocols) ===
+
+/**
+ * @brief Set handshake handlers for custom protocol handling
+ * @param a_stream Stream instance
+ * @param a_handlers Handshake handlers configuration
+ * @return 0 on success, negative on error
+ */
+int dap_http2_stream_set_handshake_handlers(dap_http2_stream_t *a_stream, 
+                                           const dap_stream_handshake_handlers_t *a_handlers);
+
+/**
+ * @brief Check if stream has handshake handlers (is custom protocol)
+ * @param a_stream Stream instance
+ * @return true if has handshake handlers
+ */
+bool dap_http2_stream_has_handshake_handlers(const dap_http2_stream_t *a_stream);
+
+// === EMBEDDED TRANSITIONS API ===
+
+/**
+ * @brief Simple protocol transition (for use in read_callbacks)
+ * @param a_stream Stream instance
+ * @param a_new_callback New read callback
+ * @param a_new_context New context for callback
+ * @return 0 on success, negative on error
+ */
+int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
+                                        dap_stream_read_callback_t a_new_callback,
+                                        void *a_new_context);
+
+/**
+ * @brief Request session encryption upgrade from stream
+ * @param a_stream Stream instance
+ * @param a_encryption_type Target encryption type
+ * @param a_key_data Encryption key data (optional)
+ * @param a_key_size Key data size
+ * @return 0 on success, negative on error
+ */
+int dap_http2_stream_request_session_encryption(dap_http2_stream_t *a_stream,
+                                               int a_encryption_type,  // dap_session_encryption_type_t
+                                               const void *a_key_data,
+                                               size_t a_key_size);
+
+#ifdef __cplusplus
+}
+#endif 
