@@ -8,7 +8,7 @@
 
 #define DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_TEST 0x99
 
-static int s_cli_stream_test(int argc, char **argv, char **a_str_reply)
+static int s_cli_stream_test(int argc, char **argv, char **a_str_reply, int a_version)
 {
     // This function is provided without any error checking due to debug purpose
     const char *l_addr_str = NULL,
