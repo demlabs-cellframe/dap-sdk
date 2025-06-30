@@ -634,7 +634,6 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
     json_object_object_add(a_json_out, a_version == 1 ? "Signature size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));
 
 }
-
 /**
  * @brief return string with recommended types
  * @return string with recommended types
