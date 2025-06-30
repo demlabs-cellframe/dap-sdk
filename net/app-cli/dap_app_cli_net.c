@@ -201,13 +201,16 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         return -1;
     }
     a_cmd->cmd_res_cur = 0;
-    dap_json_rpc_params_t * params = dap_json_rpc_params_create();
+    dap_json_rpc_params_t *params = dap_json_rpc_params_create();
     char *l_cmd_str = dap_app_cli_form_command(a_cmd);
     dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
     DAP_DELETE(l_cmd_str);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
-    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
-    char * request_str = dap_json_rpc_request_to_json_string(a_request);
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(
+        a_cmd->cmd_name, params, l_id_response,
+        dap_config_get_item_int32_default(g_config, "cli-server", "version", 1));
+
+    char *request_str = dap_json_rpc_request_to_json_string(a_request);
 
     dap_string_t *l_post_data = dap_string_new("");
     dap_string_printf(l_post_data, "POST /connect HTTP/1.1\r\n"

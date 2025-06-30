@@ -57,6 +57,7 @@ static bool s_debug_cli = false;
 static atomic_int_fast32_t s_cmd_thread_count = 0;
 static bool s_allowed_cmd_control = false;
 static const char **s_allowed_cmd_array = NULL;
+static int s_cli_version = 1;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
@@ -186,6 +187,8 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
     }
     s_allowed_cmd_control = dap_config_get_item_bool_default(g_config, a_cfg_section, "allowed_cmd_control", s_allowed_cmd_control);
     log_it(L_INFO, "CLI server initialized");
+    s_cli_version = dap_config_get_item_int32_default(g_config, "cli-server", "version", s_cli_version);
+    log_it(L_INFO, "CLI server initialized with protocol version %d", s_cli_version);
     return 0;
 }
 
@@ -448,7 +451,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %zu\r\n"
+                                            "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
                                             "Processing-Time: %zu\r\n"
                                             "Node-Type: %s\r\n"
                                             "Node-Version: %s\r\n\r\n"
@@ -468,7 +471,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
 }
 
 char *dap_cli_cmd_exec(char *a_req_str) {
-    dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str);
+    dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str, s_cli_version);
     if ( !request )
         return NULL;
     int l_verbose = 0;
@@ -536,11 +539,11 @@ char *dap_cli_cmd_exec(char *a_req_str) {
                 l_call_time = dap_nanotime_now();
             }
             if (json_commands(cmd_name)) {
-                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
             } else {
-                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply, request->version);
             }
             if (s_stat_callback) {
                 s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
@@ -574,9 +577,9 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         reply_body = str_reply;
 
     // create response
-    dap_json_rpc_response_t *response = reply_body
-            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id)
-            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id);
+    dap_json_rpc_response_t* response = reply_body
+            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id, request->version)
+            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id, request->version);
     json_object_put(l_json_arr_reply);
     char *response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
@@ -606,4 +609,9 @@ DAP_INLINE void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array)
     dap_return_if_pass_err(s_allowed_cmd_array, "Allowed cmd array already exist");
     s_allowed_cmd_array = a_cmd_array;
     s_allowed_cmd_control = true;
+}
+
+DAP_INLINE int dap_cli_server_get_version()
+{
+    return s_cli_version;
 }
