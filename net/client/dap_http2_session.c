@@ -50,9 +50,7 @@ dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker, uint64_t a
     dap_http2_session_t *l_session = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http2_session_t, NULL);
     *l_session = (dap_http2_session_t){ 
         .worker = a_worker, 
-        .state = DAP_HTTP2_SESSION_STATE_IDLE, 
         .ts_created = time(NULL), 
-        .stream_id = 1,
         .connect_timeout_ms = a_connect_timeout_ms ? a_connect_timeout_ms : 30000
     };
     log_it(L_DEBUG, "Created HTTP2 session %p on worker %u (timeout: %llu ms)", 
@@ -72,8 +70,6 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
 {
     dap_return_val_if_fail_err( a_session && a_addr,
         -EINVAL, "Invalid parameters for session connect" );
-    dap_return_val_if_fail_err( a_session->state == DAP_HTTP2_SESSION_STATE_IDLE,
-        -EBUSY, "Session is not in IDLE state, cannot connect" );
     log_it(L_DEBUG, "Connecting HTTP2 session %p to %s:%u (SSL: %s)",
                     a_session, a_addr, a_port, a_use_ssl ? "enabled" : "disabled");
 #ifdef DAP_NET_CLIENT_NO_SSL
@@ -142,8 +138,6 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     l_ev_socket->remote_port = a_port;
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-
-    a_session->state = DAP_HTTP2_SESSION_STATE_CONNECTING;
 
     // Connection
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -215,7 +209,6 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
         int l_error = errno;
 #endif
         log_it(L_ERROR, "Connect failed: %d (\"%s\")", l_error, dap_strerror(l_error));
-        a_session->state = DAP_HTTP2_SESSION_STATE_ERROR;
         dap_events_socket_delete_unsafe(l_ev_socket, true);
         a_session->es = NULL;
         return -l_error;
@@ -230,11 +223,6 @@ void dap_http2_session_close(dap_http2_session_t *a_session)
     }
 
     log_it(L_DEBUG, "Closing HTTP2 session %p", a_session);
-
-    // Update state if not already in error
-    if (a_session->state != DAP_HTTP2_SESSION_STATE_ERROR) {
-        a_session->state = DAP_HTTP2_SESSION_STATE_CLOSING;
-    }
 
     // Clean up timers
     if (a_session->connect_timer) {
@@ -332,14 +320,6 @@ int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, s
     return -1;
 }
 
-// State queries
-dap_http2_session_state_t dap_http2_session_get_state(const dap_http2_session_t *a_session)
-{
-    // TODO: Implement state query
-    UNUSED(a_session);
-    return DAP_HTTP2_SESSION_STATE_IDLE;
-}
-
 bool dap_http2_session_is_connected(const dap_http2_session_t *a_session)
 {
     // TODO: Implement connection check
@@ -369,7 +349,6 @@ dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_sessi
     
     // TODO: Implementation - create single stream
     log_it(L_DEBUG, "Creating single stream for session %p", a_session);
-    a_session->stream_id = 1;
     return NULL;
 }
 
@@ -464,8 +443,6 @@ static void s_session_connected_callback(dap_events_socket_t *a_esocket)
         l_session->connect_timer = NULL;
     }
 
-    // Update session state
-    l_session->state = DAP_HTTP2_SESSION_STATE_CONNECTED;
     l_session->ts_established = time(NULL);
 
     // TODO: Setup read timeout timer on stream level
@@ -513,9 +490,6 @@ static void s_session_error_callback(dap_events_socket_t *a_esocket, int a_error
     log_it(L_ERROR, "HTTP2 session %p socket error: %d (\"%s\")", 
            l_session, a_error, dap_strerror(a_error));
 
-    // Update session state
-    l_session->state = DAP_HTTP2_SESSION_STATE_ERROR;
-
     // Call user callback if set
     if (l_session->callbacks.error) {
         dap_http2_session_error_t l_session_error = DAP_HTTP2_SESSION_ERROR_NETWORK;
@@ -551,11 +525,6 @@ static void s_session_delete_callback(dap_events_socket_t *a_esocket, void *a_ar
     
     log_it(L_DEBUG, "HTTP2 session %p socket being deleted", l_session);
 
-    // Update session state
-    if (l_session->state != DAP_HTTP2_SESSION_STATE_ERROR) {
-        l_session->state = DAP_HTTP2_SESSION_STATE_CLOSED;
-    }
-
     // Clear socket reference
     l_session->es = NULL;
 
@@ -586,9 +555,6 @@ static bool s_session_connect_timeout_callback(void *a_arg)
     dap_http2_session_t *l_session = (dap_http2_session_t *)l_esocket->_inheritor;
     
     log_it(L_WARNING, "HTTP2 session %p connect timeout", l_session);
-
-    // Update session state
-    l_session->state = DAP_HTTP2_SESSION_STATE_ERROR;
 
     // Close socket
     l_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -635,16 +601,3 @@ dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_htt
     UNUSED(a_session);
     return NULL;
 }
-
-const char* dap_http2_session_state_to_str(dap_http2_session_state_t a_state)
-{
-    switch (a_state) {
-        case DAP_HTTP2_SESSION_STATE_IDLE:       return "Idle";
-        case DAP_HTTP2_SESSION_STATE_CONNECTING: return "Connecting";
-        case DAP_HTTP2_SESSION_STATE_CONNECTED:  return "Connected";
-        case DAP_HTTP2_SESSION_STATE_CLOSING:    return "Closing";
-        case DAP_HTTP2_SESSION_STATE_CLOSED:     return "Closed";
-        case DAP_HTTP2_SESSION_STATE_ERROR:      return "Error";
-        default:                                 return "Unknown";
-    }
-} 

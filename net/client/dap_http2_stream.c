@@ -28,8 +28,6 @@ dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
     
     // Basic initialization
     l_stream->session = a_session;
-    l_stream->state = DAP_HTTP2_STREAM_STATE_IDLE;
-    l_stream->stream_id = dap_http2_session_next_stream_id(a_session);
     
     // Initialize callbacks to NULL
     l_stream->read_callback = NULL;
@@ -185,26 +183,6 @@ size_t dap_http2_stream_read_callback_sse(dap_http2_stream_t *a_stream,
     return 0;
 }
 
-// === STATE MANAGEMENT ===
-
-/**
- * @brief Get current stream state
- */
-dap_http2_stream_state_t dap_http2_stream_get_state(dap_http2_stream_t *a_stream)
-{
-    // TODO: Implementation
-    return DAP_HTTP2_STREAM_STATE_IDLE;
-}
-
-/**
- * @brief Set stream state
- */
-void dap_http2_stream_set_state(dap_http2_stream_t *a_stream,
-                               dap_http2_stream_state_t a_state)
-{
-    // TODO: Implementation
-}
-
 /**
  * @brief Check if stream is in error state
  */
@@ -245,25 +223,6 @@ const char* dap_http2_stream_get_protocol_name(const dap_http2_stream_t *a_strea
         return "SSE";
     } else {
         return "Custom";
-    }
-}
-
-/**
- * @brief Get state string representation
- */
-const char* dap_http2_stream_state_to_str(dap_http2_stream_state_t a_state)
-{
-    switch (a_state) {
-        case DAP_HTTP2_STREAM_STATE_IDLE:           return "IDLE";
-        case DAP_HTTP2_STREAM_STATE_REQUEST_SENT:   return "REQUEST_SENT";
-        case DAP_HTTP2_STREAM_STATE_HEADERS:        return "HEADERS";
-        case DAP_HTTP2_STREAM_STATE_BODY:           return "BODY";
-        case DAP_HTTP2_STREAM_STATE_COMPLETE:       return "COMPLETE";
-        case DAP_HTTP2_STREAM_STATE_ERROR:          return "ERROR";
-        case DAP_HTTP2_STREAM_STATE_UPGRADED:       return "UPGRADED";
-        case DAP_HTTP2_STREAM_STATE_CLOSING:        return "CLOSING";
-        case DAP_HTTP2_STREAM_STATE_CLOSED:         return "CLOSED";
-        default:                                    return "Unknown";
     }
 }
 
@@ -407,7 +366,7 @@ int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
 }
 
 int dap_http2_stream_request_session_encryption(dap_http2_stream_t *a_stream,
-                                               dap_session_encryption_type_t a_encryption_type,
+                                               int a_encryption_type,
                                                const void *a_key_data,
                                                size_t a_key_size)
 {

@@ -39,14 +39,6 @@
 #include "dap_timerfd.h"
 #include "dap_stream_callbacks.h"
 
-// Session encryption types
-typedef enum {
-    DAP_SESSION_ENCRYPTION_NONE,
-    DAP_SESSION_ENCRYPTION_TLS,
-    DAP_SESSION_ENCRYPTION_CUSTOM,
-    DAP_SESSION_ENCRYPTION_TLS_CUSTOM
-} dap_session_encryption_type_t;
-
 // === CHANNEL UID CONSTANTS ===
 #define CHANNEL_UID_WORKER_BITS     8
 #define CHANNEL_UID_ESOCKET_BITS    32  

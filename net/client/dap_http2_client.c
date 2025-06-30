@@ -24,64 +24,140 @@
 #include "dap_http2_client.h"
 #include "dap_http2_session.h"
 #include "dap_http2_stream.h"
+#include "dap_worker.h"
+#include "dap_http_header.h"
+#include "dap_events_socket.h"
+#include "http_status_code.h"
+#include <semaphore.h>
+#include <pthread.h>
+#include <time.h>
+#include <ctype.h>
+#include <errno.h>
 
 #define LOG_TAG "dap_http2_client"
 
-// === EFFICIENT HTTP METHOD IMPLEMENTATION ===
+// === HTTP STREAM CONTEXT ===
+// Bridge between Client Layer and Stream callbacks
+// Contains all HTTP-specific state and logic adapted from dap_client_http.c
 
-// Fast method-to-string conversion table (O(1) access)
-const char* const DAP_HTTP_METHOD_STRINGS[DAP_HTTP_METHOD_COUNT] = {
-    [DAP_HTTP_METHOD_GET]     = "GET",
-    [DAP_HTTP_METHOD_POST]    = "POST", 
-    [DAP_HTTP_METHOD_PUT]     = "PUT",
-    [DAP_HTTP_METHOD_DELETE]  = "DELETE",
-    [DAP_HTTP_METHOD_HEAD]    = "HEAD",
-    [DAP_HTTP_METHOD_OPTIONS] = "OPTIONS",
-    [DAP_HTTP_METHOD_PATCH]   = "PATCH",
-    [DAP_HTTP_METHOD_CONNECT] = "CONNECT",
-    [DAP_HTTP_METHOD_TRACE]   = "TRACE"
-};
+typedef enum {
+        HTTP_PARSE_HEADERS = 0,
+        HTTP_PARSE_BODY = 1,
+        HTTP_PARSE_COMPLETE = 2
+    } http_parse_state_t;
+typedef struct dap_http_client_context {
+    // === CLIENT REFERENCES ===
+    dap_http2_client_t *client;                    // Back reference to client
+    dap_http2_client_request_t *request;           // Current request being processed
+    
+    // === HTTP RESPONSE STATE (adapted from dap_client_http.c) ===
+    http_status_code_t status_code;                // Cached HTTP status code
+    struct dap_http_header *response_headers;      // Parsed response headers
+    size_t content_length;                         // Content-Length header value
+    bool is_chunked;                              // Transfer-Encoding: chunked
+    
+    // === HTTP PARSING STATE MACHINE ===
+    http_parse_state_t parse_state;                // Current parsing state
+    
+    // === STREAMING LOGIC (adapted from dap_client_http.c) ===
+    bool streaming_enabled;                        // Zero-copy streaming mode
+    size_t streaming_threshold;                    // Size threshold for streaming decision
+    size_t streamed_body_size;                     // Total bytes streamed (for progress)
+    
+    // === CHUNKED TRANSFER ENCODING (adapted from dap_client_http.c) ===
+    bool reading_chunk_size;                       // Currently reading chunk size line
+    size_t current_chunk_size;                     // Size of current chunk
+    size_t current_chunk_read;                     // Bytes read from current chunk
+    uint64_t current_chunk_id;                     // Unique chunk ID for integrity
+    uint64_t next_chunk_id;                        // Counter for generating chunk IDs
+    uint8_t chunked_error_count;                   // Error recovery counter
+    
+    // === RESPONSE BUFFER (adapted from dap_client_http.c) ===
+    uint8_t *response_buffer;                      // Response body buffer
+    size_t response_size;                          // Current response size
+    size_t response_capacity;                      // Buffer capacity
+    
+    // === REDIRECT SUPPORT ===
+    uint8_t redirect_count;                        // Current redirect counter
+    uint8_t max_redirects;                         // Maximum allowed redirects (from config)
+    bool follow_redirects;                         // Flag to enable/disable redirect following
+    char *redirect_location;                       // Temporary storage for Location header value
+    
+    // === SYNC/ASYNC SUPPORT ===
+    sem_t completion_semaphore;                    // Semaphore for sync requests (simpler than mutex+condvar)
+    int error_code;                               // Error code for sync requests
+    bool request_complete;                        // Completion flag
+    
+    // === TIMEOUTS ===
+    time_t ts_last_read;                          // Last data received timestamp
+    
+} dap_http_client_context_t;
 
-/**
- * @brief Parse string to HTTP method enum (optimized with early exit)
- * @param a_method_str Method string
- * @return Method enum or DAP_HTTP_METHOD_COUNT if invalid
- */
-dap_http_method_t dap_http_method_from_string(const char *a_method_str)
-{
-    if (!a_method_str) {
-        return DAP_HTTP_METHOD_COUNT;
-    }
-    
-    // Optimized: check first character for early filtering
-    switch (a_method_str[0]) {
-        case 'G':
-            if (strcmp(a_method_str, "GET") == 0) return DAP_HTTP_METHOD_GET;
-            break;
-        case 'P':
-            if (strcmp(a_method_str, "POST") == 0) return DAP_HTTP_METHOD_POST;
-            if (strcmp(a_method_str, "PUT") == 0) return DAP_HTTP_METHOD_PUT;
-            if (strcmp(a_method_str, "PATCH") == 0) return DAP_HTTP_METHOD_PATCH;
-            break;
-        case 'D':
-            if (strcmp(a_method_str, "DELETE") == 0) return DAP_HTTP_METHOD_DELETE;
-            break;
-        case 'H':
-            if (strcmp(a_method_str, "HEAD") == 0) return DAP_HTTP_METHOD_HEAD;
-            break;
-        case 'O':
-            if (strcmp(a_method_str, "OPTIONS") == 0) return DAP_HTTP_METHOD_OPTIONS;
-            break;
-        case 'C':
-            if (strcmp(a_method_str, "CONNECT") == 0) return DAP_HTTP_METHOD_CONNECT;
-            break;
-        case 'T':
-            if (strcmp(a_method_str, "TRACE") == 0) return DAP_HTTP_METHOD_TRACE;
-            break;
-    }
-    
-    return DAP_HTTP_METHOD_COUNT; // Invalid method
-}
+// === HTTP CONSTANTS (adapted from dap_client_http.c) ===
+#define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB maximum
+#define DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT (1024 * 1024) // 1MB
+#define DAP_CLIENT_HTTP_STREAMING_BUFFER_SIZE (128 * 1024) // 128KB optimal for streaming
+#define DAP_CLIENT_HTTP_MAX_HEADERS_SIZE (16 * 1024) // 16KB max for headers
+#define MAX_CHUNKED_PARSE_ERRORS 3
+#define MAX_HTTP_REDIRECTS 5
+
+// === CLEAR RETURN CODES ===
+typedef enum {
+    HTTP_PROCESS_SUCCESS = 1,         // Data processed successfully, can continue
+    HTTP_PROCESS_NEED_MORE_DATA = 0,  // Need more data, wait for next call
+    HTTP_PROCESS_ERROR = -1,          // Processing error, terminate connection
+    HTTP_PROCESS_COMPLETE = -2,       // Processing complete, close connection
+    HTTP_PROCESS_TRANSITION = -3      // Transition to another handler required
+} http_process_result_t;
+
+// === HTTP STREAM STATES (protocol-specific) ===
+typedef enum {
+    DAP_HTTP_STREAM_STATE_IDLE = 0,           // Stream created, no request sent
+    DAP_HTTP_STREAM_STATE_REQUEST_SENT = 1,   // HTTP request sent, waiting for response
+    DAP_HTTP_STREAM_STATE_HEADERS = 2,        // Receiving/parsing HTTP headers
+    DAP_HTTP_STREAM_STATE_BODY = 3,           // Receiving HTTP body
+    DAP_HTTP_STREAM_STATE_COMPLETE = 4,       // HTTP response complete
+    DAP_HTTP_STREAM_STATE_ERROR = 5           // Error state
+} dap_http_stream_state_t;
+
+// === FORWARD DECLARATIONS ===
+static dap_http_client_context_t* s_create_http_context(dap_http2_client_t *a_client, 
+                                                        dap_http2_client_request_t *a_request);
+static void s_destroy_http_context(dap_http_client_context_t *a_context);
+
+// Session callbacks (define client role)
+static void s_http_session_connected(dap_http2_session_t *a_session);
+static void s_http_session_data_received(dap_http2_session_t *a_session, const void *a_data, size_t a_size);
+static void s_http_session_error(dap_http2_session_t *a_session, int a_error);
+static void s_http_session_closed(dap_http2_session_t *a_session);
+
+// Specialized stream read callbacks (decomposed for efficiency)
+static size_t s_http_stream_read_headers(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
+static size_t s_http_stream_read_accumulation(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
+static size_t s_http_stream_read_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
+static size_t s_http_stream_read_chunked_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
+
+// HTTP protocol functions (adapted from dap_client_http.c)
+static char* s_format_http_request(const dap_http2_client_request_t *a_request);
+static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
+static http_process_result_t s_process_chunked_data(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
+static http_process_result_t s_process_chunked_data_streaming(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
+
+// Additional HTTP parsing functions
+static http_status_code_t s_extract_http_status_code(const char *a_data, size_t a_size);
+static dap_http_header_t *s_parse_single_header(dap_http_client_context_t *a_context, const char *a_line, size_t a_length);
+
+
+
+// Completion handlers
+static void s_complete_http_request(dap_http_client_context_t *a_context, int a_error_code);
+
+// Redirect handlers
+static int s_process_http_redirect(dap_http_client_context_t *a_context);
+static bool s_is_redirect_status_code(http_status_code_t a_status);
+
+// === HTTP METHOD IMPLEMENTATION ===
+// Using common functions from dap_http_header.h
 
 // Default configuration values
 #define DEFAULT_CONNECT_TIMEOUT_MS    20000  // 20 seconds
@@ -186,9 +262,7 @@ void dap_http2_client_delete(dap_http2_client_t *a_client)
     }
     
     // Clean up configuration strings
-    DAP_DEL_MULTY(a_client->config.default_user_agent,
-                  a_client->config.default_accept,
-                  a_client->config.ssl_cert_path,
+    DAP_DEL_MULTY(a_client->config.ssl_cert_path,
                   a_client->config.ssl_key_path,
                   a_client->config.ssl_ca_path);
     
@@ -217,10 +291,6 @@ dap_http2_client_config_t dap_http2_client_config_default(void)
         .verify_ssl = true,
         .enable_compression = false,
         
-        // Headers (will be allocated when set)
-        .default_user_agent = dap_strdup("DAP-HTTP2-Client/1.0"),
-        .default_accept = dap_strdup("*/*"),
-        
         // SSL paths (NULL by default)
         .ssl_cert_path = NULL,
         .ssl_key_path = NULL,
@@ -241,9 +311,7 @@ void dap_http2_client_set_config(dap_http2_client_t *a_client, const dap_http2_c
     }
     
     // Clean up old config strings
-    DAP_DEL_MULTY(a_client->config.default_user_agent,
-                  a_client->config.default_accept,
-                  a_client->config.ssl_cert_path,
+    DAP_DEL_MULTY(a_client->config.ssl_cert_path,
                   a_client->config.ssl_key_path,
                   a_client->config.ssl_ca_path);
     
@@ -251,8 +319,6 @@ void dap_http2_client_set_config(dap_http2_client_t *a_client, const dap_http2_c
     a_client->config = *a_config;
     
     // Duplicate strings
-    a_client->config.default_user_agent = dap_strdup(a_config->default_user_agent);
-    a_client->config.default_accept = dap_strdup(a_config->default_accept);
     a_client->config.ssl_cert_path = dap_strdup(a_config->ssl_cert_path);
     a_client->config.ssl_key_path = dap_strdup(a_config->ssl_key_path);
     a_client->config.ssl_ca_path = dap_strdup(a_config->ssl_ca_path);
@@ -449,7 +515,7 @@ void dap_http2_client_cancel(dap_http2_client_t *a_client)
         
         atomic_store(&a_client->state, DAP_HTTP2_CLIENT_STATE_CANCELLED);
         
-        // TODO: Cancel session/stream через UID routing
+        // TODO: Cancel session/stream via UID routing
         // uint64_t l_stream_uid = atomic_load(&a_client->stream_uid);
         // if (l_stream_uid != INVALID_STREAM_UID) {
         //     dap_http2_stream_cancel_by_uid(l_stream_uid);
@@ -476,7 +542,7 @@ void dap_http2_client_close(dap_http2_client_t *a_client)
     // Cancel first
     dap_http2_client_cancel(a_client);
     
-    // TODO: Close session через UID routing
+    // TODO: Close session via UID routing
     // uint64_t l_stream_uid = atomic_load(&a_client->stream_uid);
     // if (l_stream_uid != INVALID_STREAM_UID) {
     //     dap_http2_session_close_by_stream_uid(l_stream_uid);
@@ -490,41 +556,55 @@ void dap_http2_client_close(dap_http2_client_t *a_client)
 
 // === UTILITY FUNCTIONS ===
 
+// === STRING REPRESENTATIONS (EFFICIENT: indexed arrays) ===
+
+static const char* s_client_state_strings[] = {
+    [DAP_HTTP2_CLIENT_STATE_IDLE] = "IDLE",
+    [DAP_HTTP2_CLIENT_STATE_REQUESTING] = "REQUESTING", 
+    [DAP_HTTP2_CLIENT_STATE_RECEIVING] = "RECEIVING",
+    [DAP_HTTP2_CLIENT_STATE_COMPLETE] = "COMPLETE",
+    [DAP_HTTP2_CLIENT_STATE_ERROR] = "ERROR",
+    [DAP_HTTP2_CLIENT_STATE_CANCELLED] = "CANCELLED"
+};
+
+static const char* s_client_error_strings[] = {
+    [DAP_HTTP2_CLIENT_ERROR_NONE] = "NONE",
+    [DAP_HTTP2_CLIENT_ERROR_INVALID_URL] = "INVALID_URL",
+    [DAP_HTTP2_CLIENT_ERROR_INVALID_METHOD] = "INVALID_METHOD",
+    [DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED] = "CONNECTION_FAILED",
+    [DAP_HTTP2_CLIENT_ERROR_TIMEOUT] = "TIMEOUT",
+    [DAP_HTTP2_CLIENT_ERROR_CANCELLED] = "CANCELLED",
+    [DAP_HTTP2_CLIENT_ERROR_INTERNAL] = "INTERNAL",
+    [DAP_HTTP2_CLIENT_ERROR_TOO_MANY_REDIRECTS] = "TOO_MANY_REDIRECTS",
+    [DAP_HTTP2_CLIENT_ERROR_INVALID_REDIRECT_URL] = "INVALID_REDIRECT_URL",
+    [DAP_HTTP2_CLIENT_ERROR_REDIRECT_LOOP] = "REDIRECT_LOOP",
+    [DAP_HTTP2_CLIENT_ERROR_REDIRECT_WITHOUT_LOCATION] = "REDIRECT_WITHOUT_LOCATION"
+};
+
 /**
- * @brief Get client state string representation
+ * @brief Get client state string representation (EFFICIENT: O(1) array access)
  * @param a_state Client state
  * @return State name string
  */
 const char* dap_http2_client_state_to_str(dap_http2_client_state_t a_state)
 {
-    switch (a_state) {
-        case DAP_HTTP2_CLIENT_STATE_IDLE:       return "IDLE";
-        case DAP_HTTP2_CLIENT_STATE_REQUESTING: return "REQUESTING";
-        case DAP_HTTP2_CLIENT_STATE_RECEIVING:  return "RECEIVING";
-        case DAP_HTTP2_CLIENT_STATE_COMPLETE:   return "COMPLETE";
-        case DAP_HTTP2_CLIENT_STATE_ERROR:      return "ERROR";
-        case DAP_HTTP2_CLIENT_STATE_CANCELLED:  return "CANCELLED";
-        default:                                return "UNKNOWN";
+    if (a_state >= 0 && a_state < (int)(sizeof(s_client_state_strings) / sizeof(s_client_state_strings[0]))) {
+        return s_client_state_strings[a_state];
     }
+    return "UNKNOWN";
 }
 
 /**
- * @brief Get client error string representation
+ * @brief Get client error string representation (EFFICIENT: O(1) array access)
  * @param a_error Client error
  * @return Error name string
  */
 const char* dap_http2_client_error_to_str(dap_http2_client_error_t a_error)
 {
-    switch (a_error) {
-        case DAP_HTTP2_CLIENT_ERROR_NONE:               return "NONE";
-        case DAP_HTTP2_CLIENT_ERROR_INVALID_URL:        return "INVALID_URL";
-        case DAP_HTTP2_CLIENT_ERROR_INVALID_METHOD:     return "INVALID_METHOD";
-        case DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED:  return "CONNECTION_FAILED";
-        case DAP_HTTP2_CLIENT_ERROR_TIMEOUT:            return "TIMEOUT";
-        case DAP_HTTP2_CLIENT_ERROR_CANCELLED:          return "CANCELLED";
-        case DAP_HTTP2_CLIENT_ERROR_INTERNAL:           return "INTERNAL";
-        default:                                        return "UNKNOWN";
+    if (a_error >= 0 && a_error < (int)(sizeof(s_client_error_strings) / sizeof(s_client_error_strings[0]))) {
+        return s_client_error_strings[a_error];
     }
+    return "UNKNOWN";
 }
 
 // === REQUEST MANAGEMENT ===
@@ -542,8 +622,7 @@ dap_http2_client_request_t *dap_http2_client_request_create(void)
     }
 
     // EFFICIENT: Initialize with default values (no string allocations)
-    l_request->method = DAP_HTTP_METHOD_GET;  // Default to GET (enum, no allocation)
-    l_request->url = NULL;
+    l_request->method = HTTP_GET;  // Default to GET (enum, no allocation)
     l_request->host = NULL;
     l_request->port = 80;  // Default HTTP port
     l_request->use_ssl = false;
@@ -569,8 +648,8 @@ void dap_http2_client_request_delete(dap_http2_client_request_t *a_request)
     log_it(L_DEBUG, "Deleting HTTP2 client request");
 
     // EFFICIENT: Free only allocated strings (method is enum, no cleanup needed)
-    DAP_DEL_MULTY(a_request->url,
-                  a_request->host,
+    DAP_DEL_MULTY(a_request->host,
+                  a_request->path,
                   a_request->content_type,
                   a_request->custom_headers,
                   a_request->body_data);
@@ -719,28 +798,17 @@ int dap_http2_client_request_set_url(dap_http2_client_request_t *a_request, cons
     }
 
     // Clean up old URL data
-    DAP_DEL_MULTY(a_request->url, a_request->host);
+    DAP_DEL_MULTY(a_request->host, a_request->path);
 
-    // Store full URL
-    a_request->url = dap_strdup(a_url);
-    if (!a_request->url) {
-        log_it(L_CRITICAL, "Failed to allocate memory for URL");
-        return -2;
-    }
-
-    // EFFICIENT: Parse only needed components (no path allocation)
+    // EFFICIENT: Parse URL components directly (no full URL storage needed)
     int l_result = s_parse_url(a_url, 
                                         &a_request->host,    // Need host
                                         &a_request->port,    // Need port
-                                        NULL,                // Don't need path (saves allocation!)
+                                        &a_request->path,    // Need path for HTTP request
                                         &a_request->use_ssl); // Need SSL flag
-    if (l_result < 0) {
-        DAP_DEL_Z(a_request->url);  // EFFICIENT: no NULL check needed, auto-nullify
-        return l_result;
-    }
-
-    log_it(L_DEBUG, "Set request URL: %s", a_url);
-    return 0;
+    if (!l_result)
+        log_it(L_DEBUG, "Set request URL: %s", a_url);
+    return l_result;    
 }
 
 /**
@@ -757,8 +825,8 @@ int dap_http2_client_request_set_method(dap_http2_client_request_t *a_request, c
     }
 
     // EFFICIENT: Parse to enum (optimized with early exit)
-    dap_http_method_t l_method_enum = dap_http_method_from_string(a_method);
-    if (l_method_enum == DAP_HTTP_METHOD_COUNT) {
+    dap_http_method_t l_method_enum = dap_http_method_from_str(a_method);
+    if (l_method_enum == HTTP_INVALID) {
         log_it(L_ERROR, "Invalid HTTP method: %s", a_method);
         return -2;
     }
@@ -835,3 +903,1764 @@ int dap_http2_client_request_set_body(dap_http2_client_request_t *a_request, con
 
     return 0;
 }
+
+// === HTTP CONTEXT MANAGEMENT ===
+
+/**
+ * @brief Create HTTP client context for session/stream callbacks
+ * @param a_client HTTP client instance
+ * @param a_request Request to process
+ * @return New HTTP context or NULL on error
+ */
+static dap_http_client_context_t* s_create_http_context(dap_http2_client_t *a_client, 
+                                                        dap_http2_client_request_t *a_request)
+{
+    if (!a_client || !a_request) {
+        log_it(L_ERROR, "Invalid arguments for HTTP context creation");
+        return NULL;
+    }
+    
+    dap_http_client_context_t *l_context = DAP_NEW_Z(dap_http_client_context_t);
+    if (!l_context) {
+        log_it(L_CRITICAL, "Failed to allocate HTTP context");
+        return NULL;
+    }
+    
+    // === CLIENT REFERENCES ===
+    l_context->client = a_client;
+    l_context->request = a_request;
+    
+    // === ONLY NON-ZERO FIELDS (DAP_NEW_Z already zeroed everything) ===
+    l_context->streaming_threshold = DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT;
+    l_context->reading_chunk_size = true;  // Start reading chunk size for chunked mode
+    l_context->ts_last_read = time(NULL);
+    
+    // === REDIRECT INITIALIZATION ===
+    l_context->redirect_count = 0;
+    l_context->max_redirects = a_client->config.max_redirects > 0 ? 
+                              a_client->config.max_redirects : 
+                              DAP_HTTP2_CLIENT_MAX_REDIRECTS_DEFAULT;
+    l_context->follow_redirects = a_client->config.follow_redirects;
+    l_context->redirect_location = NULL;
+    
+    // === SYNC SUPPORT ===
+    if (sem_init(&l_context->completion_semaphore, 0, 0) != 0) {
+        log_it(L_ERROR, "Failed to initialize completion semaphore: %s", strerror(errno));
+        DAP_DELETE(l_context);
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "Created HTTP context for %s %s%s", 
+           dap_http_method_to_str(a_request->method), a_request->host, 
+           a_request->path ? a_request->path : "");
+    
+    return l_context;
+}
+
+/**
+ * @brief Destroy HTTP client context and cleanup resources
+ * @param a_context HTTP context to destroy
+ */
+static void s_destroy_http_context(dap_http_client_context_t *a_context)
+{
+    if (!a_context) {
+        return;
+    }
+    
+    log_it(L_DEBUG, "Destroying HTTP context");
+    
+    // === CLEANUP RESPONSE HEADERS ===
+    while (a_context->response_headers) {
+        dap_http_header_remove(&a_context->response_headers, a_context->response_headers);
+    }
+    
+    // === CLEANUP RESPONSE BUFFER ===
+    DAP_DEL_Z(a_context->response_buffer);
+    
+    // === CLEANUP REDIRECT LOCATION ===
+    DAP_DEL_Z(a_context->redirect_location);
+    
+    // === CLEANUP SEMAPHORE ===
+    sem_destroy(&a_context->completion_semaphore);
+    
+    // === CLEANUP CONTEXT ===
+    DAP_DELETE(a_context);
+}
+
+/**
+ * @brief Complete HTTP request and signal waiting threads
+ * @param a_context HTTP context
+ * @param a_error_code Error code (0 = success)
+ */
+static void s_complete_http_request(dap_http_client_context_t *a_context, int a_error_code)
+{
+    if (!a_context) {
+        return;
+    }
+    
+    log_it(L_DEBUG, "Completing HTTP request with error code: %d", a_error_code);
+    
+    a_context->error_code = a_error_code;
+    a_context->request_complete = true;
+    
+    // Signal semaphore to unblock sync requests
+    sem_post(&a_context->completion_semaphore);
+    
+    // Call client callbacks for async requests
+    if (a_context->client) {
+        if (a_error_code == 0 && a_context->client->callbacks.response_cb) {
+            a_context->client->callbacks.response_cb(
+                a_context->client,
+                a_context->status_code,
+                a_context->response_buffer,
+                a_context->response_size
+            );
+        } else if (a_error_code != 0 && a_context->client->callbacks.error_cb) {
+            a_context->client->callbacks.error_cb(
+                a_context->client,
+                (dap_http2_client_error_t)a_error_code
+            );
+        }
+    }
+}
+
+// === HTTP REQUEST FORMATTING ===
+
+/**
+ * @brief Format HTTP request string (SUPER-EFFICIENT: minimal conditions)
+ * @param a_request Request to format
+ * @return Formatted HTTP request string (caller must free) or NULL on error
+ */
+static char* s_format_http_request(const dap_http2_client_request_t *a_request)
+{
+    if (!a_request || !a_request->host) {
+        log_it(L_ERROR, "Invalid request for HTTP formatting");
+        return NULL;
+    }
+    
+    const char *l_method_str = dap_http_method_to_str(a_request->method);
+    if (!l_method_str) {
+        log_it(L_ERROR, "Invalid HTTP method: %d", a_request->method);
+        return NULL;
+    }
+    
+    // Path handling: slash in format string, no dynamic allocation!
+    const char *l_path = a_request->path ? a_request->path : "";
+    const char *l_slash = (l_path[0] == '/' || l_path[0] == '\0') ? "" : "/";
+    if (l_path[0] == '\0') l_path = "/"; // Empty path = root
+    
+    // Determine request type once
+    bool l_has_body = (a_request->method == HTTP_POST || a_request->method == HTTP_PUT);
+    
+    const char *l_format;
+    int l_headers_size;
+    
+    if (l_has_body) {
+        // POST/PUT format
+        l_format = "%s %s%s HTTP/1.1\r\n"
+                   "Host: %s\r\n"
+                   "User-Agent: DAP-HTTP2-Client/1.0\r\n"
+                   "Accept: */*\r\n"
+                   "Connection: close\r\n"
+                   "%s%s%s"           // Content-Type (conditional)
+                   "Content-Length: %zu\r\n"
+                   "%s%s"             // Custom headers
+                   "\r\n";
+        
+        l_headers_size = snprintf(NULL, 0, l_format,
+            l_method_str, l_slash, l_path, a_request->host,
+            a_request->content_type ? "Content-Type: " : "",
+            a_request->content_type ? a_request->content_type : "",
+            a_request->content_type ? "\r\n" : "",
+            a_request->body_size,
+            a_request->custom_headers ? a_request->custom_headers : "",
+            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
+        );
+    } else {
+        // GET format
+        l_format = "%s %s%s HTTP/1.1\r\n"
+                   "Host: %s\r\n"
+                   "User-Agent: DAP-HTTP2-Client/1.0\r\n"
+                   "Accept: */*\r\n"
+                   "Accept-Encoding: gzip, deflate\r\n"
+                   "Connection: close\r\n"
+                   "%s%s"             // Custom headers
+                   "\r\n";
+        
+        l_headers_size = snprintf(NULL, 0, l_format,
+            l_method_str, l_slash, l_path, a_request->host,
+            a_request->custom_headers ? a_request->custom_headers : "",
+            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
+        );
+    }
+    
+    if (l_headers_size < 0) {
+        log_it(L_ERROR, "Failed to calculate HTTP headers size");
+        return NULL;
+    }
+    
+    // Calculate total size (headers + body + null terminator)
+    size_t l_body_size = (l_has_body && a_request->body_data && a_request->body_size > 0) ? 
+                         a_request->body_size : 0;
+    size_t l_total_size = l_headers_size + l_body_size + 1;
+    
+    // Single allocation for entire request
+    char *l_request = DAP_NEW_SIZE(char, l_total_size);
+    if (!l_request) {
+        log_it(L_CRITICAL, "Failed to allocate HTTP request buffer (%zu bytes)", l_total_size);
+        return NULL;
+    }
+    
+    // Fill headers part
+    if (l_has_body) {
+        snprintf(l_request, l_headers_size + 1, l_format,
+            l_method_str, l_slash, l_path, a_request->host,
+            a_request->content_type ? "Content-Type: " : "",
+            a_request->content_type ? a_request->content_type : "",
+            a_request->content_type ? "\r\n" : "",
+            a_request->body_size,
+            a_request->custom_headers ? a_request->custom_headers : "",
+            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
+        );
+    } else {
+        snprintf(l_request, l_headers_size + 1, l_format,
+            l_method_str, l_slash, l_path, a_request->host,
+            a_request->custom_headers ? a_request->custom_headers : "",
+            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
+        );
+    }
+    
+    // Add body if present (direct memcpy, no realloc needed!)
+    if (l_body_size > 0) {
+        memcpy(l_request + l_headers_size, a_request->body_data, l_body_size);
+        l_request[l_headers_size + l_body_size] = '\0';
+    }
+    
+    log_it(L_DEBUG, "Formatted HTTP request (%zu bytes): %s %s%s", l_total_size - 1, l_method_str, l_slash, l_path);
+    return l_request;
+}
+
+// === SESSION CALLBACKS (define client role) ===
+
+/**
+ * @brief Session connected callback - send HTTP request
+ * @param a_session Connected session
+ */
+static void s_http_session_connected(dap_http2_session_t *a_session)
+{
+    if (!a_session) {
+        log_it(L_ERROR, "Session is NULL in connected callback");
+        return;
+    }
+    
+    // Get HTTP context from session callbacks
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_session->callbacks_arg;
+    if (!l_context) {
+        log_it(L_ERROR, "HTTP context is NULL in session connected");
+        return;
+    }
+    
+    log_it(L_INFO, "HTTP session connected, sending request");
+    
+    // Format HTTP request
+    char *l_http_request = s_format_http_request(l_context->request);
+    if (!l_http_request) {
+        log_it(L_ERROR, "Failed to format HTTP request");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+        return;
+    }
+    
+    // Send HTTP request through session
+    int l_sent = dap_http2_session_send(a_session, l_http_request, strlen(l_http_request));
+    if (l_sent < 0) {
+        log_it(L_ERROR, "Failed to send HTTP request: %d", l_sent);
+        DAP_DELETE(l_http_request);
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
+        return;
+    }
+    
+    log_it(L_DEBUG, "HTTP request sent successfully (%d bytes)", l_sent);
+    DAP_DELETE(l_http_request);
+    
+    // Get stream and set state to REQUEST_SENT
+    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
+    if (l_stream) {
+        dap_http2_stream_set_state(l_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
+    }
+    
+    // Update client state
+    atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
+}
+
+/**
+ * @brief Session data received callback - forward to stream
+ * @param a_session Session instance
+ * @param a_data Received data
+ * @param a_size Data size
+ */
+static void s_http_session_data_received(dap_http2_session_t *a_session, const void *a_data, size_t a_size)
+{
+    if (!a_session || !a_data || a_size == 0) {
+        return;
+    }
+    
+    // Get stream from session and forward data
+    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
+    if (l_stream) {
+        // Data will be processed by stream read callback
+        dap_http2_stream_process_data(l_stream, a_data, a_size);
+    }
+}
+
+/**
+ * @brief Session error callback - handle connection errors
+ * @param a_session Session instance
+ * @param a_error Error code
+ */
+static void s_http_session_error(dap_http2_session_t *a_session, int a_error)
+{
+    if (!a_session) {
+        return;
+    }
+    
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_session->callbacks_arg;
+    if (!l_context) {
+        return;
+    }
+    
+    log_it(L_WARNING, "HTTP session error: %d (%s)", a_error, strerror(abs(a_error)));
+    
+    // Map system errors to client errors
+    dap_http2_client_error_t l_client_error;
+    switch (a_error) {
+        case ETIMEDOUT:
+            l_client_error = DAP_HTTP2_CLIENT_ERROR_TIMEOUT;
+            break;
+        case ECONNREFUSED:
+        case EHOSTUNREACH:
+        case ENETUNREACH:
+            l_client_error = DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED;
+            break;
+        default:
+            l_client_error = DAP_HTTP2_CLIENT_ERROR_INTERNAL;
+            break;
+    }
+    
+    // Update client state
+    atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_ERROR);
+    
+    // Set stream state to ERROR
+    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
+    if (l_stream) {
+        dap_http2_stream_set_state(l_stream, DAP_HTTP_STREAM_STATE_ERROR);
+    }
+    
+    // Complete request with error
+    s_complete_http_request(l_context, l_client_error);
+}
+
+/**
+ * @brief Session closed callback - handle connection close
+ * @param a_session Session instance
+ */
+static void s_http_session_closed(dap_http2_session_t *a_session)
+{
+    if (!a_session) {
+        return;
+    }
+    
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_session->callbacks_arg;
+    if (!l_context) {
+        return;
+    }
+    
+    log_it(L_DEBUG, "HTTP session closed");
+    
+    // If request not completed yet, this is premature close
+    if (!l_context->request_complete) {
+        log_it(L_WARNING, "Session closed before HTTP request completed");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
+    }
+    
+    // Cleanup context
+    s_destroy_http_context(l_context);
+}
+
+/**
+ * @brief ZERO-COPY buffer allocation - streaming or accumulation
+ * Zero-copy (no buffer allocation) for:
+ * - Streaming mode (chunked or large content)
+ * - Small content (<= socket buffer size) - work directly with buf_in
+ * @param a_context HTTP context
+ * @return 0 on success, negative on error
+ */
+static int s_allocate_response_buffer(dap_http_client_context_t *a_context)
+{
+    if (!a_context) {
+        return -1;
+    }
+    
+    DAP_DELETE(a_context->response_buffer);
+    
+    // Special case: Chunked WITHOUT progress callback
+    // Need buffer for accumulation even though streaming_enabled = true
+    bool l_chunked_fallback = (a_context->is_chunked && 
+                              a_context->streaming_enabled && 
+                              !a_context->client->callbacks.progress_cb);
+    
+    // ZERO-COPY MODE: No buffer allocation for streaming (except chunked fallback)
+    if (a_context->streaming_enabled && !l_chunked_fallback) {
+        log_it(L_DEBUG, "Zero-copy streaming mode: no buffer allocation");
+        a_context->response_buffer = NULL;
+        a_context->response_capacity = 0;
+        a_context->response_size = 0;
+        return 0;
+    }
+    
+    // ACCUMULATION MODE: Allocate buffer
+    size_t l_buffer_size;
+    
+    if (l_chunked_fallback) {
+        // Chunked fallback: use maximum size (same as unknown size case)
+        l_buffer_size = DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT;
+        log_it(L_DEBUG, "Allocating chunked fallback buffer: %zu bytes (maximum size, no realloc)", l_buffer_size);
+    } else if (a_context->content_length > 0) {
+        // Known size: exact allocation
+        l_buffer_size = a_context->content_length;
+        if (l_buffer_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+            log_it(L_ERROR, "Content-Length %zu exceeds limit", l_buffer_size);
+            return -1;
+        }
+        log_it(L_DEBUG, "Allocating exact buffer: %zu bytes (Content-Length)", l_buffer_size);
+    } else {
+        // Unknown size: maximum allocation
+        l_buffer_size = DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT;
+        log_it(L_DEBUG, "Allocating maximum buffer: %zu bytes (unknown size)", l_buffer_size);
+    }
+    
+    a_context->response_buffer = DAP_NEW_Z_SIZE(uint8_t, l_buffer_size + 1);
+    if (!a_context->response_buffer) {
+        log_it(L_ERROR, "Failed to allocate %zu bytes for response buffer", l_buffer_size);
+        return -1;
+    }
+    
+    a_context->response_capacity = l_buffer_size;
+    a_context->response_size = 0;
+    
+    if (l_chunked_fallback) {
+        log_it(L_DEBUG, "Chunked fallback buffer allocated: %zu bytes (maximum size, no expansion)", l_buffer_size);
+    } else {
+        log_it(L_DEBUG, "Buffer allocated: %zu bytes (accumulation mode)", l_buffer_size);
+    }
+    
+    return 0;
+}
+
+// === SPECIALIZED STREAM CALLBACKS (decomposed for efficiency) ===
+
+/**
+ * @brief Headers parsing callback - determines processing mode and transitions
+ * @param a_stream Stream instance
+ * @param a_data Received data
+ * @param a_size Data size
+ * @return Number of bytes processed
+ */
+static size_t s_http_stream_read_headers(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    // Get HTTP context from stream callback context
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    if (!l_context) {
+        log_it(L_ERROR, "HTTP context is NULL in headers callback");
+        return 0;
+    }
+    
+    // Set stream state to HEADERS processing
+    dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_HEADERS);
+    
+    // Update last read time
+    l_context->ts_last_read = time(NULL);
+    
+    // Parse headers from incoming data
+    size_t l_headers_consumed = 0;
+    http_process_result_t l_result = s_parse_http_headers(l_context, a_data, a_size, &l_headers_consumed);
+    
+    switch (l_result) {
+        case HTTP_PROCESS_ERROR:
+            log_it(L_ERROR, "HTTP header parsing failed");
+            dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_ERROR);
+            s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+            return 0;
+            
+        case HTTP_PROCESS_NEED_MORE_DATA:
+            // Need more data for complete headers
+            return 0;
+            
+        case HTTP_PROCESS_SUCCESS:
+            // Headers parsed successfully - allocate buffer and transition
+            l_context->parse_state = HTTP_PARSE_BODY;
+            atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_RECEIVING);
+            
+            // Set stream state to BODY processing
+            dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_BODY);
+            
+            // CRITICAL: Buffer allocation AFTER header parsing
+            if (s_allocate_response_buffer(l_context) < 0) {
+                log_it(L_ERROR, "Failed to allocate response buffer");
+                s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+                return 0;
+            }
+            
+            // Choose appropriate body processing callback based on mode
+            dap_stream_read_callback_t l_new_callback;
+            
+            if (l_context->is_chunked) {
+                // Chunked ALWAYS uses streaming (accumulation is exotic)
+                l_new_callback = s_http_stream_read_chunked_streaming;
+                log_it(L_DEBUG, "Transitioning to chunked streaming mode");
+            } else {
+                if (l_context->streaming_enabled) {
+                    l_new_callback = s_http_stream_read_streaming;
+                    log_it(L_DEBUG, "Transitioning to streaming mode (Content-Length: %zu)", l_context->content_length);
+                } else {
+                    l_new_callback = s_http_stream_read_accumulation;
+                    log_it(L_DEBUG, "Transitioning to accumulation mode (Content-Length: %zu)", l_context->content_length);
+                }
+            }
+            
+            // Perform transition to specialized body processor
+            int l_transition_result = dap_http2_stream_transition_protocol(a_stream, l_new_callback, l_context);
+            if (l_transition_result < 0) {
+                log_it(L_ERROR, "Failed to transition stream protocol");
+                s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+                return 0;
+            }
+            
+            return l_headers_consumed; // Headers processed, body processing will continue with new callback
+            
+        case HTTP_PROCESS_TRANSITION:
+            // Redirect detected and redirects are ENABLED - process redirect
+            log_it(L_DEBUG, "Redirect transition detected - processing redirect");
+            
+            // Process redirect
+            int l_redirect_result = s_process_http_redirect(l_context);
+            if (l_redirect_result == HTTP_PROCESS_TRANSITION) {
+                // Redirect processed successfully - new session will be created
+                log_it(L_INFO, "Redirect processed - creating new connection");
+                s_complete_http_request(l_context, 0); // Success - redirect handled
+                return l_headers_consumed;
+            }
+            else if (l_redirect_result < 0) {
+                log_it(L_ERROR, "Failed to process redirect: %d", l_redirect_result);
+                s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+                return 0;
+            }
+            else {
+                // This should not happen - if redirects are enabled, we should get TRANSITION
+                log_it(L_ERROR, "Unexpected redirect result: %d", l_redirect_result);
+                s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+                return 0;
+            }
+            
+        default:
+            log_it(L_ERROR, "Unexpected result from header parsing: %d", l_result);
+            s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+            return 0;
+    }
+}
+
+/**
+ * @brief Accumulation mode callback - stores data in response buffer
+ * @param a_stream Stream instance
+ * @param a_data Body data
+ * @param a_size Data size
+ * @return Number of bytes processed
+ */
+static size_t s_http_stream_read_accumulation(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    if (!l_context) {
+        return 0;
+    }
+    
+    l_context->ts_last_read = time(NULL);
+    
+    // CRITICAL: Buffer must be allocated in s_http_stream_read_headers!
+    if (!l_context->response_buffer) {
+        log_it(L_ERROR, "Response buffer not allocated - architecture error");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+        return 0;
+    }
+    
+    // NO REALLOCATION! Buffer is already correct size
+    // Check only overflow (protection from errors)
+    if (l_context->response_size + a_size > l_context->response_capacity) {
+        log_it(L_ERROR, "Response buffer overflow: %zu + %zu > %zu (single allocation strategy violated)", 
+               l_context->response_size, a_size, l_context->response_capacity);
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+        return 0;
+    }
+    
+    // Copy data to buffer (efficient single copy)
+    size_t l_copy_size = dap_min(a_size, l_context->response_capacity - l_context->response_size);
+    memcpy(l_context->response_buffer + l_context->response_size, a_data, l_copy_size);
+    l_context->response_size += l_copy_size;
+    
+    // Null-terminate for safety
+    l_context->response_buffer[l_context->response_size] = '\0';
+    
+    // Call progress callback
+    if (l_context->client->callbacks.progress_cb) {
+        l_context->client->callbacks.progress_cb(
+            l_context->client,
+            l_context->response_size,
+            l_context->content_length
+        );
+    }
+    
+    // Check completion
+    if (l_context->content_length > 0 && l_context->response_size >= l_context->content_length) {
+        log_it(L_INFO, "HTTP response complete: %zu bytes accumulated", l_context->response_size);
+        l_context->parse_state = HTTP_PARSE_COMPLETE;
+        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_COMPLETE);
+        
+        // Set stream state to COMPLETE
+        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_COMPLETE);
+        
+        // Call response callback with accumulated data
+        if (l_context->client->callbacks.response_cb) {
+            l_context->client->callbacks.response_cb(
+                l_context->client,
+                l_context->status_code,
+                l_context->response_buffer,
+                l_context->response_size
+            );
+        }
+        
+        s_complete_http_request(l_context, 0); // Success
+    }
+    
+    return l_copy_size;
+}
+
+/**
+ * @brief Streaming mode callback - zero-copy data forwarding
+ * @param a_stream Stream instance
+ * @param a_data Body data (zero-copy pointer)
+ * @param a_size Data size
+ * @return Number of bytes processed
+ */
+static size_t s_http_stream_read_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    if (!l_context) {
+        return 0;
+    }
+    
+    l_context->ts_last_read = time(NULL);
+    
+    // Check size limits for streaming
+    if (l_context->streamed_body_size + a_size > (10 * 1024 * 1024)) { // 10MB limit
+        log_it(L_ERROR, "Zero-copy streaming exceeds size limit");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+        return 0;
+    }
+    
+    // Update streamed size first
+    l_context->streamed_body_size += a_size;
+    
+    // ZERO-COPY: Call progress callback with updated size
+    if (l_context->client->callbacks.progress_cb) {
+        l_context->client->callbacks.progress_cb(
+            l_context->client,
+            l_context->streamed_body_size,  // Updated size
+            l_context->content_length       // Total size (known for non-chunked)
+        );
+    }
+    
+    // Check completion for known content length
+    if (l_context->content_length > 0 && l_context->streamed_body_size >= l_context->content_length) {
+        log_it(L_INFO, "Zero-copy streaming complete: %zu bytes", l_context->streamed_body_size);
+        l_context->parse_state = HTTP_PARSE_COMPLETE;
+        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_COMPLETE);
+        
+        // Set stream state to COMPLETE
+        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_COMPLETE);
+        
+        // Call response callback with NULL data (already streamed)
+        if (l_context->client->callbacks.response_cb) {
+            l_context->client->callbacks.response_cb(
+                l_context->client,
+                l_context->status_code,
+                NULL, // No accumulated data in streaming mode
+                0     // No accumulated size
+            );
+        }
+        
+        s_complete_http_request(l_context, 0); // Success
+    }
+    
+    return a_size; // All data processed (streamed)
+}
+
+/**
+ * @brief Chunked accumulation mode callback
+ * @param a_stream Stream instance
+ * @param a_data Chunk data
+ * @param a_size Data size
+ * @return Number of bytes processed
+ */
+static size_t s_http_stream_read_chunked_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    if (!l_context) {
+        return 0;
+    }
+    
+    l_context->ts_last_read = time(NULL);
+    
+    // Process chunked data with zero-copy streaming
+    size_t l_consumed = 0;
+    http_process_result_t l_result = s_process_chunked_data_streaming(l_context, a_data, a_size, &l_consumed);
+    bool l_complete = (l_result == HTTP_PROCESS_COMPLETE);
+    if (l_complete) {
+        log_it(L_DEBUG, "Chunked streaming complete");
+        l_context->parse_state = HTTP_PARSE_COMPLETE;
+        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_COMPLETE);
+        
+        // Set stream state to COMPLETE
+        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_COMPLETE);
+        
+        // Call response callback with NULL data (already streamed)
+        if (l_context->client->callbacks.response_cb) {
+            l_context->client->callbacks.response_cb(
+                l_context->client,
+                l_context->status_code,
+                NULL, // No accumulated data in streaming mode
+                0     // No accumulated size
+            );
+        }
+        
+        s_complete_http_request(l_context, 0); // Success
+    }
+    
+    return a_size; // Chunked processor handles all data
+}
+
+/**
+ * @brief Process chunked data with zero-copy streaming
+ * @param a_context HTTP client context
+ * @param a_data Chunk data
+ * @param a_size Data size
+ * @return true if processing complete, false if need more data
+ */
+static http_process_result_t s_process_chunked_data_streaming(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed)
+{
+    if (!a_context || !a_data || a_size == 0 || !a_consumed) {
+        return HTTP_PROCESS_ERROR;
+    }
+    
+    const uint8_t *l_data = (const uint8_t*)a_data;
+    size_t l_processed = 0;
+    
+    while (l_processed < a_size) {
+        if (a_context->reading_chunk_size) {
+            // Find CRLF for chunk size line (minimal parsing)
+            const char *l_remaining = (const char*)(l_data + l_processed);
+            size_t l_remaining_size = a_size - l_processed;
+            const char *l_crlf = dap_memmem_n(l_remaining, l_remaining_size, "\r\n", 2);
+            
+            if (!l_crlf) {
+                break; // Need more data
+            }
+            
+            size_t l_size_line_len = l_crlf - l_remaining;
+            
+            // Quick hex parsing (streamlined for performance)
+            unsigned long l_chunk_size = 0;
+            bool l_parse_ok = false;
+            
+            if (l_size_line_len > 0 && l_size_line_len <= 16) {
+                l_parse_ok = true;
+                
+                for (size_t i = 0; i < l_size_line_len && l_parse_ok; i++) {
+                    char l_c = l_remaining[i];
+                    
+                    // Stop at extension separator (streaming doesn't care about extensions)
+                    if (l_c == ';' || l_c == ' ') break;
+                    
+                    int l_digit = -1;
+                    if (l_c >= '0' && l_c <= '9') l_digit = l_c - '0';
+                    else if (l_c >= 'A' && l_c <= 'F') l_digit = l_c - 'A' + 10;
+                    else if (l_c >= 'a' && l_c <= 'f') l_digit = l_c - 'a' + 10;
+                    else { l_parse_ok = false; break; }
+                    
+                    // Simple overflow check
+                    if (l_chunk_size > (ULONG_MAX - l_digit) / 16) {
+                        l_parse_ok = false; break;
+                    }
+                    
+                    l_chunk_size = l_chunk_size * 16 + l_digit;
+                }
+            }
+            
+            if (!l_parse_ok) {
+                log_it(L_ERROR, "Invalid chunk size in streaming mode");
+                return HTTP_PROCESS_ERROR;
+            }
+            
+            // Global size limit check (streaming)
+            if (l_chunk_size > 0 && 
+                a_context->streamed_body_size + l_chunk_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+                log_it(L_ERROR, "Streaming chunk would exceed global limit");
+                return HTTP_PROCESS_ERROR;
+            }
+            
+            l_processed += l_size_line_len + 2; // Skip size line + CRLF
+            a_context->current_chunk_size = (size_t)l_chunk_size;
+            a_context->current_chunk_read = 0;
+            a_context->reading_chunk_size = false;
+            
+            if (l_chunk_size == 0) {
+                // Last chunk - handle trailers minimally (streaming doesn't need them)
+                while (l_processed < a_size) {
+                    const char *l_trailer_data = (const char*)(l_data + l_processed);
+                    size_t l_trailer_remaining = a_size - l_processed;
+                    const char *l_trailer_crlf = dap_memmem_n(l_trailer_data, l_trailer_remaining, "\r\n", 2);
+                    
+                    if (!l_trailer_crlf) break;
+                    
+                    size_t l_trailer_len = l_trailer_crlf - l_trailer_data;
+                    if (l_trailer_len == 0) {
+                        // Final CRLF - streaming complete
+                        l_processed += 2; // Skip final \r\n
+                        *a_consumed = l_processed;
+                        
+                        // Signal completion
+                        if (a_context->client->callbacks.progress_cb) {
+                            // Progress callback was used - signal completion with final total
+                            a_context->client->callbacks.progress_cb(
+                                a_context->client,
+                                a_context->streamed_body_size, // Final total
+                                a_context->streamed_body_size  // Known total now
+                            );
+                        } else {
+                            // No progress callback - call response callback with accumulated data
+                            log_it(L_INFO, "Chunked transfer complete: %zu bytes accumulated", a_context->response_size);
+                            
+                            if (a_context->client->callbacks.response_cb) {
+                                a_context->client->callbacks.response_cb(
+                                    a_context->client,
+                                    a_context->status_code,
+                                    a_context->response_buffer,
+                                    a_context->response_size
+                                );
+                            }
+                        }
+                        
+                        return HTTP_PROCESS_COMPLETE;
+                    } else {
+                        // Skip trailer header (streaming ignores them)
+                        l_processed += l_trailer_len + 2;
+                    }
+                }
+                break; // Need more data for final CRLF
+            }
+            
+        } else {
+            // Reading chunk data - ZERO-COPY STREAMING
+            size_t l_chunk_remaining = a_context->current_chunk_size - a_context->current_chunk_read;
+            size_t l_data_remaining = a_size - l_processed;
+            size_t l_to_stream = dap_min(l_chunk_remaining, l_data_remaining);
+            
+            if (l_to_stream > 0) {
+                a_context->streamed_body_size += l_to_stream;
+                
+                if (a_context->client->callbacks.progress_cb) {
+                    // ZERO-COPY: pass pointer directly to progress callback
+                    a_context->client->callbacks.progress_cb(
+                        a_context->client,
+                        a_context->streamed_body_size,
+                        0  // Total unknown for chunked
+                    );
+                    // Note: Progress callback handles data immediately - no buffering needed
+                    // TODO: Add data pointer to progress callback signature for true zero-copy
+                } else {
+                    // FALLBACK: No progress callback - accumulate in response buffer for final response callback
+                    // This handles the case where user only provided response_cb but not progress_cb
+                    
+                    // Buffer should already be allocated by s_allocate_response_buffer (maximum size)
+                    if (!a_context->response_buffer) {
+                        log_it(L_ERROR, "Chunked fallback buffer not allocated - architecture error");
+                        return HTTP_PROCESS_ERROR;
+                    }
+                    
+                    // Check overflow (no realloc - buffer is already maximum size)
+                    if (a_context->response_size + l_to_stream > a_context->response_capacity) {
+                        log_it(L_ERROR, "Chunked response exceeds maximum buffer size: %zu + %zu > %zu", 
+                               a_context->response_size, l_to_stream, a_context->response_capacity);
+                        return HTTP_PROCESS_ERROR;
+                    }
+                    
+                    // Copy chunk data to accumulation buffer
+                    memcpy(a_context->response_buffer + a_context->response_size, 
+                           (const uint8_t*)a_data + l_processed, l_to_stream);
+                    a_context->response_size += l_to_stream;
+                }
+                
+                l_processed += l_to_stream;
+                a_context->current_chunk_read += l_to_stream;
+            }
+            
+            // Check chunk completion
+            if (a_context->current_chunk_read >= a_context->current_chunk_size) {
+                // Look for trailing CRLF after chunk data
+                if (l_processed + 1 < a_size && 
+                    l_data[l_processed] == '\r' && l_data[l_processed + 1] == '\n') {
+                    
+                    l_processed += 2; // Skip trailing CRLF
+                    a_context->reading_chunk_size = true; // Ready for next chunk
+                    log_it(L_DEBUG, "Completed chunk %llu (%zu bytes)", 
+                           a_context->current_chunk_id, a_context->current_chunk_size);
+                } else {
+                    // Need more data for trailing CRLF
+                    break;
+                }
+            }
+        }
+    }
+    
+    *a_consumed = l_processed;
+    return HTTP_PROCESS_NEED_MORE_DATA; // Need more data
+}
+
+// === EMBEDDED TRANSITIONS IMPLEMENTATION ===
+
+/**
+ * @brief Transition stream protocol (CORRECT - without breaking encapsulation)
+ * @param a_stream Stream instance
+ * @param a_new_callback New read callback function
+ * @param a_new_context New callback context
+ * @return 0 on success, negative on error
+ * 
+ * @note Data reprocessing should happen OUTSIDE this function,
+ *       in calling code that knows about remaining data
+ */
+int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
+                                        dap_stream_read_callback_t a_new_callback,
+                                        void *a_new_context)
+{
+    if (!a_stream || !a_new_callback) {
+        log_it(L_ERROR, "Invalid arguments for stream transition");
+        return -1;
+    }
+    
+    // Set new callback and context (ONLY this should be done by transition function)
+    a_stream->read_callback = a_new_callback;
+    a_stream->read_callback_context = a_new_context;
+    
+    log_it(L_DEBUG, "Stream protocol transitioned successfully");
+    
+    return 0;
+}
+
+// === REQUEST EXECUTION ===
+
+/**
+ * @brief Execute synchronous request
+ * @param a_client Client instance
+ * @param a_request Request to execute
+ * @param a_response_data Output: response data (caller must free)
+ * @param a_response_size Output: response size
+ * @param a_status_code Output: HTTP status code
+ * @return 0 on success, negative on error
+ */
+int dap_http2_client_request_sync(dap_http2_client_t *a_client,
+                                  const dap_http2_client_request_t *a_request,
+                                  void **a_response_data,
+                                  size_t *a_response_size,
+                                  int *a_status_code)
+{
+    if (!a_client || !a_request || !a_response_data || !a_response_size || !a_status_code) {
+        log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_sync");
+        return -1;
+    }
+    
+    // Check client state
+    dap_http2_client_state_t l_current_state = atomic_load(&a_client->state);
+    if (l_current_state != DAP_HTTP2_CLIENT_STATE_IDLE) {
+        log_it(L_ERROR, "Client is busy (state: %s)", dap_http2_client_state_to_str(l_current_state));
+        return -2;
+    }
+    
+    // Create HTTP context
+    dap_http_client_context_t *l_context = s_create_http_context(a_client, a_request);
+    if (!l_context) {
+        log_it(L_ERROR, "Failed to create HTTP context");
+        return -3;
+    }
+    
+    // Initialize semaphore for sync operation
+    if (sem_init(&l_context->completion_semaphore, 0, 0) != 0) {
+        log_it(L_ERROR, "Failed to initialize completion semaphore");
+        s_destroy_http_context(l_context);
+        return -4;
+    }
+    
+    // Create session with HTTP profile
+    dap_stream_profile_t l_profile = {
+        .session_callbacks = {
+            .connected = s_http_session_connected,
+            .data_received = s_http_session_data_received,
+            .error = s_http_session_error,
+            .closed = s_http_session_closed
+        },
+        .initial_read_callback = s_http_stream_read_headers, // Start with headers parsing
+        .callbacks_context = l_context
+    };
+    
+    // Create session (this will be assigned to worker)
+    dap_http2_session_t *l_session = dap_http2_session_create(NULL, a_client->config.connect_timeout_ms);
+    if (!l_session) {
+        log_it(L_ERROR, "Failed to create HTTP session");
+        sem_destroy(&l_context->completion_semaphore);
+        s_destroy_http_context(l_context);
+        return -5;
+    }
+    
+    // Set session callbacks
+    dap_http2_session_set_callbacks(l_session, &l_profile.session_callbacks, l_context);
+    
+    // Connect to server
+    int l_connect_result = dap_http2_session_connect(l_session, a_request->host, a_request->port, a_request->use_ssl);
+    if (l_connect_result != 0) {
+        log_it(L_ERROR, "Failed to connect to %s:%u", a_request->host, a_request->port);
+        dap_http2_session_delete(l_session);
+        sem_destroy(&l_context->completion_semaphore);
+        s_destroy_http_context(l_context);
+        return -6;
+    }
+    
+    // Update client state
+    atomic_store(&a_client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
+    
+    // Wait for completion (with timeout)
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += (a_client->config.read_timeout_ms / 1000);
+    l_timeout.tv_nsec += ((a_client->config.read_timeout_ms % 1000) * 1000000);
+    
+    int l_sem_result = sem_timedwait(&l_context->completion_semaphore, &l_timeout);
+    if (l_sem_result != 0) {
+        if (errno == ETIMEDOUT) {
+            log_it(L_ERROR, "Request timeout");
+            atomic_store(&a_client->state, DAP_HTTP2_CLIENT_STATE_ERROR);
+            dap_http2_session_close(l_session);
+            sem_destroy(&l_context->completion_semaphore);
+            s_destroy_http_context(l_context);
+            return -7;
+        } else {
+            log_it(L_ERROR, "Semaphore wait failed: %s", strerror(errno));
+            dap_http2_session_close(l_session);
+            sem_destroy(&l_context->completion_semaphore);
+            s_destroy_http_context(l_context);
+            return -8;
+        }
+    }
+    
+    // Extract results
+    int l_result = l_context->error_code;
+    if (l_result == 0) {
+        // Success - copy response data
+        *a_status_code = l_context->status_code;
+        
+        if (l_context->response_buffer && l_context->response_size > 0) {
+            *a_response_data = DAP_NEW_SIZE(uint8_t, l_context->response_size + 1);
+            if (*a_response_data) {
+                memcpy(*a_response_data, l_context->response_buffer, l_context->response_size);
+                ((uint8_t*)*a_response_data)[l_context->response_size] = '\0'; // Null-terminate
+                *a_response_size = l_context->response_size;
+            } else {
+                log_it(L_ERROR, "Failed to allocate response data copy");
+                l_result = -9;
+            }
+        } else {
+            // No response body
+            *a_response_data = NULL;
+            *a_response_size = 0;
+        }
+    }
+    
+    // Cleanup
+    dap_http2_session_delete(l_session);
+    sem_destroy(&l_context->completion_semaphore);
+    s_destroy_http_context(l_context);
+    
+    return l_result;
+}
+
+/**
+ * @brief Execute asynchronous request
+ * @param a_client Client instance
+ * @param a_request Request to execute
+ * @return 0 on success, negative on error
+ */
+int dap_http2_client_request_async(dap_http2_client_t *a_client,
+                                   const dap_http2_client_request_t *a_request)
+{
+    if (!a_client || !a_request) {
+        log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_async");
+        return -1;
+    }
+    
+    // Check client state
+    dap_http2_client_state_t l_current_state = atomic_load(&a_client->state);
+    if (l_current_state != DAP_HTTP2_CLIENT_STATE_IDLE) {
+        log_it(L_ERROR, "Client is busy (state: %s)", dap_http2_client_state_to_str(l_current_state));
+        return -2;
+    }
+    
+    // Create HTTP context (no semaphore for async)
+    dap_http_client_context_t *l_context = s_create_http_context(a_client, a_request);
+    if (!l_context) {
+        log_it(L_ERROR, "Failed to create HTTP context");
+        return -3;
+    }
+    
+    // Create session with HTTP profile
+    dap_stream_profile_t l_profile = {
+        .session_callbacks = {
+            .connected = s_http_session_connected,
+            .data_received = s_http_session_data_received,
+            .error = s_http_session_error,
+            .closed = s_http_session_closed
+        },
+        .initial_read_callback = s_http_stream_read_headers, // Start with headers parsing
+        .callbacks_context = l_context
+    };
+    
+    // Create session (this will be assigned to worker)
+    dap_http2_session_t *l_session = dap_http2_session_create(NULL, a_client->config.connect_timeout_ms);
+    if (!l_session) {
+        log_it(L_ERROR, "Failed to create HTTP session");
+        s_destroy_http_context(l_context);
+        return -4;
+    }
+    
+    // Set session callbacks
+    dap_http2_session_set_callbacks(l_session, &l_profile.session_callbacks, l_context);
+    
+    // Connect to server
+    int l_connect_result = dap_http2_session_connect(l_session, a_request->host, a_request->port, a_request->use_ssl);
+    if (l_connect_result != 0) {
+        log_it(L_ERROR, "Failed to connect to %s:%u", a_request->host, a_request->port);
+        dap_http2_session_delete(l_session);
+        s_destroy_http_context(l_context);
+        return -5;
+    }
+    
+    // Update client state
+    atomic_store(&a_client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
+    
+    log_it(L_DEBUG, "Async request started to %s:%u", a_request->host, a_request->port);
+    
+    return 0; // Success - request is now running asynchronously
+}
+
+/**
+ * @brief HTTP headers parsing with embedded analysis - EFFICIENT single-pass
+ * @param a_context HTTP context
+ * @param a_data Incoming data
+ * @param a_size Data size
+ * @param a_consumed Output: number of bytes consumed
+ * @return Process result code
+ */
+static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed)
+{
+    if (!a_context || !a_data || a_size == 0 || !a_consumed) {
+        return HTTP_PROCESS_ERROR;
+    }
+    
+    // Find end of headers
+    const char *l_data = (const char*)a_data;
+    const char *l_headers_end = dap_memmem_n(l_data, a_size, "\r\n\r\n", 4);
+    
+    if (!l_headers_end) {
+        // Check headers size limit
+        if (a_size > DAP_CLIENT_HTTP_MAX_HEADERS_SIZE) {
+            log_it(L_ERROR, "HTTP headers exceed maximum size (%zu > %zu)", 
+                   a_size, (size_t)DAP_CLIENT_HTTP_MAX_HEADERS_SIZE);
+            return HTTP_PROCESS_ERROR;
+        }
+        *a_consumed = 0;
+        return HTTP_PROCESS_NEED_MORE_DATA;
+    }
+    
+    size_t l_headers_length = l_headers_end - l_data + 4; // +4 for "\r\n\r\n"
+    *a_consumed = l_headers_length;
+    
+    // Extract status code
+    a_context->status_code = s_extract_http_status_code(l_data, l_headers_length);
+    if (a_context->status_code == 0) {
+        log_it(L_ERROR, "Failed to extract HTTP status code");
+        return HTTP_PROCESS_ERROR;
+    }
+    
+    log_it(L_DEBUG, "HTTP status: %d", a_context->status_code);
+    
+    // Clear old headers
+    while (a_context->response_headers) {
+        dap_http_header_remove(&a_context->response_headers, a_context->response_headers);
+    }
+    
+    // Parse headers line by line
+    const char *l_line_start = l_data;
+    const char *l_headers_limit = l_data + l_headers_length;
+    
+    // Skip status line
+    const char *l_line_end = dap_memmem_n(l_line_start, l_headers_limit - l_line_start, "\r\n", 2);
+    if (l_line_end) {
+        l_line_start = l_line_end + 2;
+    }
+    
+    // Check for redirect FIRST - before any analysis
+    bool l_is_redirect = s_is_redirect_status_code(a_context->status_code);
+    
+    // Header analysis flags (order-independent)
+    bool l_content_length_found = false;
+    bool l_transfer_encoding_found = false;
+    bool l_content_type_found = false;
+    bool l_location_found = false;
+    
+    // Parse headers with optimized analysis
+    while (l_line_start < l_headers_limit - 4) {
+        l_line_end = dap_memmem_n(l_line_start, l_headers_limit - l_line_start, "\r\n", 2);
+        if (!l_line_end) break;
+        
+        size_t l_line_length = l_line_end - l_line_start;
+        if (l_line_length > 0) {
+            dap_http_header_t *l_header = s_parse_single_header(a_context, l_line_start, l_line_length);
+            
+            if (l_header) {
+                if (l_is_redirect) {
+                    // For redirects, only look for Location header
+                    if (!l_location_found && strcasecmp(l_header->name, "Location") == 0) {
+                        DAP_DEL_Z(a_context->redirect_location);
+                        a_context->redirect_location = dap_strdup(l_header->value);
+                        log_it(L_DEBUG, "Found redirect location: %s", l_header->value);
+                        l_location_found = true;
+                    }
+                } else {
+                    // For non-redirects, check all important headers (order-independent)
+                    if (!l_content_length_found && strcasecmp(l_header->name, "Content-Length") == 0) {
+                        a_context->content_length = strtoul(l_header->value, NULL, 10);
+                        l_content_length_found = true;
+                    }
+                    else if (!l_transfer_encoding_found && strcasecmp(l_header->name, "Transfer-Encoding") == 0) {
+                        if (strstr(l_header->value, "chunked")) {
+                            a_context->is_chunked = true;
+                            a_context->content_length = 0; // Override Content-Length
+                        }
+                        l_transfer_encoding_found = true;
+                    }
+                    else if (!l_content_type_found && strcasecmp(l_header->name, "Content-Type") == 0) {
+                        const char *l_mime = l_header->value;
+                        // Check for binary MIME types that benefit from streaming
+                        bool l_is_binary_mime = (strstr(l_mime, "application/octet-stream") ||
+                                               strstr(l_mime, "application/zip") ||
+                                               strstr(l_mime, "application/gzip") ||
+                                               strstr(l_mime, "video/") ||
+                                               strstr(l_mime, "audio/") ||
+                                               strstr(l_mime, "image/"));
+                        
+                        // Only enable streaming for binary MIME if progress callback available
+                        if (l_is_binary_mime && a_context->client && a_context->client->callbacks.progress_cb) {
+                            a_context->streaming_enabled = true;
+                            log_it(L_DEBUG, "Binary MIME type '%s' with progress callback -> streaming mode", l_mime);
+                        } else if (l_is_binary_mime) {
+                            log_it(L_DEBUG, "Binary MIME type '%s' without progress callback -> accumulation mode", l_mime);
+                        }
+                        l_content_type_found = true;
+                    }
+                }
+            }
+        }
+        l_line_start = l_line_end + 2;
+    }
+    
+    // Check if redirect detected and handle based on settings
+    if (l_is_redirect) {
+        if (a_context->redirect_location) {
+            log_it(L_DEBUG, "Redirect detected: %d -> %s", a_context->status_code, a_context->redirect_location);
+            
+            // Check if redirects are enabled
+            if (a_context->follow_redirects) {
+                return HTTP_PROCESS_TRANSITION; // Signal redirect to caller
+            } else {
+                log_it(L_DEBUG, "Redirects disabled - treating as normal response");
+                // Treat as normal response - continue processing
+            }
+        } else {
+            // Redirect status code without Location header - server error
+            log_it(L_ERROR, "Server sent redirect status %d without Location header - invalid response", 
+                   a_context->status_code);
+            return HTTP_PROCESS_ERROR;
+        }
+    }
+    
+    // Final streaming decision for non-redirects (or redirects when disabled)
+    if (!a_context->streaming_enabled) {
+        // Check if we have progress callback for streaming
+        bool l_has_progress_callback = (a_context->client && a_context->client->callbacks.progress_cb);
+        
+        if (a_context->is_chunked) {
+            // Chunked: ALWAYS use streaming (accumulation is exotic and rarely needed)
+            a_context->streaming_enabled = true;
+            if (l_has_progress_callback) {
+                log_it(L_DEBUG, "Chunked with progress callback -> streaming mode");
+            } else {
+                log_it(L_DEBUG, "Chunked without progress callback -> streaming mode (no progress tracking)");
+            }
+        } else if (a_context->content_length > 0 && a_context->content_length > DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT) {
+            // Large content: only stream if progress callback available
+            if (l_has_progress_callback) {
+                a_context->streaming_enabled = true;
+                log_it(L_DEBUG, "Large content (%zu bytes) with progress callback -> streaming mode", a_context->content_length);
+            } else {
+                log_it(L_DEBUG, "Large content (%zu bytes) without progress callback -> accumulation mode", a_context->content_length);
+                // streaming_enabled remains false
+            }
+        }
+        // Note: Binary MIME types are handled above in header parsing loop with progress callback check
+    }
+    
+    // Check for empty body responses (optimization)
+    if (a_context->content_length == 0 && !a_context->is_chunked) {
+        // HTTP responses with no body (204 No Content, 304 Not Modified, etc.)
+        // or explicit Content-Length: 0
+        log_it(L_DEBUG, "Empty body response detected (Content-Length: 0)");
+        a_context->streaming_enabled = false; // No streaming needed for empty body
+    }
+    
+    return HTTP_PROCESS_SUCCESS;
+}
+
+/**
+ * @brief Извлечение HTTP статус кода из ответа
+ */
+static http_status_code_t s_extract_http_status_code(const char *a_data, size_t a_size)
+{
+    if (!a_data || a_size < 12) { // "HTTP/1.1 200"
+        return 0;
+    }
+    
+    // Проверка HTTP префикса
+    if (memcmp(a_data, "HTTP/", 5) != 0) {
+        return 0;
+    }
+    
+    // Поиск пробела после версии
+    const char *l_space = memchr(a_data + 5, ' ', a_size - 5);
+    if (!l_space || (l_space + 4) > (a_data + a_size)) {
+        return 0;
+    }
+    
+    const char *l_code_start = l_space + 1;
+    
+    // Проверка, что следующие 3 символа - цифры
+    if (!isdigit(l_code_start[0]) || !isdigit(l_code_start[1]) || !isdigit(l_code_start[2])) {
+        return 0;
+    }
+    
+    // Быстрое извлечение числа
+    int l_status = (l_code_start[0] - '0') * 100 + 
+                   (l_code_start[1] - '0') * 10 + 
+                   (l_code_start[2] - '0');
+    
+    return (l_status >= 100 && l_status <= 999) ? (http_status_code_t)l_status : 0;
+}
+
+/**
+ * @brief Parse single header and return pointer to created header
+ * @param a_context HTTP context
+ * @param a_line Header line
+ * @param a_length Line length
+ * @return Pointer to created header or NULL on error
+ */
+static dap_http_header_t *s_parse_single_header(dap_http_client_context_t *a_context, const char *a_line, size_t a_length)
+{
+    if (!a_context || !a_line || a_length == 0) {
+        return NULL;
+    }
+    
+    // Find separator ':'
+    const char *l_colon = memchr(a_line, ':', a_length);
+    if (!l_colon) {
+        return NULL;
+    }
+    
+    size_t l_name_len = l_colon - a_line;
+    if (l_name_len == 0 || l_name_len >= DAP_HTTP$SZ_FIELD_NAME) {
+        return NULL;
+    }
+    
+    // Extract header name
+    char l_name[DAP_HTTP$SZ_FIELD_NAME];
+    memcpy(l_name, a_line, l_name_len);
+    l_name[l_name_len] = '\0';
+    
+    // Skip spaces after ':'
+    const char *l_value_start = l_colon + 1;
+    const char *l_line_end = a_line + a_length;
+    while (l_value_start < l_line_end && (*l_value_start == ' ' || *l_value_start == '\t')) {
+        l_value_start++;
+    }
+    
+    // Extract header value
+    size_t l_value_len = l_line_end - l_value_start;
+    if (l_value_len >= DAP_HTTP$SZ_FIELD_VALUE) {
+        l_value_len = DAP_HTTP$SZ_FIELD_VALUE - 1;
+    }
+    
+    char l_value[DAP_HTTP$SZ_FIELD_VALUE];
+    memcpy(l_value, l_value_start, l_value_len);
+    l_value[l_value_len] = '\0';
+    
+    debug_if(s_debug_more, L_DEBUG, "Header: %s: %s", l_name, l_value);
+
+    // Add header
+    return dap_http_header_add(&a_context->response_headers, l_name, l_value);
+}
+
+/**
+ * @brief Process chunked transfer encoded data with comprehensive edge case handling
+ * @param a_context HTTP client context
+ * @param a_data Input data buffer
+ * @param a_size Size of input data
+ * @param a_consumed Output: number of bytes consumed
+ * @return HTTP_PROCESS_* result code
+ */
+static http_process_result_t s_process_chunked_data(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed)
+{
+    if (!a_context || !a_data || a_size == 0 || !a_consumed) {
+        return HTTP_PROCESS_ERROR;
+    }
+    
+    const uint8_t *l_data = (const uint8_t*)a_data;
+    size_t l_processed = 0;
+    
+    while (l_processed < a_size) {
+        if (a_context->reading_chunk_size) {
+            // Reset chunk read counter for new chunk
+            a_context->current_chunk_read = 0;
+            
+            // Find CRLF to complete chunk size line (safe binary search)
+            const char *l_remaining_data = (const char*)(l_data + l_processed);
+            size_t l_remaining_size = a_size - l_processed;
+            const char *l_crlf = dap_memmem_n(l_remaining_data, l_remaining_size, "\r\n", 2);
+            
+            if (!l_crlf) {
+                // Need more data to complete size line
+                break;
+            }
+            
+            size_t l_size_line_len = l_crlf - l_remaining_data;
+            
+            // Parse chunk size from hex directly (zero-copy) with enhanced validation
+            if (l_size_line_len == 0) {
+                a_context->chunked_error_count++;
+                log_it(L_ERROR, "Empty chunk size line (error #%d)", a_context->chunked_error_count);
+                
+                if (a_context->chunked_error_count >= MAX_CHUNKED_PARSE_ERRORS) {
+                    log_it(L_ERROR, "Too many chunked parsing errors, aborting");
+                    return HTTP_PROCESS_ERROR;
+                }
+                
+                // Recovery: skip empty line
+                l_processed += 2; // Skip \r\n
+                continue;
+            }
+            
+            if (l_size_line_len > 16) {
+                a_context->chunked_error_count++;
+                log_it(L_ERROR, "Chunk size line too long: %zu bytes (error #%d)", 
+                       l_size_line_len, a_context->chunked_error_count);
+                
+                if (a_context->chunked_error_count >= MAX_CHUNKED_PARSE_ERRORS) {
+                    return HTTP_PROCESS_ERROR;
+                }
+                
+                // Recovery: skip problematic line
+                l_processed += l_size_line_len + 2;
+                continue;
+            }
+            
+            // Direct hex parsing without copying - enhanced with better validation
+            unsigned long l_chunk_size = 0;
+            size_t l_hex_len = 0;
+            bool l_found_extension = false;
+            
+            // Parse hex digits directly from buffer
+            for (size_t i = 0; i < l_size_line_len; i++) {
+                char l_c = l_remaining_data[i];
+                
+                // Stop at chunk extension separator, whitespace, or control chars
+                if (l_c == ';' || l_c == ' ' || l_c == '\t' || l_c < 0x20) {
+                    l_found_extension = true;
+                    break;
+                }
+                
+                // Convert hex digit
+                int l_digit;
+                if (l_c >= '0' && l_c <= '9') {
+                    l_digit = l_c - '0';
+                } else if (l_c >= 'A' && l_c <= 'F') {
+                    l_digit = l_c - 'A' + 10;
+                } else if (l_c >= 'a' && l_c <= 'f') {
+                    l_digit = l_c - 'a' + 10;
+                } else {
+                    // Invalid hex character
+                    log_it(L_ERROR, "Invalid hex character '%c' (0x%02X) in chunk size (error #%d)", 
+                           l_c, (unsigned char)l_c, a_context->chunked_error_count + 1);
+                    break;
+                }
+                
+                // Check for overflow before shifting
+                if (l_chunk_size > (ULONG_MAX - l_digit) / 16) {
+                    log_it(L_ERROR, "Chunk size overflow during parsing");
+                    l_hex_len = 0; // Mark as error
+                    break;
+                }
+                
+                l_chunk_size = l_chunk_size * 16 + l_digit;
+                l_hex_len++;
+            }
+            
+            // Validation: must have parsed at least one hex digit
+            if (l_hex_len == 0) {
+                a_context->chunked_error_count++;
+                log_it(L_ERROR, "No valid hex digits in chunk size line (error #%d)", 
+                       a_context->chunked_error_count);
+                
+                if (a_context->chunked_error_count >= MAX_CHUNKED_PARSE_ERRORS) {
+                    return HTTP_PROCESS_ERROR;
+                }
+                
+                // Recovery: skip problematic line
+                l_processed += l_size_line_len + 2;
+                continue;
+            }
+            
+            // Size limit check
+            if (l_chunk_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+                log_it(L_ERROR, "Chunk size %lu exceeds limit %zu", 
+                       l_chunk_size, (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT);
+                return HTTP_PROCESS_ERROR;
+            }
+            
+            l_processed += l_size_line_len + 2; // +2 for CRLF
+            a_context->current_chunk_size = (size_t)l_chunk_size;
+            a_context->current_chunk_read = 0;
+            a_context->current_chunk_id = ++a_context->next_chunk_id;
+            a_context->reading_chunk_size = false;
+            
+            // Reset error counter on successful parsing
+            a_context->chunked_error_count = 0;
+            
+            if (l_found_extension) {
+                log_it(L_DEBUG, "Chunk %llu has extensions (ignored)", a_context->current_chunk_id);
+            }
+            
+            if (l_chunk_size == 0) {
+                // Last chunk - now need to handle trailer headers and final CRLF
+                log_it(L_DEBUG, "Processing last chunk (0-size)");
+                
+                // Look for trailer headers or final CRLF
+                // Format: "0\r\n[trailer-headers]\r\n"
+                // We already consumed "0\r\n", now look for final "\r\n"
+                
+                while (l_processed < a_size) {
+                    // Look for next CRLF
+                    const char *l_trailer_data = (const char*)(l_data + l_processed);
+                    size_t l_trailer_remaining = a_size - l_processed;
+                    const char *l_trailer_crlf = dap_memmem_n(l_trailer_data, l_trailer_remaining, "\r\n", 2);
+                    
+                    if (!l_trailer_crlf) {
+                        // Need more data for trailer/final CRLF
+                        break;
+                    }
+                    
+                    size_t l_trailer_line_len = l_trailer_crlf - l_trailer_data;
+                    
+                    if (l_trailer_line_len == 0) {
+                        // Empty line - this is the final CRLF
+                        l_processed += 2; // Skip final \r\n
+                        *a_consumed = l_processed;
+                        log_it(L_DEBUG, "Chunked transfer complete");
+                        return HTTP_PROCESS_COMPLETE;
+                    } else {
+                        // Non-empty line - this is a trailer header
+                        log_it(L_DEBUG, "Skipping trailer header: %.*s", (int)l_trailer_line_len, l_trailer_data);
+                        l_processed += l_trailer_line_len + 2; // Skip trailer + CRLF
+                        // Continue looking for final CRLF
+                    }
+                }
+                
+                // Need more data for final CRLF or trailer completion
+                break;
+            }
+            
+        } else {
+            // Reading chunk data
+            if (a_context->current_chunk_size == 0) {
+                log_it(L_ERROR, "Invalid state: reading chunk data but chunk size is 0");
+                return HTTP_PROCESS_ERROR;
+            }
+            
+            size_t l_chunk_remaining = a_context->current_chunk_size - a_context->current_chunk_read;
+            size_t l_data_remaining = a_size - l_processed;
+            size_t l_to_read = dap_min(l_chunk_remaining, l_data_remaining);
+            
+            if (l_to_read > 0) {
+                // Enhanced chunk integrity check
+                if (a_context->current_chunk_read + l_to_read > a_context->current_chunk_size) {
+                    log_it(L_ERROR, "Chunk overflow detected (chunk %llu): %zu + %zu > %zu", 
+                           a_context->current_chunk_id,
+                           a_context->current_chunk_read, l_to_read, a_context->current_chunk_size);
+                    return HTTP_PROCESS_ERROR;
+                }
+                
+                // Process chunk data (copy to buffer or streaming)
+                if (!a_context->streaming_enabled) {
+                    // Accumulation mode - copy to buffer with overflow protection
+                    if (a_context->response_size + l_to_read > a_context->response_capacity) {
+                        log_it(L_ERROR, "Response buffer overflow in chunked accumulation: %zu + %zu > %zu",
+                               a_context->response_size, l_to_read, a_context->response_capacity);
+                        return HTTP_PROCESS_ERROR;
+                    }
+                    
+                    memcpy(a_context->response_buffer + a_context->response_size, 
+                           l_data + l_processed, l_to_read);
+                    a_context->response_size += l_to_read;
+                } else {
+                    // Streaming mode - ZERO-COPY transfer via progress callback
+                    if (a_context->client->callbacks.progress_cb) {
+                        // Check global streaming limit
+                        if (a_context->streamed_body_size + l_to_read > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+                            log_it(L_ERROR, "Streaming would exceed global limit: %zu + %zu > %zu",
+                                   a_context->streamed_body_size, l_to_read, 
+                                   (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT);
+                            return HTTP_PROCESS_ERROR;
+                        }
+                        
+                        a_context->streamed_body_size += l_to_read;
+                        a_context->client->callbacks.progress_cb(
+                            a_context->client,
+                            a_context->streamed_body_size, // Updated size
+                            0  // For chunked, total size is unknown
+                        );
+                    }
+                }
+                
+                // Update progress
+                l_processed += l_to_read;
+                a_context->current_chunk_read += l_to_read;
+            }
+            
+            // Check chunk completion
+            if (a_context->current_chunk_read >= a_context->current_chunk_size) {
+                // Look for trailing CRLF after chunk data
+                if (l_processed + 1 < a_size && 
+                    l_data[l_processed] == '\r' && l_data[l_processed + 1] == '\n') {
+                    
+                    l_processed += 2; // Skip trailing CRLF
+                    a_context->reading_chunk_size = true; // Ready for next chunk
+                    log_it(L_DEBUG, "Completed chunk %llu (%zu bytes)", 
+                           a_context->current_chunk_id, a_context->current_chunk_size);
+                } else {
+                    // Need more data for trailing CRLF
+                    break;
+                }
+            }
+        }
+    }
+    
+    *a_consumed = l_processed;
+    return HTTP_PROCESS_NEED_MORE_DATA; // Need more data
+}
+
+// === REDIRECT HANDLING FUNCTIONS ===
+
+/**
+ * @brief Check if status code indicates a redirect
+ * @param a_status HTTP status code
+ * @return true if redirect status
+ */
+static bool s_is_redirect_status_code(http_status_code_t a_status)
+{
+    return (a_status == Http_Status_MovedPermanently ||    // 301
+            a_status == Http_Status_Found ||               // 302  
+            a_status == Http_Status_SeeOther ||            // 303
+            a_status == Http_Status_TemporaryRedirect ||   // 307
+            a_status == Http_Status_PermanentRedirect);    // 308
+}
+
+/**
+ * @brief Process HTTP redirect response
+ * @param a_context HTTP context with redirect_location set
+ * @return HTTP_PROCESS_TRANSITION on success (redirect initiated), negative on error
+ */
+static int s_process_http_redirect(dap_http_client_context_t *a_context)
+{
+    if (!a_context || !a_context->redirect_location) {
+        log_it(L_ERROR, "Invalid context or missing redirect location");
+        return HTTP_PROCESS_ERROR;
+    }
+    
+    // Check redirect limits
+    if (a_context->redirect_count >= a_context->max_redirects) {
+        log_it(L_ERROR, "Maximum redirects exceeded: %d", a_context->max_redirects);
+        return DAP_HTTP2_CLIENT_ERROR_TOO_MANY_REDIRECTS;
+    }
+    
+    // Check redirect enabled
+    if (!a_context->follow_redirects) {
+        log_it(L_DEBUG, "Redirects disabled, stopping at %d", a_context->status_code);
+        return HTTP_PROCESS_SUCCESS; // Not an error, continue processing normally
+    }
+    
+    log_it(L_DEBUG, "Processing redirect #%d to: %s", 
+           a_context->redirect_count + 1, a_context->redirect_location);
+    
+    // Update request URL using existing function
+    int l_ret = dap_http2_client_request_set_url(a_context->request, a_context->redirect_location);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to set redirect URL: %d", l_ret);
+        return DAP_HTTP2_CLIENT_ERROR_INVALID_REDIRECT_URL;
+    }
+    
+    // Increment redirect counter
+    a_context->redirect_count++;
+    
+    log_it(L_DEBUG, "Redirect prepared successfully - URL updated to: %s", a_context->redirect_location);
+    
+    // Return special code to indicate redirect transition is needed
+    // The caller will handle session creation and new connection
+    return HTTP_PROCESS_TRANSITION;
+}
+

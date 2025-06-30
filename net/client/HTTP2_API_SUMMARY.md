@@ -22,29 +22,54 @@
 - Channels - внутренняя кухня Stream'ов
 - Простой API для пользователей, гибкость для SDK разработчиков
 
+### 5. **Lifecycle Dependencies & Ownership**
+- **Session → Stream Dependency**: Stream CANNOT exist without Session
+- **Worker Ownership**: Worker thread owns all Session/Stream objects  
+- **UID-Only External Access**: No direct pointers outside Worker thread
+- **Creation Location**: Stream creation ONLY in Session.assigned_to_worker callback
+
+### 6. **Factory Pattern Implementation**
+- **Session as Factory**: Session creates Stream objects in worker thread context
+- **Thread-Safe Creation**: Factory pattern ensures objects created in correct thread
+- **Resource Access**: Factory has access to all necessary session resources
+- **Lifecycle Control**: Factory controls complete Stream initialization sequence
+
+### 7. **Composite UID Architecture**
+- **64-bit UID**: [8 bits Worker ID][56 bits Stream ID] 
+- **Atomic Operations**: Cross-thread access via atomic UID operations
+- **UID-Based Routing**: All operations route via UID extraction
+- **Consistency Guarantee**: UID valid ⟺ object exists in Worker
+
 ## Основные структуры
 
-### Client Structure (CLEANED)
+### Client Structure (FINALIZED with UID)
 ```c
 typedef struct dap_http2_client {
+    // UID Management (NEW!)
+    _Atomic uint64_t stream_uid;  // Composite UID: worker_id + stream_id
+    dap_worker_t *target_worker;  // Pre-selected worker
+    
+    // Client State  
     dap_http2_client_state_t state;
     dap_http2_client_config_t config;
     dap_http2_client_request_t *current_request;
     
-    // Network layers
-    dap_http2_session_t *session;
-    dap_http2_stream_t *stream;
-    
-    // Callbacks
+    // Callbacks (including UID assignment)
     dap_http2_client_callbacks_t callbacks;
     void *callbacks_arg;
+    
+    // NEW: Stream assignment callback
+    stream_assigned_cb_t stream_assigned_cb;
+    void *callback_context;
 } dap_http2_client_t;
 ```
 
-**Removed redundant fields:**
-- `ts_request_start, ts_first_byte, ts_complete` → Available from session
-- `auto_cleanup` → Unclear purpose
-- `request_id` → Not needed for single-stream
+**Major changes:**
+- ✅ **UID-based architecture**: Client stores composite UID instead of direct pointers
+- ✅ **Atomic UID field**: Thread-safe cross-thread access
+- ✅ **Worker pre-selection**: Known before stream creation
+- ✅ **Callback-based assignment**: Consistent lifecycle management
+- ❌ **Removed direct pointers**: No session/stream pointers in client
 
 ### Request Structure (CLEANED)
 ```c
@@ -100,9 +125,10 @@ typedef struct dap_http2_stream {
 
 ## Потоки данных
 
-### CLIENT MODE
+### CLIENT MODE (Updated with UID)
 ```
-User Code → Client → Session → Stream → Channel Callbacks
+User Code → Client (UID) → Worker[Stream → Session] → Channel Callbacks
+          create       queue command to worker by UID
 ```
 
 ### SERVER MODE  
@@ -110,7 +136,27 @@ User Code → Client → Session → Stream → Channel Callbacks
 Socket Accept → Session → Stream → Channel Callbacks
 ```
 
-**Key Insight:** Client structure используется ТОЛЬКО в client mode
+**Key Insights:** 
+- **Client structure используется ТОЛЬКО в client mode**
+- **Client не содержит прямых указателей** - только UID для routing
+- **Worker полностью владеет** Stream и Session objects
+
+### ARCHITECTURAL FLOW PATTERN
+```
+1. Client API Call → UID-based routing to Worker
+2. Worker Thread → Direct object access (Session/Stream)
+3. Stream Layer → Protocol parsing + Channel dispatching  
+4. Channel Layer → User callbacks processing data
+
+ВАЖНО: Stream создается ТОЛЬКО когда Session назначена на Worker!
+```
+
+### LIFECYCLE DEPENDENCY CHAIN
+```
+Client.stream_uid → routing → Worker.lookup_stream(uid) → Stream.session → Session.es
+        ↑                                                                         ↓
+   atomic access                                                            socket operations
+```
 
 ## API Highlights
 
@@ -160,6 +206,8 @@ bool dap_http2_stream_is_single_stream_mode(stream);
 ✅ **Data flows analyzed** - client and server scenarios validated
 ✅ **Performance optimized** - caching and memory efficiency
 ✅ **Server compatibility** - universal structures confirmed
+✅ **UID management finalized** - composite UID + callback assignment
+✅ **Thread safety designed** - atomic cross-thread, simple within worker
 
 **Ready for implementation phase** 🚀
 
@@ -202,29 +250,37 @@ size_t dap_http2_stream_read_callback_sse(stream, data, size);
 
 ## Usage Patterns
 
-### 1. Simple HTTP Client (single stream)
+### 1. Simple HTTP Client (UID-based)
 ```c
-dap_http2_stream_t *stream = dap_http2_stream_create(session, DAP_HTTP2_PROTOCOL_HTTP);
-dap_http2_stream_set_http_client_mode(stream);
-// No channels needed - direct processing
+// Client creates with callback-based initialization
+dap_http2_client_t *client = dap_http2_client_create();
+client->stream_assigned_cb = on_stream_ready;
+dap_http2_client_init_stream(client, DAP_HTTP2_PROTOCOL_HTTP);
+
+void on_stream_ready(dap_http2_client_t *client, uint64_t stream_uid) {
+    // Stream is ready for HTTP requests
+    dap_http2_client_get_async(client, "http://example.com");
+}
 ```
 
-### 2. WebSocket with Logical Channels
+### 2. WebSocket with Logical Channels (UID-based)
 ```c
-dap_http2_stream_t *stream = dap_http2_stream_create(session, DAP_HTTP2_PROTOCOL_HTTP);
+dap_http2_client_t *client = dap_http2_client_create();
+client->stream_assigned_cb = on_websocket_stream_ready;
+dap_http2_client_init_stream(client, DAP_HTTP2_PROTOCOL_HTTP);
 
-// Start as HTTP, upgrade to WebSocket
-dap_http2_stream_set_http_client_mode(stream);
-// ... after upgrade ...
-dap_http2_stream_switch_protocol(stream, DAP_HTTP2_PROTOCOL_WEBSOCKET);
-
-// Add logical channels
-dap_stream_channel_config_t channels[] = {
-    {0, chat_handler, &chat_ctx},
-    {1, file_handler, &file_ctx},
-    {2, video_handler, &video_ctx}
-};
-dap_http2_stream_add_channels_array(stream, channels, 3);
+void on_websocket_stream_ready(dap_http2_client_t *client, uint64_t stream_uid) {
+    // Start WebSocket upgrade process
+    dap_http2_client_upgrade_to_websocket(client);
+    
+    // Add logical channels (sent as commands to worker)
+    dap_stream_channel_config_t channels[] = {
+        {0, chat_handler, &chat_ctx},
+        {1, file_handler, &file_ctx},
+        {2, video_handler, &video_ctx}
+    };
+    dap_http2_client_add_channels_array(client, channels, 3);
+}
 ```
 
 ### 3. Custom Binary Protocol
@@ -294,3 +350,58 @@ dap_http2_stream_set_channel_event_callback(stream, my_channel_event_handler, NU
 4. **Dispatcher helpers** - channel lookup with caching
 5. **Integration** - Session and Client integration
 6. **Testing** - Unit tests for all components 
+
+## 📊 Константы и типы
+
+## 🆔 UID Management (NEW!)
+
+### Composite UID Format
+```c
+// 64-bit UID: [8 bits Worker ID][56 bits Stream ID]
+#define INVALID_STREAM_UID     0x0000000000000000
+#define MIN_VALID_STREAM_UID   0x0000000000000001
+#define MAX_WORKERS            256
+
+// Utility functions
+uint8_t extract_worker_id(uint64_t stream_uid);
+uint64_t extract_stream_id(uint64_t stream_uid);
+```
+
+### Callback-based Assignment
+```c
+// Stream assignment callback
+typedef void (*stream_assigned_cb_t)(dap_http2_client_t *client, uint64_t assigned_uid);
+
+// Client setup with callback
+client->stream_assigned_cb = on_stream_assigned;
+dap_http2_client_init_stream(client, DAP_HTTP2_PROTOCOL_HTTP);
+
+// Callback implementation
+void on_stream_assigned(dap_http2_client_t *client, uint64_t stream_uid) {
+    printf("Stream ready with UID: %016lx\n", stream_uid);
+    // Client is now ready for operations
+    client->state = DAP_HTTP2_CLIENT_STATE_READY;
+}
+```
+
+### Thread-Safe Operations
+```c
+// Safe UID access
+bool dap_http2_client_has_valid_stream(dap_http2_client_t *client) {
+    return atomic_load(&client->stream_uid) != INVALID_STREAM_UID;
+}
+
+// Safe command sending
+int dap_http2_client_send_data(dap_http2_client_t *client, 
+                              const void *data, size_t size) {
+    uint64_t uid = atomic_load(&client->stream_uid);
+    if (uid == INVALID_STREAM_UID) {
+        return -EAGAIN;  // Stream not ready yet
+    }
+    return send_stream_command(uid, create_send_command(data, size));
+}
+```
+
+## Performance Characteristics
+
+// ... existing code ... 

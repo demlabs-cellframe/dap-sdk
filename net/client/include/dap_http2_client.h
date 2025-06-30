@@ -29,28 +29,15 @@
 #include "dap_stream_callbacks.h"
 #include "dap_http2_session.h"
 #include "dap_http2_stream.h"
+#include "dap_http_header.h"
 
 // === UID CONSTANTS ===
 #define INVALID_STREAM_UID     0x0000000000000000UL
 #define MIN_VALID_STREAM_UID   0x0000000000000001UL
 #define MAX_WORKERS            256
 
-// === EFFICIENT HTTP METHODS ===
-typedef enum {
-    DAP_HTTP_METHOD_GET = 0,
-    DAP_HTTP_METHOD_POST,
-    DAP_HTTP_METHOD_PUT,
-    DAP_HTTP_METHOD_DELETE,
-    DAP_HTTP_METHOD_HEAD,
-    DAP_HTTP_METHOD_OPTIONS,
-    DAP_HTTP_METHOD_PATCH,
-    DAP_HTTP_METHOD_CONNECT,
-    DAP_HTTP_METHOD_TRACE,
-    DAP_HTTP_METHOD_COUNT  // Must be last - used for array bounds
-} dap_http_method_t;
-
-// Fast method-to-string conversion (array indexing)
-extern const char* const DAP_HTTP_METHOD_STRINGS[DAP_HTTP_METHOD_COUNT];
+// === HTTP METHODS ===
+// Using common enum from dap_http_header.h
 
 // === HTTP CLIENT STATES ===
 typedef enum {
@@ -70,26 +57,20 @@ typedef enum {
     DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED,
     DAP_HTTP2_CLIENT_ERROR_TIMEOUT,
     DAP_HTTP2_CLIENT_ERROR_CANCELLED,
-    DAP_HTTP2_CLIENT_ERROR_INTERNAL
+    DAP_HTTP2_CLIENT_ERROR_INTERNAL,
+    DAP_HTTP2_CLIENT_ERROR_TOO_MANY_REDIRECTS,
+    DAP_HTTP2_CLIENT_ERROR_INVALID_REDIRECT_URL,
+    DAP_HTTP2_CLIENT_ERROR_REDIRECT_LOOP,
+    DAP_HTTP2_CLIENT_ERROR_REDIRECT_WITHOUT_LOCATION  // Redirect status without Location header
 } dap_http2_client_error_t;
+
+// === REDIRECT CONSTANTS ===
+#define DAP_HTTP2_CLIENT_MAX_REDIRECTS_DEFAULT    5
+#define DAP_HTTP2_CLIENT_MAX_LOCATION_LENGTH      2048
 
 // === EFFICIENT UTILITY FUNCTIONS ===
 
-/**
- * @brief Fast method to string conversion (O(1) array access)
- * @param a_method HTTP method enum
- * @return Method string or NULL if invalid
- */
-static inline const char* dap_http_method_to_string(dap_http_method_t a_method) {
-    return (a_method < DAP_HTTP_METHOD_COUNT) ? DAP_HTTP_METHOD_STRINGS[a_method] : NULL;
-}
-
-/**
- * @brief Parse string to HTTP method enum (optimized)
- * @param a_method_str Method string
- * @return Method enum or DAP_HTTP_METHOD_COUNT if invalid
- */
-dap_http_method_t dap_http_method_from_string(const char *a_method_str);
+// HTTP method functions are now in dap_http_header.h
 
 // === UID UTILITIES ===
 static inline uint8_t dap_http2_extract_worker_id(uint64_t stream_uid) {
@@ -145,10 +126,6 @@ typedef struct dap_http2_client_config {
     bool verify_ssl;
     bool enable_compression;
     
-    // Headers
-    char *default_user_agent;
-    char *default_accept;
-    
     // SSL
     char *ssl_cert_path;
     char *ssl_key_path;
@@ -160,8 +137,8 @@ typedef struct dap_http2_client_config {
 typedef struct dap_http2_client_request {
     // Request details
     dap_http_method_t method;        // EFFICIENT: enum instead of string
-    char *url;
     char *host;
+    char *path;                      // Path component from URL (without leading slash)
     uint16_t port;
     bool use_ssl;
     
@@ -296,7 +273,7 @@ int dap_http2_client_request_set_method(dap_http2_client_request_t *a_request, c
  * @param a_method HTTP method enum
  */
 static inline void dap_http2_client_request_set_method_enum(dap_http2_client_request_t *a_request, dap_http_method_t a_method) {
-    if (a_request && a_method < DAP_HTTP_METHOD_COUNT) {
+    if (a_request && a_method < HTTP_METHOD_COUNT) {
         a_request->method = a_method;
     }
 }

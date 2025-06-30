@@ -34,9 +34,16 @@ extern "C" {
 #define     DAP_HTTP$SZ_FIELD_VALUE 1024                            /* -- // -- value string */
 
 typedef enum dap_http_method {
-    HTTP_GET,
+    HTTP_GET = 0,
     HTTP_POST,
-    // Add more
+    HTTP_PUT,
+    HTTP_DELETE,
+    HTTP_HEAD,
+    HTTP_OPTIONS,
+    HTTP_PATCH,
+    HTTP_CONNECT,
+    HTTP_TRACE,
+    HTTP_METHOD_COUNT,  // Must be last - used for array bounds
     HTTP_INVALID = 0xf
 } dap_http_method_t;
 
@@ -64,23 +71,52 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
 void dap_http_header_print(dap_http_header_t *a_headers); 
 
 static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
-    if ( !a_method )
+    if (!a_method)
         return HTTP_INVALID;
-    if ( !strcmp(a_method, "GET") )
-        return HTTP_GET;
-    else if ( !strcmp(a_method, "POST") )
-        return HTTP_POST;
-    else return HTTP_INVALID;
-    // Add more
+    
+    // Optimized: check first character for early filtering
+    switch (a_method[0]) {
+        case 'G':
+            if (strcmp(a_method, "GET") == 0) return HTTP_GET;
+            break;
+        case 'P':
+            if (strcmp(a_method, "POST") == 0) return HTTP_POST;
+            if (strcmp(a_method, "PUT") == 0) return HTTP_PUT;
+            if (strcmp(a_method, "PATCH") == 0) return HTTP_PATCH;
+            break;
+        case 'D':
+            if (strcmp(a_method, "DELETE") == 0) return HTTP_DELETE;
+            break;
+        case 'H':
+            if (strcmp(a_method, "HEAD") == 0) return HTTP_HEAD;
+            break;
+        case 'O':
+            if (strcmp(a_method, "OPTIONS") == 0) return HTTP_OPTIONS;
+            break;
+        case 'C':
+            if (strcmp(a_method, "CONNECT") == 0) return HTTP_CONNECT;
+            break;
+        case 'T':
+            if (strcmp(a_method, "TRACE") == 0) return HTTP_TRACE;
+            break;
+    }
+    
+    return HTTP_INVALID;
 }
 
 static inline const char * dap_http_method_to_str(dap_http_method_t a_method) {
-    static const char * l_methods[] = {
-        [HTTP_GET] = "GET",
-        [HTTP_POST] = "POST"
+    static const char * const l_methods[] = {
+        [HTTP_GET]     = "GET",
+        [HTTP_POST]    = "POST", 
+        [HTTP_PUT]     = "PUT",
+        [HTTP_DELETE]  = "DELETE",
+        [HTTP_HEAD]    = "HEAD",
+        [HTTP_OPTIONS] = "OPTIONS",
+        [HTTP_PATCH]   = "PATCH",
+        [HTTP_CONNECT] = "CONNECT",
+        [HTTP_TRACE]   = "TRACE"
     };
-    return l_methods[a_method < HTTP_INVALID ? a_method : HTTP_INVALID];
-    // Add more
+    return (a_method < HTTP_METHOD_COUNT) ? l_methods[a_method] : NULL;
 }
 
 #ifdef __cplusplus

@@ -63,5 +63,57 @@
   "tests": {
     "path": "net/server/test/",
     "test_suites": ["enc_server", "http_server"]
-  }
+  },
+  "key_principles": [
+    "Universal Session/Stream architecture for all protocols",
+    "Session creates Stream automatically when added to worker",
+    "After session.connect() - NO direct access to session pointer (it's in worker thread)",
+    "Communication with worker ONLY via callbacks and UID-based functions",
+    "dap_stream_profile_t contains 'first order' callbacks for protocol handling"
+  ],
+  "http2_client_architecture": {
+    "client_layer": {
+      "responsibility": "API, URL parsing, request management, state tracking",
+      "location": "dap_http2_client.c",
+      "creates": "session with profile, then loses direct access"
+    },
+    "session_layer": {
+      "responsibility": "Transport (TCP/SSL), connection management",
+      "location": "dap_http2_session.c", 
+      "universal": true,
+      "creates_stream": "automatically when added to worker"
+    },
+    "stream_layer": {
+      "responsibility": "Protocol handling via read_callback",
+      "location": "dap_http2_stream.c",
+      "universal": true,
+      "protocol_specific": "via different read_callback functions"
+    },
+    "http_protocol_handler": {
+      "responsibility": "HTTP parsing, formatting, chunked processing",
+      "location": "inside dap_http2_client.c as static functions",
+      "implementation": "dap_stream_profile_t.initial_read_callback",
+      "adapts_from": "dap_client_http.c logic"
+    }
+  },
+  "critical_flow": {
+    "sync_request": [
+      "1. Client creates session with HTTP profile",
+      "2. Client calls session.connect() - session goes to worker",
+      "3. Worker creates stream automatically with profile.initial_read_callback", 
+      "4. Worker calls session_callbacks.connected -> sends HTTP request",
+      "5. Worker receives data -> calls stream read_callback -> HTTP parsing",
+      "6. HTTP callback calls client callbacks -> client gets response",
+      "7. Client waits on condition variable for completion"
+    ],
+    "async_request": [
+      "Same flow but client doesn't wait - all via callbacks"
+    ]
+  },
+  "forbidden_patterns": [
+    "Direct stream creation in client code",
+    "Session pointer access after connect()",
+    "Custom create_and_connect functions",
+    "HTTP-specific modifications to universal Session/Stream"
+  ]
 } 
