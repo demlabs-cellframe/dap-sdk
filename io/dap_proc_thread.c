@@ -155,8 +155,8 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     pthread_mutex_lock(&l_thread->queue_lock);
     DL_APPEND(l_thread->queue[a_priority], l_item);
     atomic_fetch_add(&l_thread->proc_queue_size, 1);
-    pthread_cond_signal(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_signal(&l_thread->queue_event);
     return 0;
 }
 
@@ -246,8 +246,8 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     while ((l_item = s_proc_queue_pull(l_thread, NULL))) {
         DAP_DELETE(l_item);
     }
-    pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_destroy(&l_thread->queue_lock);
     return 0;
 }
