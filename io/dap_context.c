@@ -1842,7 +1842,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 {
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
     if(!l_es){
-        log_it(L_CRITICAL,"Memory allocation error");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
