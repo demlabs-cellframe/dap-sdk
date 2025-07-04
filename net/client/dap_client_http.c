@@ -472,6 +472,26 @@ static int s_parse_response_header(dap_client_http_t *a_client_http, const char 
 }
 
 /**
+ * @brief dap_client_http_get_read_timeout_ms
+ * @return
+ */
+uint64_t dap_client_http_get_read_timeout_ms()
+{
+    return s_client_timeout_read_after_connect_ms;
+}
+
+/**
+ * @brief dap_client_http_set_read_timeout_ms
+ * @param a_timeout_ms
+ */
+void dap_client_http_set_read_timeout_ms(uint64_t a_timeout_ms)
+{
+    s_client_timeout_read_after_connect_ms = a_timeout_ms;
+}
+
+/**
+ * @brief s_http_connected
+ * @param a_esocket
  * @brief Send HTTP request with properly formatted headers
  * @param a_es Event socket to send request on
  * @param a_client_http HTTP client context
