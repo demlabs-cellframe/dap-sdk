@@ -216,8 +216,8 @@ typedef struct dap_http2_stream {
     size_t receive_buffer_capacity;
     
     // === MAIN CALLBACK SYSTEM ===
-    dap_stream_read_callback_t read_callback;
-    void *read_callback_context;
+    dap_http2_stream_callbacks_t callbacks;
+    void *callback_context;
     
 #ifdef DAP_STREAM_CHANNELS_ENABLED
     // === CHANNEL MULTIPLEXING ===

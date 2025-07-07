@@ -289,10 +289,20 @@ void dap_http2_session_set_callbacks(dap_http2_session_t *a_session,
                                      const dap_http2_session_callbacks_t *a_callbacks,
                                      void *a_callbacks_arg)
 {
-    // TODO: Implement callback configuration
-    UNUSED(a_session);
-    UNUSED(a_callbacks);
-    UNUSED(a_callbacks_arg);
+    if (!a_session) {
+        log_it(L_ERROR, "Invalid arguments to set session callbacks");
+        return;
+    }
+
+    if (a_callbacks) {
+        a_session->callbacks = *a_callbacks;
+    } else {
+        memset(&a_session->callbacks, 0, sizeof(a_session->callbacks));
+    }
+    a_session->callbacks_arg = a_callbacks_arg;
+
+    log_it(L_DEBUG, "Session %p callbacks set. Connected cb: %p",
+           a_session, a_session->callbacks.connected);
 }
 
 int dap_http2_session_upgrade(dap_http2_session_t *a_session,
@@ -335,21 +345,39 @@ bool dap_http2_session_is_error(const dap_http2_session_t *a_session)
 }
 
 // Single stream management
-dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session)
+dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session,
+                                                     const dap_http2_stream_callbacks_t *a_callbacks,
+                                                     void *a_callback_arg)
 {
     if (!a_session) {
-        log_it(L_ERROR, "Session is NULL");
+        log_it(L_ERROR, "Session is NULL, cannot create stream");
         return NULL;
     }
     
     if (a_session->stream) {
-        log_it(L_WARNING, "Session already has a stream");
+        log_it(L_WARNING, "Session %p already has a stream", a_session);
         return a_session->stream;
     }
     
-    // TODO: Implementation - create single stream
     log_it(L_DEBUG, "Creating single stream for session %p", a_session);
-    return NULL;
+    
+    dap_http2_stream_t *l_stream = dap_http2_stream_create(a_session);
+    if (!l_stream) {
+        log_it(L_CRITICAL, "Failed to create stream for session %p", a_session);
+        return NULL;
+    }
+    
+    // Set protocol callbacks for the stream
+    if (a_callbacks) {
+        l_stream->callbacks = *a_callbacks;
+    }
+    l_stream->callback_context = a_callback_arg;
+    
+    a_session->stream = l_stream;
+    
+    log_it(L_INFO, "Stream %p created and linked to session %p", l_stream, a_session);
+    
+    return l_stream;
 }
 
 dap_http2_stream_t *dap_http2_session_get_stream(const dap_http2_session_t *a_session)
@@ -359,11 +387,6 @@ dap_http2_stream_t *dap_http2_session_get_stream(const dap_http2_session_t *a_se
     }
     return a_session->stream;
 }
-
-
-
-
-
 
 dap_http2_session_t *dap_http2_session_create_from_socket(dap_worker_t *a_worker, 
                                                           SOCKET a_client_socket)

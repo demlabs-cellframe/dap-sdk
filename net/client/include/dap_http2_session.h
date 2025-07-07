@@ -164,23 +164,19 @@ void dap_http2_session_delete(dap_http2_session_t *a_session);
 // === CONFIGURATION ===
 
 /**
- * @brief Set session connect timeout (client only)
+ * @brief Set session connection timeout
  * @param a_session Session instance
- * @param a_connect_timeout_ms Connect timeout in milliseconds
+ * @param a_connect_timeout_ms Timeout in milliseconds
  */
 void dap_http2_session_set_connect_timeout(dap_http2_session_t *a_session,
                                            uint64_t a_connect_timeout_ms);
 
 /**
- * @brief Get session connect timeout
+ * @brief Get session connection timeout
  * @param a_session Session instance
- * @return Connect timeout in milliseconds
+ * @return Timeout in milliseconds
  */
 uint64_t dap_http2_session_get_connect_timeout(const dap_http2_session_t *a_session);
-
-
-
-
 
 /**
  * @brief Set session callbacks (defines client/server role)
@@ -265,14 +261,19 @@ bool dap_http2_session_is_server_mode(const dap_http2_session_t *a_session);
 // === STREAM MANAGEMENT ===
 
 /**
- * @brief Create single stream for session
- * @param a_session Session instance
- * @return New stream or NULL on error
+ * @brief Create a single stream for this session.
+ * The session will act as a factory for the stream.
+ * @param a_session Session instance.
+ * @param a_callbacks The protocol implementation for the stream.
+ * @param a_callback_arg The context for the stream callbacks.
+ * @return New stream instance or NULL on error.
  */
-dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session);
+dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session,
+                                                     const dap_http2_stream_callbacks_t *a_callbacks,
+                                                     void *a_callback_arg);
 
 /**
- * @brief Get stream from session
+ * @brief Get the single stream associated with this session.
  * @param a_session Session instance
  * @return Stream or NULL if none
  */

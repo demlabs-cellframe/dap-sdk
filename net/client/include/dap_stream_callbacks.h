@@ -29,15 +29,46 @@
 
 #pragma once
 
-#include "dap_common.h"
+#include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Forward declarations to avoid circular dependencies
+struct dap_http2_stream;
+struct dap_http2_session;
 
-// === FORWARD DECLARATIONS ===
-typedef struct dap_http2_session dap_http2_session_t;
-typedef struct dap_http2_stream dap_http2_stream_t;
+// === Stream Callback Types ===
+typedef size_t (*dap_stream_read_callback_t)(struct dap_http2_stream *a_stream, const void *a_data, size_t a_size);
+typedef void (*dap_stream_write_callback_t)(struct dap_http2_stream *a_stream);
+typedef void (*dap_stream_error_callback_t)(struct dap_http2_stream *a_stream, int a_error);
+typedef void (*dap_stream_closed_callback_t)(struct dap_http2_stream *a_stream);
+
+/**
+ * @brief Aggregated structure for all stream-level callbacks.
+ * Defines the protocol implementation for a stream.
+ */
+typedef struct dap_http2_stream_callbacks {
+    dap_stream_read_callback_t read_cb;
+    dap_stream_write_callback_t write_cb;
+    dap_stream_error_callback_t error_cb;
+    dap_stream_closed_callback_t closed_cb;
+} dap_http2_stream_callbacks_t;
+
+// === Session Callback Types ===
+typedef void (*dap_http2_session_connected_cb_t)(struct dap_http2_session *a_session);
+typedef void (*dap_http2_session_data_received_cb_t)(struct dap_http2_session *a_session, const void *a_data, size_t a_size);
+typedef void (*dap_http2_session_error_cb_t)(struct dap_http2_session *a_session, int a_error);
+typedef void (*dap_http2_session_closed_cb_t)(struct dap_http2_session *a_session);
+
+/**
+ * @brief Aggregated structure for all session-level callbacks.
+ * Defines the connection management logic.
+ */
+typedef struct dap_http2_session_callbacks {
+    dap_http2_session_connected_cb_t connected;
+    dap_http2_session_data_received_cb_t data_received;
+    dap_http2_session_error_cb_t error;
+    dap_http2_session_closed_cb_t closed;
+    void (*assigned_to_worker)(struct dap_http2_session *a_session);
+} dap_http2_session_callbacks_t;
 
 // === UNIVERSAL STATE TYPES ===
 typedef int dap_stream_state_t;   // Protocol-specific state (HTTP, WebSocket, Binary, etc.)
@@ -46,31 +77,10 @@ typedef int dap_session_state_t;  // Transport-specific state (connecting, conne
 // === STREAM CALLBACK TYPES ===
 
 /**
- * @brief Main stream read callback - processes incoming data
- */
-typedef size_t (*dap_stream_read_callback_t)(dap_http2_stream_t *a_stream, 
-                                             const void *a_data, 
-                                             size_t a_data_size);
-
-/**
  * @brief Stream event callback - handles stream events
  */
-typedef void (*dap_stream_event_callback_t)(dap_http2_stream_t *a_stream, 
+typedef void (*dap_stream_event_callback_t)(struct dap_http2_stream *a_stream, 
                                             int a_event);
-
-// === SESSION CALLBACK TYPES ===
-
-/**
- * @brief Session callbacks - define role (client/server)
- */
-typedef struct dap_http2_session_callbacks {
-    void (*connected)(dap_http2_session_t *a_session);
-    void (*data_received)(dap_http2_session_t *a_session, const void *a_data, size_t a_size);
-    void (*error)(dap_http2_session_t *a_session, int a_error);
-    void (*closed)(dap_http2_session_t *a_session);
-    void (*assigned_to_worker)(dap_http2_session_t *a_session);
-    void (*encryption_ready)(dap_http2_session_t *a_session);
-} dap_http2_session_callbacks_t;
 
 // === STREAM PROFILE (Application Context) ===
 
@@ -88,8 +98,4 @@ typedef struct dap_stream_profile {
     // Common context for all callbacks
     void *callbacks_context;
     
-} dap_stream_profile_t;
-
-#ifdef __cplusplus
-}
-#endif 
+} dap_stream_profile_t; 
