@@ -3,7 +3,7 @@
 * Alexey V. Stratulat <alexey.stratulat@demlabs.net>
 * Dmitriy Gerasimov <dmitriy.gerasimov@demlabs.net
 * DeM Labs Inc.   https://demlabs.net
-* Copyright  (c) 2017-2022
+* Copyright  (c) 2025
 * All rights reserved.
 
 This file is part of DAP (Distributed Applications Platform) the open source project

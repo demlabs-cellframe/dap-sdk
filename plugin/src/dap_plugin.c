@@ -29,6 +29,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 #include "dap_plugin_manifest.h"
 #include "dap_plugin_command.h"
 #include "dap_plugin_binary.h"
+#include "dap_plugin_dependency_manager.h"
 
 #include "dap_plugin.h"
 #include "dap_strfuncs.h"
@@ -81,7 +82,12 @@ int dap_plugin_init(const char * a_root_path)
     dap_plugin_manifest_init();
     dap_plugin_command_init();
     dap_plugin_binary_init();
-
+    
+    // Initialize dependency manager
+    if (dap_plugin_dependency_manager_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize plugin dependency manager");
+        return -2;
+    }
 
     //Get list files
     dap_list_name_directories_t *l_list_plugins_name = dap_get_subs(s_plugins_root_path);
@@ -107,6 +113,7 @@ int dap_plugin_init(const char * a_root_path)
 void dap_plugin_deinit(){
     log_it(L_NOTICE, "Deinitialize plugins");
     dap_plugin_stop_all();
+    dap_plugin_dependency_manager_deinit();
     dap_plugin_binary_deinit();
     dap_plugin_manifest_deinit();
     dap_plugin_command_deinit();
@@ -119,7 +126,67 @@ void dap_plugin_deinit(){
  */
 static void s_solve_dependencies()
 {
-    // TODO solving dependencies
+    log_it(L_INFO, "Solving plugin dependencies using dependency manager");
+    
+    // Get all manifests for dependency resolution
+    dap_plugin_manifest_t *l_manifest_all = dap_plugin_manifest_all();
+    if (!l_manifest_all) {
+        log_it(L_DEBUG, "No manifests found for dependency resolution");
+        return;
+    }
+    
+    // Count manifests
+    size_t l_manifests_count = 0;
+    dap_plugin_manifest_t *l_manifest, *l_tmp;
+    HASH_ITER(hh, l_manifest_all, l_manifest, l_tmp) {
+        l_manifests_count++;
+    }
+    
+    if (l_manifests_count == 0) {
+        log_it(L_DEBUG, "No manifests to process");
+        return;
+    }
+    
+    // Create manifests array
+    dap_plugin_manifest_t *l_manifests = DAP_NEW_Z_SIZE(dap_plugin_manifest_t, 
+                                                        l_manifests_count * sizeof(dap_plugin_manifest_t));
+    if (!l_manifests) {
+        log_it(L_ERROR, "Memory allocation failed for manifests array");
+        return;
+    }
+    
+    // Fill manifests array
+    size_t l_index = 0;
+    HASH_ITER(hh, l_manifest_all, l_manifest, l_tmp) {
+        memcpy(&l_manifests[l_index], l_manifest, sizeof(dap_plugin_manifest_t));
+        l_index++;
+    }
+    
+    // Create dependency-sorted order
+    char **l_sorted_names = NULL;
+    size_t l_sorted_count = 0;
+    
+    int l_ret = dap_plugin_create_dependency_order(l_manifests, l_manifests_count,
+                                                  &l_sorted_names, &l_sorted_count);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to create dependency order (code %d)", l_ret);
+        DAP_DELETE(l_manifests);
+        return;
+    }
+    
+    log_it(L_INFO, "Dependency resolution completed: %zu plugins in correct order", l_sorted_count);
+    
+    // Print resolved order for debugging
+    for (size_t i = 0; i < l_sorted_count; i++) {
+        log_it(L_DEBUG, "  %zu. %s", i + 1, l_sorted_names[i]);
+    }
+    
+    // Clean up
+    for (size_t i = 0; i < l_sorted_count; i++) {
+        DAP_DELETE(l_sorted_names[i]);
+    }
+    DAP_DELETE(l_sorted_names);
+    DAP_DELETE(l_manifests);
 }
 
 
