@@ -37,7 +37,7 @@ struct dap_http2_session;
 
 // === Stream Callback Types ===
 typedef size_t (*dap_stream_read_callback_t)(struct dap_http2_stream *a_stream, const void *a_data, size_t a_size);
-typedef void (*dap_stream_write_callback_t)(struct dap_http2_stream *a_stream);
+typedef size_t (*dap_stream_write_callback_t)(struct dap_http2_stream *a_stream, const void *a_data, size_t a_size);
 typedef void (*dap_stream_error_callback_t)(struct dap_http2_stream *a_stream, int a_error);
 typedef void (*dap_stream_closed_callback_t)(struct dap_http2_stream *a_stream);
 
@@ -57,17 +57,18 @@ typedef void (*dap_http2_session_connected_cb_t)(struct dap_http2_session *a_ses
 typedef void (*dap_http2_session_data_received_cb_t)(struct dap_http2_session *a_session, const void *a_data, size_t a_size);
 typedef void (*dap_http2_session_error_cb_t)(struct dap_http2_session *a_session, int a_error);
 typedef void (*dap_http2_session_closed_cb_t)(struct dap_http2_session *a_session);
+typedef void (*dap_http2_session_assigned_to_worker_cb_t)(struct dap_http2_session *a_session);
 
 /**
  * @brief Aggregated structure for all session-level callbacks.
  * Defines the connection management logic.
  */
 typedef struct dap_http2_session_callbacks {
+    dap_http2_session_assigned_to_worker_cb_t assigned;
     dap_http2_session_connected_cb_t connected;
     dap_http2_session_data_received_cb_t data_received;
     dap_http2_session_error_cb_t error;
     dap_http2_session_closed_cb_t closed;
-    void (*assigned_to_worker)(struct dap_http2_session *a_session);
 } dap_http2_session_callbacks_t;
 
 // === UNIVERSAL STATE TYPES ===
@@ -92,10 +93,9 @@ typedef struct dap_stream_profile {
     // Session transport callbacks
     dap_http2_session_callbacks_t session_callbacks;
     
-    // Stream application callback
-    dap_stream_read_callback_t initial_read_callback;
+    // Stream application callbacks
+    dap_http2_stream_callbacks_t *stream_callbacks;
     
     // Common context for all callbacks
-    void *callbacks_context;
-    
+    void *profile_context;
 } dap_stream_profile_t; 

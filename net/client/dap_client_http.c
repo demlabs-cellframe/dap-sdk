@@ -454,8 +454,8 @@ static int s_parse_response_header(dap_client_http_t *a_client_http, const char 
     if (!a_header_line || a_header_len < 4)
         return -1;
     
-    char l_name[DAP_HTTP$SZ_FIELD_NAME];
-    char l_value[DAP_HTTP$SZ_FIELD_VALUE];
+    char l_name[256];
+    char l_value[2048];
     
     int l_ret = dap_http_header_parse_line(a_header_line, a_header_len, 
                                            l_name, sizeof(l_name),

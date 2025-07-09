@@ -131,6 +131,9 @@ typedef enum {
     DAP_HTTP2_STREAM_CHANNEL_EVENT_CLEARED   // All channels were cleared
 } dap_http2_stream_channel_event_t;
 
+struct dap_http2_session;
+struct dap_http2_stream;
+
 // === CALLBACK TYPES ===
 // NOTE: Basic callback types are defined in dap_stream_callbacks.h
 
@@ -141,35 +144,35 @@ typedef enum {
  * @param a_new_state New state (protocol-specific)
  * @param a_context User context
  */
-typedef void (*dap_stream_state_changed_cb_t)(dap_http2_stream_t *a_stream,
-                                              dap_stream_state_t a_old_state,
-                                              dap_stream_state_t a_new_state,
-                                              void *a_context);
+typedef void (*dap_stream_state_changed_cb_t)(struct dap_http2_stream *a_stream,
+    dap_stream_state_t a_old_state,
+    dap_stream_state_t a_new_state,
+    void *a_context);
 
 /**
- * @brief Channel callback - processes data for specific channel
- * @param a_stream Stream instance
- * @param a_channel_id Channel identifier
- * @param a_data Channel-specific data
- * @param a_data_size Size of channel data
- * @return Number of bytes processed
- */
-typedef size_t (*dap_stream_channel_callback_t)(dap_http2_stream_t *a_stream,
-                                                uint8_t a_channel_id,
-                                                const void *a_data,
-                                                size_t a_data_size);
+* @brief Channel callback - processes data for specific channel
+* @param a_stream Stream instance
+* @param a_channel_id Channel identifier
+* @param a_data Channel-specific data
+* @param a_data_size Size of channel data
+* @return Number of bytes processed
+*/
+typedef size_t (*dap_stream_channel_callback_t)(struct dap_http2_stream *a_stream,
+      uint8_t a_channel_id,
+      const void *a_data,
+      size_t a_data_size);
 
 /**
- * @brief Channel event callback - called when channels are added/removed
- * @param a_stream Stream instance
- * @param a_event Event type
- * @param a_channel_id Channel ID (for ADDED/REMOVED events)
- * @param a_channels_count Current total number of active channels
- */
-typedef void (*dap_stream_channel_event_callback_t)(dap_http2_stream_t *a_stream,
-                                                   dap_http2_stream_channel_event_t a_event,
-                                                   uint8_t a_channel_id,
-                                                   size_t a_channels_count);
+* @brief Channel event callback - called when channels are added/removed
+* @param a_stream Stream instance
+* @param a_event Event type
+* @param a_channel_id Channel ID (for ADDED/REMOVED events)
+* @param a_channels_count Current total number of active channels
+*/
+typedef void (*dap_stream_channel_event_callback_t)(struct dap_http2_stream *a_stream,
+         dap_http2_stream_channel_event_t a_event,
+         uint8_t a_channel_id,
+         size_t a_channels_count);
 
 // Custom protocol handlers (optional - only for protocols with handshake)
 typedef struct dap_stream_handshake_handlers {
@@ -178,29 +181,8 @@ typedef struct dap_stream_handshake_handlers {
     dap_stream_read_callback_t ready_callback;        // Process encrypted data (COMPLETE state)
 } dap_stream_handshake_handlers_t;
 
-    // === STREAM PROFILE (for embedded transitions) ===
-    // NOTE: dap_stream_profile_t is now defined in dap_stream_callbacks.h
-
-// === OPTIONAL CHANNEL API ===
-#ifdef DAP_STREAM_CHANNELS_ENABLED
-
-// === CHANNEL CONTEXT ===
-typedef struct dap_stream_channel_context {
-    dap_stream_channel_callback_t channel_callbacks[256];
-    void *channel_contexts[256];
-} dap_stream_channel_context_t;
-
-// === CHANNEL TEMPLATE ===
-typedef struct dap_stream_channel_template {
-    dap_stream_channel_callback_t callbacks[256];
-    void *contexts[256];
-    uint8_t initial_active_channels[32];
-    size_t initial_active_count;
-} dap_stream_channel_template_t;
-
-#endif // DAP_STREAM_CHANNELS_ENABLED
-
-
+// === STREAM PROFILE (for embedded transitions) ===
+// NOTE: dap_stream_profile_t is now defined in dap_stream_callbacks.h
 
 // === MAIN STREAM STRUCTURE ===
 
@@ -208,7 +190,7 @@ typedef struct dap_http2_stream {
     // === BASIC STREAM INFO ===
     _Atomic uint64_t uid;                 // Stream UID (worker_id + stream_id)
     dap_stream_state_t state;             // Protocol-specific state (non-atomic, worker thread only)
-    dap_http2_session_t *session;
+    struct dap_http2_session *session;
     
     // === UNIFIED BUFFER ===
     uint8_t *receive_buffer;
@@ -249,6 +231,25 @@ typedef struct dap_http2_stream {
     
 } dap_http2_stream_t;
 
+// === OPTIONAL CHANNEL API ===
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+
+// === CHANNEL CONTEXT ===
+typedef struct dap_stream_channel_context {
+    dap_stream_channel_callback_t channel_callbacks[256];
+    void *channel_contexts[256];
+} dap_stream_channel_context_t;
+
+// === CHANNEL TEMPLATE ===
+typedef struct dap_stream_channel_template {
+    dap_stream_channel_callback_t callbacks[256];
+    void *contexts[256];
+    uint8_t initial_active_channels[32];
+    size_t initial_active_count;
+} dap_stream_channel_template_t;
+
+#endif // DAP_STREAM_CHANNELS_ENABLED
+
 // === STREAM LIFECYCLE ===
 
 /**
@@ -256,7 +257,28 @@ typedef struct dap_http2_stream {
  * @param a_session Parent session
  * @return New stream instance or NULL on error
  */
-dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session);
+dap_http2_stream_t *dap_http2_stream_create(struct dap_http2_session *a_session);
+
+/**
+ * @brief Get stream UID (atomic read)
+ * @param a_stream Stream instance
+ * @return Stream UID or 0 if invalid stream
+ */
+uint64_t dap_http2_stream_get_uid(const dap_http2_stream_t *a_stream);
+
+/**
+ * @brief Get worker ID from stream UID
+ * @param a_stream Stream instance
+ * @return Worker ID or 0 if invalid
+ */
+uint8_t dap_http2_stream_get_worker_id(const dap_http2_stream_t *a_stream);
+
+/**
+ * @brief Get esocket UID from stream UID
+ * @param a_stream Stream instance  
+ * @return Esocket UID or 0 if invalid
+ */
+uint32_t dap_http2_stream_get_esocket_uid(const dap_http2_stream_t *a_stream);
 
 /**
  * @brief Delete stream and cleanup resources

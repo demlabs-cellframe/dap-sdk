@@ -28,11 +28,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-// Structure for holding HTTP header in the bidirectional list
-#define     DAP_HTTP$SZ_FIELD_NAME  256                             /* Length of the HTTP's header field name */
-#define     DAP_HTTP$SZ_FIELD_VALUE 1024                            /* -- // -- value string */
-
 typedef enum dap_http_method {
     HTTP_GET = 0,
     HTTP_POST,
@@ -47,19 +42,15 @@ typedef enum dap_http_method {
     HTTP_INVALID = 0xf
 } dap_http_method_t;
 
-typedef struct dap_http_header{
-    char    name[DAP_HTTP$SZ_FIELD_NAME],
-            value[DAP_HTTP$SZ_FIELD_VALUE];
-
-    size_t  namesz, valuesz;                                        /* Dimension of corresponding field */
-
-    struct dap_http_header *next, *prev;                            /* List's element links */
-} dap_http_header_t;
+typedef struct dap_http_header dap_http_header_t;
 
 // Core header functions - implementation independent
-dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value);
-dap_http_header_t *dap_http_header_find(dap_http_header_t *a_top, const char *a_name);
-void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr);
+dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value, uint16_t *a_size);
+dap_http_header_t *dap_http_header_add_from_line(dap_http_header_t **a_top, const char *a_line, size_t a_line_len, uint16_t *a_size);
+
+char *dap_http_header_find(dap_http_header_t *a_top, const char *a_name, uint16_t *a_len);
+void dap_http_header_remove(dap_http_header_t **a_top, const char *a_name, uint16_t *a_size);
+void dap_http_headers_remove_all(dap_http_header_t **a_top);
 dap_http_header_t *dap_http_headers_dup(dap_http_header_t *a_top);
 
 // Simple universal header parser
@@ -68,7 +59,8 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
                                char *a_value_out, size_t a_value_max);
 
 // For debug output
-void dap_http_header_print(dap_http_header_t *a_headers); 
+void dap_http_headers_dump(dap_http_header_t *a_headers);
+size_t dap_http_headers_print(dap_http_header_t *a_headers, char *a_str, size_t a_size);
 
 static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
     if (!a_method)

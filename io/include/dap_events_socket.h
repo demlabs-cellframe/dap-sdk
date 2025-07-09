@@ -25,8 +25,8 @@
 #include "unistd.h"
 typedef int SOCKET;
 #define closesocket close
-#define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
-#define SOCKET_ERROR    -1  // for win32 =  (-1)
+#define INVALID_SOCKET  (-1)  // for win32 =  (SOCKET)(~0)
+#define SOCKET_ERROR    (-1)  // for win32 =  (-1)
 #else
 #include <ws2tcpip.h>
 #include <mq.h>

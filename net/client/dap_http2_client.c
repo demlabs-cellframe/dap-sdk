@@ -19,10 +19,12 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _POSIX_C_SOURCE 200112L  // For CLOCK_REALTIME
+
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_http2_client.h"
-#include "dap_http2_session.h"
+#include "dap_http2_session.h" 
 #include "dap_http2_stream.h"
 #include "dap_worker.h"
 #include "dap_http_header.h"
@@ -52,9 +54,10 @@ typedef struct dap_http_client_context {
     
     // === HTTP RESPONSE STATE (adapted from dap_client_http.c) ===
     http_status_code_t status_code;                // Cached HTTP status code
-    struct dap_http_header *response_headers;      // Parsed response headers
+    // REMOVED: dap_http_header_t *response_headers;  // Lazy parsing - extract only needed values
     size_t content_length;                         // Content-Length header value
     bool is_chunked;                              // Transfer-Encoding: chunked
+    char *content_type;                           // Content-Type header value (for streaming decision)
     
     // === HTTP PARSING STATE MACHINE ===
     http_parse_state_t parse_state;                // Current parsing state
@@ -81,7 +84,6 @@ typedef struct dap_http_client_context {
     uint8_t redirect_count;                        // Current redirect counter
     uint8_t max_redirects;                         // Maximum allowed redirects (from config)
     bool follow_redirects;                         // Flag to enable/disable redirect following
-    char *redirect_location;                       // Temporary storage for Location header value
     
     // === SYNC/ASYNC SUPPORT ===
     sem_t completion_semaphore;                    // Semaphore for sync requests (simpler than mutex+condvar)
@@ -133,19 +135,25 @@ static void s_http_session_closed(dap_http2_session_t *a_session);
 
 // Specialized stream read callbacks (decomposed for efficiency)
 static size_t s_http_stream_read_headers(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
+static size_t s_http_stream_initial_write(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
 static size_t s_http_stream_read_accumulation(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
 static size_t s_http_stream_read_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
 static size_t s_http_stream_read_chunked_streaming(dap_http2_stream_t *a_stream, const void *a_data, size_t a_size);
 
 // HTTP protocol functions (adapted from dap_client_http.c)
-static char* s_format_http_request(const dap_http2_client_request_t *a_request);
+static size_t s_request_formatted_size(const dap_http2_client_request_t *a_request);
+static size_t s_calculate_formatted_size(const dap_http2_client_request_t *a_request);
+static void s_update_request_formatted_size(dap_http2_client_request_t *a_request);
+static size_t s_format_http_request_to_buffer(const dap_http2_client_request_t *a_request, void *a_buffer, size_t a_buffer_size);
 static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
 static http_process_result_t s_process_chunked_data(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
 static http_process_result_t s_process_chunked_data_streaming(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
 
 // Additional HTTP parsing functions
-static http_status_code_t s_extract_http_status_code(const char *a_data, size_t a_size);
-static dap_http_header_t *s_parse_single_header(dap_http_client_context_t *a_context, const char *a_line, size_t a_length);
+
+static const char s_http_header_location[] = "Location:", s_http_header_content_type[] = "Content-Type:", s_http_header_content_length[] = "Content-Length:",
+    s_http_header_transfer_encoding[] = "Transfer-Encoding:";
+
 
 
 
@@ -159,6 +167,41 @@ static bool s_is_redirect_status_code(http_status_code_t a_status);
 // === HTTP METHOD IMPLEMENTATION ===
 // Using common functions from dap_http_header.h
 
+/**
+ * @brief Calculate size of formatted HTTP request
+ * @param a_request Request structure
+ * @return Size of formatted request in bytes
+ */
+static size_t s_calculate_formatted_size(const dap_http2_client_request_t *a_request)
+{
+    if (!a_request || !a_request->path) {
+        return 0;
+    }
+    
+    const char *l_method_str = dap_http_method_to_str(a_request->method);
+    if (!l_method_str) {
+        return 0;
+    }
+    
+    return strlen(l_method_str) + 1 +                                        // "METHOD "
+           strlen(a_request->path) +                                         // "path"
+           (a_request->query_string ? strlen(a_request->query_string) : 0) + // "?query" (for any method)
+           11 +                                                             // " HTTP/1.1\r\n"
+           a_request->headers_size +                                        // All headers (incl User-Agent, Content-Length)
+           2 +                                                              // "\r\n" (final)
+           (a_request->method != HTTP_GET ? a_request->body_size : 0);      // Body (for non-GET)
+}
+
+/**
+ * @brief Get pre-calculated formatted size from request
+ * @param a_request Request structure
+ * @return Size of formatted request
+ */
+static size_t s_get_request_formatted_size(const dap_http2_client_request_t *a_request)
+{
+    return s_calculate_formatted_size(a_request);
+}
+
 // Default configuration values
 #define DEFAULT_CONNECT_TIMEOUT_MS    20000  // 20 seconds
 #define DEFAULT_READ_TIMEOUT_MS       5000   // 5 seconds
@@ -167,6 +210,9 @@ static bool s_is_redirect_status_code(http_status_code_t a_status);
 
 // Debug flag
 static bool s_debug_more = false;
+
+// === HTTP FORMATTING ===
+// Минималистичный подход: строим запрос по частям
 
 // === GLOBAL INITIALIZATION ===
 
@@ -623,13 +669,10 @@ dap_http2_client_request_t *dap_http2_client_request_create(void)
 
     // EFFICIENT: Initialize with default values (no string allocations)
     l_request->method = HTTP_GET;  // Default to GET (enum, no allocation)
-    l_request->host = NULL;
     l_request->port = 80;  // Default HTTP port
-    l_request->use_ssl = false;
-    l_request->content_type = NULL;
-    l_request->custom_headers = NULL;
-    l_request->body_data = NULL;
-    l_request->body_size = 0;
+
+    // Add standard headers immediately
+    dap_http2_client_request_add_header(l_request, "User-Agent", "Mozilla/5.0");
 
     log_it(L_DEBUG, "Created HTTP2 client request");
     return l_request;
@@ -650,165 +693,38 @@ void dap_http2_client_request_delete(dap_http2_client_request_t *a_request)
     // EFFICIENT: Free only allocated strings (method is enum, no cleanup needed)
     DAP_DEL_MULTY(a_request->host,
                   a_request->path,
-                  a_request->content_type,
-                  a_request->custom_headers,
+                  a_request->query_string,
                   a_request->body_data);
-
+                  
+    // Clean up headers list
+    dap_http_headers_remove_all(&a_request->headers);
     DAP_DELETE(a_request);
 }
 
 /**
- * @brief EFFICIENT URL parser - accepts NULL for unneeded parameters
- * @param a_url URL to parse
- * @param a_host Output: host (allocated) - can be NULL
- * @param a_port Output: port - can be NULL
- * @param a_path Output: path (allocated) - can be NULL
- * @param a_use_ssl Output: SSL flag - can be NULL
+ * @brief Add single header to request
+ * @param a_request Request instance
+ * @param a_name Header name
+ * @param a_value Header value
  * @return 0 on success, negative on error
  */
-static int s_parse_url(const char *a_url, char **a_host, uint16_t *a_port, char **a_path, bool *a_use_ssl)
+int dap_http2_client_request_add_header(dap_http2_client_request_t *a_request, const char *a_name, const char *a_value)
 {
-    if (!a_url) {
-        log_it(L_ERROR, "URL is NULL in s_parse_url");
+    if (!a_request || !a_name || !a_value) {
+        log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_add_header");
         return -1;
     }
 
-    // EFFICIENT: Calculate length once and set end pointer
-    size_t l_url_len = strlen(a_url);
-    const char *l_url_end = a_url + l_url_len;
-
-    // Default values
-    uint16_t l_default_port = 80;
-    bool l_is_ssl = false;
-
-    // Check protocol (readable and efficient)
-    const char *l_url_start;
-    if (l_url_len >= 7 && strncasecmp(a_url, "http://", 7) == 0) {
-        l_url_start = a_url + 7;
-        l_default_port = 80;
-        l_is_ssl = false;
-    } else if (l_url_len >= 8 && strncasecmp(a_url, "https://", 8) == 0) {
-        l_url_start = a_url + 8;
-        l_default_port = 443;
-        l_is_ssl = true;
-    } else {
-        log_it(L_ERROR, "URL must start with http:// or https://");
+    uint16_t l_header_size = 0;
+    dap_http_header_t *l_header = dap_http_header_add(&a_request->headers, a_name, a_value, &l_header_size);
+    if (!l_header) {
+        log_it(L_ERROR, "Failed to add header: %s: %s", a_name, a_value);
         return -2;
     }
 
-    // EFFICIENT: Find delimiters in single pass using pointer arithmetic
-    const char *l_path_start = NULL;
-    const char *l_port_start = NULL;
-    const char *l_host_end = l_url_end;  // Default: host ends at URL end
-    
-    for (const char *p = l_url_start; p < l_url_end; p++) {
-        if (*p == '/' && !l_path_start) {
-            l_path_start = p;
-            l_host_end = p;
-            break;
-        } else if (*p == ':' && !l_port_start && !l_path_start) {
-            l_port_start = p;
-        }
-    }
-    
-    // If port found but no path, adjust host end
-    if (l_port_start && !l_path_start) {
-        l_host_end = l_port_start;
-    }
-
-    // EFFICIENT: Extract hostname only if needed
-    if (a_host) {
-        size_t l_host_len = l_host_end - l_url_start;
-        if (l_host_len == 0 || l_host_len >= DAP_HOSTADDR_STRLEN) {
-            log_it(L_ERROR, "Invalid hostname length: %zu", l_host_len);
-            return -3;
-        }
-        
-        *a_host = DAP_NEW_Z_SIZE(char, l_host_len + 1);
-        if (!*a_host) {
-            log_it(L_CRITICAL, "Failed to allocate memory for hostname");
-            return -4;
-        }
-        memcpy(*a_host, l_url_start, l_host_len);
-        (*a_host)[l_host_len] = '\0';
-    }
-
-    // EFFICIENT: Parse port only if needed
-    if (a_port) {
-        *a_port = l_default_port;
-        
-        if (l_port_start) {
-            const char *l_port_str = l_port_start + 1;
-            const char *l_port_end = l_path_start ? l_path_start : l_url_end;
-            
-            // EFFICIENT: Manual port parsing with pointer arithmetic
-            uint16_t l_port_val = 0;
-            bool l_valid_port = true;
-            
-            for (const char *p = l_port_str; p < l_port_end && *p >= '0' && *p <= '9'; p++) {
-                uint16_t l_new_val = l_port_val * 10 + (*p - '0');
-                if (l_new_val < l_port_val || l_new_val > 65535) {
-                    l_valid_port = false;
-                    break;
-                }
-                l_port_val = l_new_val;
-            }
-            
-            if (l_valid_port && l_port_val > 0) {
-                *a_port = l_port_val;
-            } else {
-                log_it(L_WARNING, "Invalid port in URL, using default %u", l_default_port);
-            }
-        }
-    }
-
-    // EFFICIENT: Extract path only if needed
-    if (a_path && !(*a_path = dap_strdup(l_path_start ? l_path_start : "/"))) {
-        log_it(L_CRITICAL, "Failed to allocate memory for path");
-        if (a_host) {
-            DAP_DEL_Z(*a_host);  // EFFICIENT: no NULL check needed, auto-nullify
-        }
-        return -5;
-    }
-
-    // Set SSL flag only if needed
-    if (a_use_ssl) {
-        *a_use_ssl = l_is_ssl;
-    }
-
-    if (s_debug_more && a_host && a_port && a_path && a_use_ssl) {
-        log_it(L_DEBUG, "Parsed URL: host='%s', port=%u, path='%s', ssl=%s",
-               *a_host, *a_port, *a_path, *a_use_ssl ? "enabled" : "disabled");
-    }
-
+    a_request->headers_size += l_header_size;
+    log_it(L_DEBUG, "Added header: %s: %s (total size: %zu)", a_name, a_value, a_request->headers_size);
     return 0;
-}
-
-/**
- * @brief Set request URL (EFFICIENT: minimal allocations)
- * @param a_request Request instance
- * @param a_url URL to set
- * @return 0 on success, negative on error
- */
-int dap_http2_client_request_set_url(dap_http2_client_request_t *a_request, const char *a_url)
-{
-    if (!a_request || !a_url) {
-        log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_set_url");
-        return -1;
-    }
-
-    // Clean up old URL data
-    DAP_DEL_MULTY(a_request->host, a_request->path);
-
-    // EFFICIENT: Parse URL components directly (no full URL storage needed)
-    int l_result = s_parse_url(a_url, 
-                                        &a_request->host,    // Need host
-                                        &a_request->port,    // Need port
-                                        &a_request->path,    // Need path for HTTP request
-                                        &a_request->use_ssl); // Need SSL flag
-    if (!l_result)
-        log_it(L_DEBUG, "Set request URL: %s", a_url);
-    return l_result;    
 }
 
 /**
@@ -833,6 +749,7 @@ int dap_http2_client_request_set_method(dap_http2_client_request_t *a_request, c
 
     // EFFICIENT: Store enum (no memory allocation needed)
     a_request->method = l_method_enum;
+    s_update_request_formatted_size(a_request);  // Recalculate size after method change
 
     log_it(L_DEBUG, "Set request method: %s", a_method);
     return 0;
@@ -851,17 +768,11 @@ int dap_http2_client_request_set_headers(dap_http2_client_request_t *a_request, 
         return -1;
     }
 
-    // Clean up old headers
-    DAP_DEL_Z(a_request->custom_headers);  // EFFICIENT: no NULL check needed
-
-    // Set new headers (can be NULL)
+    // Legacy compatibility: parse header string and add individual headers
     if (a_headers) {
-        a_request->custom_headers = dap_strdup(a_headers);
-        if (!a_request->custom_headers) {
-            log_it(L_CRITICAL, "Failed to allocate memory for headers");
-            return -2;
-        }
-        log_it(L_DEBUG, "Set request headers: %s", a_headers);
+        // TODO: Parse a_headers string and call dap_http2_client_request_add_header for each
+        log_it(L_WARNING, "Legacy set_headers not fully implemented - use add_header instead");
+        return -1;
     } else {
         log_it(L_DEBUG, "Cleared request headers");
     }
@@ -896,9 +807,38 @@ int dap_http2_client_request_set_body(dap_http2_client_request_t *a_request, con
         }
         memcpy(a_request->body_data, a_data, a_size);
         a_request->body_size = a_size;
+        
+        // Add Content-Length header for non-GET methods
+        if (a_request->method != HTTP_GET) {
+            char l_length_str[32];
+            snprintf(l_length_str, sizeof(l_length_str), "%zu", a_size);
+            dap_http2_client_request_add_header(a_request, "Content-Length", l_length_str);
+        }
+        
         log_it(L_DEBUG, "Set request body: %zu bytes", a_size);
     } else {
         log_it(L_DEBUG, "Cleared request body");
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Set request content type (adds Content-Type header)
+ * @param a_request Request instance
+ * @param a_content_type Content type string (e.g., "application/json")
+ * @return 0 on success, negative on error
+ */
+static int s_request_set_content_type(dap_http2_client_request_t *a_request, const char *a_content_type)
+{
+    if (!a_request) {
+        log_it(L_ERROR, "Request is NULL in s_request_set_content_type");
+        return -1;
+    }
+
+    // Add content type header using new system
+    if (a_content_type) {
+        return dap_http2_client_request_add_header(a_request, "Content-Type", a_content_type);
     }
 
     return 0;
@@ -941,7 +881,9 @@ static dap_http_client_context_t* s_create_http_context(dap_http2_client_t *a_cl
                               a_client->config.max_redirects : 
                               DAP_HTTP2_CLIENT_MAX_REDIRECTS_DEFAULT;
     l_context->follow_redirects = a_client->config.follow_redirects;
-    l_context->redirect_location = NULL;
+    
+    // === HTTP REQUEST FORMATTING MOVED TO STREAM LAYER ===
+    // HTTP request will be formatted and sent via initial_write callback
     
     // === SYNC SUPPORT ===
     if (sem_init(&l_context->completion_semaphore, 0, 0) != 0) {
@@ -950,7 +892,7 @@ static dap_http_client_context_t* s_create_http_context(dap_http2_client_t *a_cl
         return NULL;
     }
     
-    log_it(L_DEBUG, "Created HTTP context for %s %s%s", 
+    log_it(L_DEBUG, "Created HTTP context for %s %s%s (formatting deferred to stream layer)", 
            dap_http_method_to_str(a_request->method), a_request->host, 
            a_request->path ? a_request->path : "");
     
@@ -968,23 +910,11 @@ static void s_destroy_http_context(dap_http_client_context_t *a_context)
     }
     
     log_it(L_DEBUG, "Destroying HTTP context");
-    
-    // === CLEANUP RESPONSE HEADERS ===
-    while (a_context->response_headers) {
-        dap_http_header_remove(&a_context->response_headers, a_context->response_headers);
-    }
-    
-    // === CLEANUP RESPONSE BUFFER ===
-    DAP_DEL_Z(a_context->response_buffer);
-    
-    // === CLEANUP REDIRECT LOCATION ===
-    DAP_DEL_Z(a_context->redirect_location);
-    
-    // === CLEANUP SEMAPHORE ===
     sem_destroy(&a_context->completion_semaphore);
-    
-    // === CLEANUP CONTEXT ===
-    DAP_DELETE(a_context);
+    dap_http_headers_remove_all(&a_context->request->headers);
+    DAP_DEL_MULTY(a_context->content_type, a_context->response_buffer,
+        a_context->request->host, a_context->request->path, a_context->request->query_string,
+        a_context->request->body_data, a_context);
 }
 
 /**
@@ -1027,117 +957,102 @@ static void s_complete_http_request(dap_http_client_context_t *a_context, int a_
 // === HTTP REQUEST FORMATTING ===
 
 /**
- * @brief Format HTTP request string (SUPER-EFFICIENT: minimal conditions)
+ * @brief Format HTTP request string (DEPRECATED: replaced by s_format_http_request_to_buffer)
+ * This function is kept for compatibility but should not be used in new code.
  * @param a_request Request to format
+ * @param a_request_size Output: size of formatted request (excluding null terminator)
  * @return Formatted HTTP request string (caller must free) or NULL on error
  */
-static char* s_format_http_request(const dap_http2_client_request_t *a_request)
+static char* s_format_http_request(const dap_http2_client_request_t *a_request, size_t *a_request_size)
 {
-    if (!a_request || !a_request->host) {
+    if (!a_request || !a_request_size) {
         log_it(L_ERROR, "Invalid request for HTTP formatting");
         return NULL;
+    }
+    
+    // Use new formatting function
+    size_t l_needed_size = s_calculate_formatted_size(a_request);
+    if (l_needed_size == 0) {
+        return NULL;
+    }
+    
+    char *l_buffer = DAP_NEW_SIZE(char, l_needed_size + 1);
+    if (!l_buffer) {
+        log_it(L_CRITICAL, "Failed to allocate HTTP request buffer (%zu bytes)", l_needed_size);
+        return NULL;
+    }
+    
+    size_t l_actual_size = s_format_http_request_to_buffer(a_request, l_buffer, l_needed_size);
+    if (l_actual_size == 0) {
+        DAP_DELETE(l_buffer);
+        return NULL;
+    }
+    
+    l_buffer[l_actual_size] = '\0';
+    *a_request_size = l_actual_size;
+    
+    return l_buffer;
+}
+
+/**
+ * @brief Format HTTP request directly to buffer (zero-copy approach)
+ * @param a_request Request to format
+ * @param a_buffer Target buffer
+ * @param a_buffer_size Buffer size
+ * @return Number of bytes written to buffer, or 0 on error
+ */
+static size_t s_format_http_request_to_buffer(const dap_http2_client_request_t *a_request, void *a_buffer, size_t a_buffer_size)
+{
+    if (!a_request || !a_buffer || a_buffer_size == 0) {
+        log_it(L_ERROR, "Invalid arguments for HTTP formatting");
+        return 0;
+    }
+    
+    // Check buffer size early
+    size_t l_needed_size = s_get_request_formatted_size(a_request);
+    if (l_needed_size > a_buffer_size) {
+        log_it(L_ERROR, "Buffer too small: need %zu, have %zu", l_needed_size, a_buffer_size);
+        return 0;
     }
     
     const char *l_method_str = dap_http_method_to_str(a_request->method);
     if (!l_method_str) {
         log_it(L_ERROR, "Invalid HTTP method: %d", a_request->method);
-        return NULL;
+        return 0;
     }
     
-    // Path handling: slash in format string, no dynamic allocation!
-    const char *l_path = a_request->path ? a_request->path : "";
-    const char *l_slash = (l_path[0] == '/' || l_path[0] == '\0') ? "" : "/";
-    if (l_path[0] == '\0') l_path = "/"; // Empty path = root
+    char *l_buf = (char *)a_buffer;
+    size_t l_pos = 0;
     
-    // Determine request type once
-    bool l_has_body = (a_request->method == HTTP_POST || a_request->method == HTTP_PUT);
+    // 1. First line: "METHOD path HTTP/1.1\r\n"
+    l_pos += snprintf(l_buf + l_pos, a_buffer_size - l_pos, "%s %s", 
+                      l_method_str, a_request->path ? a_request->path : "/");
     
-    const char *l_format;
-    int l_headers_size;
-    
-    if (l_has_body) {
-        // POST/PUT format
-        l_format = "%s %s%s HTTP/1.1\r\n"
-                   "Host: %s\r\n"
-                   "User-Agent: DAP-HTTP2-Client/1.0\r\n"
-                   "Accept: */*\r\n"
-                   "Connection: close\r\n"
-                   "%s%s%s"           // Content-Type (conditional)
-                   "Content-Length: %zu\r\n"
-                   "%s%s"             // Custom headers
-                   "\r\n";
-        
-        l_headers_size = snprintf(NULL, 0, l_format,
-            l_method_str, l_slash, l_path, a_request->host,
-            a_request->content_type ? "Content-Type: " : "",
-            a_request->content_type ? a_request->content_type : "",
-            a_request->content_type ? "\r\n" : "",
-            a_request->body_size,
-            a_request->custom_headers ? a_request->custom_headers : "",
-            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
-        );
-    } else {
-        // GET format
-        l_format = "%s %s%s HTTP/1.1\r\n"
-                   "Host: %s\r\n"
-                   "User-Agent: DAP-HTTP2-Client/1.0\r\n"
-                   "Accept: */*\r\n"
-                   "Accept-Encoding: gzip, deflate\r\n"
-                   "Connection: close\r\n"
-                   "%s%s"             // Custom headers
-                   "\r\n";
-        
-        l_headers_size = snprintf(NULL, 0, l_format,
-            l_method_str, l_slash, l_path, a_request->host,
-            a_request->custom_headers ? a_request->custom_headers : "",
-            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
-        );
+    // Add query string (for any method)
+    if (a_request->query_string) {
+        l_pos += snprintf(l_buf + l_pos, a_buffer_size - l_pos, "%s", a_request->query_string);
     }
     
-    if (l_headers_size < 0) {
-        log_it(L_ERROR, "Failed to calculate HTTP headers size");
-        return NULL;
+    l_pos += snprintf(l_buf + l_pos, a_buffer_size - l_pos, " HTTP/1.1\r\n");
+    
+    // 2. Headers (все заголовки уже добавлены через новую систему)
+    l_pos += dap_http_headers_print(a_request->headers, l_buf + l_pos, a_buffer_size - l_pos);
+    
+    // 3. Final CRLF
+    l_pos += snprintf(l_buf + l_pos, a_buffer_size - l_pos, "\r\n");
+    
+    // 6. Body for non-GET
+    if (a_request->method != HTTP_GET && a_request->body_data && a_request->body_size > 0) {
+        if (l_pos + a_request->body_size > a_buffer_size) {
+            log_it(L_ERROR, "Body doesn't fit in buffer");
+            return 0;
+        }
+        memcpy(l_buf + l_pos, a_request->body_data, a_request->body_size);
+        l_pos += a_request->body_size;
     }
     
-    // Calculate total size (headers + body + null terminator)
-    size_t l_body_size = (l_has_body && a_request->body_data && a_request->body_size > 0) ? 
-                         a_request->body_size : 0;
-    size_t l_total_size = l_headers_size + l_body_size + 1;
-    
-    // Single allocation for entire request
-    char *l_request = DAP_NEW_SIZE(char, l_total_size);
-    if (!l_request) {
-        log_it(L_CRITICAL, "Failed to allocate HTTP request buffer (%zu bytes)", l_total_size);
-        return NULL;
-    }
-    
-    // Fill headers part
-    if (l_has_body) {
-        snprintf(l_request, l_headers_size + 1, l_format,
-            l_method_str, l_slash, l_path, a_request->host,
-            a_request->content_type ? "Content-Type: " : "",
-            a_request->content_type ? a_request->content_type : "",
-            a_request->content_type ? "\r\n" : "",
-            a_request->body_size,
-            a_request->custom_headers ? a_request->custom_headers : "",
-            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
-        );
-    } else {
-        snprintf(l_request, l_headers_size + 1, l_format,
-            l_method_str, l_slash, l_path, a_request->host,
-            a_request->custom_headers ? a_request->custom_headers : "",
-            (a_request->custom_headers && !strstr(a_request->custom_headers, "\r\n")) ? "\r\n" : ""
-        );
-    }
-    
-    // Add body if present (direct memcpy, no realloc needed!)
-    if (l_body_size > 0) {
-        memcpy(l_request + l_headers_size, a_request->body_data, l_body_size);
-        l_request[l_headers_size + l_body_size] = '\0';
-    }
-    
-    log_it(L_DEBUG, "Formatted HTTP request (%zu bytes): %s %s%s", l_total_size - 1, l_method_str, l_slash, l_path);
-    return l_request;
+    log_it(L_DEBUG, "Formatted HTTP request (%zu bytes): %s %s", l_pos, l_method_str, a_request->path);
+    return l_pos;
 }
 
 // === SESSION CALLBACKS (define client role) ===
@@ -1160,36 +1075,27 @@ static void s_http_session_connected(dap_http2_session_t *a_session)
         return;
     }
     
-    log_it(L_INFO, "HTTP session connected, sending request");
-    
-    // Format HTTP request
-    char *l_http_request = s_format_http_request(l_context->request);
-    if (!l_http_request) {
-        log_it(L_ERROR, "Failed to format HTTP request");
+    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
+    if (!l_stream) {
+        log_it(L_ERROR, "Failed to create HTTP stream");
         s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
         return;
     }
     
-    // Send HTTP request through session
-    int l_sent = dap_http2_session_send(a_session, l_http_request, strlen(l_http_request));
-    if (l_sent < 0) {
-        log_it(L_ERROR, "Failed to send HTTP request: %d", l_sent);
-        DAP_DELETE(l_http_request);
-        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
+    // Call write_cb of the stream (which contains initial_write_callback)
+    if (l_stream->callbacks.write_cb) {
+        size_t l_bytes_sent = l_stream->callbacks.write_cb(l_stream, NULL, 0);
+        if (l_bytes_sent == 0) {
+            log_it(L_ERROR, "Failed to send HTTP request via write callback");
+            s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
+            return;
+        }
+        log_it(L_DEBUG, "HTTP request sent successfully (%zu bytes)", l_bytes_sent);
+    } else {
+        log_it(L_ERROR, "Stream write callback is NULL");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
         return;
     }
-    
-    log_it(L_DEBUG, "HTTP request sent successfully (%d bytes)", l_sent);
-    DAP_DELETE(l_http_request);
-    
-    // Get stream and set state to REQUEST_SENT
-    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
-    if (l_stream) {
-        dap_http2_stream_set_state(l_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
-    }
-    
-    // Update client state
-    atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
 }
 
 /**
@@ -1356,7 +1262,94 @@ static int s_allocate_response_buffer(dap_http_client_context_t *a_context)
     return 0;
 }
 
+
+
 // === SPECIALIZED STREAM CALLBACKS (decomposed for efficiency) ===
+
+/**
+ * @brief Initial write callback - formats and sends HTTP request
+ * @param a_stream Stream instance
+ * @param a_data Unused (initial write doesn't need external data)
+ * @param a_size Unused (initial write doesn't need external data)
+ * @return Number of bytes sent or 0 on error
+ */
+static size_t s_http_stream_initial_write(dap_http2_stream_t *a_stream, UNUSED_ARG const void *a_data, UNUSED_ARG size_t a_size)
+{   
+    if (!a_stream) {
+        log_it(L_ERROR, "Stream is NULL in initial write");
+        return 0;
+    }
+    
+    // Get HTTP context from stream callback context
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->callback_context;
+    if (!l_context || !l_context->request) {
+        log_it(L_ERROR, "HTTP context or request is NULL in initial write");
+        return 0;
+    }
+    
+    // Get write buffer info for zero-copy approach
+    void *l_write_ptr = NULL;
+    size_t *l_size_ptr = NULL;
+    size_t l_available_space = 0;
+    
+    if (dap_http2_session_get_write_buffer_info(a_stream->session, &l_write_ptr, &l_size_ptr, &l_available_space) != 0) {
+        log_it(L_ERROR, "Failed to get write buffer info from session");
+        return 0;
+    }
+    
+    // Format HTTP request directly into session buffer
+    size_t l_formatted_size = s_format_http_request_to_buffer(l_context->request, l_write_ptr, l_available_space);
+    if (l_formatted_size == 0) {
+        log_it(L_ERROR, "Failed to format HTTP request to buffer");
+        return 0;
+    }
+    
+    if (l_formatted_size <= l_available_space) {
+        // All data fits in buffer - update size directly and set writable
+        *l_size_ptr += l_formatted_size;
+        dap_events_socket_set_writable_unsafe(a_stream->session->es, true);
+        
+        log_it(L_DEBUG, "HTTP request formatted zero-copy (%zu bytes): %s %s%s", 
+               l_formatted_size, 
+               dap_http_method_to_str(l_context->request->method),
+               l_context->request->host,
+               l_context->request->path ? l_context->request->path : "");
+        
+        // Update client and stream state
+        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
+        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
+        
+        return l_formatted_size;
+    } else {
+        // This should not happen with current HTTP request sizes, but handle gracefully
+        log_it(L_WARNING, "HTTP request too large for buffer (%zu > %zu), falling back to write_unsafe", 
+               l_formatted_size, l_available_space);
+        
+        // Fallback to traditional approach for very large requests
+        size_t l_request_size;
+        char *l_formatted_request = s_format_http_request(l_context->request, &l_request_size);
+        if (!l_formatted_request) {
+            log_it(L_ERROR, "Failed to format HTTP request in fallback mode");
+            return 0;
+        }
+        
+        int l_result = dap_http2_session_send(a_stream->session, l_formatted_request, l_request_size);
+        if (l_result < 0) {
+            log_it(L_ERROR, "Failed to send HTTP request via fallback: %d", l_result);
+            DAP_DELETE(l_formatted_request);
+            return 0;
+        }
+        
+        log_it(L_DEBUG, "HTTP request sent via fallback (%zu bytes)", l_request_size);
+        
+        // Update client and stream state
+        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
+        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
+        
+        DAP_DELETE(l_formatted_request);
+        return l_request_size;
+    }
+}
 
 /**
  * @brief Headers parsing callback - determines processing mode and transitions
@@ -1372,7 +1365,7 @@ static size_t s_http_stream_read_headers(dap_http2_stream_t *a_stream, const voi
     }
     
     // Get HTTP context from stream callback context
-    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->callback_context;
     if (!l_context) {
         log_it(L_ERROR, "HTTP context is NULL in headers callback");
         return 0;
@@ -1485,7 +1478,7 @@ static size_t s_http_stream_read_accumulation(dap_http2_stream_t *a_stream, cons
         return 0;
     }
     
-    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->callback_context;
     if (!l_context) {
         return 0;
     }
@@ -1563,7 +1556,7 @@ static size_t s_http_stream_read_streaming(dap_http2_stream_t *a_stream, const v
         return 0;
     }
     
-    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->callback_context;
     if (!l_context) {
         return 0;
     }
@@ -1627,7 +1620,7 @@ static size_t s_http_stream_read_chunked_streaming(dap_http2_stream_t *a_stream,
         return 0;
     }
     
-    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->read_callback_context;
+    dap_http_client_context_t *l_context = (dap_http_client_context_t*)a_stream->callback_context;
     if (!l_context) {
         return 0;
     }
@@ -1870,9 +1863,8 @@ int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
         return -1;
     }
     
-    // Set new callback and context (ONLY this should be done by transition function)
-    a_stream->read_callback = a_new_callback;
-    a_stream->read_callback_context = a_new_context;
+    // Set new callback and context using proper API
+    dap_http2_stream_set_read_callback(a_stream, a_new_callback, a_new_context);
     
     log_it(L_DEBUG, "Stream protocol transitioned successfully");
     
@@ -1930,8 +1922,12 @@ int dap_http2_client_request_sync(dap_http2_client_t *a_client,
             .error = s_http_session_error,
             .closed = s_http_session_closed
         },
-        .initial_read_callback = s_http_stream_read_headers, // Start with headers parsing
-        .callbacks_context = l_context
+        .stream_callbacks = DAP_NEW(dap_http2_stream_callbacks_t),
+        .profile_context = l_context
+    };
+    *l_profile.stream_callbacks = (dap_http2_stream_callbacks_t) {
+        .read_cb = s_http_stream_read_headers,
+        .write_cb = s_http_stream_initial_write
     };
     
     // Create session (this will be assigned to worker)
@@ -2050,8 +2046,12 @@ int dap_http2_client_request_async(dap_http2_client_t *a_client,
             .error = s_http_session_error,
             .closed = s_http_session_closed
         },
-        .initial_read_callback = s_http_stream_read_headers, // Start with headers parsing
-        .callbacks_context = l_context
+        .stream_callbacks = DAP_NEW(dap_http2_stream_callbacks_t),
+        .profile_context = l_context
+    };
+    *l_profile.stream_callbacks = (dap_http2_stream_callbacks_t) {
+        .read_cb = s_http_stream_read_headers,
+        .write_cb = s_http_stream_initial_write
     };
     
     // Create session (this will be assigned to worker)
@@ -2115,18 +2115,16 @@ static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_c
     *a_consumed = l_headers_length;
     
     // Extract status code
-    a_context->status_code = s_extract_http_status_code(l_data, l_headers_length);
+    a_context->status_code = http_status_code_from_response(l_data, l_headers_length);
     if (a_context->status_code == 0) {
         log_it(L_ERROR, "Failed to extract HTTP status code");
         return HTTP_PROCESS_ERROR;
     }
     
-    log_it(L_DEBUG, "HTTP status: %d", a_context->status_code);
+    log_it(L_DEBUG, "HTTP status: %d (%s)", a_context->status_code, http_status_reason_phrase(a_context->status_code));
     
     // Clear old headers
-    while (a_context->response_headers) {
-        dap_http_header_remove(&a_context->response_headers, a_context->response_headers);
-    }
+    // REMOVED: dap_http_headers_remove_all(&a_context->response_headers);
     
     // Parse headers line by line
     const char *l_line_start = l_data;
@@ -2141,112 +2139,156 @@ static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_c
     // Check for redirect FIRST - before any analysis
     bool l_is_redirect = s_is_redirect_status_code(a_context->status_code);
     
-    // Header analysis flags (order-independent)
-    bool l_content_length_found = false;
-    bool l_transfer_encoding_found = false;
-    bool l_content_type_found = false;
-    bool l_location_found = false;
+    // Direct substring search in headers
+    size_t l_headers_size = l_headers_limit - l_line_start;
     
-    // Parse headers with optimized analysis
-    while (l_line_start < l_headers_limit - 4) {
-        l_line_end = dap_memmem_n(l_line_start, l_headers_limit - l_line_start, "\r\n", 2);
-        if (!l_line_end) break;
-        
-        size_t l_line_length = l_line_end - l_line_start;
-        if (l_line_length > 0) {
-            dap_http_header_t *l_header = s_parse_single_header(a_context, l_line_start, l_line_length);
+    if (l_is_redirect) {
+        // For redirects, only search for Location header
+        const char *l_location_pos = dap_memmem_n(l_line_start, l_headers_size, s_http_header_location, sizeof(s_http_header_location) - 1);
+        if (l_location_pos) {
+            l_location_pos += sizeof(s_http_header_location) - 1; // Skip "Location:"
             
-            if (l_header) {
-                if (l_is_redirect) {
-                    // For redirects, only look for Location header
-                    if (!l_location_found && strcasecmp(l_header->name, "Location") == 0) {
-                        DAP_DEL_Z(a_context->redirect_location);
-                        a_context->redirect_location = dap_strdup(l_header->value);
-                        log_it(L_DEBUG, "Found redirect location: %s", l_header->value);
-                        l_location_found = true;
+            // Skip whitespace after colon
+            while (l_location_pos < l_line_start + l_headers_size && isspace(*l_location_pos)) {
+                l_location_pos++;
+            }
+            
+            // Find end of line
+            const char *l_location_end = dap_memmem_n(l_location_pos, l_line_start + l_headers_size - l_location_pos, "\r\n", 2);
+            if (l_location_end) {
+                // Remove trailing whitespace - move back from end
+                const char *l_value_end = l_location_end;
+                while (l_value_end > l_location_pos && isspace(*(l_value_end - 1))) {
+                    l_value_end--;
+                }
+                size_t l_location_len = l_value_end - l_location_pos;
+                
+                // Create temporary location string
+                char *l_location_url = dap_strndup(l_location_pos, l_location_len);
+                if (l_location_url) {
+                    log_it(L_DEBUG, "Found Location: %s", l_location_url);
+                    
+                    // Directly update request with new URL
+                    int l_parse_result = dap_http2_client_request_parse_url(a_context->request, l_location_url, a_context->status_code);
+                    if (l_parse_result == 0) {
+                        log_it(L_DEBUG, "Successfully updated request with redirect URL");
+                    } else {
+                        log_it(L_ERROR, "Failed to parse redirect URL: %d", l_parse_result);
                     }
+                    
+                    DAP_DELETE(l_location_url);
                 } else {
-                    // For non-redirects, check all important headers (order-independent)
-                    if (!l_content_length_found && strcasecmp(l_header->name, "Content-Length") == 0) {
-                        a_context->content_length = strtoul(l_header->value, NULL, 10);
-                        l_content_length_found = true;
-                    }
-                    else if (!l_transfer_encoding_found && strcasecmp(l_header->name, "Transfer-Encoding") == 0) {
-                        if (strstr(l_header->value, "chunked")) {
-                            a_context->is_chunked = true;
-                            a_context->content_length = 0; // Override Content-Length
-                        }
-                        l_transfer_encoding_found = true;
-                    }
-                    else if (!l_content_type_found && strcasecmp(l_header->name, "Content-Type") == 0) {
-                        const char *l_mime = l_header->value;
-                        // Check for binary MIME types that benefit from streaming
-                        bool l_is_binary_mime = (strstr(l_mime, "application/octet-stream") ||
-                                               strstr(l_mime, "application/zip") ||
-                                               strstr(l_mime, "application/gzip") ||
-                                               strstr(l_mime, "video/") ||
-                                               strstr(l_mime, "audio/") ||
-                                               strstr(l_mime, "image/"));
-                        
-                        // Only enable streaming for binary MIME if progress callback available
-                        if (l_is_binary_mime && a_context->client && a_context->client->callbacks.progress_cb) {
-                            a_context->streaming_enabled = true;
-                            log_it(L_DEBUG, "Binary MIME type '%s' with progress callback -> streaming mode", l_mime);
-                        } else if (l_is_binary_mime) {
-                            log_it(L_DEBUG, "Binary MIME type '%s' without progress callback -> accumulation mode", l_mime);
-                        }
-                        l_content_type_found = true;
-                    }
+                    log_it(L_ERROR, "Failed to allocate memory for location URL");
                 }
             }
         }
-        l_line_start = l_line_end + 2;
+        
+    } else {
+        // For normal responses, search for needed headers
+        
+        // 1. Content-Length
+        const char *l_cl_pos = dap_memmem_n(l_line_start, l_headers_size, s_http_header_content_length, sizeof(s_http_header_content_length) - 1);
+        if (l_cl_pos) {
+            l_cl_pos += sizeof(s_http_header_content_length) - 1; // Skip "Content-Length:"
+            while (l_cl_pos < l_line_start + l_headers_size && isspace(*l_cl_pos)) {
+                l_cl_pos++;
+            }
+            a_context->content_length = strtoul(l_cl_pos, NULL, 10);
+            log_it(L_DEBUG, "Found Content-Length: %zu", a_context->content_length);
+        }
+        
+        // 2. Transfer-Encoding
+        const char *l_te_pos = dap_memmem_n(l_line_start, l_headers_size, s_http_header_transfer_encoding, sizeof(s_http_header_transfer_encoding) - 1);
+        if (l_te_pos) {
+            l_te_pos += sizeof(s_http_header_transfer_encoding) - 1; // Skip "Transfer-Encoding:"
+            while (l_te_pos < l_line_start + l_headers_size && isspace(*l_te_pos)) {
+                l_te_pos++;
+            }
+            if (l_te_pos + 7 <= l_line_start + l_headers_size && 
+                strncasecmp(l_te_pos, "chunked", 7) == 0) {
+                a_context->is_chunked = true;
+                a_context->content_length = 0; // Override Content-Length
+                log_it(L_DEBUG, "Found Transfer-Encoding: chunked");
+            }
+        }
+        
+        // 3. Content-Type
+        const char *l_ct_pos = dap_memmem_n(l_line_start, l_headers_size, s_http_header_content_type, sizeof(s_http_header_content_type) - 1);
+        if (l_ct_pos) {
+            l_ct_pos += sizeof(s_http_header_content_type) - 1; // Skip "Content-Type:"
+            while (l_ct_pos < l_line_start + l_headers_size && isspace(*l_ct_pos)) {
+                l_ct_pos++;
+            }
+            const char *l_ct_end = dap_memmem_n(l_ct_pos, l_line_start + l_headers_size - l_ct_pos, "\r\n", 2);
+            if (l_ct_end) {
+                // Remove trailing whitespace - move back from end
+                const char *l_value_end = l_ct_end;
+                while (l_value_end > l_ct_pos && isspace(*(l_value_end - 1))) {
+                    l_value_end--;
+                }
+                size_t l_ct_len = l_value_end - l_ct_pos;
+                DAP_DELETE(a_context->content_type);
+                a_context->content_type = dap_strndup(l_ct_pos, l_ct_len);
+                log_it(L_DEBUG, "Found Content-Type: %s", a_context->content_type);
+            }
+        }
     }
     
     // Check if redirect detected and handle based on settings
     if (l_is_redirect) {
-        if (a_context->redirect_location) {
-            log_it(L_DEBUG, "Redirect detected: %d -> %s", a_context->status_code, a_context->redirect_location);
-            
-            // Check if redirects are enabled
-            if (a_context->follow_redirects) {
-                return HTTP_PROCESS_TRANSITION; // Signal redirect to caller
-            } else {
-                log_it(L_DEBUG, "Redirects disabled - treating as normal response");
-                // Treat as normal response - continue processing
-            }
+        // Check if redirects are enabled
+        if (a_context->follow_redirects) {
+            log_it(L_DEBUG, "Redirect detected: %d (request updated)", a_context->status_code);
+            return HTTP_PROCESS_TRANSITION; // Signal redirect to caller
         } else {
-            // Redirect status code without Location header - server error
-            log_it(L_ERROR, "Server sent redirect status %d without Location header - invalid response", 
-                   a_context->status_code);
-            return HTTP_PROCESS_ERROR;
+            log_it(L_DEBUG, "Redirects disabled - treating as normal response");
+            // Treat as normal response - continue processing
         }
     }
     
     // Final streaming decision for non-redirects (or redirects when disabled)
-    if (!a_context->streaming_enabled) {
+    if (!a_context->streaming_enabled && !l_is_redirect) {
         // Check if we have progress callback for streaming
         bool l_has_progress_callback = (a_context->client && a_context->client->callbacks.progress_cb);
         
-        if (a_context->is_chunked) {
-            // Chunked: ALWAYS use streaming (accumulation is exotic and rarely needed)
-            a_context->streaming_enabled = true;
-            if (l_has_progress_callback) {
-                log_it(L_DEBUG, "Chunked with progress callback -> streaming mode");
-            } else {
-                log_it(L_DEBUG, "Chunked without progress callback -> streaming mode (no progress tracking)");
-            }
-        } else if (a_context->content_length > 0 && a_context->content_length > DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT) {
-            // Large content: only stream if progress callback available
-            if (l_has_progress_callback) {
+        // Check for binary MIME types that benefit from streaming
+        if (a_context->content_type) {
+            bool l_is_binary_mime = (strstr(a_context->content_type, "application/octet-stream") ||
+                                   strstr(a_context->content_type, "application/zip") ||
+                                   strstr(a_context->content_type, "application/gzip") ||
+                                   strstr(a_context->content_type, "video/") ||
+                                   strstr(a_context->content_type, "audio/") ||
+                                   strstr(a_context->content_type, "image/"));
+            
+            // Only enable streaming for binary MIME if progress callback available
+            if (l_is_binary_mime && l_has_progress_callback) {
                 a_context->streaming_enabled = true;
-                log_it(L_DEBUG, "Large content (%zu bytes) with progress callback -> streaming mode", a_context->content_length);
-            } else {
-                log_it(L_DEBUG, "Large content (%zu bytes) without progress callback -> accumulation mode", a_context->content_length);
-                // streaming_enabled remains false
+                log_it(L_DEBUG, "Binary MIME type '%s' with progress callback -> streaming mode", a_context->content_type);
+            } else if (l_is_binary_mime) {
+                log_it(L_DEBUG, "Binary MIME type '%s' without progress callback -> accumulation mode", a_context->content_type);
             }
         }
-        // Note: Binary MIME types are handled above in header parsing loop with progress callback check
+        
+        if (!a_context->streaming_enabled) {
+            if (a_context->is_chunked) {
+                // Chunked: ALWAYS use streaming (accumulation is exotic and rarely needed)
+                a_context->streaming_enabled = true;
+                if (l_has_progress_callback) {
+                    log_it(L_DEBUG, "Chunked with progress callback -> streaming mode");
+                } else {
+                    log_it(L_DEBUG, "Chunked without progress callback -> streaming mode (no progress tracking)");
+                }
+            } else if (a_context->content_length > 0 && a_context->content_length > DAP_CLIENT_HTTP_STREAMING_THRESHOLD_DEFAULT) {
+                // Large content: only stream if progress callback available
+                if (l_has_progress_callback) {
+                    a_context->streaming_enabled = true;
+                    log_it(L_DEBUG, "Large content (%zu bytes) with progress callback -> streaming mode", a_context->content_length);
+                } else {
+                    log_it(L_DEBUG, "Large content (%zu bytes) without progress callback -> accumulation mode", a_context->content_length);
+                    // streaming_enabled remains false
+                }
+            }
+        }
     }
     
     // Check for empty body responses (optimization)
@@ -2260,92 +2302,8 @@ static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_c
     return HTTP_PROCESS_SUCCESS;
 }
 
-/**
- * @brief Извлечение HTTP статус кода из ответа
- */
-static http_status_code_t s_extract_http_status_code(const char *a_data, size_t a_size)
-{
-    if (!a_data || a_size < 12) { // "HTTP/1.1 200"
-        return 0;
-    }
-    
-    // Проверка HTTP префикса
-    if (memcmp(a_data, "HTTP/", 5) != 0) {
-        return 0;
-    }
-    
-    // Поиск пробела после версии
-    const char *l_space = memchr(a_data + 5, ' ', a_size - 5);
-    if (!l_space || (l_space + 4) > (a_data + a_size)) {
-        return 0;
-    }
-    
-    const char *l_code_start = l_space + 1;
-    
-    // Проверка, что следующие 3 символа - цифры
-    if (!isdigit(l_code_start[0]) || !isdigit(l_code_start[1]) || !isdigit(l_code_start[2])) {
-        return 0;
-    }
-    
-    // Быстрое извлечение числа
-    int l_status = (l_code_start[0] - '0') * 100 + 
-                   (l_code_start[1] - '0') * 10 + 
-                   (l_code_start[2] - '0');
-    
-    return (l_status >= 100 && l_status <= 999) ? (http_status_code_t)l_status : 0;
-}
 
-/**
- * @brief Parse single header and return pointer to created header
- * @param a_context HTTP context
- * @param a_line Header line
- * @param a_length Line length
- * @return Pointer to created header or NULL on error
- */
-static dap_http_header_t *s_parse_single_header(dap_http_client_context_t *a_context, const char *a_line, size_t a_length)
-{
-    if (!a_context || !a_line || a_length == 0) {
-        return NULL;
-    }
-    
-    // Find separator ':'
-    const char *l_colon = memchr(a_line, ':', a_length);
-    if (!l_colon) {
-        return NULL;
-    }
-    
-    size_t l_name_len = l_colon - a_line;
-    if (l_name_len == 0 || l_name_len >= DAP_HTTP$SZ_FIELD_NAME) {
-        return NULL;
-    }
-    
-    // Extract header name
-    char l_name[DAP_HTTP$SZ_FIELD_NAME];
-    memcpy(l_name, a_line, l_name_len);
-    l_name[l_name_len] = '\0';
-    
-    // Skip spaces after ':'
-    const char *l_value_start = l_colon + 1;
-    const char *l_line_end = a_line + a_length;
-    while (l_value_start < l_line_end && (*l_value_start == ' ' || *l_value_start == '\t')) {
-        l_value_start++;
-    }
-    
-    // Extract header value
-    size_t l_value_len = l_line_end - l_value_start;
-    if (l_value_len >= DAP_HTTP$SZ_FIELD_VALUE) {
-        l_value_len = DAP_HTTP$SZ_FIELD_VALUE - 1;
-    }
-    
-    char l_value[DAP_HTTP$SZ_FIELD_VALUE];
-    memcpy(l_value, l_value_start, l_value_len);
-    l_value[l_value_len] = '\0';
-    
-    debug_if(s_debug_more, L_DEBUG, "Header: %s: %s", l_name, l_value);
 
-    // Add header
-    return dap_http_header_add(&a_context->response_headers, l_name, l_value);
-}
 
 /**
  * @brief Process chunked transfer encoded data with comprehensive edge case handling
@@ -2621,14 +2579,14 @@ static bool s_is_redirect_status_code(http_status_code_t a_status)
 }
 
 /**
- * @brief Process HTTP redirect response
- * @param a_context HTTP context with redirect_location set
+ * @brief Process HTTP redirect response (request already updated in header parsing)
+ * @param a_context HTTP context  
  * @return HTTP_PROCESS_TRANSITION on success (redirect initiated), negative on error
  */
 static int s_process_http_redirect(dap_http_client_context_t *a_context)
 {
-    if (!a_context || !a_context->redirect_location) {
-        log_it(L_ERROR, "Invalid context or missing redirect location");
+    if (!a_context) {
+        log_it(L_ERROR, "Invalid context");
         return HTTP_PROCESS_ERROR;
     }
     
@@ -2644,23 +2602,249 @@ static int s_process_http_redirect(dap_http_client_context_t *a_context)
         return HTTP_PROCESS_SUCCESS; // Not an error, continue processing normally
     }
     
-    log_it(L_DEBUG, "Processing redirect #%d to: %s", 
-           a_context->redirect_count + 1, a_context->redirect_location);
-    
-    // Update request URL using existing function
-    int l_ret = dap_http2_client_request_set_url(a_context->request, a_context->redirect_location);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to set redirect URL: %d", l_ret);
-        return DAP_HTTP2_CLIENT_ERROR_INVALID_REDIRECT_URL;
-    }
-    
     // Increment redirect counter
     a_context->redirect_count++;
     
-    log_it(L_DEBUG, "Redirect prepared successfully - URL updated to: %s", a_context->redirect_location);
+    log_it(L_DEBUG, "Processing redirect #%d (request already updated)", a_context->redirect_count);
     
     // Return special code to indicate redirect transition is needed
     // The caller will handle session creation and new connection
     return HTTP_PROCESS_TRANSITION;
+}
+
+/**
+ * @brief Parse URL and update request fields (smart handling for redirects)
+ * @param a_request Request instance
+ * @param a_url URL to parse (can be absolute or relative)
+ * @return 0 on success, negative on error
+ */
+int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, http_status_code_t a_redirect_status)
+{
+    if (!a_request || !a_url) {
+        log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_parse_url");
+        return -1;
+    }
+
+    // EFFICIENT: Calculate length once and set end pointer
+    size_t l_url_len = strlen(a_url);
+    const char *l_url_end = a_url + l_url_len;
+    
+    // Check if URL is absolute (starts with http:// or https://)
+    bool l_is_absolute = false;
+    const char *l_url_start = a_url;
+    uint16_t l_default_port = 80;
+    bool l_is_ssl = false;
+    
+    if (l_url_len >= 7 && strncasecmp(a_url, "http://", 7) == 0) {
+        l_is_absolute = true;
+        l_url_start = a_url + 7;
+        l_default_port = 80;
+        l_is_ssl = false;
+    } else if (l_url_len >= 8 && strncasecmp(a_url, "https://", 8) == 0) {
+        l_is_absolute = true;
+        l_url_start = a_url + 8;
+        l_default_port = 443;
+        l_is_ssl = true;
+    }
+    
+    if (l_is_absolute) {
+        // === ABSOLUTE URL PARSING ===
+        // Clean up old URL data completely
+        DAP_DEL_MULTY(a_request->host, a_request->path, a_request->query_string);
+        
+        // EFFICIENT: Find delimiters in single pass using pointer arithmetic
+        const char *l_path_start = NULL;
+        const char *l_port_start = NULL;
+        const char *l_query_start = NULL;
+        const char *l_host_end = l_url_end;  // Default: host ends at URL end
+        
+        for (const char *p = l_url_start; p < l_url_end; p++) {
+            if (*p == '/' && !l_path_start) {
+                l_path_start = p;
+                l_host_end = p;
+                break;
+            } else if (*p == ':' && !l_port_start && !l_path_start) {
+                l_port_start = p;
+            }
+        }
+        
+        // Find query string separator after path
+        if (l_path_start) {
+            for (const char *p = l_path_start; p < l_url_end; p++) {
+                if (*p == '?' && !l_query_start) {
+                    l_query_start = p;
+                    break;
+                }
+            }
+        }
+        
+        // If port found but no path, adjust host end
+        if (l_port_start && !l_path_start) {
+            l_host_end = l_port_start;
+        }
+
+        // EFFICIENT: Extract hostname
+        size_t l_host_len = l_host_end - l_url_start;
+        if (l_host_len == 0 || l_host_len >= DAP_HOSTADDR_STRLEN) {
+            log_it(L_ERROR, "Invalid hostname length: %zu", l_host_len);
+            return -3;
+        }
+        
+        a_request->host = DAP_NEW_Z_SIZE(char, l_host_len + 1);
+        if (!a_request->host) {
+            log_it(L_CRITICAL, "Failed to allocate memory for hostname");
+            return -4;
+        }
+        memcpy(a_request->host, l_url_start, l_host_len);
+        a_request->host[l_host_len] = '\0';
+
+        // EFFICIENT: Parse port
+        a_request->port = l_default_port;
+        
+        if (l_port_start) {
+            const char *l_port_str = l_port_start + 1;
+            const char *l_port_end = l_path_start ? l_path_start : l_url_end;
+            
+            // EFFICIENT: Manual port parsing with pointer arithmetic
+            uint16_t l_port_val = 0;
+            bool l_valid_port = true;
+            
+            for (const char *p = l_port_str; p < l_port_end && *p >= '0' && *p <= '9'; p++) {
+                uint16_t l_new_val = l_port_val * 10 + (*p - '0');
+                if (l_new_val < l_port_val || l_new_val > 65535) {
+                    l_valid_port = false;
+                    break;
+                }
+                l_port_val = l_new_val;
+            }
+            
+            if (l_valid_port && l_port_val > 0) {
+                a_request->port = l_port_val;
+            } else {
+                log_it(L_WARNING, "Invalid port in URL, using default %u", l_default_port);
+            }
+        }
+
+        // Set SSL flag
+        a_request->use_ssl = l_is_ssl;
+        
+        // EFFICIENT: Extract path (up to query string)
+        const char *l_path_end = l_query_start ? l_query_start : l_url_end;
+        if (l_path_start) {
+            size_t l_path_len = l_path_end - l_path_start;
+            a_request->path = DAP_NEW_Z_SIZE(char, l_path_len + 1);
+            if (!a_request->path) {
+                log_it(L_CRITICAL, "Failed to allocate memory for path");
+                DAP_DEL_Z(a_request->host);
+                return -5;
+            }
+            memcpy(a_request->path, l_path_start, l_path_len);
+            a_request->path[l_path_len] = '\0';
+        } else {
+            a_request->path = dap_strdup("/");
+            if (!a_request->path) {
+                log_it(L_CRITICAL, "Failed to allocate memory for default path");
+                DAP_DEL_Z(a_request->host);
+                return -5;
+            }
+        }
+        
+        // EFFICIENT: Extract query string (including '?')
+        if (l_query_start) {
+            size_t l_query_len = l_url_end - l_query_start;
+            a_request->query_string = DAP_NEW_Z_SIZE(char, l_query_len + 1);
+            if (!a_request->query_string) {
+                log_it(L_CRITICAL, "Failed to allocate memory for query string");
+                DAP_DEL_MULTY(a_request->host, a_request->path);
+                return -6;
+            }
+            memcpy(a_request->query_string, l_query_start, l_query_len);
+            a_request->query_string[l_query_len] = '\0';
+        } else {
+            a_request->query_string = NULL;
+        }
+        
+        // Add Host header automatically when URL is set
+        if (a_request->host) {
+            dap_http2_client_request_add_header(a_request, "Host", a_request->host);
+        }
+        
+        log_it(L_DEBUG, "Parsed absolute URL: host='%s', port=%u, path='%s', ssl=%s",
+               a_request->host, a_request->port, a_request->path, 
+               a_request->use_ssl ? "enabled" : "disabled");
+               
+    } else {
+        // === RELATIVE URL PARSING ===
+        // Only update path and query_string, preserve host/port/ssl
+        DAP_DEL_MULTY(a_request->path, a_request->query_string);
+        
+        // Find query string separator
+        const char *l_query_start = NULL;
+        for (const char *p = l_url_start; p < l_url_end; p++) {
+            if (*p == '?' && !l_query_start) {
+                l_query_start = p;
+                break;
+            }
+        }
+        
+        // Extract path (up to query string)
+        const char *l_path_end = l_query_start ? l_query_start : l_url_end;
+        size_t l_path_len = l_path_end - l_url_start;
+        
+        if (l_path_len > 0) {
+            a_request->path = DAP_NEW_Z_SIZE(char, l_path_len + 1);
+            if (!a_request->path) {
+                log_it(L_CRITICAL, "Failed to allocate memory for relative path");
+                return -7;
+            }
+            memcpy(a_request->path, l_url_start, l_path_len);
+            a_request->path[l_path_len] = '\0';
+        } else {
+            a_request->path = dap_strdup("/");
+            if (!a_request->path) {
+                log_it(L_CRITICAL, "Failed to allocate memory for default path");
+                return -7;
+            }
+        }
+        
+        // Extract query string (including '?')
+        if (l_query_start) {
+            size_t l_query_len = l_url_end - l_query_start;
+            a_request->query_string = DAP_NEW_Z_SIZE(char, l_query_len + 1);
+            if (!a_request->query_string) {
+                log_it(L_CRITICAL, "Failed to allocate memory for query string");
+                DAP_DEL_Z(a_request->path);
+                return -8;
+            }
+            memcpy(a_request->query_string, l_query_start, l_query_len);
+            a_request->query_string[l_query_len] = '\0';
+        } else {
+            a_request->query_string = NULL;
+        }
+        
+        log_it(L_DEBUG, "Parsed relative URL: path='%s', query='%s' (host/port/ssl preserved)",
+               a_request->path, a_request->query_string ? a_request->query_string : "none");
+    }
+
+    // Handle HTTP method changes for redirects (RFC 7231)
+    if (a_redirect_status != 0) {
+        if (a_redirect_status == 303 && a_request->method != HTTP_HEAD) {
+            // 303 See Other: MUST change to GET (except HEAD)
+            a_request->method = HTTP_GET;
+            DAP_DEL_Z(a_request->body_data);
+            a_request->body_size = 0;
+            log_it(L_DEBUG, "303 redirect: changed method to GET");
+        } else if ((a_redirect_status == 301 || a_redirect_status == 302) && a_request->method == HTTP_POST) {
+            // 301/302 with POST: change to GET for compatibility
+            a_request->method = HTTP_GET;
+            DAP_DEL_Z(a_request->body_data);
+            a_request->body_size = 0;
+            log_it(L_DEBUG, "%d redirect: changed POST to GET for compatibility", a_redirect_status);
+        }
+        // 307/308: method NEVER changes (not handled here - already correct)
+    }
+
+    log_it(L_DEBUG, "Parsed URL successfully: %s", a_url);
+    return 0;
 }
 

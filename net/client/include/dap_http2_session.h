@@ -61,9 +61,7 @@ typedef enum {
 
 // NOTE: dap_http2_session_callbacks_t is now defined in dap_stream_callbacks.h
 
-
-
-
+struct dap_http2_stream;
 
 // Main session structure (universal for client and server)
 typedef struct dap_http2_session {
@@ -85,7 +83,8 @@ typedef struct dap_http2_session {
     time_t ts_established;                // connect() or accept() time
     
     // === SINGLE STREAM MANAGEMENT ===
-    dap_http2_stream_t *stream;           // Single stream per session
+    struct dap_http2_stream *stream;           // Single stream per session
+    dap_http2_stream_callbacks_t *stream_callbacks;
     
     // === CALLBACKS (define client/server role) ===
     dap_http2_session_callbacks_t callbacks;
@@ -211,6 +210,19 @@ int dap_http2_session_upgrade(dap_http2_session_t *a_session,
 int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, size_t a_size);
 
 /**
+ * @brief Get direct write buffer info for zero-copy operations
+ * @param a_session Session instance
+ * @param a_write_ptr Output: pointer to write position in buffer
+ * @param a_size_ptr Output: pointer to current buffer size (for direct increment)
+ * @param a_available_space Output: available space in buffer
+ * @return 0 on success, negative on error
+ */
+int dap_http2_session_get_write_buffer_info(dap_http2_session_t *a_session, 
+                                           void **a_write_ptr, 
+                                           size_t **a_size_ptr, 
+                                           size_t *a_available_space);
+
+/**
  * @brief Process incoming data from session socket
  * @param a_session Session instance
  * @param a_data Incoming data
@@ -268,16 +280,15 @@ bool dap_http2_session_is_server_mode(const dap_http2_session_t *a_session);
  * @param a_callback_arg The context for the stream callbacks.
  * @return New stream instance or NULL on error.
  */
-dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session,
-                                                     const dap_http2_stream_callbacks_t *a_callbacks,
-                                                     void *a_callback_arg);
+struct dap_http2_stream *dap_http2_session_create_stream(dap_http2_session_t *a_session,
+                                                     const dap_http2_stream_callbacks_t *a_callbacks);
 
 /**
  * @brief Get the single stream associated with this session.
  * @param a_session Session instance
  * @return Stream or NULL if none
  */
-dap_http2_stream_t *dap_http2_session_get_stream(const dap_http2_session_t *a_session);
+struct dap_http2_stream *dap_http2_session_get_stream(const dap_http2_session_t *a_session);
 
 // === UTILITY FUNCTIONS ===
 

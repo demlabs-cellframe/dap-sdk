@@ -139,17 +139,17 @@ typedef struct dap_http2_client_request {
     dap_http_method_t method;        // EFFICIENT: enum instead of string
     char *host;
     char *path;                      // Path component from URL (without leading slash)
+    char *query_string;              // Query string with ? (e.g., "?name=john&page=2")
     uint16_t port;
     bool use_ssl;
     
     // Headers
-    char *content_type;
-    char *custom_headers;
+    dap_http_header_t *headers;
+    size_t headers_size;
     
-    // Body
+    // Body (for POST/PUT/PATCH only)
     void *body_data;
     size_t body_size;
-    
 } dap_http2_client_request_t;
 
 // === MAIN CLIENT STRUCTURE ===
@@ -252,12 +252,13 @@ dap_http2_client_request_t *dap_http2_client_request_create(void);
 void dap_http2_client_request_delete(dap_http2_client_request_t *a_request);
 
 /**
- * @brief Set request URL
+ * @brief Parse URL and update request fields (smart handling for redirects)
  * @param a_request Request instance
- * @param a_url URL to set
+ * @param a_url URL to parse (can be absolute or relative)
+ * @param a_redirect_status HTTP redirect status code (0 for non-redirect usage)
  * @return 0 on success, negative on error
  */
-int dap_http2_client_request_set_url(dap_http2_client_request_t *a_request, const char *a_url);
+int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, http_status_code_t a_redirect_status);
 
 /**
  * @brief Set request method (string version)
@@ -279,7 +280,16 @@ static inline void dap_http2_client_request_set_method_enum(dap_http2_client_req
 }
 
 /**
- * @brief Set request headers
+ * @brief Add single header to request
+ * @param a_request Request instance
+ * @param a_name Header name
+ * @param a_value Header value
+ * @return 0 on success, negative on error
+ */
+int dap_http2_client_request_add_header(dap_http2_client_request_t *a_request, const char *a_name, const char *a_value);
+
+/**
+ * @brief Set request headers (legacy compatibility - parses header string)
  * @param a_request Request instance
  * @param a_headers Headers string
  * @return 0 on success, negative on error

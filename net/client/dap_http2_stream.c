@@ -3,6 +3,8 @@
  * @brief HTTP/2 Stream implementation with dynamic channel callback architecture
  */
 
+#include <stdatomic.h>  // For atomic_store
+#include <inttypes.h>   // For PRIu64
 #include "dap_http2_stream.h"
 #include "dap_http2_session.h"
 #include "dap_common.h"
@@ -11,6 +13,47 @@
 #define LOG_TAG "dap_http2_stream"
 
 // === STREAM LIFECYCLE ===
+
+/**
+ * @brief Get stream UID (atomic read)
+ * @param a_stream Stream instance
+ * @return Stream UID or 0 if invalid stream
+ */
+uint64_t dap_http2_stream_get_uid(const dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return 0;
+    }
+    return atomic_load(&a_stream->uid);
+}
+
+/**
+ * @brief Get worker ID from stream UID
+ * @param a_stream Stream instance
+ * @return Worker ID or 0 if invalid
+ */
+uint8_t dap_http2_stream_get_worker_id(const dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return 0;
+    }
+    uint64_t l_uid = atomic_load(&a_stream->uid);
+    return dap_stream_uid_extract_worker_id(l_uid);
+}
+
+/**
+ * @brief Get esocket UID from stream UID
+ * @param a_stream Stream instance  
+ * @return Esocket UID or 0 if invalid
+ */
+uint32_t dap_http2_stream_get_esocket_uid(const dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return 0;
+    }
+    uint64_t l_uid = atomic_load(&a_stream->uid);
+    return dap_stream_uid_extract_esocket_uid(l_uid);
+}
 
 /**
  * @brief Create new stream
@@ -29,9 +72,24 @@ dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
     // Basic initialization
     l_stream->session = a_session;
     
-    // Initialize callbacks to NULL
-    l_stream->read_callback = NULL;
-    l_stream->read_callback_context = NULL;
+    // === SET STREAM UID (worker_id + esocket_uid) ===
+    if (a_session->es) {
+        // Extract worker_id and esocket_uid from session
+        uint8_t l_worker_id = a_session->worker ? a_session->worker->id : 0;
+        uint32_t l_esocket_uid = a_session->es->uuid;  // esocket UUID is our unique identifier
+        
+        // Compose Stream UID: worker_id(8 bits) + esocket_uid(32 bits) + reserved(24 bits)
+        uint64_t l_stream_uid = dap_stream_uid_compose(l_worker_id, l_esocket_uid);
+        
+        // Set atomic stream UID
+        atomic_store(&l_stream->uid, l_stream_uid);
+        
+        log_it(L_DEBUG, "Stream UID set: worker_id=%u, esocket_uid=%u, stream_uid=%"PRIu64,
+               l_worker_id, l_esocket_uid, l_stream_uid);
+    } else {
+        log_it(L_WARNING, "Session has no event socket - Stream UID set to 0");
+        atomic_store(&l_stream->uid, 0);
+    }
     
     return l_stream;
 }
@@ -46,7 +104,7 @@ void dap_http2_stream_delete(dap_http2_stream_t *a_stream)
     }
     
     // Clear all channels
-    dap_http2_stream_clear_all_channels(a_stream);
+    //dap_http2_stream_clear_all_channels(a_stream);
     
     // Free receive buffer
     if (a_stream->receive_buffer) {
@@ -208,18 +266,18 @@ bool dap_http2_stream_is_autonomous(dap_http2_stream_t *a_stream)
  */
 const char* dap_http2_stream_get_protocol_name(const dap_http2_stream_t *a_stream)
 {
-    if (!a_stream || !a_stream->read_callback) {
+    if (!a_stream || !a_stream->callbacks.read_cb) {
         return "Unknown";
     }
     
-    if (a_stream->read_callback == dap_http2_stream_read_callback_http_client ||
-        a_stream->read_callback == dap_http2_stream_read_callback_http_server) {
+    if (a_stream->callbacks.read_cb == dap_http2_stream_read_callback_http_client ||
+        a_stream->callbacks.read_cb == dap_http2_stream_read_callback_http_server) {
         return "HTTP";
-    } else if (a_stream->read_callback == dap_http2_stream_read_callback_websocket) {
+    } else if (a_stream->callbacks.read_cb == dap_http2_stream_read_callback_websocket) {
         return "WebSocket";
-    } else if (a_stream->read_callback == dap_http2_stream_read_callback_binary) {
+    } else if (a_stream->callbacks.read_cb == dap_http2_stream_read_callback_binary) {
         return "Binary";
-    } else if (a_stream->read_callback == dap_http2_stream_read_callback_sse) {
+    } else if (a_stream->callbacks.read_cb == dap_http2_stream_read_callback_sse) {
         return "SSE";
     } else {
         return "Custom";
@@ -360,8 +418,8 @@ int dap_http2_stream_transition_protocol(dap_http2_stream_t *a_stream,
     }
     
     log_it(L_DEBUG, "Transitioning stream %p protocol", a_stream);
-    a_stream->read_callback = a_new_callback;
-    a_stream->read_callback_context = a_new_context;
+    a_stream->callbacks.read_cb = a_new_callback;
+    a_stream->callback_context = a_new_context;
     return 0;
 }
 

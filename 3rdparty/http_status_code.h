@@ -196,4 +196,30 @@ static inline const char* http_status_reason_phrase(unsigned short code)
 
 }
 
+static inline http_status_code_t http_status_code_from_response(const char *a_str, size_t a_len) {
+    if (!a_str || a_len < 12 || memcmp(a_str, "HTTP/", 5)) { // "HTTP/1.1 200"
+        return 0;
+    }
+    
+    // Find space after version
+    const char *l_space = memchr(a_str + 5, ' ', a_len - 5);
+    if (!l_space || (l_space + 4) > (a_str + a_len)) {
+        return 0;
+    }
+    
+    const char *l_code_start = l_space + 1;
+    
+    // Check that next 3 characters are digits
+    if (!isdigit(l_code_start[0]) || !isdigit(l_code_start[1]) || !isdigit(l_code_start[2])) {
+        return 0;
+    }
+    
+    // Fast extraction of number
+    int l_status = (l_code_start[0] - '0') * 100 + 
+                   (l_code_start[1] - '0') * 10 + 
+                   (l_code_start[2] - '0');
+    
+    return (l_status >= 100 && l_status <= 999) ? (http_status_code_t)l_status : 0;
+}
+
 #endif // HTTP_STATUS_CODE_DEFINITIONS_H

@@ -31,6 +31,7 @@
 // Forward declarations for callback functions
 static void s_session_connected_callback(dap_events_socket_t *a_esocket);
 static void s_session_read_callback(dap_events_socket_t *a_esocket, void *a_data, size_t a_data_size);
+static void s_session_worker_assign_callback(dap_events_socket_t *a_esocket, dap_worker_t *a_worker);
 static void s_session_error_callback(dap_events_socket_t *a_esocket, int a_error);
 static void s_session_delete_callback(dap_events_socket_t *a_esocket, void *a_arg);
 static bool s_session_connect_timeout_callback(void *a_arg);
@@ -42,19 +43,14 @@ static void s_session_ssl_connected_callback(dap_events_socket_t *a_esocket);
 // Session lifecycle
 dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker, uint64_t a_connect_timeout_ms)
 {
-    if (!a_worker) {
-        log_it(L_ERROR, "Invalid worker parameter for session creation");
-        return NULL;
-    }
-
     dap_http2_session_t *l_session = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http2_session_t, NULL);
     *l_session = (dap_http2_session_t){ 
-        .worker = a_worker, 
+        .worker = a_worker ? a_worker : dap_worker_get_auto(), 
         .ts_created = time(NULL), 
         .connect_timeout_ms = a_connect_timeout_ms ? a_connect_timeout_ms : 30000
     };
     log_it(L_DEBUG, "Created HTTP2 session %p on worker %u (timeout: %llu ms)", 
-           l_session, a_worker->id, l_session->connect_timeout_ms);
+           l_session, l_session->worker->id, l_session->connect_timeout_ms);
     return l_session;
 }
 
@@ -77,9 +73,11 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
         return log_it(L_ERROR, "SSL requested but SSL support is disabled"), -ENOTSUP;
 #endif
     struct sockaddr_storage l_addr_storage = { };
-    if ( dap_net_resolve_host(a_addr, dap_itoa(a_port), false, &l_addr_storage, NULL) < 0 )
+    int l_addrlen = dap_net_resolve_host(a_addr, dap_itoa(a_port), false, &l_addr_storage, NULL);
+    if ( l_addrlen < 0 )
         return log_it(L_ERROR, "Failed to resolve host '%s : %u'", a_addr, a_port), -EHOSTUNREACH;
     int l_error = 0;
+
 #ifdef DAP_OS_WINDOWS
 #define m_set_error(a_error) do { a_error = WSAGetLastError(); } while (0)
 #else
@@ -120,7 +118,8 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
 #endif
         .read_callback = s_session_read_callback,
         .error_callback = s_session_error_callback,
-        .delete_callback = s_session_delete_callback
+        .delete_callback = s_session_delete_callback,
+        .worker_assign_callback = s_session_worker_assign_callback
     };
 
     dap_events_socket_t *l_ev_socket = dap_events_socket_wrap_no_add(l_socket, &l_session_callbacks);
@@ -146,13 +145,39 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_worker_add_events_socket(a_session->worker, l_ev_socket);
-    
-    // Setup connect timeout
-    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+#else
+    // Unix/Linux approach
+    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
+    if ( 0 == connect(l_socket, (struct sockaddr*)&l_ev_socket->addr_storage, l_addrlen) ) {
+        log_it(L_DEBUG, "Connected immediately to %s:%u", a_addr, a_port);
+        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
+        dap_worker_exec_callback_on(a_session->worker, l_session_callbacks.connected_callback, l_ev_socket);
+        return 0;
+    }
+    m_set_error(l_error);
+    switch (l_error) {
+#ifdef DAP_OS_WINDOWS
+    case WSAEWOULDBLOCK:
+#else
+    case EINPROGRESS:
+#endif
+        // Connection in progress
+        log_it(L_DEBUG, "Connecting to %s:%u ...", a_addr, a_port);
+        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
+        break;
+    default:
+        log_it(L_ERROR, "Connection to %s:%u failed, error %d: \"%s\"", a_addr, a_port, l_error, dap_strerror(l_error));
+        dap_events_socket_delete_unsafe(l_ev_socket, true);
+        a_session->es = NULL;
+        return -l_error;
+    }
+#endif
+
+    // TODO: remove this crappy timer and implement timerfd / QueueTimer handle in events system
+    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
     if (l_ev_uuid_ptr) {
-        *l_ev_uuid_ptr = l_ev_socket->uuid;
         a_session->connect_timer = dap_timerfd_start_on_worker(
-            a_session->worker, 30000, // 30 second timeout
+            a_session->worker, a_session->connect_timeout_ms,
             s_session_connect_timeout_callback, l_ev_uuid_ptr);
         if (!a_session->connect_timer) {
             log_it(L_WARNING, "Failed to start connect timer");
@@ -160,60 +185,6 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
         }
     }
     return 0;
-#else
-    // Unix/Linux approach
-    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
-    int l_connect_result = connect(l_socket, (struct sockaddr *)&l_ev_socket->addr_storage, 
-                                  sizeof(struct sockaddr_in));
-    
-    if (l_connect_result == 0) {
-        // Connected immediately
-        log_it(L_DEBUG, "Connected immediately to %s:%u", a_addr, a_port);
-        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
-        if (a_session->encryption_type == DAP_SESSION_ENCRYPTION_TLS) {
-#ifndef DAP_NET_CLIENT_NO_SSL
-            s_session_ssl_connected_callback(l_ev_socket);
-#endif
-        } else {
-            s_session_connected_callback(l_ev_socket);
-        }
-        return 0;
-    }
-#ifdef DAP_OS_WINDOWS
-    else if (l_connect_result == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-#else
-    else if (l_connect_result == -1 && errno == EINPROGRESS) {
-#endif
-        // Connection in progress
-        log_it(L_DEBUG, "Connection to %s:%u in progress", a_addr, a_port);
-        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
-        
-        // Setup connect timeout
-        dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (l_ev_uuid_ptr) {
-            *l_ev_uuid_ptr = l_ev_socket->uuid;
-            a_session->connect_timer = dap_timerfd_start_on_worker(
-                a_session->worker, 30000, // 30 second timeout
-                s_session_connect_timeout_callback, l_ev_uuid_ptr);
-            if (!a_session->connect_timer) {
-                log_it(L_WARNING, "Failed to start connect timer");
-                DAP_DELETE(l_ev_uuid_ptr);
-            }
-        }
-        return 0;
-    } else {
-        // Connection failed
-#ifdef DAP_OS_WINDOWS
-        int l_error = WSAGetLastError();
-#else
-        int l_error = errno;
-#endif
-        log_it(L_ERROR, "Connect failed: %d (\"%s\")", l_error, dap_strerror(l_error));
-        dap_events_socket_delete_unsafe(l_ev_socket, true);
-        a_session->es = NULL;
-        return -l_error;
-    }
-#endif
 }
 
 void dap_http2_session_close(dap_http2_session_t *a_session)
@@ -232,14 +203,14 @@ void dap_http2_session_close(dap_http2_session_t *a_session)
         dap_timerfd_delete_unsafe(a_session->connect_timer);
         a_session->connect_timer = NULL;
     }
-
+    dap_events_socket_remove_and_delete_unsafe(a_session->es, true);
+    a_session->es = NULL;
     // TODO: Clean up read timer on stream level
 
-    // Close socket
-    if (a_session->es) {
+    /*if (a_session->es) {
         a_session->es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         // Note: socket will be deleted by events system, which will call our delete callback
-    }
+    }*/
 }
 
 void dap_http2_session_delete(dap_http2_session_t *a_session)
@@ -323,11 +294,53 @@ int dap_http2_session_upgrade(dap_http2_session_t *a_session,
 // Data operations
 int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, size_t a_size)
 {
-    // TODO: Implement data sending
-    UNUSED(a_session);
-    UNUSED(a_data);
-    UNUSED(a_size);
-    return -1;
+    if (!a_session || !a_session->es) {
+        log_it(L_ERROR, "Invalid session or esocket in dap_http2_session_send");
+        return -1;
+    }
+    
+    if (!a_data || a_size == 0) {
+        log_it(L_WARNING, "Empty data in dap_http2_session_send");
+        return 0;
+    }
+    
+    // Send data through session esocket
+    size_t l_bytes_sent = dap_events_socket_write_unsafe(a_session->es, a_data, a_size);
+    if (l_bytes_sent != a_size) {
+        log_it(L_ERROR, "Failed to send all data: %zu/%zu bytes sent", l_bytes_sent, a_size);
+        return -1;
+    }
+    
+    log_it(L_DEBUG, "Sent %zu bytes through HTTP2 session", a_size);
+    return (int)l_bytes_sent;
+}
+
+/**
+ * @brief Get direct write buffer info for zero-copy operations
+ * @param a_session Session instance
+ * @param a_write_ptr Output: pointer to write position in buffer
+ * @param a_size_ptr Output: pointer to current buffer size (for direct increment)
+ * @param a_available_space Output: available space in buffer
+ * @return 0 on success, negative on error
+ */
+int dap_http2_session_get_write_buffer_info(dap_http2_session_t *a_session, 
+                                           void **a_write_ptr, 
+                                           size_t **a_size_ptr, 
+                                           size_t *a_available_space)
+{
+    if (!a_session || !a_session->es || !a_write_ptr || !a_size_ptr || !a_available_space) {
+        log_it(L_ERROR, "Invalid arguments in dap_http2_session_get_write_buffer_info");
+        return -1;
+    }
+    
+    dap_events_socket_t *l_es = a_session->es;
+    
+    // Return direct pointers to buffer info
+    *a_write_ptr = l_es->buf_out + l_es->buf_out_size;      // Write position
+    *a_size_ptr = &l_es->buf_out_size;                      // Size pointer for direct increment
+    *a_available_space = l_es->buf_out_size_max - l_es->buf_out_size; // Available space
+    
+    return 0;
 }
 
 bool dap_http2_session_is_connected(const dap_http2_session_t *a_session)
@@ -345,9 +358,7 @@ bool dap_http2_session_is_error(const dap_http2_session_t *a_session)
 }
 
 // Single stream management
-dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session,
-                                                     const dap_http2_stream_callbacks_t *a_callbacks,
-                                                     void *a_callback_arg)
+dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_session, const dap_http2_stream_callbacks_t *a_callbacks)
 {
     if (!a_session) {
         log_it(L_ERROR, "Session is NULL, cannot create stream");
@@ -371,7 +382,7 @@ dap_http2_stream_t *dap_http2_session_create_stream(dap_http2_session_t *a_sessi
     if (a_callbacks) {
         l_stream->callbacks = *a_callbacks;
     }
-    l_stream->callback_context = a_callback_arg;
+    l_stream->callback_context = a_session->callbacks_arg;
     
     a_session->stream = l_stream;
     
@@ -471,9 +482,8 @@ static void s_session_connected_callback(dap_events_socket_t *a_esocket)
     // TODO: Setup read timeout timer on stream level
 
     // Call user callback if set
-    if (l_session->callbacks.connected) {
+    if (l_session->callbacks.connected)
         l_session->callbacks.connected(l_session);
-    }
 }
 
 /**
@@ -496,6 +506,29 @@ static void s_session_read_callback(dap_events_socket_t *a_esocket, void *a_data
     }
 
     // TODO: Reset read timer on stream level
+}
+
+// === STREAM CREATION HELPER ===
+
+/**
+ * @brief Called when socket is assigned to a worker
+ */
+static void s_session_worker_assign_callback(dap_events_socket_t *a_esocket, UNUSED_ARG dap_worker_t *a_worker)
+{
+    if (!a_esocket || !a_esocket->_inheritor) {
+        log_it(L_ERROR, "Invalid arguments in session worker assign callback");
+        return;
+    }
+
+    dap_http2_session_t *l_session = (dap_http2_session_t*)a_esocket->_inheritor;
+    dap_http2_stream_t *l_stream = dap_http2_session_create_stream(l_session, l_session->stream_callbacks);
+    if (!l_stream) {
+        log_it(L_ERROR, "Failed to create stream!");
+        return;
+    }
+    DAP_DEL_Z(l_session->stream_callbacks);
+    if (l_session->callbacks.assigned)
+        l_session->callbacks.assigned(l_session);
 }
 
 /**

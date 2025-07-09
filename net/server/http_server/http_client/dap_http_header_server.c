@@ -100,9 +100,10 @@ void dap_http_header_deinit()
 
 int dap_http_header_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len)
 {
-char l_name[DAP_HTTP$SZ_FIELD_NAME] = {0};
-char l_value[DAP_HTTP$SZ_FIELD_VALUE] = {0};
+char l_name[128] = {0};
+char l_value[1024] = {0};
 size_t l_namelen, l_valuelen;
+uint16_t l_header_size;
 struct ht_field *l_ht;
 
     debug_if(s_debug_http, L_DEBUG, "Parse header string (%zu octets) : '%.*s'",  ht_line_len, (int) ht_line_len, ht_line);
@@ -156,7 +157,7 @@ struct ht_field *l_ht;
 
 
     /* Add header to list using common function */
-    dap_http_header_add(&cl_ht->in_headers, l_name, l_value);
+    dap_http_header_add(&cl_ht->in_headers, l_name, l_value, NULL);
 
     return 0;
 }
