@@ -143,7 +143,6 @@ static size_t s_http_stream_read_chunked_streaming(dap_http2_stream_t *a_stream,
 // HTTP protocol functions (adapted from dap_client_http.c)
 static size_t s_request_formatted_size(const dap_http2_client_request_t *a_request);
 static size_t s_calculate_formatted_size(const dap_http2_client_request_t *a_request);
-static void s_update_request_formatted_size(dap_http2_client_request_t *a_request);
 static size_t s_format_http_request_to_buffer(const dap_http2_client_request_t *a_request, void *a_buffer, size_t a_buffer_size);
 static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
 static http_process_result_t s_process_chunked_data(dap_http_client_context_t *a_context, const void *a_data, size_t a_size, size_t *a_consumed);
@@ -715,8 +714,8 @@ int dap_http2_client_request_add_header(dap_http2_client_request_t *a_request, c
         return -1;
     }
 
-    uint16_t l_header_size = 0;
-    dap_http_header_t *l_header = dap_http_header_add(&a_request->headers, a_name, a_value, &l_header_size);
+    uint32_t l_header_size = 0;
+    dap_http_header_t *l_header = dap_http_header_add_ex(&a_request->headers, a_name, a_value, &l_header_size);
     if (!l_header) {
         log_it(L_ERROR, "Failed to add header: %s: %s", a_name, a_value);
         return -2;
@@ -749,7 +748,6 @@ int dap_http2_client_request_set_method(dap_http2_client_request_t *a_request, c
 
     // EFFICIENT: Store enum (no memory allocation needed)
     a_request->method = l_method_enum;
-    s_update_request_formatted_size(a_request);  // Recalculate size after method change
 
     log_it(L_DEBUG, "Set request method: %s", a_method);
     return 0;
@@ -2163,22 +2161,12 @@ static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_c
                 }
                 size_t l_location_len = l_value_end - l_location_pos;
                 
-                // Create temporary location string
-                char *l_location_url = dap_strndup(l_location_pos, l_location_len);
-                if (l_location_url) {
-                    log_it(L_DEBUG, "Found Location: %s", l_location_url);
-                    
-                    // Directly update request with new URL
-                    int l_parse_result = dap_http2_client_request_parse_url(a_context->request, l_location_url, a_context->status_code);
-                    if (l_parse_result == 0) {
-                        log_it(L_DEBUG, "Successfully updated request with redirect URL");
-                    } else {
-                        log_it(L_ERROR, "Failed to parse redirect URL: %d", l_parse_result);
-                    }
-                    
-                    DAP_DELETE(l_location_url);
+                // Directly update request with new URL
+                int l_parse_result = dap_http2_client_request_parse_url(a_context->request, l_location_pos, l_location_len, a_context->status_code);
+                if (l_parse_result == 0) {
+                    log_it(L_DEBUG, "Successfully updated request with redirect URL");
                 } else {
-                    log_it(L_ERROR, "Failed to allocate memory for location URL");
+                    log_it(L_ERROR, "Failed to parse redirect URL: %d", l_parse_result);
                 }
             }
         }
@@ -2228,7 +2216,7 @@ static http_process_result_t s_parse_http_headers(dap_http_client_context_t *a_c
                 }
                 size_t l_ct_len = l_value_end - l_ct_pos;
                 DAP_DELETE(a_context->content_type);
-                a_context->content_type = dap_strndup(l_ct_pos, l_ct_len);
+                asprintf(&a_context->content_type, "%.*s", (int)l_ct_len, l_ct_pos);
                 log_it(L_DEBUG, "Found Content-Type: %s", a_context->content_type);
             }
         }
@@ -2618,7 +2606,7 @@ static int s_process_http_redirect(dap_http_client_context_t *a_context)
  * @param a_url URL to parse (can be absolute or relative)
  * @return 0 on success, negative on error
  */
-int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, http_status_code_t a_redirect_status)
+int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, size_t a_url_size, http_status_code_t a_redirect_status)
 {
     if (!a_request || !a_url) {
         log_it(L_ERROR, "Invalid arguments in dap_http2_client_request_parse_url");
@@ -2626,7 +2614,7 @@ int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, co
     }
 
     // EFFICIENT: Calculate length once and set end pointer
-    size_t l_url_len = strlen(a_url);
+    size_t l_url_len = a_url_size ? a_url_size : strlen(a_url);
     const char *l_url_end = a_url + l_url_len;
     
     // Check if URL is absolute (starts with http:// or https://)
@@ -2711,7 +2699,7 @@ int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, co
             
             for (const char *p = l_port_str; p < l_port_end && *p >= '0' && *p <= '9'; p++) {
                 uint16_t l_new_val = l_port_val * 10 + (*p - '0');
-                if (l_new_val < l_port_val || l_new_val > 65535) {
+                if (l_new_val < l_port_val) {
                     l_valid_port = false;
                     break;
                 }

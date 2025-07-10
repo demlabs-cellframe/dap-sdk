@@ -36,6 +36,8 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n);
 char* dap_strdup(const char *a_str);
 char* dap_strdup_vprintf(const char *a_format, va_list a_args);
 DAP_PRINTF_ATTR(1, 2) char *dap_strdup_printf(const char *a_format, ...);
+// compare two strings up to n characters
+char* dap_strneq(const char *a_str1, const char *a_str2, size_t n);
 char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit);
 char* dap_stpcpy(char *a_dest, const char *a_src);
 char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char *a_needle);

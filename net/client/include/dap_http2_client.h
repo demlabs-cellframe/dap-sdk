@@ -30,6 +30,7 @@
 #include "dap_http2_session.h"
 #include "dap_http2_stream.h"
 #include "dap_http_header.h"
+#include "http_status_code.h"
 
 // === UID CONSTANTS ===
 #define INVALID_STREAM_UID     0x0000000000000000UL
@@ -258,7 +259,7 @@ void dap_http2_client_request_delete(dap_http2_client_request_t *a_request);
  * @param a_redirect_status HTTP redirect status code (0 for non-redirect usage)
  * @return 0 on success, negative on error
  */
-int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, http_status_code_t a_redirect_status);
+int dap_http2_client_request_parse_url(dap_http2_client_request_t *a_request, const char *a_url, size_t a_url_size, http_status_code_t a_redirect_status);
 
 /**
  * @brief Set request method (string version)

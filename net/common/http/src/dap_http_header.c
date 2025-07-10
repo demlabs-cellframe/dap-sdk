@@ -30,27 +30,19 @@
 
 #define LOG_TAG "http_header"
 
-#define DAP_HTTP_HEADER_NAME_LEN_MASK 5
+/*
+// TODO: enable after full integration
+*
+#define DAP_HTTP_HEADER_NAME_LEN_MASK 6
 #define DAP_HTTP_HEADER_VALUE_LEN_MASK 16
 typedef struct dap_http_header {
-    struct dap_http_header *next, *prev;
     uint32_t name_len : DAP_HTTP_HEADER_NAME_LEN_MASK;
     uint32_t value_len : DAP_HTTP_HEADER_VALUE_LEN_MASK;
     uint32_t padding : 32 - DAP_HTTP_HEADER_NAME_LEN_MASK - DAP_HTTP_HEADER_VALUE_LEN_MASK; // reserved
+    struct dap_http_header *next, *prev;
     char data[];
 } dap_http_header_t;
-
-static inline void dap_http_header_to_printable(dap_http_header_t *a_header) {
-    a_header->data[a_header->name_len] = ':';
-    a_header->data[a_header->name_len + 1] = ' ';
-    a_header->data[a_header->name_len + 2 + a_header->value_len] = '\r';
-    a_header->data[a_header->name_len + 2 + a_header->value_len + 1] = '\n';
-}
-
-static inline void dap_http_header_from_printable(dap_http_header_t *a_header) {
-    a_header->data[a_header->name_len] = a_header->data[a_header->name_len + 1] =
-    a_header->data[a_header->name_len + 2 + a_header->value_len] = a_header->data[a_header->name_len + 2 + a_header->value_len + 1] = '\0';
-}
+ */
 
 /**
  * @brief Validate HTTP header name according to RFC 7230
@@ -64,95 +56,213 @@ static inline bool dap_http_header_name_is_valid(const char *a_name, size_t a_le
         return false;
         
     for (size_t i = 0; i < a_len; i++) {
-        if (!isprint(a_name[i]) || a_name[i] == ':') {
-            return false;
+        unsigned char c = a_name[i];
+        
+        // Allowed characters per RFC 7230 (tchar):
+        if (dap_ascii_isalnum(c))                    // ALPHA / DIGIT (fast lookup)
+            continue;
+            
+        // Special tchar characters (optimized)
+        switch (c) {
+            case '!': case '#': case '$': case '%': case '&': case '\'':
+            case '*': case '+': case '-': case '.': case '^': case '_':
+            case '`': case '|': case '~':
+                continue;
+            default:
+                return false;  // Forbidden: spaces, :, brackets, quotes, etc.
         }
     }
     return true;
 }
 
-static inline dap_http_header_t *dap_http_header_create(const char *a_name, const char *a_value, uint16_t a_name_len, uint16_t a_value_len, uint32_t *a_size) {
-    if ( !dap_http_header_name_is_valid(a_name, a_name_len) ) {
-        log_it(L_ERROR, "Invalid header name");
-        return NULL;
+/**
+ * @brief Validate HTTP header value according to RFC 7230
+ * @param a_value Header value to validate
+ * @param a_len Length of value
+ * @return true if valid, false otherwise
+ */
+bool dap_http_header_value_is_valid(const char *a_value, size_t a_len)
+{
+    if (!a_value || a_len == 0 || a_len >= ( 1 << DAP_HTTP_HEADER_VALUE_LEN_MASK ))
+        return false;
+    
+    // Value must not start or end with spaces
+    if (a_value[0] == ' ' || a_value[a_len-1] == ' ')
+        return false;
+    
+    for (size_t i = 0; i < a_len; i++) {
+        unsigned char c = a_value[i];
+        
+        // Allowed characters per RFC 7230 (simplified version without tabs):
+        if (dap_ascii_isprint(c))     // Printable ASCII (including space 0x20-0x7E)
+            continue;
+        if (c >= 0x80)                // obs-text (extended characters for compatibility)
+            continue;
+            
+        // All other characters are forbidden (including tabs and all control chars 0x00-0x1F)
+        return false;
     }
-    dap_http_header_t *l_header = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_http_header_t, a_name_len + a_value_len + sizeof(": \r\n"), NULL);
-    memcpy(l_header->data, a_name, a_name_len);
-    memcpy(l_header->data + a_name_len + 2, a_value, a_value_len);
+    
+    return true;
+}
+
+/**
+ * @brief Create new HTTP header with validation
+ * @param a_name Header name
+ * @param a_value Header value
+ * @param a_name_len Length of name
+ * @param a_value_len Length of value
+ * @param a_size Optional pointer to store header size
+ * @return New header or NULL on error
+ */
+static inline dap_http_header_t *dap_http_header_create(const char *a_name, const char *a_value, uint16_t a_name_len, uint16_t a_value_len, uint32_t *a_size) {
+    dap_return_val_if_fail_err( dap_http_header_name_is_valid(a_name, a_name_len), NULL, "Invalid header name" );
+    dap_return_val_if_fail_err( dap_http_header_value_is_valid(a_value, a_value_len), NULL, "Invalid header value" );
+
+    dap_http_header_t *l_header = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_http_header_t, a_name_len + a_value_len + 2, NULL);
+    memcpy( dap_mempcpy(l_header->data, a_name, a_name_len) + 1, a_value, a_value_len );
+
     l_header->name_len = a_name_len;
     l_header->value_len = a_value_len;
     if ( a_size )
-        *a_size = a_name_len + a_value_len + sizeof(": \r\n");
+        *a_size = a_name_len + a_value_len + 2;
+
+    /* TODO: remove after full integration! */
+    l_header->name = l_header->data;
+    l_header->value = l_header->data + a_name_len + 1;
+
     return l_header;
 }
 
 /**
- * @brief dap_http_header_add - Add HTTP header to list
+ * @brief Add HTTP header to list
  * @param a_top Pointer to top of list
  * @param a_name Header name
  * @param a_value Header value
+ * @param a_size Optional pointer to store header size
  * @return New header or NULL on error
  */
-dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value, uint32_t *a_size)
+dap_http_header_t *dap_http_header_add_ex(dap_http_header_t **a_top, const char *a_name, const char *a_value, uint32_t *a_size)
 {
-    if (!a_top || !a_name || !a_value)
-        return NULL;
     dap_http_header_t *l_header = dap_http_header_create(a_name, a_value, strlen(a_name), strlen(a_value), a_size);
-    DL_APPEND(*a_top, l_header);
+    if ( l_header && a_top )
+        DL_APPEND(*a_top, l_header);
     return l_header;
 }
 
 /**
- * @brief dap_http_header_find - Find header by name
+ * @brief Add new header or replace existing one with same name
+ * @param a_top Pointer to top of list
+ * @param a_name Header name
+ * @param a_value Header value
+ * @param a_size Optional pointer to store header size
+ * @return New or updated header, NULL on error
+ */
+dap_http_header_t *dap_http_header_add_or_replace(dap_http_header_t **a_top, const char *a_name, const char *a_value, uint32_t *a_size)
+{
+    if (!a_name || !*a_name || !a_value)
+        return NULL;
+
+    size_t l_value_len = strlen(a_value);
+    
+    dap_http_header_t *l_header = dap_http_header_find(*a_top, a_name), *l_new_header = NULL;
+    if ( l_header ) {
+        if ( !dap_http_header_value_is_valid(a_value, l_value_len) )
+            return NULL;
+        if ( l_header->value_len != l_value_len )
+        {
+            l_new_header = DAP_REALLOC_RET_VAL_IF_FAIL(l_header, sizeof(dap_http_header_t) + l_header->name_len + l_value_len + 2, NULL);
+            // If realloc changed the address, update list pointers
+            if ( l_new_header != l_header )
+                DL_REPLACE_ELEM(*a_top, l_header, l_new_header);
+            l_header = l_new_header;
+            l_header->value_len = l_value_len;
+            l_header->data[l_header->name_len + 1 + l_header->value_len] = '\0';
+
+            /* TODO: remove after full integration! */
+            l_header->value = l_header->data + l_header->name_len + 1;
+        }
+        memcpy(l_header->data + l_header->name_len + 1, a_value, l_value_len);
+        if ( a_size )
+            *a_size = l_header->name_len + l_header->value_len + 2;
+    } else {
+        l_header = dap_http_header_create(a_name, a_value, strlen(a_name), l_value_len, a_size);
+        if ( l_header && a_top )
+            DL_APPEND(*a_top, l_header);
+    }
+    return l_header;
+}
+
+/**
+ * @brief Find header by name
  * @param a_top Top of list
  * @param a_name Name to find
+ * @param a_value_len Optional pointer to store value length
  * @return Header or NULL if not found
  */
-char *dap_http_header_find(dap_http_header_t *a_top, const char *a_name, uint32_t *a_len)
+dap_http_header_t *dap_http_header_find_ex(dap_http_header_t *a_top, const char *a_name, uint32_t *a_value_len)
 {
     if(!a_top || !a_name)
         return NULL;
         
     dap_http_header_t *l_hdr = NULL;
     DL_FOREACH(a_top, l_hdr) {
-        if ( l_hdr->name_len == strlen(a_name) && !strncmp(l_hdr->data, a_name, l_hdr->name_len) )
+        if ( !dap_strneq(l_hdr->data, a_name, l_hdr->name_len) )
         {
-            if ( a_len )
-                *a_len = l_hdr->value_len;
-            return dap_strdup(l_hdr->data + l_hdr->name_len + 2);
+            if ( a_value_len )
+                *a_value_len = l_hdr->value_len;
+            return l_hdr;
         }
     }
     return NULL;
 }
 
 /**
- * @brief dap_http_header_remove - Remove header from list
- * @param a_top Pointer to top of list
- * @param a_hdr Header to remove
+ * @brief Get header value by name
+ * @param a_top Top of headers list
+ * @param a_name Header name to find (or NULL to get value from a_top directly)
+ * @param a_len Optional pointer to store value length
+ * @return Pointer to header value or NULL if not found
  */
-void dap_http_header_remove(dap_http_header_t **a_top, const char *a_name, uint32_t *a_size)
+const char *dap_http_header_get_value(dap_http_header_t *a_top, const char *a_name, uint32_t *a_len)
 {
-    if (!a_top || !a_name)
-        return;
-        
-    dap_http_header_t *l_hdr = NULL;
-    DL_FOREACH(*a_top, l_hdr) {
-        if ( l_hdr->name_len == strlen(a_name) && !strncmp(l_hdr->data, a_name, l_hdr->name_len) ) {
-            if ( a_size )
-                *a_size = l_hdr->name_len + l_hdr->value_len + sizeof(": \r\n");
-            DL_DELETE(*a_top, l_hdr);
-            DAP_DELETE(l_hdr);
-            break;
-        }
-    }
+    dap_http_header_t *l_hdr = a_name ? dap_http_header_find(a_top, a_name) : a_top;
+    if ( l_hdr ) {
+        if ( a_len )
+            *a_len = l_hdr->value_len;
+        return (const char*)(l_hdr->data + l_hdr->name_len + 1);
+    } else
+        return NULL;
 }
 
+/**
+ * @brief Remove header from list by name
+ * @param a_top Pointer to top of list
+ * @param a_name Name of header to remove
+ * @param a_size Optional pointer to store removed header size
+ */
+void dap_http_header_remove_ex(dap_http_header_t **a_top, const char *a_name, uint32_t *a_size)
+{
+    if (!a_top)
+        return;
+        
+    dap_http_header_t *l_hdr = dap_http_header_find(*a_top, a_name);
+    if (!l_hdr)
+        return;
+    DL_DELETE(*a_top, l_hdr);
+    DAP_DELETE(l_hdr);
+}
+
+/**
+ * @brief Remove all headers from list and free memory
+ * @param a_top Pointer to top of list
+ */
 void dap_http_headers_remove_all(dap_http_header_t **a_top)
 {
     if (!a_top)
         return;
-    dap_http_header_t *l_hdr = NULL;
-    DL_FOREACH(*a_top, l_hdr) {
+    dap_http_header_t *l_hdr, *l_tmp;
+    DL_FOREACH_SAFE(*a_top, l_hdr, l_tmp) {
         DL_DELETE(*a_top, l_hdr);
         DAP_DELETE(l_hdr);
     }
@@ -160,21 +270,12 @@ void dap_http_headers_remove_all(dap_http_header_t **a_top)
 }
 
 /**
- * @brief dap_http_headers_dup - Duplicate headers list
- * @param a_top Top of list to duplicate
- * @return New list or NULL
+ * @brief Parse header from single HTTP line
+ * @param a_line HTTP header line with CRLF termination
+ * @param a_line_len Length of line including CRLF
+ * @param a_size Optional pointer to store header size
+ * @return New header or NULL on error
  */
-dap_http_header_t *dap_http_headers_dup(dap_http_header_t *a_top)
-{
-    dap_http_header_t *l_hdr = NULL, *l_ret = NULL;
-    DL_FOREACH(a_top, l_hdr) {
-        dap_http_header_t *l_hdr_copy = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_hdr, sizeof(dap_http_header_t) + l_hdr->name_len + l_hdr->value_len + sizeof(": \r\n"), NULL);
-        l_hdr_copy->next = l_hdr_copy->prev = NULL;
-        DL_APPEND(l_ret, l_hdr_copy);
-    }
-    return l_ret;
-}
-
 static inline dap_http_header_t *dap_http_header_from_line(const char *a_line, size_t a_line_len, uint32_t *a_size)
 {
     if(!a_line || a_line_len < 4 || a_line[a_line_len - 2] != '\r' || a_line[a_line_len - 1] != '\n')
@@ -205,6 +306,14 @@ static inline dap_http_header_t *dap_http_header_from_line(const char *a_line, s
     return l_header;
 }
 
+/**
+ * @brief Parse header from HTTP line and add to list
+ * @param a_top Pointer to top of list
+ * @param a_line HTTP header line with CRLF termination
+ * @param a_line_len Length of line including CRLF
+ * @param a_size Optional pointer to store header size
+ * @return New header or NULL on error
+ */
 dap_http_header_t *dap_http_header_add_from_line(dap_http_header_t **a_top, const char *a_line, size_t a_line_len, uint32_t *a_size)
 {
     dap_http_header_t *l_header = dap_http_header_from_line(a_line, a_line_len, a_size);
@@ -214,7 +323,7 @@ dap_http_header_t *dap_http_header_add_from_line(dap_http_header_t **a_top, cons
 }
 
 /**
- * @brief dap_http_header_parse_line - Parse single HTTP header line
+ * @brief Parse single HTTP header line into separate name and value buffers
  * @param a_line Header line to parse
  * @param a_line_len Length of line
  * @param a_name_out Buffer for name output
@@ -273,7 +382,7 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
 }
 
 /**
- * @brief dap_http_header_print - Print headers for debug
+ * @brief Dump headers to debug log
  * @param a_headers Headers list
  */
 void dap_http_headers_dump(dap_http_header_t *a_headers)
@@ -282,10 +391,19 @@ void dap_http_headers_dump(dap_http_header_t *a_headers)
     
     dap_http_header_t *l_hdr = NULL;
     DL_FOREACH(a_headers, l_hdr) {
-        log_it(L_DEBUG, "\t%s: %s", l_hdr->data, l_hdr->data + l_hdr->name_len + 2);
+        log_it(L_DEBUG, "\t%.*s: %.*s", 
+               (int)l_hdr->name_len, l_hdr->data,
+               (int)l_hdr->value_len, l_hdr->data + l_hdr->name_len + 1);
     }
 }
 
+/**
+ * @brief Print headers to string buffer in HTTP format
+ * @param a_headers Headers list
+ * @param a_str Output buffer
+ * @param a_size Size of output buffer
+ * @return Number of bytes written to buffer
+ */
 size_t dap_http_headers_print(dap_http_header_t *a_headers, char *a_str, size_t a_size) {
     if(!a_headers || !a_str || !a_size)
         return 0;
@@ -296,10 +414,9 @@ size_t dap_http_headers_print(dap_http_header_t *a_headers, char *a_str, size_t 
         uint32_t l_header_size = l_hdr->name_len + l_hdr->value_len + sizeof(": \r\n");
         if ( l_ret + l_header_size > a_size )
             break;
-        dap_http_header_to_printable(l_hdr);
-        memcpy(a_str + l_ret, l_hdr->data, l_header_size);
-        dap_http_header_from_printable(l_hdr);
-        l_ret += l_header_size;
+        l_ret += snprintf(a_str + l_ret, a_size - l_ret, "%.*s: %.*s\r\n", 
+                         (int)l_hdr->name_len, l_hdr->data,
+                         (int)l_hdr->value_len, l_hdr->data + l_hdr->name_len + 1);
     }
     return l_ret;
 }

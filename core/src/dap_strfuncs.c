@@ -273,6 +273,26 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
     return a_str1 && a_str2 ? strncmp(a_str1, a_str2, a_n) : -1;
 }
 
+/**
+ * @brief dap_strneq: Compare two strings up to n characters
+ * @param a_str1 First string
+ * @param a_str2 Second string  
+ * @param n Maximum number of characters to compare
+ * @return Pointer to first differing character in a_str1, or NULL if equal
+ */
+char* dap_strneq(const char *a_str1, const char *a_str2, size_t n)
+{
+    while (n > 0 && *a_str1 == *a_str2) {
+        if (*a_str1 == '\0')
+            return NULL;
+        a_str1++;
+        a_str2++;
+        n--;
+    }
+    
+    return n ? (char*)a_str1 : NULL;
+}
+
 
 /**
  * @brief dap_strdup:

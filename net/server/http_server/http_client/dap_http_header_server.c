@@ -157,7 +157,7 @@ struct ht_field *l_ht;
 
 
     /* Add header to list using common function */
-    dap_http_header_add(&cl_ht->in_headers, l_name, l_value, NULL);
+    dap_http_header_add(&cl_ht->in_headers, l_name, l_value);
 
     return 0;
 }
