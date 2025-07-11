@@ -65,7 +65,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     if (l_sign_correct)
         l_sign_correct = !dap_sign_verify_all(l_sign, l_http_request->header.signs_size, l_data_str, strlen(l_data_str));
     if (!l_sign_correct) {
-        dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, 0); // def id
+        dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, 0, 0); // def id
         char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
         dap_json_rpc_http_request_free(l_http_request);
         DAP_DEL_MULTY(l_sign);
