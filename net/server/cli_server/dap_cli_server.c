@@ -566,3 +566,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_request_free(request);
     return response_string;
 }
+
+DAP_INLINE int dap_cli_server_get_version()
+{
+    return s_cli_version;
+}

@@ -79,3 +79,4 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_appe
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
+int dap_cli_server_get_version();
