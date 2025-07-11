@@ -30,8 +30,8 @@
 #include "dap_config.h"
 #include "uthash.h"
 
-typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
-typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
+typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply, int a_version);
+typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply, int a_version);
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
@@ -79,3 +79,4 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_appe
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
+int dap_cli_server_get_version();
