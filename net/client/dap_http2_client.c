@@ -1081,19 +1081,13 @@ static void s_http_session_connected(dap_http2_session_t *a_session)
     }
     
     // Call write_cb of the stream (which contains initial_write_callback)
-    if (l_stream->callbacks.write_cb) {
-        size_t l_bytes_sent = l_stream->callbacks.write_cb(l_stream, NULL, 0);
-        if (l_bytes_sent == 0) {
-            log_it(L_ERROR, "Failed to send HTTP request via write callback");
-            s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
-            return;
-        }
-        log_it(L_DEBUG, "HTTP request sent successfully (%zu bytes)", l_bytes_sent);
-    } else {
-        log_it(L_ERROR, "Stream write callback is NULL");
-        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_INTERNAL);
+    size_t l_bytes_sent = s_http_stream_initial_write(l_stream, NULL, 0);
+    if ( l_bytes_sent == 0 ) {
+        log_it(L_ERROR, "Failed to send HTTP request via write callback");
+        s_complete_http_request(l_context, DAP_HTTP2_CLIENT_ERROR_CONNECTION_FAILED);
         return;
     }
+    log_it(L_DEBUG, "HTTP request sent successfully (%zu bytes)", l_bytes_sent);
 }
 
 /**
@@ -1285,30 +1279,14 @@ static size_t s_http_stream_initial_write(dap_http2_stream_t *a_stream, UNUSED_A
         return 0;
     }
     
-    // Get write buffer info for zero-copy approach
-    void *l_write_ptr = NULL;
-    size_t *l_size_ptr = NULL;
-    size_t l_available_space = 0;
+    log_it(L_DEBUG, "HTTP request initial write using NEW ARCHITECTURE");
     
-    if (dap_http2_session_get_write_buffer_info(a_stream->session, &l_write_ptr, &l_size_ptr, &l_available_space) != 0) {
-        log_it(L_ERROR, "Failed to get write buffer info from session");
-        return 0;
-    }
+    // Use new architecture - call the single universal write function
+    size_t l_bytes_written = dap_http2_session_write_direct_stream(a_stream->session);
     
-    // Format HTTP request directly into session buffer
-    size_t l_formatted_size = s_format_http_request_to_buffer(l_context->request, l_write_ptr, l_available_space);
-    if (l_formatted_size == 0) {
-        log_it(L_ERROR, "Failed to format HTTP request to buffer");
-        return 0;
-    }
-    
-    if (l_formatted_size <= l_available_space) {
-        // All data fits in buffer - update size directly and set writable
-        *l_size_ptr += l_formatted_size;
-        dap_events_socket_set_writable_unsafe(a_stream->session->es, true);
-        
-        log_it(L_DEBUG, "HTTP request formatted zero-copy (%zu bytes): %s %s%s", 
-               l_formatted_size, 
+    if (l_bytes_written > 0) {
+        log_it(L_DEBUG, "HTTP request sent successfully (%zu bytes): %s %s%s", 
+               l_bytes_written, 
                dap_http_method_to_str(l_context->request->method),
                l_context->request->host,
                l_context->request->path ? l_context->request->path : "");
@@ -1317,36 +1295,60 @@ static size_t s_http_stream_initial_write(dap_http2_stream_t *a_stream, UNUSED_A
         atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
         dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
         
-        return l_formatted_size;
+        return l_bytes_written;
     } else {
-        // This should not happen with current HTTP request sizes, but handle gracefully
-        log_it(L_WARNING, "HTTP request too large for buffer (%zu > %zu), falling back to write_unsafe", 
-               l_formatted_size, l_available_space);
-        
-        // Fallback to traditional approach for very large requests
-        size_t l_request_size;
-        char *l_formatted_request = s_format_http_request(l_context->request, &l_request_size);
-        if (!l_formatted_request) {
-            log_it(L_ERROR, "Failed to format HTTP request in fallback mode");
-            return 0;
-        }
-        
-        int l_result = dap_http2_session_send(a_stream->session, l_formatted_request, l_request_size);
-        if (l_result < 0) {
-            log_it(L_ERROR, "Failed to send HTTP request via fallback: %d", l_result);
-            DAP_DELETE(l_formatted_request);
-            return 0;
-        }
-        
-        log_it(L_DEBUG, "HTTP request sent via fallback (%zu bytes)", l_request_size);
-        
-        // Update client and stream state
-        atomic_store(&l_context->client->state, DAP_HTTP2_CLIENT_STATE_REQUESTING);
-        dap_http2_stream_set_state(a_stream, DAP_HTTP_STREAM_STATE_REQUEST_SENT);
-        
-        DAP_DELETE(l_formatted_request);
-        return l_request_size;
+        log_it(L_ERROR, "Failed to send HTTP request via new architecture");
+        return 0;
     }
+}
+
+/**
+ * @brief HTTP Request write callback - NEW ARCHITECTURE
+ * Formats HTTP request into provided buffer
+ * @param a_stream Stream instance
+ * @param a_buffer Buffer to write into (provided by Session)
+ * @param a_buffer_size Available buffer size
+ * @param a_context HTTP context
+ * @return > 0: bytes written, = 0: need more space, < 0: error
+ */
+static ssize_t s_http_request_write_cb(dap_http2_stream_t *a_stream, 
+                                      void *a_buffer, 
+                                      size_t a_buffer_size, 
+                                      void *a_context)
+{
+    if (!a_stream || !a_buffer || !a_context) {
+        log_it(L_ERROR, "Invalid arguments in HTTP request write callback");
+        return STREAM_WRITE_ERROR_INVALID;
+    }
+    
+    dap_http_client_context_t *l_http_context = (dap_http_client_context_t*)a_context;
+    if (!l_http_context->request) {
+        log_it(L_ERROR, "HTTP request is NULL");
+        return STREAM_WRITE_ERROR_INVALID;
+    }
+    
+    // Calculate required size
+    size_t l_needed_size = s_get_request_formatted_size(l_http_context->request);
+    if (l_needed_size == 0) {
+        log_it(L_ERROR, "Failed to calculate HTTP request size");
+        return STREAM_WRITE_ERROR_FORMAT;
+    }
+    
+    // Check if buffer is large enough
+    if (l_needed_size > a_buffer_size) {
+        log_it(L_DEBUG, "Buffer too small: need %zu, have %zu", l_needed_size, a_buffer_size);
+        return 0;  // Request retry with larger buffer
+    }
+    
+    // Format request into buffer
+    size_t l_written = s_format_http_request_to_buffer(l_http_context->request, a_buffer, a_buffer_size);
+    if (l_written == 0) {
+        log_it(L_ERROR, "Failed to format HTTP request");
+        return STREAM_WRITE_ERROR_FORMAT;
+    }
+    
+    log_it(L_DEBUG, "HTTP request formatted: %zu bytes", l_written);
+    return (ssize_t)l_written;
 }
 
 /**
@@ -1925,7 +1927,7 @@ int dap_http2_client_request_sync(dap_http2_client_t *a_client,
     };
     *l_profile.stream_callbacks = (dap_http2_stream_callbacks_t) {
         .read_cb = s_http_stream_read_headers,
-        .write_cb = s_http_stream_initial_write
+        .write_cb = s_http_request_write_cb
     };
     
     // Create session (this will be assigned to worker)
@@ -2049,7 +2051,7 @@ int dap_http2_client_request_async(dap_http2_client_t *a_client,
     };
     *l_profile.stream_callbacks = (dap_http2_stream_callbacks_t) {
         .read_cb = s_http_stream_read_headers,
-        .write_cb = s_http_stream_initial_write
+        .write_cb = s_http_request_write_cb
     };
     
     // Create session (this will be assigned to worker)

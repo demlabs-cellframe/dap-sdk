@@ -12,6 +12,51 @@
 
 #define LOG_TAG "dap_http2_stream"
 
+// === PRIVATE IMPLEMENTATION (Hidden from header) ===
+typedef struct dap_http2_stream_private {
+    // === UNIFIED BUFFER ===
+    uint8_t *receive_buffer;
+    size_t receive_buffer_size;
+    size_t receive_buffer_capacity;
+    
+    // === HTTP PARSER STATE ===
+    dap_http_parser_state_t parser_state;
+    size_t content_length;
+    size_t content_received;
+    bool is_chunked;
+    
+    // === STREAM MANAGEMENT ===
+    bool is_autonomous;
+    
+    // === APPLICATION TIMEOUTS ===
+    void *read_timer;  // dap_timerfd_t
+    uint64_t read_timeout_ms;
+    
+    // === EVENT CALLBACKS ===
+    dap_stream_event_callback_t event_callback;
+    void *event_callback_context;
+    
+    dap_stream_state_changed_cb_t state_changed_cb;
+    void *state_changed_context;
+    
+    // === HANDSHAKE HANDLERS ===
+    dap_stream_handshake_handlers_t *handshake_handlers;
+    
+#ifdef DAP_STREAM_CHANNELS_ENABLED
+    // === CHANNEL MULTIPLEXING ===
+    dap_stream_channel_context_t *channel_context;
+#endif
+    
+} dap_http2_stream_private_t;
+
+// === USER IDEA V2 CONSTANTS ===
+static const size_t s_stream_pvt_alignof = _Alignof(dap_http2_stream_private_t),
+    s_stream_pvt_offt = (sizeof(dap_http2_stream_t) + s_stream_pvt_alignof - 1) & ~(s_stream_pvt_alignof - 1),
+    s_stream_full_size = s_stream_pvt_offt + sizeof(dap_http2_stream_private_t);
+
+// === PRIVATE DATA ACCESS ===
+// Прямой доступ через stream->private_data (типизированный указатель)
+
 // === STREAM LIFECYCLE ===
 
 /**
@@ -56,7 +101,7 @@ uint32_t dap_http2_stream_get_esocket_uid(const dap_http2_stream_t *a_stream)
 }
 
 /**
- * @brief Create new stream
+ * @brief Create new stream with User Idea V2 private data allocation
  */
 dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
 {
@@ -64,19 +109,27 @@ dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
         return NULL;
     }
     
-    dap_http2_stream_t *l_stream = DAP_NEW_Z(dap_http2_stream_t);
+    // === User Idea V2 Single Block Allocation ===
+    dap_http2_stream_t *l_stream = DAP_NEW_Z_SIZE(dap_http2_stream_t, s_stream_full_size);
     if (!l_stream) {
         return NULL;
     }
+    
+    // USER IDEA V2: private_data points to offset from STRUCTURE  
+    l_stream->private_data = (struct dap_http2_stream_private*)((uint8_t*)l_stream + s_stream_pvt_offt);
     
     // Basic initialization
     l_stream->session = a_session;
     
     // === SET STREAM UID (worker_id + esocket_uid) ===
-    if (a_session->es) {
+    // Get session worker and esocket through internal API
+    dap_worker_t *l_worker = dap_http2_session_get_worker(a_session);
+    dap_events_socket_t *l_es = dap_http2_session_get_events_socket(a_session);
+    
+    if (l_es) {
         // Extract worker_id and esocket_uid from session
-        uint8_t l_worker_id = a_session->worker ? a_session->worker->id : 0;
-        uint32_t l_esocket_uid = a_session->es->uuid;  // esocket UUID is our unique identifier
+        uint8_t l_worker_id = l_worker ? l_worker->id : 0;
+        uint32_t l_esocket_uid = l_es->uuid;  // esocket UUID is our unique identifier
         
         // Compose Stream UID: worker_id(8 bits) + esocket_uid(32 bits) + reserved(24 bits)
         uint64_t l_stream_uid = dap_stream_uid_compose(l_worker_id, l_esocket_uid);
@@ -91,11 +144,14 @@ dap_http2_stream_t* dap_http2_stream_create(dap_http2_session_t *a_session)
         atomic_store(&l_stream->uid, 0);
     }
     
+    log_it(L_DEBUG, "Stream %p created with User Idea V2: private_data=%p", 
+           l_stream, l_stream->private_data);
+    
     return l_stream;
 }
 
 /**
- * @brief Delete stream and cleanup resources
+ * @brief Delete stream and cleanup User Idea V2 single block
  */
 void dap_http2_stream_delete(dap_http2_stream_t *a_stream)
 {
@@ -103,20 +159,28 @@ void dap_http2_stream_delete(dap_http2_stream_t *a_stream)
         return;
     }
     
-    // Clear all channels
-    //dap_http2_stream_clear_all_channels(a_stream);
-    
-    // Free receive buffer
-    if (a_stream->receive_buffer) {
-        DAP_DELETE(a_stream->receive_buffer);
+    // Get private data before cleanup
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (l_private) {
+        // Free receive buffer
+        if (l_private->receive_buffer) {
+            DAP_DELETE(l_private->receive_buffer);
+        }
+        
+        // Free handshake handlers
+        if (l_private->handshake_handlers) {
+            DAP_DELETE(l_private->handshake_handlers);
+        }
+        
+        // Clear all channels if enabled
+        #ifdef DAP_STREAM_CHANNELS_ENABLED
+        if (l_private->channel_context) {
+            dap_stream_channel_context_delete(l_private->channel_context);
+        }
+        #endif
     }
     
-    // Free handshake handlers
-    if (a_stream->handshake_handlers) {
-        DAP_DELETE(a_stream->handshake_handlers);
-    }
-    
-    // Free stream structure
+    // USER IDEA V2: Free single memory block (structure is at the beginning)
     DAP_DELETE(a_stream);
 }
 
@@ -129,7 +193,15 @@ void dap_http2_stream_set_read_callback(dap_http2_stream_t *a_stream,
                                        dap_stream_read_callback_t a_callback,
                                        void *a_context)
 {
-    // TODO: Implementation
+    if (!a_stream) {
+        return;
+    }
+    
+    // Callbacks remain PUBLIC for performance
+    a_stream->callbacks.read_cb = a_callback;
+    a_stream->callback_context = a_context;
+    
+    log_it(L_DEBUG, "Stream %p read callback set to %p", a_stream, a_callback);
 }
 
 /**
@@ -139,11 +211,23 @@ void dap_http2_stream_set_event_callback(dap_http2_stream_t *a_stream,
                                         dap_stream_event_callback_t a_callback,
                                         void *a_context)
 {
-    // TODO: Implementation
+    if (!a_stream) {
+        return;
+    }
+    
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return;
+    }
+    
+    l_private->event_callback = a_callback;
+    l_private->event_callback_context = a_context;
+    
+    log_it(L_DEBUG, "Stream %p event callback set to %p", a_stream, a_callback);
 }
 
 /**
- * @brief Set state changed callback
+ * @brief Set state change callback
  */
 void dap_http2_stream_set_state_changed_callback(dap_http2_stream_t *a_stream,
                                                  dap_stream_state_changed_cb_t a_callback,
@@ -152,8 +236,47 @@ void dap_http2_stream_set_state_changed_callback(dap_http2_stream_t *a_stream,
     if (!a_stream) {
         return;
     }
-    a_stream->state_changed_cb = a_callback;
-    a_stream->state_changed_context = a_context;
+    
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return;
+    }
+    
+    l_private->state_changed_cb = a_callback;
+    l_private->state_changed_context = a_context;
+    
+    log_it(L_DEBUG, "Stream %p state change callback set to %p", a_stream, a_callback);
+}
+
+/**
+ * @brief Set stream state with callback notification
+ */
+void dap_http2_stream_set_state(dap_http2_stream_t *a_stream,
+                               dap_stream_state_t a_state)
+{
+    if (!a_stream) {
+        return;
+    }
+    
+    dap_stream_state_t l_old_state = a_stream->state;
+    a_stream->state = a_state;
+    
+    // Call state changed callback if set
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (l_private && l_private->state_changed_cb) {
+        l_private->state_changed_cb(a_stream, l_old_state, a_state, l_private->state_changed_context);
+    }
+}
+
+/**
+ * @brief Get current stream state
+ */
+dap_stream_state_t dap_http2_stream_get_state(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return -1;  // Invalid state
+    }
+    return a_stream->state;
 }
 
 // === DYNAMIC CHANNEL MANAGEMENT ===
@@ -171,9 +294,29 @@ size_t dap_http2_stream_process_data(dap_http2_stream_t *a_stream,
                                     const void *a_data,
                                     size_t a_data_size)
 {
-    // TODO: Implementation
-    return 0;
+    if (!a_stream) {
+        log_it(L_ERROR, "Stream is NULL in dap_http2_stream_process_data");
+        return 0;
+    }
+    
+    if (!a_data || a_data_size == 0) {
+        log_it(L_WARNING, "Empty data in dap_http2_stream_process_data");
+        return 0;
+    }
+    
+    if (!a_stream->callbacks.read_cb) {
+        log_it(L_ERROR, "Stream %p has no read callback", a_stream);
+        return 0;
+    }
+    
+    log_it(L_DEBUG, "Processing %zu bytes through stream %p read callback", a_data_size, a_stream);
+    
+    // Forward to current read callback
+    return a_stream->callbacks.read_cb(a_stream, a_data, a_data_size);
 }
+
+// REMOVED: dap_http2_stream_write_data - redundant wrapper
+// Use dap_http2_session_write_direct_stream directly as the single universal write function
 
 // === BUILT-IN READ CALLBACKS ===
 
@@ -251,12 +394,20 @@ bool dap_http2_stream_is_error(dap_http2_stream_t *a_stream)
 }
 
 /**
- * @brief Check if stream is autonomous (can exist without client)
+ * @brief Check if stream is autonomous
  */
 bool dap_http2_stream_is_autonomous(dap_http2_stream_t *a_stream)
 {
-    // TODO: Implementation
-    return false;
+    if (!a_stream) {
+        return false;
+    }
+    
+    const dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return false;
+    }
+    
+    return l_private->is_autonomous;
 }
 
 // === UTILITY FUNCTIONS ===
@@ -308,6 +459,9 @@ void dap_http2_stream_set_binary_mode(dap_http2_stream_t *a_stream)
 
 // === HANDSHAKE MANAGEMENT ===
 
+/**
+ * @brief Set handshake handlers
+ */
 int dap_http2_stream_set_handshake_handlers(dap_http2_stream_t *a_stream, 
                                            const dap_stream_handshake_handlers_t *a_handlers)
 {
@@ -315,22 +469,41 @@ int dap_http2_stream_set_handshake_handlers(dap_http2_stream_t *a_stream,
         return -1;
     }
     
-    // Allocate handshake handlers if not exists
-    if (!a_stream->handshake_handlers) {
-        a_stream->handshake_handlers = DAP_NEW_Z(dap_stream_handshake_handlers_t);
-        if (!a_stream->handshake_handlers) {
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return -1;
+    }
+    
+    // Allocate handlers if not already allocated
+    if (!l_private->handshake_handlers) {
+        l_private->handshake_handlers = DAP_NEW_Z(dap_stream_handshake_handlers_t);
+        if (!l_private->handshake_handlers) {
             return -1;
         }
     }
     
     // Copy handlers
-    *a_stream->handshake_handlers = *a_handlers;
+    *l_private->handshake_handlers = *a_handlers;
+    
+    log_it(L_DEBUG, "Stream %p handshake handlers set", a_stream);
     return 0;
 }
 
+/**
+ * @brief Check if stream has handshake handlers
+ */
 bool dap_http2_stream_has_handshake_handlers(const dap_http2_stream_t *a_stream)
 {
-    return a_stream && a_stream->handshake_handlers;
+    if (!a_stream) {
+        return false;
+    }
+    
+    const dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return false;
+    }
+    
+    return l_private->handshake_handlers != NULL;
 }
 
 #ifdef DAP_STREAM_CHANNELS_ENABLED
@@ -365,23 +538,38 @@ void dap_stream_channel_context_delete(dap_stream_channel_context_t *a_context)
     DAP_DELETE(a_context);
 }
 
+/**
+ * @brief Set channel context for stream
+ */
 void dap_http2_stream_set_channel_context(dap_http2_stream_t *a_stream, dap_stream_channel_context_t *a_context)
 {
     if (!a_stream) {
-        log_it(L_ERROR, "Stream is NULL");
         return;
     }
     
-    log_it(L_DEBUG, "Setting channel context %p for stream %p", a_context, a_stream);
-    a_stream->channel_context = a_context;
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return;
+    }
+    
+    l_private->channel_context = a_context;
 }
 
-dap_stream_channel_context_t* dap_http2_stream_get_channel_context(dap_http2_stream_t *a_stream)
+/**
+ * @brief Get channel context from stream
+ */
+dap_stream_channel_context_t* dap_http2_stream_get_channel_context(const dap_http2_stream_t *a_stream)
 {
     if (!a_stream) {
         return NULL;
     }
-    return a_stream->channel_context;
+    
+    const dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return NULL;
+    }
+    
+    return l_private->channel_context;
 }
 
 // === EXTERNAL CHANNEL MANAGEMENT ===
@@ -442,44 +630,89 @@ int dap_http2_stream_request_session_encryption(dap_http2_stream_t *a_stream,
 
 // === TIMEOUT MANAGEMENT ===
 
+/**
+ * @brief Set read timeout
+ */
 void dap_http2_stream_set_read_timeout(dap_http2_stream_t *a_stream,
                                        uint64_t a_read_timeout_ms)
 {
     if (!a_stream) {
         return;
     }
-    a_stream->read_timeout_ms = a_read_timeout_ms;
-}
-
-uint64_t dap_http2_stream_get_read_timeout(const dap_http2_stream_t *a_stream)
-{
-    return a_stream ? a_stream->read_timeout_ms : 0;
-}
-
-int dap_http2_stream_start_read_timer(dap_http2_stream_t *a_stream)
-{
-    if (!a_stream || !a_stream->read_timeout_ms) {
-        return -1;
-    }
     
-    // TODO: Start read timer
-    log_it(L_DEBUG, "Starting read timer for stream %p (%llu ms)", a_stream, a_stream->read_timeout_ms);
-    return -1;
-}
-
-void dap_http2_stream_stop_read_timer(dap_http2_stream_t *a_stream)
-{
-    if (!a_stream || !a_stream->read_timer) {
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
         return;
     }
     
-    // TODO: Stop read timer
-    log_it(L_DEBUG, "Stopping read timer for stream %p", a_stream);
+    l_private->read_timeout_ms = a_read_timeout_ms;
+    
+    log_it(L_DEBUG, "Stream %p read timeout set to %"PRIu64" ms", a_stream, a_read_timeout_ms);
 }
 
+/**
+ * @brief Get read timeout
+ */
+uint64_t dap_http2_stream_get_read_timeout(const dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return 0;
+    }
+    
+    const dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private) {
+        return 0;
+    }
+    
+    return l_private->read_timeout_ms;
+}
+
+/**
+ * @brief Start read timer
+ */
+int dap_http2_stream_start_read_timer(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return -1;
+    }
+    
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private || !l_private->read_timer) {
+        return -1;
+    }
+    
+    // TODO: Implementation - start timer
+    return -1;
+}
+
+/**
+ * @brief Stop read timer
+ */
+void dap_http2_stream_stop_read_timer(dap_http2_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return;
+    }
+    
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private || !l_private->read_timer) {
+        return;
+    }
+    
+    // TODO: Implementation - stop timer
+}
+
+/**
+ * @brief Reset read timer (restart with same timeout)
+ */
 int dap_http2_stream_reset_read_timer(dap_http2_stream_t *a_stream)
 {
-    if (!a_stream || !a_stream->read_timer) {
+    if (!a_stream) {
+        return -1;
+    }
+    
+    dap_http2_stream_private_t *l_private = a_stream->private_data;
+    if (!l_private || !l_private->read_timer) {
         return -1;
     }
     

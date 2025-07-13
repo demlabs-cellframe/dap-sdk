@@ -133,6 +133,7 @@ typedef enum {
 
 struct dap_http2_session;
 struct dap_http2_stream;
+struct dap_http2_stream_private;
 
 // === CALLBACK TYPES ===
 // NOTE: Basic callback types are defined in dap_stream_callbacks.h
@@ -187,49 +188,23 @@ typedef struct dap_stream_handshake_handlers {
 // === MAIN STREAM STRUCTURE ===
 
 typedef struct dap_http2_stream {
-    // === BASIC STREAM INFO ===
+    // === PERFORMANCE CRITICAL PUBLIC INTERFACE ===
     _Atomic uint64_t uid;                 // Stream UID (worker_id + stream_id)
     dap_stream_state_t state;             // Protocol-specific state (non-atomic, worker thread only)
     struct dap_http2_session *session;
     
-    // === UNIFIED BUFFER ===
-    uint8_t *receive_buffer;
-    size_t receive_buffer_size;
-    size_t receive_buffer_capacity;
-    
-    // === MAIN CALLBACK SYSTEM ===
+    // === CALLBACK INTERFACE (PUBLIC для zero-copy производительности) ===
     dap_http2_stream_callbacks_t callbacks;
     void *callback_context;
     
-#ifdef DAP_STREAM_CHANNELS_ENABLED
-    // === CHANNEL MULTIPLEXING ===
-    dap_stream_channel_context_t *channel_context;
-#endif
-    
-    // === EVENT CALLBACKS ===
-    dap_stream_event_callback_t event_callback;
-    void *event_callback_context;
-    
-    dap_stream_state_changed_cb_t state_changed_cb;
-    void *state_changed_context;
-    
-    // === HTTP PARSER STATE (for HTTP protocol) ===
-    dap_http_parser_state_t parser_state;
-    size_t content_length;
-    size_t content_received;
-    bool is_chunked;
-    
-    // === STREAM MANAGEMENT ===
-    bool is_autonomous;
-    
-    // === APPLICATION TIMEOUTS ===
-    void *read_timer;  // dap_timerfd_t - forward declaration to avoid include
-    uint64_t read_timeout_ms;
-    
-    // === HANDSHAKE HANDLERS ===
-    dap_stream_handshake_handlers_t *handshake_handlers;
+    // === PRIVATE DATA (User Idea V2 оптимизация) ===
+    struct dap_http2_stream_private *private_data;  // Типизированный указатель
     
 } dap_http2_stream_t;
+
+// === PRIVATE DATA ===
+// Note: Private data structure is defined only in .c file for true encapsulation
+// Direct access: stream->private_data (const pointer, structure contents can be modified)
 
 // === OPTIONAL CHANNEL API ===
 #ifdef DAP_STREAM_CHANNELS_ENABLED
@@ -450,10 +425,10 @@ int dap_stream_channel_disable_by_uid(uint64_t a_channel_uid);
 // === PROTOCOL SWITCHING ===
 
 /**
- * @brief Switch stream protocol by changing read callback
+ * @brief Switch stream protocol after handshake detection
  * @param a_stream Stream instance
- * @param a_new_callback New read callback function
- * @param a_context New callback context
+ * @param a_new_callback New read callback for detected protocol
+ * @param a_context New context for callback
  * @return 0 on success, negative on error
  */
 int dap_http2_stream_switch_protocol(dap_http2_stream_t *a_stream,
@@ -466,12 +441,14 @@ int dap_http2_stream_switch_protocol(dap_http2_stream_t *a_stream,
  * @brief Process incoming data through current read callback
  * @param a_stream Stream instance
  * @param a_data Incoming data
- * @param a_data_size Data size
+ * @param a_data_size Size of data
  * @return Number of bytes processed
  */
 size_t dap_http2_stream_process_data(dap_http2_stream_t *a_stream,
                                     const void *a_data,
                                     size_t a_data_size);
+
+// REMOVED: dap_http2_stream_write_data - use dap_http2_session_write_direct_stream directly
 
 // === BUILT-IN READ CALLBACKS ===
 

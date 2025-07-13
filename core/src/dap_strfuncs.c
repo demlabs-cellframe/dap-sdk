@@ -274,7 +274,7 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
 }
 
 /**
- * @brief dap_strneq: Compare two strings up to n characters
+ * @brief Compare two strings up to n characters
  * @param a_str1 First string
  * @param a_str2 Second string  
  * @param n Maximum number of characters to compare
@@ -282,6 +282,9 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
  */
 char* dap_strneq(const char *a_str1, const char *a_str2, size_t n)
 {
+    if (!a_str1 || !a_str2)
+        return (a_str1 == a_str2) ? NULL : (char*)(a_str1 ? a_str1 : a_str2);
+
     while (n > 0 && *a_str1 == *a_str2) {
         if (*a_str1 == '\0')
             return NULL;

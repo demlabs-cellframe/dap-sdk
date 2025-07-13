@@ -62,38 +62,25 @@ typedef enum {
 // NOTE: dap_http2_session_callbacks_t is now defined in dap_stream_callbacks.h
 
 struct dap_http2_stream;
+struct dap_http2_session_private;
 
 // Main session structure (universal for client and server)
+// User Idea V2 optimization: single block allocation with private data
 typedef struct dap_http2_session {
-    // === CONNECTION MANAGEMENT ===
-    dap_events_socket_t *es;              // Contains sockaddr_storage
-    dap_worker_t *worker;
+    // === PUBLIC FIELDS (external API access) ===
     dap_session_state_t state;            // Transport-specific state (non-atomic, worker thread only)
-    
-    // === ENCRYPTION (unified) ===
-    dap_session_encryption_type_t encryption_type;
-    void *encryption_context;
-    
-    // === CONNECTION TIMEOUTS ===
-    dap_timerfd_t *connect_timer;             // Connect timeout timer
-    uint64_t connect_timeout_ms;              // Connect timeout value
-    
-    // === UNIVERSAL SESSION STATE ===
-    time_t ts_created;
-    time_t ts_established;                // connect() or accept() time
-    
-    // === SINGLE STREAM MANAGEMENT ===
     struct dap_http2_stream *stream;           // Single stream per session
-    dap_http2_stream_callbacks_t *stream_callbacks;
-    
-    // === CALLBACKS (define client/server role) ===
     dap_http2_session_callbacks_t callbacks;
     void *callbacks_arg;                    // For user callbacks (connected, data_received, etc.)
     
-    // === FACTORY PATTERN SUPPORT ===
-    void *worker_assignment_context;        // For assigned_to_worker callback only
+    // === PRIVATE DATA (User Idea V2 оптимизация) ===
+    struct dap_http2_session_private *private_data;  // Типизированный указатель
     
 } dap_http2_session_t;
+
+// === PRIVATE DATA ===
+// Note: Private data structure is defined only in .c file for true encapsulation
+// Direct access: session->private_data (contains all internal implementation details)
 
 // Session upgrade interface (minimal)
 typedef struct dap_session_upgrade_context {
@@ -201,16 +188,24 @@ int dap_http2_session_upgrade(dap_http2_session_t *a_session,
 // === DATA OPERATIONS ===
 
 /**
- * @brief Send data through session
+ * @brief Send raw data over session
  * @param a_session Session instance
  * @param a_data Data to send
- * @param a_size Data size
- * @return Number of bytes sent or negative on error
+ * @param a_size Size of data
+ * @return Bytes sent or negative on error
  */
 int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, size_t a_size);
 
 /**
- * @brief Get direct write buffer info for zero-copy operations
+ * @brief UNIVERSAL WRITE FUNCTION - Write data through session's stream callback
+ * @param a_session Session instance (stream will be obtained from session)
+ * @return Number of bytes written or 0 on error
+ */
+size_t dap_http2_session_write_direct_stream(dap_http2_session_t *a_session);
+
+/**
+ * @brief Get direct write buffer info for zero-copy operations (DEPRECATED)
+ * @deprecated Use dap_http2_session_write_direct_stream instead
  * @param a_session Session instance
  * @param a_write_ptr Output: pointer to write position in buffer
  * @param a_size_ptr Output: pointer to current buffer size (for direct increment)
@@ -351,6 +346,19 @@ dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_htt
  * @return Upgrade interface pointer
  */
 dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_http2_session_t *a_session);
+
+// === INTERNAL ACCESS FUNCTIONS ===
+// For module-internal use only (stream.c, etc.)
+
+/**
+ * @brief Get events socket (internal use only)
+ */
+dap_events_socket_t* dap_http2_session_get_events_socket(const dap_http2_session_t *a_session);
+
+/**
+ * @brief Get worker (internal use only)
+ */
+dap_worker_t* dap_http2_session_get_worker(const dap_http2_session_t *a_session);
 
 #ifdef __cplusplus
 }

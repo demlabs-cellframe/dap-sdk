@@ -28,6 +28,39 @@
 
 #define LOG_TAG "dap_http2_session"
 
+// === PRIVATE DATA STRUCTURE ===
+// Hidden from public API - true encapsulation
+typedef struct dap_http2_session_private {
+    // === CONNECTION MANAGEMENT ===
+    dap_events_socket_t *es;              // Contains sockaddr_storage
+    dap_worker_t *worker;
+    
+    // === ENCRYPTION (unified) ===
+    dap_session_encryption_type_t encryption_type;
+    void *encryption_context;
+    
+    // === CONNECTION TIMEOUTS ===
+    dap_timerfd_t *connect_timer;             // Connect timeout timer
+    uint64_t connect_timeout_ms;              // Connect timeout value
+    
+    // === UNIVERSAL SESSION STATE ===
+    time_t ts_created;
+    time_t ts_established;                // connect() or accept() time
+    
+    // === SINGLE STREAM MANAGEMENT ===
+    dap_http2_stream_callbacks_t *stream_callbacks;
+    
+    // === FACTORY PATTERN SUPPORT ===
+    void *worker_assignment_context;        // For assigned_to_worker callback only
+    
+} dap_http2_session_private_t;
+
+// === USER IDEA V2 CONSTANTS ===
+// Computed once at module load time for optimal performance
+static const size_t s_session_pvt_alignof = _Alignof(dap_http2_session_private_t),
+    s_session_pvt_offt = (sizeof(dap_http2_session_t) + s_session_pvt_alignof - 1) & ~(s_session_pvt_alignof - 1),
+    s_session_full_size = s_session_pvt_offt + sizeof(dap_http2_session_private_t);
+
 // Forward declarations for callback functions
 static void s_session_connected_callback(dap_events_socket_t *a_esocket);
 static void s_session_read_callback(dap_events_socket_t *a_esocket, void *a_data, size_t a_data_size);
@@ -43,14 +76,25 @@ static void s_session_ssl_connected_callback(dap_events_socket_t *a_esocket);
 // Session lifecycle
 dap_http2_session_t *dap_http2_session_create(dap_worker_t *a_worker, uint64_t a_connect_timeout_ms)
 {
-    dap_http2_session_t *l_session = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http2_session_t, NULL);
-    *l_session = (dap_http2_session_t){ 
+    // USER IDEA V2: Single block allocation with optimal alignment
+    dap_http2_session_t *l_session = DAP_NEW_Z_SIZE(dap_http2_session_t, s_session_full_size);
+    if (!l_session) {
+        return NULL;
+    }
+    
+    // USER IDEA V2: private_data points to offset from STRUCTURE  
+    l_session->private_data = (dap_http2_session_private_t*)((uint8_t*)l_session + s_session_pvt_offt);
+    
+    // Initialize private data
+    dap_http2_session_private_t *l_private = l_session->private_data;
+    *l_private = (dap_http2_session_private_t){ 
         .worker = a_worker ? a_worker : dap_worker_get_auto(), 
         .ts_created = time(NULL), 
         .connect_timeout_ms = a_connect_timeout_ms ? a_connect_timeout_ms : 30000
     };
+    
     log_it(L_DEBUG, "Created HTTP2 session %p on worker %u (timeout: %llu ms)", 
-           l_session, l_session->worker->id, l_session->connect_timeout_ms);
+           l_session, l_private->worker->id, l_private->connect_timeout_ms);
     return l_session;
 }
 
@@ -66,6 +110,13 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
 {
     dap_return_val_if_fail_err( a_session && a_addr,
         -EINVAL, "Invalid parameters for session connect" );
+    
+    // Get private data
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (!l_private) {
+        return -EINVAL;
+    }
+    
     log_it(L_DEBUG, "Connecting HTTP2 session %p to %s:%u (SSL: %s)",
                     a_session, a_addr, a_port, a_use_ssl ? "enabled" : "disabled");
 #ifdef DAP_NET_CLIENT_NO_SSL
@@ -129,10 +180,10 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     }
 
     l_ev_socket->_inheritor = a_session;
-    a_session->es = l_ev_socket;
+    l_private->es = l_ev_socket;
 
     l_ev_socket->addr_storage = l_addr_storage;
-    a_session->encryption_type = a_use_ssl ? DAP_SESSION_ENCRYPTION_TLS : DAP_SESSION_ENCRYPTION_NONE;
+    l_private->encryption_type = a_use_ssl ? DAP_SESSION_ENCRYPTION_TLS : DAP_SESSION_ENCRYPTION_NONE;
     dap_strncpy(l_ev_socket->remote_addr_str, a_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_port;
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
@@ -144,14 +195,14 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     log_it(L_DEBUG, "Connecting to %s:%u", a_addr, a_port);
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
-    dap_worker_add_events_socket(a_session->worker, l_ev_socket);
+    dap_worker_add_events_socket(l_private->worker, l_ev_socket);
 #else
     // Unix/Linux approach
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     if ( 0 == connect(l_socket, (struct sockaddr*)&l_ev_socket->addr_storage, l_addrlen) ) {
         log_it(L_DEBUG, "Connected immediately to %s:%u", a_addr, a_port);
-        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
-        dap_worker_exec_callback_on(a_session->worker, l_session_callbacks.connected_callback, l_ev_socket);
+        dap_worker_add_events_socket(l_private->worker, l_ev_socket);
+        dap_worker_exec_callback_on(l_private->worker, l_session_callbacks.connected_callback, l_ev_socket);
         return 0;
     }
     m_set_error(l_error);
@@ -163,12 +214,12 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
 #endif
         // Connection in progress
         log_it(L_DEBUG, "Connecting to %s:%u ...", a_addr, a_port);
-        dap_worker_add_events_socket(a_session->worker, l_ev_socket);
+        dap_worker_add_events_socket(l_private->worker, l_ev_socket);
         break;
     default:
         log_it(L_ERROR, "Connection to %s:%u failed, error %d: \"%s\"", a_addr, a_port, l_error, dap_strerror(l_error));
         dap_events_socket_delete_unsafe(l_ev_socket, true);
-        a_session->es = NULL;
+        l_private->es = NULL;
         return -l_error;
     }
 #endif
@@ -176,10 +227,10 @@ int dap_http2_session_connect(dap_http2_session_t *a_session,
     // TODO: remove this crappy timer and implement timerfd / QueueTimer handle in events system
     dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
     if (l_ev_uuid_ptr) {
-        a_session->connect_timer = dap_timerfd_start_on_worker(
-            a_session->worker, a_session->connect_timeout_ms,
+        l_private->connect_timer = dap_timerfd_start_on_worker(
+            l_private->worker, l_private->connect_timeout_ms,
             s_session_connect_timeout_callback, l_ev_uuid_ptr);
-        if (!a_session->connect_timer) {
+        if (!l_private->connect_timer) {
             log_it(L_WARNING, "Failed to start connect timer");
             DAP_DELETE(l_ev_uuid_ptr);
         }
@@ -195,16 +246,22 @@ void dap_http2_session_close(dap_http2_session_t *a_session)
 
     log_it(L_DEBUG, "Closing HTTP2 session %p", a_session);
 
-    // Clean up timers
-    if (a_session->connect_timer) {
-        if (a_session->connect_timer->callback_arg) {
-            DAP_DELETE(a_session->connect_timer->callback_arg);
-        }
-        dap_timerfd_delete_unsafe(a_session->connect_timer);
-        a_session->connect_timer = NULL;
+    // Get private data
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (!l_private) {
+        return;
     }
-    dap_events_socket_remove_and_delete_unsafe(a_session->es, true);
-    a_session->es = NULL;
+
+    // Clean up timers
+    if (l_private->connect_timer) {
+        if (l_private->connect_timer->callback_arg) {
+            DAP_DELETE(l_private->connect_timer->callback_arg);
+        }
+        dap_timerfd_delete_unsafe(l_private->connect_timer);
+        l_private->connect_timer = NULL;
+    }
+    dap_events_socket_remove_and_delete_unsafe(l_private->es, true);
+    l_private->es = NULL;
     // TODO: Clean up read timer on stream level
 
     /*if (a_session->es) {
@@ -231,10 +288,11 @@ void dap_http2_session_delete(dap_http2_session_t *a_session)
     }
 
     // Clean up socket (should already be done in close, but safety)
-    if (a_session->es) {
-        a_session->es->_inheritor = NULL;
-        dap_events_socket_delete_unsafe(a_session->es, true);
-        a_session->es = NULL;
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (l_private && l_private->es) {
+        l_private->es->_inheritor = NULL;
+        dap_events_socket_delete_unsafe(l_private->es, true);
+        l_private->es = NULL;
     }
 
     // Free session structure
@@ -248,12 +306,19 @@ void dap_http2_session_set_connect_timeout(dap_http2_session_t *a_session,
     if (!a_session) {
         return;
     }
-    a_session->connect_timeout_ms = a_connect_timeout_ms;
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (l_private) {
+        l_private->connect_timeout_ms = a_connect_timeout_ms;
+    }
 }
 
 uint64_t dap_http2_session_get_connect_timeout(const dap_http2_session_t *a_session)
 {
-    return a_session ? a_session->connect_timeout_ms : 0;
+    if (!a_session) {
+        return 0;
+    }
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    return l_private ? l_private->connect_timeout_ms : 0;
 }
 
 void dap_http2_session_set_callbacks(dap_http2_session_t *a_session,
@@ -294,8 +359,14 @@ int dap_http2_session_upgrade(dap_http2_session_t *a_session,
 // Data operations
 int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, size_t a_size)
 {
-    if (!a_session || !a_session->es) {
-        log_it(L_ERROR, "Invalid session or esocket in dap_http2_session_send");
+    if (!a_session) {
+        log_it(L_ERROR, "Invalid session in dap_http2_session_send");
+        return -1;
+    }
+    
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (!l_private || !l_private->es) {
+        log_it(L_ERROR, "Invalid private data or esocket in dap_http2_session_send");
         return -1;
     }
     
@@ -305,7 +376,7 @@ int dap_http2_session_send(dap_http2_session_t *a_session, const void *a_data, s
     }
     
     // Send data through session esocket
-    size_t l_bytes_sent = dap_events_socket_write_unsafe(a_session->es, a_data, a_size);
+    size_t l_bytes_sent = dap_events_socket_write_unsafe(l_private->es, a_data, a_size);
     if (l_bytes_sent != a_size) {
         log_it(L_ERROR, "Failed to send all data: %zu/%zu bytes sent", l_bytes_sent, a_size);
         return -1;
@@ -328,17 +399,174 @@ int dap_http2_session_get_write_buffer_info(dap_http2_session_t *a_session,
                                            size_t **a_size_ptr, 
                                            size_t *a_available_space)
 {
-    if (!a_session || !a_session->es || !a_write_ptr || !a_size_ptr || !a_available_space) {
+    if (!a_session || !a_write_ptr || !a_size_ptr || !a_available_space) {
         log_it(L_ERROR, "Invalid arguments in dap_http2_session_get_write_buffer_info");
         return -1;
     }
     
-    dap_events_socket_t *l_es = a_session->es;
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (!l_private || !l_private->es) {
+        log_it(L_ERROR, "Invalid private data or esocket in dap_http2_session_get_write_buffer_info");
+        return -1;
+    }
+    
+    dap_events_socket_t *l_es = l_private->es;
     
     // Return direct pointers to buffer info
     *a_write_ptr = l_es->buf_out + l_es->buf_out_size;      // Write position
     *a_size_ptr = &l_es->buf_out_size;                      // Size pointer for direct increment
     *a_available_space = l_es->buf_out_size_max - l_es->buf_out_size; // Available space
+    
+    return 0;
+}
+
+/**
+ * @brief UNIVERSAL WRITE FUNCTION (NEW ARCHITECTURE)
+ * Single point for all write operations through stream callbacks
+ * @param a_session Session instance (stream obtained from session)
+ * @return Number of bytes written or 0 on error
+ */
+size_t dap_http2_session_write_direct_stream(dap_http2_session_t *a_session)
+{
+    if (!a_session) {
+        log_it(L_ERROR, "Invalid session in dap_http2_session_write_direct_stream");
+        return 0;
+    }
+    
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    if (!l_private || !l_private->es) {
+        log_it(L_ERROR, "Invalid private data or esocket in dap_http2_session_write_direct_stream");
+        return 0;
+    }
+    
+    // Get stream from session
+    dap_http2_stream_t *l_stream = dap_http2_session_get_stream(a_session);
+    if (!l_stream) {
+        log_it(L_ERROR, "Session has no stream");
+        return 0;
+    }
+    
+    if (!l_stream->callbacks.write_cb) {
+        log_it(L_ERROR, "Stream has no write callback");
+        return 0;
+    }
+    
+    dap_events_socket_t *l_es = l_private->es;
+    
+    // === PROTECTION CONSTANTS ===
+    const int MAX_RETRIES = 5;
+    const size_t MAX_REASONABLE_REQUEST_SIZE = 1024 * 1024; // 1MB
+    
+    int l_retry_count = 0;
+    size_t l_temp_buffer_size = 0;
+    void *l_temp_buffer = NULL;
+    
+    // === PHASE 1: Zero-Copy Attempt ===
+    
+    // Try socket buffer first (zero-copy)
+    size_t l_available_space = l_es->buf_out_size_max - l_es->buf_out_size;
+    void *l_write_ptr = l_es->buf_out + l_es->buf_out_size;
+    
+    log_it(L_DEBUG, "Attempting zero-copy write (available: %zu bytes)", l_available_space);
+    
+    ssize_t l_result = l_stream->callbacks.write_cb(l_stream, l_write_ptr, l_available_space, l_stream->callback_context);
+    
+    if (l_result > 0) {
+        // SUCCESS: Zero-copy worked
+        l_es->buf_out_size += (size_t)l_result;
+        dap_events_socket_set_writable_unsafe(l_es, true);
+        
+        log_it(L_DEBUG, "Zero-copy success: %zd bytes written directly to socket buffer", l_result);
+        return (size_t)l_result;
+        
+    } else if (l_result < 0) {
+        // ERROR: Formatting failed
+        log_it(L_ERROR, "Stream write callback failed with error: %zd", l_result);
+        return 0;
+        
+    } else {
+        // l_result == 0: Need more space
+        log_it(L_DEBUG, "Zero-copy failed: need larger buffer (available was %zu)", l_available_space);
+    }
+    
+    // === PHASE 2: Retry with Dynamic Buffer ===
+    
+    // Start with double the socket buffer size (reasonable first guess)
+    l_temp_buffer_size = l_es->buf_out_size_max * 2;
+    
+    while (l_retry_count < MAX_RETRIES) {
+        
+        // Protection: Check reasonable size limit
+        if (l_temp_buffer_size > MAX_REASONABLE_REQUEST_SIZE) {
+            log_it(L_ERROR, "Temporary buffer size %zu exceeds reasonable limit %zu", 
+                   l_temp_buffer_size, MAX_REASONABLE_REQUEST_SIZE);
+            break;
+        }
+        
+        // Allocate temporary buffer
+        l_temp_buffer = DAP_NEW_Z_SIZE(uint8_t, l_temp_buffer_size);
+        if (!l_temp_buffer) {
+            log_it(L_ERROR, "Failed to allocate temporary buffer of size %zu", l_temp_buffer_size);
+            break;
+        }
+        
+        log_it(L_DEBUG, "Retry #%d: trying with %zu byte temp buffer", l_retry_count + 1, l_temp_buffer_size);
+        
+        // Try write callback with temporary buffer
+        l_result = l_stream->callbacks.write_cb(l_stream, l_temp_buffer, l_temp_buffer_size, l_stream->callback_context);
+        
+        if (l_result > 0) {
+            // SUCCESS: Copy from temp buffer to socket
+            size_t l_written = (size_t)l_result;
+            
+            // Copy to socket buffer (may require multiple writes)
+            size_t l_copied = dap_events_socket_write_unsafe(l_es, l_temp_buffer, l_written);
+            
+            if (l_copied == l_written) {
+                log_it(L_DEBUG, "Retry success: %zu bytes written via temporary buffer", l_written);
+                DAP_DELETE(l_temp_buffer);
+                return l_written;
+            } else {
+                log_it(L_ERROR, "Failed to copy all data from temp buffer: %zu/%zu bytes", 
+                       l_copied, l_written);
+                DAP_DELETE(l_temp_buffer);
+                return 0;
+            }
+            
+        } else if (l_result < 0) {
+            // ERROR: Formatting failed
+            log_it(L_ERROR, "Stream write callback failed on retry #%d with error: %zd", 
+                   l_retry_count + 1, l_result);
+            DAP_DELETE(l_temp_buffer);
+            return 0;
+            
+        } else {
+            // l_result == 0: Still need more space
+            log_it(L_DEBUG, "Retry #%d: still need more space (tried %zu bytes)", 
+                   l_retry_count + 1, l_temp_buffer_size);
+            
+            DAP_DELETE(l_temp_buffer);
+            l_temp_buffer = NULL;
+            
+            // Exponential backoff for next attempt
+            l_temp_buffer_size *= 2;
+            l_retry_count++;
+        }
+    }
+    
+    // === PHASE 3: Error Handling ===
+    
+    // Clean up any remaining temp buffer
+    if (l_temp_buffer) {
+        DAP_DELETE(l_temp_buffer);
+    }
+    
+    if (l_retry_count >= MAX_RETRIES) {
+        log_it(L_ERROR, "Write failed after %d retries (max buffer tried: %zu bytes)", 
+               MAX_RETRIES, l_temp_buffer_size / 2);
+    } else {
+        log_it(L_ERROR, "Write failed due to memory allocation or size limits");
+    }
     
     return 0;
 }
@@ -468,16 +696,23 @@ static void s_session_connected_callback(dap_events_socket_t *a_esocket)
     log_it(L_INFO, "HTTP2 session %p connected to %s:%u", 
            l_session, a_esocket->remote_addr_str, a_esocket->remote_port);
 
+    // Get private data for timer cleanup
+    dap_http2_session_private_t *l_private = l_session->private_data;
+    if (!l_private) {
+        log_it(L_ERROR, "Session connected callback: no private data");
+        return;
+    }
+    
     // Clean up connect timer
-    if (l_session->connect_timer) {
-        if (l_session->connect_timer->callback_arg) {
-            DAP_DELETE(l_session->connect_timer->callback_arg);
+    if (l_private->connect_timer) {
+        if (l_private->connect_timer->callback_arg) {
+            DAP_DELETE(l_private->connect_timer->callback_arg);
         }
-        dap_timerfd_delete_unsafe(l_session->connect_timer);
-        l_session->connect_timer = NULL;
+        dap_timerfd_delete_unsafe(l_private->connect_timer);
+        l_private->connect_timer = NULL;
     }
 
-    l_session->ts_established = time(NULL);
+    l_private->ts_established = time(NULL);
 
     // TODO: Setup read timeout timer on stream level
 
@@ -505,6 +740,14 @@ static void s_session_read_callback(dap_events_socket_t *a_esocket, void *a_data
         l_session->callbacks.data_received(l_session, a_data, a_data_size);
     }
 
+    // Forward data to stream for processing (NEW ARCHITECTURE)
+    if (l_session->stream) {
+        size_t l_processed = dap_http2_stream_process_data(l_session->stream, a_data, a_data_size);
+        log_it(L_DEBUG, "Stream processed %zu/%zu bytes", l_processed, a_data_size);
+    } else {
+        log_it(L_DEBUG, "No stream to forward data to");
+    }
+
     // TODO: Reset read timer on stream level
 }
 
@@ -521,12 +764,20 @@ static void s_session_worker_assign_callback(dap_events_socket_t *a_esocket, UNU
     }
 
     dap_http2_session_t *l_session = (dap_http2_session_t*)a_esocket->_inheritor;
-    dap_http2_stream_t *l_stream = dap_http2_session_create_stream(l_session, l_session->stream_callbacks);
+    
+    // Get private data for stream callbacks
+    dap_http2_session_private_t *l_private = l_session->private_data;
+    if (!l_private) {
+        log_it(L_ERROR, "Session worker assign callback: no private data");
+        return;
+    }
+    
+    dap_http2_stream_t *l_stream = dap_http2_session_create_stream(l_session, l_private->stream_callbacks);
     if (!l_stream) {
         log_it(L_ERROR, "Failed to create stream!");
         return;
     }
-    DAP_DEL_Z(l_session->stream_callbacks);
+    DAP_DEL_Z(l_private->stream_callbacks);
     if (l_session->callbacks.assigned)
         l_session->callbacks.assigned(l_session);
 }
@@ -581,8 +832,11 @@ static void s_session_delete_callback(dap_events_socket_t *a_esocket, void *a_ar
     
     log_it(L_DEBUG, "HTTP2 session %p socket being deleted", l_session);
 
-    // Clear socket reference
-    l_session->es = NULL;
+    // Clear socket reference in private data
+    dap_http2_session_private_t *l_private = l_session->private_data;
+    if (l_private) {
+        l_private->es = NULL;
+    }
 
     // Call user callback if set
     if (l_session->callbacks.closed) {
@@ -648,7 +902,37 @@ size_t dap_http2_session_process_data(dap_http2_session_t *a_session,
 
 dap_session_encryption_type_t dap_http2_session_get_encryption_type(const dap_http2_session_t *a_session)
 {
-    return a_session ? a_session->encryption_type : DAP_SESSION_ENCRYPTION_NONE;
+    if (!a_session) {
+        return DAP_SESSION_ENCRYPTION_NONE;
+    }
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    return l_private ? l_private->encryption_type : DAP_SESSION_ENCRYPTION_NONE;
+}
+
+// === PRIVATE DATA ACCESS FUNCTIONS (for internal use) ===
+
+/**
+ * @brief Get events socket (internal use only)
+ */
+dap_events_socket_t* dap_http2_session_get_events_socket(const dap_http2_session_t *a_session)
+{
+    if (!a_session) {
+        return NULL;
+    }
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    return l_private ? l_private->es : NULL;
+}
+
+/**
+ * @brief Get worker (internal use only)
+ */
+dap_worker_t* dap_http2_session_get_worker(const dap_http2_session_t *a_session)
+{
+    if (!a_session) {
+        return NULL;
+    }
+    dap_http2_session_private_t *l_private = a_session->private_data;
+    return l_private ? l_private->worker : NULL;
 }
 
 dap_session_upgrade_interface_t* dap_http2_session_get_upgrade_interface(dap_http2_session_t *a_session)
