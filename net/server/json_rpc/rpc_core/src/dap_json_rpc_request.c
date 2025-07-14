@@ -208,12 +208,13 @@ char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_re
 }
 
 
-dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
+dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id, int a_version)
 {
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
-    *request = (dap_json_rpc_request_t) {
-        dap_strdup(a_method), a_params, a_id
-    };
+    request->method = dap_strdup(a_method);
+    request->params = a_params;
+    request->id = a_id;
+    request->version = a_version;
     return request;
 }
 
@@ -227,7 +228,7 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
     DAP_DELETE(request);
 }
 
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
 {
     if (!a_data)
         return NULL;
@@ -235,6 +236,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     enum json_tokener_error jterr;
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
                 *jobj_id = NULL,
+                *jobj_version = NULL,
                 *jobj_method = NULL,
                 *jobj_params = NULL,
                 *jobj_subcmd = NULL,
@@ -246,6 +248,12 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
             else {
                 log_it(L_ERROR, "Error parse JSON string, can't find request id");
                 break;
+            }
+            if (json_object_object_get_ex(jobj, "version", &jobj_version))
+                request->version = json_object_get_int64(jobj_version);
+            else {
+                log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+                request->version = a_version_default;
             }
 
             if (json_object_object_get_ex(jobj, "method", &jobj_method))
@@ -287,8 +295,8 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
         return log_it(L_ERROR, "Failed to generate JSON for params"), NULL;
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\" }",
-        a_request->method, params_json, a_request->id);
+        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\", \"version\":\"%d\" }",
+        a_request->method, params_json, a_request->id, a_request->version);
     DAP_DELETE(params_json);
     return l_str;
 }
