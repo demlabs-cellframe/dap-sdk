@@ -408,25 +408,25 @@ static int s_tsd_parse_callback_type_member_request_add(avrs_ch_t *a_avrs_ch,dap
         break;
 
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_STATUS:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.status, "Status", "MEMBER_STATUS_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.status, a_version == 1 ? "Status" : "status", "MEMBER_STATUS_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_TITLE:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.title, "Title", "MEMBER_TITLE_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.title, a_version == 1 ? "Title" : "title", "MEMBER_TITLE_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_DISPLAY_NAME:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name_display, "Display name", "MEMBER_DISPLAY_NAME_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name_display, a_version == 1 ? "Display name" : "display_name", "MEMBER_DISPLAY_NAME_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_NAME:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name, "Name", "MEMBER_NAME_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name, a_version == 1 ? "Name" : "name", "MEMBER_NAME_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_SECOND_NAME:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name_second, "Second name", "MEMBER_SECOND_NAME_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.name_second, a_version == 1 ? "Second name" : "second_name", "MEMBER_SECOND_NAME_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_SURNAME:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.surname, "Surname", "MEMBER_SURNAME_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.surname, a_version == 1 ? "Surname" : "surname", "MEMBER_SURNAME_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_PATRONIM:
-            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.patronim, "Patronim", "MEMBER_PATRONIM_SIZE_TOO_BIG", a_tsd);
+            l_ret = s_tsd_parse_member_info ( a_avrs_ch, l_member->info.patronim, a_version == 1 ? "Patronim" : "patronim", "MEMBER_PATRONIM_SIZE_TOO_BIG", a_tsd);
         break;
         case AVRS_CH_PKT_CLUSTER_ARG_MEMBER_AVATAR:
             if (a_tsd->size > AVRS_CLUSTER_MEMBER_AVATAR_SIZE_MAX){
