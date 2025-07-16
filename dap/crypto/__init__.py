@@ -6,13 +6,10 @@ All classes now properly wrap corresponding C structures.
 """
 
 from .keys import (
-    DapKey,
+    DapCryptoKey,
     DapKeyType,
     DapKeyError,
-    DapKeyManager,
-    generate_key,
-    load_key,
-    save_key
+    DapKeyManager
 )
 
 from .sign import (
@@ -28,10 +25,11 @@ from .sign import (
 from .cert import (
     DapCert,
     DapCertError,
-    DapCertMetaType,
-    DapCertificateManager,
-    create_certificate,
-    load_certificate,
+    DapCertType,
+    DapCertChain,
+    DapCertStore,
+    create_self_signed_cert,
+    load_cert_from_file,
     find_certificate
 )
 
@@ -39,19 +37,17 @@ from .hash import (
     DapHash,
     DapHashError,
     DapHashType as DapHashingType,
-    quick_hash,
-    quick_hash_fast
+    quick_hash_fast,
+    quick_hash_slow
 )
 
 __all__ = [
     # Keys
-    'DapKey',
+    'DapCryptoKey',
     'DapKeyType',
     'DapKeyError',
     'DapKeyManager',
-    'generate_key',
-    'load_key',
-    'save_key',
+
     
     # Digital Signatures
     'DapSign',
@@ -71,12 +67,12 @@ __all__ = [
     'load_certificate',
     'find_certificate',
     
-    # Hashing
+    # Hash functions
     'DapHash',
     'DapHashError',
     'DapHashingType',
-    'quick_hash',
-    'quick_hash_fast'
+    'quick_hash_fast',
+    'quick_hash_slow',
 ]
 
 # Version info

@@ -1,93 +1,54 @@
 """
-🔗 DAP SDK - Comprehensive Python SDK for DAP Protocol
+🔧 DAP Python SDK
 
-This is the complete DAP SDK providing all necessary components for blockchain development:
-- Core utilities and exceptions
-- Crypto operations (signing, certificates)
-- Network operations (client, server, streaming, HTTP)
-- Chain operations (wallet, transactions, ledger)
-- Configuration management
-- Event handling
-
-Example:
-    # Crypto operations
-    from dap.crypto import DapSign, DapCert
-    signature = DapSign.create_from_key_and_data(key, data)
-    
-    # Network operations
-    from dap.network import DapClient, DapServer, DapStream
-    client = DapClient.create_and_connect("192.168.1.100", 8080)
-    
-    # Chain operations
-    from dap.chain import DapWallet, DapTransaction, DapLedger
-    wallet = DapWallet.create_wallet("my-wallet", DapWalletType.HD)
+Main DAP package providing crypto, network, and database functionality.
+Clean API without fallbacks or mocks.
 """
 
-# Core modules
-from . import core
-from . import config
-from . import events
+__version__ = "1.0.0"
 
-# Main functional modules
-from . import crypto
-from . import network
-from . import chain
+# Import all existing DAP modules
+from . import common, config, core, crypto, events, global_db, network
 
 # Re-export main classes for convenience
 from .crypto import (
     DapSign, DapCert, DapSignError, DapCertError
 )
 
-from .network import (
-    DapClient, DapServer, DapStream, DapHttp,
-    DapClientError, DapServerError, DapStreamError, DapHttpError
-)
-
-from .chain import (
-    DapWallet, DapTransaction, DapLedger,
-    DapWalletError, DapTransactionError, DapLedgerError
-)
-
 from .core.exceptions import DapException
 
+from .global_db import (
+    Gdb, GdbCluster, GdbNode, GdbInstance,
+    MemberRole, ClusterRole, create_cluster, connect_to_cluster
+)
+
+# Main DAP classes for export
 __all__ = [
-    # Modules
-    'core',
-    'config', 
-    'events',
-    'crypto',
-    'network',
-    'chain',
-    
-    # Core exceptions
+    # Core
     'DapException',
     
-    # Crypto classes
+    # Crypto
     'DapSign',
-    'DapCert',
+    'DapCert', 
     'DapSignError',
     'DapCertError',
     
-    # Network classes
-    'DapClient',
-    'DapServer', 
-    'DapStream',
-    'DapHttp',
-    'DapClientError',
-    'DapServerError',
-    'DapStreamError',
-    'DapHttpError',
+    # Global Database
+    'Gdb',
+    'GdbCluster',
+    'GdbNode',
+    'GdbInstance',
+    'MemberRole',
+    'ClusterRole',
+    'create_cluster',
+    'connect_to_cluster',
     
-    # Chain classes
-    'DapWallet',
-    'DapTransaction',
-    'DapLedger',
-    'DapWalletError',
-    'DapTransactionError',
-    'DapLedgerError'
-]
-
-# Version info
-__version__ = "2.0.0"
-__author__ = "Demlabs"
-__description__ = "DAP SDK - Complete Python SDK for DAP Protocol with proper C structure wrapping" 
+    # Modules
+    'common',
+    'config',
+    'core',
+    'crypto',
+    'events',
+    'global_db',
+    'network'
+] 

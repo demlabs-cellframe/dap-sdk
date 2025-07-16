@@ -68,6 +68,17 @@ from .http import (
     simple_request
 )
 
+from .net import (
+    DapNet,
+    DapNetID,
+    DapNetworkManager,
+    DapNetStatus,
+    DapNetType,
+    get_network,
+    get_all_networks,
+    create_network
+)
+
 __all__ = [
     # Client operations
     'DapClient',
@@ -107,7 +118,17 @@ __all__ = [
     'create_http_client',
     'quick_get',
     'quick_post',
-    'simple_request'
+    'simple_request',
+    
+    # Network operations (integrated from helpers)
+    'DapNet',
+    'DapNetID',
+    'DapNetworkManager',
+    'DapNetStatus',
+    'DapNetType',
+    'get_network',
+    'get_all_networks',
+    'create_network'
 ]
 
 # Version info
