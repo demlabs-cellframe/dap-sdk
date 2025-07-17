@@ -70,7 +70,7 @@ void avrs_cli_deinit()
  * @param a_str_reply
  * @return
  */
-static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply, int a_version)
+static int s_cli_callback(int a_argc, char **a_argv, char **a_str_reply, UNUSED_ARG int a_version)
 {
     enum {
         CMD_HELP,
