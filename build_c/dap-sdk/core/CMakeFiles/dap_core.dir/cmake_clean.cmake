@@ -29,8 +29,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/dap_core.dir/src/dap_time.c.o.d"
   "CMakeFiles/dap_core.dir/src/dap_tsd.c.o"
   "CMakeFiles/dap_core.dir/src/dap_tsd.c.o.d"
-  "CMakeFiles/dap_core.dir/src/darwin/macos/dap_network_monitor.c.o"
-  "CMakeFiles/dap_core.dir/src/darwin/macos/dap_network_monitor.c.o.d"
   "CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o"
   "CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o.d"
   "CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o"

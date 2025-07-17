@@ -1,13 +1,19 @@
-#include "../include/python_cellframe_common.h"
-int dap_network_init(void) { return 0; }
-void dap_network_deinit(void) {}
-void* dap_client_new(void) { return (void*)1; }
-void dap_client_delete(void* client) {}
-int dap_client_connect_to(void* client, const char* addr, int port) { return 0; }
-void dap_client_disconnect(void* client) {}
-int dap_client_write(void* client, const void* data, size_t size) { return size; }
-int dap_client_read(void* client, void* buffer, size_t size) { return 0; }
-void* dap_server_new(void) { return (void*)1; }
-void dap_server_delete(void* server) {}
-int dap_server_listen(void* server, const char* addr, int port) { return 0; }
-void dap_server_stop(void* server) {}
+/*
+ * Python DAP Network Implementation
+ * Wrapper functions around DAP SDK network functions
+ */
+
+#include "python_dap.h"
+#include "dap_common.h"
+// Note: Not including problematic network headers to avoid dependency issues
+
+// Network wrapper implementations - simplified
+
+int py_dap_network_init(void) {
+    // Simplified network init - would call dap_net_init()
+    return 0;
+}
+
+void py_dap_network_deinit(void) {
+    // Simplified network deinit
+} 

@@ -4,17 +4,17 @@
 
 
 # Configuration directories and files
-SourceDirectory: /Users/dmitriygerasimov/work/cellframe/cellframe-node.rc-6.0/plugin/plugin-python/python-dap/dap-sdk/3rdparty/json-c
-BuildDirectory: /Users/dmitriygerasimov/work/cellframe/cellframe-node.rc-6.0/plugin/plugin-python/python-dap/build_c/dap-sdk/core/json-c
+SourceDirectory: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c
+BuildDirectory: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/json-c
 
 # Where to place the cost data store
 CostDataFile: 
 
 # Site is something like machine.domain, i.e. pragmatic.crd
-Site: MacBook-Pro-95.local
+Site: zeus
 
 # Build name is osname-revision-compiler, i.e. Linux-2.4.2-2smp-c++
-BuildName: Darwin-c++
+BuildName: Linux-c++
 
 # Subprojects
 LabelsForSubprojects: 
@@ -27,8 +27,8 @@ SubmitInactivityTimeout:
 NightlyStartTime: 00:00:00 EDT
 
 # Commands for the build/test/submit cycle
-ConfigureCommand: "/opt/homebrew/Cellar/cmake/3.27.9/bin/cmake" "/Users/dmitriygerasimov/work/cellframe/cellframe-node.rc-6.0/plugin/plugin-python/python-dap/dap-sdk/3rdparty/json-c"
-MakeCommand: /opt/homebrew/Cellar/cmake/3.27.9/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}"
+ConfigureCommand: "/usr/bin/cmake" "/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c"
+MakeCommand: /usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}"
 DefaultCTestConfigurationType: Release
 
 # version control
@@ -63,8 +63,8 @@ UpdateOptions:
 UpdateType: 
 
 # Compiler info
-Compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++
-CompilerVersion: 17.0.0.17000013
+Compiler: /usr/bin/c++
+CompilerVersion: 12.2.0
 
 # Dynamic analysis (MemCheck)
 PurifyCommand: 
@@ -76,7 +76,7 @@ CudaSanitizerCommand:
 CudaSanitizerCommandOptions: 
 MemoryCheckType: 
 MemoryCheckSanitizerOptions: 
-MemoryCheckCommand: MEMORYCHECK_COMMAND-NOTFOUND
+MemoryCheckCommand: /usr/bin/valgrind
 MemoryCheckCommandOptions: 
 MemoryCheckSuppressionFile: 
 
@@ -94,6 +94,9 @@ TimeOut: 1500
 # During parallel testing CTest will not start a new test if doing
 # so would cause the system load to exceed this value.
 TestLoad: 
+
+TLSVerify: 
+TLSVersion: 
 
 UseLaunchers: 
 CurlOptions: 

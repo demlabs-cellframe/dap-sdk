@@ -9,12 +9,21 @@ import threading
 from typing import Optional, Any, Dict, List
 from pathlib import Path
 
-# Import DAP config functions
+# Import DAP config wrapper functions
 from python_cellframe_common import (
-    dap_config_init, dap_config_deinit, dap_config_open, dap_config_close,
-    dap_config_get_item_str, dap_config_get_item_int, dap_config_get_item_bool,
-    dap_config_set_item_str, dap_config_set_item_int, dap_config_set_item_bool,
-    dap_config_get_sys_dir, py_m_dap_config_get_item, py_m_dap_config_get_sys_dir
+    py_dap_config_init as dap_config_init,
+    py_dap_config_deinit as dap_config_deinit,
+    py_dap_config_open as dap_config_open,
+    py_dap_config_close as dap_config_close,
+    py_dap_config_get_item_str as dap_config_get_item_str,
+    py_dap_config_get_item_int as dap_config_get_item_int,
+    py_dap_config_get_item_bool as dap_config_get_item_bool,
+    py_dap_config_set_item_str as dap_config_set_item_str,
+    py_dap_config_set_item_int as dap_config_set_item_int,
+    py_dap_config_set_item_bool as dap_config_set_item_bool,
+    py_dap_config_get_sys_dir as dap_config_get_sys_dir,
+    py_m_dap_config_get_item,
+    py_m_dap_config_get_sys_dir
 )
 
 from ..core.exceptions import DapException, DapConfigError

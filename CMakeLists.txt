@@ -14,8 +14,8 @@ add_subdirectory(dap-sdk)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 if(BUILD_PYTHON_CELLFRAME_COMMON)
-    # Create python_cellframe_common shared library
-    add_library(python_cellframe_common SHARED
+    # Create python_dap shared library
+    add_library(python_dap SHARED
         # Core DAP functions we need for Python
         src/python_dap_core.c
         src/python_dap_config.c
@@ -25,34 +25,35 @@ if(BUILD_PYTHON_CELLFRAME_COMMON)
         src/python_dap_common.c
     )
 
-    # Link with DAP SDK components
-    target_link_libraries(python_cellframe_common
+    # Link with DAP SDK components - only essential ones
+    target_link_libraries(python_dap
         dap_core
-        dap_crypto
-        dap_io
-        dap_global_db
         ${Python3_LIBRARIES}
     )
 
     # Include directories
-    target_include_directories(python_cellframe_common PRIVATE
+    target_include_directories(python_dap PRIVATE
         ${Python3_INCLUDE_DIRS}
         dap-sdk/core/include
         dap-sdk/crypto/include
+        dap-sdk/crypto/XKCP/lib/high/Keccak/FIPS202
+        dap-sdk/crypto/XKCP/lib/low/KeccakP-1600
+        dap-sdk/crypto/XKCP/lib/common
         dap-sdk/io/include
         dap-sdk/global-db/include
+        dap-sdk/3rdparty
         include
     )
 
     # Set library properties
-    set_target_properties(python_cellframe_common PROPERTIES
+    set_target_properties(python_dap PROPERTIES
         PREFIX ""
-        OUTPUT_NAME "python_cellframe_common"
+        OUTPUT_NAME "python_dap"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
     )
 
     # Install library
-    install(TARGETS python_cellframe_common
+    install(TARGETS python_dap
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin
     )

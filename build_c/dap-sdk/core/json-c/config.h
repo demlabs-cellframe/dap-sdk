@@ -15,7 +15,7 @@
 #define HAVE_DLFCN_H
 
 /* Define to 1 if you have the <endian.h> header file. */
-/* #undef HAVE_ENDIAN_H */
+#define HAVE_ENDIAN_H
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #define HAVE_FCNTL_H
@@ -72,7 +72,7 @@
 #define HAVE_UNISTD_H 1
 
 /* Define to 1 if you have the <xlocale.h> header file. */
-#define HAVE_XLOCALE_H
+/* #undef HAVE_XLOCALE_H */
 
 /* Define to 1 if you have the <bsd/stdlib.h> header file. */
 /* #undef HAVE_BSD_STDLIB_H */
@@ -150,7 +150,7 @@
 #define HAVE_VSYSLOG 1
 
 /* Define if you have the `getrandom' function. */
-/* #undef HAVE_GETRANDOM */
+#define HAVE_GETRANDOM
 
 /* Define if you have the `getrusage' function. */
 #define HAVE_GETRUSAGE
