@@ -9,15 +9,11 @@ import logging
 import subprocess
 from typing import Optional
 
-# Import only DAP system functions we actually need for integration
-try:
-    from python_cellframe_common import (
-        exec_with_ret_multistring
-    )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations
-    def exec_with_ret_multistring(cmd): return subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout
+# Import DAP system functions
+from python_cellframe_common import (
+    exec_with_ret_multistring,
+    dap_malloc, dap_free, dap_calloc, dap_realloc
+)
 
 from .exceptions import DapException
 
@@ -64,16 +60,11 @@ class DapSystem:
         if not command or not command.strip():
             raise DapSystemError("Empty command provided")
         
-        try:
-            # Call C function: exec_with_ret_multistring()
-            result = exec_with_ret_multistring(command)
-            
-            self._logger.debug(f"Executed DAP command: {command}")
-            return result if result else ""
-            
-        except Exception as e:
-            self._logger.error(f"Failed to execute DAP command '{command}': {e}")
-            raise DapSystemError(f"DAP command execution failed: {e}")
+        # Call C function: exec_with_ret_multistring()
+        result = exec_with_ret_multistring(command)
+        
+        self._logger.debug(f"Executed DAP command: {command}")
+        return result if result else ""
     
     def validate_command(self, command: str) -> bool:
         """
@@ -100,6 +91,97 @@ class DapSystem:
         
         return True
     
+    def malloc(self, size: int) -> int:
+        """
+        Allocate memory through DAP memory manager
+        
+        Args:
+            size: Size in bytes to allocate
+            
+        Returns:
+            Pointer as integer (for Python compatibility)
+            
+        Raises:
+            DapSystemError: If allocation fails
+        """
+        if size <= 0:
+            raise DapSystemError("Invalid size for memory allocation")
+        
+        # Call C function: dap_malloc()
+        ptr = dap_malloc(size)
+        if ptr is None or ptr == 0:
+            raise DapSystemError(f"Failed to allocate {size} bytes")
+        
+        self._logger.debug(f"Allocated {size} bytes at {ptr}")
+        return int(ptr)
+    
+    def free(self, ptr: int) -> None:
+        """
+        Free memory allocated by DAP memory manager
+        
+        Args:
+            ptr: Pointer to free (as integer)
+            
+        Raises:
+            DapSystemError: If free fails
+        """
+        if ptr <= 0:
+            raise DapSystemError("Invalid pointer for memory free")
+        
+        # Call C function: dap_free()
+        dap_free(ptr)
+        self._logger.debug(f"Freed memory at {ptr}")
+    
+    def calloc(self, num: int, size: int) -> int:
+        """
+        Allocate zero-initialized memory through DAP memory manager
+        
+        Args:
+            num: Number of elements
+            size: Size per element in bytes
+            
+        Returns:
+            Pointer as integer (for Python compatibility)
+            
+        Raises:
+            DapSystemError: If allocation fails
+        """
+        if num <= 0 or size <= 0:
+            raise DapSystemError("Invalid parameters for calloc")
+        
+        # Call C function: dap_calloc()
+        ptr = dap_calloc(num, size)
+        if ptr is None or ptr == 0:
+            raise DapSystemError(f"Failed to calloc {num}*{size} bytes")
+        
+        self._logger.debug(f"Allocated {num}*{size} zeroed bytes at {ptr}")
+        return int(ptr)
+    
+    def realloc(self, ptr: int, size: int) -> int:
+        """
+        Reallocate memory through DAP memory manager
+        
+        Args:
+            ptr: Existing pointer (as integer)
+            size: New size in bytes
+            
+        Returns:
+            New pointer as integer
+            
+        Raises:
+            DapSystemError: If reallocation fails
+        """
+        if size <= 0:
+            raise DapSystemError("Invalid size for realloc")
+        
+        # Call C function: dap_realloc()
+        new_ptr = dap_realloc(ptr, size)
+        if new_ptr is None or new_ptr == 0:
+            raise DapSystemError(f"Failed to realloc to {size} bytes")
+        
+        self._logger.debug(f"Reallocated from {ptr} to {new_ptr} ({size} bytes)")
+        return int(new_ptr)
+    
     def __repr__(self) -> str:
         return "DapSystem()"
 
@@ -111,18 +193,11 @@ def execute_dap_command(command: str) -> str:
     return dap_system.execute_dap_command(command)
 
 
-def safe_execute_dap_command(command: str, default: str = "") -> str:
-    """Execute DAP command safely with default fallback"""
-    try:
-        return execute_dap_command(command)
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Safe DAP command execution failed for '{command}': {e}")
-        return default
+
 
 
 __all__ = [
     'DapSystem',
     'DapSystemError',
-    'execute_dap_command',
-    'safe_execute_dap_command'
+    'execute_dap_command'
 ] 

@@ -9,30 +9,13 @@ import threading
 from typing import Optional, Any, Dict, List
 from pathlib import Path
 
-# Import existing DAP config functions
-try:
-    from python_cellframe_common import (
-        dap_config_init, dap_config_deinit, dap_config_open, dap_config_close,
-        dap_config_get_item_str, dap_config_get_item_int, dap_config_get_item_bool,
-        dap_config_set_item_str, dap_config_set_item_int, dap_config_set_item_bool,
-        dap_config_get_sys_dir, py_m_dap_config_get_item, py_m_dap_config_get_sys_dir
-    )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_config_init(): return 0
-    def dap_config_deinit(): pass
-    def dap_config_open(path): return id(path)
-    def dap_config_close(config): pass
-    def dap_config_get_item_str(config, section, key, default): return default
-    def dap_config_get_item_int(config, section, key, default): return default
-    def dap_config_get_item_bool(config, section, key, default): return default
-    def dap_config_set_item_str(config, section, key, value): return True
-    def dap_config_set_item_int(config, section, key, value): return True
-    def dap_config_set_item_bool(config, section, key, value): return True
-    def dap_config_get_sys_dir(): return "/tmp"
-    def py_m_dap_config_get_item(section, key, default): return default
-    def py_m_dap_config_get_sys_dir(): return "/tmp"
+# Import DAP config functions
+from python_cellframe_common import (
+    dap_config_init, dap_config_deinit, dap_config_open, dap_config_close,
+    dap_config_get_item_str, dap_config_get_item_int, dap_config_get_item_bool,
+    dap_config_set_item_str, dap_config_set_item_int, dap_config_set_item_bool,
+    dap_config_get_sys_dir, py_m_dap_config_get_item, py_m_dap_config_get_sys_dir
+)
 
 from ..core.exceptions import DapException, DapConfigError
 
@@ -138,6 +121,7 @@ class DapConfig:
             self._logger.error(f"Failed to get config item {section}.{key}: {e}")
             return default
     
+
     def get_item_bool(self, section: str, key: str, default: bool = False) -> bool:
         """Get boolean configuration item."""
         try:

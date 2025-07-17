@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "source": "dap_sdk_code_templates.md",
+    "type": "code_templates"
+  },
+  "file_templates": {
+    "header_file": {
+      "extension": ".h",
+      "structure": [
+        "#pragma once",
+        "#include \"dap_common.h\"",
+        "",
+        "typedef struct dap_module {",
+        "    // Structure definition",
+        "} dap_module_t;",
+        "",
+        "// Function declarations",
+        "int dap_module_init(void);",
+        "void dap_module_deinit(void);"
+      ]
+    },
+    "source_file": {
+      "extension": ".c",
+      "structure": [
+        "#include \"module.h\"",
+        "#include \"dap_common.h\"",
+        "",
+        "#define LOG_TAG \"module\"",
+        "",
+        "// Implementation"
+      ]
+    }
+  },
+  "function_templates": {
+    "basic_function": {
+      "pattern": [
+        "int dap_function_name(type_t *a_param) {",
+        "    dap_return_val_if_fail(a_param, -EINVAL);",
+        "    ",
+        "    // Implementation",
+        "    ",
+        "    return 0;",
+        "}"
+      ]
+    },
+    "memory_allocation": {
+      "pattern": [
+        "type_t *l_object = DAP_NEW(type_t);",
+        "if (!l_object) {",
+        "    log_it(L_CRITICAL, \"%s\", c_error_memory_alloc);",
+        "    return NULL;",
+        "}",
+        "",
+        "// Use object",
+        "",
+        "DAP_DELETE(l_object);"
+      ]
+    }
+  },
+  "common_patterns": {
+    "parameter_validation": "dap_return_val_if_fail(param, -EINVAL);",
+    "memory_check": "if (!ptr) { log_it(L_CRITICAL, \"%s\", c_error_memory_alloc); return -ENOMEM; }",
+    "log_entry": "log_it(L_DEBUG, \"Entering %s\", __func__);",
+    "log_exit": "log_it(L_DEBUG, \"Exiting %s\", __func__);"
+  }
+}

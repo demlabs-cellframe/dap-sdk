@@ -9,16 +9,10 @@ import logging
 from typing import Union, Optional
 from enum import Enum
 
-# Import existing DAP functions
-try:
-    from python_cellframe_common import (
-        dap_hash_fast, dap_hash_slow
-    )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations
-    def dap_hash_fast(data): return b"hash_fast_result"
-    def dap_hash_slow(data): return b"hash_slow_result"
+# Import DAP hash functions
+from python_cellframe_common import (
+    dap_hash_fast, dap_hash_slow
+)
 
 from ..core.exceptions import DapException
 

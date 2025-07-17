@@ -1,0 +1,95 @@
+{
+  "version": "1.1",
+  "created": "2025-01-03T15:00:00Z",
+  "updated": "2025-06-06T12:00:00Z",
+  "description": "Index of all tasks and contexts in DAP SDK project - Modular loading system",
+  "current_task": {
+    "source": ".local/index.json",
+    "description": "Reference to current active task",
+    "status": "Chipmunk Post-Quantum Signature implementation COMPLETED"
+  },
+  "task_data_references": {
+    "context": ".local/context.json",
+    "progress": ".local/progress.json", 
+    "task_index": ".local/index.json"
+  },
+  "context_loading_policy": {
+    "auto_load": [
+      "code_templates.json",
+      "coding_guidelines.json", 
+      "project_standards.json"
+    ],
+    "on_demand": [
+      "modules/crypto.json",
+      "modules/core.json",
+      "modules/net.json",
+      "modules/other.json"
+    ],
+    "task_specific": [
+      ".local/context.json",
+      ".local/progress.json"
+    ]
+  },
+  "project_files": {
+    "code_templates.json": {
+      "description": "Code templates and patterns for DAP SDK development",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "coding_guidelines.json": {
+      "description": "Coding guidelines and best practices",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "project_standards.json": {
+      "description": "Project documentation and quality standards",
+      "auto_load": true,
+      "category": "development_standards"
+    }
+  },
+  "module_references": {
+    "crypto": {
+      "file": "modules/crypto.json",
+      "description": "Cryptographic components and algorithms",
+      "load_when": "crypto-related tasks",
+      "status": "production_ready"
+    },
+    "core": {
+      "file": "modules/core.json", 
+      "description": "Core framework components",
+      "load_when": "core development tasks",
+      "status": "stable"
+    },
+    "net": {
+      "file": "modules/net.json",
+      "description": "Network and communication components", 
+      "load_when": "networking tasks",
+      "status": "stable"
+    },
+    "other": {
+      "file": "modules/other.json",
+      "description": "Other project components",
+      "load_when": "miscellaneous tasks",
+      "status": "stable"
+    }
+  },
+  "build_system": {
+    "debug_build_ready": true,
+    "directory": "build_debug/",
+    "xkcp_integration": "Fixed and working",
+    "test_suite": ["crypto-test", "chipmunk-test", "chipmunk_hots_test"],
+    "cmake_config": "Debug with comprehensive crypto tests"
+  },
+  "system_info": {
+    "context_management": "Modular system with on-demand loading",
+    "git_policy": ".local/ directory is git-ignored for task isolation",
+    "update_policy": "Task changes require only .local/ file updates",
+    "optimization": "Only load module contexts when needed"
+  },
+  "directories": {
+    "scripts": "Common scripts for all tasks",
+    "tests": "Common tests and utilities",
+    ".local": "Local files for current tasks (ignored in git)",
+    "modules": "Module-specific contexts (loaded on demand)"
+  }
+}

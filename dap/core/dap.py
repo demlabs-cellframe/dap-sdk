@@ -9,18 +9,10 @@ import logging
 import threading
 from typing import Optional, Dict, Any
 
-# Import existing DAP functions
-try:
-    from python_cellframe_common import (
-        dap_common_init, dap_common_deinit, dap_config_init, dap_config_deinit
-    )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations
-    def dap_common_init(): return 0
-    def dap_common_deinit(): pass
-    def dap_config_init(): return 0
-    def dap_config_deinit(): pass
+# Import DAP core functions
+from python_cellframe_common import (
+    dap_common_init, dap_common_deinit, dap_config_init, dap_config_deinit
+)
 
 from .exceptions import DapException, DapInitializationError
 from .types import DapType
