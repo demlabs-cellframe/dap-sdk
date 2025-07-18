@@ -132,7 +132,7 @@ class TestNoFallbacks:
         
         # Network functions
         network_functions = [
-            'dap_server_new', 'dap_server_delete', 'dap_server_listen',
+            'server_new', 'server_delete', 'server_listen',
             'dap_server_start', 'dap_server_stop',
             'dap_client_new', 'dap_client_delete', 'dap_client_connect_to',
             'dap_client_disconnect'

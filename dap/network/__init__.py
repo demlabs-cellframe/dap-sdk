@@ -132,6 +132,6 @@ __all__ = [
 ]
 
 # Version info
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 __author__ = "Demlabs"
 __description__ = "DAP SDK Network Module - Proper C structure wrapping"

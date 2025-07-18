@@ -237,6 +237,13 @@ static PyMethodDef s_python_dap_server_methods[] = {
     {"server_init", py_dap_server_init_wrapper, METH_VARARGS, "Initialize DAP server subsystem"},
     {"server_deinit", py_dap_server_deinit_wrapper, METH_VARARGS, "Deinitialize DAP server subsystem"},
     {"server_get_all", py_dap_server_get_all_wrapper, METH_VARARGS, "Get all DAP servers"},
+    
+    // DAP prefixed aliases
+    {"dap_server_new", py_dap_server_new_wrapper, METH_VARARGS, "Create new DAP server (alias)"},
+    {"dap_server_delete", py_dap_server_delete_wrapper, METH_VARARGS, "Delete DAP server (alias)"},
+    {"dap_server_listen", py_dap_server_listen_wrapper, METH_VARARGS, "Add listen address to server (alias)"},
+    {"dap_server_start", py_dap_server_start_wrapper, METH_VARARGS, "Start DAP server (alias)"},
+    {"dap_server_stop", py_dap_server_stop_wrapper, METH_VARARGS, "Stop DAP server (alias)"},
     {NULL, NULL, 0, NULL}
 };
 

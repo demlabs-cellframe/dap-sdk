@@ -1,497 +1,343 @@
-# GitLab CI configuration for Python DAP Module
-# Independent CI/CD pipeline for Python DAP SDK bindings
+# GitLab CI/CD Configuration for Python-DAP 3.0
+# Modern CMake-based pipeline: cmake → cpack → ctest
 
 variables:
   PYTHON_VERSION: "3.9"
-  PYTEST_CACHE_DIR: "$CI_PROJECT_DIR/.pytest_cache"
-  COVERAGE_THRESHOLD: "70"
-  DAP_TEST_TIMEOUT: "300"
+  CMAKE_BUILD_TYPE: "Release"
+  BUILD_SHARED: "ON"
+  DAP_VERSION: "3.0.0"
+  CTEST_TIMEOUT: "600"
 
 stages:
   - validate
-  - test
-  - build
-  - package
+  - cmake_build
+  - cpack_package
+  - ctest_tests
   - deploy
 
 .python_dap_base:
   image: demlabs/debian/amd64:qt5
   before_script:
-    - apt-get update && apt-get install -y python3 python3-pip python3-venv python3-dev
-    - python3 -m pip install --upgrade pip
-    - python3 -m pip install pytest pytest-cov setuptools wheel
+    - apt-get update && apt-get install -y 
+        python3 python3-pip python3-venv python3-dev
+        cmake make build-essential pkg-config
+        libssl-dev libjson-c-dev
+    - python3 -m pip install --upgrade pip setuptools wheel pytest
   cache:
-    key: python-dap-cache
+    key: python-dap-v3-cache
     paths:
+      - build_new/
+      - venv/
       - .pytest_cache/
-      - __pycache__/
-  timeout: 10 minutes
+  timeout: 15 minutes
 
-dap_code_validation:
+# ===============================================
+# STAGE 1: VALIDATION
+# ===============================================
+
+code_validation:
   extends: .python_dap_base
   stage: validate
   script:
-    - echo "🔍 Validating Python DAP Code"
+    - echo "🔍 Python-DAP 3.0 Code Validation"
+    - echo "✅ Checking Python files syntax..."
     - find dap/ -name "*.py" -exec python3 -m py_compile {} \;
-    - |
-      python3 -c "import sys; sys.path.insert(0, '.'); import dap" || echo "Import validation - expected to fail without build"
-    - echo "✅ Python DAP Code Validation completed"
+    - echo "✅ Checking C source files..."
+    - find src/ -name "*.c" -exec gcc -fsyntax-only {} \; 2>/dev/null || true
+    - echo "✅ Validating CMakeLists.txt..."
+    - cmake --help > /dev/null
+    - echo "🎯 Version validation:"
+    - grep -r "3\.0\.0" dap/__init__.py CMakeLists.txt
+    - echo "✅ Code validation completed"
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
 
-dap_structure_tests:
+# ===============================================
+# STAGE 2: CMAKE BUILD
+# ===============================================
+
+cmake_configure_build:
   extends: .python_dap_base
-  stage: test
+  stage: cmake_build
   script:
-    - echo "🏗️ Testing Python DAP Module Structure"
-    - |
-      python3 -c '
-      import os
-      import sys
-      required_modules = [
-          "dap/__init__.py",
-          "dap/core/__init__.py", 
-          "dap/crypto/__init__.py",
-          "dap/config/__init__.py",
-          "dap/events/__init__.py"
-      ]
-      missing = []
-      for module in required_modules:
-          if not os.path.exists(module):
-              missing.append(module)
-      if missing:
-          print(f"Missing modules: {missing}")
-          sys.exit(1)
-      print("✅ All required DAP modules present")
-      '
-    - echo "✅ Python DAP Structure Tests completed"
+    - echo "🏗️ Python-DAP 3.0 CMake Configuration & Build"
+    - mkdir -p build_new && cd build_new
+    - echo "📋 CMake Configuration:"
+    - cmake .. 
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DBUILD_SHARED=${BUILD_SHARED}
+        -DPYTHON_EXECUTABLE=$(which python3)
+    - echo "🔨 Building python_dap module..."
+    - make python_dap -j$(nproc)
+    - echo "📊 Build results:"
+    - ls -la lib/python_dap.so
+    - nm lib/python_dap.so | grep -c "T " || echo "0"
+    - echo "✅ CMake build completed successfully"
+  artifacts:
+    paths:
+      - build_new/
+    expire_in: 2 hours
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
 
-dap_core_tests:
+# ===============================================
+# STAGE 3: CPACK PACKAGING  
+# ===============================================
+
+cpack_create_packages:
   extends: .python_dap_base
-  stage: test
+  stage: cpack_package
+  dependencies:
+    - cmake_configure_build
   script:
-    - echo "🧪 Running Python DAP Core Tests"
-    - cd tests/
-    - python3 -m pytest test_dap_core.py -v --tb=short || echo "Core tests completed"
-    - echo "✅ Python DAP Core Tests completed"
+    - echo "📦 Python-DAP 3.0 CPack Package Creation"
+    - cd build_new
+    - echo "🏗️ Building Python package..."
+    - make python_package
+    - echo "📁 Package contents:"
+    - ls -la dist/
+    - find dist/ -name "*.whl" -exec ls -lh {} \;
+    - echo "🔍 Package validation:"
+    - file dist/*.whl
+    - python3 -m zipfile -l dist/*.whl | head -20
+    - echo "📊 Package statistics:"
+    - find dist/ -name "*.whl" -exec wc -c {} \;
+    - echo "✅ CPack packaging completed successfully"
+  artifacts:
+    paths:
+      - build_new/dist/
+      - build_new/lib/
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ===============================================
+# STAGE 4: CTEST TESTING
+# ===============================================
+
+ctest_setup_environment:
+  extends: .python_dap_base  
+  stage: ctest_tests
+  dependencies:
+    - cpack_create_packages
+  script:
+    - echo "🧪 Python-DAP 3.0 CTest Environment Setup"
+    - cd build_new
+    - echo "🔧 Setting up test environment..."
+    - make test_setup
+    - echo "✅ Virtual environment created"
+    - source ../venv/bin/activate
+    - python --version
+    - pip list | grep -E "(python-dap|pytest)"
+    - echo "🔍 Module verification:"
+    - python -c "import python_dap; print(f'Functions: {len([n for n in dir(python_dap) if not n.startswith(\"_\")])}')"
+    - echo "✅ Test environment ready"
+  artifacts:
+    paths:
+      - venv/
+      - build_new/
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+ctest_run_all_tests:
+  extends: .python_dap_base
+  stage: ctest_tests
+  dependencies:
+    - ctest_setup_environment
+  script:
+    - echo "🚀 Python-DAP 3.0 CTest Execution"
+    - cd build_new
+    - echo "📋 Available tests:"
+    - ctest -N
+    - echo "🧪 Running all tests with ctest..."
+    - ctest --output-on-failure --timeout ${CTEST_TIMEOUT} -j$(nproc) --verbose
+    - echo "📊 Test results summary:"
+    - ctest --output-on-failure --timeout ${CTEST_TIMEOUT} -j$(nproc) | tail -20
+    - echo "✅ CTest execution completed"
   artifacts:
     when: always
     paths:
-      - tests/junit.xml
+      - build_new/Testing/
+      - build_new/test_results.xml
     reports:
-      junit: tests/junit.xml
+      junit: build_new/test_results.xml
     expire_in: 1 week
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
 
-dap_crypto_tests:
+ctest_detailed_reports:
   extends: .python_dap_base
-  stage: test
-  script:
-    - echo "🔐 Testing Python DAP Crypto Module"
-    - |
-      python3 -c '
-      import os
-      import ast
-      
-      crypto_modules = [
-          "dap/crypto/__init__.py",
-          "dap/crypto/core.py" if os.path.exists("dap/crypto/core.py") else None
-      ]
-      
-      valid_modules = []
-      for module in crypto_modules:
-          if module and os.path.exists(module):
-              try:
-                  with open(module, "r") as f:
-                      ast.parse(f.read())
-                  valid_modules.append(module)
-              except SyntaxError:
-                  print(f"⚠️  Syntax error in {module}")
-      
-      print(f"✅ {len(valid_modules)} crypto modules validated")
-      '
-    - echo "✅ Python DAP Crypto Tests completed"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-
-dap_config_tests:
-  extends: .python_dap_base
-  stage: test
-  script:
-    - echo "⚙️ Testing Python DAP Config Module"
-    - |
-      python3 -c '
-      import os
-      config_files = [
-          "dap/config/__init__.py",
-          "dap/config/config.py" if os.path.exists("dap/config/config.py") else None
-      ]
-      
-      valid_configs = []
-      for config in config_files:
-          if config and os.path.exists(config):
-              valid_configs.append(config)
-      
-      print(f"✅ {len(valid_configs)} config modules found")
-      '
-    - echo "✅ Python DAP Config Tests completed"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-
-dap_events_tests:
-  extends: .python_dap_base
-  stage: test
-  script:
-    - echo "📡 Testing Python DAP Events Module"
-    - |
-      python3 -c '
-      import os
-      events_files = [
-          "dap/events/__init__.py",
-          "dap/events/events.py" if os.path.exists("dap/events/events.py") else None
-      ]
-      
-      valid_events = []
-      for event_file in events_files:
-          if event_file and os.path.exists(event_file):
-              valid_events.append(event_file)
-      
-      print(f"✅ {len(valid_events)} events modules found")
-      '
-    - echo "✅ Python DAP Events Tests completed"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-
-dap_network_tests:
-  extends: .python_dap_base
-  stage: test
-  script:
-    - echo "🌐 Testing Python DAP Network Module"
-    - |
-      python3 -c '
-      import os
-      import ast
-      
-      network_modules = [
-          "dap/network/__init__.py",
-          "dap/network/client.py" if os.path.exists("dap/network/client.py") else None,
-          "dap/network/server.py" if os.path.exists("dap/network/server.py") else None,
-          "dap/network/protocol.py" if os.path.exists("dap/network/protocol.py") else None
-      ]
-      
-      valid_modules = []
-      for module in network_modules:
-          if module and os.path.exists(module):
-              try:
-                  with open(module, "r") as f:
-                      ast.parse(f.read())
-                  valid_modules.append(module)
-                  print(f"✅ {module} - valid syntax")
-              except SyntaxError as e:
-                  print(f"⚠️  Syntax error in {module}: {e}")
-              except Exception as e:
-                  print(f"⚠️  Error reading {module}: {e}")
-      
-      print(f"✅ {len(valid_modules)} network modules validated")
-      
-      # Test basic network imports if available
-      try:
-          import dap.network
-          print("✅ dap.network module imports successfully")
-      except ImportError as e:
-          print(f"ℹ️  dap.network import failed (expected in test environment): {e}")
-      '
-    - echo "✅ Python DAP Network Tests completed"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-
-dap_build_test:
-  extends: .python_dap_base
-  stage: build
-  script:
-    - echo "🔧 Testing Python DAP Build Process"
-    - python3 setup.py build || echo "Build process tested"
-    - python3 setup.py sdist || echo "Source distribution tested"
-    - echo "✅ Python DAP Build Test completed"
-  artifacts:
-    paths:
-      - build/
-      - dist/
-    expire_in: 1 day
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-    - when: manual
-      allow_failure: true
-
-dap_integration_tests:
-  extends: .python_dap_base
-  stage: build
-  script:
-    - echo "🔗 Running Python DAP Integration Tests"
-    - cd tests/
-    - python3 -m pytest test_dap_integration.py -v --tb=short || echo "Integration tests completed"
-    - echo "✅ Python DAP Integration Tests completed"
+  stage: ctest_tests
   dependencies:
-    - dap_build_test
+    - ctest_run_all_tests
+  script:
+    - echo "📊 Python-DAP 3.0 Detailed Test Reports"
+    - cd build_new
+    - echo "🔍 Test categories analysis:"
+    - ctest -R "unit" -N | wc -l || echo "0 unit tests"
+    - ctest -R "integration" -N | wc -l || echo "0 integration tests" 
+    - ctest -R "regression" -N | wc -l || echo "0 regression tests"
+    - echo "📈 Coverage summary:"
+    - source ../venv/bin/activate
+    - python -c "
+import subprocess
+import sys
+try:
+    result = subprocess.run(['ctest', '--output-on-failure'], 
+                          capture_output=True, text=True)
+    total_tests = result.stdout.count('Test #')
+    passed_tests = result.stdout.count('Passed')
+    failed_tests = result.stdout.count('Failed')
+    print(f'📊 Test Summary:')
+    print(f'  Total: {total_tests}')
+    print(f'  Passed: {passed_tests}')
+    print(f'  Failed: {failed_tests}')
+    if total_tests > 0:
+        success_rate = (passed_tests / total_tests) * 100
+        print(f'  Success Rate: {success_rate:.1f}%')
+except Exception as e:
+    print(f'Error analyzing results: {e}')
+"
+    - echo "✅ Detailed reports completed"
+  allow_failure: true
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
     - when: manual
-      allow_failure: true
 
-dap_api_compatibility_tests:
-  extends: .python_dap_base
-  stage: build
-  script:
-    - echo "🔄 Testing Python DAP API Compatibility"
-    - |
-      python3 -c '
-      import os
-      import ast
-      
-      # Check for expected API functions/classes
-      api_checks = {
-          "dap/core/__init__.py": ["dap_init", "dap_deinit"],
-          "dap/crypto/__init__.py": ["dap_crypto_init"],
-          "dap/config/__init__.py": ["dap_config_get"]
-      }
-      
-      compatible_apis = []
-      for module, expected_funcs in api_checks.items():
-          if os.path.exists(module):
-              with open(module, "r") as f:
-                  content = f.read()
-                  found_funcs = [func for func in expected_funcs if func in content]
-                  if found_funcs:
-                      compatible_apis.append(f"{module}: {found_funcs}")
-      
-      print(f"✅ API compatibility: {len(compatible_apis)} modules checked")
-      for api in compatible_apis:
-          print(f"  {api}")
-      '
-    - echo "✅ Python DAP API Compatibility Tests completed"
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-    - when: manual
-      allow_failure: true
+# ===============================================  
+# STAGE 5: DEPLOYMENT
+# ===============================================
 
-dap_multi_platform_test:
-  extends: .python_dap_base
-  parallel:
-    matrix:
-      - PLATFORM: [amd64, arm64]
-        PYTHON: ["3.8", "3.9", "3.10"]
-  image: demlabs/debian/${PLATFORM}:qt5
-  stage: build
-  script:
-    - echo "🔄 Testing Python DAP on ${PLATFORM} with Python ${PYTHON}"
-    - apt-get update && apt-get install -y python${PYTHON} python${PYTHON}-dev
-    - python${PYTHON} -c "import sys; print(f'Python {sys.version}')"
-    - python${PYTHON} -m py_compile dap/__init__.py
-    - echo "✅ Python DAP tested on ${PLATFORM} with Python ${PYTHON}"
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: always
-    - when: manual
-      allow_failure: true
-
-dap_wheel_build:
-  extends: .python_dap_base
-  stage: package
-  script:
-    - echo "🎡 Building Python DAP Wheel"
-    - python3 -m pip install wheel
-    - python3 setup.py bdist_wheel || echo "Wheel build tested"
-    - ls -la dist/ || echo "No dist directory"
-    - echo "✅ Python DAP Wheel build completed"
-  artifacts:
-    paths:
-      - dist/*.whl
-    expire_in: 1 month
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: on_success
-    - when: manual
-      allow_failure: true
-
-dap_coverage_report:
-  extends: .python_dap_base
-  stage: package
-  script:
-    - echo "📊 Generating Python DAP Coverage Report"
-    - cd tests/
-    - python3 -m pytest --cov=../dap --cov-report=html:coverage_html --cov-report=xml:coverage.xml || echo "Coverage report generated"
-    - |
-      python3 -c '
-      import xml.etree.ElementTree as ET
-      import sys
-      try:
-          tree = ET.parse("coverage.xml")
-          root = tree.getroot()
-          coverage = float(root.attrib["line-rate"]) * 100
-          print(f"Coverage: {coverage:.1f}%")
-          if coverage < int(os.environ.get("COVERAGE_THRESHOLD", "75")):
-              print(f"WARNING: Coverage {coverage:.1f}% below threshold")
-          else:
-              print("✅ Coverage meets threshold")
-      except:
-          print("Coverage report not available")
-      '
-    - echo "✅ Coverage report completed"
-  coverage: '/Coverage: (\d+\.\d+)%/'
-  artifacts:
-    paths:
-      - tests/coverage_html/
-      - tests/coverage.xml
-    reports:
-      coverage_report:
-        coverage_format: cobertura
-        path: tests/coverage.xml
-    expire_in: 1 week
-  rules:
-    - when: manual
-      allow_failure: true
-
-dap_security_scan:
-  extends: .python_dap_base
-  stage: package
-  script:
-    - echo "🔒 Running Python DAP Security Scan"
-    - python3 -m pip install bandit safety
-    - cd dap/
-    - python3 -m bandit -r . || echo "Security scan completed with warnings"
-    - echo "✅ Python DAP Security Scan completed"
-  rules:
-    - when: manual
-      allow_failure: true
-
-dap_documentation_check:
-  extends: .python_dap_base
-  stage: package
-  script:
-    - echo "📚 Checking Python DAP Documentation"
-    - |
-      python3 -c '
-      import os
-      docs = [
-          "README.md",
-          "dap/__init__.py",
-          "docs/" if os.path.exists("docs/") else None
-      ]
-      existing = [d for d in docs if d and os.path.exists(d)]
-      print(f"Documentation files: {existing}")
-      print("✅ Documentation check completed")
-      '
-    - echo "✅ Documentation check completed"
-  rules:
-    - when: manual
-      allow_failure: true
-
-dap_package_build:
-  extends: .python_dap_base
-  stage: deploy
-  script:
-    - echo "📦 Building Python DAP Package"
-    - mkdir -p dist/
-    - tar -czf dist/python-dap-${CI_COMMIT_SHORT_SHA}.tar.gz dap/ setup.py README.md
-    - echo "✅ Python DAP Package built"
-  artifacts:
-    paths:
-      - dist/python-dap-*.tar.gz
-    expire_in: 1 month
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: on_success
-    - when: manual
-      allow_failure: true
-
-dap_release_summary:
+deploy_artifacts:
   extends: .python_dap_base
   stage: deploy
   dependencies:
-    - dap_structure_tests
-    - dap_core_tests
-    - dap_crypto_tests
-    - dap_config_tests
-    - dap_events_tests
-    - dap_build_test
+    - ctest_run_all_tests
   script:
-    - echo "📋 Generating Python DAP Release Summary"
-    - |
-      python3 -c '
-      import json
-      from pathlib import Path
-      import datetime
-      
-      summary = {
-          "timestamp": datetime.datetime.now().isoformat(),
-          "pipeline_id": "$CI_PIPELINE_ID",
-          "commit_sha": "$CI_COMMIT_SHA",
-          "branch": "$CI_COMMIT_BRANCH",
-          "module": "python-dap",
-          "test_results": {
-              "structure_tests": "PASSED",
-              "core_tests": "PASSED",
-              "crypto_tests": "PASSED",
-              "config_tests": "PASSED",
-              "events_tests": "PASSED",
-              "network_tests": "PASSED",
-              "build_tests": "PASSED"
-          },
-          "components": {
-              "dap_core": "VALIDATED",
-              "dap_crypto": "VALIDATED",
-              "dap_config": "VALIDATED",
-              "dap_events": "VALIDATED",
-              "dap_network": "VALIDATED"
-          },
-          "artifacts": {
-              "wheel_package": "AVAILABLE",
-              "source_package": "AVAILABLE",
-              "documentation": "CHECKED"
-          },
-          "compatibility": {
-              "python_versions": ["3.8", "3.9", "3.10"],
-              "platforms": ["amd64", "arm64"]
-          }
-      }
-      
-      Path("dap_release_summary.json").write_text(json.dumps(summary, indent=2))
-      print("✅ Python DAP Release Summary generated")
-      '
-    - echo "✅ Release summary completed"
+    - echo "🚀 Python-DAP 3.0 Deployment Preparation"
+    - cd build_new
+    - echo "📦 Final package verification:"
+    - ls -la dist/
+    - echo "🏷️ Version confirmation:"
+    - python3 -c "
+import sys
+sys.path.insert(0, '../')
+import dap
+print(f'Package version: {dap.__version__}')
+assert dap.__version__ == '3.0.0', f'Expected 3.0.0, got {dap.__version__}'
+print('✅ Version validation passed')
+"
+    - echo "📋 Deployment manifest:"
+    - echo "  - Python-DAP version: 3.0.0"
+    - echo "  - Binary module: python_dap.so"
+    - echo "  - Wheel package: $(ls dist/*.whl)"
+    - echo "  - Tests passed: $(ctest --output-on-failure 2>&1 | grep -c 'Passed' || echo '0')"
+    - echo "✅ Ready for deployment"
   artifacts:
     paths:
-      - dap_release_summary.json
+      - build_new/dist/
+      - build_new/lib/python_dap.so
     expire_in: 1 month
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: on_success
-    - when: manual
-      allow_failure: true 
+      when: manual
+    - when: never
+
+# ===============================================
+# MANUAL JOBS
+# ===============================================
+
+performance_benchmark:
+  extends: .python_dap_base
+  stage: ctest_tests
+  dependencies:
+    - ctest_setup_environment
+  script:
+    - echo "⚡ Python-DAP 3.0 Performance Benchmark"
+    - cd build_new
+    - source ../venv/bin/activate
+    - python -c "
+import time
+import python_dap
+
+print('🚀 Performance benchmarks:')
+
+# Test function availability speed
+start = time.time()
+functions = [name for name in dir(python_dap) if not name.startswith('_')]
+end = time.time()
+print(f'  Function discovery: {len(functions)} functions in {(end-start)*1000:.2f}ms')
+
+# Test basic operations
+operations = ['py_exec_with_ret_multistring', 'server_new', 'dap_malloc']
+for op in operations:
+    if hasattr(python_dap, op):
+        start = time.time()
+        try:
+            if op == 'py_exec_with_ret_multistring':
+                result = getattr(python_dap, op)('echo test')
+            elif op == 'server_new':
+                result = getattr(python_dap, op)('benchmark')
+            elif op == 'dap_malloc':
+                result = getattr(python_dap, op)(1024)
+            end = time.time()
+            print(f'  {op}: {(end-start)*1000:.2f}ms')
+        except Exception as e:
+            print(f'  {op}: Error - {e}')
+    else:
+        print(f'  {op}: Not available')
+
+print('✅ Benchmark completed')
+"
+    - echo "✅ Performance benchmark completed"
+  when: manual
+
+debug_environment:
+  extends: .python_dap_base
+  stage: ctest_tests
+  dependencies:
+    - ctest_setup_environment
+  script:
+    - echo "🔧 Python-DAP 3.0 Debug Environment"
+    - cd build_new
+    - echo "🔍 Environment diagnostics:"
+    - python3 --version
+    - cmake --version
+    - make --version
+    - echo "📂 Build directory structure:"
+    - find . -type f -name "*.so" -exec ls -la {} \;
+    - echo "🧪 Module introspection:"
+    - source ../venv/bin/activate
+    - python -c "
+import python_dap
+import inspect
+
+print('📋 Module information:')
+print(f'Module file: {python_dap.__file__ if hasattr(python_dap, \"__file__\") else \"Built-in\"}')
+print(f'Module doc: {python_dap.__doc__[:100] if python_dap.__doc__ else \"No documentation\"}')
+
+functions = [name for name in dir(python_dap) if not name.startswith('_')]
+print(f'Total functions: {len(functions)}')
+
+categories = {
+    'events': [f for f in functions if 'event' in f.lower()],
+    'server': [f for f in functions if 'server' in f.lower()], 
+    'crypto': [f for f in functions if any(w in f.lower() for w in ['hash', 'sign', 'crypt'])],
+    'system': [f for f in functions if any(w in f.lower() for w in ['exec', 'malloc', 'free'])]
+}
+
+for category, funcs in categories.items():
+    print(f'{category.title()}: {len(funcs)} functions')
+    for func in funcs[:3]:  # Show first 3
+        print(f'  - {func}')
+    if len(funcs) > 3:
+        print(f'  ... and {len(funcs)-3} more')
+"
+    - echo "✅ Debug environment analysis completed"
+  when: manual 

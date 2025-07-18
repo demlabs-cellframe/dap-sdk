@@ -87,8 +87,8 @@ class TestDapSystem:
         from dap.core.system import DapSystem
         
         system = DapSystem()
-        assert hasattr(system, 'exec_with_ret_multistring')
-        assert callable(system.exec_with_ret_multistring)
+        assert hasattr(system, 'py_exec_with_ret_multistring')
+        assert callable(system.py_exec_with_ret_multistring)
 
 
 class TestDapLogging:

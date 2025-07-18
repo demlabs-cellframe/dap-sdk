@@ -11,7 +11,7 @@ from typing import Optional
 
 # Import DAP system functions
 from python_dap import (
-    exec_with_ret_multistring,
+    py_exec_with_ret_multistring,
     dap_malloc, dap_free, dap_calloc, dap_realloc
 )
 
@@ -61,10 +61,22 @@ class DapSystem:
             raise DapSystemError("Empty command provided")
         
         # Call C function: exec_with_ret_multistring()
-        result = exec_with_ret_multistring(command)
+        result = py_exec_with_ret_multistring(command)
         
         self._logger.debug(f"Executed DAP command: {command}")
         return result if result else ""
+    
+    def exec_with_ret_multistring(self, command: str) -> str:
+        """
+        Execute command and return result as multistring (alias for execute_dap_command)
+        
+        Args:
+            command: Command to execute
+            
+        Returns:
+            Command output as string
+        """
+        return self.execute_dap_command(command)
     
     def validate_command(self, command: str) -> bool:
         """

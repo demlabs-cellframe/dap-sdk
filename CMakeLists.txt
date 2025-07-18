@@ -17,7 +17,7 @@ option(BUILD_TESTS "Build tests" OFF)
 
 if(BUILD_SHARED)
     message("[+] Python-DAP: Building as SHARED → embedding static DAP SDK")
-    set(PYTHON_DAP_LIB_TYPE SHARED)
+    set(PYTHON_DAP_LIB_TYPE MODULE)  # MODULE instead of SHARED for Python extension
     set(PYTHON_DAP_EMBED_SDK TRUE)
     set(PYTHON_DAP_BUILD_MODE "shared")
 else()
@@ -51,11 +51,14 @@ else()
     message("[+] Python-DAP: NO SDK embedding - static mode for plugin integration")
 endif()
 
-# Find Python
+# =========================================
+# PYTHON SETUP 
+# =========================================
+# Find Python with all needed components
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # =========================================
-# PYTHON-DAP LIBRARY CREATION
+# PYTHON-DAP EXTENSION MODULE CREATION
 # =========================================
 # Core python_dap source files
 set(PYTHON_DAP_SOURCES
@@ -74,19 +77,27 @@ set(PYTHON_DAP_SOURCES
     src/python_gdb.c
 )
 
-# Create python_dap library with conditional type
-add_library(python_dap ${PYTHON_DAP_LIB_TYPE} ${PYTHON_DAP_SOURCES})
-
-# Set properties based on build mode
+# Create python_dap as proper Python extension module
 if(BUILD_SHARED)
+    # Use Python3_add_library for proper Python extension
+    Python3_add_library(python_dap MODULE ${PYTHON_DAP_SOURCES})
+    
+    # Set proper extension properties
     set_target_properties(python_dap PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "python_dap"
+        SUFFIX "${Python3_SOABI}.so"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
         POSITION_INDEPENDENT_CODE ON
-        VERSION 2.4.0
-        SOVERSION 2
+            VERSION 3.0.0
+    SOVERSION 3
     )
+    
     target_compile_definitions(python_dap PRIVATE PYTHON_DAP_BUILDING_SHARED)
     target_compile_definitions(python_dap INTERFACE PYTHON_DAP_USING_SHARED)
 else()
+    # Static library for plugin integration
+    add_library(python_dap STATIC ${PYTHON_DAP_SOURCES})
     target_compile_definitions(python_dap INTERFACE PYTHON_DAP_USING_STATIC)
 endif()
 
@@ -98,7 +109,16 @@ if(PYTHON_DAP_EMBED_SDK)
     
     # Link with final DAP SDK library (contains all modules)
     # Link all libraries in one command for proper static linking order
-    target_link_libraries(python_dap PRIVATE -Wl,--export-dynamic dap_sdk dap_crypto_XKCP dap_crypto_kyber512 dap_link_manager dap_core_unix dap_json-c rt)
+    target_link_libraries(python_dap PRIVATE 
+        dap_sdk 
+        dap_crypto_XKCP 
+        dap_crypto_kyber512 
+        dap_link_manager 
+        dap_core_unix 
+        dap_json-c 
+        rt
+        pthread
+    )
     
     # Include DAP SDK directories
     target_include_directories(python_dap PRIVATE
@@ -129,8 +149,10 @@ target_include_directories(python_dap PUBLIC
     include
 )
 
-# Python linking
-target_link_libraries(python_dap PRIVATE -Wl,--export-dynamic ${Python3_LIBRARIES})
+# Python linking - only link Python for extension modules
+if(BUILD_SHARED)
+    target_link_libraries(python_dap PRIVATE ${Python3_LIBRARIES})
+endif()
 
 # Add XKCP configuration definitions
 target_compile_definitions(python_dap PRIVATE
@@ -140,24 +162,194 @@ target_compile_definitions(python_dap PRIVATE
     KeccakP1600_useLaneComplementing=0
 )
 
-# Set library properties
-set_target_properties(python_dap PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "python_dap"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+# =========================================
+# VIRTUAL ENVIRONMENT SETUP
+# =========================================
+# Create virtual environment if it doesn't exist
+set(VENV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/venv")
+set(VENV_PYTHON "${VENV_DIR}/bin/python")
+set(VENV_PIP "${VENV_DIR}/bin/pip")
+
+# Custom target to create virtual environment
+add_custom_target(venv
+    COMMAND test -d ${VENV_DIR} || ${Python3_EXECUTABLE} -m venv ${VENV_DIR}
+    COMMAND ${VENV_PIP} install --upgrade pip
+    COMMENT "Creating/updating virtual environment"
+    VERBATIM
 )
 
-# Install library
-install(TARGETS python_dap
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
-)
-
-# Tests
+# =========================================
+# TESTING SUPPORT
+# =========================================
 if(BUILD_TESTS)
     enable_testing()
-    # add_subdirectory(tests/c_tests)
+    
+    # Install pytest if not available
+    add_custom_target(pytest_install
+        DEPENDS venv
+        COMMAND ${VENV_PIP} install pytest pytest-timeout pytest-cov build wheel
+        COMMENT "Installing pytest and build dependencies"
+        VERBATIM
+    )
+    
+    # Clean previous package builds
+    add_custom_target(clean_package
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_SOURCE_DIR}/build
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_SOURCE_DIR}/dist
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_SOURCE_DIR}/python_dap.egg-info
+        COMMENT "Cleaning previous package builds"
+        VERBATIM
+    )
+    
+    # Build Python package (wheel)
+    add_custom_target(python_package
+        DEPENDS python_dap pytest_install clean_package
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${VENV_PYTHON} setup.py bdist_wheel
+        COMMENT "Building Python wheel package"
+        VERBATIM
+    )
+    
+    # Install package in virtual environment
+    add_custom_target(test_setup
+        DEPENDS python_package
+        # Uninstall any existing version first
+        COMMAND ${VENV_PIP} uninstall -y python-dap || true
+        # Install the newly built wheel
+        COMMAND ${VENV_PIP} install --force-reinstall --find-links ${CMAKE_CURRENT_SOURCE_DIR}/dist python-dap
+        COMMENT "Installing python-dap package in virtual environment"
+        VERBATIM
+    )
+    
+    # Unit tests
+    add_custom_target(unit_tests
+        DEPENDS test_setup
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR}/tests && ${VENV_PYTHON} -m pytest unit/ -v
+        COMMENT "Running unit tests"
+        VERBATIM
+    )
+    
+    # Integration tests  
+    add_custom_target(integration_tests
+        DEPENDS test_setup
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR}/tests && ${VENV_PYTHON} -m pytest integration/ -v
+        COMMENT "Running integration tests"
+        VERBATIM
+    )
+    
+    # Regression tests
+    add_custom_target(regression_tests
+        DEPENDS test_setup
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR}/tests && ${VENV_PYTHON} -m pytest regression/ -v
+        COMMENT "Running regression tests"
+        VERBATIM
+    )
+    
+    # All tests together
+    add_custom_target(python_tests
+        DEPENDS test_setup
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR}/tests && ${VENV_PYTHON} -m pytest -v
+        COMMENT "Running all Python DAP tests"
+        VERBATIM
+    )
+    
+    # Add individual CTest entries for automatic discovery
+    add_test(
+        NAME python_dap_unit_tests
+        COMMAND ${CMAKE_COMMAND} --build . --target unit_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+    
+    add_test(
+        NAME python_dap_integration_tests  
+        COMMAND ${CMAKE_COMMAND} --build . --target integration_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+    
+    add_test(
+        NAME python_dap_regression_tests  
+        COMMAND ${CMAKE_COMMAND} --build . --target regression_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+    
+    add_test(
+        NAME python_dap_all_tests  
+        COMMAND ${CMAKE_COMMAND} --build . --target python_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+    
+    # Set test properties
+    set_tests_properties(python_dap_unit_tests PROPERTIES TIMEOUT 300)
+    set_tests_properties(python_dap_integration_tests PROPERTIES TIMEOUT 600)
+    set_tests_properties(python_dap_regression_tests PROPERTIES TIMEOUT 300)
+    set_tests_properties(python_dap_all_tests PROPERTIES TIMEOUT 900)
 endif()
+
+# =========================================
+# PACKAGING SUPPORT (CPack)
+# =========================================
+# Package configuration
+set(CPACK_PACKAGE_NAME "python-dap")
+set(CPACK_PACKAGE_VERSION "3.0.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Python bindings for DAP SDK")
+set(CPACK_PACKAGE_VENDOR "Demlabs")
+set(CPACK_PACKAGE_CONTACT "support@demlabs.net")
+
+# Package files
+install(TARGETS python_dap
+    LIBRARY DESTINATION lib/python3/dist-packages
+    ARCHIVE DESTINATION lib
+)
+
+install(FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/python_dap.so
+    DESTINATION lib/python3/dist-packages
+    OPTIONAL
+)
+
+install(DIRECTORY 
+    ${CMAKE_CURRENT_SOURCE_DIR}/dap/
+    DESTINATION lib/python3/dist-packages/dap
+    FILES_MATCHING PATTERN "*.py"
+)
+
+install(FILES
+    README.md
+    LICENSE  
+    DESTINATION share/doc/python-dap
+    OPTIONAL
+)
+
+# Debian package specific
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "python3 (>= 3.8), python3-dev")
+set(CPACK_DEBIAN_PACKAGE_SECTION "python")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+
+# CPack generators
+set(CPACK_GENERATOR "DEB;TGZ")
+include(CPack)
+
+# =========================================
+# CUSTOM BUILD TARGETS
+# =========================================
+# Target to build and install in venv
+add_custom_target(install_venv
+    DEPENDS python_package venv
+    # Uninstall any existing version first
+    COMMAND ${VENV_PIP} uninstall -y python-dap || true
+    # Install the newly built wheel
+    COMMAND ${VENV_PIP} install --force-reinstall --find-links ${CMAKE_CURRENT_SOURCE_DIR}/dist python-dap
+    COMMAND ${VENV_PYTHON} -c "import python_dap; print(f'✅ Module loaded: {len(dir(python_dap))} functions')"
+    COMMENT "Installing python-dap package in virtual environment"
+    VERBATIM
+)
+
+# Target to validate installation
+add_custom_target(validate_install
+    DEPENDS install_venv
+    COMMAND ${VENV_PYTHON} -c "import python_dap; events_funcs = [f for f in dir(python_dap) if 'dap_events' in f]; print(f'Events functions: {len(events_funcs)}'); print('✅ SUCCESS: All events functions available' if len(events_funcs) >= 10 else '❌ ERROR: Missing events functions'); exit(0 if len(events_funcs) >= 10 else 1)"
+    COMMENT "Validating python_dap installation"
+    VERBATIM
+)
 
 # =========================================
 # PYTHON-DAP ARCHITECTURE SUMMARY
@@ -165,6 +357,7 @@ endif()
 message("[+] ===========================================")
 message("[+] PYTHON-DAP BUILD ARCHITECTURE:")
 message("[+] - Library mode: ${PYTHON_DAP_BUILD_MODE}")
+message("[+] - Library type: ${PYTHON_DAP_LIB_TYPE}")
 if(PYTHON_DAP_EMBED_SDK)
     message("[+] - DAP SDK: embedded static (${DAPSDK_MODULES})")
     message("[+] - SDK linking: dap_sdk (final combined library)")
@@ -172,5 +365,28 @@ else()
     message("[+] - DAP SDK: NOT embedded (static mode)")
     message("[+] - SDK linking: NONE (for plugin integration)")
 endif()
-message("[+] - Python linking: ${Python3_LIBRARIES}")
+message("[+] - Python version: ${Python3_VERSION}")
+message("[+] - Python include: ${Python3_INCLUDE_DIRS}")
+message("[+] - Python libraries: ${Python3_LIBRARIES}")
+message("[+] - Virtual env: ${VENV_DIR}")
+if(BUILD_TESTS)
+    message("[+] - Tests: ENABLED")
+    message("[+] - Build pipeline:")
+    message("[+]   1. make python_dap - compile C extension")
+    message("[+]   2. make python_package - build wheel package")
+    message("[+]   3. make test_setup - install package in venv")
+    message("[+]   4. make python_tests - run tests")
+    message("[+] - Test targets:")
+    message("[+]   • make unit_tests - run unit tests") 
+    message("[+]   • make integration_tests - run integration tests")
+    message("[+]   • make regression_tests - run regression tests")
+    message("[+]   • make python_tests - run ALL tests")
+    message("[+]   • ctest - run all tests via CTest")
+    message("[+]   • ctest -R unit - run only unit tests")
+    message("[+]   • ctest -R integration - run only integration tests")
+endif()
+message("[+] - Package targets:")
+message("[+]   • make python_package - build wheel package")
+message("[+]   • make install_venv - build and install in venv")
+message("[+]   • cpack - create system distribution package")
 message("[+] ===========================================")

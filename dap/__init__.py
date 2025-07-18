@@ -5,7 +5,7 @@ Main DAP package providing crypto, network, and database functionality.
 Clean API without fallbacks or mocks.
 """
 
-__version__ = "1.0.0"
+__version__ = "3.0.0"
 
 # Import all existing DAP modules
 from . import common, config, core, crypto, events, global_db, network
