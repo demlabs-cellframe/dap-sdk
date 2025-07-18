@@ -17,7 +17,8 @@ elseif(LINUX OR ANDROID)
     set (DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_LINUX_HEADERS})
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${DAP_IO_HEADERS} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS})
+# Use universal DAP library macro  
+dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
 if(DAPSDK_MODULES MATCHES "ssl-support")
@@ -28,15 +29,17 @@ if(UNIX)
   if(NOT ANDROID)
       target_link_libraries(${PROJECT_NAME} pthread)
   endif()
-
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+target_include_directories(${PROJECT_NAME} PUBLIC ../core/src/unix)
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll)
-    target_link_libraries(${PROJECT_NAME} ws2_32)
+    # Add WIN32 dependencies to final library deps
+    list(APPEND IO_LIBS "ws2_32")
+    set(DAP_IO_DEPS "${IO_LIBS}" CACHE INTERNAL "dap_io external dependencies")
 elseif (LINUX OR ANDROID)
     target_include_directories(${PROJECT_NAME} INTERFACE ./linux)
 endif()

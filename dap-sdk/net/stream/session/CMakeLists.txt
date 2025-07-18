@@ -4,13 +4,19 @@ project (dap_session)
 file(GLOB SESSION_SRCS *.c)
 file(GLOB SESSION_HDRS include/*.h)
 
-add_library(${PROJECT_NAME} STATIC ${SESSION_SRCS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${SESSION_SRCS} HEADERS ${SESSION_HDRS})
+
+target_link_libraries(dap_session dap_core dap_crypto)
 
 include_directories(include/)
-target_link_libraries(dap_session dap_core dap_crypto)
 target_include_directories(dap_session INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/src/XKCP/lib/common)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/src/XKCP/lib/high/Keccak/FIPS202)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${SESSION_HDRS}")

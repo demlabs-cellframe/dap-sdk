@@ -224,7 +224,8 @@ if ( DAP_PQLR)
 endif()
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
 
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -274,18 +275,27 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
-target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+# Store dependencies for final library - no linking of OBJECT targets
+set(CRYPTO_LIBS "dap_crypto_kyber512;dap_json-c")
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    list(APPEND CRYPTO_LIBS "secp256k1")
+endif()
+if(UNIX)
+    list(APPEND CRYPTO_LIBS "m")
+endif()
+
+target_link_libraries(dap_crypto dap_core dap_json-c)
 
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     target_link_libraries(dap_crypto secp256k1)
 endif()
-
 
 if(UNIX)
   target_link_libraries(dap_crypto m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
+target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
 if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)

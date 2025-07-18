@@ -28,12 +28,16 @@ if (DAP_USE_RPMALLOC)
     file (GLOB CORE_SRCS ${CORE_SRCS} ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
+
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c
+    ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 if (DAP_USE_RPMALLOC)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc/rpmalloc/)
     target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
@@ -60,7 +64,9 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
-target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
+
+# Store dependencies for final library - no linking of OBJECT targets
+set(DAP_CORE_DEPS "${CORE_LIBRARIES};dap_json-c" CACHE INTERNAL "dap_core external dependencies")
 
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")

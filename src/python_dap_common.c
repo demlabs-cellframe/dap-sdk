@@ -105,51 +105,5 @@ int py_dap_common_module_init(PyObject* module) {
     return 0;
 }
 
-// Global DB wrapper implementations - simplified
 
-int py_dap_global_db_init(void) {
-    // Simplified global db init - would call dap_global_db_init()
-    return 0;
-}
-
-void py_dap_global_db_deinit(void) {
-    // Simplified global db deinit
-}
-
-int py_dap_global_db_set(const char* group, const char* key, const void* value, size_t value_size) {
-    if (!group || !key || !value || value_size == 0) {
-        return -1;
-    }
-    
-    // Simplified set operation - would use proper DAP global db API
-    return 0;
-}
-
-void* py_dap_global_db_get(const char* group, const char* key, size_t* value_size) {
-    if (!group || !key || !value_size) {
-        return NULL;
-    }
-    
-    // Simplified get operation - would use proper DAP global db API
-    *value_size = 0;
-    return NULL;
-}
-
-int py_dap_global_db_del(const char* group, const char* key) {
-    if (!group || !key) {
-        return -1;
-    }
-    
-    // Simplified delete operation - would use proper DAP global db API
-    return 0;
-}
-
-// Events wrapper implementations
-int py_dap_events_init(uint32_t a_worker_threads_count, uint32_t a_connections_max) {
-    // Initialize events system with parameters
-    return 0;
-}
-
-void py_dap_events_deinit(void) {
-    // Deinitialize events system
-} 
+// Events functions implemented in python_dap_events.c 

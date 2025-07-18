@@ -6,6 +6,11 @@
 #include "python_dap.h"
 #include "dap_common.h"
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#define LOG_TAG "python_dap_logging"
 
 // Logging wrapper implementations using REAL DAP SDK functions
 
@@ -37,7 +42,8 @@ void py_dap_log_it(int a_level, const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(a_level, a_format, args);
+    // Use the DAP SDK log function directly
+    _log_it(NULL, 0, LOG_TAG, a_level, a_format, args);
     va_end(args);
 }
 
@@ -46,7 +52,8 @@ void py_dap_log_it_debug(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_DEBUG, a_format, args);
+    // Use the DAP SDK log function directly
+    _log_it(NULL, 0, LOG_TAG, L_DEBUG, a_format, args);
     va_end(args);
 }
 
@@ -55,7 +62,7 @@ void py_dap_log_it_info(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_INFO, a_format, args);
+    _log_it(NULL, 0, LOG_TAG, L_INFO, a_format, args);
     va_end(args);
 }
 
@@ -64,7 +71,7 @@ void py_dap_log_it_notice(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_NOTICE, a_format, args);
+    _log_it(NULL, 0, LOG_TAG, L_NOTICE, a_format, args);
     va_end(args);
 }
 
@@ -73,7 +80,7 @@ void py_dap_log_it_warning(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_WARNING, a_format, args);
+    _log_it(NULL, 0, LOG_TAG, L_WARNING, a_format, args);
     va_end(args);
 }
 
@@ -82,7 +89,7 @@ void py_dap_log_it_error(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_ERROR, a_format, args);
+    _log_it(NULL, 0, LOG_TAG, L_ERROR, a_format, args);
     va_end(args);
 }
 
@@ -91,7 +98,7 @@ void py_dap_log_it_critical(const char* a_format, ...) {
     
     va_list args;
     va_start(args, a_format);
-    dap_log_it_va(L_CRITICAL, a_format, args);
+    _log_it(NULL, 0, LOG_TAG, L_CRITICAL, a_format, args);
     va_end(args);
 }
 

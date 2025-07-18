@@ -32,9 +32,10 @@ if(BUILD_WITH_GDB_DRIVER_SQLITE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_THREADSAFE=2")
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${dap_global_db_SRC} ${dap_global_db_HDR})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${dap_global_db_SRC} HEADERS ${dap_global_db_HDR})
 
-target_link_libraries(${PROJECT_NAME} ${dap_global_db_LIBS})
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto ${dap_global_db_LIBS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

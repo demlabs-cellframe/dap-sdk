@@ -9,9 +9,9 @@ add_library(${PROJECT_NAME} STATIC ${DAP_LINK_MANAGER_HEADERS} ${DAP_LINK_MANAGE
 
 
 if(DAPSDK_MODULES MATCHES "ssl-support")
-    target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_json-c wolfssl)
+    target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_session dap_json-c wolfssl)
 else()
-    target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_json-c)
+    target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_session dap_json-c)
 endif()
 if(UNIX AND NOT ANDROID AND NOT DARWIN)
     target_link_libraries(${PROJECT_NAME} rt)
@@ -21,6 +21,10 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE .)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ../client/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ../stream/stream/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ../stream/ch/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../global-db/include)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_LINK_MANAGER_HEADERS}")

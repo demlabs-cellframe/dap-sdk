@@ -13,33 +13,9 @@
 
 // Core wrapper implementations (common init functions moved to python_dap_common.c)
 
-// Memory management wrappers - use standard C functions
-
-void* py_dap_malloc(size_t size) {
-    return malloc(size);
-}
-
-void py_dap_free(void* ptr) {
-    free(ptr);
-}
-
-void* py_dap_calloc(size_t num, size_t size) {
-    return calloc(num, size);
-}
-
-void* py_dap_realloc(void* ptr, size_t size) {
-    return realloc(ptr, size);
-}
-
-// Time wrapper functions
-
-uint64_t py_dap_time_now(void) {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-        return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-    }
-    return 0;
-}
+// Memory management and time functions are implemented in:
+// - python_dap_system.c (memory management using DAP SDK functions)  
+// - python_dap_time.c (time functions)
 
 // String utility wrappers
 
@@ -87,22 +63,5 @@ int py_dap_rand_int(int min, int max) {
     return min + (rand() % (max - min + 1));
 }
 
-// Logging wrapper functions - simplified
-
-void py_dap_log_level_set(int level) {
-    dap_log_level_set((enum dap_log_level)level);
-}
-
-void py_dap_log_set_external_output(int output_type, void* callback) {
-    dap_log_set_external_output((LOGGER_EXTERNAL_OUTPUT)output_type, callback);
-}
-
-void py_dap_log_set_format(int format) {
-    dap_log_set_format((dap_log_format_t)format);
-}
-
-// System wrapper functions
-
-char* py_exec_with_ret_multistring(const char* command) {
-    return exec_with_ret_multistring(command);
-} 
+// Logging functions implemented in python_dap_logging.c
+// System functions implemented in python_dap_system.c 

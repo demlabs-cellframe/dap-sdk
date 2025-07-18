@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <time.h>
 #include <string.h>
+#include <unistd.h>  // for sleep()
 
 // Time wrapper implementations using REAL DAP SDK functions
 
@@ -18,18 +19,19 @@ uint64_t py_dap_time_now(void) {
 
 uint64_t py_dap_time_now_sec(void) {
     // Call REAL DAP SDK function
-    return dap_time_now_sec();
+    return dap_time_now();  // dap_time_now() returns time in seconds
 }
 
 uint64_t py_dap_time_now_usec(void) {
     // Get current time in microseconds
-    return dap_time_now() / 1000;  // Convert nanoseconds to microseconds
+    return dap_nanotime_now() / 1000;  // Convert nanoseconds to microseconds
 }
 
 char* py_dap_time_to_str_rfc822(uint64_t a_timestamp_sec) {
     // Call REAL DAP SDK function
     static char s_buf[128];
-    return dap_time_to_str_rfc822(s_buf, sizeof(s_buf), a_timestamp_sec);
+    int l_ret = dap_time_to_str_rfc822(s_buf, sizeof(s_buf), a_timestamp_sec);
+    return (l_ret == 0) ? s_buf : NULL;
 }
 
 char* py_dap_time_to_str_rfc3339(uint64_t a_timestamp_sec) {
@@ -46,13 +48,13 @@ char* py_dap_time_to_str_rfc3339(uint64_t a_timestamp_sec) {
     return NULL;
 }
 
-int py_dap_time_from_str_rfc822(const char* a_time_str, uint64_t* a_timestamp_sec) {
-    if (!a_time_str || !a_timestamp_sec) {
-        return -EINVAL;
+uint64_t py_dap_time_from_str_rfc822(const char* a_time_str) {
+    if (!a_time_str) {
+        return 0;
     }
     
-    // Call REAL DAP SDK function
-    return dap_time_from_str_rfc822(a_time_str, a_timestamp_sec);
+    // Call REAL DAP SDK function - it returns dap_time_t directly
+    return dap_time_from_str_rfc822(a_time_str);
 }
 
 void py_dap_usleep(uint64_t a_microseconds) {
@@ -61,8 +63,8 @@ void py_dap_usleep(uint64_t a_microseconds) {
 }
 
 void py_dap_sleep(uint32_t a_seconds) {
-    // Call REAL DAP SDK function
-    dap_sleep(a_seconds);
+    // Use standard sleep function since dap_sleep doesn't exist
+    sleep(a_seconds);
 }
 
 uint64_t py_dap_gettimeofday(void) {

@@ -2,7 +2,162 @@ cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
+# =========================================
+# UNIVERSAL BUILD SYSTEM - DAP SDK
+# =========================================
+# DAP SDK always builds its modules as STATIC internally,
+# then combines them into one big STATIC or SHARED library
+
+# Default: BUILD_SHARED=ON (final library is shared)
+# Override: BUILD_SHARED=OFF (final library is static)
+option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
+
+# Internal modules are ALWAYS static
+set(DAP_INTERNAL_LIB_TYPE STATIC)
+
+if(BUILD_SHARED)
+    message("[+] DAP SDK: Building final library as SHARED (modules: static internally)")
+    set(DAP_FINAL_LIB_TYPE SHARED)
+    set(DAP_BUILD_MODE "shared")
+else()
+    message("[+] DAP SDK: Building final library as STATIC (modules: static internally)")
+    set(DAP_FINAL_LIB_TYPE STATIC)
+    set(DAP_BUILD_MODE "static")
+endif()
+
+# Export build mode for consumers
+set(DAP_SDK_BUILD_MODE ${DAP_BUILD_MODE} CACHE STRING "DAP SDK final library mode (shared/static)")
+set(DAP_SDK_INTERNAL_MODE "static" CACHE STRING "DAP SDK internal modules mode (always static)")
+
+# =========================================
+# BUILD INHERITANCE PROPAGATION
+# =========================================
+# When forced static, propagate to all subprojects
+if(DAP_FORCED_STATIC)
+    set(FORCE_SUBMODULE_STATIC ON CACHE BOOL "Propagate static build to children" FORCE)
+    message("[+] DAP SDK: Propagating FORCE_SUBMODULE_STATIC to all children")
+endif()
+
 include(cmake/OS_Detection.cmake)
+
+# =========================================
+# INTERNAL MODULE CREATION MACRO
+# =========================================
+# Creates internal OBJECT modules (always OBJECT for combining)
+# Usage: dap_add_library(target_name sources... HEADERS headers...)
+macro(dap_add_library TARGET_NAME)
+    cmake_parse_arguments(DAP_LIB "" "" "HEADERS" ${ARGN})
+    
+    # Always create modules as OBJECT for combining into final library
+    add_library(${TARGET_NAME} OBJECT ${DAP_LIB_UNPARSED_ARGUMENTS} ${DAP_LIB_HEADERS})
+    
+    # Track modules for final library creation
+    if(NOT DEFINED DAP_INTERNAL_MODULES)
+        set(DAP_INTERNAL_MODULES "")
+    endif()
+    list(APPEND DAP_INTERNAL_MODULES ${TARGET_NAME})
+    set(DAP_INTERNAL_MODULES ${DAP_INTERNAL_MODULES} CACHE INTERNAL "List of DAP internal modules")
+    
+    message("[+] DAP Internal Module: ${TARGET_NAME} (object)")
+endmacro()
+
+# =========================================
+# FINAL LIBRARY CREATION (will be called at the end)
+# =========================================
+# Creates final combined DAP SDK library from OBJECT modules
+macro(dap_create_final_library)
+    if(DEFINED DAP_INTERNAL_MODULES)
+        message("[+] Creating final DAP SDK library: dap_sdk (${DAP_BUILD_MODE})")
+        message("[+] Internal OBJECT modules to combine: ${DAP_INTERNAL_MODULES}")
+        
+        # Collect all object files from internal modules
+        set(DAP_ALL_OBJECTS "")
+        foreach(module ${DAP_INTERNAL_MODULES})
+            list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:${module}>)
+        endforeach()
+        
+        # Create final library from all object files (with real sources)
+        add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
+        
+        # Set properties for final library
+        if(BUILD_SHARED)
+            set_target_properties(dap_sdk PROPERTIES
+                POSITION_INDEPENDENT_CODE ON
+                VERSION ${DAP_SDK_NATIVE_VERSION}
+                SOVERSION 2
+            )
+            target_compile_definitions(dap_sdk PRIVATE DAP_BUILDING_LIB)
+            target_compile_definitions(dap_sdk INTERFACE DAP_USING_SHARED)
+        else()
+            target_compile_definitions(dap_sdk INTERFACE DAP_USING_STATIC)
+        endif()
+        
+        # Inherit include directories from internal modules
+        foreach(module ${DAP_INTERNAL_MODULES})
+            # Get include directories only
+            get_target_property(module_includes ${module} INTERFACE_INCLUDE_DIRECTORIES)
+            if(module_includes)
+                target_include_directories(dap_sdk PUBLIC ${module_includes})
+            endif()
+        endforeach()
+        
+        # Collect all external dependencies from modules
+        set(ALL_EXTERNAL_DEPS "")
+        if(DEFINED DAP_CORE_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_CORE_DEPS})
+        endif()
+        if(DEFINED DAP_CRYPTO_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_CRYPTO_DEPS})
+        endif()
+        if(DEFINED DAP_IO_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_IO_DEPS})
+        endif()
+        if(DEFINED DAP_GLOBAL_DB_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_GLOBAL_DB_DEPS})
+        endif()
+        if(DEFINED DAP_PLUGIN_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_PLUGIN_DEPS})
+        endif()
+        if(DEFINED DAP_HTTP_SERVER_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_HTTP_SERVER_DEPS})
+        endif()
+        if(DEFINED DAP_STREAM_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_STREAM_DEPS})
+        endif()
+        if(DEFINED DAP_STREAM_CH_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_STREAM_CH_DEPS})
+        endif()
+        if(DEFINED DAP_CLIENT_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_CLIENT_DEPS})
+        endif()
+        if(DEFINED DAP_SESSION_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_SESSION_DEPS})
+        endif()
+        if(DEFINED DAP_ENC_SERVER_DEPS)
+            list(APPEND ALL_EXTERNAL_DEPS ${DAP_ENC_SERVER_DEPS})
+        endif()
+        
+        # Remove duplicates and apply external dependencies
+        if(ALL_EXTERNAL_DEPS)
+            list(REMOVE_DUPLICATES ALL_EXTERNAL_DEPS)
+            target_link_libraries(dap_sdk PUBLIC ${ALL_EXTERNAL_DEPS})
+            message("[+] Final DAP SDK external dependencies: ${ALL_EXTERNAL_DEPS}")
+        endif()
+        
+        message("[+] Final DAP SDK Library: dap_sdk created from real object files")
+    endif()
+endmacro()
+
+# =========================================
+# LEGACY STATIC LIBRARY HELPER  
+# =========================================
+# For special cases that need explicit static
+macro(dap_add_static_library TARGET_NAME)
+    cmake_parse_arguments(DAP_STATIC_LIB "" "" "HEADERS" ${ARGN})
+    add_library(${TARGET_NAME} STATIC ${DAP_STATIC_LIB_UNPARSED_ARGUMENTS} ${DAP_STATIC_LIB_HEADERS})
+    target_compile_definitions(${TARGET_NAME} INTERFACE DAP_USING_STATIC)
+    message("[+] DAP Explicit Static Library: ${TARGET_NAME}")
+endmacro()
 
 if (NOT DEFINED DAP_VERSION)
     message(WARNING "DAP_VERSION is not defined")
@@ -199,3 +354,9 @@ if(CPPCHECK)
 else()
     message(WARNING "cppcheck not found, lint target unavailable")
 endif()
+
+# =========================================
+# CREATE FINAL DAP SDK LIBRARY
+# =========================================
+# Combine all internal static modules into one final library
+dap_create_final_library()
