@@ -6,19 +6,30 @@ Python handles all time operations, we only provide conversion to/from DAP nativ
 """
 
 import logging
+import sys
 import time
 from typing import Union
 
-# Import only DAP time conversion functions we actually need
+# Import only DAP time conversion functions we actually need - CREATE STUBS FOR MISSING
 try:
-    from python_cellframe_common import (
-        dap_time_now, dap_time_to_str_rfc822
+    from python_dap import (
+        py_dap_time_now as dap_time_now,
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations
-    def dap_time_now(): return int(time.time())
-    def dap_time_to_str_rfc822(timestamp): return time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(timestamp))
+    
+    # Create stub for missing dap_time_to_str_rfc822
+    def dap_time_to_str_rfc822(timestamp):
+        """Stub for missing dap_time_to_str_rfc822 - uses Python time instead"""
+        return time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(timestamp))
+    
+    NATIVE_TIME_AVAILABLE = True
+    logging.info("✅ DAP time functions with stubs loaded successfully")
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK time bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Time operations require native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from .exceptions import DapException
 

@@ -8,16 +8,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
+#include <errno.h>
+#include <string.h>
 
-// Core wrapper implementations
-
-int py_dap_common_init(const char *console_title, const char *a_log_file) {
-    return dap_common_init(console_title, a_log_file);
-}
-
-void py_dap_common_deinit(void) {
-    dap_common_deinit();
-}
+// Core wrapper implementations (common init functions moved to python_dap_common.c)
 
 // Memory management wrappers - use standard C functions
 
@@ -37,26 +31,60 @@ void* py_dap_realloc(void* ptr, size_t size) {
     return realloc(ptr, size);
 }
 
-// Time wrapper functions - simplified
+// Time wrapper functions
 
 uint64_t py_dap_time_now(void) {
-    return (uint64_t)time(NULL);
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+        return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+    }
+    return 0;
 }
 
-int py_dap_time_to_str_rfc822(char * out, size_t out_size_max, uint64_t timestamp) {
-    if (!out || out_size_max == 0) {
-        return -1;
+// String utility wrappers
+
+char* py_dap_strdup(const char* str) {
+    if (!str) {
+        return NULL;
     }
     
-    time_t t = (time_t)timestamp;
-    struct tm *tm_info = gmtime(&t);
-    if (!tm_info) {
-        return -1;
+    size_t len = strlen(str) + 1;
+    char* copy = py_dap_malloc(len);
+    if (copy) {
+        memcpy(copy, str, len);
     }
-    
-    // RFC 822 format: "Tue, 15 Nov 1994 12:45:26 GMT"
-    int result = strftime(out, out_size_max, "%a, %d %b %Y %H:%M:%S GMT", tm_info);
-    return (result > 0) ? 0 : -1;
+    return copy;
+}
+
+void py_dap_free_string(char* str) {
+    if (str) {
+        py_dap_free(str);
+    }
+}
+
+// Generic utility functions
+
+int py_dap_errno_get(void) {
+    return errno;
+}
+
+const char* py_dap_strerror(int errnum) {
+    return strerror(errnum);
+}
+
+void py_dap_zero_memory(void* ptr, size_t size) {
+    if (ptr && size > 0) {
+        memset(ptr, 0, size);
+    }
+}
+
+int py_dap_rand_int(int min, int max) {
+    if (min > max) {
+        int temp = min;
+        min = max;
+        max = temp;
+    }
+    return min + (rand() % (max - min + 1));
 }
 
 // Logging wrapper functions - simplified

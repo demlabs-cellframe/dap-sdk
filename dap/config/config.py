@@ -10,7 +10,7 @@ from typing import Optional, Any, Dict, List
 from pathlib import Path
 
 # Import DAP config wrapper functions
-from python_cellframe_common import (
+from python_dap import (
     py_dap_config_init as dap_config_init,
     py_dap_config_deinit as dap_config_deinit,
     py_dap_config_open as dap_config_open,

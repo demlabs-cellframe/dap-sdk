@@ -1,68 +1,36 @@
 """
-🌐 DAP Network Server
+🌐 DAP Server Module Implementation
 
-Proper Python wrapper with dap_server_t* structure management.
-Handles server-side network operations with proper C integration.
+Direct Python wrappers over DAP server functions.
 """
 
 import logging
-import threading
-from typing import Optional, Dict, Any, Callable, List
+import sys
+from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP functions
+# Import existing DAP server functions - FAIL FAST, NO FALLBACKS  
 try:
-    from python_cellframe_common import (
-        # Core server functions
-        dap_server_new, dap_server_delete, dap_server_listen,
-        dap_server_stop, dap_server_start, dap_server_add_proc,
-        dap_server_get_clients_count, dap_server_get_clients,
-        dap_server_client_disconnect, dap_server_set_callbacks,
-        # Listener management
-        dap_server_add_listener, dap_server_remove_listener,
-        dap_server_get_listeners, dap_server_get_listener_port,
-        # System functions
-        dap_server_init, dap_server_deinit, dap_server_get_all,
-        # Configuration
-        dap_server_set_auth_required, dap_server_set_ssl_enabled,
+    from python_dap import (
+        dap_server_new, dap_server_delete, dap_server_listen, dap_server_stop,
+        dap_server_start, dap_server_add_proc, dap_server_get_clients_count,
+        dap_server_get_clients, dap_server_client_disconnect, dap_server_set_callbacks,
+        dap_server_add_listener, dap_server_remove_listener, dap_server_get_listeners,
+        dap_server_get_listener_port, dap_server_init, dap_server_deinit,
+        dap_server_get_all, dap_server_set_auth_required, dap_server_set_ssl_enabled,
         dap_server_set_worker_count, dap_server_get_worker_count,
-        # Processing callbacks
         dap_server_proc_http_request, dap_server_proc_stream_request,
         # Server type constants
-        DAP_SERVER_TYPE_HTTP, DAP_SERVER_TYPE_JSON_RPC,
-        DAP_SERVER_TYPE_TCP, DAP_SERVER_TYPE_WEBSOCKET
+        DAP_SERVER_TYPE_HTTP, DAP_SERVER_TYPE_JSON_RPC, DAP_SERVER_TYPE_TCP,
+        DAP_SERVER_TYPE_WEBSOCKET
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_server_new(name, type_val): return id(f"server_{name}")
-    def dap_server_delete(server): pass
-    def dap_server_listen(server, addr, port): return 0
-    def dap_server_stop(server): return 0
-    def dap_server_start(server): return 0
-    def dap_server_add_proc(server, path, callback): return 0
-    def dap_server_get_clients_count(server): return 0
-    def dap_server_get_clients(server): return []
-    def dap_server_client_disconnect(server, client_id): return 0
-    def dap_server_set_callbacks(server, new_client_cb, client_disconnect_cb): pass
-    def dap_server_add_listener(server, addr, port): return 0
-    def dap_server_remove_listener(server, listener_id): return 0
-    def dap_server_get_listeners(server): return []
-    def dap_server_get_listener_port(listener): return 0
-    def dap_server_init(): return 0
-    def dap_server_deinit(): pass
-    def dap_server_get_all(): return []
-    def dap_server_set_auth_required(server, enabled): pass
-    def dap_server_set_ssl_enabled(server, enabled): pass
-    def dap_server_set_worker_count(server, count): pass
-    def dap_server_get_worker_count(server): return 1
-    def dap_server_proc_http_request(server, request, response): return 0
-    def dap_server_proc_stream_request(server, stream, request): return 0
-    # Server type constants
-    DAP_SERVER_TYPE_HTTP = 0
-    DAP_SERVER_TYPE_JSON_RPC = 1
-    DAP_SERVER_TYPE_TCP = 2
-    DAP_SERVER_TYPE_WEBSOCKET = 3
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK server bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Network server functionality requires native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from ..core.exceptions import DapException
 

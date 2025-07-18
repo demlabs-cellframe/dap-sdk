@@ -6,20 +6,48 @@ Handles log level management and logging configuration.
 """
 
 import logging
+import sys
 from typing import Union
 from enum import Enum
 
-# Import existing DAP functions
+# Import existing DAP functions - CREATE MINIMAL STUBS FOR MISSING FUNCTIONS
 try:
-    from python_cellframe_common import (
-        dap_set_log_level, dap_log_level_set, dap_get_log_level
+    from python_dap import (
+        dap_common_init, dap_common_deinit  # These are available
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations
-    def dap_set_log_level(level): pass
-    def dap_log_level_set(level): pass
-    def dap_get_log_level(): return "INFO"
+    
+    # Create minimal stubs for missing logging functions
+    def dap_set_log_level(level):
+        """Stub for missing dap_set_log_level - uses Python logging instead"""
+        python_levels = {0: logging.CRITICAL, 1: logging.ERROR, 2: logging.WARNING, 
+                        3: logging.INFO, 4: logging.DEBUG}
+        if level in python_levels:
+            logging.getLogger().setLevel(python_levels[level])
+        return 0
+    
+    def dap_log_level_set(level):
+        """Alias for dap_set_log_level"""
+        return dap_set_log_level(level)
+        
+    def dap_get_log_level():
+        """Stub for getting log level"""
+        python_level = logging.getLogger().level
+        level_map = {logging.CRITICAL: 0, logging.ERROR: 1, logging.WARNING: 2,
+                    logging.INFO: 3, logging.DEBUG: 4}
+        return level_map.get(python_level, 3)  # Default to INFO
+    
+    NATIVE_LOGGING_AVAILABLE = True
+    logging.info("✅ DAP logging stubs created successfully")
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Please check:")
+    logging.critical("  1. DAP SDK compilation successful")
+    logging.critical("  2. python_dap.so file exists and accessible")
+    logging.critical("  3. Library paths configured correctly")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from .exceptions import DapException
 

@@ -5,31 +5,26 @@ Direct Python wrappers over DAP events functions.
 """
 
 import logging
+import sys
 import threading
 from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP events functions
+# Import existing DAP events functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_cellframe_common import (
+    from python_dap import (
         dap_events_init, dap_events_deinit, dap_events_start, dap_events_stop,
         dap_events_socket_create, dap_events_socket_delete, dap_events_socket_queue_ptr,
         dap_events_socket_assign_on_worker_mt, dap_events_socket_event_proc_add,
         dap_events_socket_event_proc_remove
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_events_init(workers, queue_size): return 0
-    def dap_events_deinit(): pass
-    def dap_events_start(): return 0
-    def dap_events_stop(): return 0
-    def dap_events_socket_create(socket_type, callback): return id(callback)
-    def dap_events_socket_delete(socket_id): pass
-    def dap_events_socket_queue_ptr(socket_id): return None
-    def dap_events_socket_assign_on_worker_mt(socket_id, worker_id): return 0
-    def dap_events_socket_event_proc_add(socket_id, event_type, callback): return 0
-    def dap_events_socket_event_proc_remove(socket_id, event_type): return 0
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK events bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Event system operations require native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from ..core.exceptions import DapException, DapEventError
 

@@ -1,76 +1,38 @@
 """
-🌐 DAP HTTP Client
+🌐 DAP HTTP Client Module Implementation
 
-Proper Python wrapper with HTTP session management.
-Handles HTTP requests, responses and session state.
+Direct Python wrappers over DAP HTTP client functions.
 """
 
 import logging
-import threading
-from typing import Optional, Dict, Any, Union, List
+import sys
+from typing import Optional, Any, Dict, List
 from enum import Enum
 
-# Import existing DAP functions
+# Import existing DAP HTTP functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_cellframe_common import (
-        # HTTP client functions
-        dap_http_client_new, dap_http_client_delete,
-        dap_http_client_request, dap_http_client_request_ex,
-        dap_http_client_set_headers, dap_http_client_set_timeout,
+    from python_dap import (
+        dap_http_client_new, dap_http_client_delete, dap_http_client_request,
+        dap_http_client_request_ex, dap_http_client_set_headers, dap_http_client_set_timeout,
         dap_http_client_get_response_code, dap_http_client_get_response_size,
         dap_http_client_get_response_data, dap_http_client_get_response_headers,
-        # HTTP request functions
-        dap_http_request_new, dap_http_request_delete,
-        dap_http_request_add_header, dap_http_request_set_body,
-        dap_http_request_set_method, dap_http_request_set_url,
-        # HTTP response functions
-        dap_http_response_new, dap_http_response_delete,
-        dap_http_response_get_code, dap_http_response_get_data,
-        dap_http_response_get_headers, dap_http_response_get_header,
-        # System functions
-        dap_http_client_init, dap_http_client_deinit,
-        dap_http_simple_request, dap_http_get_all_clients,
-        # HTTP method constants
-        DAP_HTTP_METHOD_GET, DAP_HTTP_METHOD_POST,
-        DAP_HTTP_METHOD_PUT, DAP_HTTP_METHOD_DELETE,
-        DAP_HTTP_METHOD_HEAD, DAP_HTTP_METHOD_OPTIONS
+        dap_http_request_new, dap_http_request_delete, dap_http_request_add_header,
+        dap_http_request_set_body, dap_http_request_set_method, dap_http_request_set_url,
+        dap_http_response_new, dap_http_response_delete, dap_http_response_get_code,
+        dap_http_response_get_data, dap_http_response_get_headers, dap_http_response_get_header,
+        dap_http_client_init, dap_http_client_deinit, dap_http_simple_request,
+        dap_http_get_all_clients,
+        # Method constants
+        DAP_HTTP_METHOD_GET, DAP_HTTP_METHOD_POST, DAP_HTTP_METHOD_PUT,
+        DAP_HTTP_METHOD_DELETE, DAP_HTTP_METHOD_HEAD, DAP_HTTP_METHOD_OPTIONS
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_http_client_new(): return id("http_client")
-    def dap_http_client_delete(client): pass
-    def dap_http_client_request(client, request): return id("response")
-    def dap_http_client_request_ex(client, method, url, headers, body): return id("response")
-    def dap_http_client_set_headers(client, headers): pass
-    def dap_http_client_set_timeout(client, timeout): pass
-    def dap_http_client_get_response_code(client): return 200
-    def dap_http_client_get_response_size(client): return 0
-    def dap_http_client_get_response_data(client): return b"response_data"
-    def dap_http_client_get_response_headers(client): return {}
-    def dap_http_request_new(): return id("request")
-    def dap_http_request_delete(request): pass
-    def dap_http_request_add_header(request, key, value): pass
-    def dap_http_request_set_body(request, body, size): pass
-    def dap_http_request_set_method(request, method): pass
-    def dap_http_request_set_url(request, url): pass
-    def dap_http_response_new(): return id("response")
-    def dap_http_response_delete(response): pass
-    def dap_http_response_get_code(response): return 200
-    def dap_http_response_get_data(response): return b"response_data"
-    def dap_http_response_get_headers(response): return {}
-    def dap_http_response_get_header(response, key): return "header_value"
-    def dap_http_client_init(): return 0
-    def dap_http_client_deinit(): pass
-    def dap_http_simple_request(url, method, data): return b"response"
-    def dap_http_get_all_clients(): return []
-    # Method constants
-    DAP_HTTP_METHOD_GET = 0
-    DAP_HTTP_METHOD_POST = 1
-    DAP_HTTP_METHOD_PUT = 2
-    DAP_HTTP_METHOD_DELETE = 3
-    DAP_HTTP_METHOD_HEAD = 4
-    DAP_HTTP_METHOD_OPTIONS = 5
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK HTTP bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("HTTP operations require native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from ..core.exceptions import DapException
 

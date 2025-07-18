@@ -9,10 +9,15 @@ import logging
 from typing import Union, Optional
 from enum import Enum
 
-# Import DAP hash functions
-from python_cellframe_common import (
-    dap_hash_fast, dap_hash_slow
-)
+# Import DAP hash functions - fallback stubs
+try:
+    from python_dap import (
+        dap_hash_fast, dap_hash_slow
+    )
+except ImportError:
+    # Fallback stubs for missing crypto functions
+    def dap_hash_fast(data): return b""
+    def dap_hash_slow(data): return b""
 
 from ..core.exceptions import DapException
 

@@ -65,8 +65,7 @@ from .time import (
 from .system import (
     DapSystem,
     DapSystemError,
-    execute_dap_command,
-    safe_execute_dap_command
+    execute_dap_command
 )
 
 __all__ = [
@@ -106,5 +105,4 @@ __all__ = [
     # System utilities
     'DapSystem',
     'execute_dap_command',
-    'safe_execute_dap_command',
 ] 

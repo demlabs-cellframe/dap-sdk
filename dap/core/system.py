@@ -10,7 +10,7 @@ import subprocess
 from typing import Optional
 
 # Import DAP system functions
-from python_cellframe_common import (
+from python_dap import (
     exec_with_ret_multistring,
     dap_malloc, dap_free, dap_calloc, dap_realloc
 )

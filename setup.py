@@ -9,6 +9,9 @@ pythonic interfaces.
 
 from setuptools import setup, find_packages
 import os
+import subprocess
+import shutil
+from pathlib import Path
 
 def read_file(filename):
     """Read file content."""
@@ -29,6 +32,50 @@ def get_version():
         pass
     return "1.0.0"
 
+def build_and_copy_native_library():
+    """Build the native library using CMake and copy to Python package."""
+    build_dir = Path("build_c")
+    lib_dir = Path("lib")
+    
+    # Create lib directory if it doesn't exist
+    lib_dir.mkdir(exist_ok=True)
+    
+    # Build using CMake if build directory exists
+    if build_dir.exists():
+        try:
+            print("Building native library with CMake...")
+            subprocess.run(["make", "python_dap", "-j4"], 
+                          cwd=build_dir, check=True)
+            
+            # Copy the built library to lib directory  
+            built_lib = build_dir / "lib" / "python_dap.so"
+            target_lib = lib_dir / "python_dap.so"
+            
+            if built_lib.exists():
+                shutil.copy2(built_lib, target_lib)
+                print(f"Successfully copied {built_lib} to {target_lib}")
+                return True
+            else:
+                print(f"Warning: Built library not found at {built_lib}")
+                
+        except subprocess.CalledProcessError as e:
+            print(f"Make failed: {e}")
+        except FileNotFoundError:
+            print("Make not found - please install build tools")
+    
+    # Check if library already exists
+    existing_lib = lib_dir / "python_dap.so"
+    if existing_lib.exists():
+        print(f"Using existing library: {existing_lib}")
+        return True
+    
+    print("Warning: No native library found - package may not work correctly")
+    return False
+
+# Pre-build hook
+print("Setting up native library...")
+build_and_copy_native_library()
+
 setup(
     name="python-dap",
     version=get_version(),
@@ -47,7 +94,9 @@ setup(
     packages=find_packages(),
     package_data={
         'dap': ['py.typed'],
+        '': ['lib/*.so']  # Include .so files
     },
+    include_package_data=True,
     
     python_requires=">=3.8",
     install_requires=[
@@ -89,5 +138,4 @@ setup(
     keywords="dap sdk blockchain demlabs crypto network",
     
     zip_safe=False,
-    include_package_data=True,
 ) 

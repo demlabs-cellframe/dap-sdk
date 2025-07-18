@@ -1,76 +1,38 @@
 """
-🌊 DAP Stream Operations
+📡 DAP Stream Module Implementation
 
-Proper Python wrapper with dap_stream_t* structure management.
-Handles streaming data operations with proper C integration.
+Direct Python wrappers over DAP stream functions.
 """
 
 import logging
-import threading
-from typing import Optional, Dict, Any, Callable, List
+import sys
+from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP functions
+# Import existing DAP stream functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_cellframe_common import (
-        # Core stream functions
-        dap_stream_new, dap_stream_delete, dap_stream_open,
-        dap_stream_close, dap_stream_write, dap_stream_read,
-        dap_stream_get_id, dap_stream_set_callbacks,
-        dap_stream_get_remote_addr, dap_stream_get_remote_port,
-        # Channel management
-        dap_stream_ch_new, dap_stream_ch_delete, dap_stream_ch_write,
-        dap_stream_ch_read, dap_stream_ch_set_ready_to_read,
-        dap_stream_ch_set_ready_to_write, dap_stream_ch_get_id,
-        # Worker management  
-        dap_stream_worker_new, dap_stream_worker_delete,
+    from python_dap import (
+        dap_stream_new, dap_stream_delete, dap_stream_open, dap_stream_close,
+        dap_stream_write, dap_stream_read, dap_stream_get_id, dap_stream_set_callbacks,
+        dap_stream_get_remote_addr, dap_stream_get_remote_port, dap_stream_ch_new,
+        dap_stream_ch_delete, dap_stream_ch_write, dap_stream_ch_read,
+        dap_stream_ch_set_ready_to_read, dap_stream_ch_set_ready_to_write,
+        dap_stream_ch_get_id, dap_stream_worker_new, dap_stream_worker_delete,
         dap_stream_worker_add_stream, dap_stream_worker_remove_stream,
         dap_stream_worker_get_count, dap_stream_worker_get_stats,
-        # System functions
         dap_stream_init, dap_stream_deinit, dap_stream_ctl_init_py,
         dap_stream_ctl_deinit, dap_stream_get_all,
-        # Stream state constants
-        DAP_STREAM_STATE_NEW, DAP_STREAM_STATE_CONNECTED,
-        DAP_STREAM_STATE_LISTENING, DAP_STREAM_STATE_ERROR,
-        DAP_STREAM_STATE_CLOSED
+        # State constants
+        DAP_STREAM_STATE_NEW, DAP_STREAM_STATE_CONNECTED, DAP_STREAM_STATE_LISTENING,
+        DAP_STREAM_STATE_ERROR, DAP_STREAM_STATE_CLOSED
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_stream_new(): return id("stream")
-    def dap_stream_delete(stream): pass
-    def dap_stream_open(stream, addr, port): return 0
-    def dap_stream_close(stream): return 0
-    def dap_stream_write(stream, data, size): return size
-    def dap_stream_read(stream, buffer, size): return 0
-    def dap_stream_get_id(stream): return stream
-    def dap_stream_set_callbacks(stream, read_cb, write_cb, error_cb): pass
-    def dap_stream_get_remote_addr(stream): return "127.0.0.1"
-    def dap_stream_get_remote_port(stream): return 0
-    def dap_stream_ch_new(stream, channel_id): return id(f"channel_{channel_id}")
-    def dap_stream_ch_delete(channel): pass
-    def dap_stream_ch_write(channel, data, size): return size
-    def dap_stream_ch_read(channel, buffer, size): return 0
-    def dap_stream_ch_set_ready_to_read(channel, ready): pass
-    def dap_stream_ch_set_ready_to_write(channel, ready): pass
-    def dap_stream_ch_get_id(channel): return 1
-    def dap_stream_worker_new(name): return id(f"worker_{name}")
-    def dap_stream_worker_delete(worker): pass
-    def dap_stream_worker_add_stream(worker, stream): return 0
-    def dap_stream_worker_remove_stream(worker, stream): return 0
-    def dap_stream_worker_get_count(worker): return 0
-    def dap_stream_worker_get_stats(worker): return {}
-    def dap_stream_init(config): return 0
-    def dap_stream_deinit(): pass
-    def dap_stream_ctl_init_py(workers): return 0
-    def dap_stream_ctl_deinit(): pass
-    def dap_stream_get_all(): return []
-    # State constants
-    DAP_STREAM_STATE_NEW = 0
-    DAP_STREAM_STATE_CONNECTED = 1
-    DAP_STREAM_STATE_LISTENING = 2
-    DAP_STREAM_STATE_ERROR = 3
-    DAP_STREAM_STATE_CLOSED = 4
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK stream bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Stream operations require native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from ..core.exceptions import DapException
 

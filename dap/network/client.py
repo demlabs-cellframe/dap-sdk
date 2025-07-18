@@ -1,67 +1,36 @@
 """
-🌐 DAP Network Client
+📡 DAP Client Module Implementation
 
-Proper Python wrapper with dap_client_t* structure management.
-Handles client-side network connections with proper C integration.
+Direct Python wrappers over DAP client functions.
 """
 
 import logging
-import threading
-from typing import Optional, Dict, Any, Callable, List
+import sys
+from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP functions
+# Import existing DAP client functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_cellframe_common import (
-        # Core client functions
-        dap_client_new, dap_client_delete, dap_client_connect_to,
-        dap_client_disconnect, dap_client_go_stage, dap_client_request,
-        dap_client_write, dap_client_read, dap_client_get_stage,
-        dap_client_set_callbacks, dap_client_set_auth_cert,
-        dap_client_get_stream, dap_client_get_uplink,
-        # Stage management functions
-        dap_client_stage_next, dap_client_stage_transaction_begin,
-        dap_client_stage_transaction_end, dap_client_get_stage_str,
-        # System functions
-        dap_client_init, dap_client_deinit, dap_client_get_all,
-        # Client stage constants
-        DAP_CLIENT_STAGE_BEGIN, DAP_CLIENT_STAGE_ENC_INIT,
-        DAP_CLIENT_STAGE_STREAM_CTL, DAP_CLIENT_STAGE_STREAM_SESSION,
-        DAP_CLIENT_STAGE_STREAM_STREAMING, DAP_CLIENT_STAGE_DISCONNECTED,
-        DAP_CLIENT_STAGE_ERROR, DAP_CLIENT_STAGE_ESTABLISHED
+    from python_dap import (
+        dap_client_new, dap_client_delete, dap_client_connect_to, dap_client_disconnect,
+        dap_client_go_stage, dap_client_request, dap_client_write, dap_client_read,
+        dap_client_get_stage, dap_client_set_callbacks, dap_client_set_auth_cert,
+        dap_client_get_stream, dap_client_get_uplink, dap_client_stage_next,
+        dap_client_stage_transaction_begin, dap_client_stage_transaction_end,
+        dap_client_get_stage_str, dap_client_init, dap_client_deinit,
+        dap_client_get_all,
+        # Stage constants
+        DAP_CLIENT_STAGE_BEGIN, DAP_CLIENT_STAGE_ENC_INIT, DAP_CLIENT_STAGE_STREAM_CTL,
+        DAP_CLIENT_STAGE_STREAM_SESSION, DAP_CLIENT_STAGE_STREAM_STREAMING,
+        DAP_CLIENT_STAGE_DISCONNECTED, DAP_CLIENT_STAGE_ERROR, DAP_CLIENT_STAGE_ESTABLISHED
     )
-except ImportError:
-    logging.warning("python_cellframe_common not available - using fallback implementations")
-    # Fallback implementations for development
-    def dap_client_new(): return id("client")
-    def dap_client_delete(client): pass
-    def dap_client_connect_to(client, addr, port): return 0
-    def dap_client_disconnect(client): return 0
-    def dap_client_go_stage(client, stage, callback): return 0
-    def dap_client_request(client, path, data, size): return 0
-    def dap_client_write(client, data, size): return size
-    def dap_client_read(client, buffer, size): return 0
-    def dap_client_get_stage(client): return 0
-    def dap_client_set_callbacks(client, connected_cb, error_cb, delete_cb): pass
-    def dap_client_set_auth_cert(client, cert): return 0
-    def dap_client_get_stream(client): return id("stream")
-    def dap_client_get_uplink(client): return id("uplink")
-    def dap_client_stage_next(client): return 0
-    def dap_client_stage_transaction_begin(client, path): return 0
-    def dap_client_stage_transaction_end(client): return 0
-    def dap_client_get_stage_str(stage): return f"STAGE_{stage}"
-    def dap_client_init(): return 0
-    def dap_client_deinit(): pass
-    def dap_client_get_all(): return []
-    # Stage constants
-    DAP_CLIENT_STAGE_BEGIN = 0
-    DAP_CLIENT_STAGE_ENC_INIT = 1
-    DAP_CLIENT_STAGE_STREAM_CTL = 2
-    DAP_CLIENT_STAGE_STREAM_SESSION = 3
-    DAP_CLIENT_STAGE_STREAM_STREAMING = 4
-    DAP_CLIENT_STAGE_DISCONNECTED = 5
-    DAP_CLIENT_STAGE_ERROR = 6
-    DAP_CLIENT_STAGE_ESTABLISHED = 7
+except ImportError as e:
+    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("Cannot continue without native DAP SDK client bindings.")
+    logging.critical(f"Import error: {e}")
+    logging.critical("Network client functionality requires native implementation.")
+    logging.critical("TERMINATING - No fallback mode available.")
+    sys.exit(1)
 
 from ..core.exceptions import DapException
 

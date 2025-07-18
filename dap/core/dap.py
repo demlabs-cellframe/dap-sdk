@@ -10,7 +10,7 @@ import threading
 from typing import Optional, Dict, Any
 
 # Import DAP core functions
-from python_cellframe_common import (
+from python_dap import (
     dap_common_init, dap_common_deinit, dap_config_init, dap_config_deinit
 )
 
