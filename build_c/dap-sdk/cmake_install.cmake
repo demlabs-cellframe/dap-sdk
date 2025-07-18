@@ -45,6 +45,13 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/crypto/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/io/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/stream/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/link_manager/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/client/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/cmake_install.cmake")
+  include("/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/global-db/cmake_install.cmake")
 
 endif()
 

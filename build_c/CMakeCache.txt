@@ -20,8 +20,14 @@ BUILD_64:BOOL=ON
 //Build python_cellframe_common library
 BUILD_PYTHON_CELLFRAME_COMMON:BOOL=ON
 
+//Restore for python-dap
+BUILD_SHARED:BOOL=ON
+
 //Default to building shared libraries
 BUILD_SHARED_LIBS:BOOL=OFF
+
+//Build as static library (for integration)
+BUILD_STATIC:BOOL=OFF
 
 //Default to building static libraries
 BUILD_STATIC_LIBS:BOOL=ON
@@ -37,6 +43,32 @@ CMAKE_ADDR2LINE:FILEPATH=/usr/bin/addr2line
 
 //Path to a program.
 CMAKE_AR:FILEPATH=/usr/bin/ar
+
+//ASM compiler
+CMAKE_ASM_COMPILER:FILEPATH=/usr/bin/cc
+
+//A wrapper around 'ar' adding the appropriate '--plugin' option
+// for the GCC compiler
+CMAKE_ASM_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar
+
+//A wrapper around 'ranlib' adding the appropriate '--plugin' option
+// for the GCC compiler
+CMAKE_ASM_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib
+
+//Flags used by the ASM compiler during all build types.
+CMAKE_ASM_FLAGS:STRING=
+
+//Flags used by the ASM compiler during DEBUG builds.
+CMAKE_ASM_FLAGS_DEBUG:STRING=-g
+
+//Flags used by the ASM compiler during MINSIZEREL builds.
+CMAKE_ASM_FLAGS_MINSIZEREL:STRING=-Os -DNDEBUG
+
+//Flags used by the ASM compiler during RELEASE builds.
+CMAKE_ASM_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
+
+//Flags used by the ASM compiler during RELWITHDEBINFO builds.
+CMAKE_ASM_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
 //Choose the type of build, options are: None Debug Release RelWithDebInfo
 // MinSizeRel ...
@@ -360,6 +392,21 @@ CTEST_SUBMIT_RETRY_COUNT:STRING=3
 //How long to wait between timed-out CTest submissions.
 CTEST_SUBMIT_RETRY_DELAY:STRING=5
 
+//Use xkcp plain-c implemintation
+DAP_CRYPTO_XKCP_PLAINC:BOOL=OFF
+
+//Use xkcp reference implemintation
+DAP_CRYPTO_XKCP_REFERENCE:BOOL=OFF
+
+//PQRL Intergration
+DAP_PQLR:BOOL=OFF
+
+//DAP SDK final library mode (shared/static)
+DAP_SDK_BUILD_MODE:STRING=static
+
+//DAP SDK internal modules mode (always static)
+DAP_SDK_INTERNAL_MODE:STRING=static
+
 //Value Computed by CMake
 DAP_SDK_NATIVE_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk
 
@@ -396,6 +443,9 @@ ENABLE_RDRAND:BOOL=OFF
 //Enable partial threading support.
 ENABLE_THREADING:BOOL=ON
 
+//Path to a program.
+MAKE:FILEPATH=/usr/bin/make
+
 //Command to build the project
 MAKECOMMAND:STRING=/usr/bin/cmake --build . --config "${CTEST_CONFIGURATION_TYPE}"
 
@@ -411,14 +461,47 @@ OVERRIDE_GET_RANDOM_SEED:BOOL=OFF
 //Name of the computer/site where compile is being run
 SITE:STRING=zeus
 
+//Path to a program.
+XMLSTYLEPROC:FILEPATH=/usr/bin/xsltproc
+
+//Value Computed by CMake
+dap_chain_btc_rpc_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/json_rpc/btc_rpc
+
+//Value Computed by CMake
+dap_chain_btc_rpc_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_chain_btc_rpc_LIB_DEPENDS:STATIC=general;dap_json_rpc_core;
+
+//Value Computed by CMake
+dap_chain_btc_rpc_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/json_rpc/btc_rpc
+
+//Value Computed by CMake
+dap_cli_server_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/cli_server
+
+//Value Computed by CMake
+dap_cli_server_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_cli_server_LIB_DEPENDS:STATIC=general;m;general;dap_json_rpc;
+
+//Value Computed by CMake
+dap_cli_server_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/cli_server
+
+//Value Computed by CMake
+dap_client_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/client
+
+//Value Computed by CMake
+dap_client_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_client_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/client
+
 //Value Computed by CMake
 dap_core_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core
 
 //Value Computed by CMake
 dap_core_IS_TOP_LEVEL:STATIC=OFF
-
-//Dependencies for the target
-dap_core_LIB_DEPENDS:STATIC=general;dap_core_unix;general;rt;general;dap_json-c;
 
 //Value Computed by CMake
 dap_core_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core
@@ -430,10 +513,88 @@ dap_core_unix_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/
 dap_core_unix_IS_TOP_LEVEL:STATIC=OFF
 
 //Dependencies for the target
-dap_core_unix_LIB_DEPENDS:STATIC=general;dap_core;general;pthread;
+dap_core_unix_LIB_DEPENDS:STATIC=general;pthread;
 
 //Value Computed by CMake
 dap_core_unix_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/src/unix
+
+//Value Computed by CMake
+dap_crypto_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/crypto
+
+//Value Computed by CMake
+dap_crypto_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_crypto_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/crypto
+
+//Value Computed by CMake
+dap_crypto_XKCP_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/crypto/XKCP
+
+//Value Computed by CMake
+dap_crypto_XKCP_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_crypto_XKCP_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/crypto/XKCP
+
+//Value Computed by CMake
+dap_crypto_kyber512_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/crypto/src/Kyber/crypto_kem/kyber512/optimized
+
+//Value Computed by CMake
+dap_crypto_kyber512_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_crypto_kyber512_LIB_DEPENDS:STATIC=general;dap_crypto;general;pthread;
+
+//Value Computed by CMake
+dap_crypto_kyber512_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/crypto/src/Kyber/crypto_kem/kyber512/optimized
+
+//Value Computed by CMake
+dap_dns_server_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/dns_server
+
+//Value Computed by CMake
+dap_dns_server_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_dns_server_LIB_DEPENDS:STATIC=general;m;general;dap_json_rpc;
+
+//Value Computed by CMake
+dap_dns_server_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/dns_server
+
+//Value Computed by CMake
+dap_enc_server_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/enc_server
+
+//Value Computed by CMake
+dap_enc_server_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_enc_server_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/enc_server
+
+//Value Computed by CMake
+dap_global_db_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/global-db
+
+//Value Computed by CMake
+dap_global_db_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_global_db_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/global-db
+
+//Value Computed by CMake
+dap_http_server_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/http_server
+
+//Value Computed by CMake
+dap_http_server_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_http_server_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/http_server
+
+//Value Computed by CMake
+dap_io_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/io
+
+//Value Computed by CMake
+dap_io_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_io_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/io
 
 //Value Computed by CMake
 dap_json-c_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/json-c
@@ -448,6 +609,102 @@ dap_json-c_LIB_DEPENDS:STATIC=general;m;
 dap_json-c_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c
 
 //Value Computed by CMake
+dap_json_rpc_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/json_rpc
+
+//Value Computed by CMake
+dap_json_rpc_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_json_rpc_LIB_DEPENDS:STATIC=general;dap_json-c;general;dap_json_rpc_core;
+
+//Value Computed by CMake
+dap_json_rpc_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/json_rpc
+
+//Value Computed by CMake
+dap_json_rpc_core_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/json_rpc/rpc_core
+
+//Value Computed by CMake
+dap_json_rpc_core_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_json_rpc_core_LIB_DEPENDS:STATIC=general;dap_json-c;general;dap_cli_server;
+
+//Value Computed by CMake
+dap_json_rpc_core_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/json_rpc/rpc_core
+
+//Value Computed by CMake
+dap_link_manager_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/link_manager
+
+//Value Computed by CMake
+dap_link_manager_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_link_manager_LIB_DEPENDS:STATIC=general;dap_http_server;general;dap_enc_server;general;dap_json-c;general;rt;
+
+//Value Computed by CMake
+dap_link_manager_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/link_manager
+
+//Value Computed by CMake
+dap_notify_srv_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server/notify_server
+
+//Value Computed by CMake
+dap_notify_srv_IS_TOP_LEVEL:STATIC=OFF
+
+//Dependencies for the target
+dap_notify_srv_LIB_DEPENDS:STATIC=general;dap_json-c;
+
+//Value Computed by CMake
+dap_notify_srv_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server/notify_server
+
+//Dependencies for the target
+dap_sdk_LIB_DEPENDS:STATIC=general;dap_core_unix;general;rt;general;dap_json-c;
+
+//Value Computed by CMake
+dap_session_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/stream/session
+
+//Value Computed by CMake
+dap_session_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_session_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/stream/session
+
+//Value Computed by CMake
+dap_stream_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/stream/stream
+
+//Value Computed by CMake
+dap_stream_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_stream_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/stream/stream
+
+//Value Computed by CMake
+dap_stream_ch_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/stream/ch
+
+//Value Computed by CMake
+dap_stream_ch_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dap_stream_ch_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/stream/ch
+
+//Value Computed by CMake
+libdap-server_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/server
+
+//Value Computed by CMake
+libdap-server_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+libdap-server_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/server
+
+//Value Computed by CMake
+libdap-stream_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/net/stream
+
+//Value Computed by CMake
+libdap-stream_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+libdap-stream_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/net/stream
+
+//Value Computed by CMake
 python-dap_BINARY_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c
 
 //Value Computed by CMake
@@ -457,7 +714,7 @@ python-dap_IS_TOP_LEVEL:STATIC=ON
 python-dap_SOURCE_DIR:STATIC=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap
 
 //Dependencies for the target
-python_dap_LIB_DEPENDS:STATIC=general;dap_core;general;/usr/lib/x86_64-linux-gnu/libpython3.11.so;
+python_dap_LIB_DEPENDS:STATIC=general;dap_sdk;general;/usr/lib/x86_64-linux-gnu/libpython3.11.so;
 
 
 ########################
@@ -470,6 +727,23 @@ BSYMBOLIC_WORKS:INTERNAL=1
 CMAKE_ADDR2LINE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_AR
 CMAKE_AR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_COMPILER
+CMAKE_ASM_COMPILER-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_COMPILER_AR
+CMAKE_ASM_COMPILER_AR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_COMPILER_RANLIB
+CMAKE_ASM_COMPILER_RANLIB-ADVANCED:INTERNAL=1
+CMAKE_ASM_COMPILER_WORKS:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_FLAGS
+CMAKE_ASM_FLAGS-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_FLAGS_DEBUG
+CMAKE_ASM_FLAGS_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_FLAGS_MINSIZEREL
+CMAKE_ASM_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_FLAGS_RELEASE
+CMAKE_ASM_FLAGS_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_FLAGS_RELWITHDEBINFO
+CMAKE_ASM_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //This is the directory where this CMakeCache.txt was created
 CMAKE_CACHEFILE_DIR:INTERNAL=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c
 //Major version of cmake used to create the current loaded cache
@@ -600,7 +874,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=5
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=25
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -645,6 +919,8 @@ CMAKE_TAPI-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Test COMPILER_SUPPORTS_MARCH_NATIVE
+COMPILER_SUPPORTS_MARCH_NATIVE:INTERNAL=1
 //ADVANCED property for variable: COVERAGE_COMMAND
 COVERAGE_COMMAND-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: COVERAGE_EXTRA_FLAGS
@@ -685,6 +961,10 @@ CPACK_SOURCE_ZIP-ADVANCED:INTERNAL=1
 CTEST_SUBMIT_RETRY_COUNT-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CTEST_SUBMIT_RETRY_DELAY
 CTEST_SUBMIT_RETRY_DELAY-ADVANCED:INTERNAL=1
+//dap_core external dependencies
+DAP_CORE_DEPS:INTERNAL=dap_core_unix;rt;dap_json-c
+//List of DAP internal modules
+DAP_INTERNAL_MODULES:INTERNAL=dap_core;dap_crypto;dap_io;dap_session;dap_stream;dap_stream_ch;dap_client;dap_http_server;dap_enc_server;dap_global_db
 //ADVANCED property for variable: DART_TESTING_TIMEOUT
 DART_TESTING_TIMEOUT-ADVANCED:INTERNAL=1
 //Details about finding Python3
@@ -854,4 +1134,6 @@ _Python3_Interpreter_REASON_FAILURE:INTERNAL=
 _Python3_LIBRARY_RELEASE:INTERNAL=/usr/lib/x86_64-linux-gnu/libpython3.11.so
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
+//Result of TRY_COMPILE
+compile_result_unused:INTERNAL=FALSE
 

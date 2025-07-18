@@ -72,10 +72,24 @@ include CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/codegen:
 .PHONY : CMakeFiles/python_dap.dir/codegen
 
+CMakeFiles/python_dap.dir/src/python_dap.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap.c
+CMakeFiles/python_dap.dir/src/python_dap.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/python_dap.dir/src/python_dap.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap.c.o -MF CMakeFiles/python_dap.dir/src/python_dap.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap.c
+
+CMakeFiles/python_dap.dir/src/python_dap.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap.c > CMakeFiles/python_dap.dir/src/python_dap.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap.c -o CMakeFiles/python_dap.dir/src/python_dap.c.s
+
 CMakeFiles/python_dap.dir/src/python_dap_core.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_core.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_core.c
 CMakeFiles/python_dap.dir/src/python_dap_core.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/python_dap.dir/src/python_dap_core.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/python_dap.dir/src/python_dap_core.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_core.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_core.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_core.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_core.c
 
 CMakeFiles/python_dap.dir/src/python_dap_core.c.i: cmake_force
@@ -89,7 +103,7 @@ CMakeFiles/python_dap.dir/src/python_dap_core.c.s: cmake_force
 CMakeFiles/python_dap.dir/src/python_dap_config.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_config.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_config.c
 CMakeFiles/python_dap.dir/src/python_dap_config.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/python_dap.dir/src/python_dap_config.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building C object CMakeFiles/python_dap.dir/src/python_dap_config.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_config.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_config.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_config.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_config.c
 
 CMakeFiles/python_dap.dir/src/python_dap_config.c.i: cmake_force
@@ -103,7 +117,7 @@ CMakeFiles/python_dap.dir/src/python_dap_config.c.s: cmake_force
 CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_crypto.c
 CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building C object CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building C object CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_crypto.c
 
 CMakeFiles/python_dap.dir/src/python_dap_crypto.c.i: cmake_force
@@ -117,7 +131,7 @@ CMakeFiles/python_dap.dir/src/python_dap_crypto.c.s: cmake_force
 CMakeFiles/python_dap.dir/src/python_dap_network.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_network.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_network.c
 CMakeFiles/python_dap.dir/src/python_dap_network.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building C object CMakeFiles/python_dap.dir/src/python_dap_network.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building C object CMakeFiles/python_dap.dir/src/python_dap_network.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_network.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_network.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_network.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_network.c
 
 CMakeFiles/python_dap.dir/src/python_dap_network.c.i: cmake_force
@@ -131,7 +145,7 @@ CMakeFiles/python_dap.dir/src/python_dap_network.c.s: cmake_force
 CMakeFiles/python_dap.dir/src/python_dap_system.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_system.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_system.c
 CMakeFiles/python_dap.dir/src/python_dap_system.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building C object CMakeFiles/python_dap.dir/src/python_dap_system.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building C object CMakeFiles/python_dap.dir/src/python_dap_system.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_system.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_system.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_system.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_system.c
 
 CMakeFiles/python_dap.dir/src/python_dap_system.c.i: cmake_force
@@ -145,7 +159,7 @@ CMakeFiles/python_dap.dir/src/python_dap_system.c.s: cmake_force
 CMakeFiles/python_dap.dir/src/python_dap_common.c.o: CMakeFiles/python_dap.dir/flags.make
 CMakeFiles/python_dap.dir/src/python_dap_common.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_common.c
 CMakeFiles/python_dap.dir/src/python_dap_common.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building C object CMakeFiles/python_dap.dir/src/python_dap_common.c.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/python_dap.dir/src/python_dap_common.c.o"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_common.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_common.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_common.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_common.c
 
 CMakeFiles/python_dap.dir/src/python_dap_common.c.i: cmake_force
@@ -156,34 +170,121 @@ CMakeFiles/python_dap.dir/src/python_dap_common.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_common.c.s"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_common.c -o CMakeFiles/python_dap.dir/src/python_dap_common.c.s
 
+CMakeFiles/python_dap.dir/src/python_dap_time.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap_time.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_time.c
+CMakeFiles/python_dap.dir/src/python_dap_time.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building C object CMakeFiles/python_dap.dir/src/python_dap_time.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_time.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_time.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_time.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_time.c
+
+CMakeFiles/python_dap.dir/src/python_dap_time.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap_time.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_time.c > CMakeFiles/python_dap.dir/src/python_dap_time.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap_time.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_time.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_time.c -o CMakeFiles/python_dap.dir/src/python_dap_time.c.s
+
+CMakeFiles/python_dap.dir/src/python_dap_logging.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap_logging.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_logging.c
+CMakeFiles/python_dap.dir/src/python_dap_logging.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building C object CMakeFiles/python_dap.dir/src/python_dap_logging.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_logging.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_logging.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_logging.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_logging.c
+
+CMakeFiles/python_dap.dir/src/python_dap_logging.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap_logging.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_logging.c > CMakeFiles/python_dap.dir/src/python_dap_logging.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap_logging.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_logging.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_logging.c -o CMakeFiles/python_dap.dir/src/python_dap_logging.c.s
+
+CMakeFiles/python_dap.dir/src/python_dap_events.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap_events.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_events.c
+CMakeFiles/python_dap.dir/src/python_dap_events.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building C object CMakeFiles/python_dap.dir/src/python_dap_events.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_events.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_events.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_events.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_events.c
+
+CMakeFiles/python_dap.dir/src/python_dap_events.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap_events.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_events.c > CMakeFiles/python_dap.dir/src/python_dap_events.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap_events.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_events.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_events.c -o CMakeFiles/python_dap.dir/src/python_dap_events.c.s
+
+CMakeFiles/python_dap.dir/src/python_dap_client.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap_client.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_client.c
+CMakeFiles/python_dap.dir/src/python_dap_client.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building C object CMakeFiles/python_dap.dir/src/python_dap_client.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_client.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_client.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_client.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_client.c
+
+CMakeFiles/python_dap.dir/src/python_dap_client.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap_client.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_client.c > CMakeFiles/python_dap.dir/src/python_dap_client.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap_client.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_client.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_client.c -o CMakeFiles/python_dap.dir/src/python_dap_client.c.s
+
+CMakeFiles/python_dap.dir/src/python_dap_server.c.o: CMakeFiles/python_dap.dir/flags.make
+CMakeFiles/python_dap.dir/src/python_dap_server.c.o: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_server.c
+CMakeFiles/python_dap.dir/src/python_dap_server.c.o: CMakeFiles/python_dap.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building C object CMakeFiles/python_dap.dir/src/python_dap_server.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/python_dap.dir/src/python_dap_server.c.o -MF CMakeFiles/python_dap.dir/src/python_dap_server.c.o.d -o CMakeFiles/python_dap.dir/src/python_dap_server.c.o -c /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_server.c
+
+CMakeFiles/python_dap.dir/src/python_dap_server.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/python_dap.dir/src/python_dap_server.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_server.c > CMakeFiles/python_dap.dir/src/python_dap_server.c.i
+
+CMakeFiles/python_dap.dir/src/python_dap_server.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/python_dap.dir/src/python_dap_server.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/src/python_dap_server.c -o CMakeFiles/python_dap.dir/src/python_dap_server.c.s
+
 # Object files for target python_dap
 python_dap_OBJECTS = \
+"CMakeFiles/python_dap.dir/src/python_dap.c.o" \
 "CMakeFiles/python_dap.dir/src/python_dap_core.c.o" \
 "CMakeFiles/python_dap.dir/src/python_dap_config.c.o" \
 "CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o" \
 "CMakeFiles/python_dap.dir/src/python_dap_network.c.o" \
 "CMakeFiles/python_dap.dir/src/python_dap_system.c.o" \
-"CMakeFiles/python_dap.dir/src/python_dap_common.c.o"
+"CMakeFiles/python_dap.dir/src/python_dap_common.c.o" \
+"CMakeFiles/python_dap.dir/src/python_dap_time.c.o" \
+"CMakeFiles/python_dap.dir/src/python_dap_logging.c.o" \
+"CMakeFiles/python_dap.dir/src/python_dap_events.c.o" \
+"CMakeFiles/python_dap.dir/src/python_dap_client.c.o" \
+"CMakeFiles/python_dap.dir/src/python_dap_server.c.o"
 
 # External object files for target python_dap
 python_dap_EXTERNAL_OBJECTS =
 
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_core.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_config.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_network.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_system.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/src/python_dap_common.c.o
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/build.make
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: dap-sdk/core/libdap_core.a
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: /usr/lib/x86_64-linux-gnu/libpython3.11.so
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: dap-sdk/core/src/unix/libdap_core_unix.a
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: dap-sdk/core/libdap_core.a
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: dap-sdk/core/src/unix/libdap_core_unix.a
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: dap-sdk/core/json-c/libdap_json-c.a
-/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: CMakeFiles/python_dap.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking C shared library /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so"
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_core.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_config.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_crypto.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_network.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_system.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_common.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_time.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_logging.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_events.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_client.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/src/python_dap_server.c.o
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/build.make
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: dap-sdk/libdap_sdk.a
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: /usr/lib/x86_64-linux-gnu/libpython3.11.so
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: dap-sdk/core/src/unix/libdap_core_unix.a
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: dap-sdk/core/json-c/libdap_json-c.a
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0: CMakeFiles/python_dap.dir/link.txt
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking C shared library /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/python_dap.dir/link.txt --verbose=$(VERBOSE)
+	$(CMAKE_COMMAND) -E cmake_symlink_library /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0 /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2 /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so
+
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0
+	@$(CMAKE_COMMAND) -E touch_nocreate /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2
+
+/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so.2.4.0
+	@$(CMAKE_COMMAND) -E touch_nocreate /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so
 
 # Rule to build all files generated by this target.
 CMakeFiles/python_dap.dir/build: /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/lib/python_dap.so

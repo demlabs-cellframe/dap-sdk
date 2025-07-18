@@ -181,6 +181,20 @@ depend:
 	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
+# Convenience name for target.
+dap-sdk/CMakeFiles/dap_sdk.dir/rule:
+	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap-sdk/CMakeFiles/dap_sdk.dir/rule
+.PHONY : dap-sdk/CMakeFiles/dap_sdk.dir/rule
+
+# Convenience name for target.
+dap_sdk: dap-sdk/CMakeFiles/dap_sdk.dir/rule
+.PHONY : dap_sdk
+
+# fast build rule for target.
+dap_sdk/fast:
+	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c && $(MAKE) $(MAKESILENT) -f dap-sdk/CMakeFiles/dap_sdk.dir/build.make dap-sdk/CMakeFiles/dap_sdk.dir/build
+.PHONY : dap_sdk/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -195,6 +209,7 @@ help:
 	@echo "... package"
 	@echo "... package_source"
 	@echo "... rebuild_cache"
+	@echo "... dap_sdk"
 .PHONY : help
 
 

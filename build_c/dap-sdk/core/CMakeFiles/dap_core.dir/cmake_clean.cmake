@@ -35,8 +35,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o.d"
   "CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o"
   "CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o.d"
-  "libdap_core.a"
-  "libdap_core.pdb"
 )
 
 # Per-language clean rules from dependency scanning.

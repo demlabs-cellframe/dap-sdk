@@ -121,11 +121,47 @@ dap_core_unix_OBJECTS = \
 "CMakeFiles/dap_core_unix.dir/dap_process_memory.c.o"
 
 # External object files for target dap_core_unix
-dap_core_unix_EXTERNAL_OBJECTS =
+dap_core_unix_EXTERNAL_OBJECTS = \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_binary_tree.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_cbuf.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_common.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_config.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_crc64.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_file_utils.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_fnmatch.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_list.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_math_convert.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_module.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_strfuncs.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_string.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_time.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_tsd.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o" \
+"/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o"
 
 dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/src/unix/CMakeFiles/dap_core_unix.dir/dap_cpu_monitor.c.o
 dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/src/unix/CMakeFiles/dap_core_unix.dir/dap_process_manager.c.o
 dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/src/unix/CMakeFiles/dap_core_unix.dir/dap_process_memory.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_binary_tree.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_cbuf.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_common.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_config.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_crc64.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_file_utils.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_fnmatch.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_list.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_math_convert.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_module.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_strfuncs.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_string.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_time.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_tsd.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o
+dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o
 dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/src/unix/CMakeFiles/dap_core_unix.dir/build.make
 dap-sdk/core/src/unix/libdap_core_unix.a: dap-sdk/core/src/unix/CMakeFiles/dap_core_unix.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking C static library libdap_core_unix.a"

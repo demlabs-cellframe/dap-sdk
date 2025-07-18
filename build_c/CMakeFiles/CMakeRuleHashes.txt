@@ -29,3 +29,4 @@ ee2e92463f1c3a9f13d2657e1dae94c7 dap-sdk/core/json-c/CMakeFiles/NightlySubmit
 1d0294e31d724d99147d8971a8ad69ab dap-sdk/core/json-c/CMakeFiles/NightlyUpdate
 698cbacce48aec36ba108f139382f2f3 dap-sdk/core/json-c/CMakeFiles/distcheck
 f448f65f9cfb154afa8fb77c5325a817 dap-sdk/core/json-c/CMakeFiles/uninstall
+4b774b718db975b74934ef478e373588 dap-sdk/crypto/XKCP/CMakeFiles/BuildXKCP

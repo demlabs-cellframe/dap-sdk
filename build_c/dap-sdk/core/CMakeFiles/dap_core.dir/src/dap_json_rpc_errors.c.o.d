@@ -116,17 +116,17 @@ dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o: \
  /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/include/dap_fnmatch.h \
  /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/uthash/src/utlist.h \
  /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/json-c/json.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/arraylist.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/debug.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_c_version.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_object.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_inttypes.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/arraylist.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/debug.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_c_version.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_object.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_inttypes.h \
  /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core/json-c/json_config.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_types.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/printbuf.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_object_iterator.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_pointer.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_object.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_tokener.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/json_util.h \
- /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/3rdparty/json-c/linkhash.h
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_types.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/printbuf.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_object_iterator.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_pointer.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_object.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_tokener.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/json_util.h \
+ /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/../3rdparty/json-c/linkhash.h

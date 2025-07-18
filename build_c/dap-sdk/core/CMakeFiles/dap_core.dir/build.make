@@ -324,56 +324,29 @@ dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.s: cmake_forc
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.s"
 	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap-sdk/core/src/unix/dap_process_memory.c -o CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.s
 
-# Object files for target dap_core
-dap_core_OBJECTS = \
-"CMakeFiles/dap_core.dir/src/dap_binary_tree.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_cbuf.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_common.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_config.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_crc64.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_file_utils.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_fnmatch.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_list.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_math_convert.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_module.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_strfuncs.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_string.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_time.c.o" \
-"CMakeFiles/dap_core.dir/src/dap_tsd.c.o" \
-"CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o" \
-"CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o" \
-"CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o"
-
-# External object files for target dap_core
-dap_core_EXTERNAL_OBJECTS =
-
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_binary_tree.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_cbuf.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_common.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_config.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_crc64.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_file_utils.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_fnmatch.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_list.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_math_convert.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_module.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_strfuncs.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_string.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_time.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_tsd.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/build.make
-dap-sdk/core/libdap_core.a: dap-sdk/core/CMakeFiles/dap_core.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Linking C static library libdap_core.a"
-	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core && $(CMAKE_COMMAND) -P CMakeFiles/dap_core.dir/cmake_clean_target.cmake
-	cd /home/naeper/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/build_c/dap-sdk/core && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/dap_core.dir/link.txt --verbose=$(VERBOSE)
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_binary_tree.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_cbuf.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_common.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_config.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_crc64.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_file_utils.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_fnmatch.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_json_rpc_errors.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_list.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_math_convert.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_module.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_strfuncs.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_string.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_time.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/dap_tsd.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_cpu_monitor.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_manager.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/src/unix/dap_process_memory.c.o
+dap_core: dap-sdk/core/CMakeFiles/dap_core.dir/build.make
+.PHONY : dap_core
 
 # Rule to build all files generated by this target.
-dap-sdk/core/CMakeFiles/dap_core.dir/build: dap-sdk/core/libdap_core.a
+dap-sdk/core/CMakeFiles/dap_core.dir/build: dap_core
 .PHONY : dap-sdk/core/CMakeFiles/dap_core.dir/build
 
 dap-sdk/core/CMakeFiles/dap_core.dir/clean:

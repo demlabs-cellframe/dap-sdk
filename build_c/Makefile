@@ -195,6 +195,19 @@ python_dap/fast:
 .PHONY : python_dap/fast
 
 #=============================================================================
+# Target rules for targets named dap_sdk
+
+# Build rule for target.
+dap_sdk: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_sdk
+.PHONY : dap_sdk
+
+# fast build rule for target.
+dap_sdk/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/CMakeFiles/dap_sdk.dir/build.make dap-sdk/CMakeFiles/dap_sdk.dir/build
+.PHONY : dap_sdk/fast
+
+#=============================================================================
 # Target rules for targets named dap_core
 
 # Build rule for target.
@@ -623,6 +636,288 @@ dap_json-c/fast:
 	$(MAKE) $(MAKESILENT) -f dap-sdk/core/json-c/CMakeFiles/dap_json-c.dir/build.make dap-sdk/core/json-c/CMakeFiles/dap_json-c.dir/build
 .PHONY : dap_json-c/fast
 
+#=============================================================================
+# Target rules for targets named dap_crypto
+
+# Build rule for target.
+dap_crypto: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_crypto
+.PHONY : dap_crypto
+
+# fast build rule for target.
+dap_crypto/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/crypto/CMakeFiles/dap_crypto.dir/build.make dap-sdk/crypto/CMakeFiles/dap_crypto.dir/build
+.PHONY : dap_crypto/fast
+
+#=============================================================================
+# Target rules for targets named dap_crypto_kyber512
+
+# Build rule for target.
+dap_crypto_kyber512: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_crypto_kyber512
+.PHONY : dap_crypto_kyber512
+
+# fast build rule for target.
+dap_crypto_kyber512/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/crypto/src/Kyber/crypto_kem/kyber512/optimized/CMakeFiles/dap_crypto_kyber512.dir/build.make dap-sdk/crypto/src/Kyber/crypto_kem/kyber512/optimized/CMakeFiles/dap_crypto_kyber512.dir/build
+.PHONY : dap_crypto_kyber512/fast
+
+#=============================================================================
+# Target rules for targets named BuildXKCP
+
+# Build rule for target.
+BuildXKCP: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 BuildXKCP
+.PHONY : BuildXKCP
+
+# fast build rule for target.
+BuildXKCP/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/crypto/XKCP/CMakeFiles/BuildXKCP.dir/build.make dap-sdk/crypto/XKCP/CMakeFiles/BuildXKCP.dir/build
+.PHONY : BuildXKCP/fast
+
+#=============================================================================
+# Target rules for targets named dap_io
+
+# Build rule for target.
+dap_io: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_io
+.PHONY : dap_io
+
+# fast build rule for target.
+dap_io/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/io/CMakeFiles/dap_io.dir/build.make dap-sdk/io/CMakeFiles/dap_io.dir/build
+.PHONY : dap_io/fast
+
+#=============================================================================
+# Target rules for targets named dap_session
+
+# Build rule for target.
+dap_session: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_session
+.PHONY : dap_session
+
+# fast build rule for target.
+dap_session/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/stream/session/CMakeFiles/dap_session.dir/build.make dap-sdk/net/stream/session/CMakeFiles/dap_session.dir/build
+.PHONY : dap_session/fast
+
+#=============================================================================
+# Target rules for targets named dap_stream
+
+# Build rule for target.
+dap_stream: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_stream
+.PHONY : dap_stream
+
+# fast build rule for target.
+dap_stream/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/stream/stream/CMakeFiles/dap_stream.dir/build.make dap-sdk/net/stream/stream/CMakeFiles/dap_stream.dir/build
+.PHONY : dap_stream/fast
+
+#=============================================================================
+# Target rules for targets named dap_stream_ch
+
+# Build rule for target.
+dap_stream_ch: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_stream_ch
+.PHONY : dap_stream_ch
+
+# fast build rule for target.
+dap_stream_ch/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/stream/ch/CMakeFiles/dap_stream_ch.dir/build.make dap-sdk/net/stream/ch/CMakeFiles/dap_stream_ch.dir/build
+.PHONY : dap_stream_ch/fast
+
+#=============================================================================
+# Target rules for targets named dap_link_manager
+
+# Build rule for target.
+dap_link_manager: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_link_manager
+.PHONY : dap_link_manager
+
+# fast build rule for target.
+dap_link_manager/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/link_manager/CMakeFiles/dap_link_manager.dir/build.make dap-sdk/net/link_manager/CMakeFiles/dap_link_manager.dir/build
+.PHONY : dap_link_manager/fast
+
+#=============================================================================
+# Target rules for targets named dap_client
+
+# Build rule for target.
+dap_client: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_client
+.PHONY : dap_client
+
+# fast build rule for target.
+dap_client/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/client/CMakeFiles/dap_client.dir/build.make dap-sdk/net/client/CMakeFiles/dap_client.dir/build
+.PHONY : dap_client/fast
+
+#=============================================================================
+# Target rules for targets named dap_cli_server
+
+# Build rule for target.
+dap_cli_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_cli_server
+.PHONY : dap_cli_server
+
+# fast build rule for target.
+dap_cli_server/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/cli_server/CMakeFiles/dap_cli_server.dir/build.make dap-sdk/net/server/cli_server/CMakeFiles/dap_cli_server.dir/build
+.PHONY : dap_cli_server/fast
+
+#=============================================================================
+# Target rules for targets named dap_notify_srv
+
+# Build rule for target.
+dap_notify_srv: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_notify_srv
+.PHONY : dap_notify_srv
+
+# fast build rule for target.
+dap_notify_srv/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/notify_server/CMakeFiles/dap_notify_srv.dir/build.make dap-sdk/net/server/notify_server/CMakeFiles/dap_notify_srv.dir/build
+.PHONY : dap_notify_srv/fast
+
+#=============================================================================
+# Target rules for targets named dap_http_server
+
+# Build rule for target.
+dap_http_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_http_server
+.PHONY : dap_http_server
+
+# fast build rule for target.
+dap_http_server/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/http_server/CMakeFiles/dap_http_server.dir/build.make dap-sdk/net/server/http_server/CMakeFiles/dap_http_server.dir/build
+.PHONY : dap_http_server/fast
+
+#=============================================================================
+# Target rules for targets named dap_enc_server
+
+# Build rule for target.
+dap_enc_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_enc_server
+.PHONY : dap_enc_server
+
+# fast build rule for target.
+dap_enc_server/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/enc_server/CMakeFiles/dap_enc_server.dir/build.make dap-sdk/net/server/enc_server/CMakeFiles/dap_enc_server.dir/build
+.PHONY : dap_enc_server/fast
+
+#=============================================================================
+# Target rules for targets named dap_dns_server
+
+# Build rule for target.
+dap_dns_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_dns_server
+.PHONY : dap_dns_server
+
+# fast build rule for target.
+dap_dns_server/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/dns_server/CMakeFiles/dap_dns_server.dir/build.make dap-sdk/net/server/dns_server/CMakeFiles/dap_dns_server.dir/build
+.PHONY : dap_dns_server/fast
+
+#=============================================================================
+# Target rules for targets named dap_json_rpc
+
+# Build rule for target.
+dap_json_rpc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_json_rpc
+.PHONY : dap_json_rpc
+
+# fast build rule for target.
+dap_json_rpc/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/json_rpc/CMakeFiles/dap_json_rpc.dir/build.make dap-sdk/net/server/json_rpc/CMakeFiles/dap_json_rpc.dir/build
+.PHONY : dap_json_rpc/fast
+
+#=============================================================================
+# Target rules for targets named dap_json_rpc_core
+
+# Build rule for target.
+dap_json_rpc_core: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_json_rpc_core
+.PHONY : dap_json_rpc_core
+
+# fast build rule for target.
+dap_json_rpc_core/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/json_rpc/rpc_core/CMakeFiles/dap_json_rpc_core.dir/build.make dap-sdk/net/server/json_rpc/rpc_core/CMakeFiles/dap_json_rpc_core.dir/build
+.PHONY : dap_json_rpc_core/fast
+
+#=============================================================================
+# Target rules for targets named dap_chain_btc_rpc
+
+# Build rule for target.
+dap_chain_btc_rpc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_chain_btc_rpc
+.PHONY : dap_chain_btc_rpc
+
+# fast build rule for target.
+dap_chain_btc_rpc/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/net/server/json_rpc/btc_rpc/CMakeFiles/dap_chain_btc_rpc.dir/build.make dap-sdk/net/server/json_rpc/btc_rpc/CMakeFiles/dap_chain_btc_rpc.dir/build
+.PHONY : dap_chain_btc_rpc/fast
+
+#=============================================================================
+# Target rules for targets named dap_global_db
+
+# Build rule for target.
+dap_global_db: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 dap_global_db
+.PHONY : dap_global_db
+
+# fast build rule for target.
+dap_global_db/fast:
+	$(MAKE) $(MAKESILENT) -f dap-sdk/global-db/CMakeFiles/dap_global_db.dir/build.make dap-sdk/global-db/CMakeFiles/dap_global_db.dir/build
+.PHONY : dap_global_db/fast
+
+src/python_dap.o: src/python_dap.c.o
+.PHONY : src/python_dap.o
+
+# target to build an object file
+src/python_dap.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap.c.o
+.PHONY : src/python_dap.c.o
+
+src/python_dap.i: src/python_dap.c.i
+.PHONY : src/python_dap.i
+
+# target to preprocess a source file
+src/python_dap.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap.c.i
+.PHONY : src/python_dap.c.i
+
+src/python_dap.s: src/python_dap.c.s
+.PHONY : src/python_dap.s
+
+# target to generate assembly for a file
+src/python_dap.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap.c.s
+.PHONY : src/python_dap.c.s
+
+src/python_dap_client.o: src/python_dap_client.c.o
+.PHONY : src/python_dap_client.o
+
+# target to build an object file
+src/python_dap_client.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_client.c.o
+.PHONY : src/python_dap_client.c.o
+
+src/python_dap_client.i: src/python_dap_client.c.i
+.PHONY : src/python_dap_client.i
+
+# target to preprocess a source file
+src/python_dap_client.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_client.c.i
+.PHONY : src/python_dap_client.c.i
+
+src/python_dap_client.s: src/python_dap_client.c.s
+.PHONY : src/python_dap_client.s
+
+# target to generate assembly for a file
+src/python_dap_client.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_client.c.s
+.PHONY : src/python_dap_client.c.s
+
 src/python_dap_common.o: src/python_dap_common.c.o
 .PHONY : src/python_dap_common.o
 
@@ -719,6 +1014,54 @@ src/python_dap_crypto.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_crypto.c.s
 .PHONY : src/python_dap_crypto.c.s
 
+src/python_dap_events.o: src/python_dap_events.c.o
+.PHONY : src/python_dap_events.o
+
+# target to build an object file
+src/python_dap_events.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_events.c.o
+.PHONY : src/python_dap_events.c.o
+
+src/python_dap_events.i: src/python_dap_events.c.i
+.PHONY : src/python_dap_events.i
+
+# target to preprocess a source file
+src/python_dap_events.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_events.c.i
+.PHONY : src/python_dap_events.c.i
+
+src/python_dap_events.s: src/python_dap_events.c.s
+.PHONY : src/python_dap_events.s
+
+# target to generate assembly for a file
+src/python_dap_events.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_events.c.s
+.PHONY : src/python_dap_events.c.s
+
+src/python_dap_logging.o: src/python_dap_logging.c.o
+.PHONY : src/python_dap_logging.o
+
+# target to build an object file
+src/python_dap_logging.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_logging.c.o
+.PHONY : src/python_dap_logging.c.o
+
+src/python_dap_logging.i: src/python_dap_logging.c.i
+.PHONY : src/python_dap_logging.i
+
+# target to preprocess a source file
+src/python_dap_logging.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_logging.c.i
+.PHONY : src/python_dap_logging.c.i
+
+src/python_dap_logging.s: src/python_dap_logging.c.s
+.PHONY : src/python_dap_logging.s
+
+# target to generate assembly for a file
+src/python_dap_logging.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_logging.c.s
+.PHONY : src/python_dap_logging.c.s
+
 src/python_dap_network.o: src/python_dap_network.c.o
 .PHONY : src/python_dap_network.o
 
@@ -742,6 +1085,30 @@ src/python_dap_network.s: src/python_dap_network.c.s
 src/python_dap_network.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_network.c.s
 .PHONY : src/python_dap_network.c.s
+
+src/python_dap_server.o: src/python_dap_server.c.o
+.PHONY : src/python_dap_server.o
+
+# target to build an object file
+src/python_dap_server.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_server.c.o
+.PHONY : src/python_dap_server.c.o
+
+src/python_dap_server.i: src/python_dap_server.c.i
+.PHONY : src/python_dap_server.i
+
+# target to preprocess a source file
+src/python_dap_server.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_server.c.i
+.PHONY : src/python_dap_server.c.i
+
+src/python_dap_server.s: src/python_dap_server.c.s
+.PHONY : src/python_dap_server.s
+
+# target to generate assembly for a file
+src/python_dap_server.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_server.c.s
+.PHONY : src/python_dap_server.c.s
 
 src/python_dap_system.o: src/python_dap_system.c.o
 .PHONY : src/python_dap_system.o
@@ -767,6 +1134,30 @@ src/python_dap_system.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_system.c.s
 .PHONY : src/python_dap_system.c.s
 
+src/python_dap_time.o: src/python_dap_time.c.o
+.PHONY : src/python_dap_time.o
+
+# target to build an object file
+src/python_dap_time.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_time.c.o
+.PHONY : src/python_dap_time.c.o
+
+src/python_dap_time.i: src/python_dap_time.c.i
+.PHONY : src/python_dap_time.i
+
+# target to preprocess a source file
+src/python_dap_time.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_time.c.i
+.PHONY : src/python_dap_time.c.i
+
+src/python_dap_time.s: src/python_dap_time.c.s
+.PHONY : src/python_dap_time.s
+
+# target to generate assembly for a file
+src/python_dap_time.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/python_dap.dir/build.make CMakeFiles/python_dap.dir/src/python_dap_time.c.s
+.PHONY : src/python_dap_time.c.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -781,6 +1172,7 @@ help:
 	@echo "... package"
 	@echo "... package_source"
 	@echo "... rebuild_cache"
+	@echo "... BuildXKCP"
 	@echo "... Continuous"
 	@echo "... ContinuousBuild"
 	@echo "... ContinuousConfigure"
@@ -811,10 +1203,34 @@ help:
 	@echo "... NightlyUpdate"
 	@echo "... distcheck"
 	@echo "... uninstall"
+	@echo "... dap_chain_btc_rpc"
+	@echo "... dap_cli_server"
+	@echo "... dap_client"
 	@echo "... dap_core"
 	@echo "... dap_core_unix"
+	@echo "... dap_crypto"
+	@echo "... dap_crypto_kyber512"
+	@echo "... dap_dns_server"
+	@echo "... dap_enc_server"
+	@echo "... dap_global_db"
+	@echo "... dap_http_server"
+	@echo "... dap_io"
 	@echo "... dap_json-c"
+	@echo "... dap_json_rpc"
+	@echo "... dap_json_rpc_core"
+	@echo "... dap_link_manager"
+	@echo "... dap_notify_srv"
+	@echo "... dap_sdk"
+	@echo "... dap_session"
+	@echo "... dap_stream"
+	@echo "... dap_stream_ch"
 	@echo "... python_dap"
+	@echo "... src/python_dap.o"
+	@echo "... src/python_dap.i"
+	@echo "... src/python_dap.s"
+	@echo "... src/python_dap_client.o"
+	@echo "... src/python_dap_client.i"
+	@echo "... src/python_dap_client.s"
 	@echo "... src/python_dap_common.o"
 	@echo "... src/python_dap_common.i"
 	@echo "... src/python_dap_common.s"
@@ -827,12 +1243,24 @@ help:
 	@echo "... src/python_dap_crypto.o"
 	@echo "... src/python_dap_crypto.i"
 	@echo "... src/python_dap_crypto.s"
+	@echo "... src/python_dap_events.o"
+	@echo "... src/python_dap_events.i"
+	@echo "... src/python_dap_events.s"
+	@echo "... src/python_dap_logging.o"
+	@echo "... src/python_dap_logging.i"
+	@echo "... src/python_dap_logging.s"
 	@echo "... src/python_dap_network.o"
 	@echo "... src/python_dap_network.i"
 	@echo "... src/python_dap_network.s"
+	@echo "... src/python_dap_server.o"
+	@echo "... src/python_dap_server.i"
+	@echo "... src/python_dap_server.s"
 	@echo "... src/python_dap_system.o"
 	@echo "... src/python_dap_system.i"
 	@echo "... src/python_dap_system.s"
+	@echo "... src/python_dap_time.o"
+	@echo "... src/python_dap_time.i"
+	@echo "... src/python_dap_time.s"
 .PHONY : help
 
 
