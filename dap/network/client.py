@@ -6,12 +6,13 @@ Direct Python wrappers over DAP client functions.
 
 import logging
 import sys
+import threading
 from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
 # Import existing DAP client functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_client_new, dap_client_delete, dap_client_connect_to, dap_client_disconnect,
         dap_client_go_stage, dap_client_request, dap_client_write, dap_client_read,
         dap_client_get_stage, dap_client_set_callbacks, dap_client_set_auth_cert,
@@ -25,11 +26,11 @@ try:
         DAP_CLIENT_STAGE_DISCONNECTED, DAP_CLIENT_STAGE_ERROR, DAP_CLIENT_STAGE_ESTABLISHED
     )
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
-    logging.critical("Cannot continue without native DAP SDK client bindings.")
-    logging.critical(f"Import error: {e}")
-    logging.critical("Network client functionality requires native implementation.")
-    logging.critical("TERMINATING - No fallback mode available.")
+    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"Cannot continue without native DAP SDK stream bindings.")
+    print(f"Import error: {e}")
+    print(f"network client operations require native implementation.")
+    print(f"TERMINATING - All functions must be implemented in C extension.")
     sys.exit(1)
 
 from ..core.exceptions import DapException

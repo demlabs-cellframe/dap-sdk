@@ -6,32 +6,54 @@ Direct Python wrappers over DAP stream functions.
 
 import logging
 import sys
+import threading
 from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
+from ..core.exceptions import DapNetworkError
+
+
+class DapStreamNotAvailableError(DapNetworkError):
+    """DAP Stream functions not available in C extension."""
+    
+    def __init__(self, missing_functions: List[str], **kwargs):
+        message = f"Stream functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        super().__init__(
+            message=message,
+            error_code="DAP_STREAM_NOT_AVAILABLE",
+            **kwargs
+        )
+        self.add_context("missing_function_count", len(missing_functions))
+        self.add_context("missing_functions", missing_functions)
+        self.add_suggestion("Implement missing stream functions in python_dap C extension")
+        self.add_suggestion("Check if DAP SDK stream module is properly linked")
+        self.add_suggestion("Use alternative networking modules until stream functions are available")
+
+
 # Import existing DAP stream functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_stream_new, dap_stream_delete, dap_stream_open, dap_stream_close,
-        dap_stream_write, dap_stream_read, dap_stream_get_id, dap_stream_set_callbacks,
-        dap_stream_get_remote_addr, dap_stream_get_remote_port, dap_stream_ch_new,
-        dap_stream_ch_delete, dap_stream_ch_write, dap_stream_ch_read,
-        dap_stream_ch_set_ready_to_read, dap_stream_ch_set_ready_to_write,
-        dap_stream_ch_get_id, dap_stream_worker_new, dap_stream_worker_delete,
-        dap_stream_worker_add_stream, dap_stream_worker_remove_stream,
-        dap_stream_worker_get_count, dap_stream_worker_get_stats,
-        dap_stream_init, dap_stream_deinit, dap_stream_ctl_init_py,
-        dap_stream_ctl_deinit, dap_stream_get_all,
+        dap_stream_write, dap_stream_read, dap_stream_get_id,
+        dap_stream_set_callbacks, dap_stream_get_remote_addr,
+        dap_stream_get_remote_port, dap_stream_ch_new, dap_stream_ch_delete,
+        dap_stream_ch_write, dap_stream_ch_read, dap_stream_ch_set_ready_to_read,
+        dap_stream_ch_set_ready_to_write, dap_stream_worker_new,
+        dap_stream_worker_delete, dap_stream_worker_add_stream,
+        dap_stream_worker_remove_stream, dap_stream_worker_get_count,
+        dap_stream_worker_get_stats, dap_stream_init, dap_stream_deinit,
+        dap_stream_ctl_init_py, dap_stream_ctl_deinit, dap_stream_get_all,
         # State constants
-        DAP_STREAM_STATE_NEW, DAP_STREAM_STATE_CONNECTED, DAP_STREAM_STATE_LISTENING,
-        DAP_STREAM_STATE_ERROR, DAP_STREAM_STATE_CLOSED
+        DAP_STREAM_STATE_NEW, DAP_STREAM_STATE_CONNECTED,
+        DAP_STREAM_STATE_LISTENING, DAP_STREAM_STATE_ERROR,
+        DAP_STREAM_STATE_CLOSED
     )
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
-    logging.critical("Cannot continue without native DAP SDK stream bindings.")
-    logging.critical(f"Import error: {e}")
-    logging.critical("Stream operations require native implementation.")
-    logging.critical("TERMINATING - No fallback mode available.")
+    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"Cannot continue without native DAP SDK stream bindings.")
+    print(f"Import error: {e}")
+    print(f"Stream operations require native implementation.")
+    print(f"TERMINATING - All functions must be implemented in C extension.")
     sys.exit(1)
 
 from ..core.exceptions import DapException
@@ -54,17 +76,17 @@ class DapStreamState(Enum):
 class DapStreamChannel:
     """
     📡 DAP Stream Channel
-    
+
     Represents a channel within a stream for organized data flow.
     """
-    
+
     def __init__(self, channel_handle: int, channel_id: int, stream: 'DapStream'):
         """Initialize stream channel"""
         self._channel_handle = channel_handle
         self._channel_id = channel_id
         self._stream = stream
         self._logger = logging.getLogger(__name__)
-    
+
     def write(self, data: bytes) -> int:
         """Write data to channel"""
         try:
@@ -74,7 +96,7 @@ class DapStreamChannel:
             return bytes_written
         except Exception as e:
             raise DapStreamError(f"Channel write failed: {e}")
-    
+
     def read(self, max_size: int = 1024) -> Optional[bytes]:
         """Read data from channel"""
         try:
@@ -86,20 +108,20 @@ class DapStreamChannel:
         except Exception as e:
             self._logger.error(f"Channel read failed: {e}")
             return None
-    
+
     def set_ready_to_read(self, ready: bool) -> None:
         """Set channel ready to read state"""
         dap_stream_ch_set_ready_to_read(self._channel_handle, ready)
-    
+
     def set_ready_to_write(self, ready: bool) -> None:
         """Set channel ready to write state"""
         dap_stream_ch_set_ready_to_write(self._channel_handle, ready)
-    
+
     @property
     def id(self) -> int:
         """Get channel ID"""
         return self._channel_id
-    
+
     @property
     def handle(self) -> int:
         """Get channel handle"""
@@ -109,26 +131,26 @@ class DapStreamChannel:
 class DapStreamWorker:
     """
     👷 DAP Stream Worker
-    
+
     Handles multiple streams in separate thread for performance.
     """
-    
+
     _workers_registry: Dict[int, 'DapStreamWorker'] = {}
     _lock = threading.Lock()
-    
+
     def __init__(self, worker_handle: int, name: str = "", owns_handle: bool = True):
         """Initialize stream worker"""
         self._worker_handle = worker_handle
         self._name = name
         self._owns_handle = owns_handle
         self._logger = logging.getLogger(__name__)
-        
+
         if not worker_handle:
             raise DapStreamError("Invalid worker handle provided")
-        
+
         with self._lock:
             self._workers_registry[worker_handle] = self
-    
+
     @classmethod
     def create_worker(cls, name: str) -> 'DapStreamWorker':
         """Create new stream worker"""
@@ -139,7 +161,7 @@ class DapStreamWorker:
             return cls(worker_handle, name)
         except Exception as e:
             raise DapStreamError(f"Worker creation failed: {e}")
-    
+
     def add_stream(self, stream: 'DapStream') -> bool:
         """Add stream to worker"""
         try:
@@ -150,7 +172,7 @@ class DapStreamWorker:
         except Exception as e:
             self._logger.error(f"Failed to add stream to worker: {e}")
             return False
-    
+
     def remove_stream(self, stream: 'DapStream') -> bool:
         """Remove stream from worker"""
         try:
@@ -161,7 +183,7 @@ class DapStreamWorker:
         except Exception as e:
             self._logger.error(f"Failed to remove stream from worker: {e}")
             return False
-    
+
     def get_stream_count(self) -> int:
         """Get number of streams handled by worker"""
         try:
@@ -169,7 +191,7 @@ class DapStreamWorker:
         except Exception as e:
             self._logger.error(f"Failed to get stream count: {e}")
             return 0
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get worker statistics"""
         try:
@@ -177,7 +199,7 @@ class DapStreamWorker:
         except Exception as e:
             self._logger.error(f"Failed to get worker stats: {e}")
             return {}
-    
+
     def delete(self) -> None:
         """Delete worker"""
         if self._owns_handle and self._worker_handle:
@@ -188,12 +210,12 @@ class DapStreamWorker:
                 self._worker_handle = None
             except Exception as e:
                 self._logger.error(f"Failed to delete worker: {e}")
-    
+
     @property
     def handle(self) -> int:
         """Get worker handle"""
         return self._worker_handle
-    
+
     @property
     def name(self) -> str:
         """Get worker name"""
@@ -203,39 +225,39 @@ class DapStreamWorker:
 class DapStream:
     """
     🌊 DAP Stream with proper dap_stream_t* wrapping
-    
+
     Manages streaming data operations with proper C structure integration.
     Supports channels, workers and callback management.
-    
+
     Example:
         # Create and connect stream
         stream = DapStream.create_stream()
         stream.connect_to("192.168.1.100", 8888)
-        
+
         # Set callbacks
         def on_data_received(data):
             print(f"Received: {data}")
         stream.set_read_callback(on_data_received)
-        
+
         # Create channel for organized data flow
         channel = stream.create_channel(1)
         channel.write(b"channel data")
-        
+
         # Write direct stream data
         stream.write_data(b"stream data")
-        
+
         # Read data
         data = stream.read_data()
     """
-    
+
     _streams_registry: Dict[int, 'DapStream'] = {}
     _lock = threading.Lock()
     _system_initialized = False
-    
+
     def __init__(self, stream_handle: int, owns_handle: bool = True):
         """
         Initialize DapStream wrapper
-        
+
         Args:
             stream_handle: Native dap_stream_t* handle
             owns_handle: Whether this instance owns the handle (for cleanup)
@@ -245,19 +267,19 @@ class DapStream:
         self._logger = logging.getLogger(__name__)
         self._callbacks = {}  # Store Python callbacks
         self._channels = {}  # Track channels
-        
+
         if not stream_handle:
             raise DapStreamError("Invalid stream handle provided")
-        
+
         # Ensure system is initialized
         self._ensure_system_initialized()
-        
+
         # Register in global registry for tracking
         with self._lock:
             self._streams_registry[stream_handle] = self
-            
+
         self._logger.debug(f"DapStream created with handle {stream_handle}")
-    
+
     @classmethod
     def _ensure_system_initialized(cls):
         """Ensure DAP stream system is initialized"""
@@ -272,86 +294,86 @@ class DapStream:
                         logging.getLogger(__name__).info("DAP stream system initialized")
                     except Exception as e:
                         raise DapStreamError(f"Stream system initialization failed: {e}")
-    
+
     @classmethod
     def create_stream(cls) -> 'DapStream':
         """
         Create new stream
-        
+
         Returns:
             New DapStream instance
-            
+
         Raises:
             DapStreamError: If stream creation fails
         """
         try:
             # Call C function: dap_stream_new()
             stream_handle = dap_stream_new()
-            
+
             if not stream_handle:
                 raise DapStreamError("Failed to create new stream")
-            
+
             logging.getLogger(__name__).info("New DAP stream created")
-            
+
             return cls(stream_handle)
-            
+
         except Exception as e:
             raise DapStreamError(f"Stream creation failed: {e}")
-    
+
     def connect_to(self, address: str, port: int) -> bool:
         """
         Connect stream to remote address
-        
+
         Args:
             address: Target address
             port: Target port
-            
+
         Returns:
             True if connection successful
         """
         try:
             # Call C function: dap_stream_open()
             result = dap_stream_open(self._stream_handle, address, port)
-            
+
             if result == 0:
                 self._logger.info(f"Stream connected to {address}:{port}")
                 return True
             else:
                 self._logger.error(f"Failed to connect stream to {address}:{port}")
                 return False
-                
+
         except Exception as e:
             raise DapStreamError(f"Stream connection failed: {e}")
-    
+
     def close(self) -> bool:
         """
         Close stream
-        
+
         Returns:
             True if close successful
         """
         try:
             # Call C function: dap_stream_close()
             result = dap_stream_close(self._stream_handle)
-            
+
             if result == 0:
                 self._logger.info("Stream closed")
                 return True
             else:
                 self._logger.error("Failed to close stream")
                 return False
-                
+
         except Exception as e:
             self._logger.error(f"Stream close failed: {e}")
             return False
-    
+
     def write_data(self, data: bytes) -> int:
         """
         Write data to stream
-        
+
         Args:
             data: Data to write
-            
+
         Returns:
             Number of bytes written
         """
@@ -360,42 +382,42 @@ class DapStream:
             bytes_written = dap_stream_write(
                 self._stream_handle, data, len(data)
             )
-            
+
             self._logger.debug(f"Wrote {bytes_written} bytes to stream")
             return bytes_written
-            
+
         except Exception as e:
             raise DapStreamError(f"Stream write failed: {e}")
-    
+
     def read_data(self, max_size: int = 1024) -> Optional[bytes]:
         """
         Read data from stream
-        
+
         Args:
             max_size: Maximum bytes to read
-            
+
         Returns:
             Read data or None if no data available
         """
         try:
             # Prepare buffer
             buffer = bytearray(max_size)
-            
+
             # Call C function: dap_stream_read()
             bytes_read = dap_stream_read(
                 self._stream_handle, buffer, max_size
             )
-            
+
             if bytes_read > 0:
                 self._logger.debug(f"Read {bytes_read} bytes from stream")
                 return bytes(buffer[:bytes_read])
             else:
                 return None
-                
+
         except Exception as e:
             self._logger.error(f"Stream read failed: {e}")
             return None
-    
+
     def get_stream_id(self) -> int:
         """Get stream ID"""
         try:
@@ -403,7 +425,7 @@ class DapStream:
         except Exception as e:
             self._logger.error(f"Failed to get stream ID: {e}")
             return 0
-    
+
     def get_remote_address(self) -> Optional[str]:
         """Get remote address"""
         try:
@@ -411,7 +433,7 @@ class DapStream:
         except Exception as e:
             self._logger.error(f"Failed to get remote address: {e}")
             return None
-    
+
     def get_remote_port(self) -> int:
         """Get remote port"""
         try:
@@ -419,14 +441,14 @@ class DapStream:
         except Exception as e:
             self._logger.error(f"Failed to get remote port: {e}")
             return 0
-    
+
     def set_callbacks(self,
                      read_callback: Optional[Callable] = None,
                      write_callback: Optional[Callable] = None,
                      error_callback: Optional[Callable] = None) -> None:
         """
         Set stream event callbacks
-        
+
         Args:
             read_callback: Called when data is available to read
             write_callback: Called when stream is ready to write
@@ -440,7 +462,7 @@ class DapStream:
                 self._callbacks['write'] = write_callback
             if error_callback:
                 self._callbacks['error'] = error_callback
-            
+
             # Call C function: dap_stream_set_callbacks()
             dap_stream_set_callbacks(
                 self._stream_handle,
@@ -448,36 +470,36 @@ class DapStream:
                 write_callback,
                 error_callback
             )
-            
+
         except Exception as e:
             self._logger.error(f"Failed to set callbacks: {e}")
-    
+
     def set_read_callback(self, callback: Callable) -> None:
         """Set read callback"""
         self.set_callbacks(read_callback=callback)
-    
+
     def set_write_callback(self, callback: Callable) -> None:
         """Set write callback"""
         self.set_callbacks(write_callback=callback)
-    
+
     def set_error_callback(self, callback: Callable) -> None:
         """Set error callback"""
         self.set_callbacks(error_callback=callback)
-    
+
     def create_channel(self, channel_id: int) -> Optional[DapStreamChannel]:
         """
         Create new channel within stream
-        
+
         Args:
             channel_id: Unique channel identifier
-            
+
         Returns:
             DapStreamChannel instance if successful
         """
         try:
             # Call C function: dap_stream_ch_new()
             channel_handle = dap_stream_ch_new(self._stream_handle, channel_id)
-            
+
             if channel_handle:
                 channel = DapStreamChannel(channel_handle, channel_id, self)
                 self._channels[channel_id] = channel
@@ -485,21 +507,21 @@ class DapStream:
                 return channel
             else:
                 return None
-                
+
         except Exception as e:
             raise DapStreamError(f"Channel creation failed: {e}")
-    
+
     def get_channel(self, channel_id: int) -> Optional[DapStreamChannel]:
         """Get existing channel by ID"""
         return self._channels.get(channel_id)
-    
+
     def delete_channel(self, channel_id: int) -> bool:
         """
         Delete channel
-        
+
         Args:
             channel_id: Channel ID to delete
-            
+
         Returns:
             True if deleted successfully
         """
@@ -512,67 +534,67 @@ class DapStream:
                 return True
             else:
                 return False
-                
+
         except Exception as e:
             self._logger.error(f"Failed to delete channel {channel_id}: {e}")
             return False
-    
+
     def delete(self) -> None:
         """Delete stream and cleanup resources"""
         if self._owns_handle and self._stream_handle:
             try:
                 # Close stream first
                 self.close()
-                
+
                 # Delete all channels
                 for channel_id in list(self._channels.keys()):
                     self.delete_channel(channel_id)
-                
+
                 # Remove from registry
                 with self._lock:
                     self._streams_registry.pop(self._stream_handle, None)
-                
+
                 # Call C function: dap_stream_delete()
                 dap_stream_delete(self._stream_handle)
-                
+
                 self._logger.debug(f"Stream {self._stream_handle} deleted")
                 self._stream_handle = None
                 self._callbacks.clear()
-                
+
             except Exception as e:
                 self._logger.error(f"Failed to delete stream: {e}")
-    
+
     @property
     def handle(self) -> int:
         """Get native stream handle"""
         return self._stream_handle
-    
+
     @property
     def is_valid(self) -> bool:
         """Check if stream handle is valid"""
         return self._stream_handle and self._stream_handle in self._streams_registry
-    
+
     @property
     def channels_count(self) -> int:
         """Get number of channels"""
         return len(self._channels)
-    
+
     def __enter__(self) -> 'DapStream':
         """Context manager entry"""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - cleanup stream"""
         self.delete()
-    
+
     def __del__(self):
         """Destructor - ensure cleanup"""
         if hasattr(self, '_owns_handle') and self._owns_handle:
             try:
                 self.delete()
-            except:
+            except Exception:
                 pass  # Ignore errors in destructor
-    
+
     def __repr__(self) -> str:
         stream_id = self.get_stream_id()
         remote_addr = self.get_remote_address()
@@ -583,10 +605,10 @@ class DapStream:
 class DapStreamManager:
     """
     📁 Stream Management System
-    
+
     Provides high-level stream and worker management operations.
     """
-    
+
     @staticmethod
     def get_all_streams() -> List[DapStream]:
         """Get all streams from system"""
@@ -601,7 +623,7 @@ class DapStreamManager:
         except Exception as e:
             logging.getLogger(__name__).error(f"Failed to get all streams: {e}")
             return []
-    
+
     @staticmethod
     def initialize_control(workers: int = 32) -> bool:
         """Initialize stream control with workers"""
@@ -615,7 +637,7 @@ class DapStreamManager:
         except Exception as e:
             logging.getLogger(__name__).error(f"Stream control initialization failed: {e}")
             return False
-    
+
     @staticmethod
     def deinitialize_control() -> None:
         """Deinitialize stream control"""
@@ -624,7 +646,7 @@ class DapStreamManager:
             logging.getLogger(__name__).info("Stream control deinitialized")
         except Exception as e:
             logging.getLogger(__name__).error(f"Stream control deinitialization failed: {e}")
-    
+
     @staticmethod
     def deinitialize_system() -> None:
         """Deinitialize stream system"""
@@ -667,4 +689,4 @@ __all__ = [
     'create_stream',
     'create_stream_worker',
     'connect_stream'
-] 
+]

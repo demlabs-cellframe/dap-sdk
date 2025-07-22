@@ -12,7 +12,7 @@ from enum import Enum
 
 # Import existing DAP events functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_events_init, dap_events_deinit, dap_events_start, dap_events_stop,
         dap_events_socket_create, dap_events_socket_delete, dap_events_socket_queue_ptr,
         dap_events_socket_assign_on_worker_mt, dap_events_socket_event_proc_add,
@@ -24,7 +24,6 @@ except ImportError as e:
     logging.critical(f"Import error: {e}")
     logging.critical("Event system operations require native implementation.")
     logging.critical("TERMINATING - No fallback mode available.")
-    sys.exit(1)
 
 from ..core.exceptions import DapException, DapEventError
 

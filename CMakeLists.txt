@@ -86,7 +86,7 @@ if(BUILD_SHARED)
     set_target_properties(python_dap PROPERTIES
         PREFIX ""
         OUTPUT_NAME "python_dap"
-        SUFFIX "${Python3_SOABI}.so"
+        SUFFIX ".${Python3_SOABI}.so"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lib"
         POSITION_INDEPENDENT_CODE ON
             VERSION 3.0.0

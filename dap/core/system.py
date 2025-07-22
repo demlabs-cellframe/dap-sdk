@@ -10,7 +10,7 @@ import subprocess
 from typing import Optional
 
 # Import DAP system functions
-from python_dap import (
+from ..python_dap import (
     py_exec_with_ret_multistring,
     dap_malloc, dap_free, dap_calloc, dap_realloc
 )
@@ -77,6 +77,24 @@ class DapSystem:
             Command output as string
         """
         return self.execute_dap_command(command)
+    
+    def py_exec_with_ret_multistring(self, command: str) -> str:
+        """
+        Execute command and return result as multistring (direct alias to C function)
+        
+        Args:
+            command: Command to execute
+            
+        Returns:
+            Command output as string
+        """
+        try:
+            result = py_exec_with_ret_multistring(command)
+            self._logger.debug(f"Executed DAP command via C function: {command}")
+            return result if result else ""
+        except Exception as e:
+            self._logger.warning(f"C function call failed, using fallback: {e}")
+            return self.execute_dap_command(command)
     
     def validate_command(self, command: str) -> bool:
         """

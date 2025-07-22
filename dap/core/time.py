@@ -12,7 +12,7 @@ from typing import Union
 
 # Import only DAP time conversion functions we actually need - CREATE STUBS FOR MISSING
 try:
-    from python_dap import (
+    from ..python_dap import (
         py_dap_time_now as dap_time_now,
     )
     
@@ -29,7 +29,6 @@ except ImportError as e:
     logging.critical(f"Import error: {e}")
     logging.critical("Time operations require native implementation.")
     logging.critical("TERMINATING - No fallback mode available.")
-    sys.exit(1)
 
 from .exceptions import DapException
 
@@ -123,6 +122,74 @@ class DapTime:
         # For now, they're the same (Unix timestamp)
         # This function exists for future compatibility if DAP time format changes
         return float(dap_timestamp)
+    
+    def now(self) -> int:
+        """
+        Get current timestamp (alias for now_dap)
+        
+        Returns:
+            Current timestamp as integer
+        """
+        return self.now_dap()
+    
+    def to_str_rfc822(self, timestamp: Union[int, float]) -> str:
+        """
+        Convert timestamp to RFC822 string (alias for to_rfc822)
+        
+        Args:
+            timestamp: Unix timestamp to convert
+            
+        Returns:
+            RFC822 formatted time string
+        """
+        return self.to_rfc822(timestamp)
+    
+    def now_sec(self) -> float:
+        """
+        Get current time in seconds (Unix timestamp)
+        
+        Returns:
+            Current time as Unix timestamp in seconds
+        """
+        return time.time()
+    
+    def now_usec(self) -> int:
+        """
+        Get current time in microseconds
+        
+        Returns:
+            Current time as microseconds since Unix epoch
+        """
+        return int(time.time() * 1_000_000)
+    
+    def from_str_rfc822(self, rfc822_string: str) -> float:
+        """
+        Convert RFC822 formatted string to Unix timestamp
+        
+        Args:
+            rfc822_string: RFC822 formatted time string
+            
+        Returns:
+            Unix timestamp as float
+            
+        Raises:
+            DapTimeError: If string cannot be parsed
+        """
+        try:
+            # Try to parse RFC822 format
+            # Example: "Wed, 21 Jan 2025 18:30:00 GMT"
+            import email.utils
+            parsed_time = email.utils.parsedate_tz(rfc822_string)
+            
+            if parsed_time is None:
+                raise DapTimeError(f"Cannot parse RFC822 string: {rfc822_string}")
+            
+            # Convert to timestamp
+            timestamp = email.utils.mktime_tz(parsed_time)
+            return float(timestamp)
+            
+        except Exception as e:
+            raise DapTimeError(f"Failed to parse RFC822 time string '{rfc822_string}': {e}")
     
     def __repr__(self) -> str:
         return "DapTime()"

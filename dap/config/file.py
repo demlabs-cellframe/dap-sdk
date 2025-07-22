@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 # Import native DAP file functions - Fail Fast principle
-from python_dap import (
+from ..python_dap import (
     py_dap_config_open as dap_config_open,
     py_dap_config_close as dap_config_close,
     py_dap_config_get_item_str as dap_config_get_item_str

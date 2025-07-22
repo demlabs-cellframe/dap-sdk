@@ -11,7 +11,7 @@ from enum import Enum
 
 # Import DAP hash functions - fallback stubs
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_hash_fast, dap_hash_slow
     )
 except ImportError:

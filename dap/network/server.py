@@ -10,29 +10,49 @@ import threading
 from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP server functions - FAIL FAST, NO FALLBACKS
+from ..core.exceptions import DapNetworkError
+
+
+class DapServerNotAvailableError(DapNetworkError):
+    """DAP Server functions not available in C extension."""
+    
+    def __init__(self, missing_functions: List[str], **kwargs):
+        message = f"Server functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        super().__init__(
+            message=message,
+            error_code="DAP_SERVER_NOT_AVAILABLE",
+            **kwargs
+        )
+        self.add_context("missing_function_count", len(missing_functions))
+        self.add_context("missing_functions", missing_functions)
+        self.add_suggestion("Implement missing server functions in python_dap C extension")
+        self.add_suggestion("Check if DAP SDK server module is properly linked")
+
+
+# Import existing DAP server functions - FAIL FAST, NO FALLBACKS  
 try:
-    from python_dap import (
+    from ..python_dap import (
         server_new, server_delete, server_stop,
         server_start, server_listen, server_init, server_deinit,
-        server_get_all
+        server_get_all,
+        # Server type constants
+        DAP_SERVER_TYPE_HTTP, DAP_SERVER_TYPE_JSON_RPC, 
+        DAP_SERVER_TYPE_TCP, DAP_SERVER_TYPE_WEBSOCKET
     )
     
     # Check if functions are available
     if not all([server_new, server_delete, server_stop, server_start]):
         raise ImportError("Critical server functions missing")
-    
-    NATIVE_SERVER_AVAILABLE = True
-    logging.info("✅ Native DAP server functions loaded successfully")
+        
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: DAP server functions not available!")
-    logging.critical("Cannot continue without DAP server functions.")
-    logging.critical(f"Import error: {e}")
-    logging.critical("Please check:")
-    logging.critical("  1. python_dap.so compiled with server support")
-    logging.critical("  2. DAP SDK server module linked correctly")
-    logging.critical("  3. All server function bindings present")
-    logging.critical("TERMINATING - No fallback mode available.")
+    print(f"🚨 CRITICAL ERROR: DAP server functions not available!")
+    print(f"Cannot continue without DAP server functions.")
+    print(f"Import error: {e}")
+    print(f"Please check:")
+    print(f"  1. python_dap.so compiled with server support")
+    print(f"  2. DAP SDK server module linked correctly")
+    print(f"  3. All server function bindings present")
+    print(f"TERMINATING - All functions must be implemented in C extension.")
     sys.exit(1)
 
 from ..core.exceptions import DapException

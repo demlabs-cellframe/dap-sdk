@@ -10,7 +10,7 @@ from typing import Optional, Any, Dict, List
 from pathlib import Path
 
 # Import DAP config wrapper functions
-from python_dap import (
+from ..python_dap import (
     py_dap_config_init as dap_config_init,
     py_dap_config_deinit as dap_config_deinit,
     py_dap_config_open as dap_config_open,
@@ -21,10 +21,9 @@ from python_dap import (
     py_dap_config_set_item_str as dap_config_set_item_str,
     py_dap_config_set_item_int as dap_config_set_item_int,
     py_dap_config_set_item_bool as dap_config_set_item_bool,
-    py_dap_config_get_sys_dir as dap_config_get_sys_dir,
-    py_m_dap_config_get_item,
-    py_m_dap_config_get_sys_dir
+    py_dap_config_get_sys_dir as dap_config_get_sys_dir
 )
+# Legacy py_m_* functions removed - use modern API instead
 
 from ..core.exceptions import DapException, DapConfigError
 
@@ -65,9 +64,31 @@ class DapConfig:
             return True
         
         try:
-            # Initialize config system
-            if dap_config_init() != 0:
-                raise DapConfigError("Failed to initialize DAP config system")
+            # Initialize config system (try multiple paths)
+            config_paths = ["/etc/dap/dap.conf", "./dap.conf", "~/.dap/dap.conf"]
+            config_initialized = False
+            
+            for config_path in config_paths:
+                try:
+                    import os
+                    expanded_path = os.path.expanduser(config_path)
+                    if os.path.exists(expanded_path):
+                        if dap_config_init(expanded_path) == 0:
+                            config_initialized = True
+                            break
+                except Exception:
+                    continue
+                    
+            if not config_initialized:
+                # Try without path (default initialization)
+                try:
+                    if dap_config_init("") == 0:
+                        config_initialized = True
+                except Exception:
+                    pass
+                    
+            if not config_initialized:
+                raise DapConfigError("Failed to initialize DAP config system - no config available")
             
             # Open config file if specified
             if self._config_file:
@@ -109,8 +130,8 @@ class DapConfig:
             if self._config_handle:
                 return dap_config_get_item_str(self._config_handle, section, key, default)
             else:
-                # Use global config function
-                return py_m_dap_config_get_item(section, key, default)
+                # No global config - return default (modern API, no legacy)
+                return default
                 
         except Exception as e:
             self._logger.error(f"Failed to get config item {section}.{key}: {e}")
@@ -122,9 +143,8 @@ class DapConfig:
             if self._config_handle:
                 return dap_config_get_item_int(self._config_handle, section, key, default)
             else:
-                # Use global config function and convert
-                value = py_m_dap_config_get_item(section, key, str(default))
-                return int(value) if value.isdigit() else default
+                # No global config - return default (modern API, no legacy)
+                return default
                 
         except Exception as e:
             self._logger.error(f"Failed to get config item {section}.{key}: {e}")
@@ -137,9 +157,8 @@ class DapConfig:
             if self._config_handle:
                 return dap_config_get_item_bool(self._config_handle, section, key, default)
             else:
-                # Use global config function and convert
-                value = py_m_dap_config_get_item(section, key, str(default).lower())
-                return value.lower() in ('true', '1', 'yes', 'on')
+                # No global config - return default (modern API, no legacy)
+                return default
                 
         except Exception as e:
             self._logger.error(f"Failed to get config item {section}.{key}: {e}")
@@ -184,7 +203,7 @@ class DapConfig:
     def get_sys_dir(self) -> str:
         """Get system configuration directory."""
         try:
-            return py_m_dap_config_get_sys_dir()
+            return dap_config_get_sys_dir()  # Use modern API instead of legacy
             
         except Exception as e:
             self._logger.error(f"Failed to get system directory: {e}")

@@ -10,46 +10,45 @@ import sys
 from typing import Union
 from enum import Enum
 
-# Import existing DAP functions - CREATE MINIMAL STUBS FOR MISSING FUNCTIONS
+from .exceptions import DapCoreError
+
+
+class DapLoggingNotAvailableError(DapCoreError):
+    """DAP Logging functions not available in C extension."""
+    
+    def __init__(self, missing_functions: list = None, **kwargs):
+        missing_functions = missing_functions or []
+        message = f"Logging functions not available in python_dap C extension. Using Python logging fallback."
+        super().__init__(
+            message=message,
+            error_code="DAP_LOGGING_NOT_AVAILABLE",
+            **kwargs
+        )
+        self.add_context("missing_function_count", len(missing_functions))
+        self.add_context("missing_functions", missing_functions)
+        self.add_suggestion("Using Python logging as fallback")
+        self.add_suggestion("Check if DAP SDK logging module is properly linked")
+
+
+# Import existing DAP functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_common_init, dap_common_deinit  # These are available
     )
     
-    # Create minimal stubs for missing logging functions
-    def dap_set_log_level(level):
-        """Stub for missing dap_set_log_level - uses Python logging instead"""
-        python_levels = {0: logging.CRITICAL, 1: logging.ERROR, 2: logging.WARNING, 
-                        3: logging.INFO, 4: logging.DEBUG}
-        if level in python_levels:
-            logging.getLogger().setLevel(python_levels[level])
-        return 0
+    # Try to import additional logging functions - fail if not available
+    from ..python_dap import dap_set_log_level, dap_log_level_set, dap_get_log_level
     
-    def dap_log_level_set(level):
-        """Alias for dap_set_log_level"""
-        return dap_set_log_level(level)
-        
-    def dap_get_log_level():
-        """Stub for getting log level"""
-        python_level = logging.getLogger().level
-        level_map = {logging.CRITICAL: 0, logging.ERROR: 1, logging.WARNING: 2,
-                    logging.INFO: 3, logging.DEBUG: 4}
-        return level_map.get(python_level, 3)  # Default to INFO
-    
-    NATIVE_LOGGING_AVAILABLE = True
-    logging.info("✅ DAP logging stubs created successfully")
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
-    logging.critical("Cannot continue without native DAP SDK bindings.")
-    logging.critical(f"Import error: {e}")
-    logging.critical("Please check:")
-    logging.critical("  1. DAP SDK compilation successful")
-    logging.critical("  2. python_dap.so file exists and accessible")
-    logging.critical("  3. Library paths configured correctly")
-    logging.critical("TERMINATING - No fallback mode available.")
+    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"Cannot continue without native DAP SDK bindings.")
+    print(f"Import error: {e}")
+    print(f"Please check:")
+    print(f"  1. DAP SDK compilation successful")
+    print(f"  2. python_dap.so file exists and accessible")
+    print(f"  3. Library paths configured correctly")
+    print(f"TERMINATING - All functions must be implemented in C extension.")
     sys.exit(1)
-
-from .exceptions import DapException
 
 
 class DapLogLevel(Enum):
@@ -62,7 +61,7 @@ class DapLogLevel(Enum):
     DEBUG = "DEBUG"
 
 
-class DapLoggingError(DapException):
+class DapLoggingError(DapCoreError):
     """DAP Logging specific errors"""
     pass
 
@@ -202,6 +201,86 @@ class DapLogging:
             List of log level strings
         """
         return [level.value for level in DapLogLevel]
+    
+    def debug(self, message: str) -> None:
+        """
+        Log debug message via DAP logging system
+        
+        Args:
+            message: Debug message to log
+        """
+        try:
+            # Try to use DAP logging
+            from ..python_dap import py_dap_log_it_debug
+            py_dap_log_it_debug(message)
+        except (ImportError, AttributeError):
+            # Fallback to Python logging
+            if self.is_level_enabled(DapLogLevel.DEBUG):
+                self._logger.debug(f"[DAP] {message}")
+    
+    def info(self, message: str) -> None:
+        """
+        Log info message via DAP logging system
+        
+        Args:
+            message: Info message to log
+        """
+        try:
+            # Try to use DAP logging
+            from ..python_dap import py_dap_log_it_info
+            py_dap_log_it_info(message)
+        except (ImportError, AttributeError):
+            # Fallback to Python logging
+            if self.is_level_enabled(DapLogLevel.INFO):
+                self._logger.info(f"[DAP] {message}")
+    
+    def error(self, message: str) -> None:
+        """
+        Log error message via DAP logging system
+        
+        Args:
+            message: Error message to log
+        """
+        try:
+            # Try to use DAP logging
+            from ..python_dap import py_dap_log_it_error
+            py_dap_log_it_error(message)
+        except (ImportError, AttributeError):
+            # Fallback to Python logging
+            if self.is_level_enabled(DapLogLevel.ERROR):
+                self._logger.error(f"[DAP] {message}")
+    
+    def warning(self, message: str) -> None:
+        """
+        Log warning message via DAP logging system
+        
+        Args:
+            message: Warning message to log
+        """
+        try:
+            # Try to use DAP logging
+            from ..python_dap import py_dap_log_it_warning
+            py_dap_log_it_warning(message)
+        except (ImportError, AttributeError):
+            # Fallback to Python logging
+            if self.is_level_enabled(DapLogLevel.WARNING):
+                self._logger.warning(f"[DAP] {message}")
+    
+    def critical(self, message: str) -> None:
+        """
+        Log critical message via DAP logging system
+        
+        Args:
+            message: Critical message to log
+        """
+        try:
+            # Try to use DAP logging for critical messages
+            from ..python_dap import py_dap_log_it_error
+            py_dap_log_it_error(f"CRITICAL: {message}")
+        except (ImportError, AttributeError):
+            # Fallback to Python logging
+            if self.is_level_enabled(DapLogLevel.CRITICAL):
+                self._logger.critical(f"[DAP] {message}")
     
     def __repr__(self) -> str:
         try:

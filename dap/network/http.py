@@ -6,12 +6,31 @@ Direct Python wrappers over DAP HTTP client functions.
 
 import logging
 import sys
+import threading
 from typing import Optional, Any, Dict, List
 from enum import Enum
 
+from ..core.exceptions import DapNetworkError
+
+
+class DapHttpNotAvailableError(DapNetworkError):
+    """DAP HTTP functions not available in C extension."""
+    
+    def __init__(self, missing_functions: List[str], **kwargs):
+        message = f"HTTP functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        super().__init__(
+            message=message,
+            error_code="DAP_HTTP_NOT_AVAILABLE",
+            **kwargs
+        )
+        self.add_context("missing_function_count", len(missing_functions))
+        self.add_context("missing_functions", missing_functions)
+        self.add_suggestion("Implement missing HTTP functions in python_dap C extension")
+        self.add_suggestion("Check if DAP SDK HTTP module is properly linked")
+
 # Import existing DAP HTTP functions - FAIL FAST, NO FALLBACKS
 try:
-    from python_dap import (
+    from ..python_dap import (
         dap_http_client_new, dap_http_client_delete, dap_http_client_request,
         dap_http_client_request_ex, dap_http_client_set_headers, dap_http_client_set_timeout,
         dap_http_client_get_response_code, dap_http_client_get_response_size,
@@ -27,11 +46,11 @@ try:
         DAP_HTTP_METHOD_DELETE, DAP_HTTP_METHOD_HEAD, DAP_HTTP_METHOD_OPTIONS
     )
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
-    logging.critical("Cannot continue without native DAP SDK HTTP bindings.")
-    logging.critical(f"Import error: {e}")
-    logging.critical("HTTP operations require native implementation.")
-    logging.critical("TERMINATING - No fallback mode available.")
+    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"Cannot continue without native DAP SDK HTTP bindings.")
+    print(f"Import error: {e}")
+    print(f"HTTP operations require native implementation.")
+    print(f"TERMINATING - All functions must be implemented in C extension.")
     sys.exit(1)
 
 from ..core.exceptions import DapException
