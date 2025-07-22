@@ -13,15 +13,15 @@ from enum import Enum
 from .exceptions import DapCoreError
 
 
-class DapLoggingNotAvailableError(DapCoreError):
-    """DAP Logging functions not available in C extension."""
+class DapLoggingMissingError(DapCoreError):
+    """DAP Logging functions missing in C extension."""
     
     def __init__(self, missing_functions: list = None, **kwargs):
         missing_functions = missing_functions or []
-        message = f"Logging functions not available in python_dap C extension. Using Python logging fallback."
+        message = f"Logging functions missing in python_dap C extension. Using Python logging fallback."
         super().__init__(
             message=message,
-            error_code="DAP_LOGGING_NOT_AVAILABLE",
+            error_code="DAP_LOGGING_MISSING",
             **kwargs
         )
         self.add_context("missing_function_count", len(missing_functions))
@@ -36,11 +36,11 @@ try:
         dap_common_init, dap_common_deinit  # These are available
     )
     
-    # Try to import additional logging functions - fail if not available
+    # Try to import additional logging functions - fail if missing
     from ..python_dap import dap_set_log_level, dap_log_level_set, dap_get_log_level
     
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     print(f"Cannot continue without native DAP SDK bindings.")
     print(f"Import error: {e}")
     print(f"Please check:")

@@ -16,8 +16,11 @@ from .sign import (
     DapSign,
     DapSignError,
     DapHashType,
+    DapSignType,
     DapSignatureAggregator,
     DapBatchVerifier,
+    DapAggregatedSignature,
+    DapMultiSignature,
     quick_sign,
     quick_verify
 )
@@ -37,8 +40,15 @@ from .hash import (
     DapHash,
     DapHashError,
     DapHashType as DapHashingType,
-    quick_hash_fast,
-    quick_hash_slow
+    quick_hash_fast
+)
+
+from .enc import (
+    DapEnc,
+    DapEncError,
+    DapEncType,
+    quick_encrypt,
+    quick_decrypt
 )
 
 __all__ = [
@@ -48,31 +58,40 @@ __all__ = [
     'DapKeyError',
     'DapKeyManager',
 
-    
     # Digital Signatures
     'DapSign',
     'DapSignError',
     'DapHashType',
+    'DapSignType',
     'DapSignatureAggregator',
     'DapBatchVerifier',
+    'DapAggregatedSignature',
+    'DapMultiSignature',
     'quick_sign',
     'quick_verify',
     
     # Certificates
     'DapCert',
     'DapCertError',
-    'DapCertMetaType',
-    'DapCertificateManager',
-    'create_certificate',
-    'load_certificate',
+    'DapCertType',
+    'DapCertChain',
+    'DapCertStore',
+    'create_self_signed_cert',
+    'load_cert_from_file',
     'find_certificate',
     
     # Hash functions
     'DapHash',
     'DapHashError',
-    'DapHashingType',
+    'DapHashingType',  # Alias for DapHashType
     'quick_hash_fast',
-    'quick_hash_slow',
+    
+    # Encryption
+    'DapEnc',
+    'DapEncError', 
+    'DapEncType',
+    'quick_encrypt',
+    'quick_decrypt',
 ]
 
 # Version info

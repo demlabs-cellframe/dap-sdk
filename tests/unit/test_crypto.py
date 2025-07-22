@@ -9,10 +9,24 @@ from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Import test helper for DAP SDK initialization
+from test_init_helper import init_test_dap_sdk
 
 class TestDapCryptoKey:
     """Test cases for DapCryptoKey class"""
+    
+    @classmethod
+    def setup_class(cls):
+        """Setup test environment with DAP SDK initialization"""
+        cls._test_sdk = init_test_dap_sdk("test_crypto_key")
+    
+    @classmethod
+    def teardown_class(cls):
+        """Cleanup test environment"""
+        if hasattr(cls, '_test_sdk'):
+            cls._test_sdk.cleanup()
     
     def test_key_creation_with_handle(self):
         """Test DapCryptoKey creation with handle"""
@@ -34,6 +48,17 @@ class TestDapCryptoKey:
 class TestDapHash:
     """Test cases for DapHash class"""
     
+    @classmethod
+    def setup_class(cls):
+        """Setup test environment with DAP SDK initialization"""
+        cls._test_sdk = init_test_dap_sdk("test_crypto_hash")
+    
+    @classmethod
+    def teardown_class(cls):
+        """Cleanup test environment"""
+        if hasattr(cls, '_test_sdk'):
+            cls._test_sdk.cleanup()
+    
     def test_hash_creation(self):
         """Test DapHash creation"""
         from dap.crypto.hash import DapHash
@@ -51,16 +76,27 @@ class TestDapHash:
     
     def test_hash_algorithm_support(self):
         """Test hash algorithm constants"""
-        from dap.crypto.hash import DapHashAlgorithm
+        from dap.crypto.hash import DapHashType
         
         # Test that common algorithms are defined
-        assert hasattr(DapHashAlgorithm, 'SHA256')
-        assert hasattr(DapHashAlgorithm, 'SHA512')
-        assert hasattr(DapHashAlgorithm, 'KECCAK')
+        assert hasattr(DapHashType, 'SHA256')
+        assert hasattr(DapHashType, 'SHA512')
+        assert hasattr(DapHashType, 'KECCAK')
 
 
 class TestDapSign:
     """Test cases for DapSign class"""
+    
+    @classmethod
+    def setup_class(cls):
+        """Setup test environment with DAP SDK initialization"""
+        cls._test_sdk = init_test_dap_sdk("test_crypto_sign")
+    
+    @classmethod
+    def teardown_class(cls):
+        """Cleanup test environment"""
+        if hasattr(cls, '_test_sdk'):
+            cls._test_sdk.cleanup()
     
     def test_sign_creation_with_handle(self):
         """Test DapSign creation with handle"""
@@ -90,6 +126,17 @@ class TestDapSign:
 
 class TestDapEnc:
     """Test cases for DapEnc encryption class"""
+    
+    @classmethod
+    def setup_class(cls):
+        """Setup test environment with DAP SDK initialization"""
+        cls._test_sdk = init_test_dap_sdk("test_crypto_enc")
+    
+    @classmethod
+    def teardown_class(cls):
+        """Cleanup test environment"""
+        if hasattr(cls, '_test_sdk'):
+            cls._test_sdk.cleanup()
     
     def test_enc_creation(self):
         """Test DapEnc creation"""
@@ -121,6 +168,17 @@ class TestDapEnc:
 
 class TestDapCert:
     """Test cases for DapCert certificate class"""
+    
+    @classmethod
+    def setup_class(cls):
+        """Setup test environment with DAP SDK initialization"""
+        cls._test_sdk = init_test_dap_sdk("test_crypto_cert")
+    
+    @classmethod
+    def teardown_class(cls):
+        """Cleanup test environment"""
+        if hasattr(cls, '_test_sdk'):
+            cls._test_sdk.cleanup()
     
     def test_cert_creation(self):
         """Test DapCert creation"""

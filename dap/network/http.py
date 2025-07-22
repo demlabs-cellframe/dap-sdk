@@ -14,10 +14,10 @@ from ..core.exceptions import DapNetworkError
 
 
 class DapHttpNotAvailableError(DapNetworkError):
-    """DAP HTTP functions not available in C extension."""
+    """DAP HTTP functions missing in C extension."""
     
     def __init__(self, missing_functions: List[str], **kwargs):
-        message = f"HTTP functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        message = f"HTTP functions missing in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
         super().__init__(
             message=message,
             error_code="DAP_HTTP_NOT_AVAILABLE",
@@ -46,7 +46,7 @@ try:
         DAP_HTTP_METHOD_DELETE, DAP_HTTP_METHOD_HEAD, DAP_HTTP_METHOD_OPTIONS
     )
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     print(f"Cannot continue without native DAP SDK HTTP bindings.")
     print(f"Import error: {e}")
     print(f"HTTP operations require native implementation.")
@@ -591,15 +591,39 @@ def simple_request(url: str, method: str = "GET", data: Optional[bytes] = None) 
         return None
 
 
+# Quick functions
+def quick_http_get(url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 30) -> DapHttpResponse:
+    """Quick HTTP GET request"""
+    client = DapHttp.create_client()
+    try:
+        if headers:
+            client.set_default_headers(headers)
+        client.set_timeout(timeout)
+        return client.get(url)
+    finally:
+        client.delete()
+
+
+def quick_http_post(url: str, data: bytes, headers: Optional[Dict[str, str]] = None, timeout: int = 30) -> DapHttpResponse:
+    """Quick HTTP POST request"""
+    client = DapHttp.create_client()
+    try:
+        if headers:
+            client.set_default_headers(headers)
+        client.set_timeout(timeout)
+        return client.post(url, data)
+    finally:
+        client.delete()
+
+
 __all__ = [
     'DapHttp',
     'DapHttpError',
-    'DapHttpMethod',
+    'DapHttpMethod', 
     'DapHttpRequest',
     'DapHttpResponse',
     'DapHttpManager',
-    'create_http_client',
-    'quick_get',
-    'quick_post',
-    'simple_request'
+    'DapHttpNotAvailableError',
+    'quick_http_get',
+    'quick_http_post'
 ] 

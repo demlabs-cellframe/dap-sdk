@@ -133,12 +133,53 @@ PyObject* py_dap_log_set_external_output_wrapper(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+// Log it wrapper functions
+PyObject* py_dap_log_it_debug_wrapper(PyObject* self, PyObject* args) {
+    const char* message;
+    if (!PyArg_ParseTuple(args, "s", &message)) {
+        return NULL;
+    }
+    py_dap_log_it_debug(message);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_log_it_info_wrapper(PyObject* self, PyObject* args) {
+    const char* message;
+    if (!PyArg_ParseTuple(args, "s", &message)) {
+        return NULL;
+    }
+    py_dap_log_it_info(message);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_log_it_warning_wrapper(PyObject* self, PyObject* args) {
+    const char* message;
+    if (!PyArg_ParseTuple(args, "s", &message)) {
+        return NULL;
+    }
+    py_dap_log_it_warning(message);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_log_it_error_wrapper(PyObject* self, PyObject* args) {
+    const char* message;
+    if (!PyArg_ParseTuple(args, "s", &message)) {
+        return NULL;
+    }
+    py_dap_log_it_error(message);
+    Py_RETURN_NONE;
+}
+
 // Module method array
 static PyMethodDef logging_methods[] = {
     {"dap_set_log_level", py_dap_log_level_set_wrapper, METH_VARARGS, "Set DAP log level"},
     {"dap_log_level_set", py_dap_log_level_set_wrapper, METH_VARARGS, "Set DAP log level (alias)"},
     {"dap_get_log_level", py_dap_log_level_get_wrapper, METH_NOARGS, "Get DAP log level"},
     {"dap_log_set_external_output", py_dap_log_set_external_output_wrapper, METH_VARARGS, "Set external log output"},
+    {"py_dap_log_it_debug", py_dap_log_it_debug_wrapper, METH_VARARGS, "Log debug message via DAP"},
+    {"py_dap_log_it_info", py_dap_log_it_info_wrapper, METH_VARARGS, "Log info message via DAP"},
+    {"py_dap_log_it_warning", py_dap_log_it_warning_wrapper, METH_VARARGS, "Log warning message via DAP"},
+    {"py_dap_log_it_error", py_dap_log_it_error_wrapper, METH_VARARGS, "Log error message via DAP"},
     {NULL, NULL, 0, NULL}  // Sentinel
 };
 

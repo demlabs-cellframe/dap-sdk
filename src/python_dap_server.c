@@ -253,6 +253,10 @@ PyMethodDef* py_dap_server_get_methods(void) {
 
 // Server module initialization
 int py_dap_server_module_init(PyObject* module) {
-    // Add server-related constants if needed
+    // Add server type constants
+    PyModule_AddIntConstant(module, "DAP_SERVER_TYPE_HTTP", 0);
+    PyModule_AddIntConstant(module, "DAP_SERVER_TYPE_JSON_RPC", 1);
+    PyModule_AddIntConstant(module, "DAP_SERVER_TYPE_TCP", 2);
+    PyModule_AddIntConstant(module, "DAP_SERVER_TYPE_WEBSOCKET", 3);
     return 0;
 }

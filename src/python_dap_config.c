@@ -78,36 +78,7 @@ const char* py_dap_config_get_sys_dir(void) {
     return "/opt/dap";
 }
 
-char* py_m_dap_config_get_item(void* config, const char* section, const char* key) {
-    if (!config || !section || !key) {
-        return NULL;
-    }
-    
-    const char* value = dap_config_get_item_str((dap_config_t*)config, section, key);
-    return value ? dap_strdup(value) : NULL;
-}
-
-const char* py_m_dap_config_get_sys_dir(void) {
-    // Return a default system directory for now
-    return "/opt/dap";
-}
-
-// System directory getter - simplified
-char* py_m_dap_config_get_sys_dir_path(void) {
-    return dap_strdup("/opt/dap");
-}
-
-// Memory allocation wrapper
-void* py_m_dap_new_size(size_t size) {
-    return DAP_NEW_SIZE(uint8_t, size);
-}
-
-// Memory deallocation wrapper
-void py_m_dap_delete(void* ptr) {
-    if (ptr) {
-        DAP_DELETE(ptr);
-    }
-}
+// Legacy py_m_* functions removed - not needed for clean modern API
 
 // Python wrapper functions
 
@@ -279,6 +250,8 @@ PyObject* py_dap_config_get_sys_dir_wrapper(PyObject* self, PyObject* args) {
     return PyUnicode_FromString(result ? result : "");
 }
 
+// Legacy py_m_* wrapper functions removed - use modern API instead
+
 // Module method array
 static PyMethodDef config_methods[] = {
     // Config functions  
@@ -295,6 +268,7 @@ static PyMethodDef config_methods[] = {
     {"py_dap_config_set_item_int", py_dap_config_set_item_int_wrapper, METH_VARARGS, "Set config int item"},
     {"py_dap_config_set_item_bool", py_dap_config_set_item_bool_wrapper, METH_VARARGS, "Set config bool item"},
     {"py_dap_config_get_sys_dir", py_dap_config_get_sys_dir_wrapper, METH_NOARGS, "Get system directory"},
+    
     {NULL, NULL, 0, NULL}  // Sentinel
 };
 

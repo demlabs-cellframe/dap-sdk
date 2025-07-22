@@ -30,4 +30,10 @@ PyObject* py_dap_config_set_item_int_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_config_set_item_bool_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_config_get_sys_dir_wrapper(PyObject* self, PyObject* args);
 
+// Legacy py_m_* wrapper functions removed - use modern API instead
+
+// Module functions
+PyMethodDef* py_dap_config_get_methods(void);
+int py_dap_config_module_init(PyObject* module);
+
 #endif // PYTHON_DAP_CONFIG_H 

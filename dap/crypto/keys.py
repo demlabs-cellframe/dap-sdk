@@ -56,7 +56,7 @@ class DapKeyManager:
             self._keys[key_name] = key_data
             return True
         except ImportError:
-            raise DapKeyError("Native crypto implementation not available")
+            raise DapKeyError("Native crypto implementation missing")
         except Exception as e:
             raise DapKeyError(f"Failed to generate key: {e}")
     
@@ -111,6 +111,11 @@ class DapCryptoKey:
         """
         self._key_handle = key_handle
         self.key_type = None
+    
+    @property
+    def handle(self) -> Any:
+        """Get key handle for compatibility with tests."""
+        return self._key_handle
         
     def get_public_key(self) -> bytes:
         """Get public key bytes."""

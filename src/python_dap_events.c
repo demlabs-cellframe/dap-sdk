@@ -6,6 +6,7 @@
 #include "python_dap.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
+#include "dap_worker.h"
 #include <errno.h>
 
 // Events wrapper implementations using REAL DAP SDK functions
@@ -26,16 +27,17 @@ int py_dap_events_start() {
 }
 
 int py_dap_events_stop(void) {
-    // DAP SDK doesn't have dap_events_stop function
-    // We can only stop via worker context or use dap_events_deinit
-    return 0; // Stub implementation
+    // DAP SDK doesn't have dap_events_stop function directly
+    // We can use dap_events_stop_all for stopping
+    dap_events_stop_all();
+    return 0;
 }
 
 void* py_dap_events_socket_create(dap_events_desc_type_t a_type, dap_events_socket_callback_t a_callback) {
     // Create callbacks structure
     dap_events_socket_callbacks_t l_callbacks = {0};
     l_callbacks.read_callback = a_callback;
-    l_callbacks.write_callback = NULL; // write_callback expects bool return type, using NULL for now
+    l_callbacks.write_callback = NULL; 
     l_callbacks.error_callback = NULL;
     l_callbacks.delete_callback = NULL;
     l_callbacks.arg = NULL;
@@ -56,28 +58,48 @@ void py_dap_events_socket_delete(void* a_socket) {
 }
 
 void* py_dap_events_socket_queue_ptr(void* a_socket) {
-    // This function doesn't exist in DAP SDK - return NULL
-    return NULL;
+    dap_events_socket_t* l_es = (dap_events_socket_t*)a_socket;
+    if (!l_es) return NULL;
+    
+    // Return pointer to the queue or socket itself for queue operations
+    // This is used for queue_ptr_send operations
+    return (void*)l_es;
 }
 
 int py_dap_events_socket_assign_on_worker_mt(void* a_socket, int a_worker_num) {
-    // This function name is incorrect - use proper API
     dap_events_socket_t* l_es = (dap_events_socket_t*)a_socket;
     if (!l_es) return -1;
     
-    // Get worker by number would require getting worker list
-    // For now return success stub
+    // Get worker by index
+    dap_worker_t* l_worker = dap_events_worker_get((uint8_t)a_worker_num);
+    if (!l_worker) return -1;
+    
+    // Assign socket to worker
+    dap_events_socket_assign_on_worker(l_es, l_worker);
     return 0;
 }
 
 void py_dap_events_socket_event_proc_add(void* a_socket, uint32_t a_events, dap_events_socket_callback_t a_callback) {
-    // This function doesn't exist in DAP SDK
-    // Events are handled through callbacks structure during creation
+    dap_events_socket_t* l_es = (dap_events_socket_t*)a_socket;
+    if (!l_es) return;
+    
+    // Set appropriate callback based on event type
+    // This is a simplified implementation - in real DAP SDK events are set during socket creation
+    if (a_events & POLLIN) {
+        l_es->callbacks.read_callback = a_callback;
+    }
+    // Add other event types as needed
 }
 
 void py_dap_events_socket_event_proc_remove(void* a_socket, uint32_t a_events) {
-    // This function doesn't exist in DAP SDK  
-    // Events are handled through callbacks structure
+    dap_events_socket_t* l_es = (dap_events_socket_t*)a_socket;
+    if (!l_es) return;
+    
+    // Remove callbacks based on event type
+    if (a_events & POLLIN) {
+        l_es->callbacks.read_callback = NULL;
+    }
+    // Remove other event types as needed
 }
 
 // Python wrapper functions
@@ -90,35 +112,141 @@ PyObject* py_dap_events_init_wrapper(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    // Call REAL implementation
     int result = py_dap_events_init((uint32_t)workers, (uint32_t)queue_size);
     return PyLong_FromLong(result);
 }
 
 PyObject* py_dap_events_deinit_wrapper(PyObject* self, PyObject* args) {
-    // Call REAL implementation
     py_dap_events_deinit();
     Py_RETURN_NONE;
 }
 
 PyObject* py_dap_events_start_wrapper(PyObject* self, PyObject* args) {
-    // Call REAL implementation
     int result = py_dap_events_start();
     return PyLong_FromLong(result);
 }
 
 PyObject* py_dap_events_stop_wrapper(PyObject* self, PyObject* args) {
-    // Call REAL implementation
     int result = py_dap_events_stop();
     return PyLong_FromLong(result);
 }
 
-// Module method array
+PyObject* py_dap_events_socket_create_wrapper(PyObject* self, PyObject* args) {
+    int type;
+    PyObject* callback_obj = NULL;
+    
+    if (!PyArg_ParseTuple(args, "i|O", &type, &callback_obj)) {
+        return NULL;
+    }
+    
+    // For now, create socket without callback (can be set later)
+    void* socket = py_dap_events_socket_create((dap_events_desc_type_t)type, NULL);
+    
+    return PyLong_FromVoidPtr(socket);
+}
+
+PyObject* py_dap_events_socket_delete_wrapper(PyObject* self, PyObject* args) {
+    PyObject* socket_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &socket_obj)) {
+        return NULL;
+    }
+    
+    void* socket = PyLong_AsVoidPtr(socket_obj);
+    if (!socket) {
+        PyErr_SetString(PyExc_ValueError, "Invalid socket pointer");
+        return NULL;
+    }
+    
+    py_dap_events_socket_delete(socket);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_events_socket_queue_ptr_wrapper(PyObject* self, PyObject* args) {
+    PyObject* socket_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &socket_obj)) {
+        return NULL;
+    }
+    
+    void* socket = PyLong_AsVoidPtr(socket_obj);
+    if (!socket) {
+        PyErr_SetString(PyExc_ValueError, "Invalid socket pointer");
+        return NULL;
+    }
+    
+    void* queue_ptr = py_dap_events_socket_queue_ptr(socket);
+    return PyLong_FromVoidPtr(queue_ptr);
+}
+
+PyObject* py_dap_events_socket_assign_on_worker_mt_wrapper(PyObject* self, PyObject* args) {
+    PyObject* socket_obj;
+    int worker_num;
+    
+    if (!PyArg_ParseTuple(args, "Oi", &socket_obj, &worker_num)) {
+        return NULL;
+    }
+    
+    void* socket = PyLong_AsVoidPtr(socket_obj);
+    if (!socket) {
+        PyErr_SetString(PyExc_ValueError, "Invalid socket pointer");
+        return NULL;
+    }
+    
+    int result = py_dap_events_socket_assign_on_worker_mt(socket, worker_num);
+    return PyLong_FromLong(result);
+}
+
+PyObject* py_dap_events_socket_event_proc_add_wrapper(PyObject* self, PyObject* args) {
+    PyObject* socket_obj;
+    int events;
+    PyObject* callback_obj = NULL;
+    
+    if (!PyArg_ParseTuple(args, "Oi|O", &socket_obj, &events, &callback_obj)) {
+        return NULL;
+    }
+    
+    void* socket = PyLong_AsVoidPtr(socket_obj);
+    if (!socket) {
+        PyErr_SetString(PyExc_ValueError, "Invalid socket pointer");
+        return NULL;
+    }
+    
+    // For now, add without callback
+    py_dap_events_socket_event_proc_add(socket, (uint32_t)events, NULL);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_events_socket_event_proc_remove_wrapper(PyObject* self, PyObject* args) {
+    PyObject* socket_obj;
+    int events;
+    
+    if (!PyArg_ParseTuple(args, "Oi", &socket_obj, &events)) {
+        return NULL;
+    }
+    
+    void* socket = PyLong_AsVoidPtr(socket_obj);
+    if (!socket) {
+        PyErr_SetString(PyExc_ValueError, "Invalid socket pointer");
+        return NULL;
+    }
+    
+    py_dap_events_socket_event_proc_remove(socket, (uint32_t)events);
+    Py_RETURN_NONE;
+}
+
+// Module method array with ALL needed functions
 static PyMethodDef events_methods[] = {
     {"dap_events_init", py_dap_events_init_wrapper, METH_VARARGS, "Initialize DAP events"},
     {"dap_events_deinit", py_dap_events_deinit_wrapper, METH_NOARGS, "Deinitialize DAP events"},
     {"dap_events_start", py_dap_events_start_wrapper, METH_NOARGS, "Start DAP events"},
     {"dap_events_stop", py_dap_events_stop_wrapper, METH_NOARGS, "Stop DAP events"},
+    {"dap_events_socket_create", py_dap_events_socket_create_wrapper, METH_VARARGS, "Create event socket"},
+    {"dap_events_socket_delete", py_dap_events_socket_delete_wrapper, METH_VARARGS, "Delete event socket"},
+    {"dap_events_socket_queue_ptr", py_dap_events_socket_queue_ptr_wrapper, METH_VARARGS, "Get socket queue pointer"},
+    {"dap_events_socket_assign_on_worker_mt", py_dap_events_socket_assign_on_worker_mt_wrapper, METH_VARARGS, "Assign socket to worker"},
+    {"dap_events_socket_event_proc_add", py_dap_events_socket_event_proc_add_wrapper, METH_VARARGS, "Add event processor"},
+    {"dap_events_socket_event_proc_remove", py_dap_events_socket_event_proc_remove_wrapper, METH_VARARGS, "Remove event processor"},
     {NULL, NULL, 0, NULL}  // Sentinel
 };
 

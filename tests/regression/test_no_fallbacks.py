@@ -12,6 +12,13 @@ import inspect
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# Import and setup test initialization BEFORE importing dap modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from test_init_helper import init_test_dap_sdk
+
+# Initialize DAP SDK with test paths before any dap imports
+_test_init = init_test_dap_sdk("regression_test")
+
 
 class TestNoFallbacks:
     """Regression tests to ensure no fallback implementations exist"""

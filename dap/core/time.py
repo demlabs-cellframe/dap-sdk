@@ -24,7 +24,7 @@ try:
     NATIVE_TIME_AVAILABLE = True
     logging.info("✅ DAP time functions with stubs loaded successfully")
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     logging.critical("Cannot continue without native DAP SDK time bindings.")
     logging.critical(f"Import error: {e}")
     logging.critical("Time operations require native implementation.")

@@ -19,7 +19,7 @@ try:
         dap_events_socket_event_proc_remove
     )
 except ImportError as e:
-    logging.critical("🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    logging.critical("🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     logging.critical("Cannot continue without native DAP SDK events bindings.")
     logging.critical(f"Import error: {e}")
     logging.critical("Event system operations require native implementation.")

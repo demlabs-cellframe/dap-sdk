@@ -1,0 +1,2 @@
+/usr/bin/ar qc libdap_json_rpc.a CMakeFiles/dap_json_rpc.dir/src/dap_json_rpc.c.o
+/usr/bin/ranlib libdap_json_rpc.a

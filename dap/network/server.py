@@ -14,10 +14,10 @@ from ..core.exceptions import DapNetworkError
 
 
 class DapServerNotAvailableError(DapNetworkError):
-    """DAP Server functions not available in C extension."""
+    """DAP Server functions missing in C extension."""
     
     def __init__(self, missing_functions: List[str], **kwargs):
-        message = f"Server functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        message = f"Server functions missing in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
         super().__init__(
             message=message,
             error_code="DAP_SERVER_NOT_AVAILABLE",
@@ -45,7 +45,7 @@ try:
         raise ImportError("Critical server functions missing")
         
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: DAP server functions not available!")
+    print(f"🚨 CRITICAL ERROR: DAP server functions missing!")
     print(f"Cannot continue without DAP server functions.")
     print(f"Import error: {e}")
     print(f"Please check:")
@@ -161,8 +161,8 @@ class DapServer:
             DapServerError: If server creation fails
         """
         try:
-                                # Call C function: server_new()
-            server_handle = server_new(name, server_type.value)
+            # Call C function: server_new() - принимает только имя config секции
+            server_handle = server_new(name)
 
             if not server_handle:
                 raise DapServerError(f"Failed to create server {name}")

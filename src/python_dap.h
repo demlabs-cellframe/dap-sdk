@@ -20,6 +20,7 @@
 #include "python_dap_server.h"
 #include "python_dap_client.h"
 #include "python_dap_events.h"
+#include "python_dap_network.h"
 
 // Module method array functions - each module provides its methods
 PyMethodDef* py_dap_common_get_methods(void);
@@ -30,6 +31,8 @@ PyMethodDef* py_dap_time_get_methods(void);
 PyMethodDef* py_dap_server_get_methods(void);
 PyMethodDef* py_dap_client_get_methods(void);
 PyMethodDef* py_dap_events_get_methods(void);
+PyMethodDef* py_dap_network_get_methods(void);
+PyMethodDef* py_dap_plugin_get_methods(void);
 
 // Module initialization functions - each module contributes to PyInit
 int py_dap_common_module_init(PyObject* module);
@@ -41,5 +44,6 @@ int py_dap_server_module_init(PyObject* module);
 int py_dap_client_module_init(PyObject* module);
 int py_dap_server_module_init(PyObject* module);
 int py_dap_events_module_init(PyObject* module);
+int py_dap_network_module_init(PyObject* module);
 
 #endif // PYTHON_DAP_H 

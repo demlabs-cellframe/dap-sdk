@@ -1,0 +1,189 @@
+/*
+ * Python DAP Network Implementation
+ * Wrapper functions around DAP SDK network/stream functions
+ */
+
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include "python_dap.h"
+#include "dap_common.h"
+#include "dap_stream_ch.h"
+
+// Stream function wrappers
+
+PyObject* dap_stream_new_wrapper(PyObject* self, PyObject* args) {
+    // TODO: Implement actual dap_stream_new call
+    // For now return a placeholder handle
+    return PyLong_FromLong(1); // Placeholder stream handle
+}
+
+PyObject* dap_stream_delete_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &stream_obj)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_delete call
+    return PyLong_FromLong(0); // Success
+}
+
+PyObject* dap_stream_open_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    const char* addr;
+    int port;
+    
+    if (!PyArg_ParseTuple(args, "Osi", &stream_obj, &addr, &port)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_open call
+    return PyLong_FromLong(0); // Success
+}
+
+PyObject* dap_stream_close_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &stream_obj)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_close call
+    return PyLong_FromLong(0); // Success
+}
+
+PyObject* dap_stream_write_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    const char* data;
+    Py_ssize_t data_len;
+    
+    if (!PyArg_ParseTuple(args, "Os#", &stream_obj, &data, &data_len)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_write call
+    return PyLong_FromLong(data_len); // Bytes written
+}
+
+PyObject* dap_stream_read_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    int max_size = 1024;
+    
+    if (!PyArg_ParseTuple(args, "O|i", &stream_obj, &max_size)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_read call
+    return PyBytes_FromString(""); // Empty data for now
+}
+
+PyObject* dap_stream_get_id_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &stream_obj)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_get_id call
+    return PyLong_FromLong(1); // Placeholder ID
+}
+
+PyObject* dap_stream_set_callbacks_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    PyObject* callbacks;
+    
+    if (!PyArg_ParseTuple(args, "OO", &stream_obj, &callbacks)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual callback setting
+    return PyLong_FromLong(0); // Success
+}
+
+PyObject* dap_stream_get_remote_addr_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &stream_obj)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_get_remote_addr call
+    return PyUnicode_FromString("127.0.0.1"); // Placeholder
+}
+
+PyObject* dap_stream_get_remote_port_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &stream_obj)) {
+        return NULL;
+    }
+    
+    // TODO: Implement actual dap_stream_get_remote_port call
+    return PyLong_FromLong(8080); // Placeholder
+}
+
+
+// Stream Channel function wrapper
+PyObject* dap_stream_ch_new_wrapper(PyObject* self, PyObject* args) {
+    PyObject* stream_obj;
+    int ch_id;
+    
+    if (!PyArg_ParseTuple(args, "Oi", &stream_obj, &ch_id)) {
+        return NULL;
+    }
+    
+    // For now return a placeholder handle - this needs actual implementation
+    // TODO: Extract dap_stream_t* from stream_obj and call real dap_stream_ch_new
+    // dap_stream_t* stream = ... (extract from stream_obj) 
+    // dap_stream_ch_t* ch = dap_stream_ch_new(stream, (uint8_t)ch_id);
+    // return create python object from ch
+    
+    return PyLong_FromLong(1); // Placeholder channel handle  
+}
+// Network initialization functions
+PyObject* py_dap_network_init_wrapper(PyObject* self, PyObject* args) {
+    return PyLong_FromLong(0); // Success
+}
+
+PyObject* py_dap_network_deinit_wrapper(PyObject* self, PyObject* args) {
+    Py_RETURN_NONE;
+}
+
+// Module method array
+static PyMethodDef network_methods[] = {
+    // Core stream functions
+    {"dap_stream_new", dap_stream_new_wrapper, METH_NOARGS, "Create new DAP stream"},
+    {"dap_stream_delete", dap_stream_delete_wrapper, METH_VARARGS, "Delete DAP stream"}, 
+    {"dap_stream_open", dap_stream_open_wrapper, METH_VARARGS, "Open DAP stream connection"},
+    {"dap_stream_close", dap_stream_close_wrapper, METH_VARARGS, "Close DAP stream"},
+    {"dap_stream_write", dap_stream_write_wrapper, METH_VARARGS, "Write data to stream"},
+    {"dap_stream_read", dap_stream_read_wrapper, METH_VARARGS, "Read data from stream"},
+    {"dap_stream_get_id", dap_stream_get_id_wrapper, METH_VARARGS, "Get stream ID"},
+    {"dap_stream_set_callbacks", dap_stream_set_callbacks_wrapper, METH_VARARGS, "Set stream callbacks"},
+    {"dap_stream_get_remote_addr", dap_stream_get_remote_addr_wrapper, METH_VARARGS, "Get remote address"},
+    {"dap_stream_get_remote_port", dap_stream_get_remote_port_wrapper, METH_VARARGS, "Get remote port"},
+    {"dap_stream_ch_new", dap_stream_ch_new_wrapper, METH_VARARGS, "Create new DAP stream channel"},
+    
+    // Network init functions
+    {"py_dap_network_init", py_dap_network_init_wrapper, METH_NOARGS, "Initialize DAP network"},
+    {"py_dap_network_deinit", py_dap_network_deinit_wrapper, METH_NOARGS, "Deinitialize DAP network"},
+    
+    {NULL, NULL, 0, NULL}  // Sentinel
+};
+
+// Function to get methods array
+PyMethodDef* py_dap_network_get_methods(void) {
+    return network_methods;
+}
+
+// Module initialization function
+int py_dap_network_module_init(PyObject* module) {
+    // Add stream state constants
+    PyModule_AddIntConstant(module, "DAP_STREAM_STATE_NEW", 0);
+    PyModule_AddIntConstant(module, "DAP_STREAM_STATE_CONNECTED", 1);
+    PyModule_AddIntConstant(module, "DAP_STREAM_STATE_LISTENING", 2);
+    PyModule_AddIntConstant(module, "DAP_STREAM_STATE_ERROR", 3);
+    PyModule_AddIntConstant(module, "DAP_STREAM_STATE_CLOSED", 4);
+    
+    return 0;
+} 

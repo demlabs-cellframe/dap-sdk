@@ -63,7 +63,7 @@ class GdbNode:
             self._connected = result
             return result
         except ImportError:
-            raise GdbError("Native GlobalDB implementation not available")
+            raise GdbError("Native GlobalDB implementation missing")
         except Exception as e:
             raise GdbError(f"Failed to connect to node: {e}")
     
@@ -74,7 +74,7 @@ class GdbNode:
             disconnect_from_node(self.address, self.port)
             self._connected = False
         except ImportError:
-            raise GdbError("Native GlobalDB implementation not available")
+            raise GdbError("Native GlobalDB implementation missing")
         except Exception as e:
             raise GdbError(f"Failed to disconnect from node: {e}")
     
@@ -307,7 +307,7 @@ def create_cluster() -> GdbCluster:
         cluster_handle = create_cluster_native()
         return GdbCluster(cluster_handle)
     except ImportError:
-        raise GdbError("Native GlobalDB implementation not available")
+        raise GdbError("Native GlobalDB implementation missing")
     except Exception as e:
         raise GdbError(f"Failed to create cluster: {e}")
 

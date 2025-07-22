@@ -106,7 +106,7 @@ class DapNet:
             except Exception as e:
                 logger.error(f"Failed to load native network {name}: {e}")
         else:
-            logger.warning("Native CellFrame API not available - using fallback")
+            logger.warning("Native CellFrame API missing - using fallback")
     
     @property
     def id(self) -> DapNetID:

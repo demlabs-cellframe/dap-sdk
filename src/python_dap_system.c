@@ -165,6 +165,7 @@ static PyMethodDef system_methods[] = {
     {"dap_free", py_dap_free_wrapper, METH_VARARGS, "Free memory (alias)"},
     {"dap_calloc", py_dap_calloc_wrapper, METH_VARARGS, "Allocate and clear memory (alias)"},
     {"dap_realloc", py_dap_realloc_wrapper, METH_VARARGS, "Reallocate memory (alias)"},
+    {"exec_with_ret_multistring", py_exec_with_ret_multistring_wrapper, METH_VARARGS, "Execute command (alias)"},
     {NULL, NULL, 0, NULL}  // Sentinel
 };
 

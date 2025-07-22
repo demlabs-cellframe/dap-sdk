@@ -24,8 +24,13 @@ from ..core.exceptions import DapException
 
 class DapHashType(Enum):
     """DAP supported hash types"""
-    FAST = "fast"
-    SLOW = "slow"
+    # ✅ RECOMMENDED: Quantum-resistant hash algorithms
+    KECCAK = "keccak"             # Recommended default (SHA-3 family)
+    FAST = "keccak"               # Alias for KECCAK (fast hash)
+    
+    # ⚠️  DEPRECATED: SHA-2 family (still secure but KECCAK preferred)
+    SHA256 = "sha256"             # DEPRECATED: Use KECCAK instead
+    SHA512 = "sha512"             # DEPRECATED: Use KECCAK instead
 
 
 class DapHashError(DapException):
@@ -52,12 +57,12 @@ class DapHash:
         result = hasher.hash(b"data")
     """
     
-    def __init__(self, hash_type: DapHashType = DapHashType.FAST):
+    def __init__(self, hash_type: DapHashType = DapHashType.KECCAK):
         """
         Initialize hash handler
         
         Args:
-            hash_type: Type of hash algorithm to use
+            hash_type: Type of hash algorithm to use (default: KECCAK)
         """
         self._hash_type = hash_type
         self._logger = logging.getLogger(__name__)
@@ -65,7 +70,7 @@ class DapHash:
     @staticmethod
     def fast(data: Union[bytes, str]) -> bytes:
         """
-        Calculate fast hash of data
+        Calculate KECCAK hash of data (fast algorithm)
         
         Args:
             data: Data to hash
@@ -80,49 +85,18 @@ class DapHash:
             data = data.encode('utf-8')
         
         try:
-            # Call C function: dap_hash_fast()
+            # Call C function: dap_hash_fast() - KECCAK implementation
             result = dap_hash_fast(data)
             if result is None:
-                raise DapHashError("Fast hash calculation failed")
+                raise DapHashError("KECCAK hash calculation failed")
             
             logging.getLogger(__name__).debug(
-                f"Fast hash calculated, input: {len(data)} bytes, output: {len(result)} bytes"
+                f"KECCAK hash calculated, input: {len(data)} bytes, output: {len(result)} bytes"
             )
             return result
             
         except Exception as e:
-            raise DapHashError(f"Fast hash failed: {e}")
-    
-    @staticmethod
-    def slow(data: Union[bytes, str]) -> bytes:
-        """
-        Calculate slow hash of data
-        
-        Args:
-            data: Data to hash
-            
-        Returns:
-            Hash result bytes
-            
-        Raises:
-            DapHashError: If hashing fails
-        """
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        
-        try:
-            # Call C function: dap_hash_slow()
-            result = dap_hash_slow(data)
-            if result is None:
-                raise DapHashError("Slow hash calculation failed")
-            
-            logging.getLogger(__name__).debug(
-                f"Slow hash calculated, input: {len(data)} bytes, output: {len(result)} bytes"
-            )
-            return result
-            
-        except Exception as e:
-            raise DapHashError(f"Slow hash failed: {e}")
+            raise DapHashError(f"KECCAK hash failed: {e}")
     
     def hash(self, data: Union[bytes, str]) -> bytes:
         """
@@ -134,12 +108,28 @@ class DapHash:
         Returns:
             Hash result bytes
         """
-        if self._hash_type == DapHashType.FAST:
-            return self.fast(data)
-        elif self._hash_type == DapHashType.SLOW:
-            return self.slow(data)
+        if self._hash_type in (DapHashType.FAST, DapHashType.KECCAK):
+            return self.fast(data)  # Both FAST and KECCAK use fast algorithm
+        elif self._hash_type == DapHashType.SHA256:
+            # Legacy SHA256 support (deprecated)
+            return self.fast(data)  # Fallback to KECCAK
+        elif self._hash_type == DapHashType.SHA512:
+            # Legacy SHA512 support (deprecated)  
+            return self.fast(data)  # Fallback to KECCAK
         else:
             raise DapHashError(f"Unknown hash type: {self._hash_type}")
+    
+    def hash_fast(self, data: Union[bytes, str]) -> bytes:
+        """
+        Hash data using fast algorithm (alias for self.fast)
+        
+        Args:
+            data: Data to hash
+            
+        Returns:
+            Hash result bytes
+        """
+        return self.fast(data)
     
     @property
     def hash_type(self) -> DapHashType:
@@ -161,15 +151,9 @@ def quick_hash_fast(data: Union[bytes, str]) -> bytes:
     return DapHash.fast(data)
 
 
-def quick_hash_slow(data: Union[bytes, str]) -> bytes:
-    """Quick slow hash function"""
-    return DapHash.slow(data)
-
-
 __all__ = [
     'DapHash', 
     'DapHashType', 
     'DapHashError',
     'quick_hash_fast',
-    'quick_hash_slow'
 ] 

@@ -1,0 +1,120 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.1, pluggy-1.6.0 -- /mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/tests/../venv/bin/python
+cachedir: .pytest_cache
+rootdir: /mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/tests
+configfile: pytest.ini
+plugins: cov-6.2.1
+collecting ... collected 0 items / 1 error
+INTERNALERROR> Traceback (most recent call last):
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap/events/events.py", line 15, in <module>
+INTERNALERROR>     from python_dap import (
+INTERNALERROR> ImportError: cannot import name 'dap_events_init' from 'python_dap' (/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/python_dap.so)
+INTERNALERROR> 
+INTERNALERROR> During handling of the above exception, another exception occurred:
+INTERNALERROR> 
+INTERNALERROR> Traceback (most recent call last):
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 289, in wrap_session
+INTERNALERROR>     session.exitstatus = doit(config, session) or 0
+INTERNALERROR>                          ^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 342, in _main
+INTERNALERROR>     config.hook.pytest_collection(session=session)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/logging.py", line 788, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 1450, in pytest_collection
+INTERNALERROR>     return (yield)
+INTERNALERROR>             ^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 353, in pytest_collection
+INTERNALERROR>     session.perform_collect()
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 813, in perform_collect
+INTERNALERROR>     self.items.extend(self.genitems(node))
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 979, in genitems
+INTERNALERROR>     yield from self.genitems(subnode)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 979, in genitems
+INTERNALERROR>     yield from self.genitems(subnode)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 974, in genitems
+INTERNALERROR>     rep, duplicate = self._collect_one_node(node, handle_dupes)
+INTERNALERROR>                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/main.py", line 839, in _collect_one_node
+INTERNALERROR>     rep = collect_one_node(node)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/runner.py", line 567, in collect_one_node
+INTERNALERROR>     rep: CollectReport = ihook.pytest_make_collect_report(collector=collector)
+INTERNALERROR>                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+INTERNALERROR>     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+INTERNALERROR>     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 167, in _multicall
+INTERNALERROR>     raise exception
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 139, in _multicall
+INTERNALERROR>     teardown.throw(exception)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/capture.py", line 880, in pytest_make_collect_report
+INTERNALERROR>     rep = yield
+INTERNALERROR>           ^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+INTERNALERROR>     res = hook_impl.function(*args)
+INTERNALERROR>           ^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/runner.py", line 391, in pytest_make_collect_report
+INTERNALERROR>     call = CallInfo.from_call(
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/runner.py", line 344, in from_call
+INTERNALERROR>     result: TResult | None = func()
+INTERNALERROR>                              ^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/runner.py", line 389, in collect
+INTERNALERROR>     return list(collector.collect())
+INTERNALERROR>                 ^^^^^^^^^^^^^^^^^^^
+mainloop: caught unexpected SystemExit!
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/python.py", line 554, in collect
+INTERNALERROR>     self._register_setup_module_fixture()
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/python.py", line 567, in _register_setup_module_fixture
+INTERNALERROR>     self.obj, ("setUpModule", "setup_module")
+INTERNALERROR>     ^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/python.py", line 280, in obj
+INTERNALERROR>     self._obj = obj = self._getobj()
+INTERNALERROR>                       ^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/python.py", line 551, in _getobj
+INTERNALERROR>     return importtestmodule(self.path, self.config)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/python.py", line 498, in importtestmodule
+INTERNALERROR>     mod = import_path(
+INTERNALERROR>           ^^^^^^^^^^^^
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/pathlib.py", line 587, in import_path
+INTERNALERROR>     importlib.import_module(module_name)
+INTERNALERROR>   File "/usr/lib/python3.11/importlib/__init__.py", line 126, in import_module
+INTERNALERROR>     return _bootstrap._gcd_import(name[level:], package, level)
+INTERNALERROR>            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 1206, in _gcd_import
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 1178, in _find_and_load
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 1149, in _find_and_load_unlocked
+INTERNALERROR>   File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/venv/lib/python3.11/site-packages/_pytest/assertion/rewrite.py", line 186, in exec_module
+INTERNALERROR>     exec(co, module.__dict__)
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/tests/integration/test_network_integration.py", line 17, in <module>
+INTERNALERROR>     import dap
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap/__init__.py", line 11, in <module>
+INTERNALERROR>     from . import common, config, core, crypto, events, global_db, network
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap/events/__init__.py", line 7, in <module>
+INTERNALERROR>     from .events import DapEvents, DapEventType, get_dap_events
+INTERNALERROR>   File "/mnt/UltraFastSSD/work/cellframe/cellframe-node.rc-6/plugins/plugin-python/python-dap/dap/events/events.py", line 27, in <module>
+INTERNALERROR>     sys.exit(1)
+INTERNALERROR> SystemExit: 1
+
+=============================== 1 error in 0.01s ===============================

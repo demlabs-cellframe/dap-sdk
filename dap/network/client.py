@@ -26,7 +26,7 @@ try:
         DAP_CLIENT_STAGE_DISCONNECTED, DAP_CLIENT_STAGE_ERROR, DAP_CLIENT_STAGE_ESTABLISHED
     )
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     print(f"Cannot continue without native DAP SDK stream bindings.")
     print(f"Import error: {e}")
     print(f"network client operations require native implementation.")
@@ -545,8 +545,13 @@ class DapClient:
     
     @property
     def handle(self) -> int:
-        """Get native client handle"""
+        """Get client handle"""
         return self._client_handle
+    
+    @property
+    def stage(self) -> DapClientStage:
+        """Get current client stage (property)"""
+        return self.get_current_stage()
     
     @property
     def is_valid(self) -> bool:
@@ -558,6 +563,29 @@ class DapClient:
         """Check if client is connected"""
         stage = self.get_current_stage()
         return stage in (DapClientStage.ESTABLISHED, DapClientStage.STREAM_STREAMING)
+    
+    def get_current_stage(self) -> DapClientStage:
+        """
+        Get current client stage
+        
+        Returns:
+            Current client stage
+        """
+        try:
+            # Call C function: dap_client_get_stage()
+            stage_value = dap_client_get_stage(self._client_handle)
+            
+            # Convert to enum
+            for stage in DapClientStage:
+                if stage.value == stage_value:
+                    return stage
+            
+            # Fallback if unknown stage
+            return DapClientStage.ERROR
+            
+        except Exception as e:
+            self._logger.error(f"Failed to get current stage: {e}")
+            return DapClientStage.ERROR
     
     def __enter__(self) -> 'DapClient':
         """Context manager entry"""

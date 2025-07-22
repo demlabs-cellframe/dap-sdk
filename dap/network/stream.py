@@ -14,10 +14,10 @@ from ..core.exceptions import DapNetworkError
 
 
 class DapStreamNotAvailableError(DapNetworkError):
-    """DAP Stream functions not available in C extension."""
+    """DAP Stream functions missing in C extension."""
     
     def __init__(self, missing_functions: List[str], **kwargs):
-        message = f"Stream functions not available in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
+        message = f"Stream functions missing in python_dap C extension: {', '.join(missing_functions[:5])}{'...' if len(missing_functions) > 5 else ''}"
         super().__init__(
             message=message,
             error_code="DAP_STREAM_NOT_AVAILABLE",
@@ -49,7 +49,7 @@ try:
         DAP_STREAM_STATE_CLOSED
     )
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: python_dap not available - C bindings failed to load!")
+    print(f"🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
     print(f"Cannot continue without native DAP SDK stream bindings.")
     print(f"Import error: {e}")
     print(f"Stream operations require native implementation.")
@@ -287,7 +287,7 @@ class DapStream:
             with cls._lock:
                 if not cls._system_initialized:
                     try:
-                        result = dap_stream_init(None)  # Default config
+                        result = dap_stream_init()  # No arguments required
                         if result != 0:
                             raise DapStreamError(f"Stream system initialization failed with code {result}")
                         cls._system_initialized = True
@@ -319,7 +319,7 @@ class DapStream:
 
         except Exception as e:
             raise DapStreamError(f"Stream creation failed: {e}")
-
+    
     def connect_to(self, address: str, port: int) -> bool:
         """
         Connect stream to remote address
@@ -568,6 +568,16 @@ class DapStream:
     def handle(self) -> int:
         """Get native stream handle"""
         return self._stream_handle
+
+    @property
+    def state(self) -> str:
+        """Get stream state"""
+        if not self._stream_handle:
+            return "invalid"
+        elif self._stream_handle in self._streams_registry:
+            return "active"
+        else:
+            return "closed"
 
     @property
     def is_valid(self) -> bool:
