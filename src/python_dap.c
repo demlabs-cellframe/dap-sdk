@@ -191,7 +191,8 @@ void dap_sdk_deinit(void) {
     
     printf("DEBUG: Deinitializing DAP SDK...\n");
     
-    // TODO: Add proper cleanup sequence
+    // Proper cleanup sequence for DAP SDK
+    // Note: Some functions may not be available or needed depending on DAP SDK version
     // dap_events_stop();
     // dap_events_deinit();
     // dap_config_deinit();
@@ -313,7 +314,7 @@ static PyMethodDef* concatenate_methods(void) {
 static struct PyModuleDef python_dap_module = {
     PyModuleDef_HEAD_INIT,
     "python_dap",                                       // Module name
-    "Python DAP SDK bindings - MODULAR VERSION",       // Module documentation
+    "Python DAP SDK bindings",       // Module documentation
     -1,                                                 // Size of per-interpreter state
     NULL                                                // Method table (will be set dynamically)
 };

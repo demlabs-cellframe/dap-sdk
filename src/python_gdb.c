@@ -199,9 +199,16 @@ int dap_global_db_get_count_py(const char* a_group) {
     
     log_it(L_DEBUG, "Getting count for global DB group %s", a_group);
     
-    // This would require implementing a callback-based count function
-    // For now, return placeholder
-    return 0;
+    // Use real DAP SDK function to get object count
+    size_t objs_count = 0;
+    dap_global_db_obj_t *objs = dap_global_db_get_all_sync(a_group, &objs_count);
+    
+    // Clean up objects if allocated
+    if (objs) {
+        dap_global_db_objs_delete(objs, objs_count);
+    }
+    
+    return (int)objs_count;
 }
 
 char** dap_global_db_get_keys_py(const char* a_group, size_t* a_keys_count) {

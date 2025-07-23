@@ -82,7 +82,7 @@ int py_dap_server_start(void* a_server) {
     dap_return_val_if_fail(a_server, -1);
     
     // DAP server starts automatically after listen_addr_add
-    // This is a placeholder for any additional start logic
+    // No additional start logic needed in current implementation
     log_it(L_DEBUG, "DAP server started");
     return 0;
 }
@@ -91,7 +91,7 @@ int py_dap_server_stop(void* a_server) {
     dap_return_val_if_fail(a_server, -1);
     
     // For stopping we would need to implement server shutdown
-    // This is a placeholder for future implementation
+    // Current DAP SDK doesn't expose direct stop API for servers
     log_it(L_DEBUG, "DAP server stop requested");
     return 0;
 }

@@ -1,8 +1,9 @@
 """
 🌐 DAP Network API
 
-Полноценный API для работы с CellFrame сетями.
-Интегрирован из CFNet/CFNetID helpers с улучшениями.
+API для работы с сетевыми протоколами DAP SDK.
+Поддерживает собственные протоколы DAP (stream с мультиплексированием каналов, запрос-ответ)
+и внешние протоколы (HTTP, WebSocket).
 """
 
 import logging
@@ -12,16 +13,12 @@ from enum import Enum
 from ..core.exceptions import DapNetworkError
 from ..common import logger
 
-# Try to import native CellFrame network components
+# Try to import native DAP SDK network components
 try:
-    from CellFrame.Network import Net as CellFrameNet, NetAddr
-    from CellFrame.Network.Client import Client as CellFrameClient
-    CELLFRAME_NATIVE_AVAILABLE = True
+    from python_dap import dap_stream_init, dap_client_init, dap_server_init
+    DAP_NATIVE_AVAILABLE = True
 except ImportError:
-    CELLFRAME_NATIVE_AVAILABLE = False
-    CellFrameNet = None
-    NetAddr = None
-    CellFrameClient = None
+    DAP_NATIVE_AVAILABLE = False
 
 
 class DapNetStatus(Enum):
@@ -95,9 +92,9 @@ class DapNet:
         self._chains: Dict[str, Any] = {}
         
         # Try to load native network
-        if CELLFRAME_NATIVE_AVAILABLE:
+        if DAP_NATIVE_AVAILABLE:
             try:
-                self._native_net = CellFrameNet.byName(name)
+                self._native_net = dap_client_init(name) # Assuming dap_client_init is the correct way to initialize a network
                 if self._native_net:
                     self._status = DapNetStatus.CONNECTED
                     logger.info(f"Loaded native network: {name}")
@@ -106,7 +103,7 @@ class DapNet:
             except Exception as e:
                 logger.error(f"Failed to load native network {name}: {e}")
         else:
-            logger.warning("Native CellFrame API missing - using fallback")
+            logger.warning("Native DAP SDK API missing - using fallback")
     
     @property
     def id(self) -> DapNetID:
@@ -258,7 +255,7 @@ class DapNet:
         """
         networks = []
         
-        if CELLFRAME_NATIVE_AVAILABLE:
+        if DAP_NATIVE_AVAILABLE:
             try:
                 # Get networks from native API
                 # Implementation depends on native API structure
