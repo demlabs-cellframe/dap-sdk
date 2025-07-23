@@ -50,11 +50,19 @@ int py_dap_client_disconnect(void* a_client) {
 }
 
 void py_dap_client_set_stage_callback(void* a_client, void* a_callback) {
-    // Callback type doesn't exist in current API - stub
+    if (!a_client) return;
+    
+    dap_client_t* client = (dap_client_t*)a_client;
+    // Set stage done callback - a_callback should be cast to dap_client_callback_t
+    client->stage_target_done_callback = (dap_client_callback_t)a_callback;
 }
 
 void py_dap_client_set_data_callback(void* a_client, void* a_callback) {
-    // Callback type doesn't exist in current API - stub
+    if (!a_client) return;
+    
+    dap_client_t* client = (dap_client_t*)a_client;
+    // Use _inheritor field to store data callback
+    client->_inheritor = a_callback;
 }
 
 // Client read/write functions need proper channel and type parameters
@@ -68,8 +76,9 @@ int py_dap_client_write(void* a_client, const void* a_data, size_t a_data_size) 
 
 ssize_t py_dap_client_read(void* a_client, void* a_data, size_t a_data_size) {
     // DAP client doesn't have direct read function
-    // Data is received through callbacks
-    return 0; // Stub implementation
+    // Data is received through callbacks - this is architectural limitation
+    // Return 0 to indicate no data available for synchronous read
+    return 0;
 }
 
 int py_dap_client_get_stage(void* a_client) {
@@ -85,7 +94,17 @@ void py_dap_client_set_callbacks(void* a_client,
                                void* a_connected_cb,
                                void* a_error_cb,
                                void* a_delete_cb) {
-    // These callback types don't exist in current API - stub
+    if (!a_client) return;
+    
+    dap_client_t* client = (dap_client_t*)a_client;
+    // Set available callbacks in DAP client structure
+    if (a_connected_cb) {
+        client->stage_target_done_callback = (dap_client_callback_t)a_connected_cb;
+    }
+    if (a_error_cb) {
+        client->stage_status_error_callback = (dap_client_callback_t)a_error_cb;
+    }
+    // a_delete_cb cannot be directly set in current DAP SDK API
 }
 
 int py_dap_client_get_remote_addr(void* a_client, char* a_addr_buf, size_t a_addr_buf_size) {
@@ -101,12 +120,11 @@ int py_dap_client_get_remote_addr(void* a_client, char* a_addr_buf, size_t a_add
     return -1;
 }
 
-void py_dap_client_set_auth_cert(void* a_client, void* a_cert) {
-    if (!a_client) return;
+void py_dap_client_set_auth_cert(void* a_client, const char* a_cert) {
+    if (!a_client || !a_cert) return;
     
-    // DAP SDK expects cert name, not cert object
-    // For now we can't convert cert object to name, so stub
-    // dap_client_set_auth_cert((dap_client_t*)a_client, cert_name);
+    // DAP SDK expects cert name as string
+    dap_client_set_auth_cert((dap_client_t*)a_client, a_cert);
 }
 
 void* py_dap_client_get_stream(void* a_client) {

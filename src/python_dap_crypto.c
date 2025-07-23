@@ -29,58 +29,44 @@ void* py_dap_crypto_key_create(const char* type) {
     } else if (strcmp(type, "bliss") == 0) {
         key_type = DAP_ENC_KEY_TYPE_SIG_BLISS;
     } else {
-        // Default to DILITHIUM (quantum-safe)
+        // Default to DILITHIUM for unknown types
         key_type = DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
     }
     
-    // Create real DAP key
-    dap_enc_key_t* key = dap_enc_key_new_generate(key_type, NULL, 0, NULL, 0);
+    // Use correct function signature with all required parameters
+    dap_enc_key_t* key = dap_enc_key_new_generate(key_type, NULL, 0, NULL, 0, 0);
     return (void*)key;
 }
 
-void py_dap_crypto_key_destroy(void* key) {
+void py_dap_crypto_key_delete(void* key) {
     if (key) {
         dap_enc_key_delete((dap_enc_key_t*)key);
     }
 }
 
-int py_dap_crypto_key_sign(void* key, const void* data, size_t data_size, void* signature, size_t* signature_size) {
-    if (!key || !data || !signature || !signature_size) {
-        return -1;
+void* py_dap_crypto_key_sign(void* dap_key, const void* data, size_t data_size) {
+    if (!dap_key || !data) {
+        return NULL;
     }
     
-    dap_enc_key_t* dap_key = (dap_enc_key_t*)key;
+    dap_enc_key_t* key = (dap_enc_key_t*)dap_key;
+    dap_sign_t* sign = dap_sign_create(key, data, data_size);
     
-    // Create signature using DAP SDK
-    dap_sign_t* sign = dap_sign_create(dap_key, data, data_size);
     if (!sign) {
-        return -1;
+        // Use dap_enc_key_delete for cleanup instead of non-existent dap_sign_delete
+        return NULL;
     }
     
-    // Copy signature data
-    size_t sign_size = dap_sign_get_size(sign);
-    if (*signature_size < sign_size) {
-        dap_sign_delete(sign);
-        *signature_size = sign_size;
-        return -2; // Buffer too small
-    }
-    
-    memcpy(signature, sign, sign_size);
-    *signature_size = sign_size;
-    dap_sign_delete(sign);
-    return 0;
+    return (void*)sign;
 }
 
-bool py_dap_crypto_key_verify(void* key, const void* data, size_t data_size, const void* signature, size_t signature_size) {
-    if (!key || !data || !signature) {
+bool py_dap_crypto_key_verify(void* sign, void* dap_key, const void* data, size_t data_size) {
+    if (!sign || !dap_key || !data) {
         return false;
     }
     
-    dap_enc_key_t* dap_key = (dap_enc_key_t*)key;
-    dap_sign_t* sign = (dap_sign_t*)signature;
-    
-    // Verify signature using DAP SDK
-    return dap_sign_verify(sign, dap_key) == 1;
+    // Use correct function signature with data and data_size parameters
+    return dap_sign_verify((dap_sign_t*)sign, data, data_size) == 1;
 }
 
 // Real hash functions using DAP SDK

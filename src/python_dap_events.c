@@ -27,8 +27,7 @@ int py_dap_events_start() {
 }
 
 int py_dap_events_stop(void) {
-    // DAP SDK doesn't have dap_events_stop function directly
-    // We can use dap_events_stop_all for stopping
+    // Use DAP SDK function to stop all events
     dap_events_stop_all();
     return 0;
 }

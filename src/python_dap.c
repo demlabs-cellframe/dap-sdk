@@ -191,12 +191,11 @@ void dap_sdk_deinit(void) {
     
     printf("DEBUG: Deinitializing DAP SDK...\n");
     
-    // Proper cleanup sequence for DAP SDK
-    // Note: Some functions may not be available or needed depending on DAP SDK version
-    // dap_events_stop();
-    // dap_events_deinit();
-    // dap_config_deinit();
-    // dap_common_deinit();
+    // Proper cleanup sequence for DAP SDK in reverse order of initialization
+    dap_events_stop_all();  // Stop all events first
+    dap_events_deinit();    // Deinit events subsystem
+    dap_config_deinit();    // Deinit configuration
+    dap_common_deinit();    // Deinit common subsystem last
     
     s_dap_sdk_initialized = false;
     pthread_mutex_unlock(&s_dap_init_mutex);
