@@ -331,9 +331,8 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  */
 int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count)
 {
-if (a_store_obj)
-    return -1;
-
+    if (!a_store_obj || !a_store_count)
+        return -1;
 
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
