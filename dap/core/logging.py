@@ -60,6 +60,16 @@ class DapLogLevel(Enum):
     INFO = "INFO"
     DEBUG = "DEBUG"
 
+# Mapping from string names to C constants
+_LOG_LEVEL_TO_INT = {
+    "DEBUG": 0,     # L_DEBUG
+    "INFO": 1,      # L_INFO
+    "NOTICE": 1,    # Map to L_INFO (NOTICE not in C)
+    "WARNING": 5,   # L_WARNING
+    "ERROR": 7,     # L_ERROR
+    "CRITICAL": 8,  # L_CRITICAL
+}
+
 
 class DapLoggingError(DapCoreError):
     """DAP Logging specific errors"""
@@ -108,8 +118,12 @@ class DapLogging:
                     raise DapLoggingError(f"Invalid log level: {level_str}")
             
             # Call C functions: dap_set_log_level() and dap_log_level_set()
-            dap_set_log_level(level_str)
-            dap_log_level_set(level_str)
+            # Convert string level to integer for C function
+            level_int = _LOG_LEVEL_TO_INT.get(level_str)
+            if level_int is None:
+                raise DapLoggingError(f"Unknown log level: {level_str}")
+            # Call C function with integer value
+            dap_log_level_set(level_int)
             
             logging.getLogger(__name__).info(f"Set DAP log level to {level_str}")
             

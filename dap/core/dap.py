@@ -50,10 +50,25 @@ class Dap:
     _instance: Optional['Dap'] = None
     _lock = threading.Lock()
     
-    def __init__(self):
-        """Initialize DAP core coordinator"""
+    def __init__(self, dap_config: dict = None):
+        """
+        Initialize DAP core coordinator
+        
+        Args:
+            dap_config: Dictionary with DAP SDK configuration:
+                       - app_name: Application name
+                       - working_dir: Working directory for the application
+                       - config_dir: Configuration directory
+                       - temp_dir: Temporary files directory
+                       - log_file: Log file path
+                       - events_threads: Number of event threads (default: 2)
+                       - events_timeout: Event timeout in ms (default: 5000)
+                       - debug_mode: Debug mode flag (default: False)
+                       If None, uses default system paths
+        """
         self._initialized = False
         self._logger = logging.getLogger(__name__)
+        self._dap_config = dap_config
         
         # Initialize subsystems
         self._type = DapType()
@@ -71,7 +86,7 @@ class Dap:
         
         self._logger.debug("DAP Core coordinator created")
     
-    def __new__(cls):
+    def __new__(cls, dap_config: dict = None):
         """Singleton pattern implementation"""
         if cls._instance is None:
             with cls._lock:
@@ -94,63 +109,92 @@ class Dap:
             return True
         
         try:
-            # Initialize DAP common systems
-            self._logger.info("Initializing DAP common systems...")
-            if dap_common_init() != 0:
-                raise DapCoreError("Failed to initialize DAP common systems")
-            self._subsystems_initialized['common'] = True
-            
-            # Initialize configuration system with fallback paths
-            self._logger.info("Initializing DAP config system...")
-            config_initialized = False
-            
-            # Try different config paths
-            config_paths = [
-                "/etc/dap/dap.conf",           # System-wide config
-                "~/.dap/dap.conf",             # User config
-                "./dap.conf",                  # Local config
-                None                           # Default initialization
-            ]
-            
-            for config_path in config_paths:
-                try:
-                    if config_path is None:
-                        # Try default initialization without config file
-                        self._logger.debug("Trying default DAP config initialization...")
-                        result = dap_config_init(None)
-                    else:
-                        # Expand user path if needed
-                        expanded_path = config_path
-                        if config_path.startswith("~/"):
-                            import os
-                            expanded_path = os.path.expanduser(config_path)
-                        
-                        # Check if file exists
-                        import os
-                        if not os.path.exists(expanded_path):
-                            self._logger.debug(f"Config file {expanded_path} not found, trying next...")
-                            continue
-                            
-                        self._logger.debug(f"Trying DAP config initialization with {expanded_path}...")
-                        result = dap_config_init(expanded_path)
-                    
-                    if result == 0:
-                        config_initialized = True
-                        self._logger.info(f"DAP config initialized successfully{' with ' + str(config_path) if config_path else ' with defaults'}")
-                        break
-                    else:
-                        self._logger.debug(f"Config init failed for {config_path}, code: {result}")
-                        
-                except Exception as e:
-                    self._logger.debug(f"Exception during config init with {config_path}: {e}")
-                    continue
-            
-            if not config_initialized:
-                # Try minimal initialization - just mark as initialized for testing
-                self._logger.warning("Unable to initialize DAP config from any source, using minimal initialization")
-                # Don't raise error for testing purposes - allow graceful degradation
+            # Check if we have custom DAP configuration
+            if self._dap_config:
+                # Use custom initialization with dap_sdk_init
+                from ..python_dap import dap_sdk_init
                 
-            self._subsystems_initialized['config'] = True
+                app_name = self._dap_config.get('app_name', 'dap_app')
+                self._logger.info(f"Initializing DAP SDK with custom configuration for: {app_name}")
+                self._logger.debug(f"DAP configuration: {self._dap_config}")
+                
+                result = dap_sdk_init(
+                    app_name,
+                    self._dap_config.get('working_dir'),
+                    self._dap_config.get('config_dir'),
+                    self._dap_config.get('temp_dir'),
+                    self._dap_config.get('log_file'),
+                    self._dap_config.get('events_threads', 2),
+                    self._dap_config.get('events_timeout', 5000),
+                    self._dap_config.get('debug_mode', False)
+                )
+                
+                if result != 0:
+                    raise DapCoreError(f"Failed to initialize DAP SDK with custom config, code: {result}")
+                    
+                self._subsystems_initialized['common'] = True
+                self._subsystems_initialized['config'] = True
+                
+                self._logger.info(f"DAP SDK initialized successfully for application: {app_name}")
+            else:
+                # Use standard system initialization
+                self._logger.info("Initializing DAP common systems with default configuration...")
+                if dap_common_init() != 0:
+                    raise DapCoreError("Failed to initialize DAP common systems")
+                self._subsystems_initialized['common'] = True
+            
+            # Initialize configuration system (only if not already done in test mode)
+            if not self._subsystems_initialized['config']:
+                self._logger.info("Initializing DAP config system...")
+                config_initialized = False
+                
+                # Try different config paths
+                config_paths = [
+                    "/etc/dap/dap.conf",           # System-wide config
+                    "~/.dap/dap.conf",             # User config
+                    "./dap.conf",                  # Local config
+                    None                           # Default initialization
+                ]
+                
+                for config_path in config_paths:
+                    try:
+                        if config_path is None:
+                            # Try default initialization without config file
+                            self._logger.debug("Trying default DAP config initialization...")
+                            result = dap_config_init(None)
+                        else:
+                            # Expand user path if needed
+                            expanded_path = config_path
+                            if config_path.startswith("~/"):
+                                import os
+                                expanded_path = os.path.expanduser(config_path)
+                            
+                            # Check if file exists
+                            import os
+                            if not os.path.exists(expanded_path):
+                                self._logger.debug(f"Config file {expanded_path} not found, trying next...")
+                                continue
+                                
+                            self._logger.debug(f"Trying DAP config initialization with {expanded_path}...")
+                            result = dap_config_init(expanded_path)
+                        
+                        if result == 0:
+                            config_initialized = True
+                            self._logger.info(f"DAP config initialized successfully{' with ' + str(config_path) if config_path else ' with defaults'}")
+                            break
+                        else:
+                            self._logger.debug(f"Config init failed for {config_path}, code: {result}")
+                            
+                    except Exception as e:
+                        self._logger.debug(f"Exception during config init with {config_path}: {e}")
+                        continue
+                
+                if not config_initialized:
+                    # Try minimal initialization - just mark as initialized for testing
+                    self._logger.warning("Unable to initialize DAP config from any source, using minimal initialization")
+                    # Don't raise error for testing purposes - allow graceful degradation
+                    
+                self._subsystems_initialized['config'] = True
             
             # Mark as initialized
             self._initialized = True

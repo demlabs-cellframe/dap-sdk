@@ -1,48 +1,35 @@
 """
-📡 DAP Client Module Implementation
+DAP Network Client Module
 
-Direct Python wrappers over DAP client functions.
+Simple client wrapper for DAP SDK network operations using C functions.
 """
 
-import logging
 import sys
-import threading
+import logging
 from typing import Optional, Any, Callable, Dict, List
 from enum import Enum
 
-# Import existing DAP client functions - FAIL FAST, NO FALLBACKS
+# Import DAP client functions from C module
 try:
     from ..python_dap import (
         dap_client_new, dap_client_delete, dap_client_connect_to, dap_client_disconnect,
-        dap_client_go_stage, dap_client_request, dap_client_write, dap_client_read,
-        dap_client_get_stage, dap_client_set_callbacks, dap_client_set_auth_cert,
-        dap_client_get_stream, dap_client_get_uplink, dap_client_stage_next,
-        dap_client_stage_transaction_begin, dap_client_stage_transaction_end,
-        dap_client_get_stage_str, dap_client_init, dap_client_deinit,
-        dap_client_get_all,
         # Stage constants
         DAP_CLIENT_STAGE_BEGIN, DAP_CLIENT_STAGE_ENC_INIT, DAP_CLIENT_STAGE_STREAM_CTL,
         DAP_CLIENT_STAGE_STREAM_SESSION, DAP_CLIENT_STAGE_STREAM_STREAMING,
         DAP_CLIENT_STAGE_DISCONNECTED, DAP_CLIENT_STAGE_ERROR, DAP_CLIENT_STAGE_ESTABLISHED
     )
 except ImportError as e:
-    print(f"🚨 CRITICAL ERROR: python_dap missing - C bindings failed to load!")
-    print(f"Cannot continue without native DAP SDK stream bindings.")
-    print(f"Import error: {e}")
-    print(f"network client operations require native implementation.")
-    print(f"TERMINATING - All functions must be implemented in C extension.")
-    sys.exit(1)
+    # If C module import fails, this is a critical error
+    raise ImportError(f"Cannot import DAP client functions from C module: {e}")
 
 from ..core.exceptions import DapException
 
-
 class DapClientError(DapException):
-    """DAP Client specific errors"""
+    """DAP Client specific exception"""
     pass
 
-
 class DapClientStage(Enum):
-    """DAP client connection stages"""
+    """DAP Client stages (based on C constants)"""
     BEGIN = DAP_CLIENT_STAGE_BEGIN
     ENC_INIT = DAP_CLIENT_STAGE_ENC_INIT
     STREAM_CTL = DAP_CLIENT_STAGE_STREAM_CTL
@@ -52,621 +39,132 @@ class DapClientStage(Enum):
     ERROR = DAP_CLIENT_STAGE_ERROR
     ESTABLISHED = DAP_CLIENT_STAGE_ESTABLISHED
 
-
 class DapClient:
     """
-    🌐 DAP Network Client with proper dap_client_t* wrapping
-    
-    Manages client-side network connections with proper C structure integration.
-    Supports stage management, async operations and callback handling.
-    
-    Example:
-        # Create and connect client
-        client = DapClient.create_and_connect("192.168.1.100", 8080)
-        
-        # Set callbacks
-        def on_connected(client_handle):
-            print("Connected!")
-        client.set_connected_callback(on_connected)
-        
-        # Send request
-        response = client.request("/api/status", b"request_data")
-        
-        # Check stage
-        stage = client.get_current_stage()
-        if stage == DapClientStage.ESTABLISHED:
-            client.write_data(b"data to send")
+    DAP Network Client wrapper using C functions
     """
     
-    _clients_registry: Dict[int, 'DapClient'] = {}
-    _lock = threading.Lock()
-    _system_initialized = False
+    def __init__(self):
+        self._client_handle = None
+        self._callbacks = {}
+        self._logger = logging.getLogger(self.__class__.__name__)
+        
+        # Create new client using C function
+        self._client_handle = dap_client_new()
+        if not self._client_handle:
+            raise DapClientError("Failed to create DAP client")
     
-    def __init__(self, client_handle: int, owns_handle: bool = True):
+    def __del__(self):
+        """Cleanup client resources"""
+        if self._client_handle:
+            try:
+                dap_client_delete(self._client_handle)
+            except:
+                pass
+    
+    def connect_to(self, host: str, port: int, protocol: str = "tcp") -> bool:
         """
-        Initialize DapClient wrapper
+        Connect to remote address using C function
         
         Args:
-            client_handle: Native dap_client_t* handle
-            owns_handle: Whether this instance owns the handle (for cleanup)
-        """
-        self._client_handle = client_handle
-        self._owns_handle = owns_handle
-        self._logger = logging.getLogger(__name__)
-        self._callbacks = {}  # Store Python callbacks
-        
-        if not client_handle:
-            raise DapClientError("Invalid client handle provided")
-        
-        # Ensure system is initialized
-        self._ensure_system_initialized()
-        
-        # Register in global registry for tracking
-        with self._lock:
-            self._clients_registry[client_handle] = self
-            
-        self._logger.debug(f"DapClient created with handle {client_handle}")
-    
-    @classmethod
-    def _ensure_system_initialized(cls):
-        """Ensure DAP client system is initialized"""
-        if not cls._system_initialized:
-            with cls._lock:
-                if not cls._system_initialized:
-                    try:
-                        result = dap_client_init()
-                        if result != 0:
-                            raise DapClientError(f"Client system initialization failed with code {result}")
-                        cls._system_initialized = True
-                        logging.getLogger(__name__).info("DAP client system initialized")
-                    except Exception as e:
-                        raise DapClientError(f"Client system initialization failed: {e}")
-    
-    @classmethod
-    def create_new(cls) -> 'DapClient':
-        """
-        Create new client
-        
-        Returns:
-            New DapClient instance
-            
-        Raises:
-            DapClientError: If client creation fails
-        """
-        try:
-            # Call C function: dap_client_new()
-            client_handle = dap_client_new()
-            
-            if not client_handle:
-                raise DapClientError("Failed to create new client")
-            
-            logging.getLogger(__name__).info("New DAP client created")
-            
-            return cls(client_handle)
-            
-        except Exception as e:
-            raise DapClientError(f"Client creation failed: {e}")
-    
-    @classmethod
-    def create_and_connect(cls, address: str, port: int) -> 'DapClient':
-        """
-        Create client and connect to address
-        
-        Args:
-            address: Target address to connect to
-            port: Target port
-            
-        Returns:
-            Connected DapClient instance
-        """
-        client = cls.create_new()
-        if client.connect_to(address, port):
-            return client
-        else:
-            client.delete()
-            raise DapClientError(f"Failed to connect to {address}:{port}")
-    
-    def connect_to(self, address: str, port: int) -> bool:
-        """
-        Connect to remote address
-        
-        Args:
-            address: Target address
-            port: Target port
+            host: Target hostname or IP
+            port: Target port number  
+            protocol: Connection protocol (tcp/udp)
             
         Returns:
             True if connection initiated successfully
         """
+        if not self._client_handle:
+            raise DapClientError("Client not initialized")
+        
         try:
-            # Call C function: dap_client_connect_to()
-            result = dap_client_connect_to(self._client_handle, address, port)
-            
+            result = dap_client_connect_to(self._client_handle, host, port, protocol)
             if result == 0:
-                self._logger.info(f"Connection initiated to {address}:{port}")
+                self._logger.debug(f"Connection to {host}:{port} initiated")
                 return True
             else:
-                self._logger.error(f"Failed to initiate connection to {address}:{port}")
+                self._logger.error(f"Failed to connect to {host}:{port}, error: {result}")
                 return False
-                
         except Exception as e:
             raise DapClientError(f"Connection failed: {e}")
     
     def disconnect(self) -> bool:
         """
-        Disconnect client
+        Disconnect from remote address
         
         Returns:
-            True if disconnection successful
+            True if disconnect successful
         """
+        if not self._client_handle:
+            return True
+            
         try:
-            # Call C function: dap_client_disconnect()
             result = dap_client_disconnect(self._client_handle)
-            
             if result == 0:
-                self._logger.info("Client disconnected")
+                self._logger.debug("Client disconnected successfully")
                 return True
             else:
-                self._logger.error("Failed to disconnect client")
+                self._logger.warning(f"Disconnect returned code: {result}")
                 return False
-                
         except Exception as e:
-            self._logger.error(f"Disconnection failed: {e}")
+            self._logger.error(f"Disconnect error: {e}")
             return False
     
-    def go_stage(self, stage: DapClientStage, 
-                callback: Optional[Callable] = None) -> bool:
-        """
-        Go to specific client stage
-        
-        Args:
-            stage: Target stage to go to
-            callback: Optional callback for stage completion
-            
-        Returns:
-            True if stage transition successful
-        """
-        try:
-            # Store callback if provided
-            if callback:
-                self._callbacks[f"stage_{stage.value}"] = callback
-            
-            # Call C function: dap_client_go_stage()
-            result = dap_client_go_stage(
-                self._client_handle, stage.value, callback
-            )
-            
-            if result == 0:
-                self._logger.debug(f"Transition to stage {stage.name} initiated")
-                return True
-            else:
-                return False
-                
-        except Exception as e:
-            raise DapClientError(f"Stage transition failed: {e}")
-    
-    def get_current_stage(self) -> DapClientStage:
-        """
-        Get current client stage
-        
-        Returns:
-            Current client stage
-        """
-        try:
-            # Call C function: dap_client_get_stage()
-            stage_value = dap_client_get_stage(self._client_handle)
-            
-            # Convert to enum
-            for stage in DapClientStage:
-                if stage.value == stage_value:
-                    return stage
-            
-            # Fallback if unknown stage
-            return DapClientStage.ERROR
-            
-        except Exception as e:
-            self._logger.error(f"Failed to get current stage: {e}")
-            return DapClientStage.ERROR
-    
-    def get_stage_string(self, stage: Optional[DapClientStage] = None) -> str:
-        """
-        Get stage as human-readable string
-        
-        Args:
-            stage: Stage to get string for (current stage if None)
-            
-        Returns:
-            Stage string representation
-        """
-        try:
-            if stage is None:
-                stage = self.get_current_stage()
-            
-            # Call C function: dap_client_get_stage_str()
-            return dap_client_get_stage_str(stage.value)
-            
-        except Exception as e:
-            return f"UNKNOWN_STAGE_{stage.value if stage else 'NONE'}"
-    
-    def request(self, path: str, data: bytes, 
-               response_callback: Optional[Callable] = None) -> Optional[bytes]:
-        """
-        Send request to connected peer
-        
-        Args:
-            path: Request path
-            data: Request data
-            response_callback: Optional callback for response
-            
-        Returns:
-            Response data if synchronous, None if async with callback
-        """
-        try:
-            # Store response callback if provided
-            if response_callback:
-                self._callbacks[f"response_{path}"] = response_callback
-            
-            # Call C function: dap_client_request()
-            result = dap_client_request(
-                self._client_handle, path, data, len(data)
-            )
-            
-            if result == 0:
-                self._logger.debug(f"Request sent to path {path}")
-                # For now, return mock response if no callback
-                if not response_callback:
-                    return b"response_data"
-                else:
-                    return None
-            else:
-                return None
-                
-        except Exception as e:
-            raise DapClientError(f"Request failed: {e}")
-    
-    def write_data(self, data: bytes) -> int:
-        """
-        Write data to client stream
-        
-        Args:
-            data: Data to write
-            
-        Returns:
-            Number of bytes written
-        """
-        try:
-            # Call C function: dap_client_write()
-            bytes_written = dap_client_write(
-                self._client_handle, data, len(data)
-            )
-            
-            self._logger.debug(f"Wrote {bytes_written} bytes to client")
-            return bytes_written
-            
-        except Exception as e:
-            raise DapClientError(f"Write failed: {e}")
-    
-    def read_data(self, max_size: int = 1024) -> Optional[bytes]:
-        """
-        Read data from client stream
-        
-        Args:
-            max_size: Maximum bytes to read
-            
-        Returns:
-            Read data or None if no data available
-        """
-        try:
-            # Prepare buffer
-            buffer = bytearray(max_size)
-            
-            # Call C function: dap_client_read()
-            bytes_read = dap_client_read(
-                self._client_handle, buffer, max_size
-            )
-            
-            if bytes_read > 0:
-                self._logger.debug(f"Read {bytes_read} bytes from client")
-                return bytes(buffer[:bytes_read])
-            else:
-                return None
-                
-        except Exception as e:
-            self._logger.error(f"Read failed: {e}")
-            return None
-    
-    def set_callbacks(self, 
-                     connected_callback: Optional[Callable] = None,
-                     error_callback: Optional[Callable] = None,
-                     delete_callback: Optional[Callable] = None) -> None:
-        """
-        Set client event callbacks
-        
-        Args:
-            connected_callback: Called when client connects
-            error_callback: Called on client error
-            delete_callback: Called when client is deleted
-        """
-        try:
-            # Store callbacks
-            if connected_callback:
-                self._callbacks['connected'] = connected_callback
-            if error_callback:
-                self._callbacks['error'] = error_callback
-            if delete_callback:
-                self._callbacks['delete'] = delete_callback
-            
-            # Call C function: dap_client_set_callbacks()
-            dap_client_set_callbacks(
-                self._client_handle,
-                connected_callback,
-                error_callback,
-                delete_callback
-            )
-            
-        except Exception as e:
-            self._logger.error(f"Failed to set callbacks: {e}")
-    
-    def set_connected_callback(self, callback: Callable) -> None:
-        """Set connected callback"""
-        self.set_callbacks(connected_callback=callback)
-    
-    def set_error_callback(self, callback: Callable) -> None:
-        """Set error callback"""
-        self.set_callbacks(error_callback=callback)
-    
-    def set_auth_certificate(self, cert: 'DapCert') -> bool:
-        """
-        Set authentication certificate
-        
-        Args:
-            cert: Certificate for authentication
-            
-        Returns:
-            True if certificate set successfully
-        """
-        try:
-            # Call C function: dap_client_set_auth_cert()
-            result = dap_client_set_auth_cert(
-                self._client_handle, cert.handle
-            )
-            return result == 0
-            
-        except Exception as e:
-            self._logger.error(f"Failed to set auth certificate: {e}")
-            return False
-    
-    def get_stream(self) -> Optional['DapStream']:
-        """
-        Get associated stream
-        
-        Returns:
-            DapStream instance if available
-        """
-        try:
-            # Call C function: dap_client_get_stream()
-            stream_handle = dap_client_get_stream(self._client_handle)
-            
-            if stream_handle:
-                # Import here to avoid circular imports
-                from .stream import DapStream
-                return DapStream(stream_handle, owns_handle=False)
-            else:
-                return None
-                
-        except Exception as e:
-            self._logger.error(f"Failed to get stream: {e}")
-            return None
-    
-    def get_uplink(self) -> Optional[int]:
-        """
-        Get uplink handle
-        
-        Returns:
-            Uplink handle if available
-        """
-        try:
-            # Call C function: dap_client_get_uplink()
-            return dap_client_get_uplink(self._client_handle)
-            
-        except Exception as e:
-            self._logger.error(f"Failed to get uplink: {e}")
-            return None
-    
-    def stage_next(self) -> bool:
-        """
-        Move to next stage
-        
-        Returns:
-            True if stage transition successful
-        """
-        try:
-            # Call C function: dap_client_stage_next()
-            result = dap_client_stage_next(self._client_handle)
-            return result == 0
-            
-        except Exception as e:
-            self._logger.error(f"Failed to move to next stage: {e}")
-            return False
-    
-    def begin_transaction(self, path: str) -> bool:
-        """
-        Begin transaction
-        
-        Args:
-            path: Transaction path
-            
-        Returns:
-            True if transaction started successfully
-        """
-        try:
-            # Call C function: dap_client_stage_transaction_begin()
-            result = dap_client_stage_transaction_begin(
-                self._client_handle, path
-            )
-            return result == 0
-            
-        except Exception as e:
-            self._logger.error(f"Failed to begin transaction: {e}")
-            return False
-    
-    def end_transaction(self) -> bool:
-        """
-        End current transaction
-        
-        Returns:
-            True if transaction ended successfully
-        """
-        try:
-            # Call C function: dap_client_stage_transaction_end()
-            result = dap_client_stage_transaction_end(self._client_handle)
-            return result == 0
-            
-        except Exception as e:
-            self._logger.error(f"Failed to end transaction: {e}")
-            return False
-    
-    def delete(self) -> None:
-        """Delete client and cleanup resources"""
-        if self._owns_handle and self._client_handle:
-            try:
-                # Remove from registry
-                with self._lock:
-                    self._clients_registry.pop(self._client_handle, None)
-                
-                # Call C function: dap_client_delete()
-                dap_client_delete(self._client_handle)
-                
-                self._logger.debug(f"Client {self._client_handle} deleted")
-                self._client_handle = None
-                self._callbacks.clear()
-                
-            except Exception as e:
-                self._logger.error(f"Failed to delete client: {e}")
-    
-    @property
-    def handle(self) -> int:
-        """Get client handle"""
-        return self._client_handle
-    
-    @property
-    def stage(self) -> DapClientStage:
-        """Get current client stage (property)"""
-        return self.get_current_stage()
-    
-    @property
-    def is_valid(self) -> bool:
-        """Check if client handle is valid"""
-        return self._client_handle and self._client_handle in self._clients_registry
-    
-    @property
     def is_connected(self) -> bool:
-        """Check if client is connected"""
-        stage = self.get_current_stage()
-        return stage in (DapClientStage.ESTABLISHED, DapClientStage.STREAM_STREAMING)
+        """Check if client is connected (placeholder implementation)"""
+        return self._client_handle is not None
     
-    def get_current_stage(self) -> DapClientStage:
-        """
-        Get current client stage
-        
-        Returns:
-            Current client stage
-        """
-        try:
-            # Call C function: dap_client_get_stage()
-            stage_value = dap_client_get_stage(self._client_handle)
-            
-            # Convert to enum
-            for stage in DapClientStage:
-                if stage.value == stage_value:
-                    return stage
-            
-            # Fallback if unknown stage
-            return DapClientStage.ERROR
-            
-        except Exception as e:
-            self._logger.error(f"Failed to get current stage: {e}")
-            return DapClientStage.ERROR
-    
-    def __enter__(self) -> 'DapClient':
-        """Context manager entry"""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - cleanup client"""
-        self.delete()
-    
-    def __del__(self):
-        """Destructor - ensure cleanup"""
-        if hasattr(self, '_owns_handle') and self._owns_handle:
-            try:
-                self.delete()
-            except:
-                pass  # Ignore errors in destructor
-    
-    def __repr__(self) -> str:
-        stage = self.get_stage_string()
-        return f"DapClient(handle={self._client_handle}, stage={stage}, connected={self.is_connected})"
-
+    def get_client_handle(self):
+        """Get raw client handle for advanced usage"""
+        return self._client_handle
 
 class DapClientManager:
     """
-    📁 Client Management System
-    
-    Provides high-level client management operations.
+    Simple manager for multiple DAP clients
     """
     
-    @staticmethod
-    def get_all_clients() -> List[DapClient]:
-        """
-        Get all clients from system
-        
-        Returns:
-            List of all DapClient instances
-        """
-        try:
-            # Call C function: dap_client_get_all()
-            client_list = dap_client_get_all()
-            
-            clients = []
-            for client_handle in client_list:
-                if client_handle:
-                    # Create wrapper without owning the handle
-                    client = DapClient(client_handle, owns_handle=False)
-                    clients.append(client)
-            
-            return clients
-            
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Failed to get all clients: {e}")
-            return []
+    def __init__(self):
+        self._clients = {}
+        self._logger = logging.getLogger(self.__class__.__name__)
     
-    @staticmethod
-    def deinitialize_system() -> None:
-        """Deinitialize client system"""
-        try:
-            dap_client_deinit()
-            DapClient._system_initialized = False
-            logging.getLogger(__name__).info("DAP client system deinitialized")
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Client system deinitialization failed: {e}")
+    def create_client(self, client_id: str) -> DapClient:
+        """Create and register new client"""
+        if client_id in self._clients:
+            self._logger.warning(f"Client {client_id} already exists")
+            return self._clients[client_id]
+        
+        client = DapClient()
+        self._clients[client_id] = client
+        self._logger.debug(f"Created client: {client_id}")
+        return client
+    
+    def get_client(self, client_id: str) -> Optional[DapClient]:
+        """Get existing client by ID"""
+        return self._clients.get(client_id)
+    
+    def remove_client(self, client_id: str) -> bool:
+        """Remove and cleanup client"""
+        if client_id in self._clients:
+            client = self._clients.pop(client_id)
+            del client  # Trigger cleanup
+            self._logger.debug(f"Removed client: {client_id}")
+            return True
+        return False
+    
+    def get_all_clients(self) -> Dict[str, DapClient]:
+        """Get all registered clients"""
+        return self._clients.copy()
 
-
-# Convenience functions
+# Module-level convenience functions
 def create_client() -> DapClient:
-    """Create new client with default settings"""
-    return DapClient.create_new()
+    """Create a new DAP client"""
+    return DapClient()
 
-
-def connect_to_peer(address: str, port: int) -> DapClient:
-    """Connect to peer and return client"""
-    return DapClient.create_and_connect(address, port)
-
-
-__all__ = [
-    'DapClient',
-    'DapClientError',
-    'DapClientStage',
-    'DapClientManager',
-    'create_client',
-    'connect_to_peer'
-] 
+def connect_to_peer(host: str, port: int, protocol: str = "tcp") -> DapClient:
+    """Create client and connect to peer in one step"""
+    client = DapClient()
+    if client.connect_to(host, port, protocol):
+        return client
+    else:
+        del client
+        raise DapClientError(f"Failed to connect to {host}:{port}") 

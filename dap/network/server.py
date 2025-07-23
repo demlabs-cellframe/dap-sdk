@@ -13,7 +13,7 @@ from enum import Enum
 from ..core.exceptions import DapNetworkError
 
 
-class DapServerNotAvailableError(DapNetworkError):
+class DapServerMissingError(DapNetworkError):
     """DAP Server functions missing in C extension."""
     
     def __init__(self, missing_functions: List[str], **kwargs):
