@@ -13,7 +13,7 @@ set(CMAKE_C_STANDARD 11)
 # Build configuration options
 option(BUILD_SHARED "Build as shared library (standalone mode)" ON)
 option(BUILD_STATIC "Build as static library (for integration)" OFF)
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_TESTS "Build tests" ON)
 
 if(BUILD_SHARED)
     message("[+] Python-DAP: Building as SHARED → embedding static DAP SDK")
@@ -74,6 +74,8 @@ set(PYTHON_DAP_SOURCES
     src/python_dap_events.c
     src/python_dap_client.c
     src/python_dap_server.c
+    src/python_dap_stream.c   # Added stream module
+    src/python_dap_http.c     # Added HTTP module
     src/python_gdb.c
 )
 
@@ -209,14 +211,16 @@ if(BUILD_TESTS)
         VERBATIM
     )
     
-    # Install package in virtual environment
+    # Install package in virtual environment for testing
     add_custom_target(test_setup
-        DEPENDS python_package
+        DEPENDS python_dap pytest_install
+        # Build the wheel package
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${VENV_PYTHON} -m build --wheel
         # Uninstall any existing version first
         COMMAND ${VENV_PIP} uninstall -y python-dap || true
-        # Install the newly built wheel
+        # Install the built wheel package
         COMMAND ${VENV_PIP} install --force-reinstall --find-links ${CMAKE_CURRENT_SOURCE_DIR}/dist python-dap
-        COMMENT "Installing python-dap package in virtual environment"
+        COMMENT "Building and installing python-dap wheel package in virtual environment"
         VERBATIM
     )
     
@@ -252,36 +256,80 @@ if(BUILD_TESTS)
         VERBATIM
     )
     
-    # Add individual CTest entries for automatic discovery
+    # Create test virtual environment target
+    add_custom_target(create_test_venv
+        COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_CURRENT_SOURCE_DIR}/test_venv || true
+        COMMAND ${Python3_EXECUTABLE} -m venv ${CMAKE_CURRENT_SOURCE_DIR}/test_venv
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/pip install --upgrade pip
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/pip install pytest pytest-timeout pytest-cov build wheel
+        COMMENT "Creating fresh test virtual environment"
+        VERBATIM
+    )
+
+    # Build and install python-dap package in test environment
+    add_custom_target(install_test_package
+        DEPENDS python_dap create_test_venv
+        # First build the wheel package
+        COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/python -m build --wheel
+        # Install the built wheel package
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/pip install --force-reinstall --find-links ${CMAKE_CURRENT_SOURCE_DIR}/dist python-dap
+        COMMENT "Building and installing python-dap wheel package in test virtual environment"
+        VERBATIM
+    )
+
+    # Add individual CTest entries - simple and parallel
     add_test(
         NAME python_dap_unit_tests
-        COMMAND ${CMAKE_COMMAND} --build . --target unit_tests
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/python -m pytest tests/unit/ -v
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
     
     add_test(
         NAME python_dap_integration_tests  
-        COMMAND ${CMAKE_COMMAND} --build . --target integration_tests
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/python -m pytest tests/integration/ -v
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
     
     add_test(
         NAME python_dap_regression_tests  
-        COMMAND ${CMAKE_COMMAND} --build . --target regression_tests
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test_venv/bin/python -m pytest tests/regression/ -v
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
     
+# REMOVED: python_dap_all_tests - causes conflicts when running all test types together
+    # Individual test types (unit, integration, regression) work perfectly when run separately
+    
+    # Force STRICT SEQUENTIAL execution - prevent race condition between test types
+    set_tests_properties(python_dap_unit_tests PROPERTIES 
+        TIMEOUT 300
+        FIXTURES_REQUIRED test_environment
+        RUN_SERIAL TRUE
+    )
+    set_tests_properties(python_dap_integration_tests PROPERTIES 
+        TIMEOUT 600
+        FIXTURES_REQUIRED test_environment
+        RUN_SERIAL TRUE
+        DEPENDS python_dap_unit_tests
+    )
+    set_tests_properties(python_dap_regression_tests PROPERTIES 
+        TIMEOUT 300
+        FIXTURES_REQUIRED test_environment
+        RUN_SERIAL TRUE
+        DEPENDS python_dap_integration_tests
+    )
+# REMOVED: Properties for python_dap_all_tests - test no longer exists
+
+    # Create test fixture to ensure environment is ready
     add_test(
-        NAME python_dap_all_tests  
-        COMMAND ${CMAKE_COMMAND} --build . --target python_tests
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        NAME test_environment_setup
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install_test_package
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
-    
-    # Set test properties
-    set_tests_properties(python_dap_unit_tests PROPERTIES TIMEOUT 300)
-    set_tests_properties(python_dap_integration_tests PROPERTIES TIMEOUT 600)
-    set_tests_properties(python_dap_regression_tests PROPERTIES TIMEOUT 300)
-    set_tests_properties(python_dap_all_tests PROPERTIES TIMEOUT 900)
+    set_tests_properties(test_environment_setup PROPERTIES
+        FIXTURES_SETUP test_environment
+        TIMEOUT 120
+    )
+
 endif()
 
 # =========================================

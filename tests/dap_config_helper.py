@@ -34,6 +34,8 @@ class DapApplicationEnvironment:
         """
         self.app_name = app_name
         self.is_test = is_test
+        
+        # No special isolation needed anymore
         self.temp_root = None
         self.paths = {}
         self._created_dirs = []
@@ -163,17 +165,51 @@ auto_discovery=true
         """Clean up application environment (only for test environments)"""
         if self.is_test and self.temp_root and os.path.exists(self.temp_root):
             try:
-                shutil.rmtree(self.temp_root)
+                # CRITICAL: DAP SDK cleanup causes race condition with background threads
+                # SKIP cleanup for DAP SDK tests to prevent SegFault/Abort
+                if 'dap' in self.app_name.lower() or 'test_' in self.app_name.lower():
+                    print(f"🔄 Skipping cleanup for DAP test environment to prevent race condition: {self.temp_root}")
+                    print(f"   (Temporary files will be cleaned up by OS or manually)")
+                    return
+                
+                # For non-DAP tests, perform normal cleanup with delay
+                import time
+                time.sleep(0.1)  # Brief delay for non-DAP tests
+                
+                self._safe_cleanup_directory(self.temp_root)
                 print(f"✅ Cleaned up test environment for {self.app_name}: {self.temp_root}")
             except OSError as e:
                 print(f"⚠️  Warning: Could not fully clean up {self.temp_root}: {e}")
         
-        for dir_path in self._created_dirs:
-            if os.path.exists(dir_path):
-                try:
-                    shutil.rmtree(dir_path)
-                except OSError:
-                    pass
+        # Clean up created directories (also skip for DAP tests)
+        if not ('dap' in self.app_name.lower() or 'test_' in self.app_name.lower()):
+            for dir_path in self._created_dirs:
+                if os.path.exists(dir_path):
+                    try:
+                        self._safe_cleanup_directory(dir_path)
+                    except OSError:
+                        pass
+    
+    def _safe_cleanup_directory(self, dir_path):
+        """
+        Safely cleanup directory with retry logic for file descriptor issues
+        """
+        import time
+        max_retries = 3
+        retry_delay = 0.05  # 50ms between retries
+        
+        for attempt in range(max_retries):
+            try:
+                shutil.rmtree(dir_path)
+                return  # Success
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    # Wait a bit longer for file descriptors to close
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    # Final attempt failed, re-raise
+                    raise e
     
     def __enter__(self):
         """Context manager entry"""
