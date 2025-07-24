@@ -1,159 +1,95 @@
 """
-🔢 DAP Hash Operations
+🔒 DAP Crypto Hash Module
 
-Direct Python wrapper over DAP hash functions.
-Handles various hashing algorithms and operations.
+High-level Python API for DAP SDK hash functions.
+Provides proper Python classes wrapping C structures.
 """
 
-import logging
-from typing import Union, Optional
 from enum import Enum
-
-# Import DAP hash functions - fallback stubs
-try:
-    from ..python_dap import (
-        dap_hash_fast, dap_hash_slow
-    )
-except ImportError:
-    # Fallback stubs for missing crypto functions
-    def dap_hash_fast(data): return b""
-    def dap_hash_slow(data): return b""
-
-from ..core.exceptions import DapException
-
+from typing import Union, Optional
+import python_dap as _dap
 
 class DapHashType(Enum):
-    """DAP supported hash types"""
-    # ✅ RECOMMENDED: Quantum-resistant hash algorithms
-    KECCAK = "keccak"             # Recommended default (SHA-3 family)
-    FAST = "keccak"               # Alias for KECCAK (fast hash)
+    """Supported hash types"""
+    KECCAK = "keccak"  # Default hash function
+    FAST = "keccak"    # Alias for KECCAK
     
-    # ⚠️  DEPRECATED: SHA-2 family (still secure but KECCAK preferred)
-    SHA256 = "sha256"             # DEPRECATED: Use KECCAK instead
-    SHA512 = "sha512"             # DEPRECATED: Use KECCAK instead
+    @classmethod
+    def default(cls) -> "DapHashType":
+        """Get default hash type"""
+        return cls.KECCAK
 
-
-class DapHashError(DapException):
-    """DAP Hash specific errors"""
+class DapHashError(Exception):
+    """Base exception for hash operations"""
     pass
 
-
 class DapHash:
-    """
-    🔢 DAP Hash wrapper
+    """High-level wrapper for DAP SDK hash functions"""
     
-    Direct wrapper over dap_hash_* functions.
-    Provides access to DAP hashing algorithms.
-    
-    Example:
-        # Fast hash
-        fast_hash = DapHash.fast(b"data to hash")
-        
-        # Slow hash  
-        slow_hash = DapHash.slow(b"data to hash")
-        
-        # Using instance
-        hasher = DapHash(DapHashType.FAST)
-        result = hasher.hash(b"data")
-    """
-    
-    def __init__(self, hash_type: DapHashType = DapHashType.KECCAK):
-        """
-        Initialize hash handler
+    def __init__(self, handle: int):
+        """Create hash wrapper from handle
         
         Args:
-            hash_type: Type of hash algorithm to use (default: KECCAK)
+            handle: C-level hash handle
+            
+        Raises:
+            DapHashError: If handle is invalid
         """
-        self._hash_type = hash_type
-        self._logger = logging.getLogger(__name__)
-    
-    @staticmethod
-    def fast(data: Union[bytes, str]) -> bytes:
-        """
-        Calculate KECCAK hash of data (fast algorithm)
+        if not handle:
+            raise DapHashError("Invalid hash handle")
+        self._handle = handle
+        
+    @property
+    def handle(self) -> int:
+        """Get raw hash handle"""
+        return self._handle
+        
+    def __del__(self):
+        """Clean up hash when object is destroyed"""
+        if hasattr(self, '_handle') and self._handle:
+            _dap.py_dap_hash_fast_delete(self._handle)
+            self._handle = None
+        
+    @classmethod
+    def create(cls, data: Union[str, bytes], hash_type: DapHashType = DapHashType.default()) -> "DapHash":
+        """Create a new hash
         
         Args:
             data: Data to hash
+            hash_type: Type of hash to create (default: KECCAK)
             
         Returns:
-            Hash result bytes
+            New hash object
             
         Raises:
             DapHashError: If hashing fails
+            TypeError: If data is not string or bytes
         """
         if isinstance(data, str):
-            data = data.encode('utf-8')
+            data = data.encode()
+        elif not isinstance(data, bytes):
+            raise TypeError("Data must be string or bytes")
+            
+        handle = _dap.py_dap_hash_fast_create(data)
+        if not handle:
+            raise DapHashError("Failed to create hash")
+        return cls(handle)
         
-        try:
-            # Call C function: dap_hash_fast() - KECCAK implementation
-            result = dap_hash_fast(data)
-            if result is None:
-                raise DapHashError("KECCAK hash calculation failed")
-            
-            logging.getLogger(__name__).debug(
-                f"KECCAK hash calculated, input: {len(data)} bytes, output: {len(result)} bytes"
-            )
-            return result
-            
-        except Exception as e:
-            raise DapHashError(f"KECCAK hash failed: {e}")
-    
-    def hash(self, data: Union[bytes, str]) -> bytes:
-        """
-        Hash data using instance hash type
+    def __enter__(self):
+        """Context manager support"""
+        return self
         
-        Args:
-            data: Data to hash
-            
-        Returns:
-            Hash result bytes
-        """
-        if self._hash_type in (DapHashType.FAST, DapHashType.KECCAK):
-            return self.fast(data)  # Both FAST and KECCAK use fast algorithm
-        elif self._hash_type == DapHashType.SHA256:
-            # Legacy SHA256 support (deprecated)
-            return self.fast(data)  # Fallback to KECCAK
-        elif self._hash_type == DapHashType.SHA512:
-            # Legacy SHA512 support (deprecated)  
-            return self.fast(data)  # Fallback to KECCAK
-        else:
-            raise DapHashError(f"Unknown hash type: {self._hash_type}")
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up on context manager exit"""
+        self.__del__()
+
+def quick_hash_fast(data: Union[str, bytes]) -> DapHash:
+    """Quick helper to create a hash using default algorithm
     
-    def hash_fast(self, data: Union[bytes, str]) -> bytes:
-        """
-        Hash data using fast algorithm (alias for self.fast)
+    Args:
+        data: Data to hash
         
-        Args:
-            data: Data to hash
-            
-        Returns:
-            Hash result bytes
-        """
-        return self.fast(data)
-    
-    @property
-    def hash_type(self) -> DapHashType:
-        """Get hash type"""
-        return self._hash_type
-    
-    @hash_type.setter
-    def hash_type(self, value: DapHashType):
-        """Set hash type"""
-        self._hash_type = value
-    
-    def __repr__(self) -> str:
-        return f"DapHash(type={self._hash_type.value})"
-
-
-# Convenience functions for quick operations
-def quick_hash_fast(data: Union[bytes, str]) -> bytes:
-    """Quick fast hash function"""
-    return DapHash.fast(data)
-
-
-__all__ = [
-    'DapHash', 
-    'DapHashType', 
-    'DapHashError',
-    'quick_hash_fast',
-] 
+    Returns:
+        New hash object
+    """
+    return DapHash.create(data) 

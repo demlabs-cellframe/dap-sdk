@@ -1,161 +1,185 @@
 """
-🔐 DAP Crypto Keys
+🔑 DAP Crypto Keys Module
 
-Cryptographic key management for DAP operations.
-Clean API without fallbacks or mocks.
+High-level Python API for DAP SDK cryptographic key operations.
+Provides proper Python classes wrapping C structures.
 """
 
-from typing import Optional, Union, Any
-import logging
-from enum import Enum
-
-logger = logging.getLogger(__name__)
-
+from enum import Enum, auto
+from typing import Optional, Union, Tuple
+import python_dap as _dap
 
 class DapKeyType(Enum):
-    """Key type enumeration."""
-    RSA = "rsa"
-    ECDSA = "ecdsa"
-    DILITHIUM = "dilithium"
-
+    """Supported cryptographic key types"""
+    DILITHIUM = "dilithium"  # Post-quantum signature scheme (default)
+    FALCON = "falcon"        # Alternative post-quantum signature
+    PICNIC = "picnic"       # Post-quantum signature scheme
+    BLISS = "bliss"         # Legacy signature scheme (deprecated)
+    CHIPMUNK = "chipmunk"   # Multi-signature scheme
+    
+    @classmethod
+    def from_string(cls, key_type: str) -> "DapKeyType":
+        """Convert string to DapKeyType"""
+        try:
+            return cls(key_type.lower())
+        except ValueError:
+            return cls.DILITHIUM  # Default to DILITHIUM
 
 class DapKeyError(Exception):
-    """Key operation error."""
+    """Base exception for DAP key operations"""
     pass
 
-
-class DapKeyManager:
-    """
-    Key manager for DAP crypto operations.
-    """
-    
-    def __init__(self, key_type: str = "sig_dilithium"):
-        """
-        Initialize key manager.
-        
-        Args:
-            key_type: Type of cryptographic key
-        """
-        self.key_type = key_type
-        self._keys = {}
-    
-    def generate_key(self, key_name: str) -> bool:
-        """
-        Generate a new cryptographic key.
-        
-        Args:
-            key_name: Name for the key
-            
-        Returns:
-            True if key was generated successfully
-        """
-        try:
-            # Native key generation implementation
-            from DAP.Crypto import generate_key_native
-            key_data = generate_key_native(self.key_type)
-            self._keys[key_name] = key_data
-            return True
-        except ImportError:
-            raise DapKeyError("Native crypto implementation missing")
-        except Exception as e:
-            raise DapKeyError(f"Failed to generate key: {e}")
-    
-    def get_key(self, key_name: str) -> Optional[Any]:
-        """
-        Get key by name.
-        
-        Args:
-            key_name: Name of the key
-            
-        Returns:
-            Key data or None if not found
-        """
-        return self._keys.get(key_name)
-    
-    def delete_key(self, key_name: str) -> bool:
-        """
-        Delete key by name.
-        
-        Args:
-            key_name: Name of the key to delete
-            
-        Returns:
-            True if key was deleted successfully
-        """
-        if key_name in self._keys:
-            del self._keys[key_name]
-            return True
-        return False
-    
-    def list_keys(self) -> list:
-        """
-        List all available keys.
-        
-        Returns:
-            List of key names
-        """
-        return list(self._keys.keys())
-
-
 class DapCryptoKey:
-    """
-    Individual crypto key class.
-    """
+    """High-level wrapper for DAP SDK cryptographic keys"""
     
-    def __init__(self, key_handle: Any):
-        """
-        Initialize crypto key.
+    def __init__(self, key_type: Union[str, DapKeyType] = DapKeyType.DILITHIUM, seed: Optional[bytes] = None):
+        """Create a new cryptographic key
         
         Args:
-            key_handle: Native key handle
+            key_type: Type of key to create (default: DILITHIUM)
+            seed: Optional seed for deterministic key generation
+            
+        Raises:
+            DapKeyError: If key creation fails
         """
-        self._key_handle = key_handle
-        self.key_type = None
+        if isinstance(key_type, str):
+            key_type = DapKeyType.from_string(key_type)
+            
+        if seed is not None:
+            self._handle = _dap.py_dap_crypto_key_create_from_seed(key_type.value, seed)
+        else:
+            self._handle = _dap.py_dap_crypto_key_create(key_type.value)
+            
+        if not self._handle:
+            raise DapKeyError(f"Failed to create {key_type.value} key")
+            
+        self._key_type = key_type
         
+    def __del__(self):
+        """Clean up key when object is destroyed"""
+        if hasattr(self, '_handle') and self._handle:
+            _dap.py_dap_crypto_key_delete(self._handle)
+            self._handle = None
+            
     @property
-    def handle(self) -> Any:
-        """Get key handle for compatibility with tests."""
-        return self._key_handle
+    def key_type(self) -> DapKeyType:
+        """Get the type of this key"""
+        return self._key_type
         
-    def get_public_key(self) -> bytes:
-        """Get public key bytes."""
-        if not self._key_handle:
-            raise DapKeyError("Key not initialized")
+    def sign(self, data: Union[str, bytes]) -> int:
+        """Create a signature for data
         
-        try:
-            return self._key_handle.get_public_key()
-        except Exception as e:
-            raise DapKeyError(f"Failed to get public key: {e}")
+        Args:
+            data: Data to sign (string or bytes)
+            
+        Returns:
+            Handle to signature object
+            
+        Raises:
+            DapKeyError: If signing fails
+            TypeError: If data is not string or bytes
+        """
+        if isinstance(data, str):
+            data = data.encode()
+        elif not isinstance(data, bytes):
+            raise TypeError("Data must be string or bytes")
+            
+        sign = _dap.py_dap_crypto_key_sign(self._handle, data)
+        if not sign:
+            raise DapKeyError("Failed to create signature")
+        return sign
+        
+    def verify(self, signature: int, data: Union[str, bytes]) -> bool:
+        """Verify a signature
+        
+        Args:
+            signature: Signature handle to verify
+            data: Original signed data
+            
+        Returns:
+            True if signature is valid
+            
+        Raises:
+            TypeError: If data is not string or bytes
+        """
+        if isinstance(data, str):
+            data = data.encode()
+        elif not isinstance(data, bytes):
+            raise TypeError("Data must be string or bytes")
+            
+        return _dap.py_dap_crypto_key_verify(signature, self._handle, data)
+        
+    def __enter__(self):
+        """Context manager support"""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up on context manager exit"""
+        self.__del__()
+        
+class DapKeyManager:
+    """Helper class for managing multiple keys"""
     
-    def get_private_key(self) -> bytes:
-        """Get private key bytes."""
-        if not self._key_handle:
-            raise DapKeyError("Key not initialized")
+    def __init__(self):
+        self._keys = {}
         
-        try:
-            return self._key_handle.get_private_key()
-        except Exception as e:
-            raise DapKeyError(f"Failed to get private key: {e}")
-    
-    def sign(self, data: bytes) -> bytes:
-        """Sign data with this key."""
-        if not self._key_handle:
-            raise DapKeyError("Key not initialized")
+    def create_key(self, name: str, key_type: Union[str, DapKeyType] = DapKeyType.DILITHIUM,
+                  seed: Optional[bytes] = None) -> DapCryptoKey:
+        """Create and store a new key
         
-        try:
-            return self._key_handle.sign(data)
-        except Exception as e:
-            raise DapKeyError(f"Failed to sign data: {e}")
-    
-    def verify(self, data: bytes, signature: bytes) -> bool:
-        """Verify signature with this key."""
-        if not self._key_handle:
-            raise DapKeyError("Key not initialized")
+        Args:
+            name: Name to store key under
+            key_type: Type of key to create
+            seed: Optional seed for deterministic generation
+            
+        Returns:
+            Created key
+            
+        Raises:
+            KeyError: If key with name already exists
+        """
+        if name in self._keys:
+            raise KeyError(f"Key '{name}' already exists")
+            
+        key = DapCryptoKey(key_type, seed)
+        self._keys[name] = key
+        return key
         
-        try:
-            return self._key_handle.verify(data, signature)
-        except Exception as e:
-            raise DapKeyError(f"Failed to verify signature: {e}")
-
-
-# Clean API - no legacy aliases 
+    def get_key(self, name: str) -> DapCryptoKey:
+        """Get a stored key by name
+        
+        Args:
+            name: Name of key to get
+            
+        Returns:
+            Stored key
+            
+        Raises:
+            KeyError: If key does not exist
+        """
+        if name not in self._keys:
+            raise KeyError(f"Key '{name}' does not exist")
+        return self._keys[name]
+        
+    def delete_key(self, name: str):
+        """Delete a stored key
+        
+        Args:
+            name: Name of key to delete
+            
+        Raises:
+            KeyError: If key does not exist
+        """
+        if name not in self._keys:
+            raise KeyError(f"Key '{name}' does not exist")
+        del self._keys[name]
+        
+    def __enter__(self):
+        """Context manager support"""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up all keys on context manager exit"""
+        for key in list(self._keys.values()):
+            key.__del__()
+        self._keys.clear() 

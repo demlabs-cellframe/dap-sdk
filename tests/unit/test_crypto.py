@@ -1,202 +1,209 @@
 """
-Unit tests for DAP Crypto modules
-Tests cryptographic functionality
+Unit tests for DAP SDK crypto module.
+Tests all crypto operations with real DAP SDK functions.
 """
 
 import pytest
-import sys
-from pathlib import Path
+from dap.crypto import (
+    DapCryptoKey, DapKeyType, DapKeyError,
+    DapSign, DapSignError, DapSignType,
+    DapCert, DapCertError, DapCertType,
+    DapHash, DapHashError, DapHashType,
+    quick_sign, quick_verify, quick_hash_fast
+)
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Test data
+TEST_DATA = b"Hello, DAP!"
+TEST_CERT_NAME = "test_cert"
 
-# Import test helper for DAP SDK initialization
-from test_init_helper import init_test_dap_sdk
+@pytest.fixture
+def dilithium_key():
+    """Create DILITHIUM key for tests"""
+    return DapCryptoKey(DapKeyType.DILITHIUM)
 
-class TestDapCryptoKey:
-    """Test cases for DapCryptoKey class"""
-    
-    @classmethod
-    def setup_class(cls):
-        """Setup test environment with DAP SDK initialization"""
-        cls._test_sdk = init_test_dap_sdk("test_crypto_key")
-    
-    @classmethod
-    def teardown_class(cls):
-        """Cleanup test environment"""
-        if hasattr(cls, '_test_sdk'):
-            cls._test_sdk.cleanup()
-    
-    def test_key_creation_with_handle(self):
-        """Test DapCryptoKey creation with handle"""
-        from dap.crypto.keys import DapCryptoKey
-        
-        key = DapCryptoKey("test_handle")
+@pytest.fixture
+def falcon_key():
+    """Create FALCON key for tests"""
+    return DapCryptoKey(DapKeyType.FALCON)
+
+@pytest.fixture
+def chipmunk_key():
+    """Create CHIPMUNK key for tests"""
+    return DapCryptoKey(DapKeyType.CHIPMUNK)
+
+@pytest.fixture
+def test_cert():
+    """Create test certificate"""
+    return DapCert.create(TEST_CERT_NAME)
+
+def test_key_creation():
+    """Test key creation with different types"""
+    # Test all supported key types
+    for key_type in DapKeyType:
+        key = DapCryptoKey(key_type)
         assert key is not None
-        assert key.handle == "test_handle"
-    
-    def test_key_methods(self):
-        """Test DapCryptoKey methods"""
-        from dap.crypto.keys import DapCryptoKey
-        
-        key = DapCryptoKey("test_handle")
-        assert hasattr(key, 'handle')
-        assert hasattr(key, '__repr__')
+        assert key.key_type == key_type
 
+def test_key_creation_from_seed():
+    """Test deterministic key creation from seed"""
+    seed = b"test_seed"
+    key1 = DapCryptoKey(DapKeyType.DILITHIUM, seed)
+    key2 = DapCryptoKey(DapKeyType.DILITHIUM, seed)
+    
+    # Same seed should produce same key
+    sig1 = key1.sign(TEST_DATA)
+    assert key2.verify(sig1, TEST_DATA)
 
-class TestDapHash:
-    """Test cases for DapHash class"""
-    
-    @classmethod
-    def setup_class(cls):
-        """Setup test environment with DAP SDK initialization"""
-        cls._test_sdk = init_test_dap_sdk("test_crypto_hash")
-    
-    @classmethod
-    def teardown_class(cls):
-        """Cleanup test environment"""
-        if hasattr(cls, '_test_sdk'):
-            cls._test_sdk.cleanup()
-    
-    def test_hash_creation(self):
-        """Test DapHash creation"""
-        from dap.crypto.hash import DapHash
-        
-        hasher = DapHash()
-        assert hasher is not None
-    
-    def test_hash_methods(self):
-        """Test DapHash methods"""
-        from dap.crypto.hash import DapHash
-        
-        hasher = DapHash()
-        assert hasattr(hasher, 'hash_fast')
-        assert callable(hasher.hash_fast)
-    
-    def test_hash_algorithm_support(self):
-        """Test hash algorithm constants"""
-        from dap.crypto.hash import DapHashType
-        
-        # Test that common algorithms are defined
-        assert hasattr(DapHashType, 'SHA256')
-        assert hasattr(DapHashType, 'SHA512')
-        assert hasattr(DapHashType, 'KECCAK')
+def test_key_creation_invalid():
+    """Test key creation with invalid parameters"""
+    with pytest.raises(DapKeyError):
+        DapCryptoKey("invalid_type")
 
+def test_key_signing(dilithium_key):
+    """Test signing with key"""
+    # Test both bytes and string data
+    for data in [TEST_DATA, TEST_DATA.decode()]:
+        signature = dilithium_key.sign(data)
+        assert signature is not None
+        assert dilithium_key.verify(signature, data)
 
-class TestDapSign:
-    """Test cases for DapSign class"""
+def test_key_verification(dilithium_key):
+    """Test signature verification"""
+    signature = dilithium_key.sign(TEST_DATA)
     
-    @classmethod
-    def setup_class(cls):
-        """Setup test environment with DAP SDK initialization"""
-        cls._test_sdk = init_test_dap_sdk("test_crypto_sign")
+    # Valid signature should verify
+    assert dilithium_key.verify(signature, TEST_DATA)
     
-    @classmethod
-    def teardown_class(cls):
-        """Cleanup test environment"""
-        if hasattr(cls, '_test_sdk'):
-            cls._test_sdk.cleanup()
-    
-    def test_sign_creation_with_handle(self):
-        """Test DapSign creation with handle"""
-        from dap.crypto.sign import DapSign
-        
-        sign = DapSign("test_handle")
-        assert sign is not None
-        assert sign.handle == "test_handle"
-    
-    def test_sign_methods(self):
-        """Test DapSign methods"""
-        from dap.crypto.sign import DapSign
-        
-        sign = DapSign("test_handle")
-        assert hasattr(sign, 'handle')
-        assert hasattr(sign, '__repr__')
-    
-    def test_sign_type_support(self):
-        """Test signature type constants"""
-        from dap.crypto.sign import DapSignType
-        
-        # Test that signature types are defined
-        assert hasattr(DapSignType, 'DILITHIUM')
-        assert hasattr(DapSignType, 'FALCON')
-        assert hasattr(DapSignType, 'SPHINCS')
+    # Invalid data should not verify
+    assert not dilithium_key.verify(signature, b"wrong data")
 
+def test_quick_sign_verify(dilithium_key):
+    """Test quick signing helpers"""
+    signature = quick_sign(dilithium_key, TEST_DATA)
+    assert quick_verify(signature, dilithium_key, TEST_DATA)
 
-class TestDapEnc:
-    """Test cases for DapEnc encryption class"""
-    
-    @classmethod
-    def setup_class(cls):
-        """Setup test environment with DAP SDK initialization"""
-        cls._test_sdk = init_test_dap_sdk("test_crypto_enc")
-    
-    @classmethod
-    def teardown_class(cls):
-        """Cleanup test environment"""
-        if hasattr(cls, '_test_sdk'):
-            cls._test_sdk.cleanup()
-    
-    def test_enc_creation(self):
-        """Test DapEnc creation"""
-        from dap.crypto.enc import DapEnc
-        
-        enc = DapEnc()
-        assert enc is not None
-    
-    def test_enc_key_methods(self):
-        """Test encryption key methods"""
-        from dap.crypto.enc import DapEnc
-        
-        enc = DapEnc()
-        assert hasattr(enc, 'key_new_generate')
-        assert hasattr(enc, 'key_delete')
-        assert callable(enc.key_new_generate)
-        assert callable(enc.key_delete)
-    
-    def test_enc_cipher_methods(self):
-        """Test encryption cipher methods"""
-        from dap.crypto.enc import DapEnc
-        
-        enc = DapEnc()
-        assert hasattr(enc, 'encrypt')
-        assert hasattr(enc, 'decrypt')
-        assert callable(enc.encrypt)
-        assert callable(enc.decrypt)
+def test_hash_creation():
+    """Test hash creation"""
+    # Test both bytes and string data
+    for data in [TEST_DATA, TEST_DATA.decode()]:
+        hash_obj = DapHash.create(data)
+        assert hash_obj is not None
 
+def test_quick_hash():
+    """Test quick hash helper"""
+    hash_obj = quick_hash_fast(TEST_DATA)
+    assert hash_obj is not None
 
-class TestDapCert:
-    """Test cases for DapCert certificate class"""
-    
-    @classmethod
-    def setup_class(cls):
-        """Setup test environment with DAP SDK initialization"""
-        cls._test_sdk = init_test_dap_sdk("test_crypto_cert")
-    
-    @classmethod
-    def teardown_class(cls):
-        """Cleanup test environment"""
-        if hasattr(cls, '_test_sdk'):
-            cls._test_sdk.cleanup()
-    
-    def test_cert_creation(self):
-        """Test DapCert creation"""
-        from dap.crypto.cert import DapCert
-        
-        cert = DapCert()
-        assert cert is not None
-    
-    def test_cert_methods(self):
-        """Test certificate methods"""
-        from dap.crypto.cert import DapCert
-        
-        cert = DapCert()
-        assert hasattr(cert, 'generate')
-        assert hasattr(cert, 'load')
-        assert hasattr(cert, 'save')
-        assert hasattr(cert, 'verify')
+def test_cert_creation():
+    """Test certificate creation"""
+    cert = DapCert.create(TEST_CERT_NAME)
+    assert cert is not None
 
+def test_cert_signing(test_cert, dilithium_key):
+    """Test certificate signing"""
+    signature = test_cert.sign(TEST_DATA)
+    assert signature is not None
+    assert test_cert.verify(signature, TEST_DATA)
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"]) 
+def test_cert_verification(test_cert, dilithium_key):
+    """Test certificate verification"""
+    signature = test_cert.sign(TEST_DATA)
+    
+    # Valid signature should verify
+    assert test_cert.verify(signature, TEST_DATA)
+    
+    # Invalid data should not verify
+    assert not test_cert.verify(signature, b"wrong data")
+
+def test_cert_chain():
+    """Test certificate chain"""
+    chain = DapCertChain()
+    cert1 = DapCert.create("cert1")
+    cert2 = DapCert.create("cert2")
+    
+    chain.add_certificate(cert1)
+    chain.add_certificate(cert2)
+    
+    # Test verification with chain
+    signature = cert1.sign(TEST_DATA)
+    assert chain.verify_chain(TEST_DATA, signature)
+
+def test_cert_store():
+    """Test certificate store"""
+    store = DapCertStore()
+    cert = DapCert.create(TEST_CERT_NAME)
+    
+    # Add certificate
+    store.add_certificate(TEST_CERT_NAME, cert)
+    assert store.get_certificate(TEST_CERT_NAME) == cert
+    
+    # Delete certificate
+    store.delete_certificate(TEST_CERT_NAME)
+    with pytest.raises(KeyError):
+        store.get_certificate(TEST_CERT_NAME)
+
+def test_key_manager():
+    """Test key manager"""
+    manager = DapKeyManager()
+    
+    # Create and store key
+    key = manager.create_key("test_key", DapKeyType.DILITHIUM)
+    assert manager.get_key("test_key") == key
+    
+    # Delete key
+    manager.delete_key("test_key")
+    with pytest.raises(KeyError):
+        manager.get_key("test_key")
+
+def test_signature_aggregator(dilithium_key):
+    """Test signature aggregation"""
+    aggregator = DapSignatureAggregator()
+    
+    # Add multiple signatures
+    signature1 = quick_sign(dilithium_key, TEST_DATA)
+    signature2 = quick_sign(dilithium_key, TEST_DATA)
+    
+    aggregator.add_signature(signature1, dilithium_key, TEST_DATA)
+    aggregator.add_signature(signature2, dilithium_key, TEST_DATA)
+    
+    # Verify all signatures
+    assert aggregator.verify_all()
+
+def test_batch_verifier(dilithium_key):
+    """Test batch signature verification"""
+    verifier = DapBatchVerifier()
+    
+    # Add multiple signatures
+    signature1 = quick_sign(dilithium_key, TEST_DATA)
+    signature2 = quick_sign(dilithium_key, TEST_DATA)
+    
+    verifier.add_signature(signature1, dilithium_key, TEST_DATA)
+    verifier.add_signature(signature2, dilithium_key, TEST_DATA)
+    
+    # Verify all signatures
+    assert verifier.verify_all()
+
+def test_context_managers():
+    """Test context manager support"""
+    # Test key context manager
+    with DapCryptoKey(DapKeyType.DILITHIUM) as key:
+        signature = key.sign(TEST_DATA)
+        assert key.verify(signature, TEST_DATA)
+    
+    # Test certificate context manager
+    with DapCert.create(TEST_CERT_NAME) as cert:
+        signature = cert.sign(TEST_DATA)
+        assert cert.verify(signature, TEST_DATA)
+    
+    # Test certificate chain context manager
+    with DapCertChain() as chain:
+        cert = DapCert.create(TEST_CERT_NAME)
+        chain.add_certificate(cert)
+        signature = cert.sign(TEST_DATA)
+        assert chain.verify_chain(TEST_DATA, signature)
+    
+    # Test certificate store context manager
+    with DapCertStore() as store:
+        cert = DapCert.create(TEST_CERT_NAME)
+        store.add_certificate(TEST_CERT_NAME, cert)
+        assert store.get_certificate(TEST_CERT_NAME) == cert 

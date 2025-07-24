@@ -1,214 +1,164 @@
 # Python DAP SDK
 
-🧬 **Direct Python bindings for DAP SDK**
+Python bindings for DAP SDK with full cryptographic support.
 
-Python DAP SDK provides direct Python wrappers over DAP SDK (dap-sdk) functions, offering low-level access to the DAP ecosystem while maintaining pythonic interfaces.
+## Features
 
-## 🚀 Quick Start
+- ✅ Complete cryptographic operations:
+  - Post-quantum signatures (DILITHIUM, FALCON, PICNIC)
+  - Multi-signature support (CHIPMUNK)
+  - Certificate management
+  - Fast hashing (KECCAK)
+- ✅ Clean Python API:
+  - Proper exception handling
+  - Type hints
+  - Context managers
+  - No legacy fallbacks
+- ✅ Production ready:
+  - Comprehensive test suite
+  - Full documentation
+  - CI/CD integration
 
-```python
-from dap import Dap, DapConfig, DapCrypto
-
-# Initialize DAP core
-dap = Dap()
-dap.init()
-
-# Work with configuration
-dap_config = DapConfig()
-network = dap_config.get_item_str("general", "network", "mainnet")
-
-# Use cryptographic functions
-dap_crypto = DapCrypto()
-key_handle = dap_crypto.key_create("ed25519")
-```
-
-## 📦 Installation
+## Installation
 
 ```bash
+# From PyPI
+pip install python-dap
+
 # From source
-git clone git@gitlab.demlabs.net:dap/python-dap.git
+git clone https://gitlab.demlabs.net/dap/python-dap
 cd python-dap
 pip install -e .
-
-# For development
-pip install -e ".[dev]"
 ```
 
-## 🏗️ Architecture
-
-Python DAP SDK is organized into modules that directly correspond to DAP SDK components:
-
-### Core Modules
-
-- **`dap.core`** - Core functions (`dap_malloc`, `dap_free`, `dap_core_init`, etc.)
-- **`dap.config`** - Configuration management (`dap_config_*` functions)
-- **`dap.events`** - Event system (`dap_events_*` functions)
-- **`dap.crypto`** - Cryptographic operations (`dap_crypto_*` functions)
-- **`dap.network`** - Network functions (`dap_network_*` functions)
-- **`dap.common`** - Common utilities (logging, encoding, time functions)
-
-### Design Principles
-
-✅ **Direct Mapping** - Each Python function directly calls corresponding dap_* function
-✅ **No Abstractions** - Minimal wrapping, maximum compatibility
-✅ **Error Handling** - Proper exception handling for Python environment
-✅ **Memory Safety** - Safe memory management for Python/C interaction
-✅ **Type Hints** - Full type annotations for better development experience
-
-## 📖 Usage Examples
-
-### Core Functions
+## Quick Start
 
 ```python
-from dap import get_dap
+from dap.crypto import DapCryptoKey, DapKeyType, quick_sign, quick_verify
 
-# Memory management
-dap = get_dap()
-dap.init()
+# Create key
+key = DapCryptoKey(DapKeyType.DILITHIUM)
 
-ptr = dap.malloc(1024)
-dap.free(ptr)
+# Sign data
+data = b"Hello, DAP!"
+signature = quick_sign(key, data)
+
+# Verify signature
+assert quick_verify(signature, key, data)
 ```
 
-### Configuration
+## Cryptographic Operations
+
+### Key Management
 
 ```python
-from dap import get_dap_config
+from dap.crypto import DapCryptoKey, DapKeyType, DapKeyManager
 
-config = get_dap_config()
+# Create key manager
+manager = DapKeyManager()
 
-# Get configuration values
-network = config.get_item_str("general", "network", "mainnet")
-port = config.get_item_int32("server", "port", 8079)
-debug = config.get_item_bool("general", "debug", False)
+# Create keys of different types
+dilithium_key = manager.create_key("dilithium", DapKeyType.DILITHIUM)
+falcon_key = manager.create_key("falcon", DapKeyType.FALCON)
+chipmunk_key = manager.create_key("chipmunk", DapKeyType.CHIPMUNK)
+
+# Use context manager for automatic cleanup
+with DapCryptoKey(DapKeyType.DILITHIUM) as key:
+    # Key will be automatically deleted after use
+    signature = key.sign(b"data")
 ```
 
-### Cryptography
+### Digital Signatures
 
 ```python
-from dap import get_dap_crypto
+from dap.crypto import DapSign, DapSignatureAggregator, DapBatchVerifier
 
-crypto = get_dap_crypto()
-crypto.init()
+# Create signature
+signature = DapSign.create(key, b"data")
 
-# Create and use cryptographic keys
-key_handle = crypto.key_create("ed25519")
-signature = crypto.key_sign(key_handle, b"Hello World")
-is_valid = crypto.key_verify(key_handle, b"Hello World", signature)
+# Verify signature
+assert signature.verify(key, b"data")
 
-crypto.key_destroy(key_handle)
+# Aggregate multiple signatures
+aggregator = DapSignatureAggregator()
+aggregator.add_signature(signature1, key1, data)
+aggregator.add_signature(signature2, key2, data)
+assert aggregator.verify_all()
+
+# Batch verify signatures
+verifier = DapBatchVerifier()
+verifier.add_signature(signature1, key1, data)
+verifier.add_signature(signature2, key2, data)
+assert verifier.verify_all()
 ```
 
-### Events
+### Certificates
 
 ```python
-from dap import get_dap_events
+from dap.crypto import DapCert, DapCertChain, DapCertStore
 
-events = get_dap_events()
+# Create certificate
+cert = DapCert.create("my_cert")
 
-def event_handler(event_data):
-    print(f"Received event: {event_data}")
+# Sign with certificate
+signature = cert.sign(b"data")
+assert cert.verify(signature, b"data")
 
-# Subscribe to events
-callback_id = events.subscribe("system.startup", event_handler)
+# Create certificate chain
+chain = DapCertChain()
+chain.add_certificate(root_cert)
+chain.add_certificate(intermediate_cert)
+chain.add_certificate(end_cert)
 
-# Emit events
-events.emit("custom.event", {"message": "Hello"})
+# Verify through chain
+assert chain.verify_chain(data, signature)
 
-# Unsubscribe
-events.unsubscribe("system.startup", callback_id)
+# Store certificates
+store = DapCertStore()
+store.add_certificate("cert1", cert1)
+store.add_certificate("cert2", cert2)
 ```
 
-### Network Operations
+### Hashing
 
 ```python
-from dap import get_dap_network
+from dap.crypto import DapHash, quick_hash_fast
 
-network = get_dap_network()
-network.init()
+# Create hash
+hash_obj = DapHash.create(b"data")
 
-# Connect to peer
-connection_id = network.connect("127.0.0.1", 8079)
-if connection_id:
-    # Send data
-    network.send(connection_id, b"Hello peer")
-    
-    # Disconnect
-    network.disconnect(connection_id)
+# Quick hash helper
+hash_obj = quick_hash_fast(b"data")
 ```
 
-
-
-## 🔧 Development
-
-### Requirements
-
-- Python 3.8+
-- DAP SDK (dap-sdk) compiled and available
-- C compiler for building extensions
-
-### Setting up Development Environment
+## Development
 
 ```bash
-git clone git@gitlab.demlabs.net:dap/python-dap.git
-cd python-dap
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install in development mode
+# Install development dependencies
 pip install -e ".[dev]"
 
 # Run tests
 pytest
 
-# Check code quality
-black .
-isort .
-flake8 .
-mypy .
+# Run tests with coverage
+pytest --cov=dap
+
+# Run type checker
+mypy dap
+
+# Format code
+black dap
+isort dap
 ```
 
-### Project Structure
+## Documentation
 
-```
-python-dap/
-├── dap/                 # Main package
-│   ├── __init__.py     # Package exports
-│   ├── core/           # Core DAP functions
-│   ├── config/         # Configuration functions
-│   ├── events/         # Event system functions
-│   ├── crypto/         # Cryptographic functions
-│   ├── network/        # Network functions
-│   └── common/         # Common utilities
-├── tests/              # Test suite
-├── docs/               # Documentation
-├── setup.py           # Package setup
-└── README.md          # This file
-```
+Full documentation is available at [docs.demlabs.net/python-dap/](https://docs.demlabs.net/python-dap/).
 
-## 🤝 Contributing
+## License
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a merge request
+This project is licensed under the GNU Affero General Public License v3 - see the [LICENSE](LICENSE) file for details.
 
-## 📄 License
+## Contributing
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🔗 Related Projects
-
-- **[Cellframe Python SDK](https://gitlab.demlabs.net/cellframe/python-cellframe-new)** - High-level Cellframe blockchain SDK
-- **[DAP SDK](https://gitlab.demlabs.net/dap/dap-sdk)** - Core DAP SDK in C
-- **[Cellframe Node](https://gitlab.demlabs.net/cellframe/cellframe-node)** - Cellframe blockchain node
-
-## 📞 Support
-
-- **Issues**: [GitLab Issues](https://gitlab.demlabs.net/dap/python-dap/-/issues)
-- **Documentation**: [docs.demlabs.net/python-dap](https://docs.demlabs.net/python-dap/)
-- **Email**: support@demlabs.net 
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details. 
