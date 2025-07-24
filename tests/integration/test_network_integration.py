@@ -13,6 +13,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Интеграционные тесты используют изолированные окружения, глобальная инициализация не нужна
 try:
     import dap
 except ImportError as e:

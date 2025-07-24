@@ -319,7 +319,7 @@ class DapStream:
 
         except Exception as e:
             raise DapStreamError(f"Stream creation failed: {e}")
-    
+
     def connect_to(self, address: str, port: int) -> bool:
         """
         Connect stream to remote address

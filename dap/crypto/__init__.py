@@ -57,7 +57,7 @@ __all__ = [
     'DapKeyType',
     'DapKeyError',
     'DapKeyManager',
-
+    
     # Digital Signatures
     'DapSign',
     'DapSignError',

@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "python-dap"
+version = "3.0.0"
+description = "Python bindings for DAP SDK - Distributed Applications Platform"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "DAP Team", email = "support@demlabs.net"}
+]
+keywords = ["dap", "blockchain", "crypto", "p2p", "network"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
+    "Topic :: Security :: Cryptography"
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=6.0", "pytest-cov"]
+dev = ["pytest>=6.0", "pytest-cov", "build", "twine", "black", "isort", "mypy", "flake8"]
+docs = ["sphinx>=4.0", "sphinx-rtd-theme", "myst-parser"]
+
+[project.urls]
+Homepage = "https://gitlab.demlabs.net/dap/python-dap"
+Documentation = "https://docs.demlabs.net/python-dap/"
+Repository = "https://gitlab.demlabs.net/dap/python-dap"
+"Bug Reports" = "https://gitlab.demlabs.net/dap/python-dap/-/issues"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+py-modules = ["python_dap"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dap*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.so", "*.pyd", "python_dap.so"]
+"dap" = ["py.typed", "*.so", "python_dap.so"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests"
+] 

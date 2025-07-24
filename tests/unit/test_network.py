@@ -31,7 +31,8 @@ class TestDapClient:
         import python_dap as dap
         
         # Проверяем основные client функции
-        client_funcs = ['dap_client_connect_to', 'dap_client_disconnect',
+        client_funcs = ['dap_client_new', 'dap_client_delete', 
+                       'dap_client_connect_to', 'dap_client_disconnect',
                        'dap_client_go_stage', 'dap_client_get_stage']
         
         for func_name in client_funcs:
@@ -133,7 +134,8 @@ class TestDapStream:
         
         # Проверяем доступность основных stream функций
         stream_funcs = ['dap_stream_ch_pkt_write', 'dap_stream_ch_pkt_send', 
-                       'dap_stream_ch_add_notifier', 'dap_stream_ch_del_notifier']
+                       'dap_stream_ch_add_notifier', 'dap_stream_ch_del_notifier',
+                       'dap_stream_ch_new', 'dap_stream_ch_delete']
         
         for func_name in stream_funcs:
             assert hasattr(dap, func_name), f"Missing stream function: {func_name}"
@@ -181,12 +183,8 @@ class TestDapHttp:
         for func_name in http_funcs:
             assert hasattr(dap, func_name), f"Missing HTTP function: {func_name}"
             assert callable(getattr(dap, func_name)), f"Function not callable: {func_name}"
-    
-    def test_http_constants(self):
-        """Test HTTP constants and method types"""
-        import python_dap as dap
-        
-        # Проверяем HTTP методы
+            
+        # Проверяем HTTP методы константы
         http_methods = ['DAP_HTTP_METHOD_GET', 'DAP_HTTP_METHOD_POST', 
                        'DAP_HTTP_METHOD_PUT', 'DAP_HTTP_METHOD_DELETE',
                        'DAP_HTTP_METHOD_HEAD', 'DAP_HTTP_METHOD_OPTIONS']
@@ -200,6 +198,16 @@ class TestDapHttp:
         
         for status in http_statuses:
             assert hasattr(dap, status), f"Missing HTTP status: {status}"
+    
+    def test_http_constants(self):
+        """Test HTTP constants and method types"""
+        import python_dap as dap
+        
+        # Дополнительные проверки констант (основные уже проверены в test_http_client_methods)
+        assert dap.DAP_HTTP_METHOD_GET == 0, "GET method constant value"
+        assert dap.DAP_HTTP_METHOD_POST == 1, "POST method constant value"
+        assert dap.DAP_HTTP_STATUS_OK == 200, "OK status constant value"
+        assert dap.DAP_HTTP_STATUS_NOT_FOUND == 404, "NOT_FOUND status constant value"
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ class DapCert:
             cert_handle: Native certificate handle (optional)
         """
         self._cert_handle = cert_handle
-    
+        
     def generate(self, key: Optional[DapCryptoKey] = None, 
                 subject: str = "CN=localhost") -> bool:
         """

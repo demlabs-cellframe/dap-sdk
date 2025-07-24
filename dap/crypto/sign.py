@@ -420,7 +420,7 @@ def quick_sign(key: DapCryptoKey, data: Union[bytes, str]) -> DapSign:
 def quick_verify(sign: DapSign, data: Union[bytes, str], 
                 public_key: Optional[DapCryptoKey] = None) -> bool:
     """Quick signature verification."""
-    return sign.verify(data, public_key)
+    return sign.verify(data, public_key) 
 
 
 __all__ = [

@@ -198,12 +198,49 @@ PyObject* py_dap_client_disconnect_wrapper(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+PyObject* py_dap_client_go_stage_wrapper(PyObject* self, PyObject* args) {
+    void* client;
+    int stage;
+    
+    if (!PyArg_ParseTuple(args, "Ki", &client, &stage)) {
+        return NULL;
+    }
+    
+    if (!client) {
+        PyErr_SetString(PyExc_ValueError, "Invalid client handle");
+        return NULL;
+    }
+    
+    // Call DAP SDK function (returns void)
+    dap_client_go_stage((dap_client_t*)client, (dap_client_stage_t)stage, NULL);
+    Py_RETURN_NONE;
+}
+
+PyObject* py_dap_client_get_stage_wrapper(PyObject* self, PyObject* args) {
+    void* client;
+    
+    if (!PyArg_ParseTuple(args, "K", &client)) {
+        return NULL;
+    }
+    
+    if (!client) {
+        PyErr_SetString(PyExc_ValueError, "Invalid client handle");
+        return NULL;
+    }
+    
+    // Get current client stage using DAP SDK function
+    dap_client_stage_t stage = dap_client_get_stage((dap_client_t*)client);
+    return PyLong_FromLong((long)stage);
+}
+
 // Module method array
 static PyMethodDef client_methods[] = {
     {"dap_client_new", py_dap_client_new_wrapper, METH_NOARGS, "Create new network client"},
     {"dap_client_delete", py_dap_client_delete_wrapper, METH_VARARGS, "Delete network client"},
     {"dap_client_connect_to", py_dap_client_connect_to_wrapper, METH_VARARGS, "Connect client to address"},
     {"dap_client_disconnect", py_dap_client_disconnect_wrapper, METH_VARARGS, "Disconnect client"},
+    {"dap_client_go_stage", py_dap_client_go_stage_wrapper, METH_VARARGS, "Move client to specified stage"},
+    {"dap_client_get_stage", py_dap_client_get_stage_wrapper, METH_VARARGS, "Get current client stage"},
     {NULL, NULL, 0, NULL}  // Sentinel
 };
 

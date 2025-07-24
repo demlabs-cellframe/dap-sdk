@@ -126,9 +126,6 @@ __all__ = [
     'DapNetworkManager',
     'DapNetStatus',
     'DapNetType',
-    'get_network',
-    'get_all_networks',
-    'create_network'
 ]
 
 # Version info

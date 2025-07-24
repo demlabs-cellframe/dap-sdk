@@ -619,7 +619,7 @@ def quick_http_post(url: str, data: bytes, headers: Optional[Dict[str, str]] = N
 __all__ = [
     'DapHttp',
     'DapHttpError',
-    'DapHttpMethod', 
+    'DapHttpMethod',
     'DapHttpRequest',
     'DapHttpResponse',
     'DapHttpManager',

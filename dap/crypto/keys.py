@@ -111,7 +111,7 @@ class DapCryptoKey:
         """
         self._key_handle = key_handle
         self.key_type = None
-    
+        
     @property
     def handle(self) -> Any:
         """Get key handle for compatibility with tests."""

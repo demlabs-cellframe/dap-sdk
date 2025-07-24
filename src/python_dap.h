@@ -45,5 +45,11 @@ int py_dap_client_module_init(PyObject* module);
 int py_dap_server_module_init(PyObject* module);
 int py_dap_events_module_init(PyObject* module);
 int py_dap_network_module_init(PyObject* module);
+int py_dap_stream_module_init(PyObject* module);
+int py_dap_http_module_init(PyObject* module);
+
+// Function declarations for getting methods arrays
+PyMethodDef* py_dap_stream_get_methods(void);
+PyMethodDef* py_dap_http_get_methods(void);
 
 #endif // PYTHON_DAP_H 

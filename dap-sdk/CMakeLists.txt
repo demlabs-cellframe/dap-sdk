@@ -159,19 +159,30 @@ macro(dap_add_static_library TARGET_NAME)
     message("[+] DAP Explicit Static Library: ${TARGET_NAME}")
 endmacro()
 
+# Set default values for build information if not provided
 if (NOT DEFINED DAP_VERSION)
-    message(WARNING "DAP_VERSION is not defined")
-    set(DAP_VERSION "0.0.0")
+    set(DAP_VERSION "3.0.0")
 endif()
 
 if (NOT DEFINED BUILD_TS)
-    message(WARNING "BUILD_TS is not defined")
-    set(BUILD_TS "0")
+    string(TIMESTAMP BUILD_TS "%s" UTC)
 endif()
 
 if (NOT DEFINED BUILD_HASH)
-    message(WARNING "BUILD_HASH is not defined")
-    set(BUILD_HASH "0")
+    # Try to get git hash, fallback to unknown
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            OUTPUT_VARIABLE BUILD_HASH
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    endif()
+    if(NOT BUILD_HASH)
+        set(BUILD_HASH "unknown")
+    endif()
 endif()
 
 add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")

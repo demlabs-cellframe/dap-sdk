@@ -135,7 +135,7 @@ PyObject* dap_network_reinit_stream_wrapper(PyObject* self, PyObject* args) {
             if (result == 0) {
                 result = dap_stream_worker_init();
                 s_stream_initialized = (result == 0);
-            }
+    }
         }
     }
     
@@ -190,7 +190,7 @@ static PyMethodDef DapNetworkMethods[] = {
 // Get methods array for module registration
 PyMethodDef* py_dap_network_get_methods(void) {
     return DapNetworkMethods;
-} 
+}
 
 // Module initialization function
 int py_dap_network_module_init(PyObject* module) {
