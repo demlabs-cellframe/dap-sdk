@@ -11,28 +11,24 @@ import python_dap as _dap
 from .keys import DapCryptoKey, DapKeyType
 
 class DapSignType(Enum):
-    """Real DAP SDK signature types"""
+    """Real DAP SDK signature types based on dap_pkey.h and dap_sign.h"""
     # Post-quantum secure (recommended)
     DILITHIUM = 1
     FALCON = 2
-    PICNIC = 3
-    BLISS = 4
-    SPHINCSPLUS = 5
-    TESLA = 6
-    SHIPOVNIK = 7
+    SPHINCSPLUS = 3
+    SHIPOVNIK = 4
     
     # Multi-signature types
-    COMPOSITE = 100    # DAP composite multi-signature
+    COMPOSITE = 100    # DAP composite multi-signature (SIG_TYPE_MULTI_COMBINED)
     CHIPMUNK = 101     # Aggregated signature (Chipmunk)
     
-    # Deprecated (but still usable)
-    ECDSA = 200        # Deprecated - quantum vulnerable
-    RSA = 201          # Deprecated - quantum vulnerable
-    ED25519 = 202      # Deprecated - quantum vulnerable
+    # Deprecated post-quantum (still quantum secure but deprecated)
+    BLISS = 200        # Deprecated post-quantum signature
+    TESLA = 201        # Deprecated post-quantum signature
+    PICNIC = 202       # Deprecated post-quantum signature
     
-    # Experimental/Legacy (deprecated for other reasons)
-    GOST = 300         # Deprecated - legacy algorithm
-    STREEBOG = 301     # Deprecated - legacy algorithm
+    # Deprecated quantum vulnerable
+    ECDSA = 300        # Deprecated - quantum vulnerable
 
 class DapSignMetadata:
     """Metadata for signature types"""
@@ -54,22 +50,6 @@ class DapSignMetadata:
             'aggregated': False,
             'description': 'FALCON post-quantum signature'
         },
-        DapSignType.PICNIC: {
-            'quantum_secure': True,
-            'deprecated': False,
-            'quantum_vulnerable': False,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'PICNIC post-quantum signature'
-        },
-        DapSignType.BLISS: {
-            'quantum_secure': True,
-            'deprecated': False,
-            'quantum_vulnerable': False,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'BLISS post-quantum signature'
-        },
         DapSignType.SPHINCSPLUS: {
             'quantum_secure': True,
             'deprecated': False,
@@ -77,14 +57,6 @@ class DapSignMetadata:
             'multi_signature': False,
             'aggregated': False,
             'description': 'SPHINCS+ post-quantum signature'
-        },
-        DapSignType.TESLA: {
-            'quantum_secure': True,
-            'deprecated': False,
-            'quantum_vulnerable': False,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'TESLA post-quantum signature'
         },
         DapSignType.SHIPOVNIK: {
             'quantum_secure': True,
@@ -110,6 +82,30 @@ class DapSignMetadata:
             'aggregated': True,
             'description': 'Chipmunk aggregated signature'
         },
+        DapSignType.BLISS: {
+            'quantum_secure': True,
+            'deprecated': True,
+            'quantum_vulnerable': False,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'BLISS post-quantum signature (deprecated)'
+        },
+        DapSignType.TESLA: {
+            'quantum_secure': True,
+            'deprecated': True,
+            'quantum_vulnerable': False,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'TESLA post-quantum signature (deprecated)'
+        },
+        DapSignType.PICNIC: {
+            'quantum_secure': True,
+            'deprecated': True,
+            'quantum_vulnerable': False,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'PICNIC post-quantum signature (deprecated)'
+        },
         DapSignType.ECDSA: {
             'quantum_secure': False,
             'deprecated': True,
@@ -117,38 +113,6 @@ class DapSignMetadata:
             'multi_signature': False,
             'aggregated': False,
             'description': 'ECDSA signature (deprecated - quantum vulnerable)'
-        },
-        DapSignType.RSA: {
-            'quantum_secure': False,
-            'deprecated': True,
-            'quantum_vulnerable': True,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'RSA signature (deprecated - quantum vulnerable)'
-        },
-        DapSignType.ED25519: {
-            'quantum_secure': False,
-            'deprecated': True,
-            'quantum_vulnerable': True,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'ED25519 signature (deprecated - quantum vulnerable)'
-        },
-        DapSignType.GOST: {
-            'quantum_secure': False,
-            'deprecated': True,
-            'quantum_vulnerable': False,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'GOST signature (deprecated - legacy algorithm)'
-        },
-        DapSignType.STREEBOG: {
-            'quantum_secure': False,
-            'deprecated': True,
-            'quantum_vulnerable': False,
-            'multi_signature': False,
-            'aggregated': False,
-            'description': 'STREEBOG signature (deprecated - legacy algorithm)'
         }
     }
     
