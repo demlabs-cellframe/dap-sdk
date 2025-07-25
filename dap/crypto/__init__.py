@@ -1,46 +1,48 @@
-"""
-🔐 DAP Crypto Module
+"""DAP SDK Crypto Module - Unified Signature System with Clean API
 
-Unified cryptographic operations for DAP SDK with single constructor pattern.
-Only real DAP SDK signature types are supported.
+This module provides a unified interface for all DAP SDK cryptographic operations
+including post-quantum signatures, multi-signatures, and key management.
 """
 
-from .keys import DapCryptoKey, DapKeyType, DapKeyError
+from .keys import DapCryptoKey, DapKeyType
 from .sign import (
-    DapSign, DapSignType, DapSignMetadata, DapSignError,
-    quick_sign, quick_verify, quick_multi_sign,
-    quick_composite_sign, quick_aggregated_sign,
-    get_recommended_signature_types, get_deprecated_signature_types,
+    DapSign, 
+    DapSignType, 
+    DapSignMetadata, 
+    DapSignError,
+    get_recommended_signature_types,
+    get_deprecated_signature_types,
     check_signature_compatibility
 )
+from .hash import DapHashType, DapHash
+from .cert import DapCert
 
 __all__ = [
     # Key management
-    "DapCryptoKey",
-    "DapKeyType", 
-    "DapKeyError",
+    'DapCryptoKey',
+    'DapKeyType',
     
-    # Unified signature system with single constructor
-    "DapSign",
-    "DapSignType",
-    "DapSignMetadata", 
-    "DapSignError",
+    # Unified signature system
+    'DapSign',
+    'DapSignType', 
+    'DapSignMetadata',
+    'DapSignError',
     
-    # Quick functions (all use single constructor internally)
-    "quick_sign",
-    "quick_verify", 
-    "quick_multi_sign",
-    "quick_composite_sign",
-    "quick_aggregated_sign",
+    # Hash functions
+    'DapHashType',
+    'DapHash',
+    
+    # Certificates
+    'DapCert',
     
     # Utility functions
-    "get_recommended_signature_types",
-    "get_deprecated_signature_types",
-    "check_signature_compatibility"
+    'get_recommended_signature_types',
+    'get_deprecated_signature_types',
+    'check_signature_compatibility'
 ]
 
-__version__ = "4.0.0"
-__description__ = "DAP SDK Crypto Module - Single Constructor with Real DAP Types Only"
+__version__ = "5.0.0"
+__description__ = "DAP SDK Crypto Module - Clean Unified API with sign_add and Certificate Support"
 
 # Configuration
 DEFAULT_SIGNATURE_TYPE = DapSignType.DILITHIUM  # Quantum-secure default
