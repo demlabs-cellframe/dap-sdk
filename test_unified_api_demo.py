@@ -2,7 +2,7 @@
 """
 🚀 Демонстрация унифицированного API системы подписей DAP SDK
 
-Показывает новые возможности умных конструкторов и единого интерфейса.
+Показывает новые возможности умных конструкторов с автоопределением типа.
 """
 
 from dap.crypto import (
@@ -13,10 +13,10 @@ from dap.crypto import (
     get_recommended_signature_types
 )
 
-def demo_unified_constructors():
-    """Демонстрация унифицированных конструкторов"""
-    print("🔧 Умные конструкторы DapSign:")
-    print("=" * 40)
+def demo_auto_detection():
+    """Демонстрация автоматического определения типа подписи"""
+    print("🧠 Автоматическое определение типа подписи:")
+    print("=" * 50)
     
     data = "Тестовые данные для подписи".encode('utf-8')
     
@@ -24,84 +24,103 @@ def demo_unified_constructors():
     dilithium_key = DapCryptoKey(DapKeyType.DILITHIUM)
     falcon_key = DapCryptoKey(DapKeyType.FALCON)
     chipmunk_keys = [DapCryptoKey(DapKeyType.CHIPMUNK) for _ in range(3)]
+    mixed_keys = [dilithium_key, falcon_key]
     
-    print("1️⃣  Автоматическое определение типа подписи:")
-    
-    # Единый конструктор - одиночная подпись
+    print("1️⃣  Одиночная подпись - тип определяется по ключу:")
     single_sign = DapSign.create(data, key=dilithium_key)
-    print(f"   Одиночная подпись: {single_sign.sign_type.value}")
-    print(f"   Квантово-защищённая: {single_sign.is_quantum_secure()}")
+    print(f"   Ключ: {dilithium_key.key_type.value} → Подпись: {single_sign.sign_type.value}")
     
-    # Единый конструктор - мультиподпись (композиционная)
-    multi_keys = [dilithium_key, falcon_key]
-    composite_sign = DapSign.create(data, keys=multi_keys)
-    print(f"   Мультиподпись: {composite_sign.sign_type.value}")
-    print(f"   Поддерживает мультиподпись: {composite_sign.supports_multi_signature()}")
+    print()
+    print("2️⃣  Мультиподпись - тип определяется по составу ключей:")
     
-    # Единый конструктор - агрегированная подпись
-    agg_sign = DapSign.create(data, keys=chipmunk_keys, aggregated=True)
-    print(f"   Агрегированная: {agg_sign.sign_type.value}")
-    print(f"   Поддерживает агрегацию: {agg_sign.supports_aggregation()}")
+    # Смешанные ключи → COMPOSITE
+    composite_sign = DapSign.create(data, keys=mixed_keys)
+    print(f"   Смешанные ключи → {composite_sign.sign_type.value}")
+    
+    # Все ключи CHIPMUNK → CHIPMUNK (агрегированная)
+    chipmunk_sign = DapSign.create(data, keys=chipmunk_keys)
+    print(f"   Все CHIPMUNK → {chipmunk_sign.sign_type.value} (агрегированная)")
+    
+    print()
+    print("3️⃣  Возможности автоматически определяются:")
+    print(f"   Одиночная - мультиподпись: {single_sign.supports_multi_signature()}")
+    print(f"   Композиционная - агрегация: {composite_sign.supports_aggregation()}")
+    print(f"   CHIPMUNK - агрегация: {chipmunk_sign.supports_aggregation()}")
     
     print()
 
-def demo_specific_constructors():
-    """Демонстрация специализированных конструкторов"""
-    print("🎯 Специализированные конструкторы:")
-    print("=" * 40)
+def demo_simplified_constructors():
+    """Демонстрация упрощенных конструкторов"""
+    print("🎯 Упрощенные конструкторы без лишних параметров:")
+    print("=" * 55)
     
-    data = "Документ для мультиподписи".encode('utf-8')
+    data = "Документ для подписи".encode('utf-8')
     
     # Создание ключей
-    keys = [DapCryptoKey(DapKeyType.DILITHIUM), DapCryptoKey(DapKeyType.FALCON)]
+    key = DapCryptoKey(DapKeyType.DILITHIUM)
+    keys = [DapCryptoKey(DapKeyType.FALCON), DapCryptoKey(DapKeyType.DILITHIUM)]
     chipmunk_keys = [DapCryptoKey(DapKeyType.CHIPMUNK) for _ in range(2)]
     
-    # Композиционная мультиподпись
-    composite = DapSign.create_composite(data, keys)
-    print(f"📝 Композиционная: {composite.sign_type.value}")
-    print(f"   Ключей: {len(composite.keys)}")
+    print("📝 Единый конструктор DapSign.create():")
     
-    # Агрегированная подпись
-    aggregated = DapSign.create_aggregated(data, chipmunk_keys)
-    print(f"🔗 Агрегированная: {aggregated.sign_type.value}")
-    print(f"   Ключей: {len(aggregated.keys)}")
-    print(f"   Поддерживает агрегацию: {aggregated.supports_aggregation()}")
+    # Один ключ → одиночная подпись
+    single = DapSign.create(data, key=key)
+    print(f"   create(data, key=key) → {single.sign_type.value}")
+    
+    # Несколько ключей → автоматически определяется тип
+    multi = DapSign.create(data, keys=keys)
+    print(f"   create(data, keys=mixed) → {multi.sign_type.value}")
+    
+    agg = DapSign.create(data, keys=chipmunk_keys)
+    print(f"   create(data, keys=chipmunk) → {agg.sign_type.value}")
+    
+    print()
+    print("🎯 Явные конструкторы для точного контроля:")
+    
+    # Явное указание типа
+    explicit_composite = DapSign.create_composite(data, keys)
+    print(f"   create_composite() → {explicit_composite.sign_type.value}")
+    
+    explicit_agg = DapSign.create_aggregated(data, chipmunk_keys)
+    print(f"   create_aggregated() → {explicit_agg.sign_type.value}")
     
     print()
 
 def demo_universal_verification():
     """Демонстрация универсальной верификации"""
-    print("✅ Универсальная верификация:")
-    print("=" * 35)
+    print("✅ Универсальная верификация - один метод для всех:")
+    print("=" * 55)
     
     data = "Данные для верификации".encode('utf-8')
     
     # Создание подписей
     key = DapCryptoKey(DapKeyType.DILITHIUM)
     keys = [DapCryptoKey(DapKeyType.FALCON), DapCryptoKey(DapKeyType.DILITHIUM)]
-    
-    # Одиночная подпись
-    single_sign = DapSign.create(data, key=key)
-    single_valid = single_sign.verify(data)  # Использует сохранённый ключ
-    print(f"🔑 Одиночная подпись валидна: {single_valid}")
-    
-    # Композиционная мультиподпись
-    composite_sign = DapSign.create_composite(data, keys)
-    composite_valid = composite_sign.verify(data)  # Использует сохранённые ключи
-    print(f"👥 Композиционная подпись валидна: {composite_valid}")
-    
-    # Агрегированная подпись
     chipmunk_keys = [DapCryptoKey(DapKeyType.CHIPMUNK) for _ in range(2)]
-    agg_sign = DapSign.create_aggregated(data, chipmunk_keys)
-    agg_valid = agg_sign.verify(data)  # Автоматическая верификация
-    print(f"🔗 Агрегированная подпись валидна: {agg_valid}")
+    
+    # Создание подписей
+    single = DapSign.create(data, key=key)
+    composite = DapSign.create(data, keys=keys)
+    aggregated = DapSign.create(data, keys=chipmunk_keys)
+    
+    print("🔑 Все подписи проверяются одним методом verify():")
+    
+    # Автоматическое использование сохранённых ключей
+    print(f"   Одиночная: {single.verify(data)}")
+    print(f"   Композиционная: {composite.verify(data)}")
+    print(f"   Агрегированная: {aggregated.verify(data)}")
+    
+    print()
+    print("⚡ Можно явно передать ключи для проверки:")
+    print(f"   Одиночная с явным ключом: {single.verify(data, key=key)}")
+    print(f"   Мультиподпись с явными ключами: {composite.verify(data, keys=keys)}")
     
     print()
 
-def demo_unified_quick_functions():
-    """Демонстрация унифицированных quick функций"""
-    print("⚡ Унифицированные quick функции:")
-    print("=" * 40)
+def demo_simplified_quick_functions():
+    """Демонстрация упрощенных quick функций"""
+    print("⚡ Упрощенные quick функции:")
+    print("=" * 35)
     
     data = "Быстрые подписи".encode('utf-8')
     
@@ -110,77 +129,93 @@ def demo_unified_quick_functions():
     keys = [DapCryptoKey(DapKeyType.FALCON), DapCryptoKey(DapKeyType.DILITHIUM)]
     chipmunk_keys = [DapCryptoKey(DapKeyType.CHIPMUNK) for _ in range(2)]
     
-    print("1️⃣  Универсальная quick_sign:")
+    print("1️⃣  Универсальная quick_sign() без лишних параметров:")
     
     # Одиночная подпись
     single = quick_sign(data, key=key)
-    print(f"   Одиночная: {single.sign_type.value}")
+    print(f"   quick_sign(data, key=key) → {single.sign_type.value}")
     
-    # Мультиподпись через универсальную функцию
+    # Мультиподпись - автоопределение
     multi = quick_sign(data, keys=keys)
-    print(f"   Мультиподпись: {multi.sign_type.value}")
+    print(f"   quick_sign(data, keys=mixed) → {multi.sign_type.value}")
     
-    # Агрегированная через универсальную функцию
-    agg = quick_sign(data, keys=chipmunk_keys, aggregated=True)
-    print(f"   Агрегированная: {agg.sign_type.value}")
+    # Агрегированная - автоопределение
+    agg = quick_sign(data, keys=chipmunk_keys)
+    print(f"   quick_sign(data, keys=chipmunk) → {agg.sign_type.value}")
     
     print()
-    print("2️⃣  Специализированные quick функции:")
+    print("2️⃣  Специализированные функции:")
     
     # Специализированные функции
     composite = quick_composite_sign(data, keys)
-    print(f"   Композиционная: {composite.sign_type.value}")
+    print(f"   quick_composite_sign() → {composite.sign_type.value}")
     
     aggregated = quick_aggregated_sign(data, chipmunk_keys)
-    print(f"   Агрегированная: {aggregated.sign_type.value}")
+    print(f"   quick_aggregated_sign() → {aggregated.sign_type.value}")
     
     print()
     print("3️⃣  Универсальная верификация:")
     
-    # Универсальная верификация
-    print(f"   Одиночная валидна: {quick_verify(single, data)}")
-    print(f"   Композиционная валидна: {quick_verify(composite, data)}")
-    print(f"   Агрегированная валидна: {quick_verify(aggregated, data)}")
+    # Все проверяются одинаково
+    print(f"   Все подписи проверяются: quick_verify(signature, data)")
+    print(f"   Одиночная: {quick_verify(single, data)}")
+    print(f"   Композиционная: {quick_verify(composite, data)}")
+    print(f"   Агрегированная: {quick_verify(aggregated, data)}")
     
     print()
 
-def demo_capability_checking():
-    """Демонстрация проверки возможностей"""
-    print("🔍 Универсальная проверка возможностей:")
-    print("=" * 45)
+def demo_smart_detection_logic():
+    """Демонстрация логики умного определения типов"""
+    print("🧠 Логика умного определения типов:")
+    print("=" * 40)
     
-    data = "Тест возможностей".encode('utf-8')
+    data = "Тест логики определения".encode('utf-8')
     
-    # Создаем разные типы подписей
-    signatures = [
-        ("Одиночная DILITHIUM", DapSign.create(data, key=DapCryptoKey(DapKeyType.DILITHIUM))),
-        ("Композиционная", DapSign.create_composite(data, [DapCryptoKey(DapKeyType.FALCON), DapCryptoKey(DapKeyType.DILITHIUM)])),
-        ("Агрегированная CHIPMUNK", DapSign.create_aggregated(data, [DapCryptoKey(DapKeyType.CHIPMUNK), DapCryptoKey(DapKeyType.CHIPMUNK)]))
+    print("📋 Правила автоопределения:")
+    print("   • Один ключ → тип подписи = тип ключа")
+    print("   • Несколько ключей, все CHIPMUNK → CHIPMUNK (агрегированная)")
+    print("   • Несколько ключей, смешанные → COMPOSITE")
+    print()
+    
+    # Тестирование различных сценариев
+    test_cases = [
+        ("DILITHIUM ключ", DapCryptoKey(DapKeyType.DILITHIUM), None),
+        ("FALCON ключ", DapCryptoKey(DapKeyType.FALCON), None),
+        ("Смешанные ключи", None, [DapCryptoKey(DapKeyType.DILITHIUM), DapCryptoKey(DapKeyType.FALCON)]),
+        ("Только CHIPMUNK", None, [DapCryptoKey(DapKeyType.CHIPMUNK), DapCryptoKey(DapKeyType.CHIPMUNK)]),
+        ("Один CHIPMUNK в списке", None, [DapCryptoKey(DapKeyType.CHIPMUNK)]),
     ]
     
-    capabilities = ['quantum_secure', 'multi_signature', 'aggregated', 'ring_signature', 'zero_knowledge', 'deprecated']
-    
-    for name, signature in signatures:
-        print(f"📋 {name}:")
-        for cap in capabilities:
-            status = "✅" if signature.check_capability(cap) else "❌"
-            print(f"   {status} {cap}")
-        print()
+    for description, key, keys in test_cases:
+        try:
+            if key:
+                signature = DapSign.create(data, key=key)
+            else:
+                signature = DapSign.create(data, keys=keys)
+            
+            print(f"✅ {description}:")
+            print(f"   → {signature.sign_type.value}")
+            print(f"   Мультиподпись: {signature.supports_multi_signature()}")
+            print(f"   Агрегация: {signature.supports_aggregation()}")
+            print()
+        except Exception as e:
+            print(f"❌ {description}: {e}")
+            print()
 
 def main():
     """Главная функция демонстрации"""
-    print("🚀 Демонстрация унифицированного API системы подписей")
-    print("=" * 65)
+    print("🚀 Демонстрация упрощенного API с автоопределением типов")
+    print("=" * 70)
     print()
     
     try:
-        demo_unified_constructors()
-        demo_specific_constructors()
+        demo_auto_detection()
+        demo_simplified_constructors()
         demo_universal_verification()
-        demo_unified_quick_functions()
-        demo_capability_checking()
+        demo_simplified_quick_functions()
+        demo_smart_detection_logic()
         
-        print("🎉 Демонстрация унифицированного API завершена успешно!")
+        print("🎉 Демонстрация упрощенного API завершена успешно!")
         
     except Exception as e:
         print(f"💥 Ошибка во время демонстрации: {e}")
