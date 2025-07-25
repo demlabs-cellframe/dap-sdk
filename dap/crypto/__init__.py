@@ -16,10 +16,13 @@ from .sign import (
     DapSign,
     DapSignError,
     DapSignType,
-    DapSignatureAggregator,
-    DapBatchVerifier,
+    DapSignMetadata,
     quick_sign,
-    quick_verify
+    quick_verify,
+    quick_multi_sign,
+    get_recommended_signature_types,
+    get_deprecated_signature_types,
+    check_signature_compatibility
 )
 
 from .cert import (
@@ -47,14 +50,17 @@ __all__ = [
     'DapKeyError',
     'DapKeyManager',
     
-    # Digital Signatures
+    # Digital Signatures (Unified System)
     'DapSign',
     'DapSignError',
     'DapSignType',
-    'DapSignatureAggregator',
-    'DapBatchVerifier',
+    'DapSignMetadata',
     'quick_sign',
     'quick_verify',
+    'quick_multi_sign',
+    'get_recommended_signature_types',
+    'get_deprecated_signature_types',
+    'check_signature_compatibility',
     
     # Certificates
     'DapCert',
@@ -76,4 +82,4 @@ __all__ = [
 # Version info
 __version__ = "3.0.0"
 __author__ = "Demlabs"
-__description__ = "DAP SDK Crypto Module - Proper C structure wrapping"
+__description__ = "DAP SDK Crypto Module - Unified Signature System"
