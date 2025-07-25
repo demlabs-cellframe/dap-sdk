@@ -151,87 +151,75 @@ class DapSignError(Exception):
 class DapSign:
     """Unified signature class with single constructor supporting all operations"""
     
-    def __init__(self, 
-                 data: Optional[Union[str, bytes]] = None,
-                 key: Optional[DapCryptoKey] = None,
-                 keys: Optional[List[DapCryptoKey]] = None,
-                 handle: Optional[int] = None,
-                 sign_type: Optional[DapSignType] = None):
-        """Universal signature constructor
-        
-        Creation modes:
-        1. DapSign(data, key=key)                    # Single signature
-        2. DapSign(data, keys=keys)                  # Multi-signature (auto-detect type)
-        3. DapSign(data, keys=keys, sign_type=type)  # Multi-signature (explicit type)
-        4. DapSign(handle=handle, sign_type=type)    # Wrap existing handle
+    @staticmethod
+    def sign(data: Optional[Union[str, bytes]] = None,
+             sign_obj: Optional[Union[str, bytes]] = None,
+             key: Optional[DapCryptoKey] = None,
+             keys: Optional[List[DapCryptoKey]] = None,
+             sign_type: Optional[DapSignType] = None) -> "DapSign":
+        """Static signing function - creates and returns signature
         
         Args:
-            data: Data to sign (for creation modes)
+            data: Data to sign (legacy parameter)
+            sign_obj: Binary object to sign (new parameter)
             key: Single key for single signature
             keys: Multiple keys for multi-signature
-            handle: Existing signature handle (for wrapping)
             sign_type: Explicit signature type (optional)
             
+        Returns:
+            New DapSign instance with the signature
+            
         Raises:
-            DapSignError: If signature creation/wrapping fails
+            DapSignError: If signing fails
             ValueError: If invalid parameter combination
         """
-        # Mode 4: Wrap existing handle
-        if handle is not None:
-            if not handle:
-                raise DapSignError("Invalid signature handle")
-            if sign_type is None:
-                raise ValueError("sign_type required when wrapping handle")
-            self._handle = handle
-            self._type = sign_type
-            self._keys = keys or []
-            self._metadata = DapSignMetadata.get_metadata(sign_type)
-            return
+        # Determine what to sign (prefer sign_obj over data)
+        if sign_obj is not None and data is not None:
+            raise ValueError("Cannot specify both 'data' and 'sign_obj', use one or the other")
         
-        # Creation modes require data
-        if data is None:
-            raise ValueError("Either 'data' or 'handle' must be provided")
+        to_sign = sign_obj if sign_obj is not None else data
         
-        if isinstance(data, str):
-            data = data.encode()
-        elif not isinstance(data, bytes):
-            raise TypeError("Data must be string or bytes")
+        if to_sign is None:
+            raise ValueError("Either 'data' or 'sign_obj' must be provided")
         
-        # Mode 1: Single signature
+        if isinstance(to_sign, str):
+            to_sign = to_sign.encode()
+        elif not isinstance(to_sign, bytes):
+            raise TypeError("data/sign_obj must be string or bytes")
+        
+        # Single signature
         if key is not None:
             if keys is not None:
                 raise ValueError("Cannot specify both 'key' and 'keys'")
-            self._create_single_signature(data, key, sign_type)
-            return
+            return DapSign._create_single_signature_static(to_sign, key, sign_type)
         
-        # Mode 2 & 3: Multi-signature
+        # Multi-signature
         if keys is not None:
             if not keys:
                 raise ValueError("Keys list is empty")
-            self._create_multi_signature(data, keys, sign_type)
-            return
+            return DapSign._create_multi_signature_static(to_sign, keys, sign_type)
         
         raise ValueError("Either 'key' or 'keys' must be provided for signature creation")
     
-    def _create_single_signature(self, data: bytes, key: DapCryptoKey, sign_type: Optional[DapSignType]):
-        """Create single signature"""
+    @staticmethod
+    def _create_single_signature_static(to_sign: bytes, key: DapCryptoKey, sign_type: Optional[DapSignType]) -> "DapSign":
+        """Create single signature (static version)"""
         # Determine signature type
         if sign_type is None:
             # Auto-detect from key type
             sign_type = DapSignType(key.key_type.value)
         
         # Create signature
-        handle = key.sign(data)
+        handle = key.sign(to_sign)
         if not handle:
             raise DapSignError("Failed to create single signature")
         
-        self._handle = handle
-        self._type = sign_type
-        self._keys = [key]
-        self._metadata = DapSignMetadata.get_metadata(sign_type)
+        # Create instance using handle wrapper mode
+        return DapSign(handle=handle, sign_type=sign_type, keys=[key])
     
-    def _create_multi_signature(self, data: bytes, keys: List[DapCryptoKey], sign_type: Optional[DapSignType]):
-        """Create multi-signature"""
+    @staticmethod
+    def _create_multi_signature_static(to_sign: bytes, keys: List[DapCryptoKey], sign_type: Optional[DapSignType]) -> "DapSign":
+        """Create multi-signature (static version)"""
         # Auto-detect signature type if not specified
         if sign_type is None:
             if all(k.key_type == DapKeyType.CHIPMUNK for k in keys):
@@ -245,19 +233,18 @@ class DapSign:
         
         # Create based on type
         if sign_type == DapSignType.COMPOSITE:
-            handle = self._create_composite(data, keys)
+            handle = DapSign._create_composite_static(to_sign, keys)
         elif sign_type == DapSignType.CHIPMUNK:
-            handle = self._create_aggregated(data, keys)
+            handle = DapSign._create_aggregated_static(to_sign, keys)
         else:
             raise ValueError(f"Unsupported multi-signature type: {sign_type}")
         
-        self._handle = handle
-        self._type = sign_type
-        self._keys = keys
-        self._metadata = DapSignMetadata.get_metadata(sign_type)
+        # Create instance using handle wrapper mode
+        return DapSign(handle=handle, sign_type=sign_type, keys=keys)
     
-    def _create_composite(self, data: bytes, keys: List[DapCryptoKey]) -> int:
-        """Create composite multi-signature"""
+    @staticmethod
+    def _create_composite_static(to_sign: bytes, keys: List[DapCryptoKey]) -> int:
+        """Create composite multi-signature (static version)"""
         multi_sign_handle = _dap.py_dap_crypto_multi_sign_create()
         if not multi_sign_handle:
             raise DapSignError("Failed to create composite multi-signature")
@@ -265,7 +252,7 @@ class DapSign:
         try:
             # Add individual signatures
             for key in keys:
-                sig_handle = key.sign(data)
+                sig_handle = key.sign(to_sign)
                 if not _dap.py_dap_crypto_multi_sign_add(multi_sign_handle, sig_handle):
                     raise DapSignError("Failed to add signature to composite multi-signature")
             
@@ -278,8 +265,9 @@ class DapSign:
         finally:
             _dap.py_dap_crypto_multi_sign_delete(multi_sign_handle)
     
-    def _create_aggregated(self, data: bytes, keys: List[DapCryptoKey]) -> int:
-        """Create aggregated signature"""
+    @staticmethod
+    def _create_aggregated_static(to_sign: bytes, keys: List[DapCryptoKey]) -> int:
+        """Create aggregated signature (static version)"""
         agg_sign_handle = _dap.py_dap_crypto_aggregated_sign_create()
         if not agg_sign_handle:
             raise DapSignError("Failed to create aggregated signature")
@@ -287,7 +275,7 @@ class DapSign:
         try:
             # Add individual signatures with keys
             for key in keys:
-                sig_handle = key.sign(data)
+                sig_handle = key.sign(to_sign)
                 if not _dap.py_dap_crypto_aggregated_sign_add(agg_sign_handle, sig_handle, key.handle):
                     raise DapSignError("Failed to add signature to aggregated signature")
             
@@ -299,6 +287,86 @@ class DapSign:
             return combined_handle
         finally:
             _dap.py_dap_crypto_aggregated_sign_delete(agg_sign_handle)
+    
+    def __init__(self, 
+                 data: Optional[Union[str, bytes]] = None,
+                 sign_obj: Optional[Union[str, bytes]] = None,
+                 key: Optional[DapCryptoKey] = None,
+                 keys: Optional[List[DapCryptoKey]] = None,
+                 handle: Optional[int] = None,
+                 sign_type: Optional[DapSignType] = None):
+        """Universal signature constructor
+        
+        Creation modes:
+        1. DapSign(data, key=key)                        # Single signature (legacy)
+        2. DapSign(sign_obj=obj, key=key)                # Single signature (new)
+        3. DapSign(data, keys=keys)                      # Multi-signature (legacy)
+        4. DapSign(sign_obj=obj, keys=keys)              # Multi-signature (new)
+        5. DapSign(data, keys=keys, sign_type=type)      # Multi-signature explicit (legacy)
+        6. DapSign(sign_obj=obj, keys=keys, sign_type=type) # Multi-signature explicit (new)
+        7. DapSign(handle=handle, sign_type=type)        # Wrap existing handle
+        
+        Args:
+            data: Data to sign (legacy parameter, for backward compatibility)
+            sign_obj: Binary object to sign (new parameter)
+            key: Single key for single signature
+            keys: Multiple keys for multi-signature
+            handle: Existing signature handle (for wrapping)
+            sign_type: Explicit signature type (optional)
+            
+        Raises:
+            DapSignError: If signature creation/wrapping fails
+            ValueError: If invalid parameter combination
+        """
+        # Mode 7: Wrap existing handle
+        if handle is not None:
+            if not handle:
+                raise DapSignError("Invalid signature handle")
+            if sign_type is None:
+                raise ValueError("sign_type required when wrapping handle")
+            self._handle = handle
+            self._type = sign_type
+            self._keys = keys or []
+            self._metadata = DapSignMetadata.get_metadata(sign_type)
+            return
+        
+        # Use static sign function for creation modes
+        if data is not None or sign_obj is not None:
+            created_signature = DapSign.sign(data=data, sign_obj=sign_obj, key=key, keys=keys, sign_type=sign_type)
+            # Copy attributes from created signature
+            self._handle = created_signature._handle
+            self._type = created_signature._type
+            self._keys = created_signature._keys
+            self._metadata = created_signature._metadata
+            return
+        
+        raise ValueError("Either 'data', 'sign_obj', or 'handle' must be provided")
+    
+    def _create_single_signature(self, to_sign: bytes, key: DapCryptoKey, sign_type: Optional[DapSignType]):
+        """Create single signature (deprecated - use static sign function)"""
+        # This method is now deprecated in favor of static sign function
+        created = DapSign._create_single_signature_static(to_sign, key, sign_type)
+        self._handle = created._handle
+        self._type = created._type
+        self._keys = created._keys
+        self._metadata = created._metadata
+    
+    def _create_multi_signature(self, to_sign: bytes, keys: List[DapCryptoKey], sign_type: Optional[DapSignType]):
+        """Create multi-signature (deprecated - use static sign function)"""
+        # This method is now deprecated in favor of static sign function
+        created = DapSign._create_multi_signature_static(to_sign, keys, sign_type)
+        self._handle = created._handle
+        self._type = created._type
+        self._keys = created._keys
+        self._metadata = created._metadata
+    
+    def _create_composite(self, to_sign: bytes, keys: List[DapCryptoKey]) -> int:
+        """Create composite multi-signature (deprecated - use static version)"""
+        return DapSign._create_composite_static(to_sign, keys)
+    
+    def _create_aggregated(self, to_sign: bytes, keys: List[DapCryptoKey]) -> int:
+        """Create aggregated signature (deprecated - use static version)"""
+        return DapSign._create_aggregated_static(to_sign, keys)
     
     @property
     def handle(self) -> int:
@@ -340,21 +408,41 @@ class DapSign:
         """Check if this signature type supports aggregation"""
         return self.check_capability('aggregated')
     
-    def verify(self, data: Union[str, bytes], 
+    def verify(self, data: Optional[Union[str, bytes]] = None,
+               sign_obj: Optional[Union[str, bytes]] = None,
                key: Optional[DapCryptoKey] = None,
                keys: Optional[List[DapCryptoKey]] = None) -> bool:
-        """Universal signature verification"""
-        if isinstance(data, str):
-            data = data.encode()
-        elif not isinstance(data, bytes):
-            raise TypeError("Data must be string or bytes")
+        """Universal signature verification
+        
+        Args:
+            data: Data to verify (legacy parameter)
+            sign_obj: Binary object to verify (new parameter)
+            key: Key for single signature verification
+            keys: Keys for multi-signature verification
+            
+        Returns:
+            True if signature is valid
+        """
+        # Determine what to verify (prefer sign_obj over data)
+        if sign_obj is not None and data is not None:
+            raise ValueError("Cannot specify both 'data' and 'sign_obj', use one or the other")
+        
+        to_verify = sign_obj if sign_obj is not None else data
+        
+        if to_verify is None:
+            raise ValueError("Either 'data' or 'sign_obj' must be provided for verification")
+        
+        if isinstance(to_verify, str):
+            to_verify = to_verify.encode()
+        elif not isinstance(to_verify, bytes):
+            raise TypeError("data/sign_obj must be string or bytes")
         
         # Single signature verification
         if not self.supports_multi_signature():
             verify_key = key or (self._keys[0] if self._keys else None)
             if not verify_key:
                 raise ValueError("Key is required for single signature verification")
-            return verify_key.verify(self._handle, data)
+            return verify_key.verify(self._handle, to_verify)
         
         # Multi-signature verification
         verify_keys = keys or self._keys
@@ -363,38 +451,53 @@ class DapSign:
         
         if self._type == DapSignType.COMPOSITE:
             key_handles = [k.handle for k in verify_keys]
-            return _dap.py_dap_crypto_multi_sign_verify(self._handle, key_handles, data)
+            return _dap.py_dap_crypto_multi_sign_verify(self._handle, key_handles, to_verify)
         elif self._type == DapSignType.CHIPMUNK:
-            return _dap.py_dap_crypto_aggregated_sign_verify(self._handle, data)
+            return _dap.py_dap_crypto_aggregated_sign_verify(self._handle, to_verify)
         else:
             raise ValueError(f"Unsupported multi-signature type: {self._type}")
 
-# Helper functions for convenience
-def quick_sign(data: Union[str, bytes],
+# Helper functions for convenience (support both data and sign_obj)
+def quick_sign(data: Optional[Union[str, bytes]] = None,
+               sign_obj: Optional[Union[str, bytes]] = None,
                key: Optional[DapCryptoKey] = None,
                keys: Optional[List[DapCryptoKey]] = None,
                **kwargs) -> DapSign:
-    """Quick signature creation"""
-    return DapSign(data, key, keys, **kwargs)
+    """Quick signature creation (supports both data and sign_obj) - uses static sign function"""
+    return DapSign.sign(data=data, sign_obj=sign_obj, key=key, keys=keys, **kwargs)
 
 def quick_verify(signature: DapSign, 
-                data: Union[str, bytes],
+                data: Optional[Union[str, bytes]] = None,
+                sign_obj: Optional[Union[str, bytes]] = None,
                 key: Optional[DapCryptoKey] = None,
                 keys: Optional[List[DapCryptoKey]] = None) -> bool:
-    """Quick signature verification"""
-    return signature.verify(data, key, keys)
+    """Quick signature verification (supports both data and sign_obj)"""
+    return signature.verify(data=data, sign_obj=sign_obj, key=key, keys=keys)
 
-def quick_multi_sign(data: Union[str, bytes], keys: List[DapCryptoKey], **kwargs) -> DapSign:
-    """Quick multi-signature creation"""
-    return DapSign(data, keys=keys, **kwargs)
+def quick_multi_sign(data: Optional[Union[str, bytes]] = None,
+                    sign_obj: Optional[Union[str, bytes]] = None,
+                    keys: Optional[List[DapCryptoKey]] = None,
+                    **kwargs) -> DapSign:
+    """Quick multi-signature creation (supports both data and sign_obj) - uses static sign function"""
+    if keys is None:
+        raise ValueError("keys parameter is required")
+    return DapSign.sign(data=data, sign_obj=sign_obj, keys=keys, **kwargs)
 
-def quick_composite_sign(data: Union[str, bytes], keys: List[DapCryptoKey]) -> DapSign:
-    """Quick composite signature creation"""
-    return DapSign(data, keys=keys, sign_type=DapSignType.COMPOSITE)
+def quick_composite_sign(data: Optional[Union[str, bytes]] = None,
+                        sign_obj: Optional[Union[str, bytes]] = None,
+                        keys: Optional[List[DapCryptoKey]] = None) -> DapSign:
+    """Quick composite signature creation (supports both data and sign_obj) - uses static sign function"""
+    if keys is None:
+        raise ValueError("keys parameter is required")
+    return DapSign.sign(data=data, sign_obj=sign_obj, keys=keys, sign_type=DapSignType.COMPOSITE)
 
-def quick_aggregated_sign(data: Union[str, bytes], keys: List[DapCryptoKey]) -> DapSign:
-    """Quick aggregated signature creation"""
-    return DapSign(data, keys=keys, sign_type=DapSignType.CHIPMUNK)
+def quick_aggregated_sign(data: Optional[Union[str, bytes]] = None,
+                         sign_obj: Optional[Union[str, bytes]] = None,
+                         keys: Optional[List[DapCryptoKey]] = None) -> DapSign:
+    """Quick aggregated signature creation (supports both data and sign_obj) - uses static sign function"""
+    if keys is None:
+        raise ValueError("keys parameter is required")
+    return DapSign.sign(data=data, sign_obj=sign_obj, keys=keys, sign_type=DapSignType.CHIPMUNK)
 
 def get_recommended_signature_types() -> List[DapSignType]:
     """Get list of recommended signature types"""
