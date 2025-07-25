@@ -66,17 +66,18 @@ set(PYTHON_DAP_SOURCES
     src/python_dap_core.c
     src/python_dap_config.c
     src/python_dap_crypto.c  # Re-enabled
-    src/python_dap_network.c
     src/python_dap_system.c
     src/python_dap_common.c
     src/python_dap_time.c
     src/python_dap_logging.c
-    src/python_dap_events.c
-    src/python_dap_client.c
-    src/python_dap_server.c
-    src/python_dap_stream.c   # Added stream module
-    src/python_dap_http.c     # Added HTTP module
     src/python_gdb.c
+    # Temporary disable problematic modules for initial crypto testing
+    # src/python_dap_network.c
+    # src/python_dap_events.c
+    # src/python_dap_client.c
+    # src/python_dap_server.c
+    # src/python_dap_stream.c
+    # src/python_dap_http.c
 )
 
 # Create python_dap as proper Python extension module

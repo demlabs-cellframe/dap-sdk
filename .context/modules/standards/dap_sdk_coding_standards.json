@@ -1,0 +1,818 @@
+{
+  "type": "coding_standards_module",
+  "domain": "dap_sdk_coding_standards",
+  "version": "1.0.0",
+  "created": "2025-01-16T23:50:00Z",
+  "updated": "2025-01-16T23:50:00Z",
+  "source": "DAP SDK codebase analysis",
+  "navigation_system": {
+    "purpose": "Стандарты кодирования DAP SDK и Cellframe SDK",
+    "recovery_path": ".context/manifest.json",
+    "current_file": ".context/modules/standards/dap_sdk_coding_standards.json",
+    "file_role": "CODING_STANDARDS",
+    "related_files": [
+      ".context/manifest.json",
+      ".context/modules/projects/dap_sdk_project.json"
+    ],
+    "quick_navigation": {
+      "🏠 Главная": ".context/manifest.json - главный навигатор системы",
+      "🛠️ CLI": ".context/tools/scripts/slc_cli.py - автоматизация",
+      "📋 DAP SDK": ".context/modules/projects/dap_sdk_project.json - проект DAP SDK"
+    },
+    "usage_hint": "Загружается автоматически при работе с DAP SDK и Cellframe SDK",
+    "ai_context": "Файл СЛК системы: dap_sdk_coding_standards.json"
+  },
+  "template_info": {
+    "name": "DAP SDK / Cellframe SDK Coding Standards",
+    "description": "Полные стандарты кодирования для разработки на DAP SDK и Cellframe SDK",
+    "version": "1.0.0",
+    "domain": "c_programming_dap_sdk",
+    "specialization": "quantum_resistant_blockchain_development",
+    "applicability": "Все проекты использующие DAP SDK и Cellframe SDK",
+    "auto_load_triggers": [
+      "dap-sdk",
+      "cellframe-sdk", 
+      "cellframe-node",
+      "dap_",
+      "DAP_",
+      "#include \"dap_",
+      "quantum-resistant",
+      "post-quantum"
+    ]
+  },
+  "core_principles": {
+    "security_first": {
+      "rule": "Безопасность превыше производительности",
+      "description": "Все решения должны приоритизировать безопасность над производительностью",
+      "enforcement": "mandatory"
+    },
+    "post_quantum_priority": {
+      "rule": "Пост-квантовые алгоритмы ВСЕГДА имеют приоритет",
+      "description": "Готовность к квантовой угрозе важнее текущей производительности",
+      "enforcement": "critical"
+    },
+    "no_openssl_policy": {
+      "rule": "ЗАПРЕЩЕНО использовать OpenSSL",
+      "description": "Проект использует собственные криптографические примитивы",
+      "rationale": "Независимость от внешних библиотек и контроль безопасности",
+      "enforcement": "critical",
+      "violation_action": "immediate_rejection"
+    },
+    "memory_safety": {
+      "rule": "Использовать только DAP SDK макросы управления памятью",
+      "description": "DAP_NEW, DAP_DELETE, DAP_FREE вместо прямых malloc/free",
+      "enforcement": "mandatory"
+    },
+    "cross_platform": {
+      "rule": "Код должен работать на Linux, macOS, Windows",
+      "description": "Избегать платформо-специфичных решений без fallback",
+      "enforcement": "recommended"
+    }
+  },
+  "naming_conventions": {
+    "functions": {
+      "prefix": "dap_",
+      "style": "snake_case",
+      "pattern": "dap_module_action_object",
+      "examples": [
+        "dap_common_init()",
+        "dap_config_get()",
+        "dap_plugin_register_type_handler()",
+        "dap_crypto_hash_fast()"
+      ],
+      "guidelines": [
+        "Всегда начинать с префикса dap_",
+        "Использовать описательные имена (не сокращения)",
+        "Порядок: модуль_действие_объект",
+        "Инициализация: _init(), завершение: _deinit()"
+      ]
+    },
+    "variables": {
+      "local_variables": {
+        "prefix": "l_",
+        "style": "snake_case",
+        "examples": [
+          "l_buffer_size",
+          "l_result",
+          "l_temp_string",
+          "l_node_count"
+        ]
+      },
+      "function_arguments": {
+        "prefix": "a_",
+        "style": "snake_case", 
+        "examples": [
+          "a_config_path",
+          "a_buffer",
+          "a_size",
+          "a_callback_func"
+        ]
+      },
+      "static_variables": {
+        "prefix": "s_",
+        "style": "snake_case",
+        "examples": [
+          "s_initialized",
+          "s_global_config",
+          "s_handler_registry"
+        ]
+      },
+      "global_variables": {
+        "prefix": "g_",
+        "style": "snake_case",
+        "examples": [
+          "g_app_name",
+          "g_debug_mode",
+          "g_plugin_manager"
+        ]
+      },
+      "guidelines": [
+        "Никогда не использовать односимвольные имена (кроме циклов)",
+        "Предпочитать длинные описательные имена",
+        "Избегать венгерской нотации",
+        "bool переменные: is_, has_, can_, should_"
+      ]
+    },
+    "macros": {
+      "prefix": "DAP_",
+      "style": "UPPER_CASE",
+      "examples": [
+        "DAP_NEW",
+        "DAP_DELETE", 
+        "DAP_MALLOC",
+        "DAP_PLUGIN_TYPE_PYTHON",
+        "DAP_LOG_FORMAT_NO_PREFIX"
+      ],
+      "guidelines": [
+        "Всегда в UPPER_CASE",
+        "Префикс DAP_ обязателен",
+        "Использовать для констант и функциональных макросов"
+      ]
+    },
+    "types": {
+      "suffix": "_t",
+      "style": "snake_case",
+      "pattern": "dap_module_object_t",
+      "examples": [
+        "dap_config_t",
+        "dap_chain_t",
+        "dap_plugin_manifest_t",
+        "dap_plugin_type_handler_t"
+      ],
+      "struct_naming": [
+        "typedef struct dap_structure_name {",
+        "    // поля",
+        "} dap_structure_name_t;"
+      ],
+      "enum_naming": [
+        "typedef enum dap_enum_name {",
+        "    DAP_ENUM_VALUE_ONE,",
+        "    DAP_ENUM_VALUE_TWO",
+        "} dap_enum_name_t;"
+      ]
+    },
+    "files": {
+      "header_files": {
+        "pattern": "dap_module_name.h",
+        "examples": [
+          "dap_common.h",
+          "dap_plugin.h",
+          "dap_plugin_dependency_manager.h"
+        ]
+      },
+      "source_files": {
+        "pattern": "dap_module_name.c",
+        "examples": [
+          "dap_common.c",
+          "dap_plugin.c",
+          "dap_plugin_dependency_manager.c"
+        ]
+      },
+      "test_files": {
+        "pattern": "dap_module_name_test.c",
+        "examples": [
+          "dap_crypto_test.c",
+          "dap_plugin_test.c"
+        ]
+      }
+    }
+  },
+  "memory_management": {
+    "allocation": {
+      "preferred_macros": [
+        "DAP_NEW(type) - выделить память для одного объекта",
+        "DAP_NEW_Z(type) - выделить и обнулить память",
+        "DAP_NEW_SIZE(type, size) - выделить память указанного размера",
+        "DAP_MALLOC(size) - прямое выделение памяти",
+        "DAP_CALLOC(count, size) - выделить и обнулить"
+      ],
+      "forbidden": [
+        "malloc() - использовать DAP_MALLOC",
+        "calloc() - использовать DAP_CALLOC", 
+        "new - использовать DAP_NEW",
+        "alloca() - небезопасно на всех платформах"
+      ],
+      "pattern": {
+        "correct": [
+          "dap_config_t *l_config = DAP_NEW(dap_config_t);",
+          "if (!l_config) {",
+          "    log_it(L_CRITICAL, \"%s\", c_error_memory_alloc);",
+          "    return -ENOMEM;",
+          "}"
+        ],
+        "wrong": [
+          "dap_config_t *l_config = malloc(sizeof(dap_config_t));"
+        ]
+      }
+    },
+    "deallocation": {
+      "preferred_macros": [
+        "DAP_DELETE(ptr) - освободить память одного объекта",
+        "DAP_FREE(ptr) - освободить выделенную память",
+        "DAP_DEL_MULTY(ptr) - освободить массив объектов"
+      ],
+      "forbidden": [
+        "free() - использовать DAP_FREE",
+        "delete - использовать DAP_DELETE"
+      ],
+      "guidelines": [
+        "ВСЕГДА устанавливать указатель в NULL после освобождения",
+        "Проверять на NULL перед освобождением",
+        "Освобождать в обратном порядке выделения"
+      ],
+      "pattern": {
+        "correct": [
+          "if (l_config) {",
+          "    DAP_DELETE(l_config);",
+          "    l_config = NULL;",
+          "}"
+        ]
+      }
+    },
+    "validation": {
+      "always_check": "Всегда проверять результат выделения памяти",
+      "error_handling": "Возвращать -ENOMEM при ошибке выделения памяти",
+      "logging": "Логировать критические ошибки памяти с L_CRITICAL",
+      "cleanup": "Всегда очищать память в функциях cleanup/deinit"
+    }
+  },
+  "logging_system": {
+    "function": "log_it(level, format, ...)",
+    "required_define": "#define LOG_TAG \"module_name\"",
+    "levels": {
+      "L_CRITICAL": {
+        "value": 5,
+        "usage": "Критические ошибки, приводящие к падению приложения",
+        "examples": ["Ошибки выделения памяти", "Невозможность инициализации"]
+      },
+      "L_ERROR": {
+        "value": 4,
+        "usage": "Ошибки, не приводящие к падению, но нарушающие работу",
+        "examples": ["Ошибки чтения файлов", "Некорректные параметры"]
+      },
+      "L_WARNING": {
+        "value": 3,
+        "usage": "Предупреждения о потенциальных проблемах",
+        "examples": ["Deprecated функции", "Необычные параметры"]
+      },
+      "L_NOTICE": {
+        "value": 2,
+        "usage": "Важные события в работе приложения",
+        "examples": ["Успешная инициализация", "Изменение конфигурации"]
+      },
+      "L_INFO": {
+        "value": 1,
+        "usage": "Общая информация о работе",
+        "examples": ["Статус операций", "Информационные сообщения"]
+      },
+      "L_DEBUG": {
+        "value": 0,
+        "usage": "Детальная отладочная информация",
+        "examples": ["Трассировка функций", "Значения переменных"]
+      }
+    },
+    "formats": {
+      "DAP_LOG_FORMAT_DEFAULT": "Полный формат с временем - для production",
+      "DAP_LOG_FORMAT_SIMPLE": "Упрощенный формат - для отладки",
+      "DAP_LOG_FORMAT_NO_TIME": "Без времени - для стабильных логов",
+      "DAP_LOG_FORMAT_NO_PREFIX": "🔴 ОБЯЗАТЕЛЬНО для unit тестов"
+    },
+    "testing_rules": {
+      "unit_tests": {
+        "mandatory_format": "DAP_LOG_FORMAT_NO_PREFIX",
+        "setup_code": "dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);",
+        "rationale": "Чистый вывод без префиксов для лучшего UX разработки"
+      },
+      "cleanup": {
+        "save_original": "dap_log_format_t l_original = dap_log_get_format();",
+        "restore": "dap_log_set_format(l_original);"
+      }
+    },
+    "patterns": {
+      "basic_usage": [
+        "#define LOG_TAG \"plugin_manager\"",
+        "",
+        "log_it(L_DEBUG, \"Entering %s\", __func__);",
+        "log_it(L_INFO, \"Loading plugin: %s\", a_plugin_name);",
+        "log_it(L_ERROR, \"Failed to load plugin: %s\", a_plugin_name);"
+      ],
+      "memory_error": [
+        "if (!l_ptr) {",
+        "    log_it(L_CRITICAL, \"%s\", c_error_memory_alloc);",
+        "    return -ENOMEM;",
+        "}"
+      ]
+    }
+  },
+  "error_handling": {
+    "return_codes": {
+      "success": {
+        "value": 0,
+        "usage": "Успешное выполнение операции"
+      },
+      "memory_error": {
+        "value": "-ENOMEM",
+        "usage": "Ошибка выделения памяти"
+      },
+      "invalid_parameter": {
+        "value": "-EINVAL", 
+        "usage": "Некорректные входные параметры"
+      },
+      "not_found": {
+        "value": "-ENOENT",
+        "usage": "Объект не найден"
+      },
+      "permission_denied": {
+        "value": "-EACCES",
+        "usage": "Недостаточно прав доступа"
+      },
+      "operation_not_supported": {
+        "value": "-ENOSYS",
+        "usage": "Операция не поддерживается"
+      }
+    },
+    "validation_macros": {
+      "dap_return_val_if_fail": {
+        "usage": "dap_return_val_if_fail(condition, return_value)",
+        "examples": [
+          "dap_return_val_if_fail(a_plugin_name, -EINVAL);",
+          "dap_return_val_if_fail(a_callback, -EINVAL);"
+        ]
+      },
+      "dap_return_if_fail": {
+        "usage": "dap_return_if_fail(condition)",
+        "examples": [
+          "dap_return_if_fail(s_initialized);"
+        ]
+      }
+    },
+    "patterns": {
+      "parameter_validation": [
+        "int dap_function_name(const char *a_param) {",
+        "    dap_return_val_if_fail(a_param, -EINVAL);",
+        "    // реализация",
+        "    return 0;",
+        "}"
+      ],
+      "error_propagation": [
+        "int l_result = dap_sub_function(a_param);",
+        "if (l_result != 0) {",
+        "    log_it(L_ERROR, \"Sub function failed: %d\", l_result);",
+        "    return l_result;",
+        "}"
+      ]
+    }
+  },
+  "cryptography_rules": {
+    "no_openssl": {
+      "rule": "СТРОГО ЗАПРЕЩЕНО использовать OpenSSL",
+      "rationale": "Проект использует собственные криптографические примитивы",
+      "forbidden": [
+        "#include <openssl/sha.h>",
+        "SHA256(data, len, hash);",
+        "EVP_*",
+        "RSA_*",
+        "EC_*"
+      ],
+      "correct_alternatives": {
+        "sha256": "dap_hash_fast() или dap_enc_hash()",
+        "keccak": "XKCP библиотека через dap_crypto_XKCP",
+        "general": "Все хэш-функции через dap_hash.h"
+      },
+      "examples": {
+        "wrong": [
+          "#include <openssl/sha.h>",
+          "SHA256(data, len, hash);"
+        ],
+        "correct": [
+          "#include \"dap_hash.h\"",
+          "dap_hash_fast(data, len, hash);"
+        ]
+      }
+    },
+    "post_quantum_priority": {
+      "primary_algorithms": [
+        "Chipmunk - lattice-based multi-signature",
+        "Kyber - post-quantum key encapsulation",
+        "Dilithium - lattice-based signatures",
+        "Falcon - compact lattice signatures",
+        "MSRLN - key exchange"
+      ],
+      "deprecated_classical": [
+        "ECDSA - только для совместимости",
+        "RSA - только для совместимости"
+      ]
+    },
+    "memory_security": {
+      "zero_sensitive_memory": "Всегда обнулять чувствительные данные перед освобождением",
+      "constant_time_operations": "Использовать constant-time сравнения для критичных данных",
+      "secure_random": "Использовать DAP SDK функции генерации случайных чисел"
+    }
+  },
+  "file_structure": {
+    "header_file_template": [
+      "/*",
+      " * Authors:",
+      " * [Author Name] <email@demlabs.net>",
+      " * DeM Labs Ltd   https://demlabs.net",
+      " * Copyright  (c) [year]",
+      " * All rights reserved.",
+      "",
+      " This file is part of DAP SDK the open source project",
+      "",
+      "    DAP SDK is free software: you can redistribute it and/or modify",
+      "    it under the terms of the GNU General Public License as published by",
+      "    the Free Software Foundation, either version 3 of the License, or",
+      "    (at your option) any later version.",
+      "",
+      "    DAP SDK is distributed in the hope that it will be useful,",
+      "    but WITHOUT ANY WARRANTY; without even the implied warranty of",
+      "    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+      "    GNU General Public License for more details.",
+      "",
+      "    You should have received a copy of the GNU General Public License",
+      "    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.",
+      "*/",
+      "",
+      "#pragma once",
+      "",
+      "#include <stdbool.h>",
+      "#include <stdint.h>",
+      "#include <stddef.h>",
+      "#include \"dap_common.h\"",
+      "",
+      "#ifdef __cplusplus",
+      "extern \"C\" {",
+      "#endif",
+      "",
+      "// Type definitions",
+      "// Function declarations",
+      "",
+      "#ifdef __cplusplus",
+      "}",
+      "#endif"
+    ],
+    "source_file_template": [
+      "#include \"dap_module.h\"",
+      "#include \"dap_common.h\"",
+      "",
+      "#define LOG_TAG \"module\"",
+      "",
+      "// Static variables",
+      "// Static function declarations",
+      "// Public function implementations",
+      "// Static function implementations"
+    ],
+    "include_order": [
+      "1. System headers (sorted alphabetically)",
+      "2. DAP SDK headers (sorted alphabetically)", 
+      "3. Local project headers",
+      "4. Current module header (in .c files)"
+    ]
+  },
+  "code_style": {
+    "indentation": {
+      "rule": "4 пробела (НЕ табы)",
+      "rationale": "Консистентность на всех платформах и редакторах"
+    },
+    "braces": {
+      "style": "K&R style",
+      "examples": [
+        "if (condition) {",
+        "    // code",
+        "} else {",
+        "    // code",
+        "}"
+      ]
+    },
+    "line_length": {
+      "maximum": 120,
+      "recommended": 100,
+      "guidelines": [
+        "Разбивать длинные строки на несколько",
+        "Выравнивать параметры функций",
+        "Использовать промежуточные переменные для сложных выражений"
+      ]
+    },
+    "comments": {
+      "block_comments": "/* */ для многострочных блоков",
+      "inline_comments": "// для однострочных комментариев",
+      "function_documentation": [
+        "/**",
+        " * @brief Краткое описание функции",
+        " * ",
+        " * Подробное описание функции и её поведения.",
+        " * ",
+        " * @param a_param1 Описание первого параметра",
+        " * @param a_param2 Описание второго параметра",
+        " * @return Описание возвращаемого значения",
+        " */"
+      ]
+    },
+    "whitespace": {
+      "around_operators": "Пробелы вокруг операторов: a + b, a == b",
+      "after_keywords": "Пробел после ключевых слов: if (condition)",
+      "function_calls": "Без пробела: function(args)",
+      "trailing_whitespace": "Удалять trailing пробелы"
+    }
+  },
+  "testing_standards": {
+    "framework": "DAP SDK Test Framework",
+    "test_file_naming": {
+      "pattern": "*_test.c и *_test.h",
+      "examples": [
+        "dap_crypto_test.c",
+        "dap_plugin_test.c"
+      ]
+    },
+    "test_function_naming": {
+      "pattern": "static void s_test_<functionality>()",
+      "examples": [
+        "static void s_test_memory_allocation()",
+        "static void s_test_plugin_loading()"
+      ]
+    },
+    "assertions": {
+      "preferred": "dap_assert(condition, \"Descriptive message\")",
+      "avoid": "assert() без описания",
+      "examples": [
+        "dap_assert(result == 0, \"Plugin should load successfully\");",
+        "dap_assert(ptr != NULL, \"Memory allocation should succeed\");"
+      ]
+    },
+    "logging_setup": {
+      "mandatory": [
+        "dap_common_init(\"test_name\", NULL);",
+        "dap_log_level_set(L_DEBUG);",
+        "dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);",
+        "dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);"
+      ],
+      "cleanup": [
+        "dap_log_set_format(original_format);",
+        "dap_common_deinit();"
+      ]
+    },
+    "test_structure": [
+      "1. Save original settings",
+      "2. Setup test environment", 
+      "3. Run test logic with assertions",
+      "4. Cleanup and restore settings"
+    ]
+  },
+  "build_system": {
+    "primary": "CMake",
+    "configurations": [
+      "Debug - для разработки с символами отладки",
+      "Release - оптимизированная сборка для production",
+      "RelWithDebInfo - оптимизированная с символами для профилирования"
+    ],
+    "cmake_patterns": {
+      "library_definition": [
+        "add_library(dap_module",
+        "    src/dap_module.c",
+        "    include/dap_module.h",
+        ")",
+        "",
+        "target_include_directories(dap_module PUBLIC include)",
+        "target_link_libraries(dap_module dap_core)"
+      ]
+    }
+  },
+  "performance_guidelines": {
+    "optimization_approach": "3-фазная стратегия оптимизации",
+    "profiling_requirement": "ВСЕГДА профилировать перед оптимизацией",
+    "simd_guidelines": {
+      "when_to_use": "Для операций с >30% времени выполнения",
+      "fallback_required": "Всегда предоставлять не-SIMD версию",
+      "batch_processing": "Обрабатывать 4+ элементов одновременно"
+    },
+    "memory_optimization": {
+      "stack_vs_heap": "Предпочитать stack для временных данных",
+      "cache_locality": "Оптимизировать расположение данных в памяти",
+      "memory_pools": "Использовать memory pools для частых аллокаций"
+    }
+  },
+  "security_guidelines": {
+    "input_validation": {
+      "all_parameters": "Валидировать ВСЕ входные параметры",
+      "buffer_bounds": "Проверять границы буферов",
+      "null_checks": "Проверять на NULL все указатели"
+    },
+    "secure_coding": {
+      "no_buffer_overflows": "Использовать безопасные функции строк",
+      "integer_overflow": "Проверять переполнения при арифметике",
+      "time_of_check": "Избегать race conditions в проверках"
+    },
+    "cryptographic_security": {
+      "constant_time": "Constant-time операции для криптографии",
+      "secure_memory": "Обнулять чувствительные данные",
+      "random_quality": "Использовать криптографически стойкие ГСЧ"
+    }
+  },
+  "integration_with_slc": {
+    "auto_load_conditions": [
+      "Проекты содержащие dap-sdk/",
+      "Проекты содержащие cellframe-sdk/",
+      "Файлы с префиксом dap_",
+      "Файлы с include \"dap_",
+      "CMake файлы упоминающие DAP",
+      "Проекты с квантово-устойчивой криптографией"
+    ],
+    "recommended_usage": [
+      "Загружать при старте работы с DAP SDK проектами",
+      "Использовать как справочник при code review",
+      "Применять при создании новых модулей",
+      "Следовать при рефакторинге существующего кода"
+    ],
+    "complementary_modules": [
+      ".context/modules/projects/dap_sdk_project.json",
+      ".context/modules/languages/c/c_development.json",
+      ".context/modules/methodologies/performance_optimization.json"
+    ]
+  },
+  "examples": {
+    "minimal_module": {
+      "header": [
+        "#pragma once",
+        "#include \"dap_common.h\"",
+        "",
+        "typedef struct dap_example {",
+        "    char *name;",
+        "    uint32_t value;",
+        "} dap_example_t;",
+        "",
+        "int dap_example_init(void);",
+        "void dap_example_deinit(void);",
+        "dap_example_t *dap_example_create(const char *a_name, uint32_t a_value);",
+        "void dap_example_delete(dap_example_t *a_example);"
+      ],
+      "source": [
+        "#include \"dap_example.h\"",
+        "",
+        "#define LOG_TAG \"example\"",
+        "",
+        "static bool s_initialized = false;",
+        "",
+        "int dap_example_init(void) {",
+        "    if (s_initialized) {",
+        "        log_it(L_WARNING, \"Example module already initialized\");",
+        "        return 0;",
+        "    }",
+        "    ",
+        "    log_it(L_INFO, \"Initializing example module\");",
+        "    s_initialized = true;",
+        "    return 0;",
+        "}",
+        "",
+        "void dap_example_deinit(void) {",
+        "    if (!s_initialized) {",
+        "        return;",
+        "    }",
+        "    ",
+        "    log_it(L_INFO, \"Deinitializing example module\");",
+        "    s_initialized = false;",
+        "}",
+        "",
+        "dap_example_t *dap_example_create(const char *a_name, uint32_t a_value) {",
+        "    dap_return_val_if_fail(a_name, NULL);",
+        "    dap_return_val_if_fail(s_initialized, NULL);",
+        "    ",
+        "    dap_example_t *l_example = DAP_NEW(dap_example_t);",
+        "    if (!l_example) {",
+        "        log_it(L_CRITICAL, \"%s\", c_error_memory_alloc);",
+        "        return NULL;",
+        "    }",
+        "    ",
+        "    l_example->name = dap_strdup(a_name);",
+        "    if (!l_example->name) {",
+        "        log_it(L_CRITICAL, \"%s\", c_error_memory_alloc);",
+        "        DAP_DELETE(l_example);",
+        "        return NULL;",
+        "    }",
+        "    ",
+        "    l_example->value = a_value;",
+        "    ",
+        "    log_it(L_DEBUG, \"Created example: %s, value: %u\", a_name, a_value);",
+        "    return l_example;",
+        "}",
+        "",
+        "void dap_example_delete(dap_example_t *a_example) {",
+        "    if (!a_example) {",
+        "        return;",
+        "    }",
+        "    ",
+        "    if (a_example->name) {",
+        "        DAP_FREE(a_example->name);",
+        "    }",
+        "    ",
+        "    DAP_DELETE(a_example);",
+        "}"
+      ]
+    },
+    "test_module": [
+      "#include \"dap_example.h\"",
+      "#include \"dap_test.h\"",
+      "",
+      "static void s_test_example_creation(void) {",
+      "    dap_example_t *l_example = dap_example_create(\"test\", 42);",
+      "    dap_assert(l_example != NULL, \"Example creation should succeed\");",
+      "    dap_assert(dap_strcmp(l_example->name, \"test\") == 0, \"Name should match\");",
+      "    dap_assert(l_example->value == 42, \"Value should match\");",
+      "    dap_example_delete(l_example);",
+      "}",
+      "",
+      "void dap_example_test_run(void) {",
+      "    dap_print_module_name(\"dap_example\");",
+      "    ",
+      "    // Save original settings",
+      "    dap_log_format_t l_original_format = dap_log_get_format();",
+      "    ",
+      "    // Setup test environment",
+      "    dap_common_init(\"example_test\", NULL);",
+      "    dap_log_level_set(L_DEBUG);",
+      "    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);",
+      "    dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);",
+      "    ",
+      "    // Initialize module",
+      "    int l_result = dap_example_init();",
+      "    dap_assert(l_result == 0, \"Module initialization should succeed\");",
+      "    ",
+      "    // Run tests",
+      "    s_test_example_creation();",
+      "    ",
+      "    // Cleanup",
+      "    dap_example_deinit();",
+      "    dap_log_set_format(l_original_format);",
+      "    dap_common_deinit();",
+      "}"
+    ]
+  },
+  "common_mistakes": {
+    "memory_management": [
+      "❌ Использование malloc() вместо DAP_NEW",
+      "❌ Забывание проверки на NULL после аллокации",
+      "❌ Не установка указателя в NULL после освобождения",
+      "❌ Утечки памяти при ошибках в середине функции"
+    ],
+    "naming": [
+      "❌ Функции без префикса dap_",
+      "❌ Переменные без префиксов l_, a_, s_, g_",
+      "❌ Макросы в нижнем регистре",
+      "❌ Односимвольные имена переменных"
+    ],
+    "logging": [
+      "❌ Отсутствие #define LOG_TAG",
+      "❌ Неправильный формат логирования в тестах",
+      "❌ Неподходящий уровень логирования",
+      "❌ Не восстановление настроек логирования в тестах"
+    ],
+    "security": [
+      "❌ Использование OpenSSL функций",
+      "❌ Не валидация входных параметров",
+      "❌ Buffer overflow в строковых операциях",
+      "❌ Не обнуление чувствительных данных"
+    ]
+  },
+  "quality_checklist": {
+    "before_commit": [
+      "✅ Все функции имеют префикс dap_",
+      "✅ Все переменные имеют соответствующие префиксы",
+      "✅ Используются только DAP макросы управления памятью",
+      "✅ Есть проверки возвращаемых значений",
+      "✅ Добавлен LOG_TAG и используется log_it()",
+      "✅ Нет использования OpenSSL",
+      "✅ Код компилируется без предупреждений",
+      "✅ Написаны unit тесты с правильным форматом логирования",
+      "✅ Документация функций в doxygen формате"
+    ],
+    "code_review": [
+      "✅ Соответствие стандартам именования",
+      "✅ Правильное управление памятью",
+      "✅ Адекватная обработка ошибок",
+      "✅ Безопасность кода",
+      "✅ Покрытие тестами",
+      "✅ Производительность критичных участков",
+      "✅ Соответствие архитектурным принципам DAP SDK"
+    ]
+  }
+} 

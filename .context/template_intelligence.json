@@ -1,0 +1,26 @@
+{
+  "system": "Advanced Template Intelligence",
+  "version": "1.0.0",
+  "created": "2025-06-09T00:16:21.363186",
+  "sessions": [],
+  "statistics": {
+    "templates_generated": 0,
+    "successful_recommendations": 0,
+    "user_satisfaction": 0.0
+  },
+  "navigation_system": {
+    "purpose": "Файл СЛК: template_intelligence.json",
+    "recovery_path": ".context/manifest.json",
+    "current_file": ".context/template_intelligence.json",
+    "file_role": "UNKNOWN",
+    "related_files": [
+      ".context/manifest.json"
+    ],
+    "quick_navigation": {
+      "🏠 Главная": ".context/manifest.json - главный навигатор системы",
+      "🛠️ CLI": ".context/tools/scripts/slc_cli.py - автоматизация"
+    },
+    "usage_hint": "./slc info template_intelligence.json для подробной информации",
+    "ai_context": "Файл СЛК системы: template_intelligence.json"
+  }
+}

@@ -1,0 +1,257 @@
+{
+  "version": "2.0",
+  "template_version": "1.0",
+  "created": "2025-07-24T14:37:00Z",
+  "updated": "2025-07-24T14:40:00Z",
+  "description": "Комплексное исправление всех критических недостатков Python биндингов DAP SDK",
+  "task_data": {
+    "id": "TASK_20250724_143715",
+    "title": "Исправление критических недостатков Python биндингов DAP SDK",
+    "description": "Комплексная задача по исправлению 73 критических проблем, выявленных в ходе глобального аудита Python биндингов DAP SDK. Включает восстановление отсутствующих функций, исправление архитектурных нарушений, удаление заглушек и приведение кода к production-ready состоянию.",
+    "category": "python_dap_binding",
+    "priority": "CRITICAL",
+    "status": "ACTIVE",
+    "progress": 0,
+    "metadata": {
+      "created": "2025-07-24T14:37:15.176844",
+      "updated": "2025-07-24T14:40:00.000000",
+      "assigned_to": "AI Agent + DAP SDK Team",
+      "estimated_duration": "2-3 недели",
+      "actual_duration": null,
+      "start_date": "2025-07-24",
+      "target_completion": "2025-08-14"
+    },
+    "context": {
+      "context_loading_policy": {
+        "auto_load": [
+          "modules/core/manifest.json",
+          "modules/core/standards.json",
+          "modules/core/development_standards.json",
+          "modules/core/project.json",
+          "modules/projects/dap_sdk_project.json",
+          "modules/languages/python/python_development.json",
+          "modules/languages/python/knowledge_base/dap_sdk_binding_standards.json"
+        ]
+      },
+      "related_modules": [
+        "python-dap",
+        "cellframe-sdk/dap-sdk"
+      ],
+      "dependencies": [
+        "DAP SDK crypto модуль",
+        "DAP SDK global-db модуль",
+        "DAP SDK chain модуль",
+        "Keccak хеширование"
+      ],
+      "files_involved": [
+        "src/python_dap.c",
+        "src/python_dap_crypto.c",
+        "src/python_dap_client.c",
+        "src/python_dap_config.c",
+        "src/python_dap_common.c",
+        "src/python_dap_system.c",
+        "src/python_dap_http.c",
+        "src/python_dap_stream.c",
+        "src/python_gdb.c",
+        "CMakeLists.txt",
+        "PYTHON_DAP_BINDINGS_AUDIT_REPORT.md"
+      ],
+      "related_tasks": [
+        "плагинная_архитектура_python_dap_-_завер_20250722_172011",
+        "reflection_phase_1753341781"
+      ]
+    },
+    "objectives": {
+      "primary_goal": "Привести Python биндинги DAP SDK к production-ready состоянию путем исправления всех 73 критических проблем",
+      "success_criteria": [
+        "100% функций DAP SDK доступны через Python биндинги",
+        "Все заглушки заменены на реальные вызовы DAP SDK",
+        "Соблюдены все стандарты именования DAP SDK",
+        "Архитектура соответствует принципам SOLID и fail-fast",
+        "Весь debug код удален",
+        "Все тесты проходят стабильно"
+      ],
+      "acceptance_criteria": [
+        "Crypto модуль полностью функционален и подключен к сборке",
+        "Global Database модуль реализован без заглушек",
+        "Chain модуль полностью реализован",
+        "Высокоуровневое Python API с классами и async/await",
+        "Документация всех функций и примеры использования"
+      ]
+    },
+    "implementation_plan": {
+      "phases": [
+        {
+          "phase": 1,
+          "title": "🔴 Критические исправления - Crypto модуль",
+          "description": "Подключение и полная реализация crypto модуля с решением проблемы Keccak",
+          "estimated_time": "3-4 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 2,
+          "title": "🔴 Критические исправления - Global Database",
+          "description": "Полная реализация Global Database модуля без заглушек",
+          "estimated_time": "2-3 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 3,
+          "title": "🔴 Критические исправления - Chain модуль",
+          "description": "Создание полного Chain модуля с нуля",
+          "estimated_time": "3-4 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 4,
+          "title": "🟡 Исправление именования и архитектуры",
+          "description": "Приведение всех функций к стандартам DAP SDK",
+          "estimated_time": "2 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 5,
+          "title": "🟡 Замена всех заглушек",
+          "description": "Замена всех placeholder реализаций на реальные вызовы",
+          "estimated_time": "2 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 6,
+          "title": "🟢 Высокоуровневое Python API",
+          "description": "Создание удобного высокоуровневого API для Python",
+          "estimated_time": "3 дня",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        },
+        {
+          "phase": 7,
+          "title": "🟢 Очистка и финализация",
+          "description": "Удаление debug кода и финальная полировка",
+          "estimated_time": "1 день",
+          "deliverables": [],
+          "status": "READY",
+          "tasks": []
+        }
+      ],
+      "milestones": [
+        {
+          "milestone": "Crypto модуль работает",
+          "deadline": "2025-07-28",
+          "criteria": "Все crypto функции доступны и протестированы"
+        },
+        {
+          "milestone": "Все критические модули реализованы",
+          "deadline": "2025-08-04",
+          "criteria": "Crypto, GDB и Chain модули полностью функциональны"
+        },
+        {
+          "milestone": "Production-ready код",
+          "deadline": "2025-08-14",
+          "criteria": "Все 73 проблемы исправлены, код готов к production"
+        }
+      ]
+    },
+    "testing_requirements": {
+      "unit_tests": "100% покрытие всех новых функций unit тестами с pytest",
+      "integration_tests": "Тесты взаимодействия между всеми модулями",
+      "performance_tests": "Бенчмарки crypto операций и сетевых вызовов",
+      "security_tests": "Проверка утечек памяти valgrind, fuzzing crypto функций"
+    },
+    "risks_and_mitigations": [
+      {
+        "risk": "Проблемы с линковкой Keccak могут блокировать crypto",
+        "probability": "HIGH",
+        "impact": "HIGH",
+        "mitigation": "Использовать альтернативную реализацию Keccak или исправить build систему DAP SDK"
+      },
+      {
+        "risk": "Изменения в DAP SDK API могут сломать биндинги",
+        "probability": "MEDIUM",
+        "impact": "HIGH",
+        "mitigation": "Тесная координация с командой DAP SDK, версионирование API"
+      },
+      {
+        "risk": "Async реализация может быть сложной",
+        "probability": "MEDIUM",
+        "impact": "MEDIUM",
+        "mitigation": "Начать с sync версий, async добавить инкрементально"
+      }
+    ],
+    "progress_tracking": {
+      "completed_phases": [],
+      "current_phase": null,
+      "blockers": [],
+      "achievements": [
+        "Проведен полный аудит - найдено 73 проблемы",
+        "Создан детальный отчет PYTHON_DAP_BINDINGS_AUDIT_REPORT.md",
+        "Проблемы категоризированы и приоритизированы"
+      ],
+      "lessons_learned": []
+    },
+    "performance_metrics": {
+      "baseline": {
+        "missing_functions": "28",
+        "naming_violations": "15",
+        "stub_implementations": "12",
+        "architecture_violations": "5",
+        "debug_code_instances": "6",
+        "total_issues": "73"
+      },
+      "targets": {
+        "missing_functions": "0",
+        "naming_violations": "0", 
+        "stub_implementations": "0",
+        "architecture_violations": "0",
+        "debug_code_instances": "0",
+        "total_issues": "0"
+      },
+      "actual": {
+        "missing_functions": "28",
+        "naming_violations": "15",
+        "stub_implementations": "12",
+        "architecture_violations": "5",
+        "debug_code_instances": "6",
+        "total_issues": "73"
+      }
+    },
+    "documentation": {
+      "design_documents": [
+        "PYTHON_DAP_BINDINGS_AUDIT_REPORT.md"
+      ],
+      "technical_specifications": [
+        ".context/modules/languages/python/knowledge_base/dap_sdk_binding_standards.json"
+      ],
+      "user_documentation": [],
+      "api_documentation": []
+    }
+  },
+  "navigation_system": {
+    "purpose": "Задача: Исправление критических недостатков Python биндингов DAP SDK",
+    "recovery_path": ".context/manifest.json",
+    "current_file": ".context/tasks/исправление_критических_недостатков_pyth_20250724_143715.json",
+    "file_role": "TASK_DEFINITION",
+    "related_files": {
+      ".context/manifest.json": "Главный манифест системы",
+      "PYTHON_DAP_BINDINGS_AUDIT_REPORT.md": "Детальный отчет аудита с описанием всех проблем"
+    },
+    "quick_navigation": {
+      "🏠 Главная": ".context/manifest.json - главный навигатор системы",
+      "📋 Задачи": ".context/tasks/ - управление задачами",
+      "🛠️ CLI": ".context/tools/scripts/slc_cli.py - автоматизация"
+    },
+    "usage_hint": "./slc list для просмотра всех задач проекта",
+    "ai_context": "Активная задача СЛК: Исправление критических недостатков Python биндингов DAP SDK"
+  }
+}

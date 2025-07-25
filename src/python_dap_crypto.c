@@ -18,8 +18,9 @@
 #include "dap_enc_bliss.h"
 #include "dap_cert.h"
 #include "dap_cert_file.h"
-#include "dap_multi_sign.h"
-#include "dap_aggregated_sign.h"
+#include "dap_sign.h"
+#include "dap_enc_multisign.h"
+// Note: Aggregated signatures handled by dap_enc_multisign.h
 
 // Key type mapping
 static dap_enc_key_type_t get_key_type(const char* type) {

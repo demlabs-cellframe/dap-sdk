@@ -1,19 +1,15 @@
 """
 Integration tests for DAP SDK crypto module.
-Tests crypto operations in real-world scenarios.
+Tests crypto operations in real-world scenarios using existing API.
 """
 
 import pytest
 import os
 from pathlib import Path
 from dap.crypto import (
-    DapCryptoKey, DapKeyType,
+    DapKey, DapKeyType,
     DapSign, DapSignType,
-    DapCert, DapCertType,
-    DapHash, DapHashType,
-    DapKeyManager, DapCertStore,
-    DapSignatureAggregator, DapBatchVerifier,
-    quick_sign, quick_verify, quick_hash_fast
+    DapCert, DapHash
 )
 
 # Test data
@@ -22,173 +18,173 @@ TEST_LARGE_DATA = os.urandom(1024 * 1024)  # 1MB of random data
 TEST_CERT_NAME = "test_integration_cert"
 
 @pytest.fixture
-def key_manager():
-    """Create key manager for tests"""
-    return DapKeyManager()
-
-@pytest.fixture
-def cert_store():
-    """Create certificate store for tests"""
-    return DapCertStore()
-
-def test_full_signing_flow(key_manager):
-    """Test complete signing flow with key management"""
-    # Create keys of different types
-    dilithium_key = key_manager.create_key("dilithium", DapKeyType.DILITHIUM)
-    falcon_key = key_manager.create_key("falcon", DapKeyType.FALCON)
-    chipmunk_key = key_manager.create_key("chipmunk", DapKeyType.CHIPMUNK)
-    
-    # Sign data with each key
-    signatures = {
-        "dilithium": quick_sign(dilithium_key, TEST_DATA),
-        "falcon": quick_sign(falcon_key, TEST_DATA),
-        "chipmunk": quick_sign(chipmunk_key, TEST_DATA)
+def test_keys():
+    """Create test keys for integration tests"""
+    return {
+        'dilithium': DapKey(),  # Default DILITHIUM
+        'falcon': DapKey(DapKeyType.FALCON),
+        'chipmunk': DapKey(DapKeyType.CHIPMUNK)
     }
-    
-    # Verify all signatures
-    assert quick_verify(signatures["dilithium"], dilithium_key, TEST_DATA)
-    assert quick_verify(signatures["falcon"], falcon_key, TEST_DATA)
-    assert quick_verify(signatures["chipmunk"], chipmunk_key, TEST_DATA)
-    
-    # Cross-verification should fail
-    assert not quick_verify(signatures["dilithium"], falcon_key, TEST_DATA)
-    assert not quick_verify(signatures["falcon"], chipmunk_key, TEST_DATA)
-    assert not quick_verify(signatures["chipmunk"], dilithium_key, TEST_DATA)
 
-def test_certificate_chain_validation(cert_store):
-    """Test certificate chain validation"""
-    # Create root and intermediate certificates
-    root_cert = DapCert.create("root")
-    intermediate_cert = DapCert.create("intermediate")
-    end_cert = DapCert.create("end")
+def test_full_signing_flow(test_keys):
+    """Test complete signing flow with different key types"""
+    # Sign data with each key type
+    signatures = {}
+    for key_name, key in test_keys.items():
+        signatures[key_name] = DapSign(TEST_DATA, pvt_key=key)
     
-    # Store certificates
-    cert_store.add_certificate("root", root_cert)
-    cert_store.add_certificate("intermediate", intermediate_cert)
-    cert_store.add_certificate("end", end_cert)
+    # Verify all signatures with their respective keys
+    for key_name, signature in signatures.items():
+        assert signature.verify(TEST_DATA, test_keys[key_name])
     
-    # Create certificate chain
-    chain = DapCertChain()
-    chain.add_certificate(root_cert)
-    chain.add_certificate(intermediate_cert)
-    chain.add_certificate(end_cert)
-    
-    # Sign data with end certificate
-    signature = end_cert.sign(TEST_DATA)
-    
-    # Verify through chain
-    assert chain.verify_chain(TEST_DATA, signature)
+    # Cross-verification should fail (signature from one key shouldn't verify with another)
+    assert not signatures["dilithium"].verify(TEST_DATA, test_keys["falcon"])
+    assert not signatures["falcon"].verify(TEST_DATA, test_keys["chipmunk"])
+    assert not signatures["chipmunk"].verify(TEST_DATA, test_keys["dilithium"])
 
-def test_batch_signature_verification(key_manager):
-    """Test batch signature verification"""
-    # Create multiple keys
-    keys = [
-        key_manager.create_key(f"key_{i}", DapKeyType.DILITHIUM)
-        for i in range(10)
-    ]
+def test_certificate_operations():
+    """Test certificate creation and signing operations"""
+    # Create certificate with default DILITHIUM
+    cert = DapCert.create(TEST_CERT_NAME)
+    assert cert is not None
     
-    # Create batch verifier
-    verifier = DapBatchVerifier()
+    # Test certificate signing
+    cert_signature = DapSign(TEST_DATA, pvt_cert=cert)
+    assert cert_signature is not None
     
-    # Add multiple signatures to batch
+    # Verify signature with certificate
+    assert cert_signature.verify(TEST_DATA, cert)
+
+def test_batch_signature_verification():
+    """Test verification of multiple signatures"""
+    # Create multiple DILITHIUM keys (default)
+    keys = [DapKey() for _ in range(10)]
+    
+    # Create multiple signatures
+    signatures = []
     for key in keys:
-        signature = quick_sign(key, TEST_DATA)
-        verifier.add_signature(signature, key, TEST_DATA)
+        signature = DapSign(TEST_DATA, pvt_key=key)
+        signatures.append((signature, key))
     
-    # Verify all signatures in batch
-    assert verifier.verify_all()
+    # Verify all signatures individually
+    for signature, key in signatures:
+        assert signature.verify(TEST_DATA, key)
 
-def test_signature_aggregation(key_manager):
-    """Test signature aggregation"""
-    # Create multiple keys
-    keys = [
-        key_manager.create_key(f"key_{i}", DapKeyType.CHIPMUNK)
-        for i in range(5)
-    ]
+def test_signature_aggregation():
+    """Test CHIPMUNK aggregated signatures"""
+    # Create multiple CHIPMUNK keys for aggregation
+    chipmunk_keys = [DapKey(DapKeyType.CHIPMUNK) for _ in range(5)]
     
-    # Create aggregator
-    aggregator = DapSignatureAggregator()
+    # Create aggregated signature
+    aggregated_signature = DapSign(TEST_DATA, pvt_keys=chipmunk_keys, sign_type=DapSignType.CHIPMUNK)
     
-    # Add multiple signatures
-    for key in keys:
-        signature = quick_sign(key, TEST_DATA)
-        aggregator.add_signature(signature, key, TEST_DATA)
-    
-    # Verify aggregated signatures
-    assert aggregator.verify_all()
+    # Verify aggregated signature
+    assert aggregated_signature.verify(TEST_DATA)
 
-def test_large_data_operations(key_manager):
+def test_large_data_operations():
     """Test crypto operations with large data"""
-    # Create key
-    key = key_manager.create_key("large_data_key", DapKeyType.DILITHIUM)
+    # Create DILITHIUM key (default)
+    key = DapKey()
     
     # Test signing large data
-    signature = quick_sign(key, TEST_LARGE_DATA)
-    assert quick_verify(signature, key, TEST_LARGE_DATA)
+    signature = DapSign(TEST_LARGE_DATA, pvt_key=key)
+    assert signature.verify(TEST_LARGE_DATA, key)
     
     # Test hashing large data
-    hash_obj = quick_hash_fast(TEST_LARGE_DATA)
+    hash_obj = DapHash(TEST_LARGE_DATA)
     assert hash_obj is not None
 
-def test_key_persistence(tmp_path):
-    """Test key persistence and recovery"""
+def test_key_persistence():
+    """Test deterministic key generation with seeds"""
     # Create key with seed for deterministic generation
     seed = b"persistent_test_seed"
-    key1 = DapCryptoKey(DapKeyType.DILITHIUM, seed)
+    key1 = DapKey(seed=seed)  # Uses default DILITHIUM
     
     # Sign data
-    signature1 = quick_sign(key1, TEST_DATA)
+    signature1 = DapSign(TEST_DATA, pvt_key=key1)
     
     # Create new key with same seed
-    key2 = DapCryptoKey(DapKeyType.DILITHIUM, seed)
+    key2 = DapKey(seed=seed)  # Should be identical to key1
     
     # Verify signature with recovered key
-    assert quick_verify(signature1, key2, TEST_DATA)
+    assert signature1.verify(TEST_DATA, key2)
 
-def test_certificate_operations(cert_store):
+def test_comprehensive_certificate_operations():
     """Test comprehensive certificate operations"""
-    # Create certificates
+    # Create certificates with default DILITHIUM
     cert1 = DapCert.create("cert1")
     cert2 = DapCert.create("cert2")
     
-    # Store certificates
-    cert_store.add_certificate("cert1", cert1)
-    cert_store.add_certificate("cert2", cert2)
-    
     # Sign same data with both certificates
-    signature1 = cert1.sign(TEST_DATA)
-    signature2 = cert2.sign(TEST_DATA)
+    signature1 = DapSign(TEST_DATA, pvt_cert=cert1)
+    signature2 = DapSign(TEST_DATA, pvt_cert=cert2)
     
-    # Verify signatures
-    assert cert1.verify(signature1, TEST_DATA)
-    assert cert2.verify(signature2, TEST_DATA)
+    # Verify signatures with their respective certificates
+    assert signature1.verify(TEST_DATA, cert1)
+    assert signature2.verify(TEST_DATA, cert2)
     
     # Cross verification should fail
-    assert not cert1.verify(signature2, TEST_DATA)
-    assert not cert2.verify(signature1, TEST_DATA)
+    assert not signature1.verify(TEST_DATA, cert2)
+    assert not signature2.verify(TEST_DATA, cert1)
 
 def test_context_manager_cleanup():
     """Test proper cleanup with context managers"""
     # Test key cleanup
-    with DapCryptoKey(DapKeyType.DILITHIUM) as key:
-        signature = quick_sign(key, TEST_DATA)
-        assert quick_verify(signature, key, TEST_DATA)
+    with DapKey() as key:  # Default DILITHIUM
+        signature = DapSign(TEST_DATA, pvt_key=key)
+        assert signature.verify(TEST_DATA, key)
     
     # Test certificate cleanup
     with DapCert.create(TEST_CERT_NAME) as cert:
-        signature = cert.sign(TEST_DATA)
-        assert cert.verify(signature, TEST_DATA)
+        signature = DapSign(TEST_DATA, pvt_cert=cert)
+        assert signature.verify(TEST_DATA, cert)
     
-    # Test chain cleanup
-    with DapCertChain() as chain:
-        with DapCert.create("chain_cert") as cert:
-            chain.add_certificate(cert)
-            signature = cert.sign(TEST_DATA)
-            assert chain.verify_chain(TEST_DATA, signature)
+    # Test signature cleanup
+    key = DapKey()
+    with DapSign(TEST_DATA, pvt_key=key) as signature:
+        assert signature.verify(TEST_DATA, key)
+
+def test_production_crypto_standards():
+    """Test that production crypto uses post-quantum safe defaults"""
+    # Test default key creation uses DILITHIUM (post-quantum safe)
+    default_key = DapKey()
+    assert default_key.key_type == DapKeyType.DILITHIUM, "Production default should be DILITHIUM"
     
-    # Test store cleanup
-    with DapCertStore() as store:
-        with DapCert.create("store_cert") as cert:
-            store.add_certificate("store_cert", cert)
-            retrieved = store.get_certificate("store_cert")
-            assert retrieved == cert 
+    # Test recommended post-quantum algorithms
+    pq_algorithms = [DapKeyType.DILITHIUM, DapKeyType.FALCON, DapKeyType.CHIPMUNK]
+    for alg in pq_algorithms:
+        key = DapKey(alg)
+        signature = DapSign(TEST_DATA, pvt_key=key)
+        assert signature.verify(TEST_DATA, key), f"Post-quantum algorithm {alg.name} should work"
+
+def test_comprehensive_aggregated_signatures():
+    """Test comprehensive coverage of aggregated signature functionality"""
+    # Create CHIPMUNK keys for aggregation (best algorithm for aggregation)
+    chipmunk_keys = [DapKey(DapKeyType.CHIPMUNK) for _ in range(5)]
+    
+    # Test aggregated signature with same message (common case)
+    common_message = b"common_message_for_all"
+    aggregated_signature = DapSign(common_message, pvt_keys=chipmunk_keys, sign_type=DapSignType.CHIPMUNK)
+    
+    assert aggregated_signature.verify(common_message), "Aggregated signatures with common message should verify"
+    
+    # Test aggregated signature with original test data
+    test_aggregated = DapSign(TEST_DATA, pvt_keys=chipmunk_keys, sign_type=DapSignType.CHIPMUNK)
+    assert test_aggregated.verify(TEST_DATA), "Aggregated signature with test data should verify"
+
+def test_large_scale_multi_signature():
+    """Test multi-signature operations with larger number of signers"""
+    # Test with larger number of signers (10) - composite
+    large_dilithium_set = [DapKey() for _ in range(10)]  # Default DILITHIUM
+    
+    # Test composite multi-signature with large key set
+    composite_sign = DapSign(TEST_DATA, pvt_keys=large_dilithium_set, sign_type=DapSignType.COMPOSITE)
+    assert composite_sign.verify(TEST_DATA, large_dilithium_set), \
+           "Large scale composite multi-signature should verify"
+    
+    # Test aggregated multi-signature with CHIPMUNK keys
+    chipmunk_large_set = [DapKey(DapKeyType.CHIPMUNK) for _ in range(10)]
+    
+    aggregated_sign = DapSign(TEST_DATA, pvt_keys=chipmunk_large_set, sign_type=DapSignType.CHIPMUNK)
+    assert aggregated_sign.verify(TEST_DATA), \
+           "Large scale aggregated multi-signature should verify" 

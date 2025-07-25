@@ -1,0 +1,29 @@
+{
+  "active_task_reference": {
+    "$ref": ".context/tasks/исправление_критических_недостатков_pyth_20250724_143715.json",
+    "task_type": "custom_task",
+    "priority": "MEDIUM",
+    "status": "ACTIVE",
+    "activated_at": "2025-07-24T14:37:15.176844"
+  },
+  "metadata": {
+    "title": "Исправление критических недостатков Python биндингов DAP SDK",
+    "task_id": "TASK_20250724_143715",
+    "category": "python_dap",
+    "description": "Новая задача",
+    "estimated_duration": "не указано",
+    "current_focus": "Исправление критических недостатков Python биндингов DAP SDK"
+  },
+  "execution_status": {
+    "phase": "НАЧАЛЬНАЯ",
+    "current_task": "Настройка и планирование",
+    "progress": "0%",
+    "next_action": "Определить детальный план выполнения задачи",
+    "last_update": "2025-07-24T14:37:15.176844",
+    "completed_steps": [
+      "✅ Создана задача: Исправление критических недостатков Python биндингов DAP SDK",
+      "✅ Установлен приоритет: MEDIUM",
+      "✅ Категория: python_dap"
+    ]
+  }
+}

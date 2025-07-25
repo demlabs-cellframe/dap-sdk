@@ -8,7 +8,7 @@ Provides proper Python classes wrapping C structures.
 from enum import Enum
 from typing import Optional, Union, List, Dict
 import python_dap as _dap
-from .keys import DapCryptoKey, DapKeyType
+from .keys import DapKey, DapKeyType
 from .sign import DapSign
 
 class DapCertType(Enum):
@@ -222,7 +222,7 @@ class DapCertStore:
             cert.__del__()
         self._certs.clear()
 
-def create_self_signed_cert(name: str, key: DapCryptoKey) -> DapCert:
+def create_self_signed_cert(name: str, key: DapKey) -> DapCert:
     """Create a self-signed certificate
     
     Args:

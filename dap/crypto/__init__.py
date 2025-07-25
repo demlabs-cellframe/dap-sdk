@@ -4,7 +4,7 @@ This module provides a unified interface for all DAP SDK cryptographic operation
 including post-quantum signatures, multi-signatures, and key management.
 """
 
-from .keys import DapCryptoKey, DapKeyType
+from .keys import DapKey, DapKeyType, DapKeyError, DapKeyManager, quick_encrypt, quick_decrypt
 from .sign import (
     DapSign, 
     DapSignType, 
@@ -20,9 +20,13 @@ from .hash import DapHashType, DapHash
 from .cert import DapCert
 
 __all__ = [
-    # Key management
-    'DapCryptoKey',
-    'DapKeyType',
+    # Key management and encryption
+    'DapKey',
+    'DapKeyType', 
+    'DapKeyError',
+    'DapKeyManager',
+    'quick_encrypt',
+    'quick_decrypt',
     
     # Unified signature system
     'DapSign',
@@ -42,7 +46,13 @@ __all__ = [
     'get_deprecated_signature_types',
     'get_quantum_vulnerable_signature_types',
     'get_legacy_deprecated_signature_types',
-    'check_signature_compatibility'
+    'check_signature_compatibility',
+    
+    # Backward compatibility
+    'DapCryptoKey',  # Alias for DapKey
+    'DapEnc',  # Alias for DapKey
+    'DapEncError',  # Alias for DapKeyError
+    'DapEncType'  # Alias for DapKeyType
 ]
 
 __version__ = "5.1.0"
@@ -51,3 +61,6 @@ __description__ = "DAP SDK Crypto Module - Clean API with Deprecated Signatures 
 # Configuration
 DEFAULT_SIGNATURE_TYPE = DapSignType.DILITHIUM  # Quantum-secure default
 MULTI_SIGNATURE_DEFAULT = DapSignType.COMPOSITE  # Default for mixed keys
+
+# Import backward compatibility aliases
+from .keys import DapCryptoKey, DapEnc, DapEncError, DapEncType

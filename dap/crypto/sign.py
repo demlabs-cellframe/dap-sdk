@@ -8,7 +8,7 @@ Supports all types of signatures through smart parameter detection.
 from enum import Enum
 from typing import Optional, Union, List, Dict
 import python_dap as _dap
-from .keys import DapCryptoKey, DapKeyType
+from .keys import DapKey, DapKeyType
 
 class DapSignType(Enum):
     """Real DAP SDK signature types based on dap_pkey.h and dap_sign.h"""
@@ -145,8 +145,8 @@ class DapSign:
     
     @staticmethod
     def sign(to_sign: Union[str, bytes],
-             pvt_key: Optional[DapCryptoKey] = None,
-             pvt_keys: Optional[List[DapCryptoKey]] = None,
+             pvt_key: Optional[DapKey] = None,
+             pvt_keys: Optional[List[DapKey]] = None,
              pvt_cert: Optional['DapCert'] = None,
              sign_type: Optional[DapSignType] = None) -> "DapSign":
         """Static signing function - creates and returns signature
@@ -202,7 +202,7 @@ class DapSign:
         return DapSign._create_single_signature_static(to_sign, pvt_key, sign_type)
     
     @staticmethod
-    def _create_single_signature_static(to_sign: bytes, pvt_key: DapCryptoKey, sign_type: Optional[DapSignType]) -> "DapSign":
+    def _create_single_signature_static(to_sign: bytes, pvt_key: DapKey, sign_type: Optional[DapSignType]) -> "DapSign":
         """Create single signature (static version)"""
         # Determine signature type
         if sign_type is None:
@@ -223,7 +223,7 @@ class DapSign:
         return DapSign(handle=handle, sign_type=sign_type, keys=[pub_key])
     
     @staticmethod
-    def _create_multi_signature_static(to_sign: bytes, pvt_keys: List[DapCryptoKey], sign_type: Optional[DapSignType]) -> "DapSign":
+    def _create_multi_signature_static(to_sign: bytes, pvt_keys: List[DapKey], sign_type: Optional[DapSignType]) -> "DapSign":
         """Create multi-signature (static version)"""
         # Auto-detect signature type if not specified
         if sign_type is None:
@@ -256,7 +256,7 @@ class DapSign:
         return DapSign(handle=handle, sign_type=sign_type, keys=pub_keys)
     
     @staticmethod
-    def _create_composite_static(to_sign: bytes, pvt_keys: List[DapCryptoKey]) -> int:
+    def _create_composite_static(to_sign: bytes, pvt_keys: List[DapKey]) -> int:
         """Create composite multi-signature (static version)"""
         multi_sign_handle = _dap.py_dap_crypto_multi_sign_create()
         if not multi_sign_handle:
@@ -279,7 +279,7 @@ class DapSign:
             _dap.py_dap_crypto_multi_sign_delete(multi_sign_handle)
     
     @staticmethod
-    def _create_aggregated_static(to_sign: bytes, pvt_keys: List[DapCryptoKey]) -> int:
+    def _create_aggregated_static(to_sign: bytes, pvt_keys: List[DapKey]) -> int:
         """Create aggregated signature (static version)"""
         agg_sign_handle = _dap.py_dap_crypto_aggregated_sign_create()
         if not agg_sign_handle:
@@ -303,12 +303,12 @@ class DapSign:
     
     def __init__(self, 
                  to_sign: Optional[Union[str, bytes]] = None,
-                 pvt_key: Optional[DapCryptoKey] = None,
-                 pvt_keys: Optional[List[DapCryptoKey]] = None,
+                 pvt_key: Optional[DapKey] = None,
+                 pvt_keys: Optional[List[DapKey]] = None,
                  pvt_cert: Optional['DapCert'] = None,
                  handle: Optional[int] = None,
                  sign_type: Optional[DapSignType] = None,
-                 keys: Optional[List[DapCryptoKey]] = None):
+                 keys: Optional[List[DapKey]] = None):
         """Universal signature constructor
         
         Creation modes:
@@ -366,7 +366,7 @@ class DapSign:
         return self._type
     
     @property
-    def keys(self) -> List[DapCryptoKey]:
+    def keys(self) -> List[DapKey]:
         """Get public keys from signature"""
         return self._keys.copy()
     
@@ -399,7 +399,7 @@ class DapSign:
         """Check if this signature type supports aggregation"""
         return self.check_capability('aggregated')
     
-    def sign_add(self, to_sign: Union[str, bytes], pvt_key: DapCryptoKey) -> None:
+    def sign_add(self, to_sign: Union[str, bytes], pvt_key: DapKey) -> None:
         """Add signature to existing multi-signature
         
         Args:
@@ -439,7 +439,7 @@ class DapSign:
             self._keys.append(pub_key)
     
     def verify(self, to_sign: Union[str, bytes],
-               pub_keys: Optional[List[DapCryptoKey]] = None) -> bool:
+               pub_keys: Optional[List[DapKey]] = None) -> bool:
         """Universal signature verification
         
         Args:
