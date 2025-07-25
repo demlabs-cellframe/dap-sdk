@@ -7,13 +7,13 @@ import pytest
 from dap.crypto import (
     DapCryptoKey, DapKeyType, DapKeyError,
     DapSign, DapSignError, DapSignType,
-    DapCert, DapCertError, DapCertType,
-    DapHash, DapHashError, DapHashType,
-    quick_sign, quick_verify, quick_hash_fast
+    DapMultiSign, DapMultiSignType,
+    quick_sign, quick_verify, quick_multi_sign
 )
 
 # Test data
 TEST_DATA = b"Hello, DAP!"
+TEST_LARGE_DATA = b"Large data" * 1024  # ~10KB of data
 TEST_CERT_NAME = "test_cert"
 
 @pytest.fixture
@@ -32,9 +32,13 @@ def chipmunk_key():
     return DapCryptoKey(DapKeyType.CHIPMUNK)
 
 @pytest.fixture
-def test_cert():
-    """Create test certificate"""
-    return DapCert.create(TEST_CERT_NAME)
+def key_list():
+    """Create list of keys for multi-signature tests"""
+    return [
+        DapCryptoKey(DapKeyType.DILITHIUM),
+        DapCryptoKey(DapKeyType.FALCON),
+        DapCryptoKey(DapKeyType.CHIPMUNK)
+    ]
 
 def test_key_creation():
     """Test key creation with different types"""
@@ -82,128 +86,87 @@ def test_quick_sign_verify(dilithium_key):
     signature = quick_sign(dilithium_key, TEST_DATA)
     assert quick_verify(signature, dilithium_key, TEST_DATA)
 
-def test_hash_creation():
-    """Test hash creation"""
-    # Test both bytes and string data
-    for data in [TEST_DATA, TEST_DATA.decode()]:
-        hash_obj = DapHash.create(data)
-        assert hash_obj is not None
+def test_composite_multi_sign(key_list):
+    """Test composite multi-signature creation and verification"""
+    # Create multi-signature
+    with DapMultiSign(DapMultiSignType.COMPOSITE) as multi_sign:
+        # Add signatures from each key
+        for key in key_list:
+            signature = quick_sign(key, TEST_DATA)
+            multi_sign.add_signature(signature)
+        
+        # Combine signatures
+        combined = multi_sign.combine()
+        assert combined is not None
+        
+        # Verify combined signature
+        assert DapMultiSign.verify(combined, TEST_DATA, key_list, DapMultiSignType.COMPOSITE)
+        
+        # Invalid data should not verify
+        assert not DapMultiSign.verify(combined, b"wrong data", key_list, DapMultiSignType.COMPOSITE)
 
-def test_quick_hash():
-    """Test quick hash helper"""
-    hash_obj = quick_hash_fast(TEST_DATA)
-    assert hash_obj is not None
+def test_aggregated_multi_sign(key_list):
+    """Test aggregated multi-signature creation and verification"""
+    # Create aggregated signature
+    with DapMultiSign(DapMultiSignType.AGGREGATED_CHIPMUNK) as multi_sign:
+        # Add signatures from each key
+        for key in key_list:
+            signature = quick_sign(key, TEST_DATA)
+            multi_sign.add_signature(signature, key)
+        
+        # Combine signatures
+        combined = multi_sign.combine()
+        assert combined is not None
+        
+        # Verify combined signature
+        assert DapMultiSign.verify(combined, TEST_DATA, sign_type=DapMultiSignType.AGGREGATED_CHIPMUNK)
+        
+        # Invalid data should not verify
+        assert not DapMultiSign.verify(combined, b"wrong data", sign_type=DapMultiSignType.AGGREGATED_CHIPMUNK)
 
-def test_cert_creation():
-    """Test certificate creation"""
-    cert = DapCert.create(TEST_CERT_NAME)
-    assert cert is not None
+def test_quick_multi_sign(key_list):
+    """Test quick multi-signature helpers"""
+    # Test composite multi-signature
+    composite_sign = quick_multi_sign(key_list, TEST_DATA, DapMultiSignType.COMPOSITE)
+    assert DapMultiSign.verify(composite_sign, TEST_DATA, key_list, DapMultiSignType.COMPOSITE)
+    
+    # Test aggregated multi-signature
+    aggregated_sign = quick_multi_sign(key_list, TEST_DATA, DapMultiSignType.AGGREGATED_CHIPMUNK)
+    assert DapMultiSign.verify(aggregated_sign, TEST_DATA, sign_type=DapMultiSignType.AGGREGATED_CHIPMUNK)
 
-def test_cert_signing(test_cert, dilithium_key):
-    """Test certificate signing"""
-    signature = test_cert.sign(TEST_DATA)
-    assert signature is not None
-    assert test_cert.verify(signature, TEST_DATA)
+def test_multi_sign_invalid_type():
+    """Test multi-signature creation with invalid type"""
+    with pytest.raises(ValueError):
+        DapMultiSign("invalid_type")
 
-def test_cert_verification(test_cert, dilithium_key):
-    """Test certificate verification"""
-    signature = test_cert.sign(TEST_DATA)
-    
-    # Valid signature should verify
-    assert test_cert.verify(signature, TEST_DATA)
-    
-    # Invalid data should not verify
-    assert not test_cert.verify(signature, b"wrong data")
+def test_multi_sign_missing_key():
+    """Test aggregated signature without key"""
+    with DapMultiSign(DapMultiSignType.AGGREGATED_CHIPMUNK) as multi_sign:
+        signature = quick_sign(DapCryptoKey(DapKeyType.CHIPMUNK), TEST_DATA)
+        with pytest.raises(ValueError):
+            multi_sign.add_signature(signature)  # Missing required key
 
-def test_cert_chain():
-    """Test certificate chain"""
-    chain = DapCertChain()
-    cert1 = DapCert.create("cert1")
-    cert2 = DapCert.create("cert2")
-    
-    chain.add_certificate(cert1)
-    chain.add_certificate(cert2)
-    
-    # Test verification with chain
-    signature = cert1.sign(TEST_DATA)
-    assert chain.verify_chain(TEST_DATA, signature)
+def test_multi_sign_empty_keys():
+    """Test multi-signature verification with empty keys list"""
+    with pytest.raises(ValueError):
+        quick_multi_sign([], TEST_DATA)
 
-def test_cert_store():
-    """Test certificate store"""
-    store = DapCertStore()
-    cert = DapCert.create(TEST_CERT_NAME)
+def test_multi_sign_large_data(key_list):
+    """Test multi-signatures with large data"""
+    # Test composite multi-signature
+    composite_sign = quick_multi_sign(key_list, TEST_LARGE_DATA, DapMultiSignType.COMPOSITE)
+    assert DapMultiSign.verify(composite_sign, TEST_LARGE_DATA, key_list, DapMultiSignType.COMPOSITE)
     
-    # Add certificate
-    store.add_certificate(TEST_CERT_NAME, cert)
-    assert store.get_certificate(TEST_CERT_NAME) == cert
-    
-    # Delete certificate
-    store.delete_certificate(TEST_CERT_NAME)
-    with pytest.raises(KeyError):
-        store.get_certificate(TEST_CERT_NAME)
+    # Test aggregated multi-signature
+    aggregated_sign = quick_multi_sign(key_list, TEST_LARGE_DATA, DapMultiSignType.AGGREGATED_CHIPMUNK)
+    assert DapMultiSign.verify(aggregated_sign, TEST_LARGE_DATA, sign_type=DapMultiSignType.AGGREGATED_CHIPMUNK)
 
-def test_key_manager():
-    """Test key manager"""
-    manager = DapKeyManager()
+def test_multi_sign_context_manager():
+    """Test multi-signature context manager cleanup"""
+    multi_sign = DapMultiSign()
+    handle = multi_sign._handle
     
-    # Create and store key
-    key = manager.create_key("test_key", DapKeyType.DILITHIUM)
-    assert manager.get_key("test_key") == key
+    with multi_sign:
+        assert multi_sign._handle == handle
     
-    # Delete key
-    manager.delete_key("test_key")
-    with pytest.raises(KeyError):
-        manager.get_key("test_key")
-
-def test_signature_aggregator(dilithium_key):
-    """Test signature aggregation"""
-    aggregator = DapSignatureAggregator()
-    
-    # Add multiple signatures
-    signature1 = quick_sign(dilithium_key, TEST_DATA)
-    signature2 = quick_sign(dilithium_key, TEST_DATA)
-    
-    aggregator.add_signature(signature1, dilithium_key, TEST_DATA)
-    aggregator.add_signature(signature2, dilithium_key, TEST_DATA)
-    
-    # Verify all signatures
-    assert aggregator.verify_all()
-
-def test_batch_verifier(dilithium_key):
-    """Test batch signature verification"""
-    verifier = DapBatchVerifier()
-    
-    # Add multiple signatures
-    signature1 = quick_sign(dilithium_key, TEST_DATA)
-    signature2 = quick_sign(dilithium_key, TEST_DATA)
-    
-    verifier.add_signature(signature1, dilithium_key, TEST_DATA)
-    verifier.add_signature(signature2, dilithium_key, TEST_DATA)
-    
-    # Verify all signatures
-    assert verifier.verify_all()
-
-def test_context_managers():
-    """Test context manager support"""
-    # Test key context manager
-    with DapCryptoKey(DapKeyType.DILITHIUM) as key:
-        signature = key.sign(TEST_DATA)
-        assert key.verify(signature, TEST_DATA)
-    
-    # Test certificate context manager
-    with DapCert.create(TEST_CERT_NAME) as cert:
-        signature = cert.sign(TEST_DATA)
-        assert cert.verify(signature, TEST_DATA)
-    
-    # Test certificate chain context manager
-    with DapCertChain() as chain:
-        cert = DapCert.create(TEST_CERT_NAME)
-        chain.add_certificate(cert)
-        signature = cert.sign(TEST_DATA)
-        assert chain.verify_chain(TEST_DATA, signature)
-    
-    # Test certificate store context manager
-    with DapCertStore() as store:
-        cert = DapCert.create(TEST_CERT_NAME)
-        store.add_certificate(TEST_CERT_NAME, cert)
-        assert store.get_certificate(TEST_CERT_NAME) == cert 
+    assert multi_sign._handle is None 

@@ -15,6 +15,20 @@ void py_dap_crypto_key_delete(void* key);
 void* py_dap_crypto_key_sign(void* dap_key, const void* data, size_t data_size);
 bool py_dap_crypto_key_verify(void* sign, void* dap_key, const void* data, size_t data_size);
 
+// Multi-signature operations
+void* py_dap_crypto_multi_sign_create(void);
+bool py_dap_crypto_multi_sign_add(void* multi_sign, void* sign);
+void* py_dap_crypto_multi_sign_combine(void* multi_sign);
+bool py_dap_crypto_multi_sign_verify(void* combined_sign, void** keys, size_t keys_count, const void* data, size_t data_size);
+void py_dap_crypto_multi_sign_delete(void* multi_sign);
+
+// Aggregated signature operations
+void* py_dap_crypto_aggregated_sign_create(void);
+bool py_dap_crypto_aggregated_sign_add(void* agg_sign, void* sign, void* key);
+void* py_dap_crypto_aggregated_sign_combine(void* agg_sign);
+bool py_dap_crypto_aggregated_sign_verify(void* combined_sign, const void* data, size_t data_size);
+void py_dap_crypto_aggregated_sign_delete(void* agg_sign);
+
 // Hash functions
 void* py_dap_hash_fast_create(const void* data, size_t size);
 void py_dap_hash_fast_delete(void* hash);
@@ -31,6 +45,19 @@ PyObject* py_dap_crypto_key_create_from_seed_wrapper(PyObject* self, PyObject* a
 PyObject* py_dap_crypto_key_delete_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_crypto_key_sign_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_crypto_key_verify_wrapper(PyObject* self, PyObject* args);
+
+PyObject* py_dap_crypto_multi_sign_create_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_multi_sign_add_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_multi_sign_combine_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_multi_sign_verify_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_multi_sign_delete_wrapper(PyObject* self, PyObject* args);
+
+PyObject* py_dap_crypto_aggregated_sign_create_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_aggregated_sign_add_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_aggregated_sign_combine_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_aggregated_sign_verify_wrapper(PyObject* self, PyObject* args);
+PyObject* py_dap_crypto_aggregated_sign_delete_wrapper(PyObject* self, PyObject* args);
+
 PyObject* py_dap_hash_fast_create_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_hash_fast_delete_wrapper(PyObject* self, PyObject* args);
 PyObject* py_dap_cert_create_wrapper(PyObject* self, PyObject* args);

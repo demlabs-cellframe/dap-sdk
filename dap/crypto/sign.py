@@ -5,7 +5,7 @@ High-level Python API for DAP SDK digital signature operations.
 Provides proper Python classes wrapping C structures.
 """
 
-from enum import Enum
+from enum import Enum, auto
 from typing import Optional, Union, List, Dict
 import python_dap as _dap
 from .keys import DapCryptoKey, DapKeyType
@@ -22,6 +22,11 @@ class DapSignType(Enum):
     def from_key_type(cls, key_type: DapKeyType) -> "DapSignType":
         """Convert key type to signature type"""
         return cls(key_type.value)
+
+class DapMultiSignType(Enum):
+    """Types of multi-signature schemes"""
+    COMPOSITE = "composite"  # Композиционная мультиподпись (каждая подпись проверяется отдельно)
+    AGGREGATED_CHIPMUNK = "aggregated_chipmunk"  # Агрегированная подпись на основе схемы Chipmunk
 
 class DapSignError(Exception):
     """Base exception for signature operations"""
@@ -91,90 +96,119 @@ class DapSign:
             
         return key.verify(self._handle, data)
 
-class DapSignatureAggregator:
-    """Helper class for aggregating multiple signatures"""
+class DapMultiSign:
+    """Helper class for creating multi-signatures of different types"""
     
-    def __init__(self):
-        self._signatures: List[DapSign] = []
-        self._keys: List[DapCryptoKey] = []
-        self._data: Optional[bytes] = None
+    def __init__(self, sign_type: DapMultiSignType = DapMultiSignType.COMPOSITE):
+        """Create new multi-signature object
         
-    def add_signature(self, signature: DapSign, key: DapCryptoKey, data: Union[str, bytes]):
-        """Add a signature to aggregate
+        Args:
+            sign_type: Type of multi-signature scheme to use
+        """
+        self._type = sign_type
+        if sign_type == DapMultiSignType.COMPOSITE:
+            self._handle = _dap.py_dap_crypto_multi_sign_create()
+            if not self._handle:
+                raise DapSignError("Failed to create composite multi-signature object")
+        elif sign_type == DapMultiSignType.AGGREGATED_CHIPMUNK:
+            self._handle = _dap.py_dap_crypto_aggregated_sign_create()
+            if not self._handle:
+                raise DapSignError("Failed to create aggregated signature object")
+        else:
+            raise ValueError(f"Unsupported multi-signature type: {sign_type}")
+            
+    def __del__(self):
+        """Clean up when object is destroyed"""
+        if not hasattr(self, '_handle') or not self._handle:
+            return
+            
+        if self._type == DapMultiSignType.COMPOSITE:
+            _dap.py_dap_crypto_multi_sign_delete(self._handle)
+        else:  # AGGREGATED_CHIPMUNK
+            _dap.py_dap_crypto_aggregated_sign_delete(self._handle)
+        self._handle = None
+            
+    def add_signature(self, signature: DapSign, key: Optional[DapCryptoKey] = None) -> bool:
+        """Add signature to multi-signature
         
         Args:
             signature: Signature to add
-            key: Key that created signature
-            data: Original signed data
+            key: Key that created the signature (required for aggregated signatures)
+            
+        Returns:
+            True if signature was added successfully
             
         Raises:
-            ValueError: If data doesn't match previous signatures
-            TypeError: If data is not string or bytes
+            DapSignError: If signature could not be added
+            ValueError: If key is not provided for aggregated signature
         """
-        if isinstance(data, str):
-            data = data.encode()
-        elif not isinstance(data, bytes):
-            raise TypeError("Data must be string or bytes")
-            
-        if self._data is None:
-            self._data = data
-        elif data != self._data:
-            raise ValueError("All signatures must be for same data")
-            
-        self._signatures.append(signature)
-        self._keys.append(key)
+        if self._type == DapMultiSignType.COMPOSITE:
+            if not _dap.py_dap_crypto_multi_sign_add(self._handle, signature.handle):
+                raise DapSignError("Failed to add signature to composite multi-signature")
+        else:  # AGGREGATED_CHIPMUNK
+            if not key:
+                raise ValueError("Key is required for aggregated signatures")
+            if not _dap.py_dap_crypto_aggregated_sign_add(self._handle, signature.handle, key.handle):
+                raise DapSignError("Failed to add signature to aggregated signature")
+        return True
         
-    def verify_all(self) -> bool:
-        """Verify all signatures
+    def combine(self) -> DapSign:
+        """Combine all signatures into one
         
         Returns:
-            True if all signatures are valid
-        """
-        if not self._signatures or not self._data:
-            return False
+            Combined signature
             
-        return all(sig.verify(key, self._data) 
-                  for sig, key in zip(self._signatures, self._keys))
-
-class DapBatchVerifier:
-    """Helper class for batch signature verification"""
-    
-    def __init__(self):
-        self._verify_tasks: List[Dict] = []
+        Raises:
+            DapSignError: If signatures could not be combined
+        """
+        if self._type == DapMultiSignType.COMPOSITE:
+            handle = _dap.py_dap_crypto_multi_sign_combine(self._handle)
+        else:  # AGGREGATED_CHIPMUNK
+            handle = _dap.py_dap_crypto_aggregated_sign_combine(self._handle)
+            
+        if not handle:
+            raise DapSignError("Failed to combine signatures")
+        return DapSign(handle)
         
-    def add_signature(self, signature: DapSign, key: DapCryptoKey, data: Union[str, bytes]):
-        """Add signature to batch verify
+    @staticmethod
+    def verify(combined_sign: DapSign, data: Union[str, bytes], 
+               keys: Optional[List[DapCryptoKey]] = None,
+               sign_type: DapMultiSignType = DapMultiSignType.COMPOSITE) -> bool:
+        """Verify combined signature
         
         Args:
-            signature: Signature to verify
-            key: Key to verify with
+            combined_sign: Combined signature to verify
             data: Original signed data
+            keys: List of keys that created the signatures (required for composite signatures)
+            sign_type: Type of multi-signature scheme used
+            
+        Returns:
+            True if signature is valid
             
         Raises:
             TypeError: If data is not string or bytes
+            ValueError: If keys are not provided for composite signature
         """
         if isinstance(data, str):
             data = data.encode()
         elif not isinstance(data, bytes):
             raise TypeError("Data must be string or bytes")
             
-        self._verify_tasks.append({
-            'signature': signature,
-            'key': key,
-            'data': data
-        })
+        if sign_type == DapMultiSignType.COMPOSITE:
+            if not keys:
+                raise ValueError("Keys list is required for composite signatures")
+            key_handles = [key.handle for key in keys]
+            return _dap.py_dap_crypto_multi_sign_verify(combined_sign.handle, key_handles, data)
+        else:  # AGGREGATED_CHIPMUNK
+            return _dap.py_dap_crypto_aggregated_sign_verify(combined_sign.handle, data)
         
-    def verify_all(self) -> bool:
-        """Verify all signatures in batch
+    def __enter__(self):
+        """Context manager support"""
+        return self
         
-        Returns:
-            True if all signatures are valid
-        """
-        if not self._verify_tasks:
-            return False
-            
-        return all(task['signature'].verify(task['key'], task['data'])
-                  for task in self._verify_tasks)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up on context manager exit"""
+        self.__del__()
 
 def quick_sign(key: DapCryptoKey, data: Union[str, bytes]) -> DapSign:
     """Quick helper to create a signature
@@ -199,4 +233,28 @@ def quick_verify(signature: DapSign, key: DapCryptoKey, data: Union[str, bytes])
     Returns:
         True if signature is valid
     """
-    return signature.verify(key, data) 
+    return signature.verify(key, data)
+
+def quick_multi_sign(keys: List[DapCryptoKey], data: Union[str, bytes], 
+                    sign_type: DapMultiSignType = DapMultiSignType.COMPOSITE) -> DapSign:
+    """Quick helper to create a multi-signature
+    
+    Args:
+        keys: List of keys to sign with
+        data: Data to sign
+        sign_type: Type of multi-signature scheme to use
+        
+    Returns:
+        Combined signature
+        
+    Raises:
+        ValueError: If keys list is empty
+    """
+    if not keys:
+        raise ValueError("Keys list is empty")
+        
+    with DapMultiSign(sign_type) as multi_sign:
+        for key in keys:
+            signature = quick_sign(key, data)
+            multi_sign.add_signature(signature, key if sign_type == DapMultiSignType.AGGREGATED_CHIPMUNK else None)
+        return multi_sign.combine() 

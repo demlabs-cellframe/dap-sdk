@@ -18,6 +18,8 @@
 #include "dap_enc_bliss.h"
 #include "dap_cert.h"
 #include "dap_cert_file.h"
+#include "dap_multi_sign.h"
+#include "dap_aggregated_sign.h"
 
 // Key type mapping
 static dap_enc_key_type_t get_key_type(const char* type) {
@@ -167,6 +169,84 @@ bool py_dap_cert_verify(void* cert, void* sign, const void* data, size_t data_si
     
     dap_cert_t* l_cert = (dap_cert_t*)cert;
     return dap_cert_verify(l_cert, (dap_sign_t*)sign, data, data_size) == 1;
+}
+
+// Multi-signature operations
+void* py_dap_crypto_multi_sign_create(void) {
+    return (void*)dap_multi_sign_create();
+}
+
+bool py_dap_crypto_multi_sign_add(void* multi_sign, void* sign) {
+    if (!multi_sign || !sign) {
+        return false;
+    }
+    return dap_multi_sign_add((dap_multi_sign_t*)multi_sign, (dap_sign_t*)sign) == 0;
+}
+
+void* py_dap_crypto_multi_sign_combine(void* multi_sign) {
+    if (!multi_sign) {
+        return NULL;
+    }
+    return (void*)dap_multi_sign_combine((dap_multi_sign_t*)multi_sign);
+}
+
+bool py_dap_crypto_multi_sign_verify(void* combined_sign, void** keys, size_t keys_count, const void* data, size_t data_size) {
+    if (!combined_sign || !keys || keys_count == 0 || !data || data_size == 0) {
+        return false;
+    }
+    
+    // Convert void** to dap_enc_key_t**
+    dap_enc_key_t** key_array = DAP_NEW_SIZE(dap_enc_key_t*, keys_count);
+    if (!key_array) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < keys_count; i++) {
+        key_array[i] = (dap_enc_key_t*)keys[i];
+    }
+    
+    bool result = dap_multi_sign_verify((dap_sign_t*)combined_sign, key_array, keys_count, data, data_size) == 1;
+    DAP_DELETE(key_array);
+    
+    return result;
+}
+
+void py_dap_crypto_multi_sign_delete(void* multi_sign) {
+    if (multi_sign) {
+        dap_multi_sign_delete((dap_multi_sign_t*)multi_sign);
+    }
+}
+
+// Aggregated signature operations
+void* py_dap_crypto_aggregated_sign_create(void) {
+    return (void*)dap_aggregated_sign_create();
+}
+
+bool py_dap_crypto_aggregated_sign_add(void* agg_sign, void* sign, void* key) {
+    if (!agg_sign || !sign || !key) {
+        return false;
+    }
+    return dap_aggregated_sign_add((dap_aggregated_sign_t*)agg_sign, (dap_sign_t*)sign, (dap_enc_key_t*)key) == 0;
+}
+
+void* py_dap_crypto_aggregated_sign_combine(void* agg_sign) {
+    if (!agg_sign) {
+        return NULL;
+    }
+    return (void*)dap_aggregated_sign_combine((dap_aggregated_sign_t*)agg_sign);
+}
+
+bool py_dap_crypto_aggregated_sign_verify(void* combined_sign, const void* data, size_t data_size) {
+    if (!combined_sign || !data || data_size == 0) {
+        return false;
+    }
+    return dap_aggregated_sign_verify((dap_sign_t*)combined_sign, data, data_size) == 1;
+}
+
+void py_dap_crypto_aggregated_sign_delete(void* agg_sign) {
+    if (agg_sign) {
+        dap_aggregated_sign_delete((dap_aggregated_sign_t*)agg_sign);
+    }
 }
 
 // Python wrapper functions
@@ -329,6 +409,164 @@ static PyObject* py_dap_cert_verify_wrapper(PyObject* self, PyObject* args) {
     return PyBool_FromLong(result);
 }
 
+// Python wrapper functions for multi-signatures
+static PyObject* py_dap_crypto_multi_sign_create_wrapper(PyObject* self, PyObject* args) {
+    void* multi_sign = py_dap_crypto_multi_sign_create();
+    if (!multi_sign) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to create multi-signature");
+        return NULL;
+    }
+    return PyLong_FromVoidPtr(multi_sign);
+}
+
+static PyObject* py_dap_crypto_multi_sign_add_wrapper(PyObject* self, PyObject* args) {
+    void* multi_sign;
+    void* sign;
+    
+    if (!PyArg_ParseTuple(args, "KK", &multi_sign, &sign)) {
+        return NULL;
+    }
+    
+    bool result = py_dap_crypto_multi_sign_add(multi_sign, sign);
+    return PyBool_FromLong(result);
+}
+
+static PyObject* py_dap_crypto_multi_sign_combine_wrapper(PyObject* self, PyObject* args) {
+    void* multi_sign;
+    
+    if (!PyArg_ParseTuple(args, "K", &multi_sign)) {
+        return NULL;
+    }
+    
+    void* combined_sign = py_dap_crypto_multi_sign_combine(multi_sign);
+    if (!combined_sign) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to combine multi-signature");
+        return NULL;
+    }
+    
+    return PyLong_FromVoidPtr(combined_sign);
+}
+
+static PyObject* py_dap_crypto_multi_sign_verify_wrapper(PyObject* self, PyObject* args) {
+    void* combined_sign;
+    PyObject* keys_list;
+    const char* data;
+    Py_ssize_t data_size;
+    
+    if (!PyArg_ParseTuple(args, "KOs#", &combined_sign, &keys_list, &data, &data_size)) {
+        return NULL;
+    }
+    
+    if (!PyList_Check(keys_list)) {
+        PyErr_SetString(PyExc_TypeError, "Keys argument must be a list");
+        return NULL;
+    }
+    
+    Py_ssize_t keys_count = PyList_Size(keys_list);
+    if (keys_count == 0) {
+        PyErr_SetString(PyExc_ValueError, "Keys list is empty");
+        return NULL;
+    }
+    
+    void** keys = DAP_NEW_SIZE(void*, keys_count);
+    if (!keys) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to allocate memory for keys array");
+        return NULL;
+    }
+    
+    for (Py_ssize_t i = 0; i < keys_count; i++) {
+        PyObject* key_obj = PyList_GetItem(keys_list, i);
+        if (!key_obj) {
+            DAP_DELETE(keys);
+            return NULL;
+        }
+        keys[i] = PyLong_AsVoidPtr(key_obj);
+        if (PyErr_Occurred()) {
+            DAP_DELETE(keys);
+            return NULL;
+        }
+    }
+    
+    bool result = py_dap_crypto_multi_sign_verify(combined_sign, keys, (size_t)keys_count, data, (size_t)data_size);
+    DAP_DELETE(keys);
+    
+    return PyBool_FromLong(result);
+}
+
+static PyObject* py_dap_crypto_multi_sign_delete_wrapper(PyObject* self, PyObject* args) {
+    void* multi_sign;
+    
+    if (!PyArg_ParseTuple(args, "K", &multi_sign)) {
+        return NULL;
+    }
+    
+    py_dap_crypto_multi_sign_delete(multi_sign);
+    Py_RETURN_NONE;
+}
+
+// Python wrapper functions for aggregated signatures
+static PyObject* py_dap_crypto_aggregated_sign_create_wrapper(PyObject* self, PyObject* args) {
+    void* agg_sign = py_dap_crypto_aggregated_sign_create();
+    if (!agg_sign) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to create aggregated signature");
+        return NULL;
+    }
+    return PyLong_FromVoidPtr(agg_sign);
+}
+
+static PyObject* py_dap_crypto_aggregated_sign_add_wrapper(PyObject* self, PyObject* args) {
+    void* agg_sign;
+    void* sign;
+    void* key;
+    
+    if (!PyArg_ParseTuple(args, "KKK", &agg_sign, &sign, &key)) {
+        return NULL;
+    }
+    
+    bool result = py_dap_crypto_aggregated_sign_add(agg_sign, sign, key);
+    return PyBool_FromLong(result);
+}
+
+static PyObject* py_dap_crypto_aggregated_sign_combine_wrapper(PyObject* self, PyObject* args) {
+    void* agg_sign;
+    
+    if (!PyArg_ParseTuple(args, "K", &agg_sign)) {
+        return NULL;
+    }
+    
+    void* combined_sign = py_dap_crypto_aggregated_sign_combine(agg_sign);
+    if (!combined_sign) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to combine aggregated signature");
+        return NULL;
+    }
+    
+    return PyLong_FromVoidPtr(combined_sign);
+}
+
+static PyObject* py_dap_crypto_aggregated_sign_verify_wrapper(PyObject* self, PyObject* args) {
+    void* combined_sign;
+    const char* data;
+    Py_ssize_t data_size;
+    
+    if (!PyArg_ParseTuple(args, "Ks#", &combined_sign, &data, &data_size)) {
+        return NULL;
+    }
+    
+    bool result = py_dap_crypto_aggregated_sign_verify(combined_sign, data, (size_t)data_size);
+    return PyBool_FromLong(result);
+}
+
+static PyObject* py_dap_crypto_aggregated_sign_delete_wrapper(PyObject* self, PyObject* args) {
+    void* agg_sign;
+    
+    if (!PyArg_ParseTuple(args, "K", &agg_sign)) {
+        return NULL;
+    }
+    
+    py_dap_crypto_aggregated_sign_delete(agg_sign);
+    Py_RETURN_NONE;
+}
+
 // Method definitions
 static PyMethodDef crypto_methods[] = {
     // Key management
@@ -360,6 +598,30 @@ static PyMethodDef crypto_methods[] = {
      "Create a signature using certificate"},
     {"py_dap_cert_verify", py_dap_cert_verify_wrapper, METH_VARARGS,
      "Verify a signature using certificate"},
+     
+    // Multi-signature operations
+    {"py_dap_crypto_multi_sign_create", py_dap_crypto_multi_sign_create_wrapper, METH_NOARGS,
+     "Create a new multi-signature object"},
+    {"py_dap_crypto_multi_sign_add", py_dap_crypto_multi_sign_add_wrapper, METH_VARARGS,
+     "Add a signature to multi-signature object"},
+    {"py_dap_crypto_multi_sign_combine", py_dap_crypto_multi_sign_combine_wrapper, METH_VARARGS,
+     "Combine signatures in multi-signature object"},
+    {"py_dap_crypto_multi_sign_verify", py_dap_crypto_multi_sign_verify_wrapper, METH_VARARGS,
+     "Verify combined multi-signature"},
+    {"py_dap_crypto_multi_sign_delete", py_dap_crypto_multi_sign_delete_wrapper, METH_VARARGS,
+     "Delete multi-signature object"},
+     
+    // Aggregated signature operations
+    {"py_dap_crypto_aggregated_sign_create", py_dap_crypto_aggregated_sign_create_wrapper, METH_NOARGS,
+     "Create a new aggregated signature object"},
+    {"py_dap_crypto_aggregated_sign_add", py_dap_crypto_aggregated_sign_add_wrapper, METH_VARARGS,
+     "Add a signature and key to aggregated signature object"},
+    {"py_dap_crypto_aggregated_sign_combine", py_dap_crypto_aggregated_sign_combine_wrapper, METH_VARARGS,
+     "Combine signatures in aggregated signature object"},
+    {"py_dap_crypto_aggregated_sign_verify", py_dap_crypto_aggregated_sign_verify_wrapper, METH_VARARGS,
+     "Verify combined aggregated signature"},
+    {"py_dap_crypto_aggregated_sign_delete", py_dap_crypto_aggregated_sign_delete_wrapper, METH_VARARGS,
+     "Delete aggregated signature object"},
      
     {NULL, NULL, 0, NULL}  // Sentinel
 };
