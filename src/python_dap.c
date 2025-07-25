@@ -10,7 +10,17 @@
 #include <stdio.h>
 #include <pthread.h>
 #include "python_dap.h"
+// Include all module headers
+#include "python_dap_common.h"
+#include "python_dap_config.h"
+#include "python_dap_system.h"
+#include "python_dap_logging.h"
+#include "python_dap_time.h"
+#include "python_dap_server.h"
+#include "python_dap_client.h"
+#include "python_dap_events.h"
 #include "python_dap_network.h"
+#include "python_dap_crypto.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_events.h"
@@ -259,6 +269,7 @@ static PyMethodDef* concatenate_methods(void) {
     PyMethodDef* client_methods = py_dap_client_get_methods();
     PyMethodDef* events_methods = py_dap_events_get_methods();
     PyMethodDef* network_methods = py_dap_network_get_methods();
+    PyMethodDef* crypto_methods = py_dap_crypto_get_methods();
     PyMethodDef* stream_methods = py_dap_stream_get_methods();
     PyMethodDef* http_methods = py_dap_http_get_methods();
     
@@ -295,6 +306,7 @@ static PyMethodDef* concatenate_methods(void) {
     COUNT_METHODS(client_methods);
     COUNT_METHODS(events_methods);
     COUNT_METHODS(network_methods);
+    COUNT_METHODS(crypto_methods);
     COUNT_METHODS(stream_methods);
     COUNT_METHODS(http_methods);
     COUNT_METHODS(plugin_methods);
@@ -329,6 +341,7 @@ static PyMethodDef* concatenate_methods(void) {
     COPY_METHODS(client_methods);
     COPY_METHODS(events_methods);
     COPY_METHODS(network_methods);
+    COPY_METHODS(crypto_methods);
     COPY_METHODS(stream_methods);
     COPY_METHODS(http_methods);
     COPY_METHODS(plugin_methods);
@@ -427,6 +440,7 @@ PyMODINIT_FUNC PyInit_python_dap(void) {
         py_dap_client_module_init(module) != 0 ||
         py_dap_events_module_init(module) != 0 ||
         py_dap_network_module_init(module) != 0 ||
+        py_dap_crypto_module_init(module) != 0 ||
         py_dap_stream_module_init(module) != 0 ||
         py_dap_http_module_init(module) != 0) {
         

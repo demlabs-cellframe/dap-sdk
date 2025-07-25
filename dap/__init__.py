@@ -12,7 +12,10 @@ from . import common, config, core, crypto, events, global_db, network
 
 # Re-export main classes for convenience
 from .crypto import (
-    DapSign, DapCert, DapSignError, DapCertError
+    DapSign, DapSignError, DapSignType, DapSignMetadata,
+    DapCryptoKey, DapKeyType,
+    DapHashType, DapHash,
+    DapCert
 )
 
 from .core.exceptions import DapException
@@ -29,9 +32,14 @@ __all__ = [
     
     # Crypto
     'DapSign',
-    'DapCert', 
     'DapSignError',
-    'DapCertError',
+    'DapSignType',
+    'DapSignMetadata',
+    'DapCryptoKey',
+    'DapKeyType',
+    'DapHashType',
+    'DapHash',
+    'DapCert',
     
     # Global Database
     'Gdb',

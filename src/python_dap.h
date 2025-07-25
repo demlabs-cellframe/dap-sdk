@@ -11,17 +11,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Include all module headers
-#include "python_dap_common.h"
-#include "python_dap_config.h"
-#include "python_dap_system.h"
-#include "python_dap_logging.h"
-#include "python_dap_time.h"
-#include "python_dap_server.h"
-#include "python_dap_client.h"
-#include "python_dap_events.h"
-#include "python_dap_network.h"
-
 // Module method array functions - each module provides its methods
 PyMethodDef* py_dap_common_get_methods(void);
 PyMethodDef* py_dap_config_get_methods(void);
