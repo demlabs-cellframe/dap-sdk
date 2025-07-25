@@ -20,6 +20,8 @@ from .sign import (
     quick_sign,
     quick_verify,
     quick_multi_sign,
+    quick_composite_sign,
+    quick_aggregated_sign,
     get_recommended_signature_types,
     get_deprecated_signature_types,
     check_signature_compatibility
@@ -58,6 +60,8 @@ __all__ = [
     'quick_sign',
     'quick_verify',
     'quick_multi_sign',
+    'quick_composite_sign',
+    'quick_aggregated_sign',
     'get_recommended_signature_types',
     'get_deprecated_signature_types',
     'check_signature_compatibility',
@@ -80,6 +84,6 @@ __all__ = [
 ]
 
 # Version info
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 __author__ = "Demlabs"
-__description__ = "DAP SDK Crypto Module - Unified Signature System"
+__description__ = "DAP SDK Crypto Module - Unified Signature System with Smart Constructors"
