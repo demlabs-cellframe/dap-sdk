@@ -25,8 +25,14 @@ class DapSignType(Enum):
     COMPOSITE = 100    # DAP composite multi-signature
     CHIPMUNK = 101     # Aggregated signature (Chipmunk)
     
-    # Hash-based
-    KECCAK = 200
+    # Deprecated (but still usable)
+    ECDSA = 200        # Deprecated - quantum vulnerable
+    RSA = 201          # Deprecated - quantum vulnerable
+    ED25519 = 202      # Deprecated - quantum vulnerable
+    
+    # Experimental/Legacy (deprecated for other reasons)
+    GOST = 300         # Deprecated - legacy algorithm
+    STREEBOG = 301     # Deprecated - legacy algorithm
 
 class DapSignMetadata:
     """Metadata for signature types"""
@@ -35,6 +41,7 @@ class DapSignMetadata:
         DapSignType.DILITHIUM: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'DILITHIUM post-quantum signature'
@@ -42,6 +49,7 @@ class DapSignMetadata:
         DapSignType.FALCON: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'FALCON post-quantum signature'
@@ -49,6 +57,7 @@ class DapSignMetadata:
         DapSignType.PICNIC: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'PICNIC post-quantum signature'
@@ -56,6 +65,7 @@ class DapSignMetadata:
         DapSignType.BLISS: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'BLISS post-quantum signature'
@@ -63,6 +73,7 @@ class DapSignMetadata:
         DapSignType.SPHINCSPLUS: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'SPHINCS+ post-quantum signature'
@@ -70,6 +81,7 @@ class DapSignMetadata:
         DapSignType.TESLA: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'TESLA post-quantum signature'
@@ -77,6 +89,7 @@ class DapSignMetadata:
         DapSignType.SHIPOVNIK: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': False,
             'aggregated': False,
             'description': 'SHIPOVNIK post-quantum signature'
@@ -84,6 +97,7 @@ class DapSignMetadata:
         DapSignType.COMPOSITE: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': True,
             'aggregated': False,
             'description': 'DAP composite multi-signature'
@@ -91,16 +105,50 @@ class DapSignMetadata:
         DapSignType.CHIPMUNK: {
             'quantum_secure': True,
             'deprecated': False,
+            'quantum_vulnerable': False,
             'multi_signature': True,
             'aggregated': True,
             'description': 'Chipmunk aggregated signature'
         },
-        DapSignType.KECCAK: {
-            'quantum_secure': True,
-            'deprecated': False,
+        DapSignType.ECDSA: {
+            'quantum_secure': False,
+            'deprecated': True,
+            'quantum_vulnerable': True,
             'multi_signature': False,
             'aggregated': False,
-            'description': 'KECCAK hash-based signature'
+            'description': 'ECDSA signature (deprecated - quantum vulnerable)'
+        },
+        DapSignType.RSA: {
+            'quantum_secure': False,
+            'deprecated': True,
+            'quantum_vulnerable': True,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'RSA signature (deprecated - quantum vulnerable)'
+        },
+        DapSignType.ED25519: {
+            'quantum_secure': False,
+            'deprecated': True,
+            'quantum_vulnerable': True,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'ED25519 signature (deprecated - quantum vulnerable)'
+        },
+        DapSignType.GOST: {
+            'quantum_secure': False,
+            'deprecated': True,
+            'quantum_vulnerable': False,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'GOST signature (deprecated - legacy algorithm)'
+        },
+        DapSignType.STREEBOG: {
+            'quantum_secure': False,
+            'deprecated': True,
+            'quantum_vulnerable': False,
+            'multi_signature': False,
+            'aggregated': False,
+            'description': 'STREEBOG signature (deprecated - legacy algorithm)'
         }
     }
     
@@ -113,6 +161,16 @@ class DapSignMetadata:
     def supports_multi_signature(cls, sign_type: DapSignType) -> bool:
         """Check if signature type supports multi-signatures"""
         return cls._metadata.get(sign_type, {}).get('multi_signature', False)
+    
+    @classmethod
+    def is_quantum_vulnerable(cls, sign_type: DapSignType) -> bool:
+        """Check if signature type is quantum vulnerable"""
+        return cls._metadata.get(sign_type, {}).get('quantum_vulnerable', False)
+    
+    @classmethod  
+    def is_deprecated(cls, sign_type: DapSignType) -> bool:
+        """Check if signature type is deprecated"""
+        return cls._metadata.get(sign_type, {}).get('deprecated', False)
 
 class DapSignError(Exception):
     """DAP signature operation error"""
@@ -365,6 +423,10 @@ class DapSign:
         """Check if this signature type is deprecated"""
         return self.check_capability('deprecated')
     
+    def is_quantum_vulnerable(self) -> bool:
+        """Check if this signature type is quantum vulnerable"""
+        return self.check_capability('quantum_vulnerable')
+    
     def supports_multi_signature(self) -> bool:
         """Check if this signature type supports multi-signatures"""
         return self.check_capability('multi_signature')
@@ -463,13 +525,31 @@ def get_recommended_signature_types() -> List[DapSignType]:
     return recommended
 
 def get_deprecated_signature_types() -> List[DapSignType]:
-    """Get list of deprecated signature types"""
+    """Get list of all deprecated signature types (both quantum vulnerable and legacy)"""
     deprecated = []
     for sign_type in DapSignType:
         metadata = DapSignMetadata.get_metadata(sign_type)
         if metadata.get('deprecated', False):
             deprecated.append(sign_type)
     return deprecated
+
+def get_quantum_vulnerable_signature_types() -> List[DapSignType]:
+    """Get list of quantum vulnerable signature types (subset of deprecated)"""
+    quantum_vulnerable = []
+    for sign_type in DapSignType:
+        metadata = DapSignMetadata.get_metadata(sign_type)
+        if metadata.get('quantum_vulnerable', False):
+            quantum_vulnerable.append(sign_type)
+    return quantum_vulnerable
+
+def get_legacy_deprecated_signature_types() -> List[DapSignType]:
+    """Get list of legacy deprecated signature types (deprecated but not quantum vulnerable)"""
+    legacy_deprecated = []
+    for sign_type in DapSignType:
+        metadata = DapSignMetadata.get_metadata(sign_type)
+        if metadata.get('deprecated', False) and not metadata.get('quantum_vulnerable', False):
+            legacy_deprecated.append(sign_type)
+    return legacy_deprecated
 
 def check_signature_compatibility(sign_type1: DapSignType, sign_type2: DapSignType) -> bool:
     """Check if two signature types are compatible for multi-signature operations"""

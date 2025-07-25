@@ -12,6 +12,8 @@ from .sign import (
     DapSignError,
     get_recommended_signature_types,
     get_deprecated_signature_types,
+    get_quantum_vulnerable_signature_types,
+    get_legacy_deprecated_signature_types,
     check_signature_compatibility
 )
 from .hash import DapHashType, DapHash
@@ -38,11 +40,13 @@ __all__ = [
     # Utility functions
     'get_recommended_signature_types',
     'get_deprecated_signature_types',
+    'get_quantum_vulnerable_signature_types',
+    'get_legacy_deprecated_signature_types',
     'check_signature_compatibility'
 ]
 
-__version__ = "5.0.0"
-__description__ = "DAP SDK Crypto Module - Clean Unified API with sign_add and Certificate Support"
+__version__ = "5.1.0"
+__description__ = "DAP SDK Crypto Module - Clean API with Deprecated Signatures Support"
 
 # Configuration
 DEFAULT_SIGNATURE_TYPE = DapSignType.DILITHIUM  # Quantum-secure default
