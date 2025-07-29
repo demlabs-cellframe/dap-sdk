@@ -13,10 +13,18 @@ if(WIN32)
     add_definitions ("-D_CRT_SECURE_NO_WARNINGS")
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${DAP_ENC_SERVER_SRCS} ${DAP_ENC_SERVER_HDRS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${DAP_ENC_SERVER_SRCS} HEADERS ${DAP_ENC_SERVER_HDRS})
+
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../io/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../http_server/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/src/XKCP/lib/common)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/src/XKCP/lib/high/Keccak/FIPS202)
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_json-c)
 if(WIN32)

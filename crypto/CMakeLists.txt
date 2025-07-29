@@ -114,7 +114,16 @@ file( GLOB CRYPTO_SRCS
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
       src/ringct20/*.c
-      src/falcon/*.c
+      src/falcon/codec.c
+      src/falcon/common.c
+      src/falcon/falcon.c
+      src/falcon/fft.c
+      src/falcon/fpr.c
+      src/falcon/keygen.c
+      src/falcon/rng.c
+      src/falcon/shake.c
+      src/falcon/sign.c
+      src/falcon/vrfy.c
       src/chipmunk/*.c
       src/hash/sha2-256/*.c
       ${SPHINCS_BASE_SRCS}
@@ -224,7 +233,8 @@ if ( DAP_PQLR)
 endif()
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
 
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -252,6 +262,10 @@ endfunction(print_target_properties)
 add_dependencies(${PROJECT_NAME} dap_crypto_XKCP) 
 target_link_libraries(${PROJECT_NAME} dap_crypto_XKCP)
 
+# Explicitly get XKCP include directories for OBJECT library
+get_target_property(XKCP_INCLUDES dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(${PROJECT_NAME} PUBLIC ${XKCP_INCLUDES})
+
 if (DAP_PQRL)
 
     TARGET_LINK_LIBRARIES(dap_crypto ${PQLR_DILITHIUM_LIBRARIES})
@@ -274,18 +288,30 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
-target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+# Store dependencies for final library - no linking of OBJECT targets
+set(CRYPTO_LIBS "dap_crypto_kyber512;dap_json-c")
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    list(APPEND CRYPTO_LIBS "secp256k1")
+endif()
+if(UNIX)
+    list(APPEND CRYPTO_LIBS "m")
+endif()
+
+target_link_libraries(dap_crypto dap_core dap_json-c)
 
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     target_link_libraries(dap_crypto secp256k1)
 endif()
 
-
 if(UNIX)
   target_link_libraries(dap_crypto m)
 endif()
 
+# Export dependencies for main SDK build
+set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
+
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
+target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
 if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)

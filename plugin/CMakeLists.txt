@@ -8,17 +8,27 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB DAP_PLUGIN_SRCS src/*.c)
 file(GLOB DAP_PLUGIN_HEADERS include/*.h)
 
-add_library(${PROJECT_NAME} STATIC ${DAP_PLUGIN_SRCS} ${DAP_PLUGIN_HEADERS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${DAP_PLUGIN_SRCS} HEADERS ${DAP_PLUGIN_HEADERS})
 
-target_link_libraries(${PROJECT_NAME})
-
-target_link_libraries(${PROJECT_NAME} dap_core dap_cli_server )
-
+# Store dependencies for final library - no linking of OBJECT targets
+set(PLUGIN_LIBS "dap_cli_server")
 if(NOT WIN32)
-    target_link_libraries(${PROJECT_NAME} dl )
+    list(APPEND PLUGIN_LIBS "dl")
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC include/ )
+set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external dependencies")
+
+target_include_directories(${PROJECT_NAME} PUBLIC 
+    include/ 
+    ../core/include/
+    ../3rdparty/uthash/src/
+    ../net/server/cli_server/include/
+    ../io/include/
+    ${CMAKE_BINARY_DIR}/core/json-c/
+    ${CMAKE_BINARY_DIR}/dap-sdk/core/json-c/
+    ../3rdparty/json-c/
+)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")

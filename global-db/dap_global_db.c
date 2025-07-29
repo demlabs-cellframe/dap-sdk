@@ -288,7 +288,7 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
 {
     a_obj->timestamp = a_new_timestamp;
-    DAP_DEL_Z(a_obj->sign);
+    DAP_DELETE(a_obj->sign);
     a_obj->crc = 0;
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
@@ -409,6 +409,14 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     if (!l_ret) {
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
+
+        // if global_db obj is pinned
+        if (a_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+            s_add_pinned_obj_in_pinned_group(a_obj);
+        // if upin obj
+        } else if (l_existed_obj_pinned && !(a_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
+            s_del_pinned_obj_from_pinned_group_by_source_group(a_obj->group, a_obj->key);
+        }
 
         if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
             // Do not notify for delete if deleted record not exists
@@ -1004,7 +1012,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     int l_res = s_store_obj_apply(a_dbi, &l_store_data);
-    if (l_res == DAP_GLOBAL_DB_RC_SUCCESS && a_pin_value)
+    if (a_pin_value)
         s_add_pinned_obj_in_pinned_group(&l_store_data);
     DAP_DELETE(l_store_data.sign);
     return l_res;
@@ -1106,7 +1114,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
         if (l_ret)
             debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
     }
-    if (l_ret == DAP_GLOBAL_DB_RC_SUCCESS && (a_store_objs->flags & DAP_GLOBAL_DB_RECORD_PINNED))
+    if (a_store_objs->flags & DAP_GLOBAL_DB_RECORD_PINNED)
         s_add_pinned_obj_in_pinned_group(a_store_objs);
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_end(!l_ret);
@@ -1383,7 +1391,7 @@ static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a
     int l_res = -1;
     if (a_key) {
         l_res = s_store_obj_apply(a_dbi, &l_store_obj);
-        if (l_res == DAP_GLOBAL_DB_RC_SUCCESS && (l_store_obj.flags & DAP_GLOBAL_DB_RECORD_PINNED))
+        if (l_store_obj.flags & DAP_GLOBAL_DB_RECORD_PINNED)
             s_del_pinned_obj_from_pinned_group_by_source_group(a_group, a_key);
         DAP_DELETE(l_store_obj.sign);
     } else {

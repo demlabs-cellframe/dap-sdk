@@ -32,13 +32,17 @@ if(BUILD_WITH_GDB_DRIVER_SQLITE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_THREADSAFE=2")
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${dap_global_db_SRC} ${dap_global_db_HDR})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${dap_global_db_SRC} HEADERS ${dap_global_db_HDR})
 
-target_link_libraries(${PROJECT_NAME} ${dap_global_db_LIBS})
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto ${dap_global_db_LIBS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+
+# Export dependencies for main SDK build
+set(DAP_GLOBAL_DB_DEPS "${dap_global_db_LIBS}" CACHE INTERNAL "dap_global_db external dependencies")
 
 if (BUILD_GLOBAL_DB_TEST)
     add_subdirectory(test)

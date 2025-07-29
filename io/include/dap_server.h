@@ -40,7 +40,13 @@
 #include <sys/timerfd.h>
 #define EPOLL_HANDLE  int
 #elif defined(DAP_OS_WINDOWS)
-#elif defined(DAP_OS_BSD)
+#elif defined(DAP_OS_BSD) || defined(DAP_OS_DARWIN)
+#include <netinet/in.h>
+#include <stdint.h>
+#include <sys/event.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#define EPOLL_HANDLE  int
 #else
 #error "No poll headers for your platform"
 #endif

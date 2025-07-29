@@ -20,10 +20,13 @@ if(WIN32)
 endif()
 
 include_directories(${PROJECT_NAME} include http_client/include)
-add_library(${PROJECT_NAME} STATIC ${HTTP_SERVER_SRCS} ${HTTP_SERVER_HDRS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${HTTP_SERVER_SRCS} HEADERS ${HTTP_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../io/include)
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
@@ -33,28 +36,29 @@ if (UNIX)
     target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
 if(WIN32)
-  target_link_libraries(${PROJECT_NAME} intl iconv
-  kernel32
-  user32
-  shell32
-  winmm
-  gdi32
-  advapi32
-  ole32
-  version
-  imm32
-  oleaut32
-  ws2_32
-  ntdll
-  psapi
-  shlwapi
-  bcrypt
-  crypt32
-  secur32
+    target_link_libraries(${PROJECT_NAME}
+    intl iconv
+    kernel32
+    user32
+    shell32
+    winmm
+    gdi32
+    advapi32
+    ole32
+    version
+    imm32
+    oleaut32
+    ws2_32
+    ntdll
+    psapi
+    shlwapi
+    bcrypt
+    crypt32
+    secur32
 )
 endif()
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${HTTP_SERVER_HDRS}")

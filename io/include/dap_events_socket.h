@@ -60,7 +60,7 @@ typedef int SOCKET;
     #include <sys/eventfd.h>
     #include <mqueue.h>
     #include <sys/un.h>
-#elif defined (DAP_OS_BSD)
+#elif defined (DAP_OS_BSD) || defined(DAP_OS_DARWIN)
     #define DAP_EVENTS_CAPS_KQUEUE
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_EVENT_KEVENT
@@ -68,6 +68,8 @@ typedef int SOCKET;
     #include <netinet/in.h>
     #include <sys/un.h>
     #include <sys/event.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
     #include <sys/un.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL

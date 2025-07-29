@@ -97,6 +97,23 @@
     },
     "pattern": "Always check return values and handle errors gracefully"
   },
+  "development_priorities": {
+    "legacy_compatibility": {
+      "default_stance": "NOT REQUIRED",
+      "rule": "Обратная совместимость и legacy код НЕ являются приоритетом по умолчанию",
+      "rationale": "Фокус на современном, чистом коде вместо поддержки устаревших интерфейсов",
+      "exceptions": "Только если явно указано в техническом задании или требованиях задачи",
+      "action": "При обнаружении legacy функций - заменять на новые API, не создавать wrapper'ы для совместимости",
+      "examples": {
+        "avoid": "py_m_dap_config_get_item() // legacy function",
+        "prefer": "py_dap_config_get_item_str() // modern API"
+      }
+    },
+    "code_modernization": {
+      "rule": "При рефакторинге предпочитать полное обновление API вместо обратной совместимости",
+      "pattern": "Удалять устаревший код, не поддерживать legacy интерфейсы без явного требования"
+    }
+  },
   "includes": {
     "required": [
       "dap_common.h"

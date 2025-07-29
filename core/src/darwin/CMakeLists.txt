@@ -18,3 +18,10 @@ if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 
+# Add macOS frameworks for network monitoring
+if(DARWIN)
+    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
+    find_library(SYSTEMCONFIGURATION_FRAMEWORK SystemConfiguration)
+    target_link_libraries(${PROJECT_NAME} ${COREFOUNDATION_FRAMEWORK} ${SYSTEMCONFIGURATION_FRAMEWORK})
+endif()
+
