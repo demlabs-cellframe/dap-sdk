@@ -17,6 +17,9 @@ endif()
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
 target_link_libraries(core_test dap_test dap_core pthread)
 
+# Add test framework include directory
+target_include_directories(${PROJECT_NAME} PRIVATE ../../test-framework)
+
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/test.h
@@ -44,6 +47,9 @@ add_test(
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)
     target_include_directories(${PROJECT_NAME} PRIVATE unix/linux)
+    # Add paths to actual Unix header files in src/unix/
+    target_include_directories(${PROJECT_NAME} PRIVATE ../src/unix)
+    target_include_directories(${PROJECT_NAME} PRIVATE ../src/unix/linux)
 endif()
 add_subdirectory(uint256_t)
 
