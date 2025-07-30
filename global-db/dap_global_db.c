@@ -362,6 +362,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             dap_global_db_driver_delete(&l_to_delete, 1);
         }
     }
+    UNUSED(l_existed_obj_pinned);
     if (l_read_obj && l_cluster->owner_root_access &&
             a_obj->sign && (!l_read_obj->sign ||
             dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign)))
