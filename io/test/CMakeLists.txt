@@ -9,7 +9,7 @@ file(GLOB DAP_IO_TEST_HEADERS *.h)
 
 add_executable(${PROJECT_NAME} ${DAP_IO_TEST_SOURCES} ${DAP_IO_TEST_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto dap_io)
+target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto dap_io pthread)
 
 add_test(
     NAME server_io_test
