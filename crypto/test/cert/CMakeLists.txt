@@ -8,7 +8,7 @@ file(GLOB HEADERS *.h)
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_crypto dap_core  dap_test)
+target_link_libraries(${PROJECT_NAME} dap_crypto dap_core dap_test dap_crypto_kyber512 pthread)
 
 add_test(
     NAME crypto_cert_test
