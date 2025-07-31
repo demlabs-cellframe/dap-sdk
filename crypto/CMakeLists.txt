@@ -288,6 +288,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
+# Include paths for json_config.h - support both standalone and embedded builds
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/json-c)
+if(DEFINED DAP_SDK_BUILD_DIR)
+    # When built as submodule (e.g., in python-cellframe)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${DAP_SDK_BUILD_DIR}/core/json-c)
+    message("[+] DAP Crypto: Using external build path for json-c: ${DAP_SDK_BUILD_DIR}/core/json-c")
+endif()
+
 # Store dependencies for final library - no linking of OBJECT targets
 set(CRYPTO_LIBS "dap_crypto_kyber512;dap_json-c")
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
