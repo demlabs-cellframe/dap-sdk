@@ -544,7 +544,9 @@ void dap_config_close(dap_config_t *a_conf) {
 }
 
 void dap_config_deinit() {
-
+    DAP_DEL_Z(s_configs_path);
+    dap_config_close(g_config);
+    g_config = NULL;
 }
 
 int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, const char *a_section, dap_stream_node_addr_t **a_addrs, uint16_t *a_addrs_count)

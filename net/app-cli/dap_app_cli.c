@@ -249,7 +249,7 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
         // no command passed, start interactive shell
         l_res = shell_reader_loop();
     }
-    dap_config_close(g_config);
+    dap_config_deinit();
     return l_res;
 }
 
