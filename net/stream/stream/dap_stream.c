@@ -422,7 +422,8 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     if (a_stream->esocket) {
         a_stream->esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
-        dap_events_socket_remove_and_delete_unsafe(a_stream->esocket, true);
+        a_stream->esocket->_inheritor = NULL;
+        a_stream->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
 
 #ifdef  DAP_SYS_DEBUG
