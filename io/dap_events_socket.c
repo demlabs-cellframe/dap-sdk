@@ -1209,10 +1209,10 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
     case DESCRIPTOR_TYPE_SOCKET_UDP:
     case DESCRIPTOR_TYPE_FILE:
     case DESCRIPTOR_TYPE_PIPE:
-        if ( a_es->pending_read || a_es->pending_write ) {
+        /*if ( a_es->pending_read || a_es->pending_write ) {
             l_res = CancelIoEx((HANDLE)a_es->socket, NULL) ? ERROR_IO_PENDING : GetLastError();
             func = "CancelIoEx";
-        } else
+        } else*/
             dap_events_socket_descriptor_close(a_es);
     break;
     case DESCRIPTOR_TYPE_QUEUE:
