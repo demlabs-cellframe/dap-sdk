@@ -316,7 +316,7 @@ void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uui
  */
 void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
 {
-    if (!a_timerfd)
+    if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
     if (a_timerfd->events_socket->context)
