@@ -31,6 +31,7 @@ extern dap_config_t *g_configs_table;
 extern dap_config_t *g_config;
 
 int dap_config_init(const char*);
+void dap_config_deinit();
 dap_config_t *dap_config_open(const char*);
 
 void dap_config_close(dap_config_t*);

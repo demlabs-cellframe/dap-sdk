@@ -1210,10 +1210,12 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
     case DESCRIPTOR_TYPE_FILE:
     case DESCRIPTOR_TYPE_PIPE:
         if ( a_es->pending_read || a_es->pending_write ) {
-            l_res = CancelIoEx((HANDLE)a_es->socket, NULL) ? ERROR_IO_PENDING : GetLastError();
-            func = "CancelIoEx";
-        } else
-            dap_events_socket_descriptor_close(a_es);
+            l_res = ERROR_IO_PENDING;
+            func = "closesocket";
+            //l_res = CancelIoEx((HANDLE)a_es->socket, NULL) ? ERROR_IO_PENDING : GetLastError();
+            //func = "CancelIoEx";
+        }
+        dap_events_socket_descriptor_close(a_es);
     break;
     case DESCRIPTOR_TYPE_QUEUE:
         for ( queue_entry_t *l_work_item = (queue_entry_t*)InterlockedFlushSList((PSLIST_HEADER)a_es->buf_out), *l_tmp;

@@ -372,7 +372,7 @@ static bool s_process_chunked_data(dap_client_http_t *a_client_http, dap_client_
             if (l_to_read > 0) {
                 // Validate chunk data integrity - prevent overflow
                 if (a_client_http->current_chunk_read + l_to_read > a_client_http->current_chunk_size) {
-                    log_it(L_ERROR, "Chunk data overflow detected: trying to read %zu bytes, but only %zu remaining in chunk %llu",
+                    log_it(L_ERROR, "Chunk data overflow detected: trying to read %zu bytes, but only %zu remaining in chunk %"DAP_UINT64_FORMAT_U,
                            l_to_read, 
                            a_client_http->current_chunk_size - a_client_http->current_chunk_read,
                            a_client_http->current_chunk_id);
@@ -1568,7 +1568,7 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
         if (l_client_http->is_chunked && 
             l_client_http->current_chunk_read < l_client_http->current_chunk_size) {
             
-            log_it(L_WARNING, "Connection closed in middle of chunk: received %zu of %zu bytes (chunk ID: %llu)",
+            log_it(L_WARNING, "Connection closed in middle of chunk: received %zu of %zu bytes (chunk ID: %"DAP_UINT64_FORMAT_U")",
                    l_client_http->current_chunk_read, 
                    l_client_http->current_chunk_size,
                    l_client_http->current_chunk_id);

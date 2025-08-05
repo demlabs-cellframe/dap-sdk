@@ -12,7 +12,7 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
     return response;
 }
 
-dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id) {
+dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id, int a_version) {
 
     if (!result) {
         log_it(L_CRITICAL, "Invalid arguments");
@@ -23,6 +23,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     
     response->id = id;
     response->type = type;
+    response->version = a_version;
 
     switch(response->type){
         case TYPE_RESPONSE_STRING:
@@ -74,6 +75,10 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
     }
 
     json_object* jobj = json_object_new_object();
+    if (!jobj) {
+        log_it(L_ERROR, "Can't create json object");
+        return NULL;
+    }
     // json type
     json_object_object_add(jobj, "type", json_object_new_int(response->type));
 
@@ -101,9 +106,16 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 
     // json id
     json_object_object_add(jobj, "id", json_object_new_int64(response->id));
+    // json version
+    json_object_object_add(jobj, "version", json_object_new_int64(response->version));
 
     // convert to string
     const char* json_string = json_object_to_json_string(jobj);
+    if (!json_string) {
+        log_it(L_ERROR, "Can't convert json object to string");
+        json_object_put(jobj);
+        return NULL;
+    }
     char* result_string = strdup(json_string);
     json_object_put(jobj);
 
@@ -124,6 +136,14 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
         // log_it(L_CRITICAL, "Memmory allocation error");
         printf( "Memmory allocation error");
         return NULL;
+    }
+
+    json_object* version_obj = NULL;
+    if (json_object_object_get_ex(jobj, "version", &version_obj))
+        response->version = json_object_get_int64(version_obj);
+    else {
+        log_it(L_DEBUG, "Can't find response version, apply version 1");
+        response->version = 1;
     }
 
     json_object* type_obj = NULL;
@@ -302,16 +322,20 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 printf("json object is NULL\n");
                 return -2;
             }
-            switch(json_print_commands(cmd_name)) {
-                case 1: json_print_for_tx_history(response); break; return 0;
-                // case 2: json_print_for_mempool_list(response); break; return 0;
-                default: {
-                        dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
-                        if (!l_cmd || l_cmd->func_rpc(response, cmd_params, cmd_cnt)){
-                            json_print_object(response->result_json_object, 0);
+            if (response->version == 1) {
+                switch(json_print_commands(cmd_name)) {
+                    case 1: json_print_for_tx_history(response); break; return 0;
+                    // case 2: json_print_for_mempool_list(response); break; return 0;
+                    default: {
+                            dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
+                            if (!l_cmd || l_cmd->func_rpc(response, cmd_params, cmd_cnt)){
+                                json_print_object(response->result_json_object, 0);
+                            }
                         }
-                    }
-                    break;
+                        break;
+                }
+            } else {
+                json_print_object(response->result_json_object, 0);
             }
             break;
     }
