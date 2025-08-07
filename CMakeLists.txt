@@ -377,3 +377,89 @@ endif()
 # =========================================
 # Combine all internal static modules into one final library
 dap_create_final_library()
+
+# =========================================
+# INSTALL CONFIGURATION - DAP SDK
+# =========================================
+if(BUILD_SHARED)
+    # Install shared library
+    install(TARGETS dap_sdk
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        COMPONENT dap_sdk_runtime
+    )
+    
+    # Install headers for development
+    install(DIRECTORY 
+        core/include/
+        crypto/include/
+        global-db/include/
+        io/include/
+        net/client/include/
+        net/server/cli_server/include/
+        net/server/enc_server/include/
+        net/server/http_server/include/
+        net/stream/stream/include/
+        net/stream/session/include/
+        net/stream/ch/include/
+        net/link_manager/include/
+        plugin/include/
+        DESTINATION include/dap-sdk
+        COMPONENT dap_sdk_dev
+        FILES_MATCHING PATTERN "*.h"
+    )
+    
+    # Install 3rdparty headers
+    install(DIRECTORY 
+        3rdparty/uthash/src/
+        DESTINATION include/dap-sdk/uthash
+        COMPONENT dap_sdk_dev
+        FILES_MATCHING PATTERN "*.h"
+    )
+    
+    # Install pkg-config file
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/dap-sdk.pc"
+        @ONLY
+    )
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/dap-sdk.pc"
+        DESTINATION lib/pkgconfig
+        COMPONENT dap_sdk_dev
+    )
+    
+    # =========================================
+    # PACKAGING SUPPORT (CPack) - DAP SDK
+    # =========================================
+    # Package configuration
+    set(CPACK_PACKAGE_NAME "libdap-sdk")
+    set(CPACK_PACKAGE_VERSION "3.0.0")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DAP SDK - Distributed Applications Platform SDK")
+    set(CPACK_PACKAGE_VENDOR "Demlabs")
+    set(CPACK_PACKAGE_CONTACT "support@demlabs.net")
+    
+    # Multi-component packaging
+    set(CPACK_COMPONENTS_ALL dap_sdk_runtime dap_sdk_dev)
+    
+    # Component descriptions
+    set(CPACK_COMPONENT_DAP_SDK_RUNTIME_DISPLAY_NAME "DAP SDK Runtime Library")
+    set(CPACK_COMPONENT_DAP_SDK_RUNTIME_DESCRIPTION "Shared library for DAP SDK")
+    set(CPACK_COMPONENT_DAP_SDK_RUNTIME_REQUIRED ON)
+    
+    set(CPACK_COMPONENT_DAP_SDK_DEV_DISPLAY_NAME "DAP SDK Development")
+    set(CPACK_COMPONENT_DAP_SDK_DEV_DESCRIPTION "Headers and development files for DAP SDK")
+    set(CPACK_COMPONENT_DAP_SDK_DEV_DEPENDS dap_sdk_runtime)
+    
+    # Debian package configuration
+    set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Demlabs <support@demlabs.net>")
+    
+    # Package generators
+    set(CPACK_GENERATOR "DEB;TGZ")
+    include(CPack)
+    
+    message("[+] DAP SDK: CPack packaging enabled for shared library")
+else()
+    message("[+] DAP SDK: No packaging for static build mode")
+endif()
