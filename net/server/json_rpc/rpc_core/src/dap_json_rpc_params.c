@@ -1,5 +1,6 @@
 #include "dap_json_rpc_params.h"
 #include "dap_string.h"
+#include "json_util.h"
 
 #define LOG_TAG "dap_json_rpc_params"
 
@@ -167,7 +168,13 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_obj
         }
     }
 
-    if (a_args){        
+    if (a_args){
+        if (json_object_get_type(a_args) != json_type_object) {
+            log_it(L_ERROR, "Arguments must be JSON object type, got %s", 
+                   json_type_to_name(json_object_get_type(a_args)));
+            dap_string_free(l_str_tmp, true);
+            return NULL;
+        }
         json_object_object_foreach(a_args, key, val){
             const char *l_key_str = NULL;
             const char *l_val_str = NULL;
