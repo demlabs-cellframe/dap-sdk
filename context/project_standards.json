@@ -18,7 +18,7 @@
     "translation_standards": {
       "api_functions": "Keep in English",
       "data_types": "Keep in English",
-      "code_comments": "Translate to target language",
+      "code_comments": "Keep in English only",
       "string_literals": "Localize for target language"
     }
   },
