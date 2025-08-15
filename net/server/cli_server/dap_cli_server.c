@@ -239,6 +239,7 @@ int json_commands(const char * a_name) {
             "ledger",
             "tx_create",
             "tx_create_json",
+            "mempool_add",
             "tx_verify",
             "tx_cond_create",
             "tx_cond_remove",
@@ -564,5 +565,10 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     char* response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
-    return response_string;
+    return response_string ? response_string : dap_strdup("Error");
+}
+
+DAP_INLINE int dap_cli_server_get_version()
+{
+    return s_cli_version;
 }
