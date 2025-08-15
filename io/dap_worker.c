@@ -434,22 +434,14 @@ static bool s_socket_all_check_activity(void * a_arg)
                  l_curtime >= l_es->last_time_active + s_connection_timeout &&
                 !l_es->no_close) {
             
-            // Only log in debug mode or for important sockets
-            if (g_debug_reactor) {
-                log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                              l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
-            } else {
-                log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout, closing...", l_es->socket);
-            }
+                log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
+                        l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
             
             // Call error callback if set
             if (l_es->callbacks.error_callback) {
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
             }
-            
-            // Instead of immediate deletion, set the flag for closing
-            l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-            // Socket will be actually deleted in the main event processing loop in dap_worker_thread_loop()
+            dap_events_socket_remove_and_delete_unsafe(l_es, false);
         }
     }
     
