@@ -1204,12 +1204,14 @@ char* dap_utf16_to_utf8(const unichar2 *str, long len, long *items_read, long *i
  * @param a_ch1 - char to replace
  * @return Returns a string with the replaced character
  */
-char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
+char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2, bool a_str_dup)
 {
 // sanity check
     dap_return_val_if_pass(!a_src, NULL);
 // func work
-    char *l_dst = dap_strdup(a_src), *l_str;
+    char 
+        *l_dst = a_str_dup ? dap_strdup(a_src) : (char *)a_src, 
+        *l_str;
     for ( l_str = l_dst; (l_str = strchr(l_str, a_ch1)); l_str++)
         *l_str = a_ch2;
     return l_dst;
