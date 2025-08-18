@@ -142,8 +142,10 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
         char l_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_port = 0;
         if ( 0 > (l_arg_len = dap_net_parse_config_address(l_addr, l_ip, &l_port, &l_saddr, NULL)) ) {
             printf ("Incorrect address \"%s\" format\n", l_addr);
+            DAP_DELETE(l_addr);
             return ~0;
         }
+        DAP_DELETE(l_addr);
     } else
         return printf("CLI server is not set, check config"), ~0;
     
