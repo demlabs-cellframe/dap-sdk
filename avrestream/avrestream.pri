@@ -33,7 +33,7 @@ darwin {
     DEFINES += _GNU_SOURCE
     include(src/darwin/darwin.pri)
     DEFINES += DAP_OS_DARWIN DAP_OS_BSD
-    LIBS+ = -lrt
+    # Note: -lrt not available on macOS, removed
 
     QMAKE_LIBDIR += /usr/local/lib
     QMAKE_CFLAGS += -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-unused-local-typedefs
