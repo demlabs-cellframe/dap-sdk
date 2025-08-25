@@ -283,6 +283,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 log_it(L_WARNING, "Config item %s from %s.cfg already exist and will be replace", l_item->name, (*a_conf)->path);
                 s_config_item_dump(l_item);
                 dap_config_item_del(l_item, false);
+                DAP_DELETE(l_name);
                 l_replace = true;
             }
             l_item->type = l_type;
