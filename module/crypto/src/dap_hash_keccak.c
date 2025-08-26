@@ -23,4 +23,7 @@
 */
 
 #include "dap_hash_keccak.h"
+// XKCP includes moved here from header for encapsulation
+#include "KeccakHash.h"
+#include "SimpleFIPS202.h"
 

@@ -1,4 +1,6 @@
 #include "dap_enc_sphincsplus.h"
+// XKCP includes moved here from header for encapsulation
+#include "SimpleFIPS202.h"
 //#include "sphincsplus/randombytes.h"
 #include "api.h"
 #include "dap_hash.h"

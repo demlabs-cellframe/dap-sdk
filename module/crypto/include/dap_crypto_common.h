@@ -13,8 +13,9 @@ extern "C" {
 
 #include "dap_common.h"
 
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+// XKCP includes moved to implementation files
+// #include "KeccakHash.h"
+// #include "SimpleFIPS202.h"
 //#include "SP800-185.h"
 
 #include "rand/dap_rand.h"

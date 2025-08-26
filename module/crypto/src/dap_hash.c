@@ -27,6 +27,8 @@
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_enc_base58.h"
+// XKCP includes moved here from header for encapsulation
+#include "KeccakHash.h"
 #include "hash/sha2-256/dap_sha2_256.h"
 
 #define LOG_TAG "dap_hash"

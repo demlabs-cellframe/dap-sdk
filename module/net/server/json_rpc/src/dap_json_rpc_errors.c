@@ -179,11 +179,8 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj)
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
-    json_object *l_jobj_code_eror = json_object_object_get(a_jobj, "code");
-    json_object *l_jobj_msg = json_object_object_get(a_jobj, "message");
-    l_error->code_error = json_object_get_int64(l_jobj_code_eror);
-    l_error->msg = dap_strdup(json_object_get_string(l_jobj_msg));
-    json_object_put(l_jobj_code_eror);
-    json_object_put(l_jobj_msg);
+    l_error->code_error = dap_json_object_get_int64(a_jobj, "code");
+    const char *l_msg = dap_json_object_get_string(a_jobj, "message");
+    l_error->msg = l_msg ? dap_strdup(l_msg) : NULL;
     return l_error;
 }

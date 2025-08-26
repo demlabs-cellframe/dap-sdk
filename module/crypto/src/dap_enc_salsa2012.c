@@ -5,9 +5,9 @@
 #include <string.h>
 
 #include "dap_enc_salsa2012.h"
+// Removed XKCP includes - now using dap_hash_fast instead
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "KeccakHash.h"
 
 #define LOG_TAG "dap_enc_salsa2012"
 #define SALSA20_KEY_SIZE 32
@@ -38,12 +38,19 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
     a_key->priv_key_data_size = SALSA20_KEY_SIZE;
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
 
-    Keccak_HashInstance Keccak_ctx;
-    Keccak_HashInitialize(&Keccak_ctx, 1088,  512, a_key->priv_key_data_size*8, 0x06);
-    Keccak_HashUpdate(&Keccak_ctx, kex_buf, kex_size*8);
+    // Create combined input buffer for hashing
+    size_t l_total_size = kex_size + seed_size;
+    uint8_t *l_input_buf = DAP_NEW_SIZE(uint8_t, l_total_size);
+    memcpy(l_input_buf, kex_buf, kex_size);
     if(seed_size)
-        Keccak_HashUpdate(&Keccak_ctx, seed, seed_size*8);
-    Keccak_HashFinal(&Keccak_ctx, a_key->priv_key_data);
+        memcpy(l_input_buf + kex_size, seed, seed_size);
+    
+    // Use DAP hash instead of direct XKCP calls
+    dap_hash_fast_t l_hash_out;
+    dap_hash_fast(l_input_buf, l_total_size, &l_hash_out);
+    memcpy(a_key->priv_key_data, &l_hash_out, DAP_MIN(a_key->priv_key_data_size, sizeof(l_hash_out)));
+    
+    DAP_DELETE(l_input_buf);
 }
 
 /**
