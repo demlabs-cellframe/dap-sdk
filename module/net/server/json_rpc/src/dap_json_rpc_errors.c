@@ -54,7 +54,7 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
     return l_json_err;
 }
 
-int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, const char *msg, ...)
+int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const char *msg, ...)
 {
     va_list args;
     va_start(args, msg);
@@ -67,11 +67,13 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
     }
 
     int l_array_length = dap_json_array_length(a_json_arr_reply);
-    json_object *l_json_obj_errors = NULL, *l_json_arr_errors = NULL;
+    dap_json_t *l_json_obj_errors = NULL;
+    dap_json_array_t *l_json_arr_errors = NULL;
     for (int i = 0; i < l_array_length; i++) {
-        json_object *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
+        dap_json_t *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
         if (l_json_obj && dap_json_get_type(l_json_obj) == DAP_JSON_TYPE_OBJECT) {
-            if (json_object_object_get_ex(l_json_obj, "errors", &l_json_arr_errors)) {
+            l_json_arr_errors = dap_json_object_get_array(l_json_obj, "errors");
+            if (l_json_arr_errors) {
                 l_json_obj_errors = l_json_obj;
                 break;
             }
@@ -79,16 +81,16 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
     }
 
     if (!l_json_obj_errors) {
-        l_json_obj_errors = json_object_new_object();
-        l_json_arr_errors = json_object_new_array();
-        json_object_object_add(l_json_obj_errors, "errors", l_json_arr_errors);
-        json_object_array_add(a_json_arr_reply, l_json_obj_errors);
+        l_json_obj_errors = dap_json_object_new();
+        l_json_arr_errors = dap_json_array_new();
+        dap_json_object_add_array(l_json_obj_errors, "errors", l_json_arr_errors);
+        dap_json_array_add(a_json_arr_reply, l_json_obj_errors);
     } 
 
-    json_object* l_obj_error = json_object_new_object();
-    json_object_object_add(l_obj_error, "code", dap_json_object_new_int(a_code_error));
-    json_object_object_add(l_obj_error, "message", dap_json_object_new_string(l_msg));
-    json_object_array_add(l_json_arr_errors, l_obj_error);
+    dap_json_t* l_obj_error = dap_json_object_new();
+    dap_json_object_add_int(l_obj_error, "code", a_code_error);
+    dap_json_object_add_string(l_obj_error, "message", l_msg);
+    dap_json_array_add(l_json_arr_errors, l_obj_error);
 
     log_it(L_ERROR, "Registration type error. Code error: %d message: %s", a_code_error, l_msg);
     DAP_DEL_Z(l_msg);

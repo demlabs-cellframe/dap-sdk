@@ -58,7 +58,7 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create();
 void dap_json_rpc_error_JSON_free(dap_json_rpc_error_JSON_t *a_error_json);
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const char *msg);
 
-int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, const char *msg, ...);
+int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const char *msg, ...);
 
 dap_json_t * dap_json_rpc_error_get();
 

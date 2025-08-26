@@ -299,20 +299,20 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
     //  log_it(L_DEBUG,"_write_response_bad_request");
     //  Sleep(300);
 
-    struct json_object *jobj = json_object_new_object( );
-    json_object_object_add( jobj, "error", json_object_new_string(error_msg) );
+    dap_json_t *jobj = dap_json_object_new();
+    dap_json_object_add_string(jobj, "error", error_msg);
 
-    log_it( L_DEBUG, "error message %s",  json_object_to_json_string(jobj) );
+    log_it(L_DEBUG, "error message %s", dap_json_to_string(jobj));
     a_http_simple->http_client->reply_status_code = Http_Status_BadRequest;
 
-    const char* json_str = json_object_to_json_string( jobj );
-    dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str) );
+    const char* json_str = dap_json_to_string(jobj);
+    dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str));
 
-    dap_strncpy( a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) );
+    dap_strncpy(a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime));
 
-    s_copy_reply_and_mime_to_response( a_http_simple );
+    s_copy_reply_and_mime_to_response(a_http_simple);
 
-    json_object_put( jobj ); // free obj
+    dap_json_object_free(jobj); // free obj
 }
 
 /**

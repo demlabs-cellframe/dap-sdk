@@ -24,6 +24,7 @@
 
 #include "dap_json.h"
 #include "dap_strfuncs.h"
+#include "json.h"
 #include <string.h>
 
 #define LOG_TAG "dap_json"
