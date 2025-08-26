@@ -4,7 +4,7 @@
 #include "dap_hash.h"
 #include "dap_time.h"
 #include "dap_string.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "json_types.h"
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>

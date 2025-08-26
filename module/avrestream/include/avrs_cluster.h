@@ -27,7 +27,7 @@
 #include <dap_list.h>
 #include <stdint.h>
 #include <pthread.h>
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 
 #include "dap_guiid.h"
 #include "avrs.h"

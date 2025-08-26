@@ -23,7 +23,7 @@
 #pragma once
 #include "avrs_content.h"
 #include "dap_stream_ch.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include <dap_common.h>
 #include <dap_hash.h>
 #include <dap_enc_key.h>

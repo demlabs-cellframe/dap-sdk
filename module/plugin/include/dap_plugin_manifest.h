@@ -29,7 +29,7 @@ extern "C"{
 #endif
 
 #include <stdbool.h>
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_config.h"
 
 typedef struct dap_plugin_manifest{

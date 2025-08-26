@@ -28,7 +28,7 @@
 #include <netinet/in.h>
 #endif
 
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
 #include "dap_list.h"

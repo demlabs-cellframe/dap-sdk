@@ -28,8 +28,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
-#include "uthash.h"
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_file_utils.h"

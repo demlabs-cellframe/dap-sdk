@@ -22,7 +22,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdbool.h>
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include <dirent.h>
 
 #include "dap_common.h"

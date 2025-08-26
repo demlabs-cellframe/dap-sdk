@@ -27,7 +27,7 @@
 #include "avrs.h"
 #include "avrs_cluster.h"
 
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 
 typedef struct avrs_session avrs_session_t;
 typedef struct avrs_session_content avrs_session_content_t;

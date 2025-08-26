@@ -4,8 +4,8 @@
 #include "dap_cli_server.h"
 #include "dap_plugin_manifest.h"
 #include "dap_plugin.h"
-#include "uthash.h"
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_plugin_command.h"
 
 #define LOG_TAG "dap_plugin_command"

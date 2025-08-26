@@ -27,7 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_header.h"
 #include "dap_http_client.h"
 #include "dap_http_cache.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 
 struct dap_http_server;
 struct dap_http_url_processor;

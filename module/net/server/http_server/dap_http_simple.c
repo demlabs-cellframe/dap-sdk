@@ -38,7 +38,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #include <pthread.h>
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_json.h"
 #include "dap_common.h"
 #include "dap_context.h"

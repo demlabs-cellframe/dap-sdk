@@ -31,7 +31,8 @@ if(UNIX)
   endif()
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC include)
+target_include_directories(${PROJECT_NAME} PUBLIC include
+                                                ../../3rdparty/uthash/src)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_include_directories(${PROJECT_NAME} PUBLIC ../core/src/unix)
 

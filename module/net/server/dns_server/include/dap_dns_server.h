@@ -29,7 +29,7 @@
 #include <pthread.h>
 #endif
 #include "dap_server.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_client.h"
 
 #define DNS_TIME_TO_LIVE 600    // Seconds

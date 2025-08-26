@@ -20,7 +20,7 @@
     You should have received a copy of the GNU General Public License
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_http_server.h"
 #include "dap_http_cache.h"
 

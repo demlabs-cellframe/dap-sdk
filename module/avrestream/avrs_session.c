@@ -33,7 +33,7 @@
 #include "dap_common.h"
 #include "dap_sign.h"
 #include "dap_stream_worker.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 
 
 #define LOG_TAG "avrs_session"

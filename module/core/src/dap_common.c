@@ -28,8 +28,8 @@
 #include "dap_string.h"
 #include "dap_list.h"
 #include "dap_file_utils.h"
-#include "utlist.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 
 #ifdef DAP_OS_ANDROID
   #include <android/log.h>

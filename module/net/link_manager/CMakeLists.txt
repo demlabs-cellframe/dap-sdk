@@ -20,8 +20,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${XKCP_INCLUDES})
 
 # Store dependencies for final library - no linking of OBJECT targets
 set(LINK_MANAGER_LIBS "")
-if(DAPSDK_MODULES MATCHES "ssl-support")
-endif()
 if(UNIX AND NOT ANDROID AND NOT DARWIN)
     list(APPEND LINK_MANAGER_LIBS "rt")
 endif()
@@ -31,12 +29,14 @@ set(DAP_LINK_MANAGER_DEPS "${LINK_MANAGER_LIBS}" CACHE INTERNAL "dap_link_manage
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE .)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../module/core/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../core/include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src/unix)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../crypto/include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../io/include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/json-c)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../../../module/core/json-c)
 
 
 

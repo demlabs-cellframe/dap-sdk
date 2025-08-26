@@ -22,7 +22,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_config.h"
 #include "dap_common.h"
 #include "dap_file_utils.h"

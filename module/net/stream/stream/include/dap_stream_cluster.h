@@ -25,7 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <dap_common.h>
 #include <stdint.h>
 #include <pthread.h>
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_list.h"
 #include "dap_guuid.h"
 #include "../../server/json_rpc/include/dap_json_rpc_errors.h"

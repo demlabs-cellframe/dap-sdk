@@ -26,7 +26,7 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "utlist.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_json.h"
 
 #define DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 1

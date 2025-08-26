@@ -2,7 +2,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include "dap_config.h"
-#include "uthash.h"
+#include "../../../3rdparty/uthash/src/uthash.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #ifdef DAP_OS_WINDOWS
