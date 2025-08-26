@@ -44,9 +44,9 @@
 #include "dap_context.h"
 #include "dap_server.h"
 
-#include "dap_json_rpc_errors.h"
-#include "dap_json_rpc_request.h"
-#include "dap_json_rpc_response.h"
+#include "../json_rpc/include/dap_json_rpc_errors.h"
+#include "../json_rpc/include/dap_json_rpc_request.h"
+#include "../json_rpc/include/dap_json_rpc_response.h"
 
 #define LOG_TAG "dap_cli_server"
 
@@ -78,22 +78,22 @@ static void* s_cli_cmd_exec(void *a_arg);
 static bool s_allowed_cmd_check(const char *a_buf) {
     if (!s_allowed_cmd_array)
         return false;
-    enum json_tokener_error jterr;
+    enum dap_json_tokener_error_t jterr;
     const char *l_method;
-    json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
+    dap_json_t *jobj = dap_json_tokener_parse_verbose(a_buf, &jterr),
                 *jobj_method = NULL;
     if ( jterr != json_tokener_success ) 
-        return log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr)), false;
-    if ( json_object_object_get_ex(jobj, "method", &jobj_method) )
-        l_method = json_object_get_string(jobj_method);
+        return log_it(L_ERROR, "Can't parse json command, error %s", dap_json_tokener_error_t_desc(jterr)), false;
+    if ( dap_json_object_get_ex(jobj, "method", &jobj_method) )
+        l_method = dap_json_object_get_string(jobj_method);
     else {
         log_it(L_ERROR, "Invalid command request, dump it");
-        json_object_put(jobj);
+        dap_json_object_free(jobj);
         return false;
     }
 
     bool l_allowed = !!dap_str_find( s_allowed_cmd_array, l_method );
-    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
+    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), dap_json_object_free(jobj), l_allowed;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
@@ -492,7 +492,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         str_cmd = cmd_name;
     int res = -1;
     char *str_reply = NULL;
-    json_object *l_json_arr_reply = json_object_new_array();
+    dap_json_t *l_json_arr_reply = json_object_new_array();
     if (l_cmd) {
         if (l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);
@@ -569,7 +569,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, str_reply);
             DAP_DELETE(str_reply);
         } else {
-            json_object *json_res = json_object_new_object();
+            dap_json_t *json_res = json_object_new_object();
             json_object_object_add(json_res, "ret_code", json_object_new_int(res));
             json_object_array_add(l_json_arr_reply, json_res);
         }
@@ -580,7 +580,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_response_t* response = reply_body
             ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id, request->version)
             : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id, request->version);
-    json_object_put(l_json_arr_reply);
+    dap_json_object_free(l_json_arr_reply);
     char *response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);

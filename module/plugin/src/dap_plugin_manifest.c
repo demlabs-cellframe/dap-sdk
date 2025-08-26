@@ -2,7 +2,7 @@
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
-#include "json.h"
+#include "dap_json.h"
 
 #include "dap_plugin_manifest.h"
 #include "uthash.h"
@@ -95,35 +95,35 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
 dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path)
 {
    // Open json file_path
-    struct json_object *l_json = json_object_from_file(a_file_path);
+    dap_json_t *l_json = dap_json_from_file(a_file_path);
     
     if(!l_json) {
         log_it(L_ERROR, "Can't open manifest file on path: %s", a_file_path);
         return NULL;
     }
     
-    if(!json_object_is_type(l_json, json_type_object)) {
+    if(!dap_json_is_object(l_json)) {
         log_it(L_ERROR, "Invalid manifest structure, shoud be a json object: %s", a_file_path);
-        json_object_put(l_json);
+        dap_json_object_free(l_json);
         return NULL;
     }
 
-    json_object *j_name = json_object_object_get(l_json, "name");
-    json_object *j_version = json_object_object_get(l_json, "version");;
-    json_object *j_dependencies = json_object_object_get(l_json, "dependencies");
-    json_object *j_author = json_object_object_get(l_json, "author");
-    json_object *j_description = json_object_object_get(l_json, "description");
-    json_object *j_path = json_object_object_get(l_json, "path");
-    json_object *j_params = json_object_object_get(l_json, "params");
-    json_object *j_type = json_object_object_get(l_json, "type");
+    dap_json_t *j_name = dap_json_object_get_object(l_json, "name");
+    dap_json_t *j_version = dap_json_object_get_object(l_json, "version");;
+    dap_json_array_t *j_dependencies = dap_json_object_get_array(l_json, "dependencies");
+    dap_json_t *j_author = dap_json_object_get_object(l_json, "author");
+    dap_json_t *j_description = dap_json_object_get_object(l_json, "description");
+    dap_json_t *j_path = dap_json_object_get_object(l_json, "path");
+    dap_json_array_t *j_params = dap_json_object_get_array(l_json, "params");
+    dap_json_t *j_type = dap_json_object_get_object(l_json, "type");
 
     const char *l_name, *l_version, *l_author, *l_description, *l_type, *l_path;
-    l_name = json_object_get_string(j_name);
-    l_version = json_object_get_string(j_version);
-    l_author = json_object_get_string(j_author);
-    l_description = json_object_get_string(j_description);
-    l_type = json_object_get_string(j_type);
-    l_path = json_object_get_string(j_path);
+    l_name = j_name ? dap_json_object_get_string(l_json, "name") : NULL;
+    l_version = j_version ? dap_json_object_get_string(l_json, "version") : NULL;
+    l_author = j_author ? dap_json_object_get_string(l_json, "author") : NULL;
+    l_description = j_description ? dap_json_object_get_string(l_json, "description") : NULL;
+    l_type = j_type ? dap_json_object_get_string(l_json, "type") : NULL;
+    l_path = j_path ? dap_json_object_get_string(l_json, "path") : NULL;
     
     if (!l_name || !l_version || !l_author || !l_description || !l_type)
     {
@@ -135,20 +135,22 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     dap_plugin_manifest_t *l_manifest = NULL;
     HASH_FIND_STR(s_manifests, l_name, l_manifest);
     if (l_manifest)
-        return json_object_put(l_json), log_it(L_ERROR, "Plugin name \"%s\" is already present", l_name), l_manifest;
+        return dap_json_object_free(l_json), log_it(L_ERROR, "Plugin name \"%s\" is already present", l_name), l_manifest;
 
-    size_t l_dependencies_count = j_dependencies ? (size_t)json_object_array_length(j_dependencies) : 0;
-    size_t l_params_count =      j_params ? (size_t)json_object_array_length(j_params) : 0;
+    size_t l_dependencies_count = j_dependencies ? dap_json_array_length(j_dependencies) : 0;
+    size_t l_params_count =      j_params ? dap_json_array_length(j_params) : 0;
 
     char **l_dependencies_names = NULL, **l_params = NULL;
     // Read dependencies;
     if(l_dependencies_count)
     {
         if (!( l_dependencies_names = DAP_NEW_Z_COUNT(char*, l_dependencies_count) ))
-            return json_object_put(l_json), log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
+            return dap_json_object_free(l_json), log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
 
         for (size_t i = 0; i <  l_dependencies_count; i++){
-            l_dependencies_names[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(j_dependencies, i)));
+            dap_json_t *l_dep_item = dap_json_array_get_idx(j_dependencies, i);
+            const char *l_dep_str = dap_json_to_string(l_dep_item);
+            l_dependencies_names[i] = dap_strdup(l_dep_str);
         }
     }
 
@@ -156,19 +158,21 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(l_params_count)
     {
         if (!( l_params = DAP_NEW_Z_COUNT(char*, l_params_count) )) {
-            json_object_put(l_json);
+            dap_json_object_free(l_json);
             DAP_DEL_ARRAY(l_dependencies_names, l_dependencies_count);
             DAP_DELETE(l_dependencies_names);
             return log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
         }
         for (size_t i = 0; i < l_params_count; i++){
-            l_params[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(j_params, i)));
+            dap_json_t *l_param_item = dap_json_array_get_idx(j_params, i);
+            const char *l_param_str = dap_json_to_string(l_param_item);
+            l_params[i] = dap_strdup(l_param_str);
         }
     }
 
     // Create manifest itself
     if (!( l_manifest = DAP_NEW_Z(dap_plugin_manifest_t) )) {
-        json_object_put(l_json);
+        dap_json_object_free(l_json);
         DAP_DEL_ARRAY(l_dependencies_names, l_dependencies_count);
         DAP_DEL_ARRAY(l_params, l_params_count);
         DAP_DEL_MULTY(l_dependencies_names, l_params);
@@ -192,7 +196,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
         l_manifest->config = dap_config_open(l_config_path);
     DAP_DEL_MULTY(l_config_path, l_config_path_test);
     HASH_ADD_STR(s_manifests, name, l_manifest);
-    json_object_put(l_json);
+    dap_json_object_free(l_json);
     return l_manifest;
 }
 

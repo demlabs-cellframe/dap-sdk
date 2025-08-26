@@ -1,4 +1,5 @@
 #include "dap_json_rpc_errors.h"
+#include "dap_json.h"
 
 #define LOG_TAG "dap_json_rpc_errors"
 
@@ -48,8 +49,8 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
-    l_json_err->obj_code = json_object_new_int(code);
-    l_json_err->obj_msg = json_object_new_string(msg);
+    l_json_err->obj_code = dap_json_object_new_int(code);
+    l_json_err->obj_msg = dap_json_object_new_string(msg);
     return l_json_err;
 }
 
@@ -60,16 +61,16 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
     char *l_msg = dap_strdup_vprintf(msg, args);
     va_end(args);
 
-    if (!a_json_arr_reply || !json_object_is_type(a_json_arr_reply, json_type_array)) {
+    if (!a_json_arr_reply || !dap_json_is_array(a_json_arr_reply)) {
         log_it(L_CRITICAL, "Reply is not json array");
         return -1;
     }
 
-    int l_array_length = json_object_array_length(a_json_arr_reply);
+    int l_array_length = dap_json_array_length(a_json_arr_reply);
     json_object *l_json_obj_errors = NULL, *l_json_arr_errors = NULL;
     for (int i = 0; i < l_array_length; i++) {
-        json_object *l_json_obj = json_object_array_get_idx(a_json_arr_reply, i);
-        if (l_json_obj && json_object_get_type(l_json_obj) == json_type_object) {
+        json_object *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
+        if (l_json_obj && dap_json_get_type(l_json_obj) == DAP_JSON_TYPE_OBJECT) {
             if (json_object_object_get_ex(l_json_obj, "errors", &l_json_arr_errors)) {
                 l_json_obj_errors = l_json_obj;
                 break;
@@ -85,8 +86,8 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
     } 
 
     json_object* l_obj_error = json_object_new_object();
-    json_object_object_add(l_obj_error, "code", json_object_new_int(a_code_error));
-    json_object_object_add(l_obj_error, "message", json_object_new_string(l_msg));
+    json_object_object_add(l_obj_error, "code", dap_json_object_new_int(a_code_error));
+    json_object_object_add(l_obj_error, "message", dap_json_object_new_string(l_msg));
     json_object_array_add(l_json_arr_errors, l_obj_error);
 
     log_it(L_ERROR, "Registration type error. Code error: %d message: %s", a_code_error, l_msg);
@@ -100,7 +101,7 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
 //     LL_FOREACH(s_errors, error) {
 //         json_object_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
 //     }
-//     if (json_object_array_length(json_arr_errors) > 0) {
+//     if (dap_json_array_length(json_arr_errors) > 0) {
 //         return json_arr_errors;
 //     } else {
 //         json_object_put(json_arr_errors);
@@ -129,7 +130,7 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
 // json_object *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error)
 // {
 //     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
-//     json_object *l_jobj_msg = json_object_new_string(a_error->msg);
+//     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
 //     json_object *l_jobj = json_object_new_object();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);
@@ -142,7 +143,7 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
 // {
 //     log_it(L_NOTICE, "Translation JSON string to struct dap_json_rpc_error");
 //     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
-//     json_object *l_jobj_msg = json_object_new_string(a_error->msg);
+//     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
 //     json_object *l_jobj = json_object_new_object();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);

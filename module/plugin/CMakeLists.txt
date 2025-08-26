@@ -32,12 +32,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 # Removed hardcoded path - now handled via DAP_SDK_PATH_BUILD logic below
 if(DEFINED DAP_SDK_PATH_BUILD)
     # When built as submodule (e.g., in python-cellframe)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${DAP_SDK_PATH_BUILD}/core/json-c)
-    message("[+] DAP Plugin: Using external build path for json-c: ${DAP_SDK_PATH_BUILD}/core/json-c")
+    target_include_directories(${PROJECT_NAME} PUBLIC ${DAP_SDK_PATH_BUILD}/module/core/json-c)
+    message("[+] DAP Plugin: Using external build path for json-c: ${DAP_SDK_PATH_BUILD}/module/core/json-c")
 else()
     # Fallback paths for standalone builds
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/core/json-c)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/core/json-c)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/module/core/json-c)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/module/core/json-c)
 endif()
 
 if(INSTALL_DAP_SDK)

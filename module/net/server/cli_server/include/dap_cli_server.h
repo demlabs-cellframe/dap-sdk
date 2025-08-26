@@ -29,7 +29,7 @@
 #include "dap_common.h"
 #include "dap_config.h"
 #include "uthash.h"
-#include "json.h"
+#include "dap_json.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply, int a_version);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply, int a_version);
@@ -85,7 +85,7 @@ int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
 
 /* For using clear json_rpc */
-typedef void (handler_func_cli_t)(json_object *a_params, json_object *a_reply);
+typedef void (handler_func_cli_t)(dap_json_t *a_params, dap_json_t *a_reply);
 
 typedef struct dap_cli_handler_cl {
     const char *method;
@@ -95,7 +95,7 @@ typedef struct dap_cli_handler_cl {
 
 void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fund);
 
-//void dap_json_rpo_handler_cli_run(const char *a_method, json_object *a_params, json_object **obj_result);
+//void dap_json_rpo_handler_cli_run(const char *a_method, dap_json_t *a_params, dap_json_t **obj_result);
 void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback);
 void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array);
 int dap_cli_server_get_version();

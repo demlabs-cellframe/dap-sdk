@@ -25,7 +25,7 @@
 #pragma once
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "json.h"
+#include "dap_json.h"
 
 #ifdef __cplusplus
 extern "C"{

@@ -27,7 +27,7 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "utlist.h"
-#include "json.h"
+#include "dap_json.h"
 
 #define DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 1
 #define DAP_JSON_RPC_ERR_CODE_SERIALIZATION_SIGN_TO_JSON 2
@@ -47,8 +47,8 @@ typedef struct dap_json_rpc_error
 
 typedef struct dap_json_rpc_error_JSON
 {
-    json_object *obj_code;
-    json_object *obj_msg;
+    dap_json_t *obj_code;
+    dap_json_t *obj_msg;
 }dap_json_rpc_error_JSON_t;
 
 int dap_json_rpc_error_init(void);
@@ -60,16 +60,16 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
 
 int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, const char *msg, ...);
 
-json_object * dap_json_rpc_error_get();
+dap_json_t * dap_json_rpc_error_get();
 
 dap_json_rpc_error_t *dap_json_rpc_error_search_by_code(int a_code_error);
 
-json_object * dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error);
+dap_json_t * dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error);
 char *dap_json_rpc_error_get_json_str(dap_json_rpc_error_t *a_error);
 
 dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json);
 
-dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj);
+dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj);
 
 void dap_json_rpc_add_standart_erros(void);
 

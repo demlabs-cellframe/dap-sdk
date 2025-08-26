@@ -31,7 +31,7 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
-#include "dap_json_rpc_errors.h"
+#include "../../net/server/json_rpc/include/dap_json_rpc_errors.h"
 #include "dap_config.h"
 #include "dap_pkey.h"
 #include "dap_enc_chipmunk.h"  // For Chipmunk implementation

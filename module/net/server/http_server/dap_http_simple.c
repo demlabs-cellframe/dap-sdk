@@ -39,7 +39,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include "utlist.h"
-#include "json_object.h"
+#include "dap_json.h"
 #include "dap_common.h"
 #include "dap_context.h"
 #include "dap_worker.h"

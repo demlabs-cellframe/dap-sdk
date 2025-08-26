@@ -30,7 +30,7 @@
 #include "dap_enc_key.h"
 #include "dap_hash.h"
 #include "dap_string.h"
-#include "json.h"
+#include "dap_json.h"
 
 enum dap_sign_type_enum {
     SIG_TYPE_NULL = 0x0000,
