@@ -112,7 +112,7 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
         return -1;
     }
     
-    return json_object_array_add(a_array, a_item);
+    return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
 }
 
 size_t dap_json_array_length(dap_json_t* a_array)
@@ -121,7 +121,7 @@ size_t dap_json_array_length(dap_json_t* a_array)
         return 0;
     }
     
-    return json_object_array_length(a_array);
+    return json_object_array_length(_dap_json_to_json_c(a_array));
 }
 
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
@@ -130,7 +130,7 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    return json_object_array_get_idx(a_array, a_idx);
+    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
 }
 
 // Object field manipulation
@@ -147,7 +147,7 @@ int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char
         return -1;
     }
     
-    return json_object_object_add(a_json, a_key, l_string);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
 }
 
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
@@ -163,7 +163,7 @@ int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
         return -1;
     }
     
-    return json_object_object_add(a_json, a_key, l_int);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_int);
 }
 
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value)
@@ -179,7 +179,7 @@ int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_v
         return -1;
     }
     
-    return json_object_object_add(a_json, a_key, l_double);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_double);
 }
 
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value)
@@ -195,7 +195,7 @@ int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value
         return -1;
     }
     
-    return json_object_object_add(a_json, a_key, l_bool);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_bool);
 }
 
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
@@ -206,9 +206,9 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     }
     
     // Increase reference count since json-c will manage the object
-    json_object_get(a_value);
+    json_object_get(_dap_json_to_json_c(a_value));
     
-    return json_object_object_add(a_json, a_key, a_value);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
 }
 
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array)
@@ -219,9 +219,9 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
     }
     
     // Increase reference count since json-c will manage the array
-    json_object_get(a_array);
+    json_object_get(_dap_json_to_json_c(a_array));
     
-    return json_object_object_add(a_json, a_key, a_array);
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
 }
 
 // Object field access
@@ -232,7 +232,7 @@ const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return NULL;
     }
     
@@ -246,7 +246,7 @@ int dap_json_object_get_int(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return 0;
     }
     
@@ -260,7 +260,7 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return 0.0;
     }
     
@@ -274,7 +274,7 @@ bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return false;
     }
     
@@ -288,11 +288,11 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return NULL;
     }
     
-    return l_obj;
+    return _json_c_to_dap_json(l_obj);
 }
 
 dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
@@ -302,11 +302,11 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return NULL;
     }
     
-    return l_obj;
+    return _json_c_to_dap_json(l_obj);
 }
 
 // String conversion
@@ -316,7 +316,7 @@ const char* dap_json_to_string(dap_json_t* a_json)
         return NULL;
     }
     
-    return json_object_to_json_string(a_json);
+    return json_object_to_json_string(_dap_json_to_json_c(a_json));
 }
 
 char* dap_json_to_string_pretty(dap_json_t* a_json)
@@ -325,7 +325,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json)
         return NULL;
     }
     
-    const char *l_json_str = json_object_to_json_string_ext(a_json, JSON_C_TO_STRING_PRETTY);
+    const char *l_json_str = json_object_to_json_string_ext(_dap_json_to_json_c(a_json), JSON_C_TO_STRING_PRETTY);
     if (!l_json_str) {
         return NULL;
     }
@@ -340,7 +340,7 @@ bool dap_json_is_null(dap_json_t* a_json)
         return true;
     }
     
-    return json_object_is_type(a_json, json_type_null);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_null);
 }
 
 bool dap_json_is_string(dap_json_t* a_json)
@@ -349,7 +349,7 @@ bool dap_json_is_string(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_string);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_string);
 }
 
 bool dap_json_is_int(dap_json_t* a_json)
@@ -358,7 +358,7 @@ bool dap_json_is_int(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_int);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_int);
 }
 
 bool dap_json_is_double(dap_json_t* a_json)
@@ -367,7 +367,7 @@ bool dap_json_is_double(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_double);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_double);
 }
 
 bool dap_json_is_bool(dap_json_t* a_json)
@@ -376,7 +376,7 @@ bool dap_json_is_bool(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_boolean);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_boolean);
 }
 
 bool dap_json_is_object(dap_json_t* a_json)
@@ -385,7 +385,7 @@ bool dap_json_is_object(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_object);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_object);
 }
 
 bool dap_json_is_array(dap_json_t* a_json)
@@ -394,7 +394,7 @@ bool dap_json_is_array(dap_json_t* a_json)
         return false;
     }
     
-    return json_object_is_type(a_json, json_type_array);
+    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_array);
 }
 
 // Advanced object manipulation
@@ -433,7 +433,7 @@ int dap_json_object_del(dap_json_t* a_json, const char* a_key)
         return -1;
     }
     
-    json_object_object_del(a_json, a_key);
+    json_object_object_del(_dap_json_to_json_c(a_json), a_key);
     return 0;
 }
 
@@ -451,7 +451,7 @@ int dap_json_object_get_int_default(dap_json_t* a_json, const char* a_key, int a
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return a_default;
     }
     
@@ -465,7 +465,7 @@ int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key)
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return 0;
     }
     
@@ -479,7 +479,7 @@ int64_t dap_json_object_get_int64_default(dap_json_t* a_json, const char* a_key,
     }
     
     struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(a_json, a_key, &l_obj)) {
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return a_default;
     }
     
@@ -492,7 +492,7 @@ dap_json_type_t dap_json_get_type(dap_json_t* a_json)
         return DAP_JSON_TYPE_NULL;
     }
     
-    enum json_type l_type = json_object_get_type(a_json);
+    enum json_type l_type = json_object_get_type(_dap_json_to_json_c(a_json));
     
     switch (l_type) {
         case json_type_null:
@@ -638,13 +638,13 @@ dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
         return NULL;
     }
     
-    return json_object_get(a_json);
+    return _json_c_to_dap_json(json_object_get(_dap_json_to_json_c(a_json)));
 }
 
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value)
 {
-    return json_object_new_int(a_value);
+    return _json_c_to_dap_json(json_object_new_int(a_value));
 }
 
 dap_json_t* dap_json_object_new_string(const char* a_value)
@@ -654,15 +654,15 @@ dap_json_t* dap_json_object_new_string(const char* a_value)
         return NULL;
     }
     
-    return json_object_new_string(a_value);
+    return _json_c_to_dap_json(json_object_new_string(a_value));
 }
 
 dap_json_t* dap_json_object_new_double(double a_value)
 {
-    return json_object_new_double(a_value);
+    return _json_c_to_dap_json(json_object_new_double(a_value));
 }
 
 dap_json_t* dap_json_object_new_bool(bool a_value)
 {
-    return json_object_new_boolean(a_value);
+    return _json_c_to_dap_json(json_object_new_boolean(a_value));
 }
