@@ -5,7 +5,9 @@
 #include "dap_enc_iaes.h"
 #include "sha3/fips202.h"
 
-// Removed XKCP includes - now using dap_hash_fast instead
+// XKCP includes moved here from header for encapsulation
+#include "KeccakHash.h"
+#include "SimpleFIPS202.h"
 
 #include "dap_common.h"
 
@@ -62,13 +64,10 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
 
     memcpy(id_concat_kex,seed, seed_size);
     memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
-    // Use DAP hash instead of direct SHAKE256/128 calls
-    dap_hash_fast_t l_hash_key, l_hash_iv;
-    dap_hash_fast(id_concat_kex, (kex_size + seed_size), &l_hash_key);
-    dap_hash_fast(seed, seed_size, &l_hash_iv);
-    
-    memcpy(a_key->priv_key_data, &l_hash_key, DAP_MIN(IAES_KEYSIZE, sizeof(l_hash_key)));
-    memcpy(DAP_ENC_AES_KEY(a_key)->ivec, &l_hash_iv, DAP_MIN(IAES_BLOCK_SIZE, sizeof(l_hash_iv)));
+    //SHAKE256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    //SHAKE128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+    shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
 
     free(id_concat_kex);
 }

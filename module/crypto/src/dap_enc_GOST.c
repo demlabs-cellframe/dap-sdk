@@ -5,8 +5,6 @@
 #include <string.h>
 
 #include "dap_enc_GOST.h"
-// XKCP includes moved here from header for encapsulation
-#include "KeccakHash.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
 #include "KeccakHash.h"

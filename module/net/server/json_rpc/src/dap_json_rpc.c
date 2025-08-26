@@ -144,12 +144,13 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
             DAP_DELETE(l_res_str);
         } else {
-            json_object* l_json_obj_res = json_object_new_array();
-            json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
-            size_t l_strlen = 0;
-            const char *l_json_str_res = json_object_to_json_string_length(l_json_obj_res, JSON_C_TO_STRING_SPACED, &l_strlen);
+            dap_json_t* l_json_obj_res = dap_json_array_new();
+            dap_json_t* l_error_msg = dap_json_object_new_string("Wrong request");
+            dap_json_array_add(l_json_obj_res, l_error_msg);
+            const char *l_json_str_res = dap_json_to_string(l_json_obj_res);
+            size_t l_strlen = l_json_str_res ? strlen(l_json_str_res) : 0;
             enc_http_reply(l_dg, (char*)l_json_str_res, l_strlen);
-            json_object_put(l_json_obj_res);
+            dap_json_object_free(l_json_obj_res);
             log_it(L_ERROR, "Wrong request");
             *return_code = Http_Status_BadRequest;
         }

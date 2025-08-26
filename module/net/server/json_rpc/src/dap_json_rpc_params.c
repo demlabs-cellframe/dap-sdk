@@ -215,38 +215,41 @@ char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
 {
     dap_return_val_if_fail(a_params, NULL);
 
-    json_object *jobj_array = json_object_new_array();
+    dap_json_t *jobj_array = dap_json_array_new();
     if (!jobj_array)
         return log_it(L_CRITICAL, "Failed to create JSON array"), NULL;
 
     for (uint32_t i = 0; i < a_params->length; i++){
-        json_object *jobj_tmp = NULL;
+        dap_json_t *jobj_tmp = NULL;
 
         switch (a_params->params[i]->type) {
             case TYPE_PARAM_NULL:
-                jobj_tmp = json_object_new_object();
+                jobj_tmp = dap_json_object_new();
                 break;
             case TYPE_PARAM_STRING:
-                jobj_tmp = json_object_new_string((char*)a_params->params[i]->value_param);
+                jobj_tmp = dap_json_object_new_string((char*)a_params->params[i]->value_param);
                 break;
             case TYPE_PARAM_INTEGER:
-                jobj_tmp = json_object_new_int64(*((int64_t*)a_params->params[i]->value_param));
+                jobj_tmp = dap_json_object_new_int64(*((int64_t*)a_params->params[i]->value_param));
                 break;
             case TYPE_PARAM_DOUBLE:
-                jobj_tmp = json_object_new_double(*((double*)a_params->params[i]->value_param));
+                jobj_tmp = dap_json_object_new_double(*((double*)a_params->params[i]->value_param));
                 break;
             case TYPE_PARAM_BOOLEAN:
-                jobj_tmp = json_object_new_boolean(*((bool*)a_params->params[i]->value_param));
+                jobj_tmp = dap_json_object_new_bool(*((bool*)a_params->params[i]->value_param));
+                break;
+            case TYPE_PARAM_JSON:
+                jobj_tmp = (dap_json_t*)a_params->params[i]->value_param;
                 break;
             default:
                 log_it(L_CRITICAL, "Invalid parameter type");
-                json_object_put(jobj_array);
+                dap_json_object_free(jobj_array);
                 return NULL;
         }
-        json_object_array_add(jobj_array, jobj_tmp);
+        dap_json_array_add(jobj_array, jobj_tmp);
     };
-    char *l_str = dap_strdup( json_object_to_json_string(jobj_array) );
-    json_object_put(jobj_array);
+    char *l_str = dap_strdup( dap_json_to_string(jobj_array) );
+    dap_json_object_free(jobj_array);
     return l_str;
 }
 
