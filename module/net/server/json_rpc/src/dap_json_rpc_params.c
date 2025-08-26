@@ -35,10 +35,10 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
             new_param->value_param = DAP_DUP((double*)a_value);
             break;
         case TYPE_PARAM_JSON: {
-            json_object *l_jobj_value = (json_object*)a_value;
-            json_object *l_obj_dist = NULL;
-            json_object_deep_copy(l_jobj_value, &l_obj_dist, NULL);
-            new_param->value_param = l_obj_dist;
+            dap_json_t *l_jobj_value = (dap_json_t*)a_value;
+            // For now, use the same object (deep copy not implemented in dap_json)
+            // TODO: Implement deep copy in dap_json if needed
+            new_param->value_param = l_jobj_value;
         } break;
         default:
             new_param->value_param = NULL;
@@ -59,8 +59,8 @@ void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
 {
     dap_return_if_fail(param);
     if (param->type == TYPE_PARAM_JSON) {
-        json_object *l_obj = (json_object*)param->value_param;
-        json_object_put(l_obj);
+        dap_json_t *l_obj = (dap_json_t*)param->value_param;
+        dap_json_object_free(l_obj);
     } else
         DAP_DELETE(param->value_param);
     DAP_DELETE(param);
@@ -90,7 +90,7 @@ dap_json_rpc_type_param_t dap_json_rpc_params_get_type_param(dap_json_rpc_params
     return a_params && a_params->length > index ? a_params->params[index]->type : TYPE_PARAM_NULL;
 }
 
-dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *a_array_list)
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(dap_json_t *a_array_list)
 {
     if (a_array_list == NULL)
         return NULL;

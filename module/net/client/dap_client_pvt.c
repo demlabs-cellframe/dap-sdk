@@ -956,28 +956,34 @@ static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_d
         size_t l_bob_message_size = 0;
         int l_json_parse_count = 0;
         // parse data
-        struct json_object *jobj = json_tokener_parse(l_data);
+        dap_json_t *jobj = dap_json_parse_string(l_data);
         if(jobj) {
-            // parse encrypt_id & encrypt_msg
-            json_object_object_foreach(jobj, key, val)
-            {
-                if(json_object_get_type(val) == json_type_string) {
-                    const char *l_str = json_object_get_string(val);
-                    l_json_parse_count += s_json_multy_obj_parse_str( key, l_str, 6,
-                                            "encrypt_id", &l_session_id_b64, 
-                                            "encrypt_msg",  &l_bob_message_b64,
-                                            "node_sign", &l_node_sign_b64);
-                }
-                if(json_object_get_type(val) == json_type_int) {
-                    int val_int = json_object_get_int(val);
-                    if(!strcmp(key, "dap_protocol_version")) {
-                        l_client_pvt->remote_protocol_version = val_int;
-                        l_json_parse_count++;
-                    }
-                }
+            // parse encrypt_id & encrypt_msg directly
+            const char *l_encrypt_id = dap_json_object_get_string(jobj, "encrypt_id");
+            if (l_encrypt_id) {
+                l_session_id_b64 = dap_strdup(l_encrypt_id);
+                l_json_parse_count++;
+            }
+            
+            const char *l_encrypt_msg = dap_json_object_get_string(jobj, "encrypt_msg");
+            if (l_encrypt_msg) {
+                l_bob_message_b64 = dap_strdup(l_encrypt_msg);
+                l_json_parse_count++;
+            }
+            
+            const char *l_node_sign = dap_json_object_get_string(jobj, "node_sign");
+            if (l_node_sign) {
+                l_node_sign_b64 = dap_strdup(l_node_sign);
+                l_json_parse_count++;
+            }
+            
+            int l_protocol_version = dap_json_object_get_int(jobj, "dap_protocol_version");
+            if (l_protocol_version != 0) {  // assuming 0 means not found
+                l_client_pvt->remote_protocol_version = l_protocol_version;
+                l_json_parse_count++;
             }
             // free jobj
-            json_object_put(jobj);
+            dap_json_object_free(jobj);
             if(!l_client_pvt->remote_protocol_version)
                 l_client_pvt->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
         }

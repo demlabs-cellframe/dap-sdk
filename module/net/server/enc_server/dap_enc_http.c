@@ -75,15 +75,39 @@ static void _enc_http_write_reply(struct dap_http_simple *a_cl_st,
                                   const char* a_encrypt_msg,int a_msg_len,
                                   const char* a_node_sign,  int a_sign_len)
 {
-    struct json_object *l_jobj = json_object_new_object();
-    json_object_object_add(l_jobj, "encrypt_id", json_object_new_string_len(a_encrypt_id, a_id_len));
-    json_object_object_add(l_jobj, "encrypt_msg", json_object_new_string_len(a_encrypt_msg, a_msg_len));
-    if (a_node_sign)
-        json_object_object_add(l_jobj, "node_sign", json_object_new_string_len(a_node_sign, a_sign_len));
-    json_object_object_add(l_jobj, "dap_protocol_version", json_object_new_int(DAP_PROTOCOL_VERSION));
-    const char* l_json_str = json_object_to_json_string(l_jobj);
-    dap_http_simple_reply(a_cl_st, (void*) l_json_str, (size_t) strlen(l_json_str));
-    json_object_put(l_jobj);
+    dap_json_t *l_jobj = dap_json_object_new();
+    if (!l_jobj) {
+        log_it(L_ERROR, "Failed to create JSON object");
+        return;
+    }
+    
+    // Convert binary data to null-terminated strings for JSON
+    char *l_encrypt_id_str = DAP_NEW_Z_SIZE(char, a_id_len + 1);
+    memcpy(l_encrypt_id_str, a_encrypt_id, a_id_len);
+    
+    char *l_encrypt_msg_str = DAP_NEW_Z_SIZE(char, a_msg_len + 1);
+    memcpy(l_encrypt_msg_str, a_encrypt_msg, a_msg_len);
+    
+    dap_json_object_add_string(l_jobj, "encrypt_id", l_encrypt_id_str);
+    dap_json_object_add_string(l_jobj, "encrypt_msg", l_encrypt_msg_str);
+    
+    if (a_node_sign) {
+        char *l_node_sign_str = DAP_NEW_Z_SIZE(char, a_sign_len + 1);
+        memcpy(l_node_sign_str, a_node_sign, a_sign_len);
+        dap_json_object_add_string(l_jobj, "node_sign", l_node_sign_str);
+        DAP_DELETE(l_node_sign_str);
+    }
+    
+    dap_json_object_add_int(l_jobj, "dap_protocol_version", DAP_PROTOCOL_VERSION);
+    
+    const char* l_json_str = dap_json_to_string(l_jobj);
+    if (l_json_str) {
+        dap_http_simple_reply(a_cl_st, (void*) l_json_str, (size_t) strlen(l_json_str));
+    }
+    
+    DAP_DELETE(l_encrypt_id_str);
+    DAP_DELETE(l_encrypt_msg_str);
+    dap_json_object_free(l_jobj);
 }
 
 void dap_enc_http_json_response_format_enable(bool);

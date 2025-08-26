@@ -87,7 +87,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
 char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
                                 char ** a_path, size_t * a_enc_request_size, char ** a_custom_header);
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path);
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, dap_json_t** a_response, const char *a_cert_path);
 
 #ifdef __cplusplus
 }

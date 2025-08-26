@@ -159,9 +159,9 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json)
 {
     log_it(L_NOTICE, "Translation struct dap_json_rpc_error to JSON string");
-    json_object *l_jobj = json_tokener_parse(a_json);
+    dap_json_t *l_jobj = dap_json_parse_string(a_json);
     dap_json_rpc_error_t *l_error = dap_json_rpc_create_from_json_object(l_jobj);
-    json_object_put(l_jobj);
+    dap_json_object_free(l_jobj);
     return l_error;
 }
 
@@ -172,7 +172,7 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json)
 //     dap_json_rpc_error_add(*a_json_arr_reply, 1, "Not found handler for this request");
 // }
 
-dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj)
+dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj)
 {
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
     if (!l_error) {

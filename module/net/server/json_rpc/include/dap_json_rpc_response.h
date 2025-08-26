@@ -41,10 +41,10 @@ typedef enum dap_json_rpc_response_type_result{
 
 typedef struct dap_json_rpc_response_JSON
 {
-    json_object *obj_result;
-    json_object *obj_error;
+    dap_json_t *obj_result;
+    dap_json_t *obj_error;
     dap_json_rpc_error_JSON_t *struct_error;
-    json_object *obj_id;
+    dap_json_t *obj_id;
 }dap_json_rpc_request_JSON_t;
 
 void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON);
@@ -57,7 +57,7 @@ typedef struct dap_json_rpc_response
         int64_t result_int;
         double result_double;
         bool result_boolean;
-        json_object *result_json_object;
+        dap_json_t *result_json_object;
     };
     uint64_t id;
     int version;
@@ -106,8 +106,8 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
  */
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string);
 
-void json_print_object(struct json_object *obj, int indent_level);
-void json_print_value(struct json_object *obj, const char *key, int indent_level, bool print_separator);
+void json_print_object(dap_json_t *obj, int indent_level);
+void json_print_value(dap_json_t *obj, const char *key, int indent_level, bool print_separator);
 
 /**
  * Prints the result of a JSON-RPC response to the standard output.

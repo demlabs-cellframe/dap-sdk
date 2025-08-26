@@ -80,10 +80,10 @@ void dap_json_rpc_add_standart_erros(void);
     } while (0)
 
 #define dap_json_rpc_allocation_put(a_json_obj_reply) \
-    json_object_put(a_json_obj_reply), NULL
+    dap_json_object_free(a_json_obj_reply), NULL
 
 #define dap_json_rpc_allocation_put_error(a_json_obj_reply) \
-    json_object_put(a_json_obj_reply), DAP_CHAIN_NODE_CLI_COM_DECREE_MEMORY_ALLOC_ERR
+    dap_json_object_free(a_json_obj_reply), DAP_CHAIN_NODE_CLI_COM_DECREE_MEMORY_ALLOC_ERR
 
 #ifdef __cplusplus
 }
