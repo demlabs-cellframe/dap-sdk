@@ -31,14 +31,10 @@ extern "C" {
 #endif
 
 /**
- * @brief Opaque DAP JSON object type - hides internal json-c implementation
+ * @brief Opaque DAP JSON type - hides internal json-c implementation
+ * Can represent both JSON objects and arrays internally
  */
 typedef struct dap_json dap_json_t;
-
-/**
- * @brief Opaque DAP JSON array type - hides internal json-c implementation
- */
-typedef struct dap_json_array dap_json_array_t;
 
 // Object creation and destruction
 dap_json_t* dap_json_object_new(void);
@@ -51,11 +47,11 @@ dap_json_t* dap_json_object_new_double(double a_value);
 dap_json_t* dap_json_object_new_bool(bool a_value);
 
 // Array creation and manipulation
-dap_json_array_t* dap_json_array_new(void);
-void dap_json_array_free(dap_json_array_t* a_array);
-int dap_json_array_add(dap_json_array_t* a_array, dap_json_t* a_item);
-size_t dap_json_array_length(dap_json_array_t* a_array);
-dap_json_t* dap_json_array_get_idx(dap_json_array_t* a_array, size_t a_idx);
+dap_json_t* dap_json_array_new(void);
+void dap_json_array_free(dap_json_t* a_array);
+int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
+size_t dap_json_array_length(dap_json_t* a_array);
+dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
 
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
@@ -63,7 +59,7 @@ int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value);
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value);
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value);
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value);
-int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_array_t* a_array);
+int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array);
 
 // Object field access
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key);
@@ -71,7 +67,7 @@ int dap_json_object_get_int(dap_json_t* a_json, const char* a_key);
 double dap_json_object_get_double(dap_json_t* a_json, const char* a_key);
 bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key);
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key);
-dap_json_array_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key);
+dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key);
 
 // String conversion
 const char* dap_json_to_string(dap_json_t* a_json);

@@ -54,7 +54,7 @@ static void s_test_dap_json_array_creation(void)
 {
     log_it(L_DEBUG, "Testing JSON array creation");
     
-    dap_json_array_t *l_array = dap_json_array_new();
+    dap_json_t *l_array = dap_json_array_new();
     dap_return_if_fail(l_array != NULL);
     
     log_it(L_DEBUG, "JSON array created successfully");
@@ -133,7 +133,7 @@ static void test_dap_json_data_types(void)
 // Тест операций с массивами
 static void test_dap_json_array_operations(void)
 {
-    dap_json_array_t *array = dap_json_array_new();
+    dap_json_t *array = dap_json_array_new();
     dap_assert_PIF(array != NULL, "Failed to create JSON array");
     
     // Добавление элементов
@@ -156,7 +156,7 @@ static void test_dap_json_array_operations(void)
     dap_assert_PIF(value == 42, "Array int element test failed");
     
     // Тест сериализации массива
-    char *array_str = dap_json_array_to_string(array);
+    char *array_str = dap_json_to_string(array);
     dap_assert_PIF(array_str != NULL, "Array serialization failed");
     dap_assert_PIF(strstr(array_str, "first") != NULL, "Array serialization missing element");
     

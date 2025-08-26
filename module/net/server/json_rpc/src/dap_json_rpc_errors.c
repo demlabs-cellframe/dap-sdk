@@ -68,7 +68,7 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 
     int l_array_length = dap_json_array_length(a_json_arr_reply);
     dap_json_t *l_json_obj_errors = NULL;
-    dap_json_array_t *l_json_arr_errors = NULL;
+    dap_json_t *l_json_arr_errors = NULL;
     for (int i = 0; i < l_array_length; i++) {
         dap_json_t *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
         if (l_json_obj && dap_json_get_type(l_json_obj) == DAP_JSON_TYPE_OBJECT) {

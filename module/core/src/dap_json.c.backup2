@@ -34,19 +34,19 @@
  * Can represent both JSON objects and arrays internally
  */
 struct dap_json {
-    void *pvt;  // Internal json-c object pointer (struct json_object*)
+    void *json_ob;  // Internal json-c object pointer (struct json_object*)
 };
 
 // Helper functions for internal type conversion
 static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
-    return a_dap_json ? (struct json_object*)a_dap_json->pvt : NULL;
+    return a_dap_json ? (struct json_object*)a_dap_json->json_obj : NULL;
 }
 
 static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
     if (!a_json_obj) return NULL;
     dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
     if (l_dap_json) {
-        l_dap_json->pvt = a_json_obj;
+        l_dap_json->json_obj = a_json_obj;
     }
     return l_dap_json;
 }
@@ -405,7 +405,7 @@ dap_json_t* dap_json_from_file(const char* a_file_path)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_from_file(a_file_path));
+    return json_object_from_file(a_file_path);
 }
 
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
@@ -414,16 +414,7 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    struct json_object* l_temp_obj = NULL;
-    bool l_result = json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
-    
-    if (l_result && l_temp_obj) {
-        *a_value = _json_c_to_dap_json(l_temp_obj);
-    } else {
-        *a_value = NULL;
-    }
-    
-    return l_result;
+    return json_object_object_get_ex(a_json, a_key, a_value);
 }
 
 int dap_json_object_del(dap_json_t* a_json, const char* a_key)
@@ -575,7 +566,7 @@ dap_json_t* dap_json_tokener_parse_verbose(const char* a_str, dap_json_tokener_e
         }
     }
     
-    return _json_c_to_dap_json(l_json);
+    return l_json;
 }
 
 const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_jerr)

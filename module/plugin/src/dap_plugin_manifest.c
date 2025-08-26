@@ -110,11 +110,11 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
 
     dap_json_t *j_name = dap_json_object_get_object(l_json, "name");
     dap_json_t *j_version = dap_json_object_get_object(l_json, "version");;
-    dap_json_array_t *j_dependencies = dap_json_object_get_array(l_json, "dependencies");
+    dap_json_t *j_dependencies = dap_json_object_get_array(l_json, "dependencies");
     dap_json_t *j_author = dap_json_object_get_object(l_json, "author");
     dap_json_t *j_description = dap_json_object_get_object(l_json, "description");
     dap_json_t *j_path = dap_json_object_get_object(l_json, "path");
-    dap_json_array_t *j_params = dap_json_object_get_array(l_json, "params");
+    dap_json_t *j_params = dap_json_object_get_array(l_json, "params");
     dap_json_t *j_type = dap_json_object_get_object(l_json, "type");
 
     const char *l_name, *l_version, *l_author, *l_description, *l_type, *l_path;

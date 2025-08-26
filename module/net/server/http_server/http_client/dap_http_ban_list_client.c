@@ -68,7 +68,7 @@ dap_json_t *dap_http_ban_list_client_dump(const char *a_addr) {
     int num = 1;
     ban_record_t *l_rec = NULL, *l_tmp = NULL;
     dap_json_t *l_jobj_out = dap_json_object_new();
-    dap_json_array_t *l_jobj_array = NULL;
+    dap_json_t *l_jobj_array = NULL;
     if (!l_jobj_out) return NULL;
     pthread_rwlock_rdlock(&s_ban_list_lock);
     if (a_addr) {
