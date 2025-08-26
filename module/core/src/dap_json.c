@@ -29,10 +29,52 @@
 
 #define LOG_TAG "dap_json"
 
+/**
+ * @brief Internal DAP JSON object structure - opaque to users
+ */
+struct dap_json {
+    void *json_obj;  // Internal json-c object pointer
+};
+
+/**
+ * @brief Internal DAP JSON array structure - opaque to users
+ */
+struct dap_json_array {
+    void *json_obj;  // Internal json-c object pointer
+};
+
+// Helper functions for internal type conversion
+static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
+    return a_dap_json ? (struct json_object*)a_dap_json->json_obj : NULL;
+}
+
+static inline struct json_object* _dap_json_array_to_json_c(dap_json_array_t* a_dap_array) {
+    return a_dap_array ? (struct json_object*)a_dap_array->json_obj : NULL;
+}
+
+static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
+    if (!a_json_obj) return NULL;
+    dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
+    if (l_dap_json) {
+        l_dap_json->json_obj = a_json_obj;
+    }
+    return l_dap_json;
+}
+
+static inline dap_json_array_t* _json_c_to_dap_json_array(struct json_object* a_json_obj) {
+    if (!a_json_obj) return NULL;
+    dap_json_array_t* l_dap_array = DAP_NEW_Z(dap_json_array_t);
+    if (l_dap_array) {
+        l_dap_array->json_obj = a_json_obj;
+    }
+    return l_dap_array;
+}
+
 // Object creation and destruction
 dap_json_t* dap_json_object_new(void)
 {
-    return json_object_new_object();
+    struct json_object* l_json_obj = json_object_new_object();
+    return _json_c_to_dap_json(l_json_obj);
 }
 
 dap_json_t* dap_json_parse_string(const char* a_json_string)
@@ -50,26 +92,35 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
         return NULL;
     }
     
-    return l_json;
+    return _json_c_to_dap_json(l_json);
 }
 
 void dap_json_object_free(dap_json_t* a_json)
 {
     if (a_json) {
-        json_object_put(a_json);
+        struct json_object* l_json_obj = _dap_json_to_json_c(a_json);
+        if (l_json_obj) {
+            json_object_put(l_json_obj);
+        }
+        DAP_DELETE(a_json);
     }
 }
 
 // Array creation and manipulation
 dap_json_array_t* dap_json_array_new(void)
 {
-    return json_object_new_array();
+    struct json_object* l_json_array = json_object_new_array();
+    return _json_c_to_dap_json_array(l_json_array);
 }
 
 void dap_json_array_free(dap_json_array_t* a_array)
 {
     if (a_array) {
-        json_object_put(a_array);
+        struct json_object* l_json_obj = _dap_json_array_to_json_c(a_array);
+        if (l_json_obj) {
+            json_object_put(l_json_obj);
+        }
+        DAP_DELETE(a_array);
     }
 }
 

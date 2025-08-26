@@ -31,14 +31,14 @@ extern "C" {
 #endif
 
 /**
- * @brief DAP JSON object type (wrapper around json-c)
+ * @brief Opaque DAP JSON object type - hides internal json-c implementation
  */
-typedef struct json_object dap_json_t;
+typedef struct dap_json dap_json_t;
 
 /**
- * @brief DAP JSON array type (wrapper around json-c)
+ * @brief Opaque DAP JSON array type - hides internal json-c implementation
  */
-typedef struct json_object dap_json_array_t;
+typedef struct dap_json_array dap_json_array_t;
 
 // Object creation and destruction
 dap_json_t* dap_json_object_new(void);
