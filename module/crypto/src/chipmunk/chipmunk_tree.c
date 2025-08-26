@@ -27,6 +27,7 @@
 #include "dap_hash.h"
 #include "dap_common.h"
 #include <string.h>
+#include <stdint.h>
 
 #define LOG_TAG "chipmunk_tree"
 
@@ -678,6 +679,14 @@ int chipmunk_tree_init_with_size(chipmunk_tree_t *a_tree,
     a_tree->height = height;
     a_tree->leaf_count = leaf_count;
     a_tree->non_leaf_count = non_leaf_count;
+    
+    // Check for reasonable allocation size limits
+    if (a_tree->leaf_count > (SIZE_MAX / sizeof(chipmunk_hvc_poly_t)) ||
+        a_tree->non_leaf_count > (SIZE_MAX / sizeof(chipmunk_hvc_poly_t))) {
+        log_it(L_ERROR, "Tree size too large for allocation: leaf_count=%zu, non_leaf_count=%zu", 
+               a_tree->leaf_count, a_tree->non_leaf_count);
+        return -1;
+    }
     
     // Allocate memory for tree nodes
     a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);

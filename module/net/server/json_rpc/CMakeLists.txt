@@ -16,7 +16,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ../../../core/include/
     ../http_server/include/
     ../../include/
+    ../../stream/stream/include/
+    ../../io/include/
     ../../../../3rdparty/uthash/src/
+    ../../../../3rdparty/
 )
 
 target_link_libraries(${PROJECT_NAME} dap_json-c)

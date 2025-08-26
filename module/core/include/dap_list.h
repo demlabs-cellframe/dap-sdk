@@ -15,7 +15,7 @@
 
 #include    <errno.h>                                                       /* <errno> codes */
 
-#include    "dap_common.h"                                                  /* DAP_ALLOC, DAP_FREE */
+#include "dap_common.h"                                                  /* DAP_ALLOC, DAP_FREE */
 #include "utlist.h"
 
 #ifdef __cplusplus
