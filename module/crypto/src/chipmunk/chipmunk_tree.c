@@ -174,10 +174,17 @@ int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
     
     // Calculate dynamic tree dimensions based on actual leaf count
     a_tree->height = chipmunk_tree_calculate_height(a_leaf_count);
-    // For complete binary tree, we need power-of-2 leaves
-    size_t tree_capacity = 1UL << (a_tree->height - 1);
-    a_tree->leaf_count = tree_capacity; // Use full tree capacity, not just a_leaf_count
-    a_tree->non_leaf_count = tree_capacity - 1; // For complete binary tree: non_leaf_count = leaf_count - 1
+    
+    // Валидация высоты дерева перед вычислениями
+    if (a_tree->height < CHIPMUNK_TREE_HEIGHT_MIN || a_tree->height > CHIPMUNK_TREE_HEIGHT_MAX) {
+        log_it(L_ERROR, "Invalid tree height: %u (min: %d, max: %d)", 
+               a_tree->height, CHIPMUNK_TREE_HEIGHT_MIN, CHIPMUNK_TREE_HEIGHT_MAX);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
+    
+    // Используем безопасные макросы вместо ручного вычисления
+    a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT(a_tree->height);
+    a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT(a_tree->height);
 
     // Allocate memory for tree nodes - теперь указатели точно NULL
     a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
@@ -549,16 +556,33 @@ void chipmunk_path_clear(chipmunk_path_t *a_path) {
  * @brief Calculate required tree height for given participant count
  */
 uint32_t chipmunk_tree_calculate_height(size_t a_participant_count) {
+    // Дополнительная валидация входных данных
+    if (a_participant_count == 0) {
+        log_it(L_WARNING, "Zero participant count, using minimum height");
+        return CHIPMUNK_TREE_HEIGHT_MIN;
+    }
+    
     if (a_participant_count <= 1) {
         return CHIPMUNK_TREE_HEIGHT_MIN;
     }
     
-    // Find minimum height where 2^(height-1) >= participant_count
+    if (a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
+        log_it(L_ERROR, "Participant count %zu exceeds maximum %d", 
+               a_participant_count, CHIPMUNK_TREE_MAX_PARTICIPANTS);
+        return CHIPMUNK_TREE_HEIGHT_MAX;  // Возвращаем максимум вместо ошибки
+    }
+    
+    // Безопасное вычисление высоты
     uint32_t height = CHIPMUNK_TREE_HEIGHT_MIN;
     size_t capacity = 1UL << (height - 1);
     
+    // Дополнительная проверка переполнения в цикле
     while (capacity < a_participant_count && height < CHIPMUNK_TREE_HEIGHT_MAX) {
         height++;
+        if (height - 1 >= 63) {  // Защита от переполнения битового сдвига
+            log_it(L_ERROR, "Height calculation would cause overflow, using maximum height");
+            return CHIPMUNK_TREE_HEIGHT_MAX;
+        }
         capacity = 1UL << (height - 1);
     }
     
