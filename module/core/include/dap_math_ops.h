@@ -51,7 +51,7 @@ typedef int128_t _dap_int128_t;
 
 #endif // __SIZEOF_INT128__ == 16
 
-typedef struct uint256_t {
+typedef struct uint256 {
     union {
         struct {
             uint128_t hi;
@@ -84,7 +84,7 @@ typedef struct uint256_t {
     } DAP_ALIGN_PACKED;
 } DAP_ALIGN_PACKED uint256_t;
 
-typedef struct uint512_t {
+typedef struct uint512 {
     uint256_t hi;
     uint256_t lo;
 } DAP_ALIGN_PACKED  uint512_t;

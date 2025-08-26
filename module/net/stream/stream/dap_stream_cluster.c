@@ -294,8 +294,7 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
             dap_json_object_add_string(l_jobj_info, "ip", l_link_info->remote_addr_str);
             dap_json_object_add_int(l_jobj_info, "port", l_link_info->remote_port);
             dap_json_object_add_string(l_jobj_info, "channel", l_link_info->channels);
-            // Using int as we don't have uint64 support in dap_json yet
-            dap_json_object_add_int(l_jobj_info, "total_packets_sent", (int)l_link_info->total_packets_sent);
+            dap_json_object_add_uint64(l_jobj_info, "total_packets_sent", l_link_info->total_packets_sent);
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }

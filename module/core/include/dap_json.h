@@ -25,6 +25,9 @@
 #pragma once
 
 #include "dap_common.h"
+#include "dap_math_ops.h"
+#include "dap_math_convert.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +59,9 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value);
+int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value);
+int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value);
+int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value);
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value);
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value);
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value);
@@ -64,6 +70,9 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
 // Object field access
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key);
 int dap_json_object_get_int(dap_json_t* a_json, const char* a_key);
+int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key);
+uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key);
+uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key);
 double dap_json_object_get_double(dap_json_t* a_json, const char* a_key);
 bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key);
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key);
@@ -128,6 +137,15 @@ const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_jerr);
 
 // Reference counting (important for json-c compatibility)
 dap_json_t* dap_json_object_get_ref(dap_json_t* a_json);
+
+// Value object creation (for simple types)
+dap_json_t* dap_json_object_new_int(int a_value);
+dap_json_t* dap_json_object_new_int64(int64_t a_value);
+dap_json_t* dap_json_object_new_uint64(uint64_t a_value);
+dap_json_t* dap_json_object_new_uint256(uint256_t a_value);
+dap_json_t* dap_json_object_new_string(const char* a_value);
+dap_json_t* dap_json_object_new_double(double a_value);
+dap_json_t* dap_json_object_new_bool(bool a_value);
 
 #ifdef __cplusplus
 }

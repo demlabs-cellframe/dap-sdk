@@ -166,6 +166,63 @@ int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_int);
 }
 
+int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    struct json_object *l_int64 = json_object_new_int64(a_value);
+    if (!l_int64) {
+        log_it(L_ERROR, "Failed to create JSON int64 object");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_int64);
+}
+
+int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    struct json_object *l_uint64 = json_object_new_uint64(a_value);
+    if (!l_uint64) {
+        log_it(L_ERROR, "Failed to create JSON uint64 object");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_uint64);
+}
+
+int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    // Convert uint256 to string representation
+    char *l_str = dap_uint256_uninteger_to_char(a_value);
+    if (!l_str) {
+        log_it(L_ERROR, "Failed to convert uint256 to string");
+        return -1;
+    }
+    
+    struct json_object *l_string = json_object_new_string(l_str);
+    DAP_DELETE(l_str);
+    
+    if (!l_string) {
+        log_it(L_ERROR, "Failed to create JSON string object for uint256");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+}
+
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value)
 {
     if (!a_json || !a_key) {
@@ -251,6 +308,53 @@ int dap_json_object_get_int(dap_json_t* a_json, const char* a_key)
     }
     
     return json_object_get_int(l_obj);
+}
+
+int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return 0;
+    }
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return 0;
+    }
+    
+    return json_object_get_int64(l_obj);
+}
+
+uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return 0;
+    }
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return 0;
+    }
+    
+    return json_object_get_uint64(l_obj);
+}
+
+uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return uint256_0;  // Return zero value for uint256
+    }
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return uint256_0;
+    }
+    
+    const char *l_str = json_object_get_string(l_obj);
+    if (!l_str) {
+        return uint256_0;
+    }
+    
+    return dap_uint256_scan_uninteger(l_str);
 }
 
 double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
@@ -458,20 +562,6 @@ int dap_json_object_get_int_default(dap_json_t* a_json, const char* a_key, int a
     return json_object_get_int(l_obj);
 }
 
-int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        return 0;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return 0;
-    }
-    
-    return json_object_get_int64(l_obj);
-}
-
 int64_t dap_json_object_get_int64_default(dap_json_t* a_json, const char* a_key, int64_t a_default)
 {
     if (!a_json || !a_key) {
@@ -645,6 +735,30 @@ dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
 dap_json_t* dap_json_object_new_int(int a_value)
 {
     return _json_c_to_dap_json(json_object_new_int(a_value));
+}
+
+dap_json_t* dap_json_object_new_int64(int64_t a_value)
+{
+    return _json_c_to_dap_json(json_object_new_int64(a_value));
+}
+
+dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
+{
+    return _json_c_to_dap_json(json_object_new_uint64(a_value));
+}
+
+dap_json_t* dap_json_object_new_uint256(uint256_t a_value)
+{
+    char *l_str = dap_uint256_uninteger_to_char(a_value);
+    if (!l_str) {
+        log_it(L_ERROR, "Failed to convert uint256 to string");
+        return NULL;
+    }
+    
+    struct json_object *l_string = json_object_new_string(l_str);
+    DAP_DELETE(l_str);
+    
+    return _json_c_to_dap_json(l_string);
 }
 
 dap_json_t* dap_json_object_new_string(const char* a_value)
