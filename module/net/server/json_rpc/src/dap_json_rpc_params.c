@@ -1,5 +1,7 @@
 #include "dap_json_rpc_params.h"
 #include "dap_string.h"
+// Temporary json-c includes for remaining complex functions
+#include "json.h"
 
 #define LOG_TAG "dap_json_rpc_params"
 
@@ -95,46 +97,41 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(dap_json_t *a
     if (a_array_list == NULL)
         return NULL;
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
-    int length = json_object_array_length(a_array_list);
+    size_t length = dap_json_array_length(a_array_list);
 
-    for (int i = 0; i < length; i++){
-        json_object *jobj = json_object_array_get_idx(a_array_list, i);
-        json_type jobj_type = json_object_get_type(jobj);
+    for (size_t i = 0; i < length; i++){
+        dap_json_t *jobj = dap_json_array_get_idx(a_array_list, i);
+        if (!jobj) {
+            dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
+            continue;
+        }
 
-        switch (jobj_type) {
-            case json_type_string: {
-                char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
+        if (dap_json_is_string(jobj)) {
+            const char *l_str = dap_json_object_get_string(jobj, NULL);
+            if (l_str) {
+                char *l_str_tmp = dap_strdup(l_str);
                 dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
                 DAP_FREE(l_str_tmp);
-                break;
             }
-            case json_type_boolean: {
-                bool l_bool_tmp = json_object_get_boolean(jobj);
-                dap_json_rpc_params_add_data(params, &l_bool_tmp, TYPE_PARAM_BOOLEAN);
-                break;
-            }
-            case json_type_int: {
-                int64_t l_int_tmp = json_object_get_int64(jobj);
-                dap_json_rpc_params_add_data(params, &l_int_tmp, TYPE_PARAM_INTEGER);
-                break;
-            }
-            case json_type_double: {
-                double l_double_tmp = json_object_get_double(jobj);
-                dap_json_rpc_params_add_data(params, &l_double_tmp, TYPE_PARAM_DOUBLE);
-                break;
-            }
-            case json_type_object: {
-                dap_json_rpc_params_add_data(params, jobj, TYPE_PARAM_JSON);
-                break;
-            }
-            default:
-                dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
+        } else if (dap_json_is_bool(jobj)) {
+            bool l_bool_tmp = dap_json_object_get_bool(jobj, NULL);
+            dap_json_rpc_params_add_data(params, &l_bool_tmp, TYPE_PARAM_BOOLEAN);
+        } else if (dap_json_is_int(jobj)) {
+            int64_t l_int_tmp = dap_json_object_get_int64(jobj, NULL);
+            dap_json_rpc_params_add_data(params, &l_int_tmp, TYPE_PARAM_INTEGER);
+        } else if (dap_json_is_double(jobj)) {
+            double l_double_tmp = dap_json_object_get_double(jobj, NULL);
+            dap_json_rpc_params_add_data(params, &l_double_tmp, TYPE_PARAM_DOUBLE);
+        } else if (dap_json_is_object(jobj) || dap_json_is_array(jobj)) {
+            dap_json_rpc_params_add_data(params, jobj, TYPE_PARAM_JSON);
+        } else {
+            dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
         }
     }
     return params;
 }
 
-dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args, const char* a_method)
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(dap_json_t *a_subcmd, dap_json_t *a_args, const char* a_method)
 {
     if (a_method == NULL )
         return NULL;
