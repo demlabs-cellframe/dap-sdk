@@ -24,8 +24,8 @@ endif()
 
 if (DAP_USE_RPMALLOC)
     message("[!] rpmalloc ON")
-    file (GLOB CORE_HEADERS ${CORE_HEADERS} ../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
+    file (GLOB CORE_HEADERS ${CORE_HEADERS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
+    file (GLOB CORE_SRCS ${CORE_SRCS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
 endif()
 
 # Use universal DAP library macro
@@ -34,12 +34,12 @@ dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
     ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 if (DAP_USE_RPMALLOC)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc/rpmalloc/)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/rpmalloc/rpmalloc/)
     target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
 endif()
 if(WIN32)
@@ -63,7 +63,7 @@ if (BUILD_WITH_ZIP)
     set(CORE_LIBRARIES ${CORE_LIBRARIES} zip)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
-add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
+add_subdirectory(../../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 
 # Store dependencies for final library - no linking of OBJECT targets
 set(DAP_CORE_DEPS "${CORE_LIBRARIES};dap_json-c" CACHE INTERNAL "dap_core external dependencies")
@@ -85,7 +85,7 @@ if(INSTALL_DAP_SDK)
     )
 
 
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
+    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

@@ -21,11 +21,11 @@ set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external depende
 
 target_include_directories(${PROJECT_NAME} PUBLIC 
     include/ 
-    ../core/include/
-    ../3rdparty/uthash/src/
-    ../net/server/cli_server/include/
-    ../io/include/
-    ../3rdparty/json-c/
+    ../../module/core/include/
+    ../../3rdparty/uthash/src/
+    ../../module/net/server/cli_server/include/
+    ../../module/io/include/
+    ../../3rdparty/json-c/
 )
 
 # Include paths for json_config.h - support both standalone and embedded builds  

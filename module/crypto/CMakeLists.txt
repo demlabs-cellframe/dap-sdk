@@ -212,7 +212,7 @@ set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msr
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 add_subdirectory(./XKCP)
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
+    add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
 endif()
 
 
@@ -282,11 +282,11 @@ endif()
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c)
 
 # Include paths for json_config.h - support both standalone and embedded builds
 if(DEFINED DAP_SDK_PATH_BUILD)
@@ -295,7 +295,7 @@ if(DEFINED DAP_SDK_PATH_BUILD)
     message("[+] DAP Crypto: Using external build path for json-c: ${DAP_SDK_PATH_BUILD}/core/json-c")
 else()
     # Fallback: standalone builds - use relative path
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/json-c)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/../../3rdparty/json-c)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/core/json-c)
 endif()
 
@@ -321,11 +321,11 @@ endif()
 # Export dependencies for main SDK build
 set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
 
-target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
+target_include_directories(dap_crypto PUBLIC ../../3rdparty/shishua)
 target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
 if (BUILD_WITH_ECDSA)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
+    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/include)
+    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/src)
 endif()
 
 if(BUILD_CRYPTO_TESTS)

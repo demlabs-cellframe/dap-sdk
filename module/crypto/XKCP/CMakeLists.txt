@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-include (../../cmake/TargetArch_Detection.cmake)
+include (../../../cmake/TargetArch_Detection.cmake)
 target_architecture(TARGET_ARCH)
 
 project (dap_crypto_XKCP)

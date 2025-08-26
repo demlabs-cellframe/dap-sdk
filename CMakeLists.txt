@@ -58,7 +58,6 @@ endmacro()
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
-option(BUILD_WITH_TEST "Build with testing" ON)
 option(BUILD_EXAMPLES "Build examples" ON)
 option(BUILD_TESTS "Build tests" OFF)
 
@@ -133,14 +132,14 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Test framework - UPDATED PATH
-if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_WITH_TEST)
+if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
     enable_testing()
     add_subdirectory(module/test)
     message("[+] Testing framework")
 endif()
 
 # New tests structure - UPDATED PATHS
-if(BUILD_TESTS OR BUILD_WITH_TEST)
+if(BUILD_TESTS)
     add_subdirectory(tests)
     message("[+] Tests enabled with new structure")
 endif()
