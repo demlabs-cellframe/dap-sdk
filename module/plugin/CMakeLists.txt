@@ -21,10 +21,10 @@ set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external depende
 
 target_include_directories(${PROJECT_NAME} PUBLIC 
     include/ 
-    ../../module/core/include/
+    ../core/include/
     ../../3rdparty/uthash/src/
-    ../../module/net/server/cli_server/include/
-    ../../module/io/include/
+    ../net/server/cli_server/include/
+    ../io/include/
     ../../3rdparty/json-c/
 )
 
