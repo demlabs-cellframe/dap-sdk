@@ -127,7 +127,7 @@ endif()
 
 # Examples - UPDATED PATH
 if(BUILD_EXAMPLES)
-    add_subdirectory(module/examples)
+    # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
     message("[+] Module 'examples'")
 endif()
 

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
+add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 project (dap_io C)
 set(CMAKE_C_STANDARD 11)
@@ -22,7 +23,6 @@ dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS $
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
 if(DAPSDK_MODULES MATCHES "ssl-support")
-  target_link_libraries(${PROJECT_NAME} wolfssl)
 endif()
 
 if(UNIX)

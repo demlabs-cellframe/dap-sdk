@@ -10,7 +10,6 @@ dap_add_library(${PROJECT_NAME} ${DAP_CLIENT_SOURCES} HEADERS ${DAP_CLIENT_HEADE
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_enc_server dap_stream dap_session dap_json-c)
 if(DAPSDK_MODULES MATCHES "ssl-support")
-    target_link_libraries(${PROJECT_NAME} wolfssl)
 endif()
 if(UNIX AND NOT ANDROID AND NOT DARWIN)
     target_link_libraries(${PROJECT_NAME} rt)
