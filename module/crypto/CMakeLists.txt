@@ -209,7 +209,6 @@ enable_language(ASM)
 
 
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
-add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 add_subdirectory(./XKCP)
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
@@ -261,6 +260,16 @@ endfunction(print_target_properties)
 
 add_dependencies(${PROJECT_NAME} dap_crypto_XKCP) 
 target_link_libraries(${PROJECT_NAME} dap_crypto_XKCP)
+
+option(BUILD_DAP_CRYPTO_KYBER512 "Build Kyber512 crypto module" ON) # default KEM for assymetric crypto
+if(BUILD_DAP_CRYPTO_KYBER512)
+    add_subdirectory(src/Kyber/crypto_kem/kyber512/optimized kyber512_build)
+    add_dependencies(${PROJECT_NAME} dap_crypto_kyber512)
+    target_link_libraries(${PROJECT_NAME} dap_crypto_kyber512)
+    message("[+] DAP Crypto: Kyber512 support enabled")
+else()
+    message("[!] DAP Crypto: Kyber512 support disabled ")
+endif()
 
 # Explicitly get XKCP include directories for OBJECT library
 get_target_property(XKCP_INCLUDES dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)

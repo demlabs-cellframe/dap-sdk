@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 
+# Avoid duplicate target issues
+cmake_policy(SET CMP0002 NEW)
+if(POLICY CMP0079)
+    cmake_policy(SET CMP0079 NEW)
+endif()
+
 project (dap_crypto_kyber512 C)
 set(CMAKE_C_STANDARD 11)
 
@@ -49,13 +55,20 @@ file(GLOB DAP_CRYPTO_KYBER512_HEADERS
 add_library(${PROJECT_NAME} STATIC ${DAP_CRYPTO_KYBER512_HEADERS} ${DAP_CRYPTO_KYBER512_SOURCES})
 
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
+target_link_libraries(${PROJECT_NAME} dap_core)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC .)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../crypto/include
+)
 
 if (${BUILD_DAP_CRYPTO_KYBER512_TESTS} MATCHES ON)
     enable_testing()

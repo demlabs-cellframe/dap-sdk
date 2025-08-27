@@ -85,6 +85,13 @@ void dap_json_rpc_add_standart_erros(void);
 #define dap_json_rpc_allocation_put_error(a_json_obj_reply) \
     dap_json_object_free(a_json_obj_reply), DAP_CHAIN_NODE_CLI_COM_DECREE_MEMORY_ALLOC_ERR
 
+// Forward declaration to avoid circular dependency
+struct dap_sign;
+typedef struct dap_sign dap_sign_t;
+
+// Utility function for sign information in JSON RPC context
+void dap_json_rpc_sign_get_information(dap_json_t* a_json_arr_reply, dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version);
+
 #ifdef __cplusplus
 }
 #endif

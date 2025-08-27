@@ -1,5 +1,8 @@
 #include "dap_json_rpc_errors.h"
 #include "dap_json.h"
+#include "dap_sign.h"
+#include "dap_enc_base58.h"
+#include "dap_hash.h"
 
 #define LOG_TAG "dap_json_rpc_errors"
 
@@ -183,4 +186,25 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj)
     const char *l_msg = dap_json_object_get_string(a_jobj, "message");
     l_error->msg = l_msg ? dap_strdup(l_msg) : NULL;
     return l_error;
+}
+
+// Utility function for sign information in JSON RPC context
+// Moved from dap_sign.c to avoid circular dependency
+void dap_json_rpc_sign_get_information(dap_json_t* a_json_arr_reply, dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version)
+{
+    if (!a_sign) {
+        dap_json_rpc_error_add(a_json_arr_reply, -1, "Corrupted signature data");
+        return;
+    }
+    
+    dap_hash_fast_t l_hash_pkey;
+    dap_json_object_add_string(a_json_out, a_version == 1 ? "Type" : "sig_type", dap_sign_type_to_str(a_sign->header.type));
+    if (dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
+        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+             : dap_hash_fast_to_str_static(&l_hash_pkey);
+        dap_json_object_add_string(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", l_hash_str);             
+    }
+    dap_json_object_add_int(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", (int)a_sign->header.sign_pkey_size);
+    dap_json_object_add_int(a_json_out, a_version == 1 ? "Signature size" : "sig_size", (int)a_sign->header.sign_size);
 }
