@@ -43,6 +43,7 @@ typedef struct dap_json dap_json_t;
 dap_json_t* dap_json_object_new(void);
 dap_json_t* dap_json_parse_string(const char* a_json_string);
 void dap_json_object_free(dap_json_t* a_json);
+dap_json_t* dap_json_object_ref(dap_json_t* a_json);
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value);
 dap_json_t* dap_json_object_new_string(const char* a_value);
@@ -64,6 +65,7 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value);
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value);
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value);
+int dap_json_object_add_null(dap_json_t* a_json, const char* a_key);
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value);
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array);
 
@@ -79,7 +81,7 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key);
 dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key);
 
 // String conversion
-const char* dap_json_to_string(dap_json_t* a_json);
+char* dap_json_to_string(dap_json_t* a_json);
 char* dap_json_to_string_pretty(dap_json_t* a_json);
 
 // Advanced object manipulation
@@ -112,6 +114,10 @@ bool dap_json_is_double(dap_json_t* a_json);
 bool dap_json_is_bool(dap_json_t* a_json);
 bool dap_json_is_object(dap_json_t* a_json);
 bool dap_json_is_array(dap_json_t* a_json);
+
+// Printing functions
+void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level);
+void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator);
 dap_json_type_t dap_json_get_type(dap_json_t* a_json);
 
 // Tokener functions for parsing with error handling

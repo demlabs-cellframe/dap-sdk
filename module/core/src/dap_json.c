@@ -414,13 +414,14 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
 }
 
 // String conversion
-const char* dap_json_to_string(dap_json_t* a_json)
+char* dap_json_to_string(dap_json_t* a_json)
 {
     if (!a_json) {
         return NULL;
     }
     
-    return json_object_to_json_string(_dap_json_to_json_c(a_json));
+    const char* l_json_str = json_object_to_json_string(_dap_json_to_json_c(a_json));
+    return l_json_str ? dap_strdup(l_json_str) : NULL;
 }
 
 char* dap_json_to_string_pretty(dap_json_t* a_json)
@@ -430,11 +431,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json)
     }
     
     const char *l_json_str = json_object_to_json_string_ext(_dap_json_to_json_c(a_json), JSON_C_TO_STRING_PRETTY);
-    if (!l_json_str) {
-        return NULL;
-    }
-    
-    return dap_strdup(l_json_str);
+    return l_json_str ? dap_strdup(l_json_str) : NULL;
 }
 
 // Type checking
@@ -779,4 +776,117 @@ dap_json_t* dap_json_object_new_double(double a_value)
 dap_json_t* dap_json_object_new_bool(bool a_value)
 {
     return _json_c_to_dap_json(json_object_new_boolean(a_value));
+}
+
+#define INDENTATION_LEVEL "    "
+
+void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level) {
+    if (!a_json) {
+        fprintf(a_stream, "null");
+        return;
+    }
+
+    if (dap_json_is_object(a_json)) {
+        fprintf(a_stream, "{\n");
+        // Use raw json-c object for iteration until dap_json gets object iteration API
+        json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
+        bool first = true;
+        
+        json_object_object_foreach(raw_obj, key, val) {
+            if (!first) {
+                fprintf(a_stream, ",\n");
+            }
+            first = false;
+            
+            // Print indentation
+            for (int i = 0; i <= a_indent_level + 1; i++) {
+                fprintf(a_stream, INDENTATION_LEVEL);
+            }
+            
+            dap_json_t *dap_val = _json_c_to_dap_json(val);
+            fprintf(a_stream, "\"%s\": ", key);
+            dap_json_print_value(dap_val, key, a_stream, a_indent_level + 1, false);
+        }
+        
+        fprintf(a_stream, "\n");
+        for (int i = 0; i <= a_indent_level; i++) {
+            fprintf(a_stream, INDENTATION_LEVEL);
+        }
+        fprintf(a_stream, "}");
+        
+    } else if (dap_json_is_array(a_json)) {
+        size_t length = dap_json_array_length(a_json);
+        if (length == 0) {
+            fprintf(a_stream, "[]");
+            return;
+        }
+        
+        fprintf(a_stream, "[\n");
+        for (size_t i = 0; i < length; i++) {
+            // Print indentation
+            for (int j = 0; j <= a_indent_level + 1; j++) {
+                fprintf(a_stream, INDENTATION_LEVEL);
+            }
+            
+            dap_json_t *item = dap_json_array_get_idx(a_json, i);
+            dap_json_print_value(item, NULL, a_stream, a_indent_level + 1, false);
+            if (i < length - 1) {
+                fprintf(a_stream, ",");
+            }
+            fprintf(a_stream, "\n");
+        }
+        
+        for (int i = 0; i <= a_indent_level; i++) {
+            fprintf(a_stream, INDENTATION_LEVEL);
+        }
+        fprintf(a_stream, "]");
+        
+    } else {
+        dap_json_print_value(a_json, NULL, a_stream, a_indent_level, false);
+    }
+}
+
+void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator) {
+    if (!a_json) {
+        fprintf(a_stream, "null");
+        return;
+    }
+
+    if (dap_json_is_string(a_json)) {
+        const char *str_val = dap_json_object_get_string(a_json, NULL);
+        fprintf(a_stream, a_print_separator ? "\"%s\", " : "\"%s\"", str_val ? str_val : "");
+    } else if (dap_json_is_int(a_json)) {
+        int64_t int_val = dap_json_object_get_int64(a_json, NULL);
+        fprintf(a_stream, "%"DAP_INT64_FORMAT, int_val);
+    } else if (dap_json_is_double(a_json)) {
+        double double_val = dap_json_object_get_double(a_json, NULL);
+        fprintf(a_stream, "%lf", double_val);
+    } else if (dap_json_is_bool(a_json)) {
+        bool bool_val = dap_json_object_get_bool(a_json, NULL);
+        fprintf(a_stream, "%s", bool_val ? "true" : "false");
+    } else if (dap_json_is_object(a_json) || dap_json_is_array(a_json)) {
+        fprintf(a_stream, "\n");
+        dap_json_print_object(a_json, a_stream, a_indent_level);
+    } else {
+        fprintf(a_stream, "null");
+    }
+}
+
+int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
+    dap_return_val_if_fail(a_json && a_key, -1);
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return -1;
+    
+    return json_object_object_add(l_obj, a_key, NULL);
+}
+
+dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
+    dap_return_val_if_fail(a_json, NULL);
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return NULL;
+    
+    json_object_get(l_obj); // Increase reference count
+    return a_json;
 }

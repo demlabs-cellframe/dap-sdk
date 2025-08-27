@@ -235,38 +235,44 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
     dap_json_tokener_error_t jterr;
     dap_json_t *jobj = dap_json_tokener_parse_verbose(a_data, &jterr);
-    if (jterr == DAP_JSON_TOKENER_ERROR_SUCCESS && jobj)
+    if (jterr == DAP_JSON_TOKENER_SUCCESS && jobj)
         do {
+            // Parse id field
             request->id = dap_json_object_get_int64(jobj, "id");
-            else {
+            if (request->id == 0) {
                 log_it(L_ERROR, "Error parse JSON string, can't find request id");
                 break;
             }
-            if (json_object_object_get_ex(jobj, "version", &jobj_version))
-                request->version = json_object_get_int64(jobj_version);
-            else {
+            
+            // Parse version field
+            request->version = dap_json_object_get_int64(jobj, "version");
+            if (request->version == 0) {
                 log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
                 request->version = a_version_default;
             }
 
-            if (json_object_object_get_ex(jobj, "method", &jobj_method))
-                request->method = dap_strdup(json_object_get_string(jobj_method));
-            else {
+            // Parse method field
+            const char *l_method = dap_json_object_get_string(jobj, "method");
+            if (l_method) {
+                request->method = dap_strdup(l_method);
+            } else {
                 log_it(L_ERROR, "Error parse JSON string, can't find method for request with id: %" DAP_UINT64_FORMAT_U, request->id);
                 break;
             }
 
-            if(!json_object_object_get_ex(jobj, "params", &jobj_params)){
-                json_object_object_get_ex(jobj, "subcommand", &jobj_subcmd);
-                json_object_object_get_ex(jobj, "arguments", &l_arguments_obj);
+            // Parse params/subcommand/arguments
+            dap_json_t *jobj_params = dap_json_object_get_object(jobj, "params");
+            if (!jobj_params) {
+                dap_json_t *jobj_subcmd = dap_json_object_get_object(jobj, "subcommand");
+                dap_json_t *l_arguments_obj = dap_json_object_get_object(jobj, "arguments");
+                if (jobj_subcmd && l_arguments_obj) {
+                    request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
+                }
+            } else {
+                request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
             }
 
-            if (jobj_params)
-                request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else 
-                request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
-
-            json_object_put(jobj);
+            dap_json_object_free(jobj);
             if (!request->params){
                 dap_json_rpc_params_remove_all(request->params);
                 DAP_DEL_MULTY(request->method, request);
@@ -275,8 +281,9 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
             return request;
         } while (0);
     else
-        log_it(L_ERROR, "Error parse json tokener: %s", json_tokener_error_desc(jterr));
-    json_object_put(jobj);
+        log_it(L_ERROR, "Error parse json tokener: %s", dap_json_tokener_error_desc(jterr));
+    if (jobj)
+        dap_json_object_free(jobj);
     dap_json_rpc_params_remove_all(request->params);
     DAP_DEL_MULTY(request->method, request);
     return NULL;
@@ -363,7 +370,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path) {
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, dap_json_t** a_response, const char *a_cert_path) {
     size_t l_request_data_size, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
@@ -397,7 +404,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
             if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
                 char l_err[40] = "";
                 snprintf(l_err, sizeof(l_err), "Response error code: %d", l_exec_cmd_request->error_code);
-                *a_response = json_object_new_string(l_err);
+                *a_response = dap_json_object_new_string(l_err);
                 break;
             }
             log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
@@ -405,13 +412,13 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {
-            *a_response = json_object_new_string("Response time run out ");
+            *a_response = dap_json_object_new_string("Response time run out ");
             log_it(L_ERROR, "Response time from %s:%d  run out",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
             break;
         }
         case EXEC_CMD_ERR_UNKNOWN : {
-            *a_response = json_object_new_string("Unknown error in json-rpc");
+            *a_response = dap_json_object_new_string("Unknown error in json-rpc");
             log_it(L_ERROR, "Response from %s:%d has unknown error",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
             break;

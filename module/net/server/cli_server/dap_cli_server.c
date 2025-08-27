@@ -48,6 +48,12 @@
 #include "../json_rpc/include/dap_json_rpc_request.h"
 #include "../json_rpc/include/dap_json_rpc_response.h"
 
+// Cellframe RPC functions are only available when building with Cellframe SDK
+#ifndef DAP_SDK_ONLY
+// Forward declaration for Cellframe RPC function
+extern int dap_chain_rpc_is_json_command(const char *a_cmd_name);
+#endif
+
 #define LOG_TAG "dap_cli_server"
 
 #define MAX_CONSOLE_CLIENTS 16
@@ -64,6 +70,10 @@ static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
 static dap_cli_server_cmd_stat_callback_t s_stat_callback = NULL;
 
+// HTTP headers list
+static dap_cli_server_http_header_t *s_http_headers = NULL;
+static pthread_rwlock_t s_http_headers_rwlock = PTHREAD_RWLOCK_INITIALIZER;
+
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
@@ -74,18 +84,19 @@ typedef struct cli_cmd_arg {
 } cli_cmd_arg_t;
 
 static void* s_cli_cmd_exec(void *a_arg);
+static char* s_generate_additional_headers(void);
 
 static bool s_allowed_cmd_check(const char *a_buf) {
     if (!s_allowed_cmd_array)
         return false;
-    enum dap_json_tokener_error_t jterr;
+    dap_json_tokener_error_t jterr;
     const char *l_method;
     dap_json_t *jobj = dap_json_tokener_parse_verbose(a_buf, &jterr),
                 *jobj_method = NULL;
-    if ( jterr != json_tokener_success ) 
-        return log_it(L_ERROR, "Can't parse json command, error %s", dap_json_tokener_error_t_desc(jterr)), false;
+    if ( jterr != DAP_JSON_TOKENER_SUCCESS ) 
+        return log_it(L_ERROR, "Can't parse json command, error %s", dap_json_tokener_error_desc(jterr)), false;
     if ( dap_json_object_get_ex(jobj, "method", &jobj_method) )
-        l_method = dap_json_object_get_string(jobj_method);
+        l_method = dap_json_object_get_string(jobj_method, NULL);
     else {
         log_it(L_ERROR, "Invalid command request, dump it");
         dap_json_object_free(jobj);
@@ -239,58 +250,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_ca
     return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex, a_id);
 }
 
-int json_commands(const char * a_name) {
-    static const char* long_cmd[] = {
-            "tx_history",
-            "wallet",
-            "mempool",
-            "ledger",
-            "tx_create",
-            "tx_create_json",
-            "mempool_add",
-            "tx_verify",
-            "tx_cond_create",
-            "tx_cond_remove",
-            "tx_cond_unspent_find",
-            "chain_ca_copy",
-            "dag",
-            "block",
-            "token",
-            "esbocs",
-            "global_db",
-            "net_srv",
-            "net",
-            "srv_stake",
-            "poll",
-            "emit_delegate",
-            "token_decl",
-            "token_update",
-            "token_update_sign",
-            "token_decl_sign",
-            "chain_ca_pub",
-            "token_emit",
-            "find",
-            "version",
-            "remove",
-            "gdb_import",
-            "stats",
-            "stake_lock",
-            "exec_cmd",
-            "print_log",
-            "srv_xchange",
-            "file",
-            "policy",            
-            "srv_datum",
-            "decree",
-            "node"
-    };
-    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
-        if (!strcmp(a_name, long_cmd[i])) {
-            return 1;
-        }
-    }
-    return 0;
-}
+
 
 /**
  * @brief dap_cli_server_cmd_set_reply_text
@@ -449,19 +409,18 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 static void *s_cli_cmd_exec(void *a_arg) {
     atomic_fetch_add(&s_cmd_thread_count, 1);
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
-    char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
-            *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
-                                            "Processing-Time: %zu\r\n"
-                                            "Node-Type: %s\r\n"
-                                            "Node-Version: %s\r\n\r\n"
-                                            "%s", 
-                                            dap_strlen(l_ret), 
-                                            dap_nanotime_now() - l_arg->time_start, 
-                                            dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false)
-                                                ? "Public" : "Private", 
-                                            "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 
-                                             l_ret);
+    char *l_ret = dap_cli_cmd_exec(l_arg->buf);
+    char *l_additional_headers = s_generate_additional_headers();
+    char *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
+                                         "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
+                                         "Processing-Time: %zu\r\n"
+                                         "%s\r\n"
+                                         "%s", 
+                                         dap_strlen(l_ret), 
+                                         dap_nanotime_now() - l_arg->time_start, 
+                                         l_additional_headers,
+                                         l_ret);
+    DAP_DELETE(l_additional_headers);
     DAP_DELETE(l_ret);
     dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination and output optimizations
@@ -492,7 +451,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         str_cmd = cmd_name;
     int res = -1;
     char *str_reply = NULL;
-    dap_json_t *l_json_arr_reply = json_object_new_array();
+    dap_json_t *l_json_arr_reply = dap_json_array_new();
     if (l_cmd) {
         if (l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);
@@ -538,7 +497,11 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             if (s_stat_callback) {
                 l_call_time = dap_nanotime_now();
             }
-            if (json_commands(cmd_name)) {
+#ifndef DAP_SDK_ONLY
+            if (dap_chain_rpc_is_json_command(cmd_name)) {
+#else
+            if (0) { // DAP SDK doesn't have Cellframe commands
+#endif
                 res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
@@ -569,9 +532,9 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, str_reply);
             DAP_DELETE(str_reply);
         } else {
-            dap_json_t *json_res = json_object_new_object();
-            json_object_object_add(json_res, "ret_code", json_object_new_int(res));
-            json_object_array_add(l_json_arr_reply, json_res);
+            dap_json_t *json_res = dap_json_object_new();
+            dap_json_object_add_int64(json_res, "ret_code", res);
+            dap_json_array_add(l_json_arr_reply, json_res);
         }
     } else
         reply_body = str_reply;
@@ -579,8 +542,11 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     // create response
     dap_json_rpc_response_t* response = reply_body
             ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id, request->version)
-            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id, request->version);
-    dap_json_object_free(l_json_arr_reply);
+            : dap_json_rpc_response_create(l_json_arr_reply, TYPE_RESPONSE_JSON, request->id, request->version);
+    // Note: l_json_arr_reply will be freed by dap_json_rpc_response_free if it was used in response
+    if (reply_body) {
+        dap_json_object_free(l_json_arr_reply);
+    }
     char *response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
@@ -614,4 +580,188 @@ DAP_INLINE void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array)
 DAP_INLINE int dap_cli_server_get_version()
 {
     return s_cli_version;
+}
+
+// HTTP header management functions
+void dap_cli_server_http_header_add_static(const char *a_name, const char *a_value) {
+    dap_return_if_fail(a_name && a_value);
+    
+    pthread_rwlock_wrlock(&s_http_headers_rwlock);
+    
+    // Check if header already exists and update it
+    dap_cli_server_http_header_t *l_header = s_http_headers;
+    while (l_header) {
+        if (dap_strcmp(l_header->name, a_name) == 0) {
+            // Update existing header
+            DAP_DELETE(l_header->value);
+            l_header->value = dap_strdup(a_value);
+            if (l_header->callback) {
+                l_header->callback = NULL; // Switch to static mode
+            }
+            pthread_rwlock_unlock(&s_http_headers_rwlock);
+            return;
+        }
+        l_header = l_header->next;
+    }
+    
+    // Create new header
+    l_header = DAP_NEW_Z(dap_cli_server_http_header_t);
+    if (!l_header) {
+        pthread_rwlock_unlock(&s_http_headers_rwlock);
+        return;
+    }
+    
+    l_header->name = dap_strdup(a_name);
+    l_header->value = dap_strdup(a_value);
+    l_header->callback = NULL;
+    l_header->next = s_http_headers;
+    s_http_headers = l_header;
+    
+    pthread_rwlock_unlock(&s_http_headers_rwlock);
+}
+
+void dap_cli_server_http_header_add_dynamic(const char *a_name, dap_cli_server_http_header_callback_t a_callback) {
+    dap_return_if_fail(a_name && a_callback);
+    
+    pthread_rwlock_wrlock(&s_http_headers_rwlock);
+    
+    // Check if header already exists and update it
+    dap_cli_server_http_header_t *l_header = s_http_headers;
+    while (l_header) {
+        if (dap_strcmp(l_header->name, a_name) == 0) {
+            // Update existing header
+            DAP_DELETE(l_header->value);
+            l_header->value = NULL;
+            l_header->callback = a_callback;
+            pthread_rwlock_unlock(&s_http_headers_rwlock);
+            return;
+        }
+        l_header = l_header->next;
+    }
+    
+    // Create new header
+    l_header = DAP_NEW_Z(dap_cli_server_http_header_t);
+    if (!l_header) {
+        pthread_rwlock_unlock(&s_http_headers_rwlock);
+        return;
+    }
+    
+    l_header->name = dap_strdup(a_name);
+    l_header->value = NULL;
+    l_header->callback = a_callback;
+    l_header->next = s_http_headers;
+    s_http_headers = l_header;
+    
+    pthread_rwlock_unlock(&s_http_headers_rwlock);
+}
+
+void dap_cli_server_http_header_remove(const char *a_name) {
+    dap_return_if_fail(a_name);
+    
+    pthread_rwlock_wrlock(&s_http_headers_rwlock);
+    
+    dap_cli_server_http_header_t **l_current = &s_http_headers;
+    while (*l_current) {
+        if (dap_strcmp((*l_current)->name, a_name) == 0) {
+            dap_cli_server_http_header_t *l_to_remove = *l_current;
+            *l_current = l_to_remove->next;
+            
+            DAP_DELETE(l_to_remove->name);
+            DAP_DELETE(l_to_remove->value);
+            DAP_DELETE(l_to_remove);
+            break;
+        }
+        l_current = &((*l_current)->next);
+    }
+    
+    pthread_rwlock_unlock(&s_http_headers_rwlock);
+}
+
+void dap_cli_server_http_headers_clear(void) {
+    pthread_rwlock_wrlock(&s_http_headers_rwlock);
+    
+    while (s_http_headers) {
+        dap_cli_server_http_header_t *l_to_remove = s_http_headers;
+        s_http_headers = s_http_headers->next;
+        
+        DAP_DELETE(l_to_remove->name);
+        DAP_DELETE(l_to_remove->value);
+        DAP_DELETE(l_to_remove);
+    }
+    
+    pthread_rwlock_unlock(&s_http_headers_rwlock);
+}
+
+// Generate additional HTTP headers string
+static char* s_generate_additional_headers(void) {
+    char *l_headers_str = NULL;
+    
+    pthread_rwlock_rdlock(&s_http_headers_rwlock);
+    
+    if (!s_http_headers) {
+        pthread_rwlock_unlock(&s_http_headers_rwlock);
+        return dap_strdup("");
+    }
+    
+    // Calculate total length needed
+    size_t l_total_len = 0;
+    dap_cli_server_http_header_t *l_header = s_http_headers;
+    while (l_header) {
+        const char *l_value = NULL;
+        char *l_temp_value = NULL;
+        
+        if (l_header->callback) {
+            l_temp_value = l_header->callback();
+            l_value = l_temp_value;
+        } else {
+            l_value = l_header->value;
+        }
+        
+        if (l_value) {
+            l_total_len += strlen(l_header->name) + strlen(l_value) + 4; // ": \r\n"
+        }
+        
+        if (l_temp_value) {
+            DAP_DELETE(l_temp_value);
+        }
+        
+        l_header = l_header->next;
+    }
+    
+    if (l_total_len == 0) {
+        pthread_rwlock_unlock(&s_http_headers_rwlock);
+        return dap_strdup("");
+    }
+    
+    // Allocate and build headers string
+    l_headers_str = DAP_NEW_SIZE(char, l_total_len + 1);
+    l_headers_str[0] = '\0';
+    
+    l_header = s_http_headers;
+    while (l_header) {
+        const char *l_value = NULL;
+        char *l_dynamic_value = NULL;
+        
+        if (l_header->callback) {
+            l_dynamic_value = l_header->callback();
+            l_value = l_dynamic_value;
+        } else {
+            l_value = l_header->value;
+        }
+        
+        if (l_value) {
+            char *l_header_line = dap_strdup_printf("%s: %s\r\n", l_header->name, l_value);
+            strcat(l_headers_str, l_header_line);
+            DAP_DELETE(l_header_line);
+        }
+        
+        if (l_dynamic_value) {
+            DAP_DELETE(l_dynamic_value);
+        }
+        
+        l_header = l_header->next;
+    }
+    
+    pthread_rwlock_unlock(&s_http_headers_rwlock);
+    return l_headers_str;
 }

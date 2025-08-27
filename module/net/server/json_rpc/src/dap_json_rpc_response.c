@@ -49,7 +49,7 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
                 DAP_DEL_Z(response->result_string); break;
             case TYPE_RESPONSE_JSON:
                 if (response->result_json_object)
-                    json_object_put(response->result_json_object);
+                    dap_json_object_free(response->result_json_object);
                 break;
             case TYPE_RESPONSE_INTEGER:
             case TYPE_RESPONSE_DOUBLE:
@@ -69,101 +69,111 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
         return NULL;
     }
 
-    json_object* jobj = json_object_new_object();
+    dap_json_t *jobj = dap_json_object_new();
+    if (!jobj) {
+        return NULL;
+    }
+    
     // json type
-    json_object_object_add(jobj, "type", json_object_new_int(response->type));
+    dap_json_object_add_int64(jobj, "type", response->type);
 
     // json result
     switch (response->type) {
         case TYPE_RESPONSE_STRING:
-            json_object_object_add(jobj, "result", json_object_new_string(response->result_string));
+            dap_json_object_add_string(jobj, "result", response->result_string);
             break;
         case TYPE_RESPONSE_INTEGER:
-            json_object_object_add(jobj, "result", json_object_new_int64(response->result_int));
+            dap_json_object_add_int64(jobj, "result", response->result_int);
             break;
         case TYPE_RESPONSE_DOUBLE:
-            json_object_object_add(jobj, "result", json_object_new_double(response->result_double));
+            dap_json_object_add_double(jobj, "result", response->result_double);
             break;
         case TYPE_RESPONSE_BOOLEAN:
-            json_object_object_add(jobj, "result", json_object_new_boolean(response->result_boolean));
+            dap_json_object_add_bool(jobj, "result", response->result_boolean);
             break;
         case TYPE_RESPONSE_JSON:
-            json_object_object_add(jobj, "result", json_object_get(response->result_json_object));
+            if (response->result_json_object) {
+                dap_json_object_add_object(jobj, "result", response->result_json_object);
+            } else {
+                dap_json_object_add_null(jobj, "result");
+            }
             break;
         case TYPE_RESPONSE_NULL:
-            json_object_object_add(jobj, "result", NULL);
+            dap_json_object_add_null(jobj, "result");
             break;
     }
 
     // json id
-    json_object_object_add(jobj, "id", json_object_new_int64(response->id));
+    dap_json_object_add_int64(jobj, "id", response->id);
     // json version
-    json_object_object_add(jobj, "version", json_object_new_int64(response->version));
+    dap_json_object_add_int64(jobj, "version", response->version);
 
     // convert to string
-    const char* json_string = json_object_to_json_string(jobj);
-    char* result_string = strdup(json_string);
-    json_object_put(jobj);
+    char* result_string = dap_json_to_string(jobj);
+    dap_json_object_free(jobj);
 
     return result_string;
 }
 
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string) {
-    json_object* jobj = json_tokener_parse(json_string);
+    dap_json_t *jobj = dap_json_parse_string(json_string);
     if (!jobj) {
-        // log_it(L_ERROR, "Error parsing JSON string");
-        printf("Error parsing JSON string");
+        log_it(L_ERROR, "Error parsing JSON string");
         return NULL;
     }
 
-    dap_json_rpc_response_t* response = malloc(sizeof(dap_json_rpc_response_t));
+    dap_json_rpc_response_t* response = DAP_NEW_Z(dap_json_rpc_response_t);
     if (!response) {
-        json_object_put(jobj);
-        // log_it(L_CRITICAL, "Memmory allocation error");
-        printf( "Memmory allocation error");
+        dap_json_object_free(jobj);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
 
-    json_object* version_obj = NULL;
-    if (json_object_object_get_ex(jobj, "version", &version_obj))
-        response->version = json_object_get_int64(version_obj);
-    else {
+    dap_json_t *version_obj = dap_json_object_get_object(jobj, "version");
+    if (version_obj) {
+        response->version = dap_json_object_get_int64(version_obj, NULL);
+    } else {
         log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
     }
 
-    json_object* type_obj = NULL;
-    if (json_object_object_get_ex(jobj, "type", &type_obj)) {
-        response->type = json_object_get_int(type_obj);
+    dap_json_t *type_obj = dap_json_object_get_object(jobj, "type");
+    if (type_obj) {
+        response->type = (int)dap_json_object_get_int64(type_obj, NULL);
 
-        json_object* result_obj = NULL;
-        if (json_object_object_get_ex(jobj, "result", &result_obj)) {
+        dap_json_t *result_obj = dap_json_object_get_object(jobj, "result");
+        if (result_obj) {
             switch (response->type) {
-                case TYPE_RESPONSE_STRING:
-                    response->result_string = strdup(json_object_get_string(result_obj));
+                case TYPE_RESPONSE_STRING: {
+                    const char *str_val = dap_json_object_get_string(result_obj, NULL);
+                    response->result_string = str_val ? dap_strdup(str_val) : NULL;
                     break;
+                }
                 case TYPE_RESPONSE_INTEGER:
-                    response->result_int = json_object_get_int64(result_obj);
+                    response->result_int = dap_json_object_get_int64(result_obj, NULL);
                     break;
                 case TYPE_RESPONSE_DOUBLE:
-                    response->result_double = json_object_get_double(result_obj);
+                    response->result_double = dap_json_object_get_double(result_obj, NULL);
                     break;
                 case TYPE_RESPONSE_BOOLEAN:
-                    response->result_boolean = json_object_get_boolean(result_obj);
+                    response->result_boolean = dap_json_object_get_bool(result_obj, NULL);
                     break;
                 case TYPE_RESPONSE_JSON:
-                    response->result_json_object = json_object_get(result_obj);
+                    // Create a copy of the JSON object for response
+                    response->result_json_object = dap_json_object_ref(result_obj);
                     break;
                 case TYPE_RESPONSE_NULL:
                     break;
             }
         }
     }
-    json_object* result_id = NULL;
-    json_object_object_get_ex(jobj, "id", &result_id);
-    response->id = json_object_get_int64(result_id);
+    
+    dap_json_t *result_id = dap_json_object_get_object(jobj, "id");
+    if (result_id) {
+        response->id = dap_json_object_get_int64(result_id, NULL);
+    }
 
-    json_object_put(jobj);
+    dap_json_object_free(jobj);
     return response;
 }
 
@@ -180,104 +190,54 @@ int json_print_commands(const char * a_name) {
     return 0;
 }
 
-void json_print_object(json_object *obj, int indent_level) {
-    enum json_type type = json_object_get_type(obj);
 
-    switch (type) {
-        case json_type_object: {
-            json_object_object_foreach(obj, key, val) {
-                for (int i = 0; i <= indent_level; i++) {
-                    printf(INDENTATION_LEVEL); // indentation level
-                }
-                printf("%s: ", key);
-                json_print_value(val, key, indent_level + 1, false);
-                printf("\n");
-            }
-            break;
-        }
-        case json_type_array: {
-            int length = json_object_array_length(obj);
-            for (int i = 0; i < length; i++) {
-                for (int j = 0; j <= indent_level; j++) {
-                    printf(INDENTATION_LEVEL); // indentation level
-                }
-                json_object *item = json_object_array_get_idx(obj, i);
-                json_print_value(item, NULL, indent_level + 1, length - 1 - i);
-                printf("\n");
-            }
-            break;
-        }
-        default:
-            break;
-    }
-}
 
-void json_print_value(json_object *obj, const char *key, int indent_level, bool print_separator) {
-    enum json_type type = json_object_get_type(obj);
 
-    switch (type) {
-        case json_type_string:
-            printf(print_separator ? "%s, " : "%s", json_object_get_string(obj));
-            break;
-        case json_type_int:
-            printf("%"DAP_INT64_FORMAT, json_object_get_int64(obj));
-            break;
-        case json_type_double:
-            printf("%lf", json_object_get_double(obj));
-            break;
-        case json_type_boolean:
-            printf("%s", json_object_get_boolean(obj) ? "true" : "false");
-            break;
-        case json_type_object:
-        case json_type_array:
-            printf("\n");
-            json_print_object(obj, indent_level);
-            break;
-        default:
-            break;
-    }
-}
 
 void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     if (!response || !response->result_json_object) {
         printf("Response is empty\n");
         return;
     }
-    if (json_object_get_type(response->result_json_object) == json_type_array) {
-        int result_count = json_object_array_length(response->result_json_object);
+    
+    if (dap_json_is_array(response->result_json_object)) {
+        size_t result_count = dap_json_array_length(response->result_json_object);
         if (result_count <= 0) {
             printf("Response array is empty\n");
             return;
         }
-        for (int i = 0; i < result_count; i++) {
-            struct json_object *json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+        
+        for (size_t i = 0; i < result_count; i++) {
+            dap_json_t *json_obj_result = dap_json_array_get_idx(response->result_json_object, i);
             if (!json_obj_result) {
-                printf("Failed to get array element at index %d\n", i);
+                printf("Failed to get array element at index %zu\n", i);
                 continue;
             }
 
-            json_object *j_obj_sum, *j_obj_accepted, *j_obj_rejected, *j_obj_chain, *j_obj_net_name;
-            if (json_object_object_get_ex(json_obj_result, "tx_sum", &j_obj_sum) &&
-                json_object_object_get_ex(json_obj_result, "accepted_tx", &j_obj_accepted) &&
-                json_object_object_get_ex(json_obj_result, "rejected_tx", &j_obj_rejected)) {
-                json_object_object_get_ex(json_obj_result, "chain", &j_obj_chain);
-                json_object_object_get_ex(json_obj_result, "network", &j_obj_net_name);
-
-                if (j_obj_sum && j_obj_accepted && j_obj_rejected && j_obj_chain && j_obj_net_name) {
-                    printf("Print %d transactions in network %s chain %s. \n"
-                            "Of which %d were accepted into the ledger and %d were rejected.\n",
-                            json_object_get_int(j_obj_sum), json_object_get_string(j_obj_net_name),
-                            json_object_get_string(j_obj_chain), json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
-                } else {
-                    printf("Missing required fields in array element at index %d\n", i);
-                }
+            dap_json_t *j_obj_sum = dap_json_object_get_object(json_obj_result, "tx_sum");
+            dap_json_t *j_obj_accepted = dap_json_object_get_object(json_obj_result, "accepted_tx");
+            dap_json_t *j_obj_rejected = dap_json_object_get_object(json_obj_result, "rejected_tx");
+            dap_json_t *j_obj_chain = dap_json_object_get_object(json_obj_result, "chain");
+            dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_result, "network");
+            
+            if (j_obj_sum && j_obj_accepted && j_obj_rejected) {
+                int64_t sum = dap_json_object_get_int64(j_obj_sum, NULL);
+                int64_t accepted = dap_json_object_get_int64(j_obj_accepted, NULL);
+                int64_t rejected = dap_json_object_get_int64(j_obj_rejected, NULL);
+                const char *net_name = j_obj_net_name ? dap_json_object_get_string(j_obj_net_name, NULL) : "unknown";
+                const char *chain_name = j_obj_chain ? dap_json_object_get_string(j_obj_chain, NULL) : "unknown";
+                
+                printf("Print %ld transactions in network %s chain %s. \n"
+                        "Of which %ld were accepted into the ledger and %ld were rejected.\n",
+                        sum, net_name ? net_name : "unknown", 
+                        chain_name ? chain_name : "unknown", accepted, rejected);
             } else {
-                json_print_object(json_obj_result, 0);
+                dap_json_print_object(json_obj_result, stdout, 0);
             }
             printf("\n");
         }
     } else {
-        json_print_object(response->result_json_object, 0);
+        dap_json_print_object(response->result_json_object, stdout, 0);
     }
 }
 
@@ -286,51 +246,72 @@ void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
         printf("Response is empty\n");
         return;
     }
-    if (json_object_get_type(response->result_json_object) == json_type_array) {
-        int result_count = json_object_array_length(response->result_json_object);
+    
+    if (dap_json_is_array(response->result_json_object)) {
+        size_t result_count = dap_json_array_length(response->result_json_object);
         if (result_count <= 0) {
             printf("Response array is empty\n");
             return;
         }
-        if (json_object_is_type(json_object_array_get_idx(response->result_json_object, 0), json_type_array)) {
-            for (int i = 0; i < result_count; i++) {
-                struct json_object *json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+        
+        dap_json_t *first_element = dap_json_array_get_idx(response->result_json_object, 0);
+        if (first_element && dap_json_is_array(first_element)) {
+            for (size_t i = 0; i < result_count; i++) {
+                dap_json_t *json_obj_result = dap_json_array_get_idx(response->result_json_object, i);
                 if (!json_obj_result) {
-                    printf("Failed to get array element at index %d\n", i);
+                    printf("Failed to get array element at index %zu\n", i);
                     continue;
                 }
-                for (size_t j = 0; j < json_object_array_length(json_obj_result); j++) {
-                    struct json_object *json_obj = json_object_array_get_idx(json_obj_result, j);
-                    if (json_obj)
-                        printf("%s", json_object_get_string(json_obj));
+                
+                size_t inner_count = dap_json_array_length(json_obj_result);
+                for (size_t j = 0; j < inner_count; j++) {
+                    dap_json_t *json_obj = dap_json_array_get_idx(json_obj_result, j);
+                    if (json_obj) {
+                        const char *str_val = dap_json_object_get_string(json_obj, NULL);
+                        if (str_val) {
+                            printf("%s", str_val);
+                        }
+                    }
                 }
             }
         } else {
-            json_print_object(response->result_json_object, -1);
+            dap_json_print_object(response->result_json_object, stdout, -1);
         }
     } else {
-        json_print_object(response->result_json_object, -1);
+        dap_json_print_object(response->result_json_object, stdout, -1);
     }
 }
 
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
-    json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 0);
-    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums, *j_arr_total;
-    json_object_object_get_ex(json_obj_response, "net", &j_obj_net_name);
-    json_object_object_get_ex(json_obj_response, "chains", &j_arr_chains);
-    int result_count = json_object_array_length(j_arr_chains);
-    for (int i = 0; i < result_count; i++) {
-        json_object * json_obj_result = json_object_array_get_idx(j_arr_chains, i);
-        json_object_object_get_ex(json_obj_result, "name", &j_obj_chain);
-        json_object_object_get_ex(json_obj_result, "removed", &j_obj_removed);
-        json_object_object_get_ex(json_obj_result, "datums", &j_arr_datums);
-        json_object_object_get_ex(json_obj_result, "total", &j_arr_total);
-        printf("Removed %d records from the %s chain mempool in %s network.\n", 
-                json_object_get_int(j_obj_removed), json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name));
+    dap_json_t *json_obj_response = dap_json_array_get_idx(response->result_json_object, 0);
+    if (!json_obj_response) return;
+    
+    dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_response, "net");
+    dap_json_t *j_arr_chains = dap_json_object_get_object(json_obj_response, "chains");
+    if (!j_arr_chains) return;
+    
+    size_t result_count = dap_json_array_length(j_arr_chains);
+    for (size_t i = 0; i < result_count; i++) {
+        dap_json_t *json_obj_result = dap_json_array_get_idx(j_arr_chains, i);
+        if (!json_obj_result) continue;
+        
+        dap_json_t *j_obj_chain = dap_json_object_get_object(json_obj_result, "name");
+        dap_json_t *j_obj_removed = dap_json_object_get_object(json_obj_result, "removed");
+        dap_json_t *j_arr_datums = dap_json_object_get_object(json_obj_result, "datums");
+        dap_json_t *j_arr_total = dap_json_object_get_object(json_obj_result, "total");
+        
+        const char *net_name = j_obj_net_name ? dap_json_object_get_string(j_obj_net_name, NULL) : "unknown";
+        const char *chain_name = j_obj_chain ? dap_json_object_get_string(j_obj_chain, NULL) : "unknown";
+        int64_t removed_count = j_obj_removed ? dap_json_object_get_int64(j_obj_removed, NULL) : 0;
+        
+        printf("Removed %ld records from the %s chain mempool in %s network.\n", 
+                removed_count, chain_name ? chain_name : "unknown", net_name ? net_name : "unknown");
         printf("Datums:\n");
-        json_print_object(j_arr_datums, 1);
+        if (j_arr_datums)
+            dap_json_print_object(j_arr_datums, stdout, 1);
         // TODO total parser
-        json_print_object(j_arr_total, 1);
+        if (j_arr_total)
+            dap_json_print_object(j_arr_total, stdout, 1);
     }
 }
 
@@ -366,12 +347,12 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                     case 1: json_print_for_tx_history(response); break;
                     case 2: json_print_for_file_cmd(response); break;
                     default: {
-                            json_print_object(response->result_json_object, 0);
+                            dap_json_print_object(response->result_json_object, stdout, 0);
                         }
                         break;
                 }
             } else {
-                json_print_object(response->result_json_object, 0);
+                dap_json_print_object(response->result_json_object, stdout, 0);
             }
             break;
     }
@@ -382,8 +363,11 @@ void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
 {
     if (l_request_JSON->struct_error)
         dap_json_rpc_error_JSON_free(l_request_JSON->struct_error);
-    json_object_put(l_request_JSON->obj_result);
-    json_object_put(l_request_JSON->obj_error);
-    json_object_put(l_request_JSON->obj_id);
+    if (l_request_JSON->obj_result)
+        dap_json_object_free(l_request_JSON->obj_result);
+    if (l_request_JSON->obj_error)
+        dap_json_object_free(l_request_JSON->obj_error);
+    if (l_request_JSON->obj_id)
+        dap_json_object_free(l_request_JSON->obj_id);
     DAP_FREE(l_request_JSON);
 }

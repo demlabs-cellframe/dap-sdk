@@ -1,6 +1,5 @@
 #include "dap_http_ban_list_client.h"
 #include "dap_hash.h"
-#include "json_types.h"
 #include "../../json_rpc/include/dap_json_rpc_errors.h"
 
 typedef struct ban_record {

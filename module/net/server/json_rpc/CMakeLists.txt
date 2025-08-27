@@ -27,6 +27,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ../http_server/include/
     ../http_server/http_client/include/
     ../enc_server/include/
+    ../cli_server/include/
     ../../include/
     ../../client/include/
     ../../stream/stream/include/

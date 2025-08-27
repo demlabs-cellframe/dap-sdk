@@ -37,6 +37,16 @@ typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
+// Callback for dynamic HTTP header generation
+typedef char* (*dap_cli_server_http_header_callback_t)(void);
+
+typedef struct dap_cli_server_http_header {
+    char *name;  // Header name (e.g., "Node-Version")
+    char *value; // Static value (if callback is NULL)
+    dap_cli_server_http_header_callback_t callback; // Dynamic value generator (if not NULL)
+    struct dap_cli_server_http_header *next;
+} dap_cli_server_http_header_t;
+
 typedef struct dap_cli_server_cmd_override{
     /* use it if you want to prevent logging of some sensetive data */
     dap_cli_server_override_log_cmd_callback_t log_cmd_call;
@@ -81,7 +91,6 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_appe
 int32_t dap_cli_get_cmd_thread_count();
 
 //for json
-int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
 
 /* For using clear json_rpc */
@@ -97,5 +106,12 @@ void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fu
 
 //void dap_json_rpo_handler_cli_run(const char *a_method, dap_json_t *a_params, dap_json_t **obj_result);
 void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback);
+
+// HTTP header management functions
+void dap_cli_server_http_header_add_static(const char *a_name, const char *a_value);
+void dap_cli_server_http_header_add_dynamic(const char *a_name, dap_cli_server_http_header_callback_t a_callback);
+void dap_cli_server_http_header_remove(const char *a_name);
+void dap_cli_server_http_headers_clear(void);
+
 void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array);
 int dap_cli_server_get_version();

@@ -29,6 +29,8 @@
 // Добавляем SHA2-256 из secp256k1 с правильными путями
 #include "../../3rdparty/secp256k1/src/hash.h"
 #include "../../3rdparty/secp256k1/src/hash_impl.h"
+// XKCP includes for SHA3 functions
+#include "SimpleFIPS202.h"
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"

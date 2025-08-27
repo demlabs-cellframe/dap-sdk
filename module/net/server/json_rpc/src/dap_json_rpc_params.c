@@ -141,31 +141,35 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(dap_json
     // add subcmd to params
     dap_string_append_printf(l_str_tmp, "%s;", a_method);
     if(a_subcmd){
-        enum json_type l_subcmd_type = json_object_get_type(a_subcmd);
-        if(l_subcmd_type == json_type_array){
-            int length = json_object_array_length(a_subcmd);
+        if (dap_json_is_array(a_subcmd)) {
+            size_t length = dap_json_array_length(a_subcmd);
             
-            for (int i = 0; i < length; i++){
-                json_object *jobj = json_object_array_get_idx(a_subcmd, i);
-                json_type jobj_type = json_object_get_type(jobj);
-
-                if (jobj_type != json_type_string){
+            for (size_t i = 0; i < length; i++){
+                dap_json_t *jobj = dap_json_array_get_idx(a_subcmd, i);
+                if (!dap_json_is_string(jobj)){
                     log_it(L_ERROR, "Bad subcommand type");
                     dap_string_free(l_str_tmp, true);
                     return NULL;
                 }
 
-                dap_string_append_printf(l_str_tmp, "%s;", json_object_get_string(jobj));
+                const char *str_val = dap_json_object_get_string(jobj, NULL);
+                dap_string_append_printf(l_str_tmp, "%s;", str_val ? str_val : "");
             }
-        } else if (l_subcmd_type == json_type_string) { 
-            dap_string_append_printf(l_str_tmp, "%s;", json_object_get_string( a_subcmd));
+        } else if (dap_json_is_string(a_subcmd)) { 
+            const char *str_val = dap_json_object_get_string(a_subcmd, NULL);
+            dap_string_append_printf(l_str_tmp, "%s;", str_val ? str_val : "");
         } else {
             return log_it(L_CRITICAL, "Subcomand must be array or string type."), dap_string_free(l_str_tmp, true),  NULL;
         }
     }
 
     if (a_args){        
-        json_object_object_foreach(a_args, key, val){
+        // TODO: This function needs complete rewrite to use dap_json API
+        // For now, temporarily using json-c directly as object iteration is complex
+        // This will be addressed when dap_json API gets object iteration support
+        json_object *json_args = (json_object*)a_args;
+        
+        json_object_object_foreach(json_args, key, val){
             const char *l_key_str = NULL;
             const char *l_val_str = NULL;
             enum json_type l_arg_type = json_object_get_type(val);

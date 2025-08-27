@@ -50,7 +50,7 @@ void  dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response)
             printf("response type is NULL\n");
             break;
         case TYPE_RESPONSE_JSON:
-            log_it(L_MSG, "response: %s", json_object_to_json_string(a_response->result_json_object));
+            log_it(L_MSG, "response: %s", dap_json_to_string(a_response->result_json_object));
             break;
     }
     // dap_json_rpc_response_handler_t *l_handler = NULL;

@@ -106,8 +106,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
  */
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string);
 
-void json_print_object(dap_json_t *obj, int indent_level);
-void json_print_value(dap_json_t *obj, const char *key, int indent_level, bool print_separator);
+// Print functions moved to dap_json module
 
 /**
  * Prints the result of a JSON-RPC response to the standard output.
