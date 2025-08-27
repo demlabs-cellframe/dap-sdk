@@ -51,8 +51,6 @@ typedef struct dap_hash_str {
 extern "C" {
 #endif
 
-#include "SimpleFIPS202.h"
-
 int dap_chain_hash_fast_from_str( const char * a_hash_str, dap_hash_fast_t *a_hash);
 int dap_chain_hash_fast_from_hex_str( const char *a_hex_str, dap_chain_hash_fast_t *a_hash);
 int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_hash_fast_t *a_hash);
@@ -65,17 +63,7 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
  * @return true
  * @return false
  */
-DAP_STATIC_INLINE bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
-{
-    if ( (a_data_in == NULL) || (a_data_in_size == 0) || (a_hash_out == NULL) )
-        return false;
-
-    //            dap_hash_keccak( a_data_in, a_data_in_size, a_data_out, a_data_out_size );
-
-    SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
-
-    return true;
-}
+bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out );
 
 
 /**

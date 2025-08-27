@@ -29,6 +29,7 @@
 #include "dap_enc_base58.h"
 // XKCP includes moved here from header for encapsulation
 #include "KeccakHash.h"
+#include "SimpleFIPS202.h"
 #include "hash/sha2-256/dap_sha2_256.h"
 
 #define LOG_TAG "dap_hash"
@@ -91,4 +92,22 @@ int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t 
  */
 int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
     return dap_sha2_256(a_output, a_input, a_inlen);
+}
+
+/**
+ * @brief dap_hash_fast
+ * get SHA3_256 hash for specific data (moved from inline to proper encapsulation)
+ * @param a_data_in input data
+ * @param a_data_in_size size of input data
+ * @param a_hash_out returned hash
+ * @return true on success, false on failure
+ */
+bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
+{
+    if ( (a_data_in == NULL) || (a_data_in_size == 0) || (a_hash_out == NULL) )
+        return false;
+
+    SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
+
+    return true;
 }

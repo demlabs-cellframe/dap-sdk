@@ -98,7 +98,7 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
 #endif
 }
 
-static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, json_object **a_response_out, size_t *a_response_out_size)
+static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, dap_json_t **a_response_out, size_t *a_response_out_size)
 {
     int ret = 0;
 
@@ -116,9 +116,9 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
                         a_exec_cmd_request->response, a_exec_cmd_request->response_size,
                         l_response_dec, l_response_dec_size_max,
                         DAP_ENC_DATA_TYPE_RAW);
-            *a_response_out = json_tokener_parse(l_response_dec);
+            *a_response_out = dap_json_parse_string(l_response_dec);
             if (!*a_response_out && l_response_dec) {
-                *a_response_out = json_object_new_string("Can't decode the response, check the access rights on the remote node");
+                *a_response_out = dap_json_object_new_string("Can't decode the response, check the access rights on the remote node");
                 log_it(L_DEBUG, "Wrong response %s", l_response_dec);
                 DAP_DEL_Z(l_response_dec);
             }
@@ -233,18 +233,11 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
     if (!a_data)
         return NULL;
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
-    enum json_tokener_error jterr;
-    json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
-                *jobj_id = NULL,
-                *jobj_version = NULL,
-                *jobj_method = NULL,
-                *jobj_params = NULL,
-                *jobj_subcmd = NULL,
-                *l_arguments_obj = NULL;
-    if (jterr == json_tokener_success)
+    dap_json_tokener_error_t jterr;
+    dap_json_t *jobj = dap_json_tokener_parse_verbose(a_data, &jterr);
+    if (jterr == DAP_JSON_TOKENER_ERROR_SUCCESS && jobj)
         do {
-            if (json_object_object_get_ex(jobj, "id", &jobj_id))
-                request->id = json_object_get_int64(jobj_id);
+            request->id = dap_json_object_get_int64(jobj, "id");
             else {
                 log_it(L_ERROR, "Error parse JSON string, can't find request id");
                 break;
