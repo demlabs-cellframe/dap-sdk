@@ -458,9 +458,6 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #define DAP_FORMAT_ERRNUM "d"
 #endif // DAP_OS_WINDOWS
 
-/* Cross-platform format for size_t */
-#define DAP_SIZE_FORMAT "zu"
-
 #ifndef LOWORD
   #define LOWORD( l ) ((uint16_t) (((uintptr_t) (l)) & 0xFFFF))
   #define HIWORD( l ) ((uint16_t) ((((uintptr_t) (l)) >> 16) & 0xFFFF))
