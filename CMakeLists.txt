@@ -64,7 +64,7 @@ endmacro()
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
-option(BUILD_EXAMPLES "Build examples" ON)
+option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
 option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
 option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" ON)
