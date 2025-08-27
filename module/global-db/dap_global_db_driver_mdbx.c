@@ -896,7 +896,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
-        log_it(L_CRITICAL, "Can't allocate memory l_count_out %" DAP_SIZE_FORMAT ", l_element_size %" DAP_SIZE_FORMAT ", l_addition_size %" DAP_SIZE_FORMAT, l_count_out, l_element_size, l_addition_size);
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %zu, l_element_size %zu, l_addition_size %zu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
     if (a_keys_only_read) {
@@ -1316,7 +1316,7 @@ MDBX_txn *l_txn = s_txn;
          * Allocate memory for array[l_count_out] of returned objects
         */
         if ( !(l_obj_arr = (dap_store_obj_t *)DAP_NEW_Z_SIZE(char, l_count_out * sizeof(dap_store_obj_t))) ) {
-            log_it(L_ERROR, "Cannot allocate %" DAP_SIZE_FORMAT " bytes for %" DAP_SIZE_FORMAT " store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
+            log_it(L_ERROR, "Cannot allocate %zu bytes for %zu store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
             goto safe_ret;
         }
         /* Iterate cursor to retrieve records from DB */
