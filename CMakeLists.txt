@@ -53,8 +53,36 @@ macro(dap_create_final_library)
             list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
         endforeach()
         
+        # Add DAP SDK unified interface
+        list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:dap_sdk_interface>)
+        
         # Create final library
         add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
+        
+        # Link external static libraries into final library
+        target_link_libraries(dap_sdk PRIVATE
+            dap_json-c
+            dap_crypto_kyber512
+            dap_crypto_XKCP
+            dap_crypto
+            dap_io
+            dap_client
+            dap_link_manager
+            dap_cli_server
+            dap_dns_server
+            dap_enc_server
+            dap_http_server
+            dap_json_rpc
+            dap_notify_srv
+            dap_stream
+            dap_stream_ch
+            dap_session
+        )
+        
+        # Link MDBX only if enabled
+        if(BUILD_WITH_GDB_DRIVER_MDBX)
+            target_link_libraries(dap_sdk PRIVATE mdbx-static)
+        endif()
         
         message("[+] Final DAP SDK Library: dap_sdk created from real object files")
     else()
@@ -69,7 +97,7 @@ option(BUILD_TESTS "Build tests" OFF)
 
 # Global DB drivers - MDBX is default for all platforms
 option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
-option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" ON)
+option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" OFF)
 option(BUILD_WITH_GDB_DRIVER_PGSQL "Build with PostgreSQL driver for Global DB" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
@@ -81,6 +109,9 @@ else()
     set(DAP_FINAL_LIB_TYPE STATIC)
 endif()
 
+# Define DAP_SDK_ONLY to distinguish from full Cellframe builds
+add_definitions(-DDAP_SDK_ONLY)
+
 # Set default modules if none are specified
 if (NOT DEFINED DAPSDK_MODULES OR DAPSDK_MODULES STREQUAL "")
     set(DAPSDK_MODULES "crypto plugin io network-core network-server network-client network-link_manager global-db")
@@ -89,6 +120,17 @@ endif()
 
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
+
+# Add DAP SDK unified interface
+add_library(dap_sdk_interface OBJECT dap_sdk.c)
+target_include_directories(dap_sdk_interface PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/crypto/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src
+)
 
 # Optional modules with UPDATED PATHS
 if (DAPSDK_MODULES MATCHES "crypto")

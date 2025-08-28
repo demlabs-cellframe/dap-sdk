@@ -104,7 +104,19 @@ int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inl
  */
 bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
 {
-    if ( (a_data_in == NULL) || (a_data_in_size == 0) || (a_hash_out == NULL) )
+    // Allow empty input (a_data_in_size == 0) - SHA3 can hash empty data
+    // For empty input, a_data_in can be NULL, but a_hash_out must be valid
+    if (a_hash_out == NULL)
+        return false;
+    
+    // Handle empty input case - a_data_in can be NULL when a_data_in_size is 0
+    if (a_data_in_size == 0) {
+        SHA3_256( (unsigned char *)a_hash_out, NULL, 0 );
+        return true;
+    }
+    
+    // For non-empty input, a_data_in must not be NULL
+    if (a_data_in == NULL)
         return false;
 
     SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );

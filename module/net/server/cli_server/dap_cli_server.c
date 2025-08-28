@@ -52,6 +52,9 @@
 #ifndef DAP_SDK_ONLY
 // Forward declaration for Cellframe RPC function
 extern int dap_chain_rpc_is_json_command(const char *a_cmd_name);
+#else
+// Stub for DAP SDK only builds
+static inline int dap_chain_rpc_is_json_command(const char *a_cmd_name) { (void)a_cmd_name; return 0; }
 #endif
 
 #define LOG_TAG "dap_cli_server"

@@ -1,9 +1,0 @@
-message("Debug: CMAKE_CURRENT_SOURCE_DIR = ${CMAKE_CURRENT_SOURCE_DIR}")
-message("Debug: CMAKE_SOURCE_DIR = ${CMAKE_SOURCE_DIR}")
-message("Debug: Looking for dap_add_library macro...")
-
-if(COMMAND dap_add_library)
-    message("Debug: dap_add_library macro is DEFINED")
-else()
-    message("Debug: dap_add_library macro is NOT DEFINED")
-endif()

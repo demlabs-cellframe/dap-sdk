@@ -214,7 +214,10 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
     pthread_cond_init(&l_thread->queue_event, NULL);
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
-    assert(l_worker_related);
+    if (!l_worker_related) {
+        log_it(L_ERROR, "s_context_callback_started(): Cannot get worker for CPU ID %u", l_thread->context->cpu_id);
+        return -1;
+    }
     l_worker_related->proc_queue_input = l_thread;
     return 0;
 }

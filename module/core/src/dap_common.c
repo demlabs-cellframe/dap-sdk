@@ -420,6 +420,9 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
             return -1;
         if (a_log_file_path != s_log_file_path)
             dap_stpcpy(s_log_file_path, a_log_file_path);
+    } else {
+        // If no log file specified, enable stdout output for console logging
+        dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     }
     return 0;
 }

@@ -394,8 +394,19 @@ pthread_t       l_tid;
 
 #endif
 
+    // Check if workers are properly initialized before waiting
+    if (!s_workers_init || !s_workers) {
+        log_it(L_WARNING, "dap_events_wait(): Workers not initialized, skipping wait");
+        return 0;
+    }
 
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        // Check if worker and context are valid
+        if (!s_workers[i] || !s_workers[i]->context) {
+            log_it(L_WARNING, "dap_events_wait(): Worker %u or context is NULL, skipping", i);
+            continue;
+        }
+        
         void *ret;
         pthread_t l_thread_id = s_workers[i]->context->thread_id;
         pthread_join(l_thread_id , &ret );
@@ -461,10 +472,18 @@ dap_worker_t *dap_events_worker_get_auto( )
  */
 dap_worker_t * dap_events_worker_get(uint8_t a_index)
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return NULL;
+    }
 
-    return  (a_index < s_threads_count) ? s_workers[a_index] : NULL;
+    if (a_index >= s_threads_count) {
+        log_it(L_ERROR, "dap_events_worker_get(): Requested worker index %u >= threads_count %u", 
+               (uint32_t)a_index, s_threads_count);
+        return NULL;
+    }
+
+    return s_workers[a_index];
 }
 
 /**
