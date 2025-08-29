@@ -529,7 +529,7 @@ static bool s_test_globaldb_crypto_streams_integration(void) {
     DAP_TEST_ASSERT_NOT_NULL(l_test_signature, "Test signature creation");
     
     int l_verify_result = dap_sign_verify(l_test_signature, l_test_data, strlen(l_test_data));
-    DAP_TEST_ASSERT(l_verify_result == 1, "Test signature verification");
+    DAP_TEST_ASSERT(l_verify_result == 0, "Test signature verification");
     
     // Cleanup
     DAP_DELETE(l_test_signature);

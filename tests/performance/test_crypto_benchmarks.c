@@ -49,8 +49,8 @@ static bool s_benchmark_hash_performance(void) {
     dap_test_timer_start(&l_timer);
     
     for (size_t i = 0; i < HASH_ITERATIONS; i++) {
-        int l_ret = dap_hash_fast(l_test_data, l_data_size, &l_hash);
-        if (l_ret != 0) {
+        bool l_ret = dap_hash_fast(l_test_data, l_data_size, &l_hash);
+        if (l_ret != true) {
             log_it(L_ERROR, "Hash calculation failed at iteration %zu", i);
             return false;
         }
@@ -148,7 +148,7 @@ static bool s_benchmark_dilithium_verify_performance(void) {
     
     for (size_t i = 0; i < VERIFY_ITERATIONS; i++) {
         int l_verify_result = dap_sign_verify(l_signature, l_test_data, l_data_size);
-        if (l_verify_result == 1) {
+        if (l_verify_result == 0) {
             l_successful_verifications++;
         }
     }

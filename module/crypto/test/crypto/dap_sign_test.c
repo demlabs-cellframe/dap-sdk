@@ -170,8 +170,11 @@ static void test_chipmunk_aggregation_integration(void)
     dap_sign_aggregation_params_t agg_params = {0};
     agg_params.aggregation_type = DAP_SIGN_AGGREGATION_TYPE_TREE_BASED;
     
+    // Test message for aggregation
+    const char *test_message = "test_message_for_aggregation";
+    
     // Attempt aggregation (this may fail due to mock data, but tests the API)
-    dap_sign_t *aggregated = dap_sign_aggregate_signatures(test_signatures, 3, &agg_params);
+    dap_sign_t *aggregated = dap_sign_aggregate_signatures(test_signatures, 3, test_message, strlen(test_message), &agg_params);
     
     if (aggregated) {
         log_it(L_INFO, "Aggregation succeeded - testing aggregated signature properties");

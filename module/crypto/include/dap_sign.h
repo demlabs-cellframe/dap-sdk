@@ -254,6 +254,8 @@ typedef struct dap_sign_performance_stats {
 dap_sign_t *dap_sign_aggregate_signatures(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
+    const void *a_message,
+    size_t a_message_size,
     const dap_sign_aggregation_params_t *a_params
 );
 

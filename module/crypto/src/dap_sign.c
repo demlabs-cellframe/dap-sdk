@@ -47,6 +47,8 @@ static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
+    const void *a_message,
+    size_t a_message_size,
     const dap_sign_aggregation_params_t *a_params);
 
 static int dap_sign_chipmunk_verify_aggregated_internal(
@@ -431,6 +433,9 @@ bool dap_sign_compare_pkeys(dap_sign_t *a_sign1, dap_sign_t *a_sign2)
  */
 dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey)
 {
+    dap_return_val_if_pass(!a_chain_sign, NULL);
+    // Additional validation for signature structure
+    dap_return_val_if_pass(a_chain_sign->header.sign_size == 0 && a_chain_sign->header.sign_pkey_size == 0, NULL);
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
     dap_return_val_if_pass(l_type == DAP_ENC_KEY_TYPE_INVALID, NULL);
 
@@ -611,30 +616,7 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
                              a_sign->header.sign_size);
 }
 
-/**
- * @brief dap_sign_get_information Added in string information about signature
- * @param a_sign Signature can be NULL
- * @param a_json_out The output string pointer
- */
-// This function is deprecated - use dap_json_rpc_sign_get_information instead
-// Kept for compatibility but implementation moved to json_rpc module
-int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version)
-{
-    if (!a_sign) {
-        return -1;
-    }
-    dap_chain_hash_fast_t l_hash_pkey;
-    dap_json_object_add_string(a_json_out, a_version == 1 ? "Type" : "sig_type", dap_sign_type_to_str(a_sign->header.type));
-    if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
-        dap_json_object_add_string(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", l_hash_str);             
-    }
-    dap_json_object_add_int(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", (int)a_sign->header.sign_pkey_size);
-    dap_json_object_add_int(a_json_out, a_version == 1 ? "Signature size" : "sig_size", (int)a_sign->header.sign_size);
-    return 0;
-}
+
 /**
  * @brief return string with recommended types
  * @return string with recommended types
@@ -786,9 +768,11 @@ uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
+    const void *a_message,
+    size_t a_message_size,
     const dap_sign_aggregation_params_t *a_params)
 {
-    if (!a_signatures || a_signatures_count == 0) {
+    if (!a_signatures || a_signatures_count == 0 || !a_message || a_message_size == 0) {
         log_it(L_ERROR, "Invalid input parameters for Chipmunk aggregation");
         return NULL;
     }
@@ -833,12 +817,10 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
         return NULL;
     }
     
-    // Dummy message for aggregation (in real use, this would be the actual message)
-    uint8_t dummy_message[] = "aggregated_signature_message";
-    
+    // Use the actual message for aggregation
     // Perform Chipmunk aggregation
     int result = chipmunk_aggregate_signatures(individual_sigs, a_signatures_count,
-                                              dummy_message, sizeof(dummy_message),
+                                              a_message, a_message_size,
                                               multi_sig);
     
     if (result != 0) {
@@ -895,11 +877,13 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
 dap_sign_t *dap_sign_aggregate_signatures(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
+    const void *a_message,
+    size_t a_message_size,
     const dap_sign_aggregation_params_t *a_params)
 {
     dap_log_set_format(DAP_LOG_FORMAT_NO_PREFIX);
     
-    if (!a_signatures || a_signatures_count == 0 || !a_params) {
+    if (!a_signatures || a_signatures_count == 0 || !a_message || a_message_size == 0 || !a_params) {
         log_it(L_ERROR, "Invalid input parameters");
         return NULL;
     }
@@ -922,7 +906,7 @@ dap_sign_t *dap_sign_aggregate_signatures(
     // Dispatch to algorithm-specific aggregation implementation
     switch (sig_type.type) {
         case SIG_TYPE_CHIPMUNK:
-            return dap_sign_chipmunk_aggregate_signatures_internal(a_signatures, a_signatures_count, a_params);
+            return dap_sign_chipmunk_aggregate_signatures_internal(a_signatures, a_signatures_count, a_message, a_message_size, a_params);
         // Add other signature types here
         default:
             log_it(L_ERROR, "Aggregation not implemented for signature type %s", dap_sign_type_to_str(sig_type));
@@ -1376,7 +1360,7 @@ int dap_sign_benchmark_aggregation(
             params.aggregation_type = a_aggregation_type;
             
             dap_sign_t *aggregated = dap_sign_chipmunk_aggregate_signatures_internal(
-                test_signatures, a_signatures_count, &params);
+                test_signatures, a_signatures_count, test_message, test_message_len, &params);
             
             // Cleanup
             for (uint32_t i = 0; i < a_signatures_count; i++) {

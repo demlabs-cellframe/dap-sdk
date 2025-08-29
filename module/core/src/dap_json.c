@@ -876,9 +876,17 @@ int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
     dap_return_val_if_fail(a_json && a_key, -1);
     
     json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return -1;
+    if (!l_obj) {
+        log_it(L_ERROR, "Failed to convert dap_json to json_object");
+        return -1;
+    }
     
-    return json_object_object_add(l_obj, a_key, NULL);
+    // In this version of json-c, we add NULL directly which represents a null value
+    log_it(L_DEBUG, "Adding null field '%s' to JSON object", a_key);
+    int result = json_object_object_add(l_obj, a_key, NULL);
+    log_it(L_DEBUG, "json_object_object_add with NULL result: %d", result);
+    
+    return result;
 }
 
 dap_json_t* dap_json_object_ref(dap_json_t* a_json) {

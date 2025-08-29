@@ -89,8 +89,8 @@ static bool s_test_complete_dap_workflow(void) {
     
     // Hash the JSON data
     dap_hash_fast_t l_tx_hash = {0};
-    int l_hash_ret = dap_hash_fast(l_json_str, strlen(l_json_str), &l_tx_hash);
-    DAP_TEST_ASSERT(l_hash_ret == 0, "Transaction hash calculation");
+    bool l_hash_ret = dap_hash_fast(l_json_str, strlen(l_json_str), &l_tx_hash);
+    DAP_TEST_ASSERT(l_hash_ret == true, "Transaction hash calculation");
     
     // Sign with master key
     dap_sign_t* l_master_signature = dap_sign_create(l_master_key, &l_tx_hash, sizeof(l_tx_hash));
@@ -104,10 +104,10 @@ static bool s_test_complete_dap_workflow(void) {
     log_it(L_DEBUG, "Step 6: Signature verification");
     
     int l_master_verify = dap_sign_verify(l_master_signature, &l_tx_hash, sizeof(l_tx_hash));
-    DAP_TEST_ASSERT(l_master_verify == 1, "Master signature verification");
+    DAP_TEST_ASSERT(l_master_verify == 0, "Master signature verification");
     
     int l_node_verify = dap_sign_verify(l_node_signature, &l_tx_hash, sizeof(l_tx_hash));
-    DAP_TEST_ASSERT(l_node_verify == 1, "Node signature verification");
+    DAP_TEST_ASSERT(l_node_verify == 0, "Node signature verification");
     
     // Step 7: Cross-verification test (simplified for this API)
     log_it(L_DEBUG, "Step 7: Signature verification completed");

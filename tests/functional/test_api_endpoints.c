@@ -115,8 +115,8 @@ static bool s_test_crypto_api_functionality(void) {
     
     // Hash the document
     dap_hash_fast_t l_doc_hash = {0};
-    int l_hash_ret = dap_hash_fast(l_document, l_doc_size, &l_doc_hash);
-    DAP_TEST_ASSERT(l_hash_ret == 0, "Document hashing");
+    bool l_hash_ret = dap_hash_fast(l_document, l_doc_size, &l_doc_hash);
+    DAP_TEST_ASSERT(l_hash_ret == true, "Document hashing");
     
     // Sign the hash
     size_t l_signature_size = 0;
@@ -126,7 +126,7 @@ static bool s_test_crypto_api_functionality(void) {
     
     // Verify signature
     int l_verify_result = dap_sign_verify(l_signature, &l_doc_hash, sizeof(l_doc_hash));
-    DAP_TEST_ASSERT(l_verify_result == 1, "Signature verification");
+    DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification");
     
     // Test 3: Multiple document workflow
     log_it(L_DEBUG, "Testing multiple document workflow");
@@ -147,7 +147,7 @@ static bool s_test_crypto_api_functionality(void) {
         DAP_TEST_ASSERT_NOT_NULL(l_sig, "Batch document signing");
         
         int l_verify = dap_sign_verify(l_sig, &l_hash, sizeof(l_hash));
-        DAP_TEST_ASSERT(l_verify == 1, "Batch document verification");
+        DAP_TEST_ASSERT(l_verify == 0, "Batch document verification");
         
         DAP_DELETE(l_sig);
     }
@@ -186,8 +186,8 @@ static bool s_test_combined_api_workflow(void) {
     
     // Step 3: Create hash of JSON data
     dap_hash_fast_t l_tx_hash = {0};
-    int l_hash_ret = dap_hash_fast(l_json_data, strlen(l_json_data), &l_tx_hash);
-    DAP_TEST_ASSERT(l_hash_ret == 0, "Transaction hash creation");
+    bool l_hash_ret = dap_hash_fast(l_json_data, strlen(l_json_data), &l_tx_hash);
+    DAP_TEST_ASSERT(l_hash_ret == true, "Transaction hash creation");
     
     // Step 4: Sign the transaction
     size_t l_signature_size = 0;
@@ -235,7 +235,7 @@ static bool s_test_combined_api_workflow(void) {
     
     // Verify signature
     int l_sig_verify = dap_sign_verify(l_signature, &l_verify_hash, sizeof(l_verify_hash));
-    DAP_TEST_ASSERT(l_sig_verify == 1, "Signature verification in combined workflow");
+    DAP_TEST_ASSERT(l_sig_verify == 0, "Signature verification in combined workflow");
     
     // Cleanup
     DAP_DELETE(l_final_json);

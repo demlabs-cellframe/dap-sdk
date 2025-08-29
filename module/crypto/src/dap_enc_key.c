@@ -1119,6 +1119,9 @@ dap_enc_key_t *dap_enc_key_dup(dap_enc_key_t *a_key)
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
     dap_return_val_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type, NULL);
+    // Check array bounds to prevent SegFault  
+    dap_return_val_if_pass(a_key_type < 0 || a_key_type > DAP_ENC_KEY_TYPE_LAST, NULL);
+    
     dap_enc_key_t * l_ret = DAP_NEW_Z(dap_enc_key_t);
     if(s_callbacks[a_key_type].new_callback){
         s_callbacks[a_key_type].new_callback(l_ret);
@@ -1144,9 +1147,11 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
 {
 // sanity check
     dap_return_val_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type, NULL);
+    // Check array bounds to prevent SegFault  
+    dap_return_val_if_pass(a_key_type < 0 || a_key_type > DAP_ENC_KEY_TYPE_LAST, NULL);
 // func work
     dap_enc_key_t * l_ret = dap_enc_key_new(a_key_type);
-    if(s_callbacks[a_key_type].new_generate_callback) {
+    if(l_ret && s_callbacks[a_key_type].new_generate_callback) {
         s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
     }
     return l_ret;

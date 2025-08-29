@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "type": "project_standards",
+    "last_updated": "2025-01-05"
+  },
+  "documentation": {
+    "language": "Russian for documentation, English for code",
+    "structure": [
+      "Title",
+      "Description (## Описание)",
+      "Module Structure (## Структура модуля)",
+      "Main Components",
+      "Usage Examples (## Примеры использования)",
+      "Implementation Notes (## Особенности реализации)",
+      "See Also (## См. также)"
+    ],
+    "translation_standards": {
+      "api_functions": "Keep in English",
+      "data_types": "Keep in English",
+      "code_comments": "Keep in English only",
+      "string_literals": "Localize for target language"
+    }
+  },
+  "quality_requirements": {
+    "code_examples": {
+      "must_compile": true,
+      "memory_safe": true,
+      "follow_conventions": true,
+      "include_error_handling": true
+    },
+    "documentation": {
+      "completeness": "100%",
+      "accuracy": "Technical accuracy required",
+      "consistency": "Uniform terminology",
+      "localization": "Cultural adaptation for each language"
+    }
+  },
+  "coding_standards": {
+    "memory_management": {
+      "rule": "Use DAP_DELETE and DAP_FREE macros instead of direct free()",
+      "example": "DAP_DELETE(pointer); // for single objects\nDAP_DEL_MULTY(pointer); // for arrays"
+    },
+    "no_openssl": {
+      "rule": "ЗАПРЕЩЕНО использовать OpenSSL. Все функции хэширования должны использовать только собственные реализации DAP SDK",
+      "rationale": "Проект использует собственные криптографические примитивы для независимости от внешних библиотек",
+      "examples": {
+        "wrong": "#include <openssl/sha.h>\nSHA256(data, len, hash);",
+        "correct": "#include \"dap_hash.h\"\ndap_hash_fast(data, len, hash);"
+      },
+      "hash_functions": {
+        "sha256": "dap_hash_fast() или dap_enc_hash()",
+        "keccak": "Использовать XKCP библиотеку через dap_crypto_XKCP",
+        "general": "Все хэш-функции доступны через dap_hash.h"
+      }
+    },
+    "file_layout": {
+      "order": [
+        "Copyright header",
+        "Include guards or #pragma once",
+        "System includes (sorted alphabetically)",
+        "DAP SDK includes (sorted alphabetically)",
+        "Local includes",
+        "Defines and macros",
+        "Type definitions",
+        "Static variables",
+        "Function declarations",
+        "Function implementations"
+      ]
+    }
+  }
+}
