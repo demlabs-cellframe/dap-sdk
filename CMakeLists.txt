@@ -101,14 +101,9 @@ option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
 
-# Global DB drivers - MDBX is default for all platforms except Android
-if(ANDROID)
-    option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB" OFF)
-    option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB (Android default)" ON)
-else()
-    option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
-    option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" OFF)
-endif()
+# Global DB drivers - MDBX is default for all platforms
+option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
+option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" OFF)  
 option(BUILD_WITH_GDB_DRIVER_PGSQL "Build with PostgreSQL driver for Global DB" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC

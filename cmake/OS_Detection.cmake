@@ -195,6 +195,9 @@ if(UNIX)
         add_definitions ("-DDAP_OS_ANDROID")
         add_definitions ("-DDAP_OS_LINUX")
         
+        # Android compatibility - disable problematic MDBX features
+        add_definitions ("-DMDBX_DISABLE_MOUNT_DETECTION")
+        
         # Android uses manual implementations for missing functions
     endif()
 
