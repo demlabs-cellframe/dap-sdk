@@ -2,6 +2,26 @@
 #include "dap_common.h"
 
 #include <stdio.h>
+
+#ifdef DAP_OS_ANDROID
+// Android-compatible getline implementation
+static ssize_t android_getline(char **lineptr, size_t *n, FILE *stream) {
+    if (!lineptr || !n || !stream) return -1;
+    
+    if (*lineptr == NULL) {
+        *n = 256;
+        *lineptr = malloc(*n);
+        if (!*lineptr) return -1;
+    }
+    
+    if (fgets(*lineptr, *n, stream) == NULL) {
+        return -1;
+    }
+    
+    return strlen(*lineptr);
+}
+#define getline android_getline
+#endif
 #include <unistd.h>
 #include <string.h>
 

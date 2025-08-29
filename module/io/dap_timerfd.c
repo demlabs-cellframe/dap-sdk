@@ -34,12 +34,130 @@
 #include <winsock2.h>
 #endif
 
+#ifndef DAP_OS_ANDROID
+#include <sys/timerfd.h>
+#endif
+
 #include "dap_common.h"
 #include "dap_events.h"
 #include "dap_worker.h"
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
 #include "dap_context.h"
+
+#ifdef DAP_OS_ANDROID
+// Android-compatible timerfd replacement using regular timer
+#include <time.h>
+#include <signal.h>
+
+// Android timerfd context
+typedef struct {
+    timer_t timer_id;
+    int pipe_fd[2];
+    struct itimerspec timer_spec;
+    pthread_mutex_t mutex;
+} android_timerfd_ctx_t;
+
+static android_timerfd_ctx_t* s_android_timers[256] = {0}; // Static array for timer contexts
+static int s_timer_count = 0;
+static pthread_mutex_t s_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Timer signal handler for Android
+static void android_timer_handler(union sigval sv) {
+    android_timerfd_ctx_t* ctx = (android_timerfd_ctx_t*)sv.sival_ptr;
+    if (ctx && ctx->pipe_fd[1] != -1) {
+        uint64_t exp = 1;
+        write(ctx->pipe_fd[1], &exp, sizeof(exp));
+    }
+}
+
+static int android_timerfd_create(int clockid, int flags) {
+    pthread_mutex_lock(&s_timer_mutex);
+    
+    if (s_timer_count >= 256) {
+        pthread_mutex_unlock(&s_timer_mutex);
+        errno = EMFILE;
+        return -1;
+    }
+    
+    android_timerfd_ctx_t* ctx = malloc(sizeof(android_timerfd_ctx_t));
+    if (!ctx) {
+        pthread_mutex_unlock(&s_timer_mutex);
+        return -1;
+    }
+    
+    // Create pipe for notification
+    if (pipe(ctx->pipe_fd) == -1) {
+        free(ctx);
+        pthread_mutex_unlock(&s_timer_mutex);
+        return -1;
+    }
+    
+    // Set non-blocking if requested
+    if (flags & O_NONBLOCK) {
+        fcntl(ctx->pipe_fd[0], F_SETFL, O_NONBLOCK);
+    }
+    
+    // Create POSIX timer
+    struct sigevent sev = {0};
+    sev.sigev_notify = SIGEV_THREAD;
+    sev.sigev_notify_function = android_timer_handler;
+    sev.sigev_value.sival_ptr = ctx;
+    
+    if (timer_create(CLOCK_MONOTONIC, &sev, &ctx->timer_id) == -1) {
+        close(ctx->pipe_fd[0]);
+        close(ctx->pipe_fd[1]);
+        free(ctx);
+        pthread_mutex_unlock(&s_timer_mutex);
+        return -1;
+    }
+    
+    pthread_mutex_init(&ctx->mutex, NULL);
+    s_android_timers[s_timer_count] = ctx;
+    int fd = ctx->pipe_fd[0];
+    s_timer_count++;
+    
+    pthread_mutex_unlock(&s_timer_mutex);
+    return fd;
+}
+
+static int android_timerfd_settime(int fd, int flags, const struct itimerspec *new_value, struct itimerspec *old_value) {
+    pthread_mutex_lock(&s_timer_mutex);
+    
+    android_timerfd_ctx_t* ctx = NULL;
+    for (int i = 0; i < s_timer_count; i++) {
+        if (s_android_timers[i] && s_android_timers[i]->pipe_fd[0] == fd) {
+            ctx = s_android_timers[i];
+            break;
+        }
+    }
+    
+    if (!ctx) {
+        pthread_mutex_unlock(&s_timer_mutex);
+        errno = EBADF;
+        return -1;
+    }
+    
+    pthread_mutex_lock(&ctx->mutex);
+    
+    if (old_value) {
+        *old_value = ctx->timer_spec;
+    }
+    
+    ctx->timer_spec = *new_value;
+    int result = timer_settime(ctx->timer_id, flags, new_value, NULL);
+    
+    pthread_mutex_unlock(&ctx->mutex);
+    pthread_mutex_unlock(&s_timer_mutex);
+    
+    return result;
+}
+
+#define timerfd_create android_timerfd_create
+#define timerfd_settime android_timerfd_settime
+#define TFD_NONBLOCK O_NONBLOCK
+#define CLOCK_MONOTONIC 1
+#endif
 
 #define LOG_TAG "dap_timerfd"
 static void s_es_callback_timer(struct dap_events_socket *a_es);

@@ -155,7 +155,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         // Init kernel objects
         pthread_condattr_t attr;
         pthread_condattr_init(&attr);
-#ifndef DAP_OS_DARWIN
+#if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID)
         pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 #endif
         pthread_mutex_init(&a_context->started_mutex, NULL);

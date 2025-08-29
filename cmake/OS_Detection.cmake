@@ -194,6 +194,8 @@ if(UNIX)
         #set (_LOPT "${LDOPT_SYSTEM} -rdynamic")
         add_definitions ("-DDAP_OS_ANDROID")
         add_definitions ("-DDAP_OS_LINUX")
+        
+        # Android uses manual implementations for missing functions
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")

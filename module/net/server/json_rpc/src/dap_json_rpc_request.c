@@ -35,7 +35,7 @@ static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_cli
     InitializeConditionVariable(&l_exec_cmd_request->wait_cond);
 #else
     pthread_mutex_init(&l_exec_cmd_request->wait_mutex, NULL);
-#ifdef DAP_OS_DARWIN
+#if defined(DAP_OS_DARWIN) || defined(DAP_OS_ANDROID)
     pthread_cond_init(&l_exec_cmd_request->wait_cond, NULL);
 #else
     pthread_condattr_t attr;
