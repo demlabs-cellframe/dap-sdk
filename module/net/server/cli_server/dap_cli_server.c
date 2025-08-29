@@ -553,7 +553,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     char *response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
-    return response_string;
+    return response_string ? response_string : dap_strdup("Error");
 }
 
 DAP_INLINE int32_t dap_cli_get_cmd_thread_count()

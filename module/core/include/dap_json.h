@@ -153,6 +153,13 @@ dap_json_t* dap_json_object_new_string(const char* a_value);
 dap_json_t* dap_json_object_new_double(double a_value);
 dap_json_t* dap_json_object_new_bool(bool a_value);
 
+// Object iteration API
+typedef void (*dap_json_object_foreach_callback_t)(const char* key, dap_json_t* value, void* user_data);
+void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data);
+
+// Extended value access API
+const char* dap_json_get_string(dap_json_t* a_json);
+
 #ifdef __cplusplus
 }
 #endif

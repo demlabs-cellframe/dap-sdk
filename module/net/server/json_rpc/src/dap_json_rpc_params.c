@@ -1,9 +1,54 @@
 #include "dap_json_rpc_params.h"
 #include "dap_string.h"
-// Temporary json-c includes for remaining complex functions
-#include "json.h"
+#include "dap_json.h"
 
 #define LOG_TAG "dap_json_rpc_params"
+
+// Helper structure for object iteration
+typedef struct {
+    dap_string_t* str_tmp;
+    bool* error_occurred;
+} dap_json_params_iteration_data_t;
+
+// Callback function for dap_json_object_foreach
+static void s_process_json_param(const char* key, dap_json_t* val, void* user_data) {
+    dap_json_params_iteration_data_t* data = (dap_json_params_iteration_data_t*)user_data;
+    if (*data->error_occurred) return;
+    
+    const char *l_key_str = NULL;
+    const char *l_val_str = NULL;
+    dap_json_type_t l_arg_type = dap_json_get_type(val);
+    
+    if (l_arg_type == DAP_JSON_TYPE_STRING || 
+        l_arg_type == DAP_JSON_TYPE_NULL || 
+        l_arg_type == DAP_JSON_TYPE_OBJECT) {
+        l_key_str = key;
+        l_val_str = dap_json_get_string(val);
+    } else if (l_arg_type == DAP_JSON_TYPE_ARRAY) {
+        size_t length = dap_json_array_length(val);
+        dap_string_append_printf(data->str_tmp, "-%s;", key);
+
+        for (size_t i = 0; i < length; i++) {
+            dap_json_t *jobj = dap_json_array_get_idx(val, i);
+            dap_json_type_t jobj_type = dap_json_get_type(jobj);
+
+            if (jobj_type != DAP_JSON_TYPE_STRING) {
+                log_it(L_ERROR, "Bad subcommand type");
+                *data->error_occurred = true;
+                return;
+            }
+            const char *jobj_str = dap_json_get_string(jobj);
+            dap_string_append_printf(data->str_tmp, "%s;", jobj_str);
+        }
+    } else {
+        l_key_str = key;
+        l_val_str = dap_json_get_string(val);
+    }
+
+    if (l_key_str && l_val_str) {
+        dap_string_append_printf(data->str_tmp, "-%s;%s;", l_key_str, l_val_str);
+    }
+}
 
 dap_json_rpc_param_t* dap_json_rpc_create_param(void * data, dap_json_rpc_type_param_t type)
 {
@@ -163,44 +208,26 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(dap_json
         }
     }
 
-    if (a_args){        
-        // TODO: This function needs complete rewrite to use dap_json API
-        // For now, temporarily using json-c directly as object iteration is complex
-        // This will be addressed when dap_json API gets object iteration support
-        json_object *json_args = (json_object*)a_args;
+    if (a_args){
+        // Validate that arguments are JSON object type using dap_json API
+        if (!dap_json_is_object(a_args)) {
+            log_it(L_ERROR, "Arguments must be JSON object type");
+            dap_string_free(l_str_tmp, true);
+            return NULL;
+        }
         
-        json_object_object_foreach(json_args, key, val){
-            const char *l_key_str = NULL;
-            const char *l_val_str = NULL;
-            enum json_type l_arg_type = json_object_get_type(val);
-            if(l_arg_type == json_type_string || 
-                l_arg_type == json_type_null || l_arg_type == json_type_object) {
-                l_key_str = key;
-                l_val_str = json_object_get_string(val);
-            } else if(l_arg_type == json_type_array){
-                int length = json_object_array_length(val);
-                dap_string_append_printf(l_str_tmp, "-%s;", key);
-
-                for (int i = 0; i < length; i++){
-                    json_object *jobj = json_object_array_get_idx(val, i);
-                    json_type jobj_type = json_object_get_type(jobj);
-
-                    if (jobj_type != json_type_string){
-                        log_it(L_ERROR, "Bad subcommand type");
-                        dap_string_free(l_str_tmp, true);
-                        return NULL;
-                    }
-
-                    dap_string_append_printf(l_str_tmp, "%s%s", json_object_get_string(jobj), i == length - 1 ? ";" : ",");
-                }
-                continue;
-            }
-
-            if(l_key_str){
-                dap_string_append_printf(l_str_tmp, "-%s;%s;", l_key_str, l_val_str ? l_val_str : "");
-            } else {
-                return log_it(L_CRITICAL, "Bad argument!"), dap_string_free(l_str_tmp, true),  NULL;
-            }
+        // Use dap_json API for object iteration
+        bool error_occurred = false;
+        dap_json_params_iteration_data_t iteration_data = {
+            .str_tmp = l_str_tmp,
+            .error_occurred = &error_occurred
+        };
+        
+        dap_json_object_foreach(a_args, s_process_json_param, &iteration_data);
+        
+        if (error_occurred) {
+            dap_string_free(l_str_tmp, true);
+            return NULL;
         }
     }
 

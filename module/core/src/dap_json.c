@@ -898,3 +898,30 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     json_object_get(l_obj); // Increase reference count
     return a_json;
 }
+
+// Object iteration implementation
+void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data) {
+    if (!a_json || !callback) return;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return;
+    
+    json_object_object_foreach(l_obj, key, val) {
+        dap_json_t *l_dap_val = _json_c_to_dap_json(val);
+        if (l_dap_val) {
+            callback(key, l_dap_val, user_data);
+        }
+    }
+}
+
+// Extended value access API implementation
+const char* dap_json_get_string(dap_json_t* a_json) {
+    if (!a_json) return NULL;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return NULL;
+    
+    return json_object_get_string(l_obj);
+}
+
+

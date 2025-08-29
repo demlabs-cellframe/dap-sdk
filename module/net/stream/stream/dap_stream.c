@@ -421,8 +421,12 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close(a_stream->session->id); // TODO make stream close after timeout, not momentaly
 
     if (a_stream->esocket) {
-        a_stream->esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
-        dap_events_socket_remove_and_delete_unsafe(a_stream->esocket, true);
+        dap_events_socket_t *l_esocket = a_stream->esocket;
+        a_stream->esocket = NULL;  // Prevent recursive calls
+        
+        l_esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
+        l_esocket->_inheritor = NULL;
+        dap_events_socket_remove_and_delete_unsafe(l_esocket, false);  // Immediate deletion for both platforms
     }
 
 #ifdef  DAP_SYS_DEBUG

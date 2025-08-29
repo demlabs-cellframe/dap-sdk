@@ -709,6 +709,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                 }
+            } else {
+                // Final error without reconnection - clean up resources
+                s_client_internal_clean(a_client_pvt);
             }
         } break;
 
