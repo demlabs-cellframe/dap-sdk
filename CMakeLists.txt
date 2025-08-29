@@ -84,6 +84,12 @@ macro(dap_create_final_library)
             target_link_libraries(dap_sdk PRIVATE mdbx-static)
         endif()
         
+        # Link macOS frameworks for network monitoring
+        if(APPLE)
+            target_link_libraries(dap_sdk PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
+            message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
+        endif()
+        
         message("[+] Final DAP SDK Library: dap_sdk created from real object files")
     else()
         message("[!] No DAP internal modules found!")
