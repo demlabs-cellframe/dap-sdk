@@ -56,7 +56,6 @@ typedef enum dap_sdk_modules {
     
     // Additional systems
     DAP_SDK_MODULE_PLUGIN       = 0x00008000,    ///< Plugin system
-    DAP_SDK_MODULE_AVRESTREAM   = 0x00010000,    ///< Audio/Video streaming
     DAP_SDK_MODULE_TEST         = 0x00020000,    ///< Test framework
     
     // Convenience combinations

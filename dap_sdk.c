@@ -61,7 +61,6 @@ static int s_init_cli_server(const dap_sdk_config_t *a_config);
 static int s_init_app_cli(const dap_sdk_config_t *a_config);
 static int s_init_json_rpc(const dap_sdk_config_t *a_config);
 static int s_init_plugin(const dap_sdk_config_t *a_config);
-static int s_init_avrestream(const dap_sdk_config_t *a_config);
 static int s_init_test(const dap_sdk_config_t *a_config);
 
 // Forward declarations for all deinitialization functions
@@ -81,7 +80,6 @@ static void s_deinit_cli_server(void);
 static void s_deinit_app_cli(void);
 static void s_deinit_json_rpc(void);
 static void s_deinit_plugin(void);
-static void s_deinit_avrestream(void);
 static void s_deinit_test(void);
 
 /**
@@ -140,8 +138,8 @@ static int s_init_io(const dap_sdk_config_t *a_config) {
     log_it(L_INFO, "Initializing DAP SDK IO subsystem");
     
     // Initialize events system (required for timers, sockets, etc.)
-    // Use reasonable defaults: 4 threads, 60 second timeout
-    if (dap_events_init(4, 60) != 0) {
+    // Use reasonable defaults: 6 threads (to support multi-threaded tests), 60 second timeout
+    if (dap_events_init(6, 60) != 0) {
         log_it(L_ERROR, "Failed to initialize events system");
         return -1;
     }
@@ -305,13 +303,6 @@ int dap_sdk_init(const dap_sdk_config_t *a_config) {
         }
     }
     
-    if (modules & DAP_SDK_MODULE_AVRESTREAM) {
-        if ((ret = s_init_avrestream(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize AVRestream System");
-            return ret;
-        }
-    }
-    
     if (modules & DAP_SDK_MODULE_TEST) {
         if ((ret = s_init_test(a_config)) != 0) {
             log_it(L_ERROR, "Failed to initialize Test Framework");
@@ -429,9 +420,6 @@ void dap_sdk_deinit(void) {
         s_deinit_test();
     }
     
-    if (s_current_modules & DAP_SDK_MODULE_AVRESTREAM) {
-        s_deinit_avrestream();
-    }
     
     if (s_current_modules & DAP_SDK_MODULE_PLUGIN) {
         s_deinit_plugin();
@@ -644,14 +632,6 @@ static int s_init_plugin(const dap_sdk_config_t *a_config) {
     return 0;
 }
 
-/**
- * @brief Initialize AVRestream system
- */
-static int s_init_avrestream(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK AVRestream System initialization (stub implementation)");
-    return 0;
-}
 
 /**
  * @brief Initialize test framework

@@ -187,16 +187,13 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
-if (DAPSDK_MODULES MATCHES "avrestream")
-    add_subdirectory(module/avrestream)
-    message("[+] Module 'av-restream'")
-endif()
 
-# Examples - UPDATED PATH
-if(BUILD_EXAMPLES)
-    # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
-    message("[+] Module 'examples'")
-endif()
+
+# Examples - UPDATED PATH - DISABLED
+# if(BUILD_EXAMPLES)
+#     # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
+#     # message("[+] Module 'examples'")
+# endif()
 
 # Test framework - UPDATED PATH
 if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
