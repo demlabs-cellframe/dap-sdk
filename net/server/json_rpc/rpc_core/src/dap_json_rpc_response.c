@@ -70,6 +70,10 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
     }
 
     json_object* jobj = json_object_new_object();
+    if (!jobj) {
+        log_it(L_ERROR, "Can't create json object");
+        return NULL;
+    }
     // json type
     json_object_object_add(jobj, "type", json_object_new_int(response->type));
 
@@ -102,6 +106,11 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 
     // convert to string
     const char* json_string = json_object_to_json_string(jobj);
+    if (!json_string) {
+        log_it(L_ERROR, "Can't convert json object to string");
+        json_object_put(jobj);
+        return NULL;
+    }
     char* result_string = strdup(json_string);
     json_object_put(jobj);
 
