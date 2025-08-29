@@ -275,7 +275,6 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
 
             json_object_put(jobj);
             if (!request->params){
-                dap_json_rpc_params_remove_all(request->params);
                 DAP_DEL_MULTY(request->method, request);
                 return NULL;
             }
