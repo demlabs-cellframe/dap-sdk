@@ -34,8 +34,10 @@
 #include <winsock2.h>
 #endif
 
+#ifdef __linux__
 #ifndef DAP_OS_ANDROID
 #include <sys/timerfd.h>
+#endif
 #endif
 
 #include "dap_common.h"
@@ -157,8 +159,12 @@ static int android_timerfd_settime(int fd, int flags, const struct itimerspec *n
 
 #define timerfd_create android_timerfd_create
 #define timerfd_settime android_timerfd_settime
+#ifndef TFD_NONBLOCK
 #define TFD_NONBLOCK O_NONBLOCK
+#endif
+#ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
+#endif
 #endif
 
 #define LOG_TAG "dap_timerfd"
@@ -261,7 +267,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_timerfd->events_socket    = l_events_socket;
     l_timerfd->esocket_uuid     = l_events_socket->uuid;
 
-#if defined DAP_OS_LINUX
+#if defined(DAP_OS_LINUX) && !defined(DAP_OS_ANDROID)
     struct itimerspec l_ts;
     int l_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if(l_tfd == -1) {
@@ -277,6 +283,28 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_ts.it_value.tv_nsec = (a_timeout_ms % 1000) * 1000000;
     if(timerfd_settime(l_tfd, 0, &l_ts, NULL) < 0) {
         log_it(L_WARNING, "dap_timerfd_start() failed: timerfd_settime() errno=%d\n", errno);
+        close(l_tfd);
+        DAP_DELETE(l_timerfd);
+        return NULL;
+    }
+    l_events_socket->socket = l_tfd;
+#elif defined(DAP_OS_ANDROID)
+    // Android uses custom timerfd implementation
+    int l_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    if(l_tfd == -1) {
+        log_it(L_WARNING, "dap_timerfd_start() failed: android timerfd_create() errno=%d\n", errno);
+        DAP_DELETE(l_timerfd);
+        return NULL;
+    }
+    
+    struct itimerspec l_ts;
+    l_ts.it_interval.tv_sec = 0;
+    l_ts.it_interval.tv_nsec = 0;
+    l_ts.it_value.tv_sec = a_timeout_ms / 1000;
+    l_ts.it_value.tv_nsec = (a_timeout_ms % 1000) * 1000000;
+    
+    if(timerfd_settime(l_tfd, 0, &l_ts, NULL) < 0) {
+        log_it(L_WARNING, "dap_timerfd_start() failed: android timerfd_settime() errno=%d\n", errno);
         close(l_tfd);
         DAP_DELETE(l_timerfd);
         return NULL;
@@ -348,7 +376,7 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
     debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
-#if defined DAP_OS_LINUX
+#if defined(DAP_OS_LINUX) && !defined(DAP_OS_ANDROID)
     struct itimerspec l_ts;
     // repeat never
     l_ts.it_interval.tv_sec = 0;
@@ -358,6 +386,17 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     l_ts.it_value.tv_nsec = (a_timerfd->timeout_ms % 1000) * 1000000;
     if(timerfd_settime(a_timerfd->tfd, 0, &l_ts, NULL) < 0) {
         log_it(L_WARNING, "Reset timerfd failed: timerfd_settime() errno=%d\n", errno);
+    }
+#elif defined(DAP_OS_ANDROID)
+    // Android timer reset using custom implementation
+    struct itimerspec l_ts;
+    l_ts.it_interval.tv_sec = 0;
+    l_ts.it_interval.tv_nsec = 0;
+    l_ts.it_value.tv_sec = a_timerfd->timeout_ms / 1000;
+    l_ts.it_value.tv_nsec = (a_timerfd->timeout_ms % 1000) * 1000000;
+    
+    if(timerfd_settime(a_timerfd->tfd, 0, &l_ts, NULL) < 0) {
+        log_it(L_WARNING, "Reset android timerfd failed: timerfd_settime() errno=%d\n", errno);
     }
 #elif defined (DAP_OS_BSD)
     dap_events_socket_t *l_es = a_timerfd->events_socket;
