@@ -28,9 +28,9 @@ static ssize_t android_getline(char **a_lineptr, size_t *a_n, FILE *a_stream) {
 #define LOG_TAG "dap_cpu_monitor"
 
 static FILE * _proc_stat = NULL;
-static dap_cpu_stats_t _cpu_stats = {0};
-static dap_cpu_t _cpu_old_stats[MAX_CPU_COUNT] = {0};
-static dap_cpu_t _cpu_summary_old = {0};
+static dap_cpu_stats_t _cpu_stats = {{0}};
+static dap_cpu_t _cpu_old_stats[MAX_CPU_COUNT] = {{0}};
+static dap_cpu_t _cpu_summary_old = {{0}};
 
 typedef struct proc_stat_line
 {
@@ -93,28 +93,28 @@ dap_cpu_stats_t dap_cpu_get_stats()
     }
 
     char *line = NULL;
-    proc_stat_line_t stat = {0};
+    proc_stat_line_t l_stat = {{0}};
 
     /** get summary cpu stat **/
     size_t mem_size;
     getline(&line, &mem_size, _proc_stat);
-    _deserialize_proc_stat(line, &stat);
+    _deserialize_proc_stat(line, &l_stat);
 
-    _cpu_stats.cpu_summary.idle_time = stat.idle;
-    _cpu_stats.cpu_summary.total_time = stat.total;
+    _cpu_stats.cpu_summary.idle_time = l_stat.idle;
+    _cpu_stats.cpu_summary.total_time = l_stat.total;
     /*********************************************/
 
-    for(unsigned i = 0; i < _cpu_stats.cpu_cores_count; i++) {
+    for(unsigned l_i = 0; l_i < _cpu_stats.cpu_cores_count; l_i++) {
         getline(&line, &mem_size, _proc_stat);
-        _deserialize_proc_stat(line, &stat);
-        _cpu_stats.cpus[i].idle_time = stat.idle;
-        _cpu_stats.cpus[i].total_time = stat.total;
-        _cpu_stats.cpus[i].ncpu = i;
+        _deserialize_proc_stat(line, &l_stat);
+        _cpu_stats.cpus[l_i].idle_time = l_stat.idle;
+        _cpu_stats.cpus[l_i].total_time = l_stat.total;
+        _cpu_stats.cpus[l_i].ncpu = l_i;
 
-        _cpu_stats.cpus[i].load = _calculate_load(_cpu_stats.cpus[i].idle_time,
-                                                  _cpu_old_stats[i].idle_time,
-                                                  _cpu_stats.cpus[i].total_time,
-                                                  _cpu_old_stats[i].total_time);
+        _cpu_stats.cpus[l_i].load = _calculate_load(_cpu_stats.cpus[l_i].idle_time,
+                                                  _cpu_old_stats[l_i].idle_time,
+                                                  _cpu_stats.cpus[l_i].total_time,
+                                                  _cpu_old_stats[l_i].total_time);
     }
 
     _cpu_stats.cpu_summary.load = _calculate_load(_cpu_stats.cpu_summary.idle_time,
