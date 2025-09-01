@@ -4,15 +4,15 @@
 #ifndef ANDROID_COMPAT_H
 #define ANDROID_COMPAT_H
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(_GNU_SOURCE)
 
+// Only define if not already defined
+#ifndef _MNTENT_H
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
-#include <fcntl.h>
 
-// Android-compatible mntent structure
+// Android-compatible mntent structure (only if not already defined)
 struct mntent {
     char *mnt_fsname;   // Device name
     char *mnt_dir;      // Mount point
@@ -23,30 +23,26 @@ struct mntent {
 };
 
 // Android-compatible setmntent/endmntent implementation
-static FILE* android_setmntent(const char* filename, const char* type) {
-    // For Android, we'll return a dummy FILE* that won't be used
-    // since mount detection is not critical for mobile apps
-    return fopen("/dev/null", "r");
-}
-
-static int android_endmntent(FILE* fp) {
-    if (fp) {
-        return fclose(fp);
-    }
-    return 1;
-}
-
-static struct mntent* android_getmntent(FILE* fp) {
-    // Return NULL to indicate no mount entries
-    // This effectively disables mount detection on Android
+static inline FILE* setmntent(const char* filename, const char* type) {
+    // For Android, return NULL to disable mount detection
+    (void)filename; (void)type;
     return NULL;
 }
 
-// Override the functions
-#define setmntent android_setmntent
-#define endmntent android_endmntent  
-#define getmntent android_getmntent
+static inline int endmntent(FILE* fp) {
+    // Safe no-op for Android
+    (void)fp;
+    return 1;
+}
 
-#endif // __ANDROID__
+static inline struct mntent* getmntent(FILE* fp) {
+    // Return NULL to indicate no mount entries on Android
+    (void)fp;
+    return NULL;
+}
+
+#endif // _MNTENT_H
+
+#endif // __ANDROID__ && !_GNU_SOURCE
 
 #endif // ANDROID_COMPAT_H

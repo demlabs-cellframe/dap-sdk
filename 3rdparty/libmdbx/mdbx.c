@@ -13,7 +13,7 @@
 #include MDBX_CONFIG_H
 #endif
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && defined(DAP_OS_ANDROID)
 #include "android_compat.h"
 #endif
 

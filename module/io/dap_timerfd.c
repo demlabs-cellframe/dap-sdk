@@ -46,9 +46,11 @@
 #include "dap_context.h"
 
 #ifdef DAP_OS_ANDROID
-// Android-compatible timerfd replacement using regular timer
+// Android-compatible timerfd replacement using POSIX timers
 #include <time.h>
 #include <signal.h>
+#include <pthread.h>
+#include <fcntl.h>
 
 // Android timerfd context
 typedef struct {
