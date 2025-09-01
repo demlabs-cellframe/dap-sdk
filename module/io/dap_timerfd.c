@@ -67,15 +67,15 @@ static int s_timer_count = 0;
 static pthread_mutex_t s_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Timer signal handler for Android
-static void android_timer_handler(union sigval sv) {
-    android_timerfd_ctx_t* ctx = (android_timerfd_ctx_t*)sv.sival_ptr;
-    if (ctx && ctx->pipe_fd[1] != -1) {
-        uint64_t exp = 1;
-        write(ctx->pipe_fd[1], &exp, sizeof(exp));
+static void android_timer_handler(union sigval a_sv) {
+    android_timerfd_ctx_t* l_ctx = (android_timerfd_ctx_t*)a_sv.sival_ptr;
+    if (l_ctx && l_ctx->pipe_fd[1] != -1) {
+        uint64_t l_exp = 1;
+        write(l_ctx->pipe_fd[1], &l_exp, sizeof(l_exp));
     }
 }
 
-static int android_timerfd_create(int clockid, int flags) {
+static int android_timerfd_create(int a_clockid, int a_flags) {
     pthread_mutex_lock(&s_timer_mutex);
     
     if (s_timer_count >= 256) {
@@ -84,77 +84,77 @@ static int android_timerfd_create(int clockid, int flags) {
         return -1;
     }
     
-    android_timerfd_ctx_t* ctx = malloc(sizeof(android_timerfd_ctx_t));
-    if (!ctx) {
+    android_timerfd_ctx_t* l_ctx = DAP_NEW_Z(android_timerfd_ctx_t);
+    if (!l_ctx) {
         pthread_mutex_unlock(&s_timer_mutex);
         return -1;
     }
     
     // Create pipe for notification
-    if (pipe(ctx->pipe_fd) == -1) {
-        free(ctx);
+    if (pipe(l_ctx->pipe_fd) == -1) {
+        DAP_DELETE(l_ctx);
         pthread_mutex_unlock(&s_timer_mutex);
         return -1;
     }
     
     // Set non-blocking if requested
-    if (flags & O_NONBLOCK) {
-        fcntl(ctx->pipe_fd[0], F_SETFL, O_NONBLOCK);
+    if (a_flags & O_NONBLOCK) {
+        fcntl(l_ctx->pipe_fd[0], F_SETFL, O_NONBLOCK);
     }
     
     // Create POSIX timer
-    struct sigevent sev = {0};
-    sev.sigev_notify = SIGEV_THREAD;
-    sev.sigev_notify_function = android_timer_handler;
-    sev.sigev_value.sival_ptr = ctx;
+    struct sigevent l_sev = {0};
+    l_sev.sigev_notify = SIGEV_THREAD;
+    l_sev.sigev_notify_function = android_timer_handler;
+    l_sev.sigev_value.sival_ptr = l_ctx;
     
-    if (timer_create(CLOCK_MONOTONIC, &sev, &ctx->timer_id) == -1) {
-        close(ctx->pipe_fd[0]);
-        close(ctx->pipe_fd[1]);
-        free(ctx);
+    if (timer_create(CLOCK_MONOTONIC, &l_sev, &l_ctx->timer_id) == -1) {
+        close(l_ctx->pipe_fd[0]);
+        close(l_ctx->pipe_fd[1]);
+        DAP_DELETE(l_ctx);
         pthread_mutex_unlock(&s_timer_mutex);
         return -1;
     }
     
-    pthread_mutex_init(&ctx->mutex, NULL);
-    s_android_timers[s_timer_count] = ctx;
-    int fd = ctx->pipe_fd[0];
+    pthread_mutex_init(&l_ctx->mutex, NULL);
+    s_android_timers[s_timer_count] = l_ctx;
+    int l_fd = l_ctx->pipe_fd[0];
     s_timer_count++;
     
     pthread_mutex_unlock(&s_timer_mutex);
-    return fd;
+    return l_fd;
 }
 
-static int android_timerfd_settime(int fd, int flags, const struct itimerspec *new_value, struct itimerspec *old_value) {
+static int android_timerfd_settime(int a_fd, int a_flags, const struct itimerspec *a_new_value, struct itimerspec *a_old_value) {
     pthread_mutex_lock(&s_timer_mutex);
     
-    android_timerfd_ctx_t* ctx = NULL;
-    for (int i = 0; i < s_timer_count; i++) {
-        if (s_android_timers[i] && s_android_timers[i]->pipe_fd[0] == fd) {
-            ctx = s_android_timers[i];
+    android_timerfd_ctx_t* l_ctx = NULL;
+    for (int l_i = 0; l_i < s_timer_count; l_i++) {
+        if (s_android_timers[l_i] && s_android_timers[l_i]->pipe_fd[0] == a_fd) {
+            l_ctx = s_android_timers[l_i];
             break;
         }
     }
     
-    if (!ctx) {
+    if (!l_ctx) {
         pthread_mutex_unlock(&s_timer_mutex);
         errno = EBADF;
         return -1;
     }
     
-    pthread_mutex_lock(&ctx->mutex);
+    pthread_mutex_lock(&l_ctx->mutex);
     
-    if (old_value) {
-        *old_value = ctx->timer_spec;
+    if (a_old_value) {
+        *a_old_value = l_ctx->timer_spec;
     }
     
-    ctx->timer_spec = *new_value;
-    int result = timer_settime(ctx->timer_id, flags, new_value, NULL);
+    l_ctx->timer_spec = *a_new_value;
+    int l_result = timer_settime(l_ctx->timer_id, a_flags, a_new_value, NULL);
     
-    pthread_mutex_unlock(&ctx->mutex);
+    pthread_mutex_unlock(&l_ctx->mutex);
     pthread_mutex_unlock(&s_timer_mutex);
     
-    return result;
+    return l_result;
 }
 
 #define timerfd_create android_timerfd_create
@@ -267,7 +267,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_timerfd->events_socket    = l_events_socket;
     l_timerfd->esocket_uuid     = l_events_socket->uuid;
 
-#if defined(DAP_OS_LINUX) && !defined(DAP_OS_ANDROID)
+#if defined(DAP_OS_LINUX)
     struct itimerspec l_ts;
     int l_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if(l_tfd == -1) {
@@ -283,28 +283,6 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_ts.it_value.tv_nsec = (a_timeout_ms % 1000) * 1000000;
     if(timerfd_settime(l_tfd, 0, &l_ts, NULL) < 0) {
         log_it(L_WARNING, "dap_timerfd_start() failed: timerfd_settime() errno=%d\n", errno);
-        close(l_tfd);
-        DAP_DELETE(l_timerfd);
-        return NULL;
-    }
-    l_events_socket->socket = l_tfd;
-#elif defined(DAP_OS_ANDROID)
-    // Android uses custom timerfd implementation
-    int l_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if(l_tfd == -1) {
-        log_it(L_WARNING, "dap_timerfd_start() failed: android timerfd_create() errno=%d\n", errno);
-        DAP_DELETE(l_timerfd);
-        return NULL;
-    }
-    
-    struct itimerspec l_ts;
-    l_ts.it_interval.tv_sec = 0;
-    l_ts.it_interval.tv_nsec = 0;
-    l_ts.it_value.tv_sec = a_timeout_ms / 1000;
-    l_ts.it_value.tv_nsec = (a_timeout_ms % 1000) * 1000000;
-    
-    if(timerfd_settime(l_tfd, 0, &l_ts, NULL) < 0) {
-        log_it(L_WARNING, "dap_timerfd_start() failed: android timerfd_settime() errno=%d\n", errno);
         close(l_tfd);
         DAP_DELETE(l_timerfd);
         return NULL;
@@ -376,7 +354,7 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
     debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
-#if defined(DAP_OS_LINUX) && !defined(DAP_OS_ANDROID)
+#if defined(DAP_OS_LINUX)
     struct itimerspec l_ts;
     // repeat never
     l_ts.it_interval.tv_sec = 0;
@@ -386,17 +364,6 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     l_ts.it_value.tv_nsec = (a_timerfd->timeout_ms % 1000) * 1000000;
     if(timerfd_settime(a_timerfd->tfd, 0, &l_ts, NULL) < 0) {
         log_it(L_WARNING, "Reset timerfd failed: timerfd_settime() errno=%d\n", errno);
-    }
-#elif defined(DAP_OS_ANDROID)
-    // Android timer reset using custom implementation
-    struct itimerspec l_ts;
-    l_ts.it_interval.tv_sec = 0;
-    l_ts.it_interval.tv_nsec = 0;
-    l_ts.it_value.tv_sec = a_timerfd->timeout_ms / 1000;
-    l_ts.it_value.tv_nsec = (a_timerfd->timeout_ms % 1000) * 1000000;
-    
-    if(timerfd_settime(a_timerfd->tfd, 0, &l_ts, NULL) < 0) {
-        log_it(L_WARNING, "Reset android timerfd failed: timerfd_settime() errno=%d\n", errno);
     }
 #elif defined (DAP_OS_BSD)
     dap_events_socket_t *l_es = a_timerfd->events_socket;

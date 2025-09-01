@@ -5,20 +5,20 @@
 
 #ifdef DAP_OS_ANDROID
 // Android-compatible getline implementation
-static ssize_t android_getline(char **lineptr, size_t *n, FILE *stream) {
-    if (!lineptr || !n || !stream) return -1;
+static ssize_t android_getline(char **a_lineptr, size_t *a_n, FILE *a_stream) {
+    if (!a_lineptr || !a_n || !a_stream) return -1;
     
-    if (*lineptr == NULL) {
-        *n = 256;
-        *lineptr = malloc(*n);
-        if (!*lineptr) return -1;
+    if (*a_lineptr == NULL) {
+        *a_n = 256;
+        *a_lineptr = DAP_NEW_SIZE(char, *a_n);
+        if (!*a_lineptr) return -1;
     }
     
-    if (fgets(*lineptr, *n, stream) == NULL) {
+    if (fgets(*a_lineptr, *a_n, a_stream) == NULL) {
         return -1;
     }
     
-    return strlen(*lineptr);
+    return strlen(*a_lineptr);
 }
 #define getline android_getline
 #endif
