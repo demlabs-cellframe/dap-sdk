@@ -126,6 +126,7 @@ build:arm64.ios:
     timeout: 3 hours 30 minutes
     dependencies: []
     script:
+      - export PATH=/opt/homebrew/bin:$PATH
       - mkdir -p build_ios_shared
       - cd build_ios_shared && cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED=ON -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -D_CMAKE_OSX_SYSROOT_PATH=iOS && ninja -j$(sysctl -n hw.ncpu) && cd -
       - mkdir -p build_ios_static
