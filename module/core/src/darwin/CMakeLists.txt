@@ -5,7 +5,7 @@ project (dap_core_darwin)
 file(GLOB CORE_DARWIN_SRCS *.c)
 file(GLOB CORE_DARWIN_HEADERS *.h)
 
-if(DARWIN)
+if(MACOS)
     file(GLOB CORE_MACOS_SRCS macos/*.c)
     file(GLOB CORE_MACOS_HEADERS macos/*.h)
 endif()
@@ -19,7 +19,7 @@ if(NOT ANDROID)
 endif()
 
 # Add macOS frameworks for network monitoring
-if(DARWIN)
+if(MACOS)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
     find_library(SYSTEMCONFIGURATION_FRAMEWORK SystemConfiguration)
     target_link_libraries(${PROJECT_NAME} ${COREFOUNDATION_FRAMEWORK} ${SYSTEMCONFIGURATION_FRAMEWORK})

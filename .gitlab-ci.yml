@@ -118,7 +118,7 @@ cppcheck_code_quality:
     - ci-polygon
 
 # iOS build for shared (.dylib) and static (.a) libraries
-ios:build:libs:
+build:arm64.ios:
     extends: .ci-polygon
     stage: build
     tags:
@@ -127,8 +127,8 @@ ios:build:libs:
     dependencies: []
     script:
       - mkdir -p build_ios_shared
-      - cd build_ios_shared && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED=ON -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -D_CMAKE_OSX_SYSROOT_PATH=iOS && make -j$(sysctl -n hw.ncpu) && cd -
+      - cd build_ios_shared && cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED=ON -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -D_CMAKE_OSX_SYSROOT_PATH=iOS && ninja -j$(sysctl -n hw.ncpu) && cd -
       - mkdir -p build_ios_static
-      - cd build_ios_static && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED=OFF -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -D_CMAKE_OSX_SYSROOT_PATH=iOS && make -j$(sysctl -n hw.ncpu) && cd -
+      - cd build_ios_static && cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED=OFF -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -D_CMAKE_OSX_SYSROOT_PATH=iOS && ninja -j$(sysctl -n hw.ncpu) && cd -
 
 
