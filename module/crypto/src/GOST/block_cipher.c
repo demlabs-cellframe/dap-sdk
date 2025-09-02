@@ -6,9 +6,6 @@
 
 #include <stdio.h>
 #include <memory.h>
-#ifdef __MACH__
-#include <sys/malloc.h>
-#endif
 #include <stdlib.h>
 
 #include "28147_14.h"
