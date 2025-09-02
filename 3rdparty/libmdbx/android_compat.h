@@ -4,15 +4,25 @@
 #ifndef ANDROID_COMPAT_H
 #define ANDROID_COMPAT_H
 
-#if defined(__ANDROID__) && !defined(_GNU_SOURCE)
+// Enable stubs for old Android API levels where mntent functions are unavailable
+#if defined(__ANDROID__) && (!defined(__ANDROID_API__) || (__ANDROID_API__ < 26))
 
-// Only define if not already defined
+// Predefine common mntent header guards to prevent redefinition from system <mntent.h>
 #ifndef _MNTENT_H
+#define _MNTENT_H 1
+#endif
+#ifndef _MNTENT_H_
+#define _MNTENT_H_ 1
+#endif
+
+#ifndef ANDROID_MNTENT_STUBS
+#define ANDROID_MNTENT_STUBS 1
+
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
-// Android-compatible mntent structure (only if not already defined)
+// Android-compatible mntent structure and stub functions
 struct mntent {
     char *mnt_fsname;   // Device name
     char *mnt_dir;      // Mount point
@@ -22,27 +32,23 @@ struct mntent {
     int mnt_passno;     // Pass number for fsck
 };
 
-// Android-compatible setmntent/endmntent implementation
 static inline FILE* setmntent(const char* filename, const char* type) {
-    // For Android, return NULL to disable mount detection
     (void)filename; (void)type;
     return NULL;
 }
 
 static inline int endmntent(FILE* fp) {
-    // Safe no-op for Android
     (void)fp;
     return 1;
 }
 
 static inline struct mntent* getmntent(FILE* fp) {
-    // Return NULL to indicate no mount entries on Android
     (void)fp;
     return NULL;
 }
 
-#endif // _MNTENT_H
+#endif // ANDROID_MNTENT_STUBS
 
-#endif // __ANDROID__ && !_GNU_SOURCE
+#endif // __ANDROID__ && (API < 26)
 
 #endif // ANDROID_COMPAT_H
