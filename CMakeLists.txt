@@ -85,7 +85,7 @@ macro(dap_create_final_library)
         endif()
         
         # Link macOS frameworks for network monitoring
-        if(APPLE)
+        if(MACOS)
             target_link_libraries(dap_sdk PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
             message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
         endif()
