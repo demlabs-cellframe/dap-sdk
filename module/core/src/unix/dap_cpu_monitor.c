@@ -104,17 +104,17 @@ dap_cpu_stats_t dap_cpu_get_stats()
     _cpu_stats.cpu_summary.total_time = l_stat.total;
     /*********************************************/
 
-    for(unsigned l_i = 0; l_i < _cpu_stats.cpu_cores_count; l_i++) {
+    for(unsigned i = 0; i < _cpu_stats.cpu_cores_count; i++) {
         getline(&line, &mem_size, _proc_stat);
         _deserialize_proc_stat(line, &l_stat);
-        _cpu_stats.cpus[l_i].idle_time = l_stat.idle;
-        _cpu_stats.cpus[l_i].total_time = l_stat.total;
-        _cpu_stats.cpus[l_i].ncpu = l_i;
+        _cpu_stats.cpus[i].idle_time = l_stat.idle;
+        _cpu_stats.cpus[i].total_time = l_stat.total;
+        _cpu_stats.cpus[i].ncpu = i;
 
-        _cpu_stats.cpus[l_i].load = _calculate_load(_cpu_stats.cpus[l_i].idle_time,
-                                                  _cpu_old_stats[l_i].idle_time,
-                                                  _cpu_stats.cpus[l_i].total_time,
-                                                  _cpu_old_stats[l_i].total_time);
+        _cpu_stats.cpus[i].load = _calculate_load(_cpu_stats.cpus[i].idle_time,
+                                                  _cpu_old_stats[i].idle_time,
+                                                  _cpu_stats.cpus[i].total_time,
+                                                  _cpu_old_stats[i].total_time);
     }
 
     _cpu_stats.cpu_summary.load = _calculate_load(_cpu_stats.cpu_summary.idle_time,

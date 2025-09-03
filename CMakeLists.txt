@@ -4,8 +4,6 @@ project(DAP_SDK_NATIVE C)
 # Отключение SSL по умолчанию - WolfSSL больше не используется
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
-# Отключение SSL по умолчанию - WolfSSL больше не используется
-add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
 
 # Build type detection

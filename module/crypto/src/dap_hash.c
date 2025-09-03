@@ -109,16 +109,11 @@ bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_
     if (a_hash_out == NULL)
         return false;
     
-    // Handle empty input case - a_data_in can be NULL when a_data_in_size is 0
-    if (a_data_in_size == 0) {
-        SHA3_256( (unsigned char *)a_hash_out, NULL, 0 );
-        return true;
-    }
-    
-    // For non-empty input, a_data_in must not be NULL
-    if (a_data_in == NULL)
+    // For non-empty input, a_data_in must not be NULL and vise versa
+    if (a_data_in == NULL != a_data_in_size == 0)
         return false;
 
+    // Handle empty input case in order with each other cases
     SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
 
     return true;
