@@ -59,7 +59,8 @@ static int s_cli_version = 1;
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
-static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
@@ -197,9 +198,10 @@ void dap_cli_server_deinit()
  * @param a_doc
  * @param a_doc_ex
  */
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                                                                                            const char *a_doc, const char *a_doc_ex)
 {
-    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, a_doc, a_doc_ex);
 }
 
 /**
@@ -210,7 +212,8 @@ dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_ca
  * @param a_doc
  * @param a_doc_ex
  */
-static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc, 
+                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
@@ -226,6 +229,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     } else {
         l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
     }
+    l_cmd_item->func_rpc = a_func_rpc;
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
     return l_cmd_item;
@@ -239,6 +243,7 @@ int json_commands(const char * a_name) {
             "ledger",
             "tx_create",
             "tx_create_json",
+            "json_datum_mempool_put",
             "mempool_add",
             "tx_verify",
             "tx_cond_create",
