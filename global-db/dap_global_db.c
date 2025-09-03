@@ -1716,6 +1716,7 @@ static void s_clean_old_obj_gdb_callback() {
         }
         dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, (char*)l_list->data);
         if (!l_cluster) {
+            debug_if(g_dap_global_db_debug_more, L_INFO, "Invalid cluster for group %s", (char*)l_list->data);
             continue;
         }
         dap_nanotime_t l_time_now = dap_nanotime_now();
