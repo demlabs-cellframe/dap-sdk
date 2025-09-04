@@ -2147,3 +2147,26 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
     return ret;
 }
 
+/**
+ * @brief dap_global_db_group_clean
+ * @details Erase all records in the group with flag DAP_GLOBAL_DB_RECORD_DEL
+ * @param a_group group name
+ * @param a_pinned clean pinned records
+ * @return 0 if success, else other
+ */
+int dap_global_db_group_clean(const char *a_group, bool a_pinned)
+{
+    dap_return_val_if_fail(a_group, -1);
+    size_t l_ret_count = 0;
+    dap_store_obj_t *l_ret = dap_global_db_get_all_raw_sync(a_group, &l_ret_count);
+    log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", a_group, l_ret_count);
+    for(size_t i = 0; i < l_ret_count; ++i) {
+        if (l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && (a_pinned || !(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED))) {       
+            debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_ret[i].group, l_ret[i].key);
+            dap_global_db_driver_delete(l_ret + i, 1);
+        }
+    }
+    dap_store_obj_free(l_ret, l_ret_count);
+
+    return 0;
+}
