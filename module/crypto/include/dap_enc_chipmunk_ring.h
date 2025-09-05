@@ -1,0 +1,76 @@
+/*
+ * Authors:
+ * Dmitry A. Gerasimov <ceo@cellframe.net>
+ * DeM Labs Ltd   https://demlabs.net
+ * Copyright  (c) 2025
+ * All rights reserved.
+
+ This file is part of DAP SDK the open source project
+
+    DAP SDK is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    DAP SDK is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#pragma once
+
+#include "dap_enc_key.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Chipmunk_Ring ring signature parameters
+ */
+#define CHIPMUNK_RING_MAX_RING_SIZE 1024
+
+/**
+ * @brief Initialize Chipmunk_Ring module
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_init(void);
+
+/**
+ * @brief Generate Chipmunk_Ring keypair (same as Chipmunk)
+ * @param a_key Output key structure
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_key_new(struct dap_enc_key *a_key);
+
+/**
+ * @brief Generate keypair from seed
+ * @param a_key Output key structure
+ * @param a_seed Seed for deterministic generation
+ * @param a_seed_size Seed size
+ * @param a_key_size Key size (unused, kept for compatibility)
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,
+                                 size_t a_seed_size, size_t a_key_size);
+
+/**
+ * @brief Delete Chipmunk_Ring key
+ * @param a_key Key to delete
+ */
+void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
+
+/**
+ * @brief Get signature size for given ring size
+ * @param a_ring_size Number of participants
+ * @return Required signature buffer size
+ */
+size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size);
+
+#ifdef __cplusplus
+}
+#endif

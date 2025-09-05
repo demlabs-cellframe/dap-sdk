@@ -125,6 +125,7 @@ file( GLOB CRYPTO_SRCS
       src/falcon/sign.c
       src/falcon/vrfy.c
       src/chipmunk/*.c
+      src/dap_enc_chipmunk_ring.c
       src/hash/sha2-256/*.c
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
@@ -175,6 +176,7 @@ file( GLOB CRYPTO_HEADERS
       src/ringct20/*.h
       src/falcon/*.h
       src/chipmunk/*.h
+      src/chipmunk/chipmunk_ring.h
       src/hash/sha2-256/*.h
       ${SPHINCS_BASE_HEADERS}
       ${SPHINCS_HEADERS}

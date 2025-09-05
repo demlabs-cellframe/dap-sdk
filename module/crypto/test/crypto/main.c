@@ -5,6 +5,7 @@
 #include "dap_enc_multithread_test.h"
 #include "dap_enc_ringct20_test.h"
 #include "dap_enc_chipmunk_test.h"
+#include "dap_enc_chipmunk_ring_test.h"
 #include "dap_sign_test.h"
 #include "rand/dap_rand.h"
 #include "dap_common.h"
@@ -47,6 +48,10 @@ int main(void) {
     // Run Chipmunk signature tests
     l_ret += dap_enc_chipmunk_tests_run();
     log_it(L_NOTICE, "Chipmunk tests result: %s", l_ret == 0 ? "PASSED" : "FAILED");
+
+    // Run ChipmunkRing signature tests
+    l_ret += dap_enc_chipmunk_ring_tests_run(l_times);
+    log_it(L_NOTICE, "Chipmunk_Ring tests result: %s", l_ret == 0 ? "PASSED" : "FAILED");
     
     // Run universal signature API tests
     dap_sign_test_run();

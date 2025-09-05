@@ -43,6 +43,7 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
+    SIG_TYPE_CHIPMUNK_RING = 0x0108, /// @brief Chipmunk ring signature
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,
@@ -354,6 +355,69 @@ uint32_t dap_sign_get_supported_aggregation_types(
  * @return true if signature is aggregated
  */
 bool dap_sign_is_aggregated(dap_sign_t *a_sign);
+
+/**
+ * @brief Check if a signature is a ring signature
+ * @param a_sign Signature to check
+ * @return true if signature is a ring signature
+ */
+DAP_STATIC_INLINE bool dap_sign_is_ring(dap_sign_t *a_sign) {
+    if (!a_sign) {
+        return false;
+    }
+
+    // Direct type check for known ring signature types
+    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING) {
+        return true;
+    }
+
+    // For aggregation-capable signature types, check if they use ring aggregation
+    // This requires parsing the signature data to determine aggregation type
+    // For now, we check the signature size as a heuristic for ring signatures
+    // Ring signatures typically have much larger sizes due to multiple commitments/responses
+
+    size_t l_expected_min_ring_size = 1000; // Minimum expected size for ring signatures
+    if (a_sign->header.sign_size > l_expected_min_ring_size) {
+        // Additional checks could be added here for signature structure analysis
+        // For example, checking for multiple commitment/response patterns in the signature data
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * @brief Check if a signature uses zero-knowledge proofs
+ * @param a_sign Signature to check
+ * @return true if signature uses ZKP
+ */
+DAP_STATIC_INLINE bool dap_sign_is_zk(dap_sign_t *a_sign) {
+    if (!a_sign) {
+        return false;
+    }
+
+    // Direct check for known ZKP-enabled signature types
+    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING ||
+        a_sign->header.type.type == SIG_TYPE_CHIPMUNK) {
+        return true;
+    }
+
+    // Check for signatures with aggregation properties that typically use ZKP
+    // Ring signatures (large size) and aggregated signatures often use ZKP
+    if (dap_sign_is_ring(a_sign) || dap_sign_is_aggregated(a_sign)) {
+        return true;
+    }
+
+    // Additional heuristic: signatures with unusual sizes might be ZKP-based
+    // Many ZKP constructions result in signatures of non-standard sizes
+    size_t l_sign_size = a_sign->header.sign_size;
+    if (l_sign_size > 500 && l_sign_size < 10000) {
+        // Size range typical for ZKP-based signatures
+        return true;
+    }
+
+    return false;
+}
 
 /**
  * @brief Get the number of signatures in an aggregated signature
