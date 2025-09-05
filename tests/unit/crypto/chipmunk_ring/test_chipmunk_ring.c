@@ -23,12 +23,12 @@
 */
 
 #include <dap_common.h>
-#include "../../../../module/test/dap_test.h"
+#include <dap_test.h>
 #include <dap_enc_key.h>
 #include <dap_enc_chipmunk_ring.h>
 #include <dap_sign.h>
 #include <dap_hash.h>
-#include <dap_random.h>
+#include "rand/dap_rand.h"
 #include <dap_math_mod.h>
 
 #define LOG_TAG "test_chipmunk_ring"
@@ -47,11 +47,11 @@ static bool s_test_key_generation(void) {
     log_it(L_INFO, "Testing Chipmunk Ring key generation...");
 
     // Test random key generation
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_key, "Random key generation should succeed");
-    DAP_TEST_ASSERT(l_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, "Key type should be CHIPMUNK_RING");
-    DAP_TEST_ASSERT(l_key->pub_key_data_size > 0, "Public key should have size");
-    DAP_TEST_ASSERT(l_key->priv_key_data_size > 0, "Private key should have size");
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_key != NULL, "Random key generation should succeed");
+    dap_assert(l_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, "Key type should be CHIPMUNK_RING");
+    dap_assert(l_key->pub_key_data_size > 0, "Public key should have size");
+    dap_assert(l_key->priv_key_data_size > 0, "Private key should have size");
 
     // Test deterministic key generation
     uint8_t l_seed[32] = {0};
@@ -60,29 +60,29 @@ static bool s_test_key_generation(void) {
     }
 
     dap_enc_key_t* l_key_det = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_seed, sizeof(l_seed), 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_key_det, "Deterministic key generation should succeed");
+    dap_assert(l_key_det != NULL, "Deterministic key generation should succeed");
 
     // Keys should be different since different generation methods
-    DAP_TEST_ASSERT(memcmp(l_key->pub_key_data, l_key_det->pub_key_data, l_key->pub_key_data_size) != 0,
+    dap_assert(memcmp(l_key->pub_key_data, l_key_det->pub_key_data, l_key->pub_key_data_size) != 0,
                    "Keys from different generation methods should differ");
 
     // Generate another key with same seed - should be identical
     dap_enc_key_t* l_key_det2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_seed, sizeof(l_seed), 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_key_det2, "Second deterministic key generation should succeed");
+    dap_assert(l_key_det2, "Second deterministic key generation should succeed");
 
-    DAP_TEST_ASSERT(memcmp(l_key_det->pub_key_data, l_key_det2->pub_key_data, l_key_det->pub_key_data_size) == 0,
+    dap_assert(memcmp(l_key_det->pub_key_data, l_key_det2->pub_key_data, l_key_det->pub_key_data_size) == 0,
                    "Keys from same seed should be identical");
 
     // Test multiple key generation for consistency
     const size_t l_num_keys = 10;
     dap_enc_key_t* l_keys[l_num_keys] = {0};
     for (size_t i = 0; i < l_num_keys; i++) {
-        l_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_keys[i], "Multiple key generation should succeed");
+        l_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_keys[i], "Multiple key generation should succeed");
 
         // Ensure all keys are unique
         for (size_t j = 0; j < i; j++) {
-            DAP_TEST_ASSERT(memcmp(l_keys[i]->pub_key_data, l_keys[j]->pub_key_data,
+            dap_assert(memcmp(l_keys[i]->pub_key_data, l_keys[j]->pub_key_data,
                                  l_keys[i]->pub_key_data_size) != 0,
                            "All generated keys should be unique");
         }
@@ -115,14 +115,14 @@ static bool s_test_ring_signature_operations(void) {
         log_it(L_DEBUG, "Testing ring size: %zu", l_ring_size);
 
     // Generate signer key
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_signer_key, "Signer key generation should succeed");
 
         // Generate ring keys
         dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
         for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Replace first key with signer key
@@ -143,7 +143,7 @@ static bool s_test_ring_signature_operations(void) {
     // Create message hash
     dap_hash_fast_t l_message_hash = {0};
             bool l_hash_result = dap_hash_fast(l_messages[msg_idx], strlen(l_messages[msg_idx]), &l_message_hash);
-    DAP_TEST_ASSERT(l_hash_result == true, "Message hashing should succeed");
+    dap_assert(l_hash_result == true, "Message hashing should succeed");
 
             // Test different signer positions
             const size_t l_signer_positions[] = {0, l_ring_size / 2, l_ring_size - 1};
@@ -155,7 +155,7 @@ static bool s_test_ring_signature_operations(void) {
                 // Replace key at signer position
                 if (l_signer_pos != 0) {
                     dap_enc_key_delete(l_ring_keys[l_signer_pos]);
-                    l_ring_keys[l_signer_pos] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+                    l_ring_keys[l_signer_pos] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
                 }
 
     // Create ring signature
@@ -167,19 +167,19 @@ static bool s_test_ring_signature_operations(void) {
                     l_ring_size,
                     l_signer_pos
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_signature, "Ring signature creation should succeed");
+    dap_assert(l_signature, "Ring signature creation should succeed");
 
                 // Verify signature properties
-    DAP_TEST_ASSERT(l_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
+    dap_assert(l_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
                    "Signature should be CHIPMUNK_RING type");
 
                 size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
-                DAP_TEST_ASSERT(l_signature->header.sign_size == l_expected_size,
+                dap_assert(l_signature->header.sign_size == l_expected_size,
                                "Signature size should match expected size");
 
     // Test signature verification
     int l_verify_result = dap_sign_verify(l_signature, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result == 0, "Ring signature verification should succeed");
+    dap_assert(l_verify_result == 0, "Ring signature verification should succeed");
 
     // Test with wrong message
                 const char* l_wrong_message = "Wrong message for verification";
@@ -187,25 +187,23 @@ static bool s_test_ring_signature_operations(void) {
     dap_hash_fast(l_wrong_message, strlen(l_wrong_message), &l_wrong_hash);
 
     l_verify_result = dap_sign_verify(l_signature, &l_wrong_hash, sizeof(l_wrong_hash));
-    DAP_TEST_ASSERT(l_verify_result != 0, "Signature verification should fail with wrong message");
+    dap_assert(l_verify_result != 0, "Signature verification should fail with wrong message");
 
     // Test ring signature detection
     bool l_is_ring = dap_sign_is_ring(l_signature);
-    DAP_TEST_ASSERT(l_is_ring == true, "Signature should be detected as ring signature");
+    dap_assert(l_is_ring == true, "Signature should be detected as ring signature");
 
     bool l_is_zk = dap_sign_is_zk(l_signature);
-    DAP_TEST_ASSERT(l_is_zk == true, "Signature should be detected as zero-knowledge proof");
+    dap_assert(l_is_zk == true, "Signature should be detected as zero-knowledge proof");
 
                 // Test signature serialization
-                uint8_t* l_serialized = dap_sign_serialize(l_signature);
-                DAP_TEST_ASSERT_NOT_NULL(l_serialized, "Signature serialization should succeed");
+                dap_assert(l_serialized, "Signature serialization should succeed");
 
-                dap_sign_t* l_deserialized = dap_sign_deserialize(l_serialized);
-                DAP_TEST_ASSERT_NOT_NULL(l_deserialized, "Signature deserialization should succeed");
+                dap_assert(l_deserialized, "Signature deserialization should succeed");
 
                 // Verify deserialized signature
                 l_verify_result = dap_sign_verify(l_deserialized, &l_message_hash, sizeof(l_message_hash));
-                DAP_TEST_ASSERT(l_verify_result == 0, "Deserialized signature verification should succeed");
+                dap_assert(l_verify_result == 0, "Deserialized signature verification should succeed");
 
     // Cleanup
     DAP_DELETE(l_signature);
@@ -248,8 +246,8 @@ static bool s_test_ring_anonymity(void) {
         // Generate ring keys
     dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Create message hash
@@ -278,11 +276,11 @@ static bool s_test_ring_anonymity(void) {
             l_ring_size,
                 l_signer_pos
         );
-        DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Ring signature creation should succeed");
+        dap_assert(l_signatures[i], "Ring signature creation should succeed");
 
         // Verify each signature
         int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
-        DAP_TEST_ASSERT(l_verify_result == 0, "Ring signature verification should succeed");
+        dap_assert(l_verify_result == 0, "Ring signature verification should succeed");
     }
 
         // Test anonymity: signatures from different positions should be indistinguishable
@@ -290,11 +288,11 @@ static bool s_test_ring_anonymity(void) {
         for (size_t i = 0; i < l_positions_to_test - 1; i++) {
             for (size_t j = i + 1; j < l_positions_to_test; j++) {
                 // Signatures should have the same size
-                DAP_TEST_ASSERT(l_signatures[i]->header.sign_size == l_signatures[j]->header.sign_size,
+                dap_assert(l_signatures[i]->header.sign_size == l_signatures[j]->header.sign_size,
                                "All signatures should have the same size");
 
                 // Signatures should be different (due to different signer positions)
-                DAP_TEST_ASSERT(memcmp(l_signatures[i]->p_signature_data, l_signatures[j]->p_signature_data,
+                dap_assert(memcmp(l_signatures[i]->pkey_n_sign, l_signatures[j]->pkey_n_sign,
                                      l_signatures[i]->header.sign_size) != 0,
                                "Signatures from different positions should be different");
             }
@@ -302,14 +300,14 @@ static bool s_test_ring_anonymity(void) {
 
         // Test that all signatures are properly typed
         for (size_t i = 0; i < l_positions_to_test; i++) {
-        DAP_TEST_ASSERT(l_signatures[i]->header.type.type == SIG_TYPE_CHIPMUNK_RING,
+        dap_assert(l_signatures[i]->header.type.type == SIG_TYPE_CHIPMUNK_RING,
                        "All signatures should be CHIPMUNK_RING type");
 
         bool l_is_ring = dap_sign_is_ring(l_signatures[i]);
-            DAP_TEST_ASSERT(l_is_ring == true, "All should be detected as ring signatures");
+            dap_assert(l_is_ring == true, "All should be detected as ring signatures");
 
             bool l_is_zk = dap_sign_is_zk(l_signatures[i]);
-            DAP_TEST_ASSERT(l_is_zk == true, "All should be detected as ZKP");
+            dap_assert(l_is_zk == true, "All should be detected as ZKP");
         }
 
         // Test anonymity with same signer but different messages
@@ -332,10 +330,10 @@ static bool s_test_ring_anonymity(void) {
                 l_ring_size,
                 0  // Same position
             );
-            DAP_TEST_ASSERT_NOT_NULL(l_same_signer_different_msg[i], "Ring signature creation should succeed");
+            dap_assert(l_same_signer_different_msg[i], "Ring signature creation should succeed");
 
             int l_verify_result = dap_sign_verify(l_same_signer_different_msg[i], &l_msg_hash, sizeof(l_msg_hash));
-            DAP_TEST_ASSERT(l_verify_result == 0, "Ring signature verification should succeed");
+            dap_assert(l_verify_result == 0, "Ring signature verification should succeed");
     }
 
     // Cleanup
@@ -368,14 +366,14 @@ static bool s_test_linkability_prevention(void) {
         size_t l_ring_size = l_ring_sizes[size_idx];
 
     // Generate signer key
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_signer_key, "Signer key generation should succeed");
 
     // Generate ring keys
         dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
         for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Replace first key with signer key
@@ -407,17 +405,17 @@ static bool s_test_linkability_prevention(void) {
                     l_ring_size,
                     0
                 );
-                DAP_TEST_ASSERT_NOT_NULL(l_signatures[attempt], "Ring signature creation should succeed");
+                dap_assert(l_signatures[attempt], "Ring signature creation should succeed");
 
                 // All signatures should be valid
                 int l_verify_result = dap_sign_verify(l_signatures[attempt], &l_message_hash, sizeof(l_message_hash));
-                DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification should succeed");
+                dap_assert(l_verify_result == 0, "Signature verification should succeed");
             }
 
             // Signatures should be different due to random elements (linkability)
             for (size_t i = 0; i < l_num_attempts - 1; i++) {
                 for (size_t j = i + 1; j < l_num_attempts; j++) {
-                    DAP_TEST_ASSERT(memcmp(l_signatures[i]->p_signature_data, l_signatures[j]->p_signature_data,
+                    dap_assert(memcmp(l_signatures[i]->pkey_n_sign, l_signatures[j]->pkey_n_sign,
                                          l_signatures[i]->header.sign_size) != 0,
                                    "Signatures from same signer should be different due to linkability");
                 }
@@ -449,69 +447,67 @@ static bool s_test_error_handling(void) {
 
     // Test with NULL parameters
     dap_sign_t* l_signature = dap_sign_create_ring(NULL, NULL, 0, NULL, 0, 0);
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with NULL parameters");
+    dap_assert(l_signature, "Signature creation should fail with NULL parameters");
 
     // Test with valid signer but NULL message
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_signer_key, "Signer key generation should succeed");
 
     l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0, 0);
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with NULL message");
+    dap_assert(l_signature, "Signature creation should fail with NULL message");
 
     // Test with empty ring
     dap_hash_fast_t l_message_hash = {0};
     dap_hash_fast(TEST_MESSAGE, TEST_MESSAGE_LEN, &l_message_hash);
 
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash), NULL, 0, 0);
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with empty ring");
+    dap_assert(l_signature, "Signature creation should fail with empty ring");
 
     // Test with invalid ring size
     dap_enc_key_t* l_ring_keys[1] = {l_signer_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
                                       l_ring_keys, 1, 0);
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with ring size < 2");
+    dap_assert(l_signature, "Signature creation should fail with ring size < 2");
 
     // Test with invalid signer index
     dap_enc_key_t* l_ring_keys_2[2] = {l_signer_key, l_signer_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
                                       l_ring_keys_2, 2, 5); // Index out of bounds
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with invalid signer index");
+    dap_assert(l_signature, "Signature creation should fail with invalid signer index");
 
     // Test with wrong key types in ring
     dap_enc_key_t* l_wrong_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_wrong_key, "Wrong key type generation should succeed");
+    dap_assert(l_wrong_key, "Wrong key type generation should succeed");
 
     dap_enc_key_t* l_ring_keys_mixed[2] = {l_signer_key, l_wrong_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
                                       l_ring_keys_mixed, 2, 0);
-    DAP_TEST_ASSERT_NULL(l_signature, "Signature creation should fail with wrong key types");
+    dap_assert(l_signature, "Signature creation should fail with wrong key types");
 
     // Test verification with NULL signature
     int l_verify_result = dap_sign_verify(NULL, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result != 0, "Verification should fail with NULL signature");
+    dap_assert(l_verify_result != 0, "Verification should fail with NULL signature");
 
     // Test verification with NULL message
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
                                       l_ring_keys_2, 2, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signature, "Valid signature creation should succeed");
+    dap_assert(l_signature, "Valid signature creation should succeed");
 
     l_verify_result = dap_sign_verify(l_signature, NULL, 0);
-    DAP_TEST_ASSERT(l_verify_result != 0, "Verification should fail with NULL message");
+    dap_assert(l_verify_result != 0, "Verification should fail with NULL message");
 
     // Test ring detection with NULL
     bool l_is_ring = dap_sign_is_ring(NULL);
-    DAP_TEST_ASSERT(l_is_ring == false, "Ring detection should return false for NULL");
+    dap_assert(l_is_ring == false, "Ring detection should return false for NULL");
 
     bool l_is_zk = dap_sign_is_zk(NULL);
-    DAP_TEST_ASSERT(l_is_zk == false, "ZK detection should return false for NULL");
+    dap_assert(l_is_zk == false, "ZK detection should return false for NULL");
 
     // Test signature serialization with NULL
-    uint8_t* l_serialized = dap_sign_serialize(NULL);
-    DAP_TEST_ASSERT_NULL(l_serialized, "Serialization should fail with NULL signature");
+    dap_assert(l_serialized, "Serialization should fail with NULL signature");
 
     // Test deserialization with NULL
-    dap_sign_t* l_deserialized = dap_sign_deserialize(NULL);
-    DAP_TEST_ASSERT_NULL(l_deserialized, "Deserialization should fail with NULL data");
+    dap_assert(l_deserialized, "Deserialization should fail with NULL data");
 
     // Cleanup
     DAP_DELETE(l_signature);
@@ -538,15 +534,15 @@ static bool s_test_performance(void) {
         // Generate keys
         dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
         for (size_t i = 0; i < l_ring_size; i++) {
-            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-            DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+            dap_assert(l_ring_keys[i], "Ring key generation should succeed");
         }
 
         // Measure signature creation time
         dap_hash_fast_t l_message_hash = {0};
         dap_hash_fast(TEST_MESSAGE, TEST_MESSAGE_LEN, &l_message_hash);
 
-        uint64_t l_start_time = dap_time_now();
+        uint64_t l_start_time = clock();
         dap_sign_t* l_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash,
@@ -555,26 +551,26 @@ static bool s_test_performance(void) {
             l_ring_size,
             0
         );
-        uint64_t l_end_time = dap_time_now();
+        uint64_t l_end_time = clock();
 
-        DAP_TEST_ASSERT_NOT_NULL(l_signature, "Signature creation should succeed");
+        dap_assert(l_signature, "Signature creation should succeed");
 
         uint64_t l_creation_time = l_end_time - l_start_time;
         log_it(L_DEBUG, "Ring size %zu: signature creation took %" PRIu64 " microseconds", l_ring_size, l_creation_time);
 
         // Measure verification time
-        l_start_time = dap_time_now();
+        l_start_time = clock();
         int l_verify_result = dap_sign_verify(l_signature, &l_message_hash, sizeof(l_message_hash));
-        l_end_time = dap_time_now();
+        l_end_time = clock();
 
-        DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification should succeed");
+        dap_assert(l_verify_result == 0, "Signature verification should succeed");
 
         uint64_t l_verify_time = l_end_time - l_start_time;
         log_it(L_DEBUG, "Ring size %zu: signature verification took %" PRIu64 " microseconds", l_ring_size, l_verify_time);
 
         // Test signature size scaling
         size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
-        DAP_TEST_ASSERT(l_signature->header.sign_size == l_expected_size,
+        dap_assert(l_signature->header.sign_size == l_expected_size,
                        "Signature size should match expected size");
 
         // Cleanup
@@ -600,8 +596,8 @@ static bool s_test_edge_cases(void) {
     // Generate maximum ring
     dap_enc_key_t* l_max_ring_keys[l_max_ring_size] = {0};
     for (size_t i = 0; i < l_max_ring_size; i++) {
-        l_max_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_max_ring_keys[i], "Max ring key generation should succeed");
+        l_max_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_max_ring_keys[i], "Max ring key generation should succeed");
     }
 
     // Test signature creation with max ring size
@@ -616,17 +612,17 @@ static bool s_test_edge_cases(void) {
         l_max_ring_size,
         0
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_max_signature, "Max ring signature creation should succeed");
+    dap_assert(l_max_signature, "Max ring signature creation should succeed");
 
     // Verify max signature
     int l_verify_result = dap_sign_verify(l_max_signature, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result == 0, "Max ring signature verification should succeed");
+    dap_assert(l_verify_result == 0, "Max ring signature verification should succeed");
 
     // Test with minimum ring size (2)
     dap_enc_key_t* l_min_ring_keys[2] = {0};
     for (size_t i = 0; i < 2; i++) {
-        l_min_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_min_ring_keys[i], "Min ring key generation should succeed");
+        l_min_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_min_ring_keys[i], "Min ring key generation should succeed");
     }
 
     dap_sign_t* l_min_signature = dap_sign_create_ring(
@@ -637,10 +633,10 @@ static bool s_test_edge_cases(void) {
         2,
         0
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_min_signature, "Min ring signature creation should succeed");
+    dap_assert(l_min_signature, "Min ring signature creation should succeed");
 
     l_verify_result = dap_sign_verify(l_min_signature, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result == 0, "Min ring signature verification should succeed");
+    dap_assert(l_verify_result == 0, "Min ring signature verification should succeed");
 
     // Test with different signer positions in min ring
     dap_sign_t* l_min_signature_pos1 = dap_sign_create_ring(
@@ -651,20 +647,20 @@ static bool s_test_edge_cases(void) {
         2,
         1
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_min_signature_pos1, "Min ring signature creation (pos 1) should succeed");
+    dap_assert(l_min_signature_pos1, "Min ring signature creation (pos 1) should succeed");
 
     l_verify_result = dap_sign_verify(l_min_signature_pos1, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result == 0, "Min ring signature verification (pos 1) should succeed");
+    dap_assert(l_verify_result == 0, "Min ring signature verification (pos 1) should succeed");
 
     // Test signature size differences
     size_t l_max_size = dap_enc_chipmunk_ring_get_signature_size(l_max_ring_size);
     size_t l_min_size = dap_enc_chipmunk_ring_get_signature_size(2);
 
-    DAP_TEST_ASSERT(l_max_signature->header.sign_size == l_max_size,
+    dap_assert(l_max_signature->header.sign_size == l_max_size,
                    "Max signature should have correct size");
-    DAP_TEST_ASSERT(l_min_signature->header.sign_size == l_min_size,
+    dap_assert(l_min_signature->header.sign_size == l_min_size,
                    "Min signature should have correct size");
-    DAP_TEST_ASSERT(l_max_size > l_min_size, "Larger ring should produce larger signature");
+    dap_assert(l_max_size > l_min_size, "Larger ring should produce larger signature");
 
     // Cleanup
     DAP_DELETE(l_max_signature);
@@ -694,8 +690,8 @@ static bool s_test_cryptographic_strength(void) {
     // Generate ring keys
     dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Create many signatures from same signer
@@ -712,11 +708,11 @@ static bool s_test_cryptographic_strength(void) {
             l_ring_size,
             0
         );
-        DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Signature creation should succeed");
+        dap_assert(l_signatures[i], "Signature creation should succeed");
 
         // Verify each signature
         int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
-        DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification should succeed");
+        dap_assert(l_verify_result == 0, "Signature verification should succeed");
     }
 
     // Test uniqueness: all signatures should be different due to random elements
@@ -724,8 +720,8 @@ static bool s_test_cryptographic_strength(void) {
     for (size_t i = 0; i < l_num_signatures; i++) {
         bool l_is_unique = true;
         for (size_t j = 0; j < l_num_signatures; j++) {
-            if (i != j && memcmp(l_signatures[i]->p_signature_data,
-                                l_signatures[j]->p_signature_data,
+            if (i != j && memcmp(l_signatures[i]->pkey_n_sign,
+                                l_signatures[j]->pkey_n_sign,
                                 l_signatures[i]->header.sign_size) == 0) {
                 l_is_unique = false;
                 break;
@@ -737,7 +733,7 @@ static bool s_test_cryptographic_strength(void) {
     }
 
     // All signatures should be unique
-    DAP_TEST_ASSERT(l_unique_signatures == l_num_signatures,
+    dap_assert(l_unique_signatures == l_num_signatures,
                    "All signatures should be cryptographically unique");
 
     // Test signature entropy (basic check)
@@ -745,13 +741,13 @@ static bool s_test_cryptographic_strength(void) {
         // Count zero bytes (should be very few in a good signature)
         size_t l_zero_bytes = 0;
         for (size_t j = 0; j < l_signatures[i]->header.sign_size; j++) {
-            if (l_signatures[i]->p_signature_data[j] == 0) {
+            if (l_signatures[i]->pkey_n_sign[j] == 0) {
                 l_zero_bytes++;
             }
         }
         // Signatures should not have too many zero bytes (indicates poor randomness)
         double l_zero_ratio = (double)l_zero_bytes / l_signatures[i]->header.sign_size;
-        DAP_TEST_ASSERT(l_zero_ratio < 0.1, "Signatures should have good entropy (not too many zeros)");
+        dap_assert(l_zero_ratio < 0.1, "Signatures should have good entropy (not too many zeros)");
     }
 
     log_it(L_INFO, "✓ Generated %zu unique signatures with good cryptographic properties", l_num_signatures);
@@ -775,14 +771,14 @@ static bool s_test_serialization_robustness(void) {
     log_it(L_INFO, "Testing Chipmunk Ring serialization robustness...");
 
     // Generate signature for testing
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_signer_key, "Signer key generation should succeed");
 
     const size_t l_ring_size = 4;
     dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Replace first key with signer key
@@ -800,17 +796,15 @@ static bool s_test_serialization_robustness(void) {
         l_ring_size,
         0
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_original_signature, "Original signature creation should succeed");
+    dap_assert(l_original_signature, "Original signature creation should succeed");
 
     // Test normal serialization/deserialization
-    uint8_t* l_serialized = dap_sign_serialize(l_original_signature);
-    DAP_TEST_ASSERT_NOT_NULL(l_serialized, "Signature serialization should succeed");
+    dap_assert(l_serialized, "Signature serialization should succeed");
 
-    dap_sign_t* l_deserialized = dap_sign_deserialize(l_serialized);
-    DAP_TEST_ASSERT_NOT_NULL(l_deserialized, "Signature deserialization should succeed");
+    dap_assert(l_deserialized, "Signature deserialization should succeed");
 
     int l_verify_result = dap_sign_verify(l_deserialized, &l_message_hash, sizeof(l_message_hash));
-    DAP_TEST_ASSERT(l_verify_result == 0, "Deserialized signature verification should succeed");
+    dap_assert(l_verify_result == 0, "Deserialized signature verification should succeed");
 
     // Test with corrupted serialization data
     if (l_deserialized->header.sign_size > 10) {
@@ -823,7 +817,6 @@ static bool s_test_serialization_robustness(void) {
         l_corrupted_serialized[l_corrupt_offset] ^= 0xFF;
         l_corrupted_serialized[l_corrupt_offset + 1] ^= 0xFF;
 
-        dap_sign_t* l_corrupted_deserialized = dap_sign_deserialize(l_corrupted_serialized);
         if (l_corrupted_deserialized) {
             // Corrupted signature should fail verification
             l_verify_result = dap_sign_verify(l_corrupted_deserialized, &l_message_hash, sizeof(l_message_hash));
@@ -838,7 +831,7 @@ static bool s_test_serialization_robustness(void) {
     size_t l_expected_serialized_size = sizeof(dap_sign_hdr_t) + l_original_signature->header.sign_size;
     size_t l_actual_serialized_size = l_original_signature->header.sign_size + sizeof(dap_sign_hdr_t);
 
-    DAP_TEST_ASSERT(l_actual_serialized_size == l_expected_serialized_size,
+    dap_assert(l_actual_serialized_size == l_expected_serialized_size,
                    "Serialized size should match expected size");
 
     // Cleanup
@@ -867,13 +860,13 @@ static bool s_test_stress_conditions(void) {
     // Generate ring keys
     dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
-        DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i], "Ring key generation should succeed");
     }
 
     // Test stress with many signatures
     dap_sign_t* l_stress_signatures[l_num_stress_signatures] = {0};
-    uint64_t l_start_time = dap_time_now();
+    uint64_t l_start_time = clock();
 
     for (size_t i = 0; i < l_num_stress_signatures; i++) {
         // Use different messages for each signature
@@ -891,15 +884,15 @@ static bool s_test_stress_conditions(void) {
             l_ring_size,
             l_signer_pos
         );
-        DAP_TEST_ASSERT_NOT_NULL(l_stress_signatures[i], "Stress signature creation should succeed");
+        dap_assert(l_stress_signatures[i], "Stress signature creation should succeed");
     }
 
-    uint64_t l_creation_time = dap_time_now() - l_start_time;
+    uint64_t l_creation_time = clock() - l_start_time;
     log_it(L_INFO, "Created %zu stress signatures in %" PRIu64 " microseconds",
            l_num_stress_signatures, l_creation_time);
 
     // Verify all stress signatures
-    l_start_time = dap_time_now();
+    l_start_time = clock();
     size_t l_verified_count = 0;
 
     for (size_t i = 0; i < l_num_stress_signatures; i++) {
@@ -914,9 +907,9 @@ static bool s_test_stress_conditions(void) {
         }
     }
 
-    uint64_t l_verify_time = dap_time_now() - l_start_time;
+    uint64_t l_verify_time = clock() - l_start_time;
 
-    DAP_TEST_ASSERT(l_verified_count == l_num_stress_signatures,
+    dap_assert(l_verified_count == l_num_stress_signatures,
                    "All stress signatures should verify successfully");
 
     log_it(L_INFO, "Verified %zu/%zu stress signatures in %" PRIu64 " microseconds",
@@ -947,7 +940,6 @@ int main(void) {
     log_it(L_NOTICE, "Starting comprehensive Chipmunk Ring unit tests...");
 
     // Initialize DAP SDK
-    if (dap_test_sdk_init() != 0) {
         log_it(L_ERROR, "Failed to initialize DAP SDK");
         return -1;
     }
@@ -979,7 +971,6 @@ int main(void) {
     l_all_passed &= s_test_stress_conditions();
 
     // Cleanup
-    dap_test_sdk_cleanup();
 
     log_it(L_NOTICE, "Comprehensive Chipmunk Ring unit tests completed");
 

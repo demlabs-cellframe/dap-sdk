@@ -25,7 +25,7 @@
 #include <dap_common.h>
 #include "../../../../module/test/dap_test.h"
 #include <dap_enc_base58.h>
-#include <dap_random.h>
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "test_base58_encoding"
 

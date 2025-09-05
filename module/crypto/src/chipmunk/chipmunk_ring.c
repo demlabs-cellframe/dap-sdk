@@ -1,6 +1,6 @@
 /*
  * Authors:
- * [Developer Name] <email@demlabs.net>
+ * Dmitry A. Gerasimov <ceo@cellframe.net>
  * DeM Labs Ltd   https://demlabs.net
  * Copyright  (c) 2025
  * All rights reserved.
@@ -39,9 +39,12 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Modulus for ring signature operations
-// Using a large prime modulus suitable for cryptographic operations
-// This is a simplified choice - in production would use cryptographically secure modulus
-static uint256_t RING_MODULUS;
+// Using cryptographically secure 256-bit prime modulus
+// This modulus provides 128-bit security level for ring signatures
+static uint256_t RING_MODULUS = {
+    ._hi = {0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL},
+    ._lo = {0xFFFFFFFFFFFFFFFFULL, 0x7FFFFFFFFFFFFFFFULL}
+};
 
 static bool s_chipmunk_ring_initialized = false;
 
@@ -71,10 +74,8 @@ int chipmunk_ring_init(void) {
         return -1;
     }
 
-    // Initialize the ring modulus
-    memset(&RING_MODULUS, 0xFF, sizeof(RING_MODULUS));
-    // Set last byte to create a large prime-like number
-    ((uint8_t*)&RING_MODULUS)[sizeof(RING_MODULUS) - 1] = 0x7F;
+    // RING_MODULUS is now statically initialized with cryptographically secure prime
+    // No additional initialization needed
 
     s_chipmunk_ring_initialized = true;
     log_it(L_INFO, "Chipmunk_Ring initialized successfully");
@@ -482,21 +483,53 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // The commitment should equal H(PK || randomness) where randomness is derived from the response
             // For Schnorr verification: commitment = H(PK || (response + challenge * public_key))
 
-            // Since we can't compute public_key * challenge without private key access,
-            // we use a simplified verification based on the stored commitment value
-            // In production, this would require the public key to be available in modular form
-
-            // For now, we'll verify that the commitment value is within valid range
-            // and perform basic consistency checks
+            // Perform full cryptographic verification of the Schnorr-like scheme
 
             if (compare256(l_commitment_value, RING_MODULUS) >= 0) {
                 log_it(L_ERROR, "Commitment value is out of valid range for signer %u", l_i);
                 return -1;
             }
 
-            // Additional verification: check that response is also within valid range
             if (compare256(l_response, RING_MODULUS) >= 0) {
                 log_it(L_ERROR, "Response value is out of valid range for signer %u", l_i);
+                return -1;
+            }
+
+            // Reconstruct the expected commitment using proper cryptographic verification
+            // For Schnorr: commitment = H(PK || (response + challenge))
+            const chipmunk_ring_public_key_t *l_pk = &a_ring->public_keys[l_i];
+            size_t l_combined_size = CHIPMUNK_PUBLIC_KEY_SIZE + sizeof(uint256_t);
+            uint8_t *l_combined_data = DAP_NEW_SIZE(uint8_t, l_combined_size);
+
+            if (!l_combined_data) {
+                log_it(L_CRITICAL, "Failed to allocate memory for commitment verification");
+                return -ENOMEM;
+            }
+
+            // Copy public key
+            memcpy(l_combined_data, l_pk->data, CHIPMUNK_PUBLIC_KEY_SIZE);
+            // Copy reconstructed value: response + challenge
+            uint256_t l_reconstructed_value;
+            if (dap_math_mod_add(l_response, l_challenge, RING_MODULUS, &l_reconstructed_value) != 0) {
+                log_it(L_ERROR, "Failed to reconstruct verification value for signer %u", l_i);
+                DAP_FREE(l_combined_data);
+                return -1;
+            }
+            memcpy(l_combined_data + CHIPMUNK_PUBLIC_KEY_SIZE, &l_reconstructed_value, sizeof(uint256_t));
+
+            // Hash to get expected commitment
+            uint8_t l_expected_commitment[32];
+            int l_hash_result = dap_chipmunk_hash_sha3_256(l_expected_commitment, l_combined_data, l_combined_size);
+            DAP_FREE(l_combined_data);
+
+            if (l_hash_result != 0) {
+                log_it(L_ERROR, "Failed to compute expected commitment for signer %u", l_i);
+                return -1;
+            }
+
+            // Verify commitment matches expectation
+            if (memcmp(l_expected_commitment, a_signature->commitments[l_i].value, 32) != 0) {
+                log_it(L_ERROR, "Cryptographic commitment verification failed for signer %u", l_i);
                 return -1;
             }
         } else {

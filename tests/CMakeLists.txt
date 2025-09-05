@@ -12,9 +12,11 @@ add_compile_options(-Wall -Wextra -Werror)
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/global-db/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../module/test
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/utilities
 )
