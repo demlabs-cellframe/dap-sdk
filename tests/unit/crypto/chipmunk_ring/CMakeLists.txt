@@ -1,36 +1,56 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Chipmunk Ring Comprehensive Unit Tests
-project(test_chipmunk_ring)
-
-# Test executable
-add_executable(${PROJECT_NAME}
-    test_chipmunk_ring.c
+# Chipmunk Ring Unit Tests
+set(TEST_NAMES
+    test_chipmunk_ring_basic
+    test_chipmunk_ring_anonymity
+    test_chipmunk_ring_performance
+    test_chipmunk_ring_edge_cases
+    test_chipmunk_ring_stress
 )
 
-# Include directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ../../../../module/core/include
-    ../../../../module/crypto/include
-    ../../../../module/io/include
-    ../../../../module/global-db/include
-    ../../../../module/net/include
-    ../../../../tests/fixtures/utilities
-    ../../../../module/plugin/include
-    ../../../../module/test/include
+set(TEST_SOURCES
+    test_chipmunk_ring_basic.c
+    test_chipmunk_ring_anonymity.c
+    test_chipmunk_ring_performance.c
+    test_chipmunk_ring_edge_cases.c
+    test_chipmunk_ring_stress.c
 )
 
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    dap_core
-    dap_crypto
-    dap_io
-    dap_global_db
-    dap_net
-    dap_plugin
-    dap_test
-)
+# Create test executables
+list(LENGTH TEST_NAMES num_tests)
+math(EXPR num_tests "${num_tests} - 1")
 
-# Add test
-add_test(NAME ${PROJECT_NAME}
-         COMMAND ${PROJECT_NAME})
+foreach(i RANGE ${num_tests})
+    list(GET TEST_NAMES ${i} test_name)
+    list(GET TEST_SOURCES ${i} test_source)
+
+    add_executable(${test_name} ${test_source})
+
+    # Include directories
+    target_include_directories(${test_name} PRIVATE
+        ../../../../module/core/include
+        ../../../../module/crypto/include
+        ../../../../module/io/include
+        ../../../../module/global-db/include
+        ../../../../module/net/include
+        ../../../../tests/fixtures/utilities
+        ../../../../module/plugin/include
+        ../../../../module/test/include
+    )
+
+    # Link libraries
+    target_link_libraries(${test_name} PRIVATE
+        dap_core
+        dap_crypto
+        dap_io
+        dap_global_db
+        dap_net
+        dap_plugin
+        dap_test
+    )
+
+    # Add test
+    add_test(NAME ${test_name}
+             COMMAND ${test_name})
+endforeach()
