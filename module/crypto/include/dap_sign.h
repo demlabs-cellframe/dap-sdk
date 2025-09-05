@@ -140,6 +140,26 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
 {
     return dap_sign_create_with_hash_type(a_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
 }
+
+/**
+ * @brief Create a ring signature using Chipmunk_Ring
+ * @param a_signer_key Private key of the signer
+ * @param a_data Data to sign
+ * @param a_data_size Size of data to sign
+ * @param a_ring_keys Array of public keys in the ring (including signer's key)
+ * @param a_ring_size Number of keys in the ring (must be >= 2)
+ * @param a_signer_index Index of the signer in the ring
+ * @return New ring signature or NULL on error
+ */
+dap_sign_t *dap_sign_create_ring(
+    dap_enc_key_t *a_signer_key,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size,
+    size_t a_signer_index
+);
+
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 

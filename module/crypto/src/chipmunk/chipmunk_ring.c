@@ -34,6 +34,7 @@
 #include "dap_hash.h"
 #include "dap_math_mod.h"
 #include "rand/dap_rand.h"
+#include "chipmunk_hash.h"
 
 #define LOG_TAG "chipmunk_ring"
 
@@ -55,6 +56,12 @@ int chipmunk_ring_init(void) {
     // Initialize Chipmunk (underlying signature scheme)
     if (chipmunk_init() != 0) {
         log_it(L_ERROR, "Failed to initialize Chipmunk for Chipmunk_Ring");
+        return -1;
+    }
+
+    // Initialize Chipmunk hash functions
+    if (dap_chipmunk_hash_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize Chipmunk hash functions for Chipmunk_Ring");
         return -1;
     }
 

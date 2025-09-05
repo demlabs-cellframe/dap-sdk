@@ -71,6 +71,27 @@ void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
  */
 size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size);
 
+/**
+ * @brief Create Chipmunk_Ring signature
+ * @param a_priv_key Private key of the signer
+ * @param a_data Data to sign
+ * @param a_data_size Size of data to sign
+ * @param a_ring_pub_keys Array of public keys for the ring
+ * @param a_ring_size Number of participants in the ring
+ * @param a_signer_index Index of the actual signer in the ring
+ * @param a_signature Output buffer for signature
+ * @param a_signature_size Size of signature buffer
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
+                              const void *a_data,
+                              size_t a_data_size,
+                              uint8_t **a_ring_pub_keys,
+                              size_t a_ring_size,
+                              size_t a_signer_index,
+                              uint8_t *a_signature,
+                              size_t a_signature_size);
+
 #ifdef __cplusplus
 }
 #endif

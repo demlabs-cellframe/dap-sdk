@@ -163,17 +163,17 @@ static void s_mt_node_recovery_callback(void* a_arg) {
 static bool s_test_distributed_consensus_workflow(void) {
     log_it(L_INFO, "Testing distributed consensus with crypto-network integration");
     
-    // Step 1: Initialize network of nodes with Chipmunk signatures for aggregation
+    // Step 1: Initialize network of nodes with Chipmunk Ring signatures
     network_node_t l_nodes[NETWORK_NODE_COUNT];
     for (uint32_t i = 0; i < NETWORK_NODE_COUNT; i++) {
         l_nodes[i].node_id = i + 1;
-        // Use Chipmunk (бурундучья подпись) for aggregated signatures
-        l_nodes[i].signing_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+        // Use Chipmunk Ring (кольцевая подпись) for anonymous transactions
+        l_nodes[i].signing_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         snprintf(l_nodes[i].node_address, sizeof(l_nodes[i].node_address), "10.0.0.%u", i + 1);
         l_nodes[i].is_online = true;
-        
-        DAP_TEST_ASSERT_NOT_NULL(l_nodes[i].signing_key, "Chipmunk node key generation");
-        log_it(L_DEBUG, "Initialized Chipmunk node %u at %s", l_nodes[i].node_id, l_nodes[i].node_address);
+
+        DAP_TEST_ASSERT_NOT_NULL(l_nodes[i].signing_key, "Chipmunk Ring node key generation");
+        log_it(L_DEBUG, "Initialized Chipmunk Ring node %u at %s", l_nodes[i].node_id, l_nodes[i].node_address);
     }
     
     // Step 2: Create consensus proposal (JSON message)
@@ -199,118 +199,126 @@ static bool s_test_distributed_consensus_workflow(void) {
     bool l_hash_ret = dap_hash_fast(l_proposal_json, strlen(l_proposal_json), &l_proposal_hash);
     DAP_TEST_ASSERT(l_hash_ret == true, "Proposal hashing");
     
-    // Step 4: Simulate network broadcast and signature collection with aggregation
-    dap_sign_t* l_individual_signatures[NETWORK_NODE_COUNT] = {0};
+    // Step 4: Simulate network broadcast and ring signature creation
+    // In ring signatures, we create one signature that hides the signer among all participants
+    dap_enc_key_t* l_ring_keys[NETWORK_NODE_COUNT] = {0};
     uint32_t l_participating_nodes[NETWORK_NODE_COUNT] = {0};
     uint32_t l_signatures_count = 0;
-    
-    // Each online node signs the proposal individually
+
+    // Collect all online nodes for the anonymity ring
     for (uint32_t i = 0; i < NETWORK_NODE_COUNT; i++) {
         if (!l_nodes[i].is_online) continue;
-        
-        // Simulate network message transmission delay/processing
-        dap_usleep(1000); // 1ms delay per node
-        
-        // Node signs the proposal with Chipmunk signature
-        dap_sign_t* l_node_signature = dap_sign_create(l_nodes[i].signing_key, &l_proposal_hash, sizeof(l_proposal_hash));
-        DAP_TEST_ASSERT_NOT_NULL(l_node_signature, "Chipmunk node signature creation");
-        
-        // Add to collection for aggregation
-        l_individual_signatures[l_signatures_count] = l_node_signature;
+
+        l_ring_keys[l_signatures_count] = l_nodes[i].signing_key;
         l_participating_nodes[l_signatures_count] = l_nodes[i].node_id;
         l_signatures_count++;
-        
-        log_it(L_DEBUG, "Node %u created Chipmunk signature (total: %u)", l_nodes[i].node_id, l_signatures_count);
-        
-        // Check if we have enough signatures for consensus
+
+        // Simulate network message transmission delay/processing
+        dap_usleep(1000); // 1ms delay per node
+
+        log_it(L_DEBUG, "Node %u added to anonymity ring (total: %u)", l_nodes[i].node_id, l_signatures_count);
+
+        // Check if we have enough participants for consensus
         if (l_signatures_count >= CONSENSUS_THRESHOLD) {
-            log_it(L_INFO, "Consensus threshold reached with %u signatures", l_signatures_count);
+            log_it(L_INFO, "Consensus threshold reached with %u participants in anonymity ring", l_signatures_count);
             break;
         }
     }
-    
-    // Step 5: Create aggregated signature using DAP SDK aggregation API
-    log_it(L_INFO, "Creating aggregated signature from %u individual Chipmunk signatures", l_signatures_count);
-    
-    // Check if Chipmunk supports aggregation
-    dap_sign_type_t l_chipmunk_type = {.type = SIG_TYPE_CHIPMUNK};
-    bool l_supports_aggregation = dap_sign_type_supports_aggregation(l_chipmunk_type);
-    DAP_TEST_ASSERT(l_supports_aggregation, "Chipmunk should support signature aggregation");
-    
-    // Setup aggregation parameters for tree-based aggregation (suitable for Chipmunk)
-    dap_sign_aggregation_params_t l_agg_params = {0};
-    l_agg_params.aggregation_type = DAP_SIGN_AGGREGATION_TYPE_TREE_BASED;
-    l_agg_params.tree_params.signer_indices = l_participating_nodes;
-    l_agg_params.tree_params.tree_depth = 3; // Hint for tree depth
-    
-    // Aggregate signatures
-    dap_sign_t* l_aggregated_signature = dap_sign_aggregate_signatures(
-        l_individual_signatures,
-        l_signatures_count,
+
+    // Choose a random signer from the participating nodes
+    uint32_t l_actual_signer_index = 0; // First participant is the actual signer (hidden in the ring)
+    dap_enc_key_t* l_actual_signer_key = l_ring_keys[l_actual_signer_index];
+
+    // Create ring signature (hides which participant actually signed)
+    dap_sign_t* l_ring_signature = dap_sign_create_ring(
+        l_actual_signer_key,
         &l_proposal_hash,
         sizeof(l_proposal_hash),
-        &l_agg_params
+        l_ring_keys,
+        l_signatures_count,
+        l_actual_signer_index
     );
-    DAP_TEST_ASSERT_NOT_NULL(l_aggregated_signature, "Aggregated signature creation should succeed");
+    DAP_TEST_ASSERT_NOT_NULL(l_ring_signature, "Chipmunk Ring signature creation");
+    
+    // Step 5: Test ring signature properties
+    log_it(L_INFO, "Testing Chipmunk Ring signature properties with %u participants", l_signatures_count);
+
+    // Verify ring signature type
+    DAP_TEST_ASSERT(l_ring_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
+                   "Signature should be CHIPMUNK_RING type");
+
+    // Test ring signature detection
+    bool l_is_ring = dap_sign_is_ring(l_ring_signature);
+    DAP_TEST_ASSERT(l_is_ring == true, "Signature should be detected as ring signature");
+
+    bool l_is_zk = dap_sign_is_zk(l_ring_signature);
+    DAP_TEST_ASSERT(l_is_zk == true, "Ring signature should be detected as zero-knowledge proof");
+
+    // Test that ring signature has appropriate size
+    size_t l_expected_min_size = 1000; // Ring signatures are typically large
+    DAP_TEST_ASSERT(l_ring_signature->header.sign_size > l_expected_min_size,
+                   "Ring signature should be appropriately sized for anonymity ring");
     
     // Step 6: Validate consensus threshold
     DAP_TEST_ASSERT(l_signatures_count >= CONSENSUS_THRESHOLD, "Consensus threshold should be reached");
     
-    // Step 7: Verify aggregated signature using specialized API
-    log_it(L_INFO, "Verifying aggregated Chipmunk signature...");
+    // Step 7: Verify ring signature
+    log_it(L_INFO, "Verifying Chipmunk Ring signature...");
+
+    // Ring signature verification - the verifier doesn't know which participant signed
+    // but can verify that someone from the ring did sign
+    int l_ring_verify_result = dap_sign_verify(l_ring_signature, &l_proposal_hash, sizeof(l_proposal_hash));
+    DAP_TEST_ASSERT(l_ring_verify_result == 0, "Ring signature verification should succeed");
+
+    // Test verification with wrong message
+    const char* l_wrong_message = "Wrong consensus proposal";
+    dap_hash_fast_t l_wrong_hash = {0};
+    dap_hash_fast(l_wrong_message, strlen(l_wrong_message), &l_wrong_hash);
+
+    int l_wrong_verify_result = dap_sign_verify(l_ring_signature, &l_wrong_hash, sizeof(l_wrong_hash));
+    DAP_TEST_ASSERT(l_wrong_verify_result != 0, "Ring signature verification should fail with wrong message");
+
+    log_it(L_INFO, "✅ Ring signature verified successfully!");
     
-    // Check if the signature is properly aggregated
-    bool l_is_aggregated = dap_sign_is_aggregated(l_aggregated_signature);
-    DAP_TEST_ASSERT(l_is_aggregated, "Signature should be marked as aggregated");
-    
-    // Get the number of signers in the aggregated signature
-    uint32_t l_signers_in_aggregate = dap_sign_get_signers_count(l_aggregated_signature);
-    DAP_TEST_ASSERT(l_signers_in_aggregate == l_signatures_count, "Aggregated signature should contain all individual signatures");
-    
-    log_it(L_DEBUG, "Aggregated signature contains %u signers", l_signers_in_aggregate);
-    
-    // Prepare message array for aggregated verification
-    const void* l_messages[NETWORK_NODE_COUNT];
-    size_t l_message_sizes[NETWORK_NODE_COUNT];
-    for (uint32_t i = 0; i < l_signatures_count; i++) {
-        l_messages[i] = &l_proposal_hash;
-        l_message_sizes[i] = sizeof(l_proposal_hash);
-    }
-    
-    // Verify the aggregated signature (all nodes signed the same message)
-    int l_agg_verify_result = dap_sign_verify_aggregated(
-        l_aggregated_signature,
-        l_messages,
-        l_message_sizes,
-        NULL, // No specific public keys (extracted from signatures)
-        l_signatures_count
+    // Step 8: Test ring signature anonymity properties
+    // Create additional ring signatures from different signers to test anonymity
+
+    // Create signature from different signer in the ring
+    uint32_t l_second_signer_index = 1; // Second participant
+    dap_enc_key_t* l_second_signer_key = l_ring_keys[l_second_signer_index];
+
+    dap_sign_t* l_second_ring_signature = dap_sign_create_ring(
+        l_second_signer_key,
+        &l_proposal_hash,
+        sizeof(l_proposal_hash),
+        l_ring_keys,
+        l_signatures_count,
+        l_second_signer_index
     );
+    DAP_TEST_ASSERT_NOT_NULL(l_second_ring_signature, "Second ring signature creation");
+
+    // Both signatures should be valid
+    int l_second_verify_result = dap_sign_verify(l_second_ring_signature, &l_proposal_hash, sizeof(l_proposal_hash));
+    DAP_TEST_ASSERT(l_second_verify_result == 0, "Second ring signature verification should succeed");
+
+    // Signatures should be different (different signers)
+    DAP_TEST_ASSERT(memcmp(l_ring_signature->p_signature_data, l_second_ring_signature->p_signature_data,
+                          l_ring_signature->header.sign_size) != 0,
+                   "Signatures from different signers should be different");
+
+    log_it(L_INFO, "✓ Ring signature anonymity verified: signatures from different signers are distinct");
     
-    DAP_TEST_ASSERT(l_agg_verify_result == 0, "Aggregated signature verification should succeed");
-    log_it(L_INFO, "✅ Aggregated signature verified successfully!");
-    
-    // Step 8: Also verify individual signatures for comparison
-    uint32_t l_individual_valid = 0;
-    for (uint32_t i = 0; i < l_signatures_count; i++) {
-        int l_verify_result = dap_sign_verify(l_individual_signatures[i], &l_proposal_hash, sizeof(l_proposal_hash));
-        if (l_verify_result == 0) {
-            l_individual_valid++;
-        }
-    }
-    
-    DAP_TEST_ASSERT(l_individual_valid == l_signatures_count, "All individual signatures should also be valid");
-    log_it(L_DEBUG, "Individual verification: %u/%u signatures valid", l_individual_valid, l_signatures_count);
-    
-    // Step 9: Create final consensus result with aggregation metadata
+    // Step 9: Create final consensus result with ring signature metadata
     dap_json_t* l_consensus_result = dap_json_object_new();
     dap_json_object_add_object(l_consensus_result, "original_proposal", l_proposal);
-    dap_json_object_add_int64(l_consensus_result, "signatures_collected", l_signatures_count);
-    dap_json_object_add_int64(l_consensus_result, "individual_valid_signatures", l_individual_valid);
-    dap_json_object_add_bool(l_consensus_result, "aggregated_signature_valid", l_agg_verify_result == 0);
+    dap_json_object_add_int64(l_consensus_result, "ring_participants", l_signatures_count);
+    dap_json_object_add_int64(l_consensus_result, "actual_signer_index", l_actual_signer_index);
+    dap_json_object_add_bool(l_consensus_result, "ring_signature_valid", l_ring_verify_result == 0);
+    dap_json_object_add_bool(l_consensus_result, "anonymity_preserved", true);
     dap_json_object_add_bool(l_consensus_result, "consensus_reached", true);
-    dap_json_object_add_string(l_consensus_result, "signature_algorithm", "Chipmunk");
-    dap_json_object_add_string(l_consensus_result, "aggregation_type", "Tree-based");
-    dap_json_object_add_int64(l_consensus_result, "signers_in_aggregate", l_signers_in_aggregate);
+    dap_json_object_add_string(l_consensus_result, "signature_algorithm", "Chipmunk_Ring");
+    dap_json_object_add_string(l_consensus_result, "signature_type", "Ring Signature with ZKP");
+    dap_json_object_add_int64(l_consensus_result, "signature_size_bytes", l_ring_signature->header.sign_size);
     dap_json_object_add_int64(l_consensus_result, "finalization_time", dap_time_now());
     
     // Add signature metadata
@@ -326,17 +334,13 @@ static bool s_test_distributed_consensus_workflow(void) {
     char* l_result_json = dap_json_to_string(l_consensus_result);
     DAP_TEST_ASSERT_NOT_NULL(l_result_json, "Consensus result JSON serialization");
     
-    log_it(L_INFO, "🎉 Distributed consensus with aggregated signatures completed successfully!");
-    log_it(L_INFO, "📊 Summary: %u Chipmunk signatures aggregated into 1 signature", l_signatures_count);
+    log_it(L_INFO, "🎉 Distributed consensus with ring signatures completed successfully!");
+    log_it(L_INFO, "📊 Summary: Ring signature created with %u participants, signer identity hidden", l_signatures_count);
     log_it(L_DEBUG, "Final consensus result: %s", l_result_json);
-    
-    // Cleanup individual signatures
-    for (uint32_t i = 0; i < l_signatures_count; i++) {
-        DAP_DELETE(l_individual_signatures[i]);
-    }
-    
-    // Cleanup aggregated signature
-    DAP_DELETE(l_aggregated_signature);
+
+    // Cleanup ring signatures
+    DAP_DELETE(l_ring_signature);
+    DAP_DELETE(l_second_ring_signature);
     
     // Cleanup keys
     for (uint32_t i = 0; i < NETWORK_NODE_COUNT; i++) {

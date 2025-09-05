@@ -122,6 +122,66 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring "unit;crypto;ring")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
+    add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
+    register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base64/test_base64_encoding.c)
+    add_dap_test(test_unit_crypto_base64 unit/crypto/base64/test_base64_encoding.c)
+    register_dap_test(test_unit_crypto_base64 "unit;crypto;encoding;base64")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/signatures/test_signatures.c)
+    add_dap_test(test_unit_crypto_signatures unit/crypto/signatures/test_signatures.c)
+    register_dap_test(test_unit_crypto_signatures "unit;crypto;signatures")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keys/test_deterministic_keys.c)
+    add_dap_test(test_unit_crypto_deterministic_keys unit/crypto/keys/test_deterministic_keys.c)
+    register_dap_test(test_unit_crypto_deterministic_keys "unit;crypto;keys")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/general/test_encryption.c)
+    add_dap_test(test_unit_crypto_encryption unit/crypto/general/test_encryption.c)
+    register_dap_test(test_unit_crypto_encryption "unit;crypto;encryption")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/ntt/test_ntt_comparison.c)
+    add_dap_test(test_unit_crypto_ntt unit/crypto/ntt/test_ntt_comparison.c)
+    register_dap_test(test_unit_crypto_ntt "unit;crypto;ntt")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/tree/test_chipmunk_tree.c)
+    add_dap_test(test_unit_crypto_tree unit/crypto/tree/test_chipmunk_tree.c)
+    register_dap_test(test_unit_crypto_tree "unit;crypto;tree")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_performance.c)
+    add_dap_test(test_unit_crypto_chipmunk_performance unit/crypto/chipmunk/test_chipmunk_performance.c)
+    register_dap_test(test_unit_crypto_chipmunk_performance "unit;crypto;chipmunk")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hots.c)
+    add_dap_test(test_unit_crypto_chipmunk_hots unit/crypto/chipmunk/test_chipmunk_hots.c)
+    register_dap_test(test_unit_crypto_chipmunk_hots "unit;crypto;chipmunk")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_large_scale.c)
+    add_dap_test(test_unit_crypto_chipmunk_large_scale unit/crypto/chipmunk/test_chipmunk_large_scale.c)
+    register_dap_test(test_unit_crypto_chipmunk_large_scale "unit;crypto;chipmunk")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_invntt_fix.c)
+    add_dap_test(test_unit_crypto_chipmunk_invntt_fix unit/crypto/chipmunk/test_chipmunk_invntt_fix.c)
+    register_dap_test(test_unit_crypto_chipmunk_invntt_fix "unit;crypto;chipmunk")
+endif()
+
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 
@@ -174,6 +234,11 @@ message("[+] Configuring Security Tests")
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/security/test_memory_safety.c)
     add_dap_test(test_security_memory security/test_memory_safety.c)
     register_dap_test(test_security_memory "security;memory")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/security/test_ring_signature_zkp.c)
+    add_dap_test(test_security_ring_zkp security/test_ring_signature_zkp.c)
+    register_dap_test(test_security_ring_zkp "security;crypto;zkp")
 endif()
 
 # Custom test targets for different categories

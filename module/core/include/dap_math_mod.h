@@ -3,7 +3,7 @@
  * Dmitriy A. Gearasimov <ceo@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
  * DAP SDK https://gitlab.demlabs.net/dap/dap-sdk
- * Copyright  (c) 2017-2024
+ * Copyright  (c) 2025
  * All rights reserved.
 
  This file is part of DAP (Distributed Applications Platform) the open source project

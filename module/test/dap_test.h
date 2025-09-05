@@ -124,9 +124,7 @@ float benchmark_test_rate(void (*func_name)(void), float sec);
  */
 #define dap_test_logging_init() do { \
     extern void dap_log_set_simple_for_tests(bool); \
-    extern void dap_log_set_external_output(int, void*); \
     dap_log_set_simple_for_tests(true); \
-    dap_log_set_external_output(1, NULL); /* LOGGER_OUTPUT_STDOUT */ \
 } while(0)
 
 /**
