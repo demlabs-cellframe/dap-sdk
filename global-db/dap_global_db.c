@@ -2148,13 +2148,13 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
 }
 
 /**
- * @brief dap_global_db_group_clean
+ * @brief dap_global_db_group_clear
  * @details Erase all records in the group with flag DAP_GLOBAL_DB_RECORD_DEL
  * @param a_group group name
  * @param a_pinned clean pinned records
  * @return 0 if success, else other
  */
-int dap_global_db_group_clean(const char *a_group, bool a_pinned)
+int dap_global_db_group_clear(const char *a_group, bool a_pinned)
 {
     dap_return_val_if_fail(a_group, -1);
     size_t l_ret_count = 0;
