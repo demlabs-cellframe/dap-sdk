@@ -996,6 +996,37 @@ clean_and_ret:
     return l_ret;
 }
 
+static size_t s_db_sqlite_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
+{
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), 0);
+    const char *l_error_msg = "size read";
+    size_t l_ret_size = 0;
+    sqlite3_stmt *l_stmt = NULL;
+    char *l_query_str = NULL;
+    if (a_key) {
+        l_query_str = sqlite3_mprintf(
+            "SELECT COALESCE(SUM(LENGTH(key)),0) + COALESCE(SUM(LENGTH(value)),0) + COALESCE(SUM(LENGTH(sign)),0) FROM \"%s\""
+            " WHERE key='%s' AND (flags & '%d' %s 0)",
+            a_group, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+    } else {
+        l_query_str = sqlite3_mprintf(
+            "SELECT COALESCE(SUM(LENGTH(key)),0) + COALESCE(SUM(LENGTH(value)),0) + COALESCE(SUM(LENGTH(sign)),0) FROM \"%s\""
+            " WHERE flags & '%d' %s 0",
+            a_group, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+    }
+    if (!l_query_str)
+        goto clean_and_ret;
+    if (s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg) != SQLITE_OK)
+        goto clean_and_ret;
+    if (s_db_sqlite_step(l_stmt, l_error_msg) != SQLITE_ROW)
+        goto clean_and_ret;
+    l_ret_size = (size_t)sqlite3_column_int64(l_stmt, 0);
+clean_and_ret:
+    s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);
+    return l_ret_size;
+}
+
 /**
  * @brief Flushes a SQLite database cahce to disk
  * @note The function closes and opens the database connection
@@ -1128,6 +1159,7 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     a_drv_callback->get_by_hash                  = s_db_sqlite_get_by_hash;
     a_drv_callback->read_hashes                  = s_db_sqlite_read_hashes;
     a_drv_callback->is_hash                      = s_db_sqlite_is_hash;
+    a_drv_callback->read_size_store              = s_db_sqlite_read_size_store;
     s_db_inited = true;
 
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);

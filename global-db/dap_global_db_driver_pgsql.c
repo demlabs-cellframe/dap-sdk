@@ -846,6 +846,54 @@ clean_and_ret:
     return l_ret ? *l_ret : false;
 }
 
+static size_t s_db_pgsql_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
+{
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
+    size_t l_ret_size = 0;
+    PGresult *l_query_res = NULL;
+    if (a_key) {
+        char *l_query_str = dap_strdup_printf(
+            "SELECT COALESCE(SUM(OCTET_LENGTH(key)),0) + COALESCE(SUM(LENGTH(value)),0) + COALESCE(SUM(LENGTH(sign)),0) FROM \"%s\""
+            " WHERE key=$1 AND (flags & %d %s 0);",
+            a_group, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        if (!l_query_str)
+            goto clean_and_ret;
+        const char *l_param_vals[1] = { a_key };
+        int l_param_lens[1] = { (int)dap_strlen(a_key) };
+        int l_param_formats[1] = { 0 }; // text
+        l_query_res = s_db_pgsql_exec(l_conn->conn, l_query_str, 1,
+                                      l_param_vals, l_param_lens, l_param_formats,
+                                      1, PGRES_TUPLES_OK, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+    } else {
+        char *l_query_str = dap_strdup_printf(
+            "SELECT COALESCE(SUM(OCTET_LENGTH(key)),0) + COALESCE(SUM(LENGTH(value)),0) + COALESCE(SUM(LENGTH(sign)),0) FROM \"%s\""
+            " WHERE flags & %d %s 0;",
+            a_group, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        if (!l_query_str)
+            goto clean_and_ret;
+        l_query_res = s_db_pgsql_exec(l_conn->conn, l_query_str, 0,
+                                      NULL, NULL, NULL,
+                                      1, PGRES_TUPLES_OK, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+    }
+    if (!l_query_res)
+        goto clean_and_ret;
+    if (PQntuples(l_query_res)) {
+        if (PQgetlength(l_query_res, 0, 0) == 8) {
+            int64_t *l_size_p = (int64_t *)PQgetvalue(l_query_res, 0, 0);
+            if (l_size_p)
+                l_ret_size = (size_t)be64toh(*l_size_p);
+        }
+    }
+clean_and_ret:
+    if (l_query_res)
+        PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret_size;
+}
+
 /**
  * @brief Flushes a PGSQL database cahce to disk
  * @note The function closes and opens the database connection
@@ -946,6 +994,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->get_by_hash             = s_db_pgsql_get_by_hash;
     a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
     a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
+    a_drv_callback->read_size_store         = s_db_pgsql_read_size_store;
     s_db_inited = true;
 
     return 0;

@@ -504,3 +504,20 @@ int dap_global_db_driver_txn_end(bool a_commit)
     debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_end callback", s_used_driver);
     return -1;
 }
+
+/**
+ * @brief Calculate size of GROUP or a SPECIFIC key
+ * @param a_group a group name string
+ * @param a_key an object key string, if equals NULL calculates for the WHOLE group
+ * @param a_with_holes if true - include any records, otherwise exclude deleted
+ * @return Total size in bytes
+ */
+size_t dap_global_db_driver_size(const char *a_group, const char *a_key, bool a_with_holes)
+{
+    size_t l_size_out = 0;
+    if (s_drv_callback.read_size_store)
+        l_size_out = s_drv_callback.read_size_store(a_group, a_key, a_with_holes);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_size_store callback", s_used_driver);
+    return l_size_out;
+}

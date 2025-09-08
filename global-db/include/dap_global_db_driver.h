@@ -143,6 +143,7 @@ typedef dap_global_db_pkt_pack_t * (*dap_global_db_driver_get_by_hash_callback_t
 typedef int (*dap_global_db_driver_txn_start_callback_t)(void);
 typedef int (*dap_global_db_driver_txn_end_callback_t)(bool);
 typedef int (*dap_global_db_driver_callback_t)(void);
+typedef size_t (*dap_global_db_driver_read_size_callback_t)(const char *a_group, const char *a_key, bool a_with_holes);
 
 typedef struct dap_global_db_driver_callbacks {
     dap_global_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
@@ -167,6 +168,7 @@ typedef struct dap_global_db_driver_callbacks {
 
     dap_global_db_driver_callback_t            deinit;
     dap_global_db_driver_callback_t            flush;
+    dap_global_db_driver_read_size_callback_t  read_size_store;
 } dap_global_db_driver_callbacks_t;
 
 int     dap_global_db_driver_init(const char *driver_name, const char *a_filename_db);
@@ -194,3 +196,4 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 int dap_global_db_driver_txn_start();
 int dap_global_db_driver_txn_end(bool a_commit);
+size_t dap_global_db_driver_size(const char *a_group, const char *a_key, bool a_with_holes);

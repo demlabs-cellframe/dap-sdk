@@ -99,6 +99,7 @@ static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key)
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
 static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
+static size_t           s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes);
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
     return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
@@ -450,6 +451,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->flush                       = s_db_mdbx_flush;
     a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
     a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
+    a_drv_dpt->read_size_store             = s_db_mdbx_read_size_store;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -608,6 +610,74 @@ static int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_ke
 DAP_STATIC_INLINE bool s_is_hole(struct driver_record *a_record)
 {
     return a_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
+}
+
+
+static size_t s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
+{
+    dap_return_val_if_fail(a_group, 0);
+    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
+    if (!l_db_ctx)
+        return 0;
+    size_t l_total = 0;
+    int rc;
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
+        log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
+        return 0;
+    }
+    MDBX_val l_key = {}, l_data = {};
+    if (a_key) {
+        rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_key);
+        if (MDBX_SUCCESS == rc) {
+            struct driver_record *l_record = l_data.iov_base;
+            if (l_data.iov_len >= sizeof(*l_record)) {
+                size_t l_need = sizeof(*l_record) + (size_t)l_record->key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                if (l_data.iov_len >= l_need) {
+                    if (a_with_holes || !s_is_hole(l_record)) {
+                        size_t l_key_len = l_record->key_len ? (size_t)(l_record->key_len - 1) : 0;
+                        l_total = l_key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                    }
+                } else
+                    log_it(L_ERROR, "Corrupted global DB record internal value");
+            } else
+                log_it(L_ERROR, "Corrupted global DB record internal value");
+        } else if (rc != MDBX_NOTFOUND)
+            log_it(L_ERROR, "s_get_obj_by_text_key: (%d) %s", rc, mdbx_strerror(rc));
+    } else {
+        MDBX_cursor *l_cursor = NULL;
+        if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
+            log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
+            goto finish;
+        }
+        if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST)) ) {
+            if (rc != MDBX_NOTFOUND)
+                log_it(L_ERROR, "mdbx_cursor_get FIRST: (%d) %s", rc, mdbx_strerror(rc));
+        } else {
+            do {
+                struct driver_record *l_record = l_data.iov_base;
+                if (l_data.iov_len >= sizeof(*l_record)) {
+                    size_t l_need = sizeof(*l_record) + (size_t)l_record->key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                    if (l_data.iov_len >= l_need) {
+                        if (a_with_holes || !s_is_hole(l_record)) {
+                            size_t l_key_len = l_record->key_len ? (size_t)(l_record->key_len - 1) : 0;
+                            l_total += l_key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                        }
+                    } else
+                        log_it(L_ERROR, "Corrupted global DB record internal value");
+                } else
+                    log_it(L_ERROR, "Corrupted global DB record internal value");
+            } while (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)));
+            if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
+                log_it(L_ERROR, "mdbx_cursor_get NEXT: (%d) %s", rc, mdbx_strerror(rc));
+        }
+        if (l_cursor)
+            mdbx_cursor_close(l_cursor);
+    }
+finish:
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
+    return l_total;
 }
 
 /*
