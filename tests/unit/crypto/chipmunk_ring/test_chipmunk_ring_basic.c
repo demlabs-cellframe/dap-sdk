@@ -20,7 +20,7 @@ static bool s_test_key_generation(void) {
     log_it(L_INFO, "Testing Chipmunk Ring key generation...");
 
     // Test random key generation
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
     dap_assert(l_key != NULL, "Random key generation should succeed");
     dap_assert(l_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, "Key type should be CHIPMUNK_RING");
     dap_assert(l_key->pub_key_data_size > 0, "Public key should have size");
@@ -32,7 +32,7 @@ static bool s_test_key_generation(void) {
         l_seed[i] = (uint8_t)i;
     }
 
-    dap_enc_key_t* l_key_det = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_seed, sizeof(l_seed), NULL, 0, 0);
+    dap_enc_key_t* l_key_det = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_seed, sizeof(l_seed), 256);
     dap_assert(l_key_det != NULL, "Deterministic key generation should succeed");
 
     // Keys should be different since different generation methods
@@ -40,7 +40,7 @@ static bool s_test_key_generation(void) {
                    "Keys from different generation methods should differ");
 
     // Generate another key with same seed - should be identical
-    dap_enc_key_t* l_key_det2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_seed, sizeof(l_seed), NULL, 0, 0);
+    dap_enc_key_t* l_key_det2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_seed, sizeof(l_seed), 256);
     dap_assert(l_key_det2 != NULL, "Second deterministic key generation should succeed");
 
     dap_assert(memcmp(l_key_det->pub_key_data, l_key_det2->pub_key_data, l_key_det->pub_key_data_size) == 0,
@@ -62,13 +62,13 @@ static bool s_test_basic_ring_operations(void) {
     log_it(L_INFO, "Testing basic Chipmunk Ring signature operations...");
 
     // Generate signer key
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
     // Generate ring keys
     dap_enc_key_t* l_ring_keys[TEST_RING_SIZE] = {0};
     for (size_t i = 0; i < TEST_RING_SIZE; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
     }
 
@@ -133,7 +133,7 @@ static bool s_test_error_handling(void) {
     dap_assert(l_signature == NULL, "Signature creation should fail with NULL parameters");
 
     // Test with valid signer but NULL message
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
     l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0, 0);

@@ -71,6 +71,19 @@ void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
  */
 size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size);
 
+/* ===== CALLBACK FUNCTIONS ===== */
+
+void dap_enc_chipmunk_ring_key_new_callback(struct dap_enc_key *a_key);
+void dap_enc_chipmunk_ring_key_generate_callback(struct dap_enc_key *a_key, const void *a_kex_buf,
+                                               size_t a_kex_size, const void *a_seed,
+                                               size_t a_seed_size, size_t a_key_size);
+void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
+
+int dap_enc_chipmunk_ring_get_sign(struct dap_enc_key *a_key, const void *a_data,
+                                  size_t a_data_size, void *a_output, size_t a_output_size);
+int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_data,
+                                     size_t a_data_size, void *a_sign, size_t a_sign_size);
+
 /**
  * @brief Create Chipmunk_Ring signature
  * @param a_priv_key Private key of the signer

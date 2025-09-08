@@ -124,9 +124,30 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring "unit;crypto;ring")
+# Chipmunk Ring tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_basic unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_basic "unit;crypto;ring;basic")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_anonymity unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_anonymity "unit;crypto;ring;anonymity")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_performance unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_performance "unit;crypto;ring;performance")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_edge_cases.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_edge_cases unit/crypto/chipmunk_ring/test_chipmunk_ring_edge_cases.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_edge_cases "unit;crypto;ring;edge_cases")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_stress.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_stress unit/crypto/chipmunk_ring/test_chipmunk_ring_stress.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_stress "unit;crypto;ring;stress")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)

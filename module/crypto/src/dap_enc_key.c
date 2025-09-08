@@ -43,6 +43,7 @@
 #include "dap_enc_multisign_prepared.h"
 #include "dap_enc_ringct20.h"
 #include "dap_enc_chipmunk.h"
+#include "dap_enc_chipmunk_ring.h"
 
 #ifdef DAP_ECDSA
 #include "dap_enc_ecdsa.h"
@@ -715,6 +716,44 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .del_sign = dap_enc_chipmunk_signature_delete,
         .del_pub_key = dap_enc_chipmunk_public_key_delete,
         .del_priv_key = dap_enc_chipmunk_private_key_delete
+    },
+
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING]={
+        .name = "CHIPMUNK_RING",
+        .enc = NULL,
+        .dec = NULL,
+        .enc_na = NULL,
+        .dec_na = NULL,
+        .dec_na_ext = NULL,
+
+        .sign_get = dap_enc_chipmunk_ring_get_sign,
+        .sign_verify = dap_enc_chipmunk_ring_verify_sign,
+
+        .gen_key_public = NULL,
+
+        .enc_out_size = NULL,
+        .dec_out_size = NULL,
+
+        .new_callback = dap_enc_chipmunk_ring_key_new_callback,
+        .new_generate_callback = dap_enc_chipmunk_ring_key_generate_callback,
+        .delete_callback = dap_enc_chipmunk_ring_key_delete,
+
+        .ser_sign = NULL,
+        .ser_priv_key = NULL,
+        .ser_pub_key = NULL,
+        .ser_priv_key_size = NULL,
+        .ser_pub_key_size = NULL,
+
+        .deser_sign = NULL,
+        .deser_priv_key = NULL,
+        .deser_pub_key = NULL,
+        .deser_sign_size = NULL,
+        .deser_pub_key_size = NULL,
+        .deser_priv_key_size = NULL,
+
+        .del_sign = NULL,
+        .del_pub_key = NULL,
+        .del_priv_key = NULL
     },
 
 };

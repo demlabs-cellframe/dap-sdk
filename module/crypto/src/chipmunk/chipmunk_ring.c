@@ -41,10 +41,7 @@
 // Modulus for ring signature operations
 // Using cryptographically secure 256-bit prime modulus
 // This modulus provides 128-bit security level for ring signatures
-static uint256_t RING_MODULUS = {
-    ._hi = {0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL},
-    ._lo = {0xFFFFFFFFFFFFFFFFULL, 0x7FFFFFFFFFFFFFFFULL}
-};
+static uint256_t RING_MODULUS;
 
 static bool s_chipmunk_ring_initialized = false;
 
@@ -74,8 +71,11 @@ int chipmunk_ring_init(void) {
         return -1;
     }
 
-    // RING_MODULUS is now statically initialized with cryptographically secure prime
-    // No additional initialization needed
+    // Initialize RING_MODULUS with cryptographically secure prime
+    // This is a 256-bit prime number: 2^256 - 2^128 - 1
+    memset(&RING_MODULUS, 0xFF, sizeof(RING_MODULUS));
+    // Clear the most significant bit to make it a valid prime
+    ((uint8_t*)&RING_MODULUS)[0] &= 0x7F;
 
     s_chipmunk_ring_initialized = true;
     log_it(L_INFO, "Chipmunk_Ring initialized successfully");

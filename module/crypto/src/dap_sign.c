@@ -378,13 +378,13 @@ dap_sign_t *dap_sign_create_ring(
     dap_return_val_if_fail(a_ring_size >= 2, NULL);
     dap_return_val_if_fail(a_signer_index < a_ring_size, NULL);
 
-    // Verify all ring keys are of correct type
+    // Verify all ring keys are of correct type (only CHIPMUNK_RING for ring signatures)
     for (size_t i = 0; i < a_ring_size; i++) {
         dap_return_val_if_fail(a_ring_keys[i], NULL);
         dap_return_val_if_fail(a_ring_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL);
     }
 
-    // Verify signer key type
+    // Verify signer key type (only CHIPMUNK_RING for ring signatures)
     dap_return_val_if_fail(a_signer_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL);
 
     // Calculate signature size
