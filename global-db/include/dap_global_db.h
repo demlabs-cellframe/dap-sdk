@@ -178,4 +178,4 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);
 
 int dap_global_db_erase_table_sync(const char *a_group);
 int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg);
-int dap_global_db_group_clear(const char *a_group, bool a_pinned);
+size_t dap_global_db_group_clear(const char *a_group, bool a_pinned);
