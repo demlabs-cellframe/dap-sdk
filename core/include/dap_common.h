@@ -148,7 +148,8 @@
 #define DAP_CAST_PTR(t,v) v
 #endif
 
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
+#define HASH_LAST_EX(hh, head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
+#define HASH_LAST(head) HASH_LAST_EX(hh, head)
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */

@@ -723,6 +723,8 @@ static inline int compare256(uint256_t a, uint256_t b)
               -    (( compare128(a.hi, b.hi) == -1 || (compare128(a.hi, b.hi) == 0 && compare128(a.lo, b.lo) == -1)) ? 1 : 0);
 }
 
+static inline int compare256_ptr(uint256_t *a, uint256_t *b) { return compare256(*a, *b); }
+
 static inline int nlz64(uint64_t N)
 {
     uint64_t I;

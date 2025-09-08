@@ -1,5 +1,6 @@
 #pragma once
 #include "dap_math_ops.h"
+#include "dap_strfuncs.h"
 
 /*
  * Forward declarations
@@ -15,6 +16,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct dap_uint256_str {
+    char str[DATOSHI_POW256 + 2];
+    char frac[DATOSHI_POW256 + 2];
+} dap_uint256_str_t;
 
 uint256_t dap_uint256_decimal_from_uint64(uint64_t a_uninteger);
 
@@ -40,6 +46,14 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger);
 uint256_t dap_uint256_scan_decimal(const char *a_str_decimal);
 
 const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac);
+
+static inline dap_uint256_str_t dap_uint256_to_char_ex(uint256_t a_uint256) {
+    dap_uint256_str_t l_res = { 0 };
+    const char *l_frac;
+    stpcpy(l_res.str, dap_uint256_to_char(a_uint256, &l_frac));
+    stpcpy(l_res.frac, l_frac);
+    return l_res;
+}
 
 /**
  * @brief dap_uint256_uninteger_to_char
