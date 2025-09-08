@@ -612,73 +612,58 @@ DAP_STATIC_INLINE bool s_is_hole(struct driver_record *a_record)
     return a_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
 }
 
-
 static size_t s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
 {
     dap_return_val_if_fail(a_group, 0);
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return 0;
+
     size_t l_total = 0;
     int rc;
     MDBX_txn *l_txn = s_txn;
+
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
         log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
         return 0;
     }
+
     MDBX_val l_key = {}, l_data = {};
+
     if (a_key) {
         rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_key);
         if (MDBX_SUCCESS == rc) {
             struct driver_record *l_record = l_data.iov_base;
             if (l_data.iov_len >= sizeof(*l_record)) {
-                size_t l_need = sizeof(*l_record) + (size_t)l_record->key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                size_t l_need = sizeof(*l_record) +
+                                (size_t)l_record->key_len +
+                                (size_t)l_record->value_len +
+                                (size_t)l_record->sign_len;
                 if (l_data.iov_len >= l_need) {
                     if (a_with_holes || !s_is_hole(l_record)) {
                         size_t l_key_len = l_record->key_len ? (size_t)(l_record->key_len - 1) : 0;
-                        l_total = l_key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
+                        l_total = l_key_len +
+                                  (size_t)l_record->value_len +
+                                  (size_t)l_record->sign_len;
                     }
-                } else
-                    log_it(L_ERROR, "Corrupted global DB record internal value");
-            } else
-                log_it(L_ERROR, "Corrupted global DB record internal value");
-        } else if (rc != MDBX_NOTFOUND)
-            log_it(L_ERROR, "s_get_obj_by_text_key: (%d) %s", rc, mdbx_strerror(rc));
+                }
+            }
+        }
     } else {
-        MDBX_cursor *l_cursor = NULL;
-        if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
-            log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
-            goto finish;
+        MDBX_stat l_stat;
+        rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat));
+        if (rc == MDBX_SUCCESS) {
+            size_t l_pages = (size_t)l_stat.ms_branch_pages + (size_t)l_stat.ms_leaf_pages + (size_t)l_stat.ms_overflow_pages;
+            l_total = l_pages * (size_t)l_stat.ms_psize;
         }
-        if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST)) ) {
-            if (rc != MDBX_NOTFOUND)
-                log_it(L_ERROR, "mdbx_cursor_get FIRST: (%d) %s", rc, mdbx_strerror(rc));
-        } else {
-            do {
-                struct driver_record *l_record = l_data.iov_base;
-                if (l_data.iov_len >= sizeof(*l_record)) {
-                    size_t l_need = sizeof(*l_record) + (size_t)l_record->key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
-                    if (l_data.iov_len >= l_need) {
-                        if (a_with_holes || !s_is_hole(l_record)) {
-                            size_t l_key_len = l_record->key_len ? (size_t)(l_record->key_len - 1) : 0;
-                            l_total += l_key_len + (size_t)l_record->value_len + (size_t)l_record->sign_len;
-                        }
-                    } else
-                        log_it(L_ERROR, "Corrupted global DB record internal value");
-                } else
-                    log_it(L_ERROR, "Corrupted global DB record internal value");
-            } while (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)));
-            if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
-                log_it(L_ERROR, "mdbx_cursor_get NEXT: (%d) %s", rc, mdbx_strerror(rc));
-        }
-        if (l_cursor)
-            mdbx_cursor_close(l_cursor);
     }
-finish:
+
     if (!s_txn)
         mdbx_txn_commit(l_txn);
+
     return l_total;
 }
+
 
 /*
  *  DESCRIPTION: Action routine - lookup in the group/table a last stored record (with the bigest Id).

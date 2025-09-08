@@ -867,16 +867,17 @@ static size_t s_db_pgsql_read_size_store(const char *a_group, const char *a_key,
                                       1, PGRES_TUPLES_OK, __FUNCTION__);
         DAP_DELETE(l_query_str);
     } else {
-        char *l_query_str = dap_strdup_printf(
-            "SELECT COALESCE(SUM(OCTET_LENGTH(key)),0) + COALESCE(SUM(LENGTH(value)),0) + COALESCE(SUM(LENGTH(sign)),0) FROM \"%s\""
-            " WHERE flags & %d %s 0;",
-            a_group, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-        if (!l_query_str)
+        char *l_group_reg = dap_strdup_printf("\"%s\"", a_group);
+        if (!l_group_reg)
             goto clean_and_ret;
-        l_query_res = s_db_pgsql_exec(l_conn->conn, l_query_str, 0,
-                                      NULL, NULL, NULL,
+        const char *l_param_vals[1] = { l_group_reg };
+        int l_param_lens[1] = { (int)dap_strlen(l_group_reg) };
+        int l_param_formats[1] = { 0 };
+        const char *l_query_str = "SELECT COALESCE(pg_total_relation_size(to_regclass($1)),0)";
+        l_query_res = s_db_pgsql_exec(l_conn->conn, l_query_str, 1,
+                                      l_param_vals, l_param_lens, l_param_formats,
                                       1, PGRES_TUPLES_OK, __FUNCTION__);
-        DAP_DELETE(l_query_str);
+        DAP_DELETE(l_group_reg);
     }
     if (!l_query_res)
         goto clean_and_ret;
