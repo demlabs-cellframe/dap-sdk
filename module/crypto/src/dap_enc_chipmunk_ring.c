@@ -28,6 +28,9 @@
 #include "dap_common.h"
 #include "dap_crypto_common.h"
 #include "chipmunk/chipmunk.h"
+
+// Детальное логирование для Chipmunk Ring модуля
+static bool s_debug_more = true;
 #include "dap_enc_key.h"
 #include "chipmunk/chipmunk_ring.h"
 #include "chipmunk/chipmunk_hash.h"
@@ -54,9 +57,9 @@ int dap_enc_chipmunk_ring_init(void) {
 int dap_enc_chipmunk_ring_key_new(struct dap_enc_key *a_key) {
     dap_return_val_if_fail(a_key, -EINVAL);
 
-    // Use standard Chipmunk key generation
-    return chipmunk_keypair(a_key->pub_key_data, a_key->pub_key_data_size,
-                           a_key->priv_key_data, a_key->priv_key_data_size);
+    // Just set the key type - key generation happens in key_new_generate callback
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
+    return 0;
 }
 
 /**
@@ -101,7 +104,7 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
             log_it(L_ERROR, "Failed to generate deterministic Chipmunk_Ring key");
             free(a_key->pub_key_data);
             free(a_key->priv_key_data);
-            return -1;
+        return -1;
         }
     } else {
         // Random key generation
@@ -197,13 +200,37 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     memcpy(l_priv_key.data, a_priv_key, CHIPMUNK_PRIVATE_KEY_SIZE);
 
     // Create ring container
+    // debug_if(s_debug_more, L_INFO, "Creating ring container for ring_size=%zu", a_ring_size);
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
     l_ring.size = (uint32_t)a_ring_size;
-    l_ring.public_keys = DAP_NEW_Z_COUNT(chipmunk_ring_public_key_t, a_ring_size);
+
+    size_t key_size = sizeof(chipmunk_ring_public_key_t);
+    size_t total_size = key_size * a_ring_size;
+
+    // Check for potential issues
+    if (a_ring_size == 0) {
+        debug_if(s_debug_more, L_ERROR, "Ring size is 0 - invalid parameter");
+        return -EINVAL;
+    }
+    if (key_size == 0) {
+        debug_if(s_debug_more, L_ERROR, "Key size is 0 - struct definition problem");
+        return -EINVAL;
+    }
+    if (total_size / key_size != a_ring_size) {
+        debug_if(s_debug_more, L_ERROR, "Integer overflow in size calculation: %zu * %zu != %zu",
+                 key_size, a_ring_size, total_size);
+        return -EINVAL;
+    }
+
+    debug_if(s_debug_more, L_INFO, "About to allocate %zu public keys, key_size=%zu, total_size=%zu",
+              a_ring_size, key_size, total_size);
+
+    l_ring.public_keys = (chipmunk_ring_public_key_t*)DAP_NEW_SIZE(chipmunk_ring_public_key_t, a_ring_size);
+    debug_if(s_debug_more, L_INFO, "Allocation result: %p", l_ring.public_keys);
 
     if (!l_ring.public_keys) {
-        log_it(L_ERROR, "Failed to allocate ring public keys");
+        debug_if(s_debug_more, L_ERROR, "Failed to allocate memory for ring public keys");
         return -ENOMEM;
     }
 

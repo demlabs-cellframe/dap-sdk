@@ -1028,7 +1028,11 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             break;
         default:
             if (!a_key->pub_key_data || a_key->pub_key_data_size != a_buflen) {
+                printf("DEBUG: About to realloc pub_key_data from %zu to %zu bytes\n", a_key->pub_key_data_size, a_buflen);
+                fflush(stdout);
                 void *l_new_pkey = DAP_REALLOC((byte_t*)a_key->pub_key_data, a_buflen);
+                printf("DEBUG: Realloc result: %p\n", l_new_pkey);
+                fflush(stdout);
                 if ( !l_new_pkey )
                     return log_it(L_CRITICAL, "%s", c_error_memory_alloc), -1;
                 a_key->pub_key_data = l_new_pkey;

@@ -43,8 +43,9 @@
 
 #define LOG_TAG "chipmunk_hots"
 
-// Debug control flag
+// Детальное логирование для Chipmunk HOTS модуля
 static bool s_debug_more = false;
+
 
 /**
  * @brief Enable/disable debug output for HOTS module

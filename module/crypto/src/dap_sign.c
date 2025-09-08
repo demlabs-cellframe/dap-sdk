@@ -41,7 +41,7 @@
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
-static bool s_dap_sign_debug_more = false;
+static bool s_dap_sign_debug_more = true;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
 // Static function declarations for internal implementations
@@ -389,18 +389,24 @@ dap_sign_t *dap_sign_create_ring(
 
     // Calculate signature size
     size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size);
+    debug_if(s_dap_sign_debug_more, L_INFO, "Ring signature size for ring_size=%zu: %zu",
+             a_ring_size, l_signature_size);
     dap_return_val_if_fail(l_signature_size > 0, NULL);
 
     // Allocate signature buffer
+    debug_if(s_dap_sign_debug_more, L_INFO, "Allocating signature buffer of size %zu", l_signature_size);
     uint8_t *l_signature_data = DAP_NEW_Z_SIZE(uint8_t, l_signature_size);
     dap_return_val_if_fail(l_signature_data, NULL);
+    debug_if(s_dap_sign_debug_more, L_INFO, "Signature buffer allocated successfully");
 
     // Extract public keys from ring keys
-    uint8_t **l_ring_pub_keys = DAP_NEW_Z_SIZE(uint8_t*, a_ring_size);
+    uint8_t **l_ring_pub_keys = DAP_NEW_Z_COUNT(uint8_t*, a_ring_size);
     if (!l_ring_pub_keys) {
+        debug_if(s_dap_sign_debug_more, L_ERROR, "Failed to allocate ring public keys array");
         DAP_DELETE(l_signature_data);
         return NULL;
     }
+    debug_if(s_dap_sign_debug_more, L_INFO, "Ring public keys array allocated successfully, size: %zu", a_ring_size);
 
     for (size_t i = 0; i < a_ring_size; i++) {
         l_ring_pub_keys[i] = a_ring_keys[i]->pub_key_data;
@@ -475,8 +481,11 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
 {
     dap_return_val_if_pass(!a_sign, NULL);
-    if (a_pub_key_out)
+    if (a_pub_key_out) {
         *a_pub_key_out = a_sign->header.sign_pkey_size;
+        printf("DEBUG: sign_pkey_size = %zu, pkey_n_sign = %p\n", *a_pub_key_out, a_sign->pkey_n_sign);
+        fflush(stdout);
+    }
     return a_sign->pkey_n_sign;
 }
 

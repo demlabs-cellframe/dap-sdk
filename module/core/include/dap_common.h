@@ -210,14 +210,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
-#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
+#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s > 0 ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
 #define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR( t, malloc(sizeof(t)) )
-#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
+#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s > 0 ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
 /* Auto memory! Do not inline! Do not modify the size in-call! */
 #define DAP_NEW_STACK(t)       &(t){ }
 #define DAP_NEW_STACK_SIZE(t, s) DAP_CAST_PTR( t, (intmax_t)(s) >= (intmax_t)(sizeof(t)) && (intmax_t)(s) < (1 << 15) ? alloca((intmax_t)(s)) : NULL )

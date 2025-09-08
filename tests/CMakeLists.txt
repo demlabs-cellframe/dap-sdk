@@ -151,6 +151,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_stress "unit;crypto;ring;stress")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_minimal_ring.c)
+    add_dap_test(test_minimal_ring unit/crypto/chipmunk_ring/test_minimal_ring.c)
+    register_dap_test(test_minimal_ring "unit;crypto;ring;minimal;debug")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")

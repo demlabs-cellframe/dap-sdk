@@ -47,7 +47,7 @@
 #endif
 
 // Флаг для расширенного логирования
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 /**
  * @brief Transform polynomial to NTT form

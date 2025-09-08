@@ -43,15 +43,15 @@
 
 #define LOG_TAG "chipmunk"
 
+// Детальное логирование для Chipmunk модуля
+static bool s_debug_more = false;
+
 // Определение MIN для использования в функциях работы с массивами
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
 #define CHIPMUNK_ETA 2  // Error distribution parameter η
-
-// Флаг для расширенного логирования
-static bool s_debug_more = false;
 
 static volatile int g_initialized = 0;
 
@@ -92,7 +92,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     
     // Check for corruption and parameter validation
     if (a_public_key_size > 100000 || a_private_key_size > 100000) {
-        log_it(L_ERROR, "CORRUPTION: Sizes are too large! pub=%zu, priv=%zu", 
+        log_it(L_ERROR, "CORRUPTION: Sizes are too large! pub=%zu, priv=%zu",
                a_public_key_size, a_private_key_size);
         return -1;
     }
@@ -183,7 +183,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     // Генерируем HOTS параметры из rho_seed (как при подписи/верификации!)
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
-            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
+            debug_if(s_debug_more, L_ERROR, "Failed to generate polynomial A[%d]", i);
             // Освобождаем память перед возвратом
             DAP_DEL_Z(l_sk);
             DAP_DEL_Z(l_pk);

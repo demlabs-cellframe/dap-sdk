@@ -7,6 +7,7 @@ set(TEST_NAMES
     test_chipmunk_ring_performance
     test_chipmunk_ring_edge_cases
     test_chipmunk_ring_stress
+    test_minimal_ring
 )
 
 set(TEST_SOURCES
@@ -15,6 +16,7 @@ set(TEST_SOURCES
     test_chipmunk_ring_performance.c
     test_chipmunk_ring_edge_cases.c
     test_chipmunk_ring_stress.c
+    test_minimal_ring.c
 )
 
 # Create test executables

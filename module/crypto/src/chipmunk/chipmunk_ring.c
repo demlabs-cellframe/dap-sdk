@@ -38,6 +38,10 @@
 
 #define LOG_TAG "chipmunk_ring"
 
+// Детальное логирование для Chipmunk Ring модуля
+static bool s_debug_more = false;
+
+
 // Modulus for ring signature operations
 // Using cryptographically secure 256-bit prime modulus
 // This modulus provides 128-bit security level for ring signatures
@@ -261,16 +265,27 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
     memcpy(&l_randomness, a_commitment->randomness, l_randomness_size);
 
     // Step 1: Compute challenge * private_key mod modulus
+    debug_if(s_debug_more, L_INFO, "Computing challenge * private_key:");
+    debug_if(s_debug_more, L_INFO, "  challenge: %08x %08x %08x %08x",
+           ((uint32_t*)&l_challenge)[0], ((uint32_t*)&l_challenge)[1],
+           ((uint32_t*)&l_challenge)[2], ((uint32_t*)&l_challenge)[3]);
+    debug_if(s_debug_more, L_INFO, "  private_key: %08x %08x %08x %08x",
+           ((uint32_t*)&l_private_key)[0], ((uint32_t*)&l_private_key)[1],
+           ((uint32_t*)&l_private_key)[2], ((uint32_t*)&l_private_key)[3]);
+    debug_if(s_debug_more, L_INFO, "  modulus: %08x %08x %08x %08x",
+           ((uint32_t*)&RING_MODULUS)[0], ((uint32_t*)&RING_MODULUS)[1],
+           ((uint32_t*)&RING_MODULUS)[2], ((uint32_t*)&RING_MODULUS)[3]);
+
     uint256_t l_challenge_times_key;
     if (dap_math_mod_mul(l_challenge, l_private_key, RING_MODULUS, &l_challenge_times_key) != 0) {
-        log_it(L_ERROR, "Failed to compute challenge * private_key");
+        debug_if(s_debug_more, L_ERROR, "Failed to compute challenge * private_key");
         return -1;
     }
 
     // Step 2: Compute response = (randomness - challenge * private_key) mod modulus
     uint256_t l_response;
     if (dap_math_mod_sub(l_randomness, l_challenge_times_key, RING_MODULUS, &l_response) != 0) {
-        log_it(L_ERROR, "Failed to compute response");
+        debug_if(s_debug_more, L_ERROR, "Failed to compute response");
         return -1;
     }
 
