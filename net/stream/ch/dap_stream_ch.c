@@ -195,6 +195,14 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     return  0;  /* SS$_SUCCESS */
 }
 
+// Deferred free to avoid use-after-free during notifier callbacks
+static void s_stream_ch_free_callback(void *a_arg)
+{
+    dap_stream_ch_t *l_ch = (dap_stream_ch_t *)a_arg;
+    if (l_ch)
+        dap_stm_ch_free(l_ch);
+}
+
 unsigned int dap_new_stream_ch_id() {
     static _Atomic unsigned int stream_ch_id = 0;
     return stream_ch_id++;
@@ -216,6 +224,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         l_ch_new->stream = a_stream;
         l_ch_new->proc = proc;
         l_ch_new->ready_to_read = true;
+        l_ch_new->closing = false;
         l_ch_new->uuid = dap_new_stream_ch_id();
         pthread_mutex_init(&(l_ch_new->mutex),NULL);
 
@@ -256,6 +265,7 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     }
 
     pthread_mutex_lock(&a_ch->mutex);
+    a_ch->closing = true;
     if (a_ch->proc)
         if (a_ch->proc->delete_callback)
             a_ch->proc->delete_callback(a_ch, NULL);
@@ -275,7 +285,11 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 
     pthread_mutex_unlock(&a_ch->mutex);
 
-    dap_stm_ch_free (a_ch);
+    // Defer actual free to worker's queue to avoid freeing while iterating notifiers
+    if (l_stream_worker && l_stream_worker->worker)
+        dap_worker_exec_callback_on(l_stream_worker->worker, s_stream_ch_free_callback, a_ch);
+    else
+        dap_stm_ch_free(a_ch);
 }
 
 /**

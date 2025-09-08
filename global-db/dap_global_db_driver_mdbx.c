@@ -1114,12 +1114,12 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
         else {
             /* Drop the whole table */
-            if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
+            if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, false)))
                 log_it (L_ERROR, "mdbx_drop: (%d) %s", rc, mdbx_strerror(rc));
-            dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );
+            /*dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );
             HASH_DEL(s_db_ctxs, l_db_ctx);
             dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
-            DAP_DELETE(l_db_ctx);
+            DAP_DELETE(l_db_ctx);*/ // LEADS TO UNDEFINED BEHAVIOR!
         }
         if (l_key.iov_len && rc == MDBX_SUCCESS) {
             rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL);
