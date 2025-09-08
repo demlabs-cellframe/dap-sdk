@@ -25,7 +25,7 @@
 #include "test_helpers.h"
 #include "dap_config.h"
 #include "dap_common.h"
-#include "dap_sdk.h"
+#include "../../../dap-sdk/dap_sdk.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
