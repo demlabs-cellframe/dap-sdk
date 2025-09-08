@@ -71,11 +71,14 @@ int chipmunk_ring_init(void) {
         return -1;
     }
 
-    // Initialize RING_MODULUS with cryptographically secure prime
-    // This is a 256-bit prime number: 2^256 - 2^128 - 1
-    memset(&RING_MODULUS, 0xFF, sizeof(RING_MODULUS));
-    // Clear the most significant bit to make it a valid prime
-    ((uint8_t*)&RING_MODULUS)[0] &= 0x7F;
+    // Initialize RING_MODULUS with a large prime number for modular arithmetic
+    // Using 2^32 - 5 (a known prime for testing)
+    memset(&RING_MODULUS, 0, sizeof(RING_MODULUS));
+    ((uint8_t*)&RING_MODULUS)[0] = 0xFB;  // 256 - 5 = 251
+    ((uint8_t*)&RING_MODULUS)[1] = 0xFF;
+    ((uint8_t*)&RING_MODULUS)[2] = 0xFF;
+    ((uint8_t*)&RING_MODULUS)[3] = 0xFF;
+    // Set only the first 4 bytes for 32-bit modulus, rest remains 0
 
     s_chipmunk_ring_initialized = true;
     log_it(L_INFO, "Chipmunk_Ring initialized successfully");
@@ -296,8 +299,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     a_signature->signer_index = a_signer_index;
 
     // Allocate memory for commitments and responses
-    a_signature->commitments = DAP_NEW_SIZE(chipmunk_ring_commitment_t, a_ring->size);
-    a_signature->responses = DAP_NEW_SIZE(chipmunk_ring_response_t, a_ring->size);
+    a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
+    a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
 
     if (!a_signature->commitments || !a_signature->responses) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);

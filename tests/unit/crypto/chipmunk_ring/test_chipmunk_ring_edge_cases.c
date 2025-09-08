@@ -28,7 +28,8 @@ static bool s_test_ring_size_limits(void) {
     // Test minimum ring size (2)
     {
         log_it(L_DEBUG, "Testing minimum ring size (2)");
-        dap_enc_key_t* l_min_ring_keys[MIN_RING_SIZE] = {0};
+        dap_enc_key_t* l_min_ring_keys[MIN_RING_SIZE];
+        memset(l_min_ring_keys, 0, sizeof(l_min_ring_keys));
         for (size_t i = 0; i < MIN_RING_SIZE; i++) {
             l_min_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_min_ring_keys[i] != NULL, "Min ring key generation should succeed");
@@ -68,7 +69,8 @@ static bool s_test_ring_size_limits(void) {
     // Test maximum ring size
     {
         log_it(L_DEBUG, "Testing maximum ring size (%d)", MAX_RING_SIZE);
-        dap_enc_key_t* l_max_ring_keys[MAX_RING_SIZE] = {0};
+        dap_enc_key_t* l_max_ring_keys[MAX_RING_SIZE];
+        memset(l_max_ring_keys, 0, sizeof(l_max_ring_keys));
         for (size_t i = 0; i < MAX_RING_SIZE; i++) {
             l_max_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_max_ring_keys[i] != NULL, "Max ring key generation should succeed");
@@ -96,7 +98,8 @@ static bool s_test_ring_size_limits(void) {
     {
         log_it(L_DEBUG, "Testing signature size differences");
         // Create signatures with different sizes
-        dap_enc_key_t* l_ring_keys[MAX_RING_SIZE] = {0};
+        dap_enc_key_t* l_ring_keys[MAX_RING_SIZE];
+        memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < MAX_RING_SIZE; i++) {
             l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -211,7 +214,8 @@ static bool s_test_empty_messages(void) {
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
     const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");

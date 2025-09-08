@@ -39,8 +39,8 @@
 #include "dap_enc_chipmunk.h"
 
 // Chipmunk includes
-#include "chipmunk_hots.h"
-#include "chipmunk.h"
+#include "chipmunk/chipmunk_hots.h"
+#include "chipmunk/chipmunk.h"
 
 #define LOG_TAG "chipmunk_hots_test"
 

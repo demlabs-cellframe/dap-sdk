@@ -92,16 +92,27 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
         return -1;
     }
 
-    // Generate random keys (temporary implementation)
-    if (randombytes(a_key->priv_key_data, a_key->priv_key_data_size) != 0) {
-        log_it(L_ERROR, "Failed to generate random private key");
-        free(a_key->pub_key_data);
-        free(a_key->priv_key_data);
-        return -1;
+    // Generate keys based on whether a seed is provided
+    if (a_seed) {
+        // Deterministic key generation
+        if (chipmunk_keypair_from_seed(a_seed,
+                                       a_key->pub_key_data, a_key->pub_key_data_size,
+                                       a_key->priv_key_data, a_key->priv_key_data_size) != 0) {
+            log_it(L_ERROR, "Failed to generate deterministic Chipmunk_Ring key");
+            free(a_key->pub_key_data);
+            free(a_key->priv_key_data);
+            return -1;
+        }
+    } else {
+        // Random key generation
+        if (chipmunk_keypair(a_key->pub_key_data, a_key->pub_key_data_size,
+                             a_key->priv_key_data, a_key->priv_key_data_size) != 0) {
+            log_it(L_ERROR, "Failed to generate random Chipmunk_Ring key");
+            free(a_key->pub_key_data);
+            free(a_key->priv_key_data);
+            return -1;
+        }
     }
-
-    // For now, copy private key to public key (temporary implementation)
-    memcpy(a_key->pub_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
 
     log_it(L_DEBUG, "Chipmunk_Ring key generated successfully");
     return 0;

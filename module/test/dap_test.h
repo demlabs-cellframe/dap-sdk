@@ -123,7 +123,6 @@ float benchmark_test_rate(void (*func_name)(void), float sec);
  * This sets the DAP logging system to use simple format without timestamps
  */
 #define dap_test_logging_init() do { \
-    extern void dap_log_set_simple_for_tests(bool); \
     dap_log_set_simple_for_tests(true); \
 } while(0)
 
@@ -131,7 +130,6 @@ float benchmark_test_rate(void (*func_name)(void), float sec);
  * @brief Restore default logging format
  */
 #define dap_test_logging_restore() do { \
-    extern void dap_log_set_simple_for_tests(bool); \
     dap_log_set_simple_for_tests(false); \
 } while(0)
 

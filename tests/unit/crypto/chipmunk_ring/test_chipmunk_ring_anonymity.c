@@ -25,7 +25,8 @@ static bool s_test_ring_anonymity(void) {
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
     // Generate ring keys
-    dap_enc_key_t* l_ring_keys[TEST_RING_SIZE] = {0};
+    dap_enc_key_t* l_ring_keys[TEST_RING_SIZE];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -37,7 +38,8 @@ static bool s_test_ring_anonymity(void) {
     dap_assert(l_hash_result == true, "Message hashing should succeed");
 
     // Test different signer positions
-    dap_sign_t* l_signatures[POSITIONS_TO_TEST] = {0};
+    dap_sign_t* l_signatures[POSITIONS_TO_TEST];
+    memset(l_signatures, 0, sizeof(l_signatures));
     size_t l_positions[POSITIONS_TO_TEST] = {0, 2, TEST_RING_SIZE - 1};
 
     for (size_t i = 0; i < POSITIONS_TO_TEST; i++) {
@@ -106,7 +108,8 @@ static bool s_test_linkability_prevention(void) {
 
     // Generate ring keys
     const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -119,7 +122,8 @@ static bool s_test_linkability_prevention(void) {
 
     // Create multiple signatures from same signer
     const size_t l_num_attempts = 5;
-    dap_sign_t* l_signatures[l_num_attempts] = {0};
+    dap_sign_t* l_signatures[l_num_attempts];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     for (size_t i = 0; i < l_num_attempts; i++) {
         l_signatures[i] = dap_sign_create_ring(
@@ -165,7 +169,8 @@ static bool s_test_cryptographic_strength(void) {
 
     // Generate keys
     const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -178,7 +183,8 @@ static bool s_test_cryptographic_strength(void) {
 
     // Create multiple signatures
     const size_t l_num_signatures = 10;
-    dap_sign_t* l_signatures[l_num_signatures] = {0};
+    dap_sign_t* l_signatures[l_num_signatures];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     for (size_t i = 0; i < l_num_signatures; i++) {
         l_signatures[i] = dap_sign_create_ring(
@@ -196,7 +202,8 @@ static bool s_test_cryptographic_strength(void) {
 
     // All signatures should be unique
     size_t l_unique_signatures = 0;
-    bool l_is_unique[l_num_signatures] = {false};
+    bool l_is_unique[l_num_signatures];
+    memset(l_is_unique, false, sizeof(l_is_unique));
 
     for (size_t i = 0; i < l_num_signatures; i++) {
         bool l_is_unique_sig = true;

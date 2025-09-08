@@ -24,6 +24,7 @@
 
 #include <dap_common.h>
 #include "../../../../module/test/dap_test.h"
+#include "../../../fixtures/utilities/test_helpers.h"
 #include <dap_enc_base58.h>
 #include "rand/dap_rand.h"
 
@@ -116,7 +117,7 @@ static bool s_test_base58_random_data(void) {
 
     for (int i = 0; i < TEST_ITERATIONS; i++) {
         // Random size between 1 and 256
-        size_t l_test_size = (random_uint32_t() % 256) + 1;
+        size_t l_test_size = (random_uint32_t(256)) + 1;
         uint8_t l_source_data[l_test_size];
         randombytes(l_source_data, l_test_size);
 
@@ -158,7 +159,7 @@ int main(void) {
     log_it(L_NOTICE, "Starting Base58 encoding unit tests...");
 
     // Initialize DAP SDK
-    dap_test_logging_init();
+    if (dap_test_sdk_init() != 0) {
         log_it(L_ERROR, "Failed to initialize DAP SDK");
         return -1;
     }
@@ -171,7 +172,7 @@ int main(void) {
     l_all_passed &= s_test_base58_random_data();
 
     // Cleanup
-    dap_test_logging_restore();
+    dap_test_sdk_cleanup();
 
     log_it(L_NOTICE, "Base58 encoding unit tests completed");
 

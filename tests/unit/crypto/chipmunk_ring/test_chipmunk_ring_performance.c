@@ -34,7 +34,8 @@ static bool s_test_performance(void) {
         log_it(L_DEBUG, "Testing ring size %zu", l_ring_size);
 
         // Generate keys for this ring size
-        dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+        dap_enc_key_t* l_ring_keys[l_ring_size];
+        memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < l_ring_size; i++) {
             l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -121,7 +122,8 @@ static bool s_test_size_scaling(void) {
         const size_t l_ring_size = l_ring_sizes[size_idx];
 
         // Generate keys
-        dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+        dap_enc_key_t* l_ring_keys[l_ring_size];
+        memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < l_ring_size; i++) {
             l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -146,7 +148,7 @@ static bool s_test_size_scaling(void) {
                            "Larger ring should produce larger signature");
         }
 
-        log_it(L_DEBUG, "Ring size %zu: signature size %zu bytes",
+        log_it(L_DEBUG, "Ring size %zu: signature size %u bytes",
                l_ring_size, l_signature->header.sign_size);
 
         l_prev_size = l_signature->header.sign_size;

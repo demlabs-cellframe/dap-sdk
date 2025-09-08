@@ -100,7 +100,8 @@ static bool s_test_memory_stress(void) {
         log_it(L_DEBUG, "Testing memory stress with ring size %zu", l_ring_size);
 
         // Generate keys for this ring size
-        dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+        dap_enc_key_t* l_ring_keys[l_ring_size];
+        memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < l_ring_size; i++) {
             l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -118,7 +119,7 @@ static bool s_test_memory_stress(void) {
         int l_verify_result = dap_sign_verify(l_signature, &l_message_hash, sizeof(l_message_hash));
         dap_assert(l_verify_result == 0, "Signature verification should succeed");
 
-        log_it(L_DEBUG, "Ring size %zu: signature size %zu bytes",
+        log_it(L_DEBUG, "Ring size %zu: signature size %u bytes",
                l_ring_size, l_signature->header.sign_size);
 
         // Cleanup
@@ -140,7 +141,8 @@ static bool s_test_concurrent_operations(void) {
 
     // Generate shared ring keys
     const size_t l_ring_size = 8;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
@@ -160,7 +162,8 @@ static bool s_test_concurrent_operations(void) {
 
     // Simulate concurrent operations
     const size_t l_num_operations = 20;
-    dap_sign_t* l_signatures[l_num_operations] = {0};
+    dap_sign_t* l_signatures[l_num_operations];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     for (size_t i = 0; i < l_num_operations; i++) {
         size_t l_signer_idx = i % l_ring_size;

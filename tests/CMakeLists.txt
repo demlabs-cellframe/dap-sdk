@@ -64,6 +64,7 @@ function(add_dap_test TEST_NAME TEST_SOURCE)
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/module/core/include
         ${CMAKE_SOURCE_DIR}/module/crypto/include
+        ${CMAKE_SOURCE_DIR}/module/crypto/src
         ${CMAKE_SOURCE_DIR}/module/io/include
         ${CMAKE_SOURCE_DIR}/module/global-db/include
         ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src

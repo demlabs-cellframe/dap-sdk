@@ -933,7 +933,7 @@ int dap_log_clear_file(const char *filename);
 
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
-#define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
+#define log_it(_log_level, ...) (_log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__))
 #define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
 
 char *dap_dump_hex(byte_t *a_data, size_t a_size);

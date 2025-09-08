@@ -302,7 +302,7 @@ static bool s_test_distributed_consensus_workflow(void) {
     DAP_TEST_ASSERT(l_second_verify_result == 0, "Second ring signature verification should succeed");
 
     // Signatures should be different (different signers)
-    DAP_TEST_ASSERT(memcmp(l_ring_signature->p_signature_data, l_second_ring_signature->p_signature_data,
+    DAP_TEST_ASSERT(memcmp(l_ring_signature->pkey_n_sign, l_second_ring_signature->pkey_n_sign,
                           l_ring_signature->header.sign_size) != 0,
                    "Signatures from different signers should be different");
 

@@ -30,6 +30,7 @@ static inline double get_time_ms(void) {
 static int test_performance_variable_signers(size_t num_signers)
 {
     double total_start = get_time_ms();
+    int ret = 1;  // Initialize to success
 
     log_it(L_INFO, "🚀 Performance test for %zu signers", num_signers);
 
@@ -58,7 +59,7 @@ static int test_performance_variable_signers(size_t num_signers)
     double keygen_start = get_time_ms();
 
     for (size_t i = 0; i < num_signers; i++) {
-        int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
+        ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
                                    (uint8_t*)&private_keys[i], sizeof(chipmunk_private_key_t));
         if (ret != 0) {
             log_it(L_ERROR, "ERROR: Failed to generate keypair for signer %zu", i);
@@ -107,7 +108,7 @@ static int test_performance_variable_signers(size_t num_signers)
     // Initialize hasher with test seed
     uint8_t hasher_seed[32] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
                               17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
-    int ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
+    ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
     if (ret != 0) {
         log_it(L_ERROR, "ERROR: Failed to initialize HVC hasher");
         goto cleanup;

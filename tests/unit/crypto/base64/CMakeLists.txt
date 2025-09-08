@@ -8,17 +8,7 @@ add_executable(${PROJECT_NAME}
     test_base64_encoding.c
 )
 
-# Include directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ../../../../module/core/include
-    ../../../../module/crypto/include
-    ../../../../module/io/include
-    ../../../../module/global-db/include
-    ../../../../module/net/include
-    ../../../../tests/fixtures/utilities
-    ../../../../module/plugin/include
-    ../../../../module/test/include
-)
+# Include directories are set at the parent level CMakeLists.txt
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE

@@ -28,6 +28,7 @@
 #include <dap_enc_chipmunk_ring.h>
 #include <dap_sign.h>
 #include <dap_hash.h>
+#include "../fixtures/utilities/test_helpers.h"
 #include "rand/dap_rand.h"
 
 #define LOG_TAG "test_ring_signature_zkp"
@@ -46,7 +47,7 @@ static bool s_test_zkp_soundness(void) {
     // Generate large ring for anonymity testing
     dap_enc_key_t* l_ring_keys[SECURITY_RING_SIZE] = {0};
     for (size_t i = 0; i < SECURITY_RING_SIZE; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
     }
 
@@ -72,7 +73,7 @@ static bool s_test_zkp_soundness(void) {
 
             // Replace key at position with signer key
             dap_enc_key_t* l_temp_key = l_ring_keys[l_pos];
-            l_ring_keys[l_pos] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+            l_ring_keys[l_pos] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
 
             l_signatures[msg_idx][signer_idx] = dap_sign_create_ring(
                 l_ring_keys[l_pos],
@@ -143,11 +144,12 @@ static bool s_test_anonymity_property(void) {
 
     // Create ring with known signers
     const size_t l_ring_size = 16;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
 
     // Generate ring keys
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
     }
 
@@ -159,7 +161,8 @@ static bool s_test_anonymity_property(void) {
     // Create signatures from different positions
     const size_t l_test_positions[] = {0, 5, 10, 15};
     const size_t l_num_positions = sizeof(l_test_positions) / sizeof(l_test_positions[0]);
-    dap_sign_t* l_signatures[l_num_positions] = {0};
+    dap_sign_t* l_signatures[l_num_positions];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     for (size_t i = 0; i < l_num_positions; i++) {
         size_t l_pos = l_test_positions[i];
@@ -193,8 +196,8 @@ static bool s_test_anonymity_property(void) {
     // (due to different signer positions and random elements)
     for (size_t i = 0; i < l_num_positions - 1; i++) {
         for (size_t j = i + 1; j < l_num_positions; j++) {
-            DAP_TEST_ASSERT(memcmp(l_signatures[i]->p_signature_data,
-                                 l_signatures[j]->p_signature_data,
+            DAP_TEST_ASSERT(memcmp(l_signatures[i]->pkey_n_sign,
+                                 l_signatures[j]->pkey_n_sign,
                                  l_signatures[i]->header.sign_size) != 0,
                            "Signatures from different positions should be different");
         }
@@ -219,13 +222,14 @@ static bool s_test_linkability_prevention(void) {
     log_it(L_INFO, "Testing linkability for double-spending prevention...");
 
     // Generate signer key and ring
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
 
     const size_t l_ring_size = 12;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
     }
 
@@ -240,7 +244,8 @@ static bool s_test_linkability_prevention(void) {
 
     // Create multiple signatures from same signer (simulating double-spending attempt)
     const size_t l_num_attempts = 5;
-    dap_sign_t* l_signatures[l_num_attempts] = {0};
+    dap_sign_t* l_signatures[l_num_attempts];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     for (size_t i = 0; i < l_num_attempts; i++) {
         l_signatures[i] = dap_sign_create_ring(
@@ -265,8 +270,8 @@ static bool s_test_linkability_prevention(void) {
     // For now, test that signatures are different (due to random elements)
     for (size_t i = 0; i < l_num_attempts - 1; i++) {
         for (size_t j = i + 1; j < l_num_attempts; j++) {
-            DAP_TEST_ASSERT(memcmp(l_signatures[i]->p_signature_data,
-                                 l_signatures[j]->p_signature_data,
+            DAP_TEST_ASSERT(memcmp(l_signatures[i]->pkey_n_sign,
+                                 l_signatures[j]->pkey_n_sign,
                                  l_signatures[i]->header.sign_size) != 0,
                            "Signatures should be different due to random elements");
         }
@@ -300,9 +305,10 @@ static bool s_test_ring_size_security(void) {
         size_t l_ring_size = l_ring_sizes[size_idx];
 
         // Generate ring keys
-        dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+        dap_enc_key_t* l_ring_keys[l_ring_size];
+        memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < l_ring_size; i++) {
-            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
         }
 
@@ -357,9 +363,10 @@ static bool s_test_cryptographic_randomness(void) {
     const size_t l_ring_size = 8;
     const size_t l_num_signatures = 10;
 
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {0};
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, 0, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
     }
 
@@ -367,7 +374,8 @@ static bool s_test_cryptographic_randomness(void) {
     dap_hash_fast_t l_message_hash = {0};
     dap_hash_fast(l_message, strlen(l_message), &l_message_hash);
 
-    dap_sign_t* l_signatures[l_num_signatures] = {0};
+    dap_sign_t* l_signatures[l_num_signatures];
+    memset(l_signatures, 0, sizeof(l_signatures));
 
     // Create multiple signatures
     for (size_t i = 0; i < l_num_signatures; i++) {
@@ -396,8 +404,8 @@ static bool s_test_cryptographic_randomness(void) {
     for (size_t i = 0; i < l_num_signatures - 1; i++) {
         for (size_t j = i + 1; j < l_num_signatures; j++) {
             l_total_pairs++;
-            if (memcmp(l_signatures[i]->p_signature_data,
-                      l_signatures[j]->p_signature_data,
+            if (memcmp(l_signatures[i]->pkey_n_sign,
+                      l_signatures[j]->pkey_n_sign,
                       l_signatures[i]->header.sign_size) != 0) {
                 l_different_pairs++;
             }

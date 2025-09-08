@@ -24,6 +24,7 @@
 
 #include <dap_common.h>
 #include "../../../../module/test/dap_test.h"
+#include "../../../fixtures/utilities/test_helpers.h"
 #include <dap_enc_base64.h>
 #include "rand/dap_rand.h"
 
@@ -41,7 +42,7 @@ static bool s_test_base64_standard(void) {
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
         // Random size between 1 and MAX_TEST_SIZE
-        size_t l_test_size = (random_uint32_t() % MAX_TEST_SIZE) + 1;
+        size_t l_test_size = (random_uint32_t(MAX_TEST_SIZE)) + 1;
         uint8_t l_source_data[l_test_size];
         randombytes(l_source_data, l_test_size);
 
@@ -76,7 +77,7 @@ static bool s_test_base64_urlsafe(void) {
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
         // Random size between 1 and MAX_TEST_SIZE
-        size_t l_test_size = (random_uint32_t() % MAX_TEST_SIZE) + 1;
+        size_t l_test_size = (random_uint32_t(MAX_TEST_SIZE)) + 1;
         uint8_t l_source_data[l_test_size];
         randombytes(l_source_data, l_test_size);
 
@@ -199,7 +200,7 @@ int main(void) {
     log_it(L_NOTICE, "Starting Base64 encoding unit tests...");
 
     // Initialize DAP SDK
-    dap_test_logging_init();
+    if (dap_test_sdk_init() != 0) {
         log_it(L_ERROR, "Failed to initialize DAP SDK");
         return -1;
     }
@@ -213,7 +214,7 @@ int main(void) {
     l_all_passed &= s_test_base64_consistency();
 
     // Cleanup
-    dap_test_logging_restore();
+    dap_test_sdk_cleanup();
 
     log_it(L_NOTICE, "Base64 encoding unit tests completed");
 

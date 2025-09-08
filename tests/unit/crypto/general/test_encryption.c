@@ -23,9 +23,10 @@
 */
 
 #include <dap_common.h>
-#include "../../../../module/test/dap_test.h"
+#include "dap_test.h"
 #include <dap_enc_key.h>
 #include <dap_enc.h>
+#include "../fixtures/utilities/test_helpers.h"
 
 #define LOG_TAG "test_encryption"
 
@@ -45,7 +46,7 @@ static bool s_test_chipmunk_encryption(void) {
 
     // Test data
     uint8_t l_original_data[TEST_DATA_SIZE];
-    randombytes(l_original_data, TEST_DATA_SIZE);
+    dap_test_random_bytes(l_original_data, TEST_DATA_SIZE);
 
     // Encrypt data
     size_t l_encrypted_size = TEST_DATA_SIZE + 256; // Add some padding for encryption overhead
@@ -94,7 +95,7 @@ static bool s_test_encryption_data_sizes(void) {
 
         // Generate test data
         uint8_t* l_original_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
-        randombytes(l_original_data, l_data_size);
+        dap_test_random_bytes(l_original_data, l_data_size);
 
         // Encrypt
         size_t l_encrypted_size = l_data_size + 256;
@@ -102,17 +103,20 @@ static bool s_test_encryption_data_sizes(void) {
 
         int l_encrypt_result = dap_enc_code(l_key, l_original_data, l_data_size,
                                            l_encrypted_data, l_encrypted_size, 0);
-        DAP_TEST_ASSERT(l_encrypt_result >= 0, "Encryption should succeed for size %zu", l_data_size);
+        char msg[100];
+        snprintf(msg, sizeof(msg), "Encryption should succeed for size %zu", l_data_size);
+        DAP_TEST_ASSERT(l_encrypt_result >= 0, msg);
 
         // Decrypt
         uint8_t* l_decrypted_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
         int l_decrypt_result = dap_enc_decode(l_key, l_encrypted_data, (size_t)l_encrypt_result,
                                              l_decrypted_data, l_data_size, 0);
-        DAP_TEST_ASSERT(l_decrypt_result >= 0, "Decryption should succeed for size %zu", l_data_size);
+        snprintf(msg, sizeof(msg), "Decryption should succeed for size %zu", l_data_size);
+        DAP_TEST_ASSERT(l_decrypt_result >= 0, msg);
 
         // Verify
-        DAP_TEST_ASSERT(memcmp(l_original_data, l_decrypted_data, l_data_size) == 0,
-                       "Decrypted data should match original for size %zu", l_data_size);
+        snprintf(msg, sizeof(msg), "Decrypted data should match original for size %zu", l_data_size);
+        DAP_TEST_ASSERT(memcmp(l_original_data, l_decrypted_data, l_data_size) == 0, msg);
 
         // Cleanup for this iteration
         DAP_DELETE(l_original_data);
@@ -134,13 +138,14 @@ static bool s_test_encryption_data_sizes(void) {
 static bool s_test_encryption_consistency(void) {
     log_it(L_INFO, "Testing encryption/decryption consistency...");
 
+    char msg[100];
     dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Key generation should succeed");
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
         // Generate unique test data for each iteration
         uint8_t l_original_data[TEST_DATA_SIZE];
-        randombytes(l_original_data, TEST_DATA_SIZE);
+        dap_test_random_bytes(l_original_data, TEST_DATA_SIZE);
 
         // Encrypt
         size_t l_encrypted_size = TEST_DATA_SIZE + 256;
@@ -148,17 +153,19 @@ static bool s_test_encryption_consistency(void) {
 
         int l_encrypt_result = dap_enc_code(l_key, l_original_data, TEST_DATA_SIZE,
                                            l_encrypted_data, l_encrypted_size, 0);
-        DAP_TEST_ASSERT(l_encrypt_result >= 0, "Encryption should succeed in iteration %d", l_iteration);
+        snprintf(msg, sizeof(msg), "Encryption should succeed in iteration %d", l_iteration);
+        DAP_TEST_ASSERT(l_encrypt_result >= 0, msg);
 
         // Decrypt
         uint8_t l_decrypted_data[TEST_DATA_SIZE];
         int l_decrypt_result = dap_enc_decode(l_key, l_encrypted_data, (size_t)l_encrypt_result,
                                              l_decrypted_data, TEST_DATA_SIZE, 0);
-        DAP_TEST_ASSERT(l_decrypt_result >= 0, "Decryption should succeed in iteration %d", l_iteration);
+        snprintf(msg, sizeof(msg), "Decryption should succeed in iteration %d", l_iteration);
+        DAP_TEST_ASSERT(l_decrypt_result >= 0, msg);
 
         // Verify
-        DAP_TEST_ASSERT(memcmp(l_original_data, l_decrypted_data, TEST_DATA_SIZE) == 0,
-                       "Data integrity check failed in iteration %d", l_iteration);
+        snprintf(msg, sizeof(msg), "Data integrity check failed in iteration %d", l_iteration);
+        DAP_TEST_ASSERT(memcmp(l_original_data, l_decrypted_data, TEST_DATA_SIZE) == 0, msg);
     }
 
     dap_enc_key_delete(l_key);
@@ -173,6 +180,8 @@ static bool s_test_encryption_consistency(void) {
 static bool s_test_multiple_key_types(void) {
     log_it(L_INFO, "Testing encryption with different key types...");
 
+    char msg[100];
+
     // Test with available key types
     dap_enc_key_type_t l_key_types[] = {
         DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
@@ -183,7 +192,7 @@ static bool s_test_multiple_key_types(void) {
     for (size_t i = 0; i < l_num_types; i++) {
         log_it(L_DEBUG, "Testing key type: %d", l_key_types[i]);
 
-        dap_enc_key_t* l_key = dap_enc_key_new_generate(l_key_types[i], NULL, 0, 0, 0);
+        dap_enc_key_t* l_key = dap_enc_key_new_generate(l_key_types[i], NULL, 0, NULL, 0, 0);
         if (!l_key) {
             log_it(L_WARNING, "Key type %d not available, skipping", l_key_types[i]);
             continue;
@@ -191,7 +200,7 @@ static bool s_test_multiple_key_types(void) {
 
         // Test basic encrypt/decrypt
         uint8_t l_test_data[256];
-        randombytes(l_test_data, sizeof(l_test_data));
+        dap_test_random_bytes(l_test_data, sizeof(l_test_data));
 
         size_t l_encrypted_size = sizeof(l_test_data) + 256;
         uint8_t l_encrypted_data[l_encrypted_size];
@@ -205,8 +214,8 @@ static bool s_test_multiple_key_types(void) {
                                                  l_decrypted_data, sizeof(l_test_data), 0);
 
             if (l_decrypt_result >= 0) {
-                DAP_TEST_ASSERT(memcmp(l_test_data, l_decrypted_data, sizeof(l_test_data)) == 0,
-                               "Encryption/decryption should work for key type %d", l_key_types[i]);
+                snprintf(msg, sizeof(msg), "Encryption/decryption should work for key type %d", l_key_types[i]);
+                DAP_TEST_ASSERT(memcmp(l_test_data, l_decrypted_data, sizeof(l_test_data)) == 0, msg);
                 log_it(L_DEBUG, "✓ Key type %d encryption/decryption test passed", l_key_types[i]);
             }
         }
@@ -228,7 +237,7 @@ static bool s_test_encryption_error_handling(void) {
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Key generation should succeed");
 
     uint8_t l_test_data[256];
-    randombytes(l_test_data, sizeof(l_test_data));
+    dap_test_random_bytes(l_test_data, sizeof(l_test_data));
 
     // Test with NULL key
     uint8_t l_encrypted_data[512];

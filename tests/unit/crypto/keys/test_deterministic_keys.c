@@ -25,6 +25,9 @@
 #include <dap_common.h>
 #include <dap_test.h>
 #include <dap_enc_key.h>
+#include <dap_sign.h>
+#include <dap_hash.h>
+#include "test_helpers.h"
 
 #define LOG_TAG "test_deterministic_keys"
 
@@ -44,10 +47,10 @@ static bool s_test_chipmunk_deterministic_keys(void) {
     }
 
     // Generate two key pairs with the same seed
-    dap_enc_key_t* l_key1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, l_test_seed, sizeof(l_test_seed), 0, 0);
+    dap_enc_key_t* l_key1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, l_test_seed, sizeof(l_test_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key1, "First deterministic key generation should succeed");
 
-    dap_enc_key_t* l_key2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, l_test_seed, sizeof(l_test_seed), 0, 0);
+    dap_enc_key_t* l_key2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, l_test_seed, sizeof(l_test_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key2, "Second deterministic key generation should succeed");
 
     // Keys should be identical
@@ -58,8 +61,8 @@ static bool s_test_chipmunk_deterministic_keys(void) {
                    "Private keys from same seed should be identical");
 
     // Test signing with both keys
-    dap_hash_fast_t l_message_hash = {0};
-    dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+    dap_hash_fast_t l_message_hash;
+    dap_hash_fast((const void*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
 
     dap_sign_t* l_sig1 = dap_sign_create(l_key1, &l_message_hash, sizeof(l_message_hash));
     DAP_TEST_ASSERT_NOT_NULL(l_sig1, "First signature creation should succeed");
@@ -80,7 +83,7 @@ static bool s_test_chipmunk_deterministic_keys(void) {
         l_different_seed[i] = (uint8_t)(i + 100);  // Different seed
     }
 
-    dap_enc_key_t* l_key3 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, l_different_seed, sizeof(l_different_seed), 0, 0);
+    dap_enc_key_t* l_key3 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, l_different_seed, sizeof(l_different_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key3, "Third key generation should succeed");
 
     // Keys should be different
@@ -111,10 +114,10 @@ static bool s_test_chipmunk_ring_deterministic_keys(void) {
     }
 
     // Generate two key pairs with the same seed
-    dap_enc_key_t* l_key1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_test_seed, sizeof(l_test_seed), 0, 0);
+    dap_enc_key_t* l_key1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_test_seed, sizeof(l_test_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key1, "First Ring deterministic key generation should succeed");
 
-    dap_enc_key_t* l_key2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_test_seed, sizeof(l_test_seed), 0, 0);
+    dap_enc_key_t* l_key2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_test_seed, sizeof(l_test_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key2, "Second Ring deterministic key generation should succeed");
 
     // Keys should be identical
@@ -126,7 +129,11 @@ static bool s_test_chipmunk_ring_deterministic_keys(void) {
 
     // Test ring signature creation
     const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size] = {l_key1, l_key2, l_key1, l_key2}; // Mix of same keys
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    l_ring_keys[0] = l_key1;
+    l_ring_keys[1] = l_key2;
+    l_ring_keys[2] = l_key1;
+    l_ring_keys[3] = l_key2;
 
     dap_hash_fast_t l_message_hash = {0};
     dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
@@ -147,7 +154,7 @@ static bool s_test_chipmunk_ring_deterministic_keys(void) {
         l_different_seed[i] = (uint8_t)(i + 200);
     }
 
-    dap_enc_key_t* l_key4 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_different_seed, sizeof(l_different_seed), 0, 0);
+    dap_enc_key_t* l_key4 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_different_seed, sizeof(l_different_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key4, "Fourth key generation should succeed");
 
     // Keys should be different
@@ -176,15 +183,16 @@ static bool s_test_key_compatibility(void) {
         l_seed[i] = (uint8_t)(i + 50);
     }
 
-    dap_enc_key_t* l_regular_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, l_seed, sizeof(l_seed), 0, 0);
+    dap_enc_key_t* l_regular_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, l_seed, sizeof(l_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_regular_key, "Regular Chipmunk key generation should succeed");
 
-    dap_enc_key_t* l_ring_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, l_seed, sizeof(l_seed), 0, 0);
+    dap_enc_key_t* l_ring_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, l_seed, sizeof(l_seed), 0);
     DAP_TEST_ASSERT_NOT_NULL(l_ring_key, "Ring Chipmunk key generation should succeed");
 
     // Keys should be different (different algorithms)
-    DAP_TEST_ASSERT(memcmp(l_regular_key->pub_key_data, l_ring_key->pub_key_data,
-                          MIN(l_regular_key->pub_key_data_size, l_ring_key->pub_key_data_size)) != 0,
+    size_t l_min_size = l_regular_key->pub_key_data_size < l_ring_key->pub_key_data_size ?
+                         l_regular_key->pub_key_data_size : l_ring_key->pub_key_data_size;
+    DAP_TEST_ASSERT(memcmp(l_regular_key->pub_key_data, l_ring_key->pub_key_data, l_min_size) != 0,
                    "Regular and Ring keys should be different");
 
     // Test signing with each type
