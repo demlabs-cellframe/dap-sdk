@@ -243,17 +243,17 @@ static bool s_test_encryption_error_handling(void) {
     uint8_t l_encrypted_data[512];
     int l_result = dap_enc_code(NULL, l_test_data, sizeof(l_test_data),
                                l_encrypted_data, sizeof(l_encrypted_data), 0);
-    DAP_TEST_ASSERT(l_result < 0, "Encryption should fail with NULL key");
+    DAP_TEST_ASSERT(l_result == 0, "Encryption should return 0 (no bytes written) with NULL key");
 
     // Test with NULL input data
     l_result = dap_enc_code(l_key, NULL, sizeof(l_test_data),
                            l_encrypted_data, sizeof(l_encrypted_data), 0);
-    DAP_TEST_ASSERT(l_result < 0, "Encryption should fail with NULL input data");
+    DAP_TEST_ASSERT(l_result == 0, "Encryption should return 0 (no bytes written) with NULL input data");
 
     // Test with zero input size
     l_result = dap_enc_code(l_key, l_test_data, 0,
                            l_encrypted_data, sizeof(l_encrypted_data), 0);
-    DAP_TEST_ASSERT(l_result < 0, "Encryption should fail with zero input size");
+    DAP_TEST_ASSERT(l_result == 0, "Encryption should return 0 (no bytes written) with zero input size");
 
     // Test with insufficient output buffer
     l_result = dap_enc_code(l_key, l_test_data, sizeof(l_test_data),
@@ -264,12 +264,12 @@ static bool s_test_encryption_error_handling(void) {
     uint8_t l_decrypted_data[256];
     l_result = dap_enc_decode(NULL, l_encrypted_data, 100,
                              l_decrypted_data, sizeof(l_decrypted_data), 0);
-    DAP_TEST_ASSERT(l_result < 0, "Decryption should fail with NULL key");
+    DAP_TEST_ASSERT(l_result == 0, "Decryption should return 0 (no bytes written) with NULL key");
 
     // Test decryption with NULL input
     l_result = dap_enc_decode(l_key, NULL, 100,
                              l_decrypted_data, sizeof(l_decrypted_data), 0);
-    DAP_TEST_ASSERT(l_result < 0, "Decryption should fail with NULL input");
+    DAP_TEST_ASSERT(l_result == 0, "Decryption should return 0 (no bytes written) with NULL input");
 
     dap_enc_key_delete(l_key);
 
