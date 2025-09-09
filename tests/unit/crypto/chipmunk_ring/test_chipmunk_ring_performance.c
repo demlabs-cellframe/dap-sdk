@@ -134,15 +134,15 @@ static bool s_test_performance_detailed(void) {
  */
 static void s_print_final_performance_table(void) {
     log_it(L_INFO, " ");
-    log_it(L_INFO, "╔═══════════════════════════════════════════════════════════════╗");
-    log_it(L_INFO, "║                 CHIPMUNKRING PERFORMANCE REPORT               ║");
-    log_it(L_INFO, "╠═══════════════════════════════════════════════════════════════╣");
-    log_it(L_INFO, "║ Ring │ Pub Key │ Priv Key │ Signature │  Signing  │ Verif.  ║");
-    log_it(L_INFO, "║ Size │  Size   │   Size   │   Size    │   Time    │  Time   ║");
-    log_it(L_INFO, "╠══════╪═════════╪══════════╪═══════════╪═══════════╪═════════╣");
+    log_it(L_INFO, "╔════════════════════════════════════════════════════════════════╗");
+    log_it(L_INFO, "║                 CHIPMUNKRING PERFORMANCE REPORT                ║");
+    log_it(L_INFO, "╠════════════════════════════════════════════════════════════════╣");
+    log_it(L_INFO, "║ Ring │ Pub Key │ Priv Key │ Signature │  Signing  │ Verif.     ║");
+    log_it(L_INFO, "║ Size │  Size   │   Size   │   Size    │   Time    │  Time      ║");
+    log_it(L_INFO, "╠══════╪═════════╪══════════╪═══════════╪═══════════╪════════════╣");
 
     for (size_t i = 0; i < g_results_count; i++) {
-        log_it(L_INFO, "║ %4zu │ %6.1fKB │ %7.1fKB │ %8.1fKB │ %7.1fms │ %6.1fms ║",
+        log_it(L_INFO, "║ %4zu │ %5.1fKB │ %6.1fKB │ %7.1fKB │ %7.3fms │   %6.3fms ║",
                g_performance_results[i].ring_size,
                g_performance_results[i].pub_key_size / 1024.0,
                g_performance_results[i].priv_key_size / 1024.0,
@@ -151,14 +151,13 @@ static void s_print_final_performance_table(void) {
                g_performance_results[i].avg_verification_time);
     }
 
-    log_it(L_INFO, "╚══════╧═════════╧══════════╧═══════════╧═══════════╧═════════╝");
+    log_it(L_INFO, "╚══════╧═════════╧══════════╧═══════════╧═══════════╧════════════╝");
     log_it(L_INFO, " ");
     log_it(L_INFO, "PERFORMANCE SUMMARY:");
     log_it(L_INFO, "- Iterations per ring size: %d", PERFORMANCE_ITERATIONS);
     log_it(L_INFO, "- Message size: %zu bytes", strlen(TEST_MESSAGE));
-    log_it(L_INFO, "- Security level: 112-bit post-quantum");
-    log_it(L_INFO, "- Algorithm: Lattice-based ring signatures with Fiat-Shamir");
-    log_it(L_INFO, "- Build type: Release (-O3 optimization)");
+    //log_it(L_INFO, "- Security level: 112-bit post-quantum");
+    log_it(L_INFO, "- Algorithm: Chipmunk signature ringed with Fiat-Shamir");
     log_it(L_INFO, " ");
 }
 
