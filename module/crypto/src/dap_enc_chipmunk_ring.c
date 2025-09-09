@@ -249,6 +249,16 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         }
 
         memcpy(l_ring.public_keys[i].data, a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
+        
+        // Debug: show what public key is stored in ring for signer
+        if (s_debug_more && i == a_signer_index) {
+            log_it(L_INFO, "=== RING CREATION: SIGNER PUBLIC KEY STORED ===");
+            log_it(L_INFO, "StoredPubKey[%zu] first 16 bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+                   i, a_ring_pub_keys[i][0], a_ring_pub_keys[i][1], a_ring_pub_keys[i][2], a_ring_pub_keys[i][3],
+                   a_ring_pub_keys[i][4], a_ring_pub_keys[i][5], a_ring_pub_keys[i][6], a_ring_pub_keys[i][7],
+                   a_ring_pub_keys[i][8], a_ring_pub_keys[i][9], a_ring_pub_keys[i][10], a_ring_pub_keys[i][11],
+                   a_ring_pub_keys[i][12], a_ring_pub_keys[i][13], a_ring_pub_keys[i][14], a_ring_pub_keys[i][15]);
+        }
     }
 
     debug_if(s_debug_more, L_INFO, "All keys copied successfully, preparing for ring hash generation");

@@ -536,10 +536,10 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                                   a_signature->challenge, sizeof(a_signature->challenge),
                                   a_signature->chipmunk_signature);
     
-    log_it(L_INFO, "Chipmunk signature verification result: %d (expected 0 for success)", l_result);
+    debug_if(s_debug_more, L_INFO, "Chipmunk signature verification result: %d (expected 0 for success)", l_result);
     
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Chipmunk signature verification failed with error code: %d", l_result);
+        debug_if(s_debug_more, L_ERROR, "Chipmunk signature verification failed with error code: %d", l_result);
         return -1;
     }
 
@@ -583,6 +583,15 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // Perform full cryptographic verification of the Schnorr-like scheme
 
             if (compare256(l_commitment_value, RING_MODULUS) >= 0) {
+                if (s_debug_more) {
+                    log_it(L_INFO, "Debug: commitment_value vs RING_MODULUS:");
+                    log_it(L_INFO, "  commitment: %08x %08x %08x %08x",
+                           ((uint32_t*)&l_commitment_value)[0], ((uint32_t*)&l_commitment_value)[1],
+                           ((uint32_t*)&l_commitment_value)[2], ((uint32_t*)&l_commitment_value)[3]);
+                    log_it(L_INFO, "  modulus:    %08x %08x %08x %08x",
+                           ((uint32_t*)&RING_MODULUS)[0], ((uint32_t*)&RING_MODULUS)[1],
+                           ((uint32_t*)&RING_MODULUS)[2], ((uint32_t*)&RING_MODULUS)[3]);
+                }
                 log_it(L_ERROR, "Commitment value is out of valid range for signer %u", l_i);
                 return -1;
             }
@@ -757,8 +766,16 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     memcpy(&a_sig->ring_size, a_input + l_offset, sizeof(uint32_t));
     l_offset += sizeof(uint32_t);
 
+    debug_if(s_debug_more, L_INFO, "Deserialized ring_size: %u", a_sig->ring_size);
+
     // Check ring size
     if (a_sig->ring_size > CHIPMUNK_RING_MAX_RING_SIZE) {
+        log_it(L_ERROR, "Ring size %u exceeds maximum %u", a_sig->ring_size, CHIPMUNK_RING_MAX_RING_SIZE);
+        return -EINVAL;
+    }
+    
+    if (a_sig->ring_size == 0) {
+        log_it(L_ERROR, "Ring size is 0 - invalid");
         return -EINVAL;
     }
 
@@ -798,7 +815,15 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
 
     if (!a_sig->commitments || !a_sig->responses) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        chipmunk_ring_signature_free(a_sig);
+        // Manual cleanup to avoid double-free
+        if (a_sig->commitments) {
+            DAP_FREE(a_sig->commitments);
+            a_sig->commitments = NULL;
+        }
+        if (a_sig->responses) {
+            DAP_FREE(a_sig->responses);
+            a_sig->responses = NULL;
+        }
         return -ENOMEM;
     }
 
