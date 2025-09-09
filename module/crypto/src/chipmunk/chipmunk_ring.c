@@ -524,6 +524,12 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
                a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
                a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
+        
+        uint8_t *pub_key = a_ring->public_keys[a_signature->signer_index].data;
+        log_it(L_INFO, "=== VERIFICATION PHASE: PUBLIC KEY DATA ===");
+        log_it(L_INFO, "PubKey first 16 bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+               pub_key[0], pub_key[1], pub_key[2], pub_key[3], pub_key[4], pub_key[5], pub_key[6], pub_key[7],
+               pub_key[8], pub_key[9], pub_key[10], pub_key[11], pub_key[12], pub_key[13], pub_key[14], pub_key[15]);
     }
     
     int l_result = chipmunk_verify(a_ring->public_keys[a_signature->signer_index].data,

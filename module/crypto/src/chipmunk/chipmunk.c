@@ -328,6 +328,18 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
     
+    // Debug: show public key extracted from private key
+    if (s_debug_more) {
+        log_it(L_INFO, "=== SIGNING PHASE: PUBLIC KEY FROM PRIVATE KEY ===");
+        uint8_t l_extracted_pubkey[CHIPMUNK_PUBLIC_KEY_SIZE];
+        chipmunk_public_key_to_bytes(l_extracted_pubkey, &l_sk.pk);
+        log_it(L_INFO, "ExtractedPubKey first 16 bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+               l_extracted_pubkey[0], l_extracted_pubkey[1], l_extracted_pubkey[2], l_extracted_pubkey[3],
+               l_extracted_pubkey[4], l_extracted_pubkey[5], l_extracted_pubkey[6], l_extracted_pubkey[7],
+               l_extracted_pubkey[8], l_extracted_pubkey[9], l_extracted_pubkey[10], l_extracted_pubkey[11],
+               l_extracted_pubkey[12], l_extracted_pubkey[13], l_extracted_pubkey[14], l_extracted_pubkey[15]);
+    }
+    
     // Генерируем HOTS параметры из rho_seed
     chipmunk_hots_params_t l_hots_params = {0};
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
