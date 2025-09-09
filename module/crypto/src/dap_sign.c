@@ -827,6 +827,10 @@ uint32_t dap_sign_get_supported_aggregation_types(
         case SIG_TYPE_CHIPMUNK:
             if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_TREE_BASED;
             break;
+        case SIG_TYPE_CHIPMUNK_RING:
+            // Ring signatures support ring aggregation
+            if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_RING;
+            break;
         // Add other signature types here
         default:
             break;

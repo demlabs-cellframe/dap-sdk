@@ -398,24 +398,8 @@ DAP_STATIC_INLINE bool dap_sign_is_ring(dap_sign_t *a_sign) {
         return false;
     }
 
-    // Direct type check for known ring signature types
-    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING) {
-        return true;
-    }
-
-    // For aggregation-capable signature types, check if they use ring aggregation
-    // This requires parsing the signature data to determine aggregation type
-    // For now, we check the signature size as a heuristic for ring signatures
-    // Ring signatures typically have much larger sizes due to multiple commitments/responses
-
-    size_t l_expected_min_ring_size = 1000; // Minimum expected size for ring signatures
-    if (a_sign->header.sign_size > l_expected_min_ring_size) {
-        // Additional checks could be added here for signature structure analysis
-        // For example, checking for multiple commitment/response patterns in the signature data
-        return true;
-    }
-
-    return false;
+    // Only signatures with SIG_TYPE_CHIPMUNK_RING are ring signatures
+    return (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING);
 }
 
 /**
