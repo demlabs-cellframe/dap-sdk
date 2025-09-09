@@ -432,9 +432,22 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
 
     // Create real Chipmunk signature for the actual signer
     // For ring signatures, we need to sign the challenge
+    if (s_debug_more) {
+        log_it(L_INFO, "=== SIGNING PHASE: CHALLENGE DATA ===");
+        log_it(L_INFO, "Challenge bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+               a_signature->challenge[0], a_signature->challenge[1], a_signature->challenge[2], a_signature->challenge[3],
+               a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
+               a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
+               a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
+    }
+    
     int l_result = chipmunk_sign(a_private_key->data,
                                 a_signature->challenge, sizeof(a_signature->challenge),
                                 a_signature->chipmunk_signature);
+    
+    if (s_debug_more && l_result == CHIPMUNK_ERROR_SUCCESS) {
+        dump_it(a_signature->chipmunk_signature, "chipmunk_ring_sign CREATED SIGNATURE", CHIPMUNK_SIGNATURE_SIZE);
+    }
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to create Chipmunk signature");
         chipmunk_ring_signature_free(a_signature);
@@ -501,8 +514,17 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     }
 
     // Verify Chipmunk signature of the challenge
-    log_it(L_INFO, "About to verify Chipmunk signature: signer_index=%u, challenge_size=%zu",
+    debug_if(s_debug_more, L_INFO, "About to verify Chipmunk signature: signer_index=%u, challenge_size=%zu",
            a_signature->signer_index, sizeof(a_signature->challenge));
+    
+    if (s_debug_more) {
+        log_it(L_INFO, "=== VERIFICATION PHASE: CHALLENGE DATA ===");
+        log_it(L_INFO, "Challenge bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+               a_signature->challenge[0], a_signature->challenge[1], a_signature->challenge[2], a_signature->challenge[3],
+               a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
+               a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
+               a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
+    }
     
     int l_result = chipmunk_verify(a_ring->public_keys[a_signature->signer_index].data,
                                   a_signature->challenge, sizeof(a_signature->challenge),

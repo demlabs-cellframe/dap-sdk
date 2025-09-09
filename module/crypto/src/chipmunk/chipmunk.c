@@ -435,8 +435,18 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
                     size_t a_message_len, const uint8_t *a_signature) {
     debug_if(s_debug_more, L_DEBUG, "Starting HOTS signature verification");
     
-    log_it(L_INFO, "chipmunk_verify: pub_key=%p, message=%p, msg_len=%zu, signature=%p",
+    debug_if(s_debug_more, L_INFO, "chipmunk_verify: pub_key=%p, message=%p, msg_len=%zu, signature=%p",
            a_public_key, a_message, a_message_len, a_signature);
+    
+    if (s_debug_more && a_public_key) {
+        dump_it(a_public_key, "chipmunk_verify INPUT PUBLIC KEY", CHIPMUNK_PUBLIC_KEY_SIZE);
+    }
+    if (s_debug_more && a_message && a_message_len > 0) {
+        dump_it(a_message, "chipmunk_verify INPUT MESSAGE", a_message_len);
+    }
+    if (s_debug_more && a_signature) {
+        dump_it(a_signature, "chipmunk_verify INPUT SIGNATURE", CHIPMUNK_SIGNATURE_SIZE);
+    }
     
     if (!a_public_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_verify");
@@ -490,14 +500,14 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     }
     
     // Используем HOTS функцию верификации
-    log_it(L_INFO, "chipmunk_verify: calling chipmunk_hots_verify with msg_len=%zu", a_message_len);
+    debug_if(s_debug_more, L_INFO, "chipmunk_verify: calling chipmunk_hots_verify with msg_len=%zu", a_message_len);
     int l_result = chipmunk_hots_verify(&l_hots_pk, a_message, a_message_len, 
                                         &l_hots_sig, &l_hots_params);
     
-    log_it(L_INFO, "chipmunk_verify: chipmunk_hots_verify returned %d", l_result);
+    debug_if(s_debug_more, L_INFO, "chipmunk_verify: chipmunk_hots_verify returned %d", l_result);
     
     if (l_result != 0) {  // Стандартное C соглашение: 0 для успеха, отрицательное для ошибки
-        log_it(L_ERROR, "HOTS signature verification failed: %d", l_result);
+        debug_if(s_debug_more, L_DEBUG, "HOTS signature verification failed: %d", l_result);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
     

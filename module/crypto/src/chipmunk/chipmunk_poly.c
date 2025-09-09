@@ -501,7 +501,7 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     static int call_count = 0;
     call_count++;
     
-    log_it(L_INFO, "chipmunk_poly_from_hash: call #%d, message=%p, len=%zu", call_count, a_message, a_message_len);
+    debug_if(s_debug_more, L_INFO, "chipmunk_poly_from_hash: call #%d, message=%p, len=%zu", call_count, a_message, a_message_len);
     
     if (!a_poly) {
         log_it(L_ERROR, "NULL poly parameter in chipmunk_poly_from_hash");
@@ -513,18 +513,25 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
         log_it(L_ERROR, "NULL message with non-zero length in chipmunk_poly_from_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // **ВРЕМЕННО ОТКЛЮЧЕН DEBUG** для диагностики double free
-    /*
-    if (call_count <= 10 || call_count % 1000 == 0) {
-        printf("🔍 FROM_HASH: Call #%d - Processing message length %zu\n", call_count, a_message_len);
+
+    // Dump input message data for analysis
+    if (s_debug_more && a_message && a_message_len > 0) {
+        dump_it(a_message, "chipmunk_poly_from_hash INPUT MESSAGE", a_message_len);
     }
-    */
-    
+
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: точно следуем оригинальному Rust коду!
     // 1. Hash message with SHA256
     dap_hash_fast_t l_hash_out;
-    dap_hash_fast(a_message, a_message_len, &l_hash_out);
+    bool l_hash_result = dap_hash_fast(a_message, a_message_len, &l_hash_out);
+    
+    if (!l_hash_result) {
+        log_it(L_ERROR, "SHA256 hashing failed in chipmunk_poly_from_hash");
+        return CHIPMUNK_ERROR_HASH_FAILED;
+    }
+    
+    if (s_debug_more) {
+        dump_it(&l_hash_out, "chipmunk_poly_from_hash SHA256 RESULT", 32);
+    }
     
     uint8_t l_seed[32];
     memcpy(l_seed, &l_hash_out, 32);
