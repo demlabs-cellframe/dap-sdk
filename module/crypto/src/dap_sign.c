@@ -374,12 +374,16 @@ dap_sign_t *dap_sign_create_ring(
     size_t a_ring_size,
     size_t a_signer_index
 ) {
+    log_it(L_INFO, "dap_sign_create_ring ENTRY: signer_index=%zu, ring_size=%zu", a_signer_index, a_ring_size);
     dap_return_val_if_fail(a_signer_key, NULL);
     // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, NULL);
     dap_return_val_if_fail(a_ring_keys, NULL);
     dap_return_val_if_fail(a_ring_size >= 2, NULL);
-    dap_return_val_if_fail(a_signer_index < a_ring_size, NULL);
+    if (a_signer_index >= a_ring_size) {
+        log_it(L_ERROR, "SIGNER INDEX ERROR: signer_index=%zu, ring_size=%zu", a_signer_index, a_ring_size);
+        return NULL;
+    }
 
     // Verify all ring keys are of correct type (only CHIPMUNK_RING for ring signatures)
     for (size_t i = 0; i < a_ring_size; i++) {

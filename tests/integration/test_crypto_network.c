@@ -268,7 +268,7 @@ static bool s_test_distributed_consensus_workflow(void) {
     // Ring signature verification - the verifier doesn't know which participant signed
     // but can verify that someone from the ring did sign
     int l_ring_verify_result = dap_sign_verify_ring(l_ring_signature, &l_proposal_hash, sizeof(l_proposal_hash),
-                                                   l_ring_keys, NETWORK_NODE_COUNT);
+                                                   l_ring_keys, l_signatures_count);
     DAP_TEST_ASSERT(l_ring_verify_result == 0, "Ring signature verification should succeed");
 
     // Test verification with wrong message
@@ -277,7 +277,7 @@ static bool s_test_distributed_consensus_workflow(void) {
     dap_hash_fast(l_wrong_message, strlen(l_wrong_message), &l_wrong_hash);
 
     int l_wrong_verify_result = dap_sign_verify_ring(l_ring_signature, &l_wrong_hash, sizeof(l_wrong_hash),
-                                                    l_ring_keys, NETWORK_NODE_COUNT);
+                                                    l_ring_keys, l_signatures_count);
     DAP_TEST_ASSERT(l_wrong_verify_result != 0, "Ring signature verification should fail with wrong message");
 
     log_it(L_INFO, "✅ Ring signature verified successfully!");
@@ -301,7 +301,7 @@ static bool s_test_distributed_consensus_workflow(void) {
 
     // Both signatures should be valid
     int l_second_verify_result = dap_sign_verify_ring(l_second_ring_signature, &l_proposal_hash, sizeof(l_proposal_hash),
-                                                     l_ring_keys, NETWORK_NODE_COUNT);
+                                                     l_ring_keys, l_signatures_count);
     DAP_TEST_ASSERT(l_second_verify_result == 0, "Second ring signature verification should succeed");
 
     // Signatures should be different (different signers)

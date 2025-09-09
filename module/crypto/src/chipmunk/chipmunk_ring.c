@@ -531,6 +531,72 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     debug_if(s_debug_more, L_INFO, "Starting ring signature zero-knowledge verification");
     debug_if(s_debug_more, L_INFO, "Ring size: %u, signer_index: %u", a_ring->size, a_signature->signer_index);
 
+    // CRITICAL: Verify that challenge was generated from this message
+    // Recreate challenge using same method as in chipmunk_ring_sign
+    size_t l_message_size = a_message ? a_message_size : 0;
+    size_t l_ring_hash_size = sizeof(a_ring->ring_hash);
+    size_t l_commitments_size = a_ring->size * sizeof(chipmunk_ring_commitment_t);
+    size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
+    
+    debug_if(s_debug_more, L_INFO, "Challenge verification input sizes: message=%zu, ring_hash=%zu, commitments=%zu, total=%zu",
+             l_message_size, l_ring_hash_size, l_commitments_size, l_total_size);
+    debug_if(s_debug_more, L_INFO, "Ring hash: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+             a_ring->ring_hash[0], a_ring->ring_hash[1], a_ring->ring_hash[2], a_ring->ring_hash[3],
+             a_ring->ring_hash[4], a_ring->ring_hash[5], a_ring->ring_hash[6], a_ring->ring_hash[7],
+             a_ring->ring_hash[8], a_ring->ring_hash[9], a_ring->ring_hash[10], a_ring->ring_hash[11],
+             a_ring->ring_hash[12], a_ring->ring_hash[13], a_ring->ring_hash[14], a_ring->ring_hash[15]);
+
+    uint8_t *l_combined_data = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
+    if (!l_combined_data) {
+        log_it(L_CRITICAL, "Failed to allocate memory for challenge verification");
+        return -ENOMEM;
+    }
+
+    size_t l_offset = 0;
+    // Add message
+    if (a_message && a_message_size > 0) {
+        memcpy(l_combined_data + l_offset, a_message, a_message_size);
+        l_offset += a_message_size;
+    }
+    // Add ring hash
+    memcpy(l_combined_data + l_offset, a_ring->ring_hash, sizeof(a_ring->ring_hash));
+    l_offset += sizeof(a_ring->ring_hash);
+    // Add all commitments
+    for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
+        memcpy(l_combined_data + l_offset, &a_signature->commitments[l_i],
+               sizeof(chipmunk_ring_commitment_t));
+        l_offset += sizeof(chipmunk_ring_commitment_t);
+    }
+
+    // Hash to get expected challenge
+    dap_hash_fast_t l_expected_challenge_hash;
+    if (!dap_hash_fast(l_combined_data, l_total_size, &l_expected_challenge_hash)) {
+        log_it(L_ERROR, "Failed to generate expected challenge hash");
+        DAP_FREE(l_combined_data);
+        return -1;
+    }
+    DAP_FREE(l_combined_data);
+
+    // Debug: Log expected vs actual challenge
+    debug_if(s_debug_more, L_INFO, "=== CHALLENGE VERIFICATION DEBUG (signer_index=%u) ===", a_signature->signer_index);
+    debug_if(s_debug_more, L_INFO, "Expected challenge: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+             ((uint8_t*)&l_expected_challenge_hash)[0], ((uint8_t*)&l_expected_challenge_hash)[1], ((uint8_t*)&l_expected_challenge_hash)[2], ((uint8_t*)&l_expected_challenge_hash)[3],
+             ((uint8_t*)&l_expected_challenge_hash)[4], ((uint8_t*)&l_expected_challenge_hash)[5], ((uint8_t*)&l_expected_challenge_hash)[6], ((uint8_t*)&l_expected_challenge_hash)[7],
+             ((uint8_t*)&l_expected_challenge_hash)[8], ((uint8_t*)&l_expected_challenge_hash)[9], ((uint8_t*)&l_expected_challenge_hash)[10], ((uint8_t*)&l_expected_challenge_hash)[11],
+             ((uint8_t*)&l_expected_challenge_hash)[12], ((uint8_t*)&l_expected_challenge_hash)[13], ((uint8_t*)&l_expected_challenge_hash)[14], ((uint8_t*)&l_expected_challenge_hash)[15]);
+    debug_if(s_debug_more, L_INFO, "Signature challenge: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+             a_signature->challenge[0], a_signature->challenge[1], a_signature->challenge[2], a_signature->challenge[3],
+             a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
+             a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
+             a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
+
+    // Compare with challenge from signature
+    if (memcmp(a_signature->challenge, &l_expected_challenge_hash, sizeof(a_signature->challenge)) != 0) {
+        debug_if(s_debug_more, L_ERROR, "Challenge verification failed - message doesn't match signature");
+        return -1;
+    }
+    debug_if(s_debug_more, L_INFO, "Challenge verification passed - message matches signature");
+
     // Verify responses for all participants
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
         debug_if(s_debug_more, L_INFO, "Verifying participant %u (signer=%u)", l_i, a_signature->signer_index);
