@@ -233,7 +233,7 @@ static bool s_test_empty_messages(void) {
     );
     dap_assert(l_signature != NULL, "Signature creation should succeed with empty message");
 
-    int l_verify_result = dap_sign_verify(l_signature, NULL, 0);
+    int l_verify_result = dap_sign_verify_ring(l_signature, NULL, 0, l_ring_keys, l_ring_size);
     dap_assert(l_verify_result == 0, "Signature verification should succeed with empty message");
 
     // Cleanup

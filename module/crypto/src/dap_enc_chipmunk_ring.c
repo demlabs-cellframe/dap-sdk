@@ -166,8 +166,14 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu, signer_index=%zu", a_ring_pub_keys, a_ring_size, a_signer_index);
     debug_if(s_debug_more, L_INFO, "signature=%p, signature_size=%zu", a_signature, a_signature_size);
 
-    if (!a_priv_key || !a_data || !a_ring_pub_keys || !a_signature) {
+    if (!a_priv_key || !a_ring_pub_keys || !a_signature) {
         log_it(L_ERROR, "Invalid parameters for Chipmunk_Ring signature");
+        return -EINVAL;
+    }
+    
+    // Allow empty messages (a_data can be NULL if a_data_size is 0)
+    if (a_data_size > 0 && !a_data) {
+        log_it(L_ERROR, "Non-zero data size but NULL data pointer");
         return -EINVAL;
     }
 

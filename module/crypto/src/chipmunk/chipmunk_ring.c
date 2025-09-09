@@ -323,7 +323,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                      const chipmunk_ring_container_t *a_ring, uint32_t a_signer_index,
                      chipmunk_ring_signature_t *a_signature) {
     dap_return_val_if_fail(a_private_key, -EINVAL);
-    dap_return_val_if_fail(a_message, -EINVAL);
+    // Allow empty messages (a_message can be NULL if a_message_size is 0)
+    dap_return_val_if_fail(a_message || a_message_size == 0, -EINVAL);
     dap_return_val_if_fail(a_ring, -EINVAL);
     dap_return_val_if_fail(a_signature, -EINVAL);
     dap_return_val_if_fail(a_signer_index < a_ring->size, -EINVAL);
@@ -503,17 +504,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
 int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                        const chipmunk_ring_signature_t *a_signature,
                        const chipmunk_ring_container_t *a_ring) {
-    dap_return_val_if_fail(a_message, -EINVAL);
+    // Allow empty messages (a_message can be NULL if a_message_size is 0)
+    dap_return_val_if_fail(a_message || a_message_size == 0, -EINVAL);
     dap_return_val_if_fail(a_signature, -EINVAL);
     dap_return_val_if_fail(a_ring, -EINVAL);
     dap_return_val_if_fail(a_signature->ring_size == a_ring->size, -EINVAL);
     dap_return_val_if_fail(a_signature->signer_index < a_ring->size, -EINVAL);
-
-    // Validate message size parameter
-    if (a_message_size == 0) {
-        log_it(L_ERROR, "Empty message provided for ring signature verification");
-        return -1;
-    }
 
     // Ring signature verification uses zero-knowledge proof approach
     // No direct verification against individual keys to preserve anonymity

@@ -375,7 +375,8 @@ dap_sign_t *dap_sign_create_ring(
     size_t a_signer_index
 ) {
     dap_return_val_if_fail(a_signer_key, NULL);
-    dap_return_val_if_fail(a_data, NULL);
+    // Allow empty messages (a_data can be NULL if a_data_size is 0)
+    dap_return_val_if_fail(a_data || a_data_size == 0, NULL);
     dap_return_val_if_fail(a_ring_keys, NULL);
     dap_return_val_if_fail(a_ring_size >= 2, NULL);
     dap_return_val_if_fail(a_signer_index < a_ring_size, NULL);
@@ -1640,7 +1641,8 @@ int dap_sign_benchmark_batch_verification(
 int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
                         dap_enc_key_t **a_ring_keys, size_t a_ring_size) {
     dap_return_val_if_fail(a_sign, -EINVAL);
-    dap_return_val_if_fail(a_data, -EINVAL);
+    // Allow empty messages (a_data can be NULL if a_data_size is 0)
+    dap_return_val_if_fail(a_data || a_data_size == 0, -EINVAL);
     dap_return_val_if_fail(a_ring_keys, -EINVAL);
     dap_return_val_if_fail(a_ring_size > 0, -EINVAL);
 
