@@ -261,7 +261,8 @@ static bool s_test_linkability_prevention(void) {
         DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Ring signature creation should succeed");
 
         // All signatures should be valid
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, SECURITY_RING_SIZE);
         DAP_TEST_ASSERT(l_verify_result == 0, "All signatures should be valid");
     }
 
@@ -333,7 +334,7 @@ static bool s_test_ring_size_security(void) {
 
         // Verify signature
         int l_verify_result = dap_sign_verify_ring(l_signature, &l_message_hash, sizeof(l_message_hash),
-                                                  l_ring_keys, SECURITY_RING_SIZE);
+                                                  l_ring_keys, l_ring_size);
         DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification should succeed");
 
         // Check signature size is appropriate for ring size
@@ -395,7 +396,8 @@ static bool s_test_cryptographic_randomness(void) {
 
     // Verify all signatures
     for (size_t i = 0; i < l_num_signatures; i++) {
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, l_ring_size);
         DAP_TEST_ASSERT(l_verify_result == 0, "All signatures should be valid");
     }
 
