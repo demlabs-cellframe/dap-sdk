@@ -996,6 +996,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
     a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
     a_drv_callback->read_size_store         = s_db_pgsql_read_size_store;
+    a_drv_callback->physical_size           = NULL;
     s_db_inited = true;
 
     return 0;

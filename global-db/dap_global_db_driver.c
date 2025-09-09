@@ -521,3 +521,13 @@ size_t dap_global_db_driver_size(const char *a_group, const char *a_key, bool a_
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_size_store callback", s_used_driver);
     return l_size_out;
 }
+
+size_t dap_global_db_driver_physical_size(void)
+{
+    size_t l_size_out = 0;
+    if (s_drv_callback.read_physical_size)
+        l_size_out = s_drv_callback.read_physical_size();
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_physical_size callback", s_used_driver);
+    return l_size_out;
+}

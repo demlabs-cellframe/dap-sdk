@@ -100,6 +100,7 @@ static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_dri
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
 static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
 static size_t           s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes);
+static size_t           s_db_mdbx_physical_size();
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
     return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
@@ -452,6 +453,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
     a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
     a_drv_dpt->read_size_store             = s_db_mdbx_read_size_store;
+    a_drv_dpt->physical_size               = s_db_mdbx_physical_size;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -610,6 +612,17 @@ static int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_ke
 DAP_STATIC_INLINE bool s_is_hole(struct driver_record *a_record)
 {
     return a_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
+}
+
+static size_t s_db_mdbx_physical_size()
+{
+    MDBX_envinfo l_info;
+    int rc = mdbx_env_info_ex(s_mdbx_env, NULL, &l_info, sizeof(l_info));
+    if (rc != MDBX_SUCCESS) {
+        log_it(L_ERROR, "mdbx_env_info_ex: (%d) %s", rc, mdbx_strerror(rc));
+        return 0;
+    }
+    return (size_t) l_info.mi_mapsize;
 }
 
 static size_t s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
