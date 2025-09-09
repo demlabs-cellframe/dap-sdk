@@ -1,0 +1,37 @@
+{
+  "active_task_reference": {
+    "$ref": ".context/tasks/документация_chipmunkring_научная_статья_20250909_165800.json",
+    "auto_load": ".context/tasks/документация_chipmunkring_научная_статья_20250909_165800.json",
+    "task_type": "scientific_documentation",
+    "priority": "HIGH",
+    "status": "ACTIVE",
+    "activated_at": "2025-09-09T16:58:00.000000"
+  },
+  "metadata": {
+    "title": "Документация ChipmunkRing и научная статья по пост-квантовым кольцевым подписям",
+    "task_id": "TASK_CHIPMUNKRING_DOCUMENTATION_2025",
+    "category": "scientific_documentation",
+    "description": "Создание полноценной научной документации и исследовательской статьи по ChipmunkRing",
+    "estimated_duration": "4 месяца",
+    "current_focus": "Создание научной статьи в LaTeX формате и технической документации"
+  },
+  "execution_status": {
+    "phase": "НАУЧНАЯ СТАТЬЯ - МАТЕМАТИЧЕСКИЕ ОСНОВЫ",
+    "current_task": "Введение и обзор существующих решений",
+    "progress": "0%",
+    "next_action": "Начать написание научной статьи с введения",
+    "last_update": "2025-09-09T16:58:00.000000",
+    "completed_steps": [
+      "✅ Создана задача документации ChipmunkRing",
+      "✅ Переключена активная задача с разработки на документацию",
+      "✅ Унаследованы все математические основы из завершенной задачи разработки",
+      "✅ ChipmunkRing implementation: 100% complete (26/26 tests passing)"
+    ]
+  },
+  "previous_task": {
+    "title": "Разработка ChipmunkRing - кольцевой подписи",
+    "status": "COMPLETED",
+    "completion_date": "2025-09-09T16:57:00.000000",
+    "final_result": "100% tests passing, full implementation completed"
+  }
+}

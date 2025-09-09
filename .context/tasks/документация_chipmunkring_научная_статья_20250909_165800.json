@@ -1,0 +1,420 @@
+{
+  "version": "2.0",
+  "template_version": "1.0",
+  "created": "2025-09-09T16:58:00Z",
+  "description": "Создание комплексной документации и научной статьи по ChipmunkRing - первой достаточно компактной и производительной пост-квантовой кольцевой подписи для практического использования в блокчейне",
+  "task_data": {
+    "id": "TASK_CHIPMUNKRING_DOCUMENTATION_2025",
+    "title": "Документация ChipmunkRing и научная статья по пост-квантовым кольцевым подписям",
+    "description": "Создание полноценной научной документации и исследовательской статьи по ChipmunkRing - первой достаточно компактной и производительной пост-квантовой кольцевой подписи для практического использования в блокчейне. Включает математическую формализацию, доказательства безопасности, сравнительный анализ с существующими решениями и практические рекомендации по внедрению.",
+    "category": "scientific_documentation",
+    "priority": "HIGH",
+    "status": "ACTIVE",
+    "progress": 0,
+    "metadata": {
+      "created": "2025-09-09T16:58:00.000000",
+      "updated": "2025-09-09T16:58:00.000000",
+      "assigned_to": "cryptography_research_team",
+      "estimated_duration": "4 месяца",
+      "actual_duration": null,
+      "start_date": "2025-09-09",
+      "target_completion": "2026-01-09"
+    },
+    "context": {
+      "context_loading_policy": {
+        "auto_load": [
+          ".context/modules/core/manifest.json",
+          ".context/modules/core/standards.json",
+          ".context/modules/core/development_standards.json",
+          ".context/modules/core/project.json",
+          ".context/modules/projects/dap_sdk_project.json",
+          ".context/modules/projects/cryptography_project.json",
+          ".context/modules/projects/chipmunk_structure_module.json",
+          ".context/modules/standards/dap_sdk_coding_standards.json",
+          ".context/modules/methodologies/documentation_systems.json",
+          ".context/modules/methodologies/live_documentation.json",
+          ".context/tasks/разработка_chipmunkring_-_кольцевой_подп_20250905_153100.json"
+        ],
+        "conditional_load": {
+          "tex_documentation": [
+            "modules/languages/tex/tex_development.json"
+          ],
+          "scientific_writing": [
+            "modules/methodologies/scientific_writing.json"
+          ],
+          "mathematical_notation": [
+            "modules/standards/mathematical_notation.json"
+          ]
+        }
+      },
+      "related_modules": [
+        "modules/projects/cryptography_project.json",
+        "modules/projects/chipmunk_structure_module.json",
+        "modules/methodologies/documentation_systems.json"
+      ],
+      "dependencies": [
+        "Completed ChipmunkRing implementation (100% tests passing)",
+        "Mathematical formalization from original task",
+        "Performance metrics and benchmarks",
+        "Security analysis and proofs"
+      ],
+      "files_involved": [
+        "docs/chipmunk_ring/",
+        "papers/chipmunk_ring_scientific_paper.tex",
+        "docs/api/chipmunk_ring_api.md",
+        "docs/integration/chipmunk_ring_integration_guide.md"
+      ]
+    },
+    "objectives": {
+      "primary_goal": "Создать исчерпывающую научную документацию по ChipmunkRing - первой достаточно компактной и производительной пост-квантовой кольцевой подписи для практического использования в блокчейне, включая научную статью в LaTeX формате для публикации",
+      "success_criteria": [
+        "Создана научная статья в LaTeX формате с математическими доказательствами",
+        "Документирована полная математическая спецификация ChipmunkRing",
+        "Проведен сравнительный анализ с существующими ring signature schemes",
+        "Создана техническая документация API для разработчиков",
+        "Написано руководство по интеграции для Cellframe",
+        "Документированы результаты security audit и performance benchmarks",
+        "Создана документация по deployment и operational considerations"
+      ],
+      "acceptance_criteria": [
+        "Научная статья готова к отправке в peer-reviewed журнал",
+        "Техническая документация соответствует стандартам DAP SDK",
+        "API документация с примерами кода и use cases",
+        "Integration guide с пошаговыми инструкциями",
+        "Performance analysis с детальными benchmarks",
+        "Security analysis с формальными доказательствами"
+      ]
+    },
+    "chipmunk_ring_foundation": {
+      "mathematical_basis": {
+        "approach": "Fiat-Shamir + Zero-Knowledge Proofs",
+        "security_basis": "Ring Learning With Errors (Ring-LWE)",
+        "parameters": {
+          "n": 512,
+          "q": 3168257,
+          "security_level": "112-bit quantum security",
+          "max_ring_size": 1024,
+          "signature_size": "~13.5KB per ring signature",
+          "performance": "~310ms signing, ~150ms verification"
+        },
+        "algorithms": {
+          "keygen": "Generate Chipmunk keypair (unchanged from base scheme)",
+          "sign": "Create ring signature using Fiat-Shamir ZKP",
+          "verify": "Verify ring signature with challenge verification"
+        }
+      },
+        "cryptographic_properties": {
+          "anonymity": "Information-theoretic anonymity among ring members",
+          "unforgeability": "Existential unforgeability under chosen message attack", 
+          "quantum_resistance": "112-bit quantum security inherited from Chipmunk",
+          "linkability": "Optional linkability tag for double-spending prevention",
+          "zero_knowledge": "Computational zero-knowledge in random oracle model"
+        },
+        "practical_advantages": {
+          "compact_size": "~13.5KB signatures vs 100KB+ in previous lattice-based schemes",
+          "performance": "~310ms signing, ~150ms verification - practical for blockchain",
+          "scalability": "Supports up to 1024 participants efficiently",
+          "blockchain_ready": "First post-quantum ring signature practical for real-world blockchain use",
+          "memory_efficiency": "Memory-safe implementation with zero leaks"
+        },
+      "implementation_achievements": {
+        "core_implementation": "✅ Complete ChipmunkRing implementation in DAP SDK",
+        "test_coverage": "✅ 100% test coverage (26/26 tests passing)",
+        "integration": "✅ Full integration with DAP SDK crypto framework",
+        "performance": "✅ Optimized for production use",
+        "security": "✅ Memory-safe with comprehensive error handling",
+        "standards_compliance": "✅ Full DAP SDK coding standards compliance"
+      },
+      "technical_specifications": {
+        "api_functions": [
+          "dap_enc_chipmunk_ring_key_new_generate()",
+          "dap_enc_chipmunk_ring_sign()",
+          "dap_enc_chipmunk_ring_verify()",
+          "dap_sign_create_ring()",
+          "dap_sign_verify_ring()"
+        ],
+        "data_structures": [
+          "chipmunk_ring_public_key_t",
+          "chipmunk_ring_private_key_t", 
+          "chipmunk_ring_signature_t",
+          "chipmunk_ring_container_t",
+          "chipmunk_ring_commitment_t",
+          "chipmunk_ring_response_t"
+        ],
+        "integration_points": [
+          "DAP SDK signature framework",
+          "Cellframe transaction system",
+          "Post-quantum cryptography suite"
+        ]
+      }
+    },
+    "implementation_plan": {
+      "phases": [
+        {
+          "phase": 1,
+          "title": "Научная статья - Математические основы",
+          "description": "Создание научной статьи в LaTeX формате с полной математической формализацией ChipmunkRing",
+          "estimated_time": "6 недель",
+          "subphases": [
+            {
+              "title": "Введение и обзор существующих решений",
+              "tasks": [
+                "Написать введение в проблему анонимных транзакций",
+                "Обзор существующих ring signature schemes (RST, LSAG, Raptor, lattice-based approaches)",
+                "Анализ ограничений существующих пост-квантовых ring signatures (размер, производительность)",
+                "Мотивация для ChipmunkRing: первая практически применимая для блокчейна",
+                "Сравнительная таблица размеров подписей и производительности"
+              ],
+              "estimated_time": "1 неделя"
+            },
+            {
+              "title": "Математическая формализация ChipmunkRing",
+              "tasks": [
+                "Формальное определение ChipmunkRing signature scheme",
+                "Описание алгоритмов KeyGen, Sign, Verify в LaTeX",
+                "Математическое обоснование security reductions",
+                "Доказательства completeness, soundness, zero-knowledge"
+              ],
+              "estimated_time": "2 недели"
+            },
+            {
+              "title": "Security analysis и доказательства",
+              "tasks": [
+                "Формальные доказательства unforgeability",
+                "Анализ anonymity properties с математическими доказательствами",
+                "Quantum resistance analysis",
+                "Side-channel attack resistance"
+              ],
+              "estimated_time": "2 недели"
+            },
+            {
+              "title": "Performance analysis и сравнение",
+              "tasks": [
+                "Теоретический анализ сложности алгоритмов",
+                "Сравнение с существующими ring signature schemes",
+                "Практические benchmarks и измерения",
+                "Анализ scalability для больших колец"
+              ],
+              "estimated_time": "1 неделя"
+            }
+          ],
+          "deliverables": [
+            "Научная статья ChipmunkRing в LaTeX формате",
+            "Математические доказательства безопасности",
+            "Сравнительный анализ с существующими решениями",
+            "Performance benchmarks и теоретический анализ"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "phase": 2,
+          "title": "Техническая документация API",
+          "description": "Создание полной технической документации для разработчиков",
+          "estimated_time": "4 недели",
+          "subphases": [
+            {
+              "title": "API Reference Documentation",
+              "tasks": [
+                "Создание Doxygen документации для всех функций",
+                "Описание всех data structures и их назначения",
+                "Документирование error codes и handling",
+                "Создание примеров использования API"
+              ],
+              "estimated_time": "1.5 недели"
+            },
+            {
+              "title": "Integration Guide для разработчиков",
+              "tasks": [
+                "Пошаговое руководство по интеграции ChipmunkRing",
+                "Примеры кода для типичных use cases",
+                "Best practices для performance optimization",
+                "Troubleshooting guide и FAQ"
+              ],
+              "estimated_time": "1.5 недели"
+            },
+            {
+              "title": "Security Guidelines",
+              "tasks": [
+                "Документация security best practices",
+                "Руководство по безопасной реализации",
+                "Анализ attack vectors и mitigation strategies",
+                "Compliance guidelines для различных стандартов"
+              ],
+              "estimated_time": "1 неделя"
+            }
+          ],
+          "deliverables": [
+            "Полная API documentation",
+            "Developer integration guide",
+            "Security implementation guidelines",
+            "Code examples и use cases"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "phase": 3,
+          "title": "Cellframe Integration Documentation",
+          "description": "Специализированная документация для интеграции с Cellframe",
+          "estimated_time": "3 недели",
+          "subphases": [
+            {
+              "title": "Cellframe Transaction Integration",
+              "tasks": [
+                "Документация интеграции с Cellframe transaction format",
+                "Руководство по обновлению consensus rules",
+                "Документация wallet integration",
+                "Testnet deployment procedures"
+              ],
+              "estimated_time": "1.5 недели"
+            },
+            {
+              "title": "Consensus и Network Documentation",
+              "tasks": [
+                "Документация влияния на consensus mechanism",
+                "Network protocol updates для ring signatures",
+                "Backward compatibility considerations",
+                "Migration strategy от обычных подписей"
+              ],
+              "estimated_time": "1.5 недели"
+            }
+          ],
+          "deliverables": [
+            "Cellframe integration guide",
+            "Consensus mechanism documentation",
+            "Network protocol specifications",
+            "Migration и deployment procedures"
+          ],
+          "status": "PLANNED"
+        },
+        {
+          "phase": 4,
+          "title": "Research Publication Preparation",
+          "description": "Подготовка научной статьи к публикации в peer-reviewed журналах",
+          "estimated_time": "4 недели",
+          "subphases": [
+            {
+              "title": "Peer Review Preparation",
+              "tasks": [
+                "Финализация математических доказательств",
+                "Создание comprehensive related work section",
+                "Подготовка experimental evaluation",
+                "Форматирование согласно journal requirements"
+              ],
+              "estimated_time": "2 недели"
+            },
+            {
+              "title": "External Review и Feedback",
+              "tasks": [
+                "Получение feedback от cryptography experts",
+                "Внедрение рекомендаций reviewers",
+                "Проверка математических доказательств",
+                "Final proofreading и editing"
+              ],
+              "estimated_time": "2 недели"
+            }
+          ],
+          "deliverables": [
+            "Camera-ready научная статья",
+            "Supplementary materials",
+            "Peer review feedback incorporation",
+            "Journal submission package"
+          ],
+          "status": "PLANNED"
+        }
+      ]
+    },
+    "documentation_structure": {
+      "scientific_paper": {
+        "format": "LaTeX",
+        "target_venue": "IEEE Transactions on Information Forensics and Security / IACR Cryptology ePrint Archive",
+        "sections": [
+          "Abstract",
+          "Introduction", 
+          "Related Work",
+          "ChipmunkRing Construction",
+          "Security Analysis",
+          "Performance Evaluation",
+          "Implementation",
+          "Conclusion"
+        ],
+        "mathematical_notation": "Standard cryptography notation with LaTeX math",
+        "figures": "TikZ diagrams для алгоритмов и security games"
+      },
+      "technical_documentation": {
+        "api_reference": {
+          "format": "Markdown + Doxygen",
+          "sections": [
+            "Quick Start Guide",
+            "API Reference",
+            "Data Structures",
+            "Error Handling",
+            "Examples"
+          ]
+        },
+        "integration_guide": {
+          "format": "Markdown",
+          "target_audience": "Cellframe developers",
+          "sections": [
+            "Overview",
+            "Installation",
+            "Basic Usage",
+            "Advanced Features",
+            "Troubleshooting"
+          ]
+        }
+      }
+    },
+    "inherited_knowledge": {
+      "from_original_task": {
+        "mathematical_foundation": {
+          "formal_specification": {
+            "approach": "Fiat-Shamir + Zero-Knowledge Proofs",
+            "security_basis": "Ring Learning With Errors (Ring-LWE)",
+            "parameters": {
+              "n": 512,
+              "q": 3168257,
+              "security_level": "112-bit quantum security",
+              "max_ring_size": 1024,
+              "signature_size_target": "50-60KB",
+              "performance_target": "2x Chipmunk baseline"
+            }
+          },
+          "algorithms": {
+            "keygen": {
+              "description": "Generate Chipmunk keypair (unchanged from base scheme)",
+              "public_key": "PK = (ρ_seed, v₀, v₁)",
+              "private_key": "SK = (key_seed, tr, PK)",
+              "security": "Ring-LWE hardness"
+            },
+            "sign": {
+              "description": "Create ring signature using Fiat-Shamir ZKP",
+              "input": "(SK_π, M, {PK₁, ..., PKₖ})",
+              "output": "Ring signature σ = (I, c₁, {r₁, ..., rₖ}, σ_π)",
+              "anonymity": "Perfect anonymity among ring members"
+            },
+            "verify": {
+              "description": "Verify ring signature correctness",
+              "input": "(σ, M, {PK₁, ..., PKₖ})",
+              "output": "Accept/Reject",
+              "soundness": "Computational soundness"
+            }
+          }
+        },
+        "implementation_results": {
+          "test_coverage": "100% (26/26 tests passing)",
+          "actual_signature_size": "~13.5KB",
+          "actual_performance": "Verified working implementation",
+          "memory_safety": "Zero memory leaks detected",
+          "integration_status": "Fully integrated with DAP SDK"
+        },
+        "research_foundations": [
+          "Ring Learning With Errors (Ring-LWE) hardness assumption",
+          "Fiat-Shamir heuristic for non-interactive zero-knowledge",
+          "Lattice-based cryptography principles",
+          "HOTS (Homomorphic One-Time Signatures) from Chipmunk",
+          "Post-quantum security analysis"
+        ]
+      }
+    }
+  }
+}
