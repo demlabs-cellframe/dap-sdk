@@ -48,8 +48,11 @@ static bool s_test_iaes_encryption(void) {
     uint8_t l_original_data[TEST_DATA_SIZE];
     dap_test_random_bytes(l_original_data, TEST_DATA_SIZE);
 
-    // Encrypt data
-    size_t l_encrypted_size = TEST_DATA_SIZE + 256; // Add some padding for encryption overhead
+    // Encrypt data - calculate proper buffer size for IAES
+    size_t l_encrypted_size = dap_enc_code_out_size(l_key, TEST_DATA_SIZE, 0);
+    if (l_encrypted_size == 0) {
+        l_encrypted_size = TEST_DATA_SIZE + 512; // Fallback with larger padding
+    }
     uint8_t* l_encrypted_data = DAP_NEW_Z_SIZE(uint8_t, l_encrypted_size);
 
     int l_encrypt_result = dap_enc_code(l_key, l_original_data, TEST_DATA_SIZE,
@@ -58,10 +61,14 @@ static bool s_test_iaes_encryption(void) {
 
     size_t l_actual_encrypted_size = (size_t)l_encrypt_result;
 
-    // Decrypt data
-    uint8_t* l_decrypted_data = DAP_NEW_Z_SIZE(uint8_t, TEST_DATA_SIZE);
+    // Decrypt data - calculate proper buffer size for decryption
+    size_t l_decrypted_size = dap_enc_decode_out_size(l_key, l_actual_encrypted_size, 0);
+    if (l_decrypted_size == 0) {
+        l_decrypted_size = TEST_DATA_SIZE + 512; // Fallback
+    }
+    uint8_t* l_decrypted_data = DAP_NEW_Z_SIZE(uint8_t, l_decrypted_size);
     int l_decrypt_result = dap_enc_decode(l_key, l_encrypted_data, l_actual_encrypted_size,
-                                         l_decrypted_data, TEST_DATA_SIZE, 0);
+                                         l_decrypted_data, l_decrypted_size, 0);
     DAP_TEST_ASSERT(l_decrypt_result >= 0, "Decryption should succeed");
 
     // Verify decrypted data matches original
@@ -203,8 +210,12 @@ static bool s_test_multiple_key_types(void) {
         uint8_t l_test_data[256];
         dap_test_random_bytes(l_test_data, sizeof(l_test_data));
 
-        size_t l_encrypted_size = sizeof(l_test_data) + 256;
-        uint8_t l_encrypted_data[l_encrypted_size];
+        // Calculate proper buffer size for this key type
+        size_t l_encrypted_size = dap_enc_code_out_size(l_key, sizeof(l_test_data), 0);
+        if (l_encrypted_size == 0) {
+            l_encrypted_size = sizeof(l_test_data) + 512; // Fallback
+        }
+        uint8_t* l_encrypted_data = DAP_NEW_Z_SIZE(uint8_t, l_encrypted_size);
 
         int l_encrypt_result = dap_enc_code(l_key, l_test_data, sizeof(l_test_data),
                                            l_encrypted_data, l_encrypted_size, 0);

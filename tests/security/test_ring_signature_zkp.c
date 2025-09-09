@@ -262,7 +262,7 @@ static bool s_test_linkability_prevention(void) {
 
         // All signatures should be valid
         int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
-                                                  l_ring_keys, SECURITY_RING_SIZE);
+                                                  l_ring_keys, l_ring_size);
         DAP_TEST_ASSERT(l_verify_result == 0, "All signatures should be valid");
     }
 
