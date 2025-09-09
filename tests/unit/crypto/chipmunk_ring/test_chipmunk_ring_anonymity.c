@@ -5,7 +5,6 @@
 #include <dap_sign.h>
 #include <dap_hash.h>
 #include "rand/dap_rand.h"
-#include <dap_math_mod.h>
 
 #define LOG_TAG "test_chipmunk_ring_anonymity"
 
@@ -259,11 +258,6 @@ int main(int argc, char** argv) {
     // Initialize modules
     if (dap_enc_chipmunk_ring_init() != 0) {
         log_it(L_ERROR, "Failed to initialize Chipmunk Ring module");
-        return -1;
-    }
-
-    if (dap_math_mod_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize DAP math module");
         return -1;
     }
 
