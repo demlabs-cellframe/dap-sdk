@@ -31,6 +31,10 @@ typedef struct {
     double avg_verification_time;
 } performance_result_t;
 
+// Global results storage
+static performance_result_t g_performance_results[10];
+static size_t g_results_count = 0;
+
 /**
  * @brief Comprehensive performance benchmark with detailed metrics
  */
@@ -104,13 +108,14 @@ static bool s_test_performance_detailed(void) {
         double l_avg_signing_time = l_total_signing_time / PERFORMANCE_ITERATIONS;
         double l_avg_verification_time = l_total_verification_time / PERFORMANCE_ITERATIONS;
 
-        // Store results
-        l_results[size_idx].ring_size = l_ring_size;
-        l_results[size_idx].pub_key_size = l_pub_key_size;
-        l_results[size_idx].priv_key_size = l_priv_key_size;
-        l_results[size_idx].signature_size = l_signature_size;
-        l_results[size_idx].avg_signing_time = l_avg_signing_time;
-        l_results[size_idx].avg_verification_time = l_avg_verification_time;
+        // Store results in global array
+        g_performance_results[g_results_count].ring_size = l_ring_size;
+        g_performance_results[g_results_count].pub_key_size = l_pub_key_size;
+        g_performance_results[g_results_count].priv_key_size = l_priv_key_size;
+        g_performance_results[g_results_count].signature_size = l_signature_size;
+        g_performance_results[g_results_count].avg_signing_time = l_avg_signing_time;
+        g_performance_results[g_results_count].avg_verification_time = l_avg_verification_time;
+        g_results_count++;
 
         log_it(L_DEBUG, "Completed ring size %zu: sign=%.1fms, verify=%.1fms, sig_size=%.1fKB",
                l_ring_size, l_avg_signing_time, l_avg_verification_time, l_signature_size / 1024.0);
@@ -121,7 +126,13 @@ static bool s_test_performance_detailed(void) {
         }
     }
 
-    // Print final performance table
+    return true;
+}
+
+/**
+ * @brief Print final performance summary table
+ */
+static void s_print_final_performance_table(void) {
     log_it(L_INFO, " ");
     log_it(L_INFO, "╔═══════════════════════════════════════════════════════════════╗");
     log_it(L_INFO, "║                 CHIPMUNKRING PERFORMANCE REPORT               ║");
@@ -130,14 +141,14 @@ static bool s_test_performance_detailed(void) {
     log_it(L_INFO, "║ Size │  Size   │   Size   │   Size    │   Time    │  Time   ║");
     log_it(L_INFO, "╠══════╪═════════╪══════════╪═══════════╪═══════════╪═════════╣");
 
-    for (size_t i = 0; i < l_num_sizes; i++) {
+    for (size_t i = 0; i < g_results_count; i++) {
         log_it(L_INFO, "║ %4zu │ %6.1fKB │ %7.1fKB │ %8.1fKB │ %7.1fms │ %6.1fms ║",
-               l_results[i].ring_size,
-               l_results[i].pub_key_size / 1024.0,
-               l_results[i].priv_key_size / 1024.0,
-               l_results[i].signature_size / 1024.0,
-               l_results[i].avg_signing_time,
-               l_results[i].avg_verification_time);
+               g_performance_results[i].ring_size,
+               g_performance_results[i].pub_key_size / 1024.0,
+               g_performance_results[i].priv_key_size / 1024.0,
+               g_performance_results[i].signature_size / 1024.0,
+               g_performance_results[i].avg_signing_time,
+               g_performance_results[i].avg_verification_time);
     }
 
     log_it(L_INFO, "╚══════╧═════════╧══════════╧═══════════╧═══════════╧═════════╝");
@@ -149,8 +160,6 @@ static bool s_test_performance_detailed(void) {
     log_it(L_INFO, "- Algorithm: Lattice-based ring signatures with Fiat-Shamir");
     log_it(L_INFO, "- Build type: Release (-O3 optimization)");
     log_it(L_INFO, " ");
-
-    return true;
 }
 
 /**
@@ -231,6 +240,9 @@ int main(int argc, char** argv) {
     bool l_all_passed = true;
     l_all_passed &= s_test_performance_detailed();
     l_all_passed &= s_test_size_scaling();
+
+    // Print final performance table after all tests
+    s_print_final_performance_table();
 
     log_it(L_NOTICE, "Chipmunk Ring performance tests completed");
 
