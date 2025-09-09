@@ -39,7 +39,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 
 // Modulus for ring signature operations
@@ -378,7 +378,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     size_t l_commitments_size = a_ring->size * sizeof(chipmunk_ring_commitment_t);
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
 
-    uint8_t *l_combined_data = DAP_NEW_SIZE(uint8_t, l_total_size);
+    uint8_t *l_combined_data = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
     if (!l_combined_data) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         chipmunk_ring_signature_free(a_signature);
@@ -501,11 +501,17 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     }
 
     // Verify Chipmunk signature of the challenge
+    log_it(L_INFO, "About to verify Chipmunk signature: signer_index=%u, challenge_size=%zu",
+           a_signature->signer_index, sizeof(a_signature->challenge));
+    
     int l_result = chipmunk_verify(a_ring->public_keys[a_signature->signer_index].data,
                                   a_signature->challenge, sizeof(a_signature->challenge),
                                   a_signature->chipmunk_signature);
+    
+    log_it(L_INFO, "Chipmunk signature verification result: %d (expected 0 for success)", l_result);
+    
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Chipmunk signature verification failed");
+        log_it(L_ERROR, "Chipmunk signature verification failed with error code: %d", l_result);
         return -1;
     }
 

@@ -44,7 +44,7 @@
 #define LOG_TAG "chipmunk_hots"
 
 // Детальное логирование для Chipmunk HOTS модуля
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 
 /**

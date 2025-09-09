@@ -47,7 +47,7 @@
 #endif
 
 // Флаг для расширенного логирования
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 /**
  * @brief Transform polynomial to NTT form
@@ -501,8 +501,16 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     static int call_count = 0;
     call_count++;
     
-    if (!a_poly || !a_message) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_from_hash");
+    log_it(L_INFO, "chipmunk_poly_from_hash: call #%d, message=%p, len=%zu", call_count, a_message, a_message_len);
+    
+    if (!a_poly) {
+        log_it(L_ERROR, "NULL poly parameter in chipmunk_poly_from_hash");
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // Allow empty message (len=0) but require non-NULL pointer for non-empty message
+    if (a_message_len > 0 && !a_message) {
+        log_it(L_ERROR, "NULL message with non-zero length in chipmunk_poly_from_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     

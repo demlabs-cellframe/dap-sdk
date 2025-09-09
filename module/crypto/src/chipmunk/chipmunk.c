@@ -44,7 +44,7 @@
 #define LOG_TAG "chipmunk"
 
 // Детальное логирование для Chipmunk модуля
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 // Определение MIN для использования в функциях работы с массивами
 #ifndef MIN
@@ -435,6 +435,9 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
                     size_t a_message_len, const uint8_t *a_signature) {
     debug_if(s_debug_more, L_DEBUG, "Starting HOTS signature verification");
     
+    log_it(L_INFO, "chipmunk_verify: pub_key=%p, message=%p, msg_len=%zu, signature=%p",
+           a_public_key, a_message, a_message_len, a_signature);
+    
     if (!a_public_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_verify");
         return CHIPMUNK_ERROR_NULL_PARAM;
@@ -448,17 +451,21 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     
     // Парсим публичный ключ
     chipmunk_public_key_t l_pk = {0};
-    if (chipmunk_public_key_from_bytes(&l_pk, a_public_key) != 0) {
-        log_it(L_ERROR, "Failed to parse public key");
+    int l_pk_result = chipmunk_public_key_from_bytes(&l_pk, a_public_key);
+    if (l_pk_result != 0) {
+        log_it(L_ERROR, "Failed to parse public key, error code: %d", l_pk_result);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
+    log_it(L_INFO, "chipmunk_verify: public key parsed successfully");
     
     // Парсим подпись
     chipmunk_signature_t l_sig = {0};
-    if (chipmunk_signature_from_bytes(&l_sig, a_signature) != 0) {
-        log_it(L_ERROR, "Failed to parse signature");
+    int l_sig_result = chipmunk_signature_from_bytes(&l_sig, a_signature);
+    if (l_sig_result != 0) {
+        log_it(L_ERROR, "Failed to parse signature, error code: %d", l_sig_result);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
+    log_it(L_INFO, "chipmunk_verify: signature parsed successfully");
     
     // Генерируем HOTS параметры из rho_seed
     chipmunk_hots_params_t l_hots_params = {0};
@@ -483,11 +490,14 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     }
     
     // Используем HOTS функцию верификации
+    log_it(L_INFO, "chipmunk_verify: calling chipmunk_hots_verify with msg_len=%zu", a_message_len);
     int l_result = chipmunk_hots_verify(&l_hots_pk, a_message, a_message_len, 
                                         &l_hots_sig, &l_hots_params);
     
+    log_it(L_INFO, "chipmunk_verify: chipmunk_hots_verify returned %d", l_result);
+    
     if (l_result != 0) {  // Стандартное C соглашение: 0 для успеха, отрицательное для ошибки
-        debug_if(s_debug_more, L_DEBUG, "HOTS signature verification failed: %d", l_result);
+        log_it(L_ERROR, "HOTS signature verification failed: %d", l_result);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
     

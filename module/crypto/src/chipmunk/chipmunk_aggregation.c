@@ -15,7 +15,7 @@
 #endif
 
 // Статические переменные для отладки
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 // Вспомогательная функция для редукции коэффициента по модулю q
 static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
