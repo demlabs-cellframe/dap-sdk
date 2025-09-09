@@ -182,10 +182,11 @@ static bool s_test_multiple_key_types(void) {
 
     char msg[100];
 
-    // Test with available key types
+    // Test with available key types that support encryption
     dap_enc_key_type_t l_key_types[] = {
-        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
-        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING
+        DAP_ENC_KEY_TYPE_IAES,
+        DAP_ENC_KEY_TYPE_OAES
+        // Note: Chipmunk keys are signature-only, not for encryption
     };
     const size_t l_num_types = sizeof(l_key_types) / sizeof(l_key_types[0]);
 
