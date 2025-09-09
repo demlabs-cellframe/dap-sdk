@@ -106,11 +106,11 @@ static bool s_test_linkability_prevention(void) {
     dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
-    // Generate ring keys
-    const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size];
+    // Generate ring keys  
+    const size_t l_ring_size = TEST_RING_SIZE;
+    dap_enc_key_t* l_ring_keys[TEST_RING_SIZE];
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
-    for (size_t i = 0; i < l_ring_size; i++) {
+    for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
     }
@@ -129,7 +129,7 @@ static bool s_test_linkability_prevention(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_signer_key,
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, l_ring_size,
+            l_ring_keys, TEST_RING_SIZE,
             0  // Same position
         );
         dap_assert(l_signatures[i] != NULL, "Ring signature creation should succeed");
@@ -154,7 +154,7 @@ static bool s_test_linkability_prevention(void) {
         DAP_DELETE(l_signatures[i]);
     }
     dap_enc_key_delete(l_signer_key);
-    for (size_t i = 0; i < l_ring_size; i++) {
+    for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         dap_enc_key_delete(l_ring_keys[i]);
     }
 
@@ -168,9 +168,9 @@ static bool s_test_linkability_prevention(void) {
 static bool s_test_cryptographic_strength(void) {
     log_it(L_INFO, "Testing Chipmunk Ring cryptographic strength...");
 
-    // Generate keys
-    const size_t l_ring_size = 4;
-    dap_enc_key_t* l_ring_keys[l_ring_size];
+    // Generate keys  
+    const size_t l_ring_size = TEST_RING_SIZE;
+    dap_enc_key_t* l_ring_keys[TEST_RING_SIZE];
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
@@ -191,13 +191,14 @@ static bool s_test_cryptographic_strength(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_ring_keys[0],  // Same signer
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, l_ring_size,
+            l_ring_keys, TEST_RING_SIZE,
             0
         );
         dap_assert(l_signatures[i] != NULL, "Signature creation should succeed");
 
         // Verify each signature
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, l_ring_size);
         dap_assert(l_verify_result == 0, "Signature verification should succeed");
     }
 
@@ -241,7 +242,7 @@ static bool s_test_cryptographic_strength(void) {
     for (size_t i = 0; i < l_num_signatures; i++) {
         DAP_DELETE(l_signatures[i]);
     }
-    for (size_t i = 0; i < l_ring_size; i++) {
+    for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         dap_enc_key_delete(l_ring_keys[i]);
     }
 
