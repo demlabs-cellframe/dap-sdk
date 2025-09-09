@@ -90,11 +90,11 @@ static bool s_test_iaes_encryption(void) {
 static bool s_test_encryption_data_sizes(void) {
     log_it(L_INFO, "Testing encryption with different data sizes...");
 
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Key generation should succeed");
 
-    // Test different data sizes
-    const size_t l_test_sizes[] = {1, 16, 64, 256, 1024, 4096};
+    // Test different data sizes (IAES requires minimum 16 bytes due to block size)
+    const size_t l_test_sizes[] = {16, 32, 64, 256, 1024, 4096};
     const size_t l_num_sizes = sizeof(l_test_sizes) / sizeof(l_test_sizes[0]);
 
     for (size_t i = 0; i < l_num_sizes; i++) {
@@ -104,8 +104,8 @@ static bool s_test_encryption_data_sizes(void) {
         uint8_t* l_original_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
         dap_test_random_bytes(l_original_data, l_data_size);
 
-        // Encrypt
-        size_t l_encrypted_size = l_data_size + 256;
+        // Encrypt - use larger buffer for IAES block cipher
+        size_t l_encrypted_size = ((l_data_size / 16) + 1) * 16 + 256; // Round up to block size + padding
         uint8_t* l_encrypted_data = DAP_NEW_Z_SIZE(uint8_t, l_encrypted_size);
 
         int l_encrypt_result = dap_enc_code(l_key, l_original_data, l_data_size,
@@ -146,7 +146,7 @@ static bool s_test_encryption_consistency(void) {
     log_it(L_INFO, "Testing encryption/decryption consistency...");
 
     char msg[100];
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Key generation should succeed");
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
@@ -245,7 +245,7 @@ static bool s_test_multiple_key_types(void) {
 static bool s_test_encryption_error_handling(void) {
     log_it(L_INFO, "Testing encryption error handling...");
 
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Key generation should succeed");
 
     uint8_t l_test_data[256];
