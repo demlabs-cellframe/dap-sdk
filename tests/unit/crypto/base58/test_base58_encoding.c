@@ -129,8 +129,9 @@ static bool s_test_base58_random_data(void) {
         size_t l_actual_encoded_size = dap_enc_base58_encode(l_source_data, l_test_size, l_encoded_data);
         DAP_TEST_ASSERT(l_actual_encoded_size <= l_encoded_size, "Encoded size should be valid");
 
-        // Decode
-        uint8_t* l_decoded_data = DAP_NEW_Z_SIZE(uint8_t, l_test_size);
+        // Decode - allocate proper size for decoded data
+        size_t l_decode_buffer_size = DAP_ENC_BASE58_DECODE_SIZE(l_actual_encoded_size);
+        uint8_t* l_decoded_data = DAP_NEW_Z_SIZE(uint8_t, l_decode_buffer_size);
         DAP_TEST_ASSERT_NOT_NULL(l_decoded_data, "Memory allocation should succeed");
 
         size_t l_decoded_size = dap_enc_base58_decode(l_encoded_data, l_decoded_data);
