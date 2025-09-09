@@ -759,8 +759,8 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     l_offset += 32;
 
     // Allocate memory for commitments and responses with overflow protection
-    a_sig->commitments = DAP_NEW_SIZE(chipmunk_ring_commitment_t, a_sig->ring_size);
-    a_sig->responses = DAP_NEW_SIZE(chipmunk_ring_response_t, a_sig->ring_size);
+    a_sig->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_sig->ring_size);
+    a_sig->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_sig->ring_size);
 
     if (!a_sig->commitments || !a_sig->responses) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);

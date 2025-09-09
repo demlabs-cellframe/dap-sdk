@@ -559,6 +559,22 @@ dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t 
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
     dap_return_val_if_pass(l_type == DAP_ENC_KEY_TYPE_INVALID, NULL);
 
+    // Special handling for ring signatures that don't include individual public keys
+    if (a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING) {
+        if (a_pkey) {
+            // Use provided public key for ring signature verification
+            dap_enc_key_t *l_ret = dap_enc_key_new(l_type);
+            if (dap_enc_key_deserialize_pub_key(l_ret, a_pkey->pkey, a_pkey->header.size)) {
+                log_it(L_ERROR, "Error in enc pub key deserialize for ring signature");
+                DAP_DEL_Z(l_ret);
+            }
+            return l_ret;
+        } else {
+            log_it(L_ERROR, "Ring signatures require external public key for verification");
+            return NULL;
+        }
+    }
+
     size_t l_pkey_size = a_pkey ? a_pkey->header.size : 0;
     uint8_t *l_pkey = a_pkey ? a_pkey->pkey : dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
@@ -1689,7 +1705,6 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
     }
 
     log_it(L_INFO, "dap_sign_verify_ring: allocated signature structure");
-    return 0;
 
     l_result = chipmunk_ring_signature_from_bytes(l_signature, l_signature_data, l_signature_data_size);
     if (l_result != 0) {
