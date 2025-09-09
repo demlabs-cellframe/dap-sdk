@@ -52,7 +52,8 @@ static bool s_test_ring_anonymity(void) {
         dap_assert(l_signatures[i] != NULL, "Ring signature creation should succeed");
 
         // Verify each signature
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, TEST_RING_SIZE);
         dap_assert(l_verify_result == 0, "Ring signature verification should succeed");
     }
 
@@ -135,7 +136,8 @@ static bool s_test_linkability_prevention(void) {
         dap_assert(l_signatures[i] != NULL, "Ring signature creation should succeed");
 
         // All signatures should be valid
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, TEST_RING_SIZE);
         dap_assert(l_verify_result == 0, "Signature verification should succeed");
     }
 

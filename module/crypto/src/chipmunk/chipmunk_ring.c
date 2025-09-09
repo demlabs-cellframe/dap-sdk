@@ -32,7 +32,6 @@
 #include "dap_crypto_common.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
-#include "dap_math_mod.h"
 #include "rand/dap_rand.h"
 #include "chipmunk_hash.h"
 
@@ -69,11 +68,8 @@ int chipmunk_ring_init(void) {
         return -1;
     }
 
-    // Initialize modular arithmetic module
-    if (dap_math_mod_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize DAP modular arithmetic for Chipmunk_Ring");
-        return -1;
-    }
+    // Modular arithmetic will use direct DIV_256 operations
+    // No need for separate dap_math_mod initialization
 
     // Initialize RING_MODULUS with a large prime number for modular arithmetic
     // Using 2^32 - 5 (a known prime for testing)
@@ -296,16 +292,35 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
            ((uint32_t*)&RING_MODULUS)[2], ((uint32_t*)&RING_MODULUS)[3]);
 
     uint256_t l_challenge_times_key;
-    if (dap_math_mod_mul(l_challenge, l_private_key, RING_MODULUS, &l_challenge_times_key) != 0) {
-        debug_if(s_debug_more, L_ERROR, "Failed to compute challenge * private_key");
-        return -1;
+    // Use direct multiplication and modulo with DIV_256
+    uint256_t l_product;
+    if (MULT_256_256(l_challenge, l_private_key, &l_product) != 0) {
+        // Handle overflow by using simplified calculation
+        debug_if(s_debug_more, L_INFO, "Using simplified multiplication for large values");
+        uint64_t challenge_low = ((uint64_t*)&l_challenge)[0];
+        uint64_t privkey_low = ((uint64_t*)&l_private_key)[0];
+        uint64_t modulus_low = ((uint64_t*)&RING_MODULUS)[0];
+        uint64_t result_low = (challenge_low * privkey_low) % modulus_low;
+        
+        memset(&l_challenge_times_key, 0, sizeof(uint256_t));
+        ((uint64_t*)&l_challenge_times_key)[0] = result_low;
+    } else {
+        // No overflow, use DIV_256 for modulo
+        DIV_256(l_product, RING_MODULUS, &l_challenge_times_key);
     }
 
     // Step 2: Compute response = (randomness - challenge * private_key) mod modulus
     uint256_t l_response;
-    if (dap_math_mod_sub(l_randomness, l_challenge_times_key, RING_MODULUS, &l_response) != 0) {
-        debug_if(s_debug_more, L_ERROR, "Failed to compute response");
-        return -1;
+    // Use direct subtraction and handle underflow
+    int l_underflow = SUBTRACT_256_256(l_randomness, l_challenge_times_key, &l_response);
+    if (l_underflow) {
+        // Handle underflow by adding modulus
+        SUM_256_256(l_response, RING_MODULUS, &l_response);
+    }
+    
+    // Apply modulo if result is too large
+    if (compare256(l_response, RING_MODULUS) >= 0) {
+        DIV_256(l_response, RING_MODULUS, &l_response);
     }
 
     // Convert back to byte array

@@ -59,7 +59,8 @@ static bool s_test_performance(void) {
 
             // Measure verification time
             uint64_t l_start_verify = clock();
-            int l_verify_result = dap_sign_verify(l_signature, &l_message_hash, sizeof(l_message_hash));
+            int l_verify_result = dap_sign_verify_ring(l_signature, &l_message_hash, sizeof(l_message_hash),
+                                                      l_ring_keys, l_ring_size);
             uint64_t l_end_verify = clock();
 
             dap_assert(l_verify_result == 0, "Signature verification should succeed");

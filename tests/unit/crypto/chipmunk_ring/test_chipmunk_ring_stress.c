@@ -55,7 +55,8 @@ static bool s_test_stress_signatures(void) {
     size_t l_verified_count = 0;
 
     for (size_t i = 0; i < STRESS_NUM_SIGNATURES; i++) {
-        int l_verify_result = dap_sign_verify(l_stress_signatures[i], &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_stress_signatures[i], &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, STRESS_RING_SIZE);
         if (l_verify_result == 0) {
             l_verified_count++;
         }
@@ -116,7 +117,8 @@ static bool s_test_memory_stress(void) {
         );
         dap_assert(l_signature != NULL, "Signature creation should succeed");
 
-        int l_verify_result = dap_sign_verify(l_signature, &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_signature, &l_message_hash, sizeof(l_message_hash),
+                                                  l_ring_keys, l_ring_size);
         dap_assert(l_verify_result == 0, "Signature verification should succeed");
 
         log_it(L_DEBUG, "Ring size %zu: signature size %u bytes",
@@ -178,7 +180,8 @@ static bool s_test_concurrent_operations(void) {
         dap_assert(l_signatures[i] != NULL, "Concurrent signature creation should succeed");
 
         // Verify each signature
-        int l_verify_result = dap_sign_verify(l_signatures[i], &l_message_hashes[l_msg_idx], sizeof(dap_hash_fast_t));
+        int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hashes[l_msg_idx], sizeof(dap_hash_fast_t),
+                                                  l_ring_keys, l_ring_size);
         dap_assert(l_verify_result == 0, "Concurrent signature verification should succeed");
     }
 
