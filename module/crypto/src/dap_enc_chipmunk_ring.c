@@ -30,7 +30,7 @@
 #include "chipmunk/chipmunk.h"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 #include "dap_enc_key.h"
 #include "chipmunk/chipmunk_ring.h"
 #include "chipmunk/chipmunk_hash.h"
@@ -67,7 +67,7 @@ int dap_enc_chipmunk_ring_key_new(struct dap_enc_key *a_key) {
  */
 int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,
                                  size_t a_seed_size, size_t a_key_size) {
-    log_it(L_DEBUG, "Generating new Chipmunk_Ring key with seed size: %zu, key size: %zu",
+    debug_if(s_debug_more, L_DEBUG, "Generating new Chipmunk_Ring key with seed size: %zu, key size: %zu",
            a_seed_size, a_key_size);
 
     dap_return_val_if_fail(a_key, -EINVAL);
@@ -85,8 +85,8 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
     a_key->priv_key_data_size = CHIPMUNK_PRIVATE_KEY_SIZE; // 4208 bytes
 
     // Allocate key data
-    a_key->pub_key_data = calloc(1, a_key->pub_key_data_size);
-    a_key->priv_key_data = calloc(1, a_key->priv_key_data_size);
+    a_key->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
+    a_key->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
 
     if (!a_key->pub_key_data || !a_key->priv_key_data) {
         log_it(L_ERROR, "Failed to allocate key data");
@@ -117,7 +117,7 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
         }
     }
 
-    log_it(L_DEBUG, "Chipmunk_Ring key generated successfully");
+    debug_if(s_debug_more, L_DEBUG, "Chipmunk_Ring key generated successfully");
     return 0;
 }
 

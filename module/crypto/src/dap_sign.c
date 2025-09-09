@@ -43,7 +43,7 @@
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
-static bool s_dap_sign_debug_more = true;
+static bool s_dap_sign_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
 // Static function declarations for internal implementations
