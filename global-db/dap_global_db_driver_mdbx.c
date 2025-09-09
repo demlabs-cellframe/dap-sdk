@@ -453,7 +453,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
     a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
     a_drv_dpt->read_size_store             = s_db_mdbx_read_size_store;
-    a_drv_dpt->physical_size               = s_db_mdbx_physical_size;
+    a_drv_dpt->read_physical_size               = s_db_mdbx_physical_size;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get

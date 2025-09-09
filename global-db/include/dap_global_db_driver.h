@@ -199,3 +199,4 @@ dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, 
 int dap_global_db_driver_txn_start();
 int dap_global_db_driver_txn_end(bool a_commit);
 size_t dap_global_db_driver_size(const char *a_group, const char *a_key, bool a_with_holes);
+size_t dap_global_db_driver_physical_size(void);

@@ -1160,7 +1160,7 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     a_drv_callback->read_hashes                  = s_db_sqlite_read_hashes;
     a_drv_callback->is_hash                      = s_db_sqlite_is_hash;
     a_drv_callback->read_size_store              = s_db_sqlite_read_size_store;
-    a_drv_callback->physical_size                = NULL;
+    a_drv_callback->read_physical_size                = NULL;
     s_db_inited = true;
 
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
