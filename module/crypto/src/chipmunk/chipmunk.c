@@ -552,7 +552,8 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     // Write v0 polynomial (CHIPMUNK_N * 4 bytes)
     debug_if(s_debug_more, L_INFO, "Writing v0 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t l_coeff = a_key->v0.coeffs[i];
+        // Apply same modulo operation as in deserialization for consistency
+        int32_t l_coeff = ((a_key->v0.coeffs[i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
         a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
         a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
@@ -563,7 +564,8 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     // Write v1 polynomial (CHIPMUNK_N * 4 bytes)
     debug_if(s_debug_more, L_INFO, "Writing v1 polynomial at offset %zu (size %d)", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t l_coeff = a_key->v1.coeffs[i];
+        // Apply same modulo operation as in deserialization for consistency
+        int32_t l_coeff = ((a_key->v1.coeffs[i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
         a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
         a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);

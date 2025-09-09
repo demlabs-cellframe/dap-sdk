@@ -199,6 +199,10 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hots.c)
     add_dap_test(test_unit_crypto_chipmunk_hots unit/crypto/chipmunk/test_chipmunk_hots.c)
     register_dap_test(test_unit_crypto_chipmunk_hots "unit;crypto;chipmunk")
+
+    # Extended HOTS test for ring signature context debugging
+    add_dap_test(test_unit_crypto_hots_extended unit/crypto/chipmunk_ring/test_hots_extended.c)
+    register_dap_test(test_unit_crypto_hots_extended "unit;crypto;hots;extended")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_large_scale.c)
