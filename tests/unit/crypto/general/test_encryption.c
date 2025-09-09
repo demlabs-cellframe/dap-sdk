@@ -35,13 +35,13 @@
 #define TEST_ITERATIONS 10
 
 /**
- * @brief Test basic encryption/decryption with Chipmunk
+ * @brief Test basic encryption/decryption with IAES
  */
-static bool s_test_chipmunk_encryption(void) {
-    log_it(L_INFO, "Testing Chipmunk encryption/decryption...");
+static bool s_test_iaes_encryption(void) {
+    log_it(L_INFO, "Testing IAES encryption/decryption...");
 
-    // Generate encryption key
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    // Generate encryption key (IAES supports encryption, Chipmunk is signature-only)
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
     DAP_TEST_ASSERT_NOT_NULL(l_key, "Encryption key generation should succeed");
 
     // Test data
@@ -182,11 +182,11 @@ static bool s_test_multiple_key_types(void) {
 
     char msg[100];
 
-    // Test with available key types that support encryption
+    // Test with symmetric encryption algorithms only
     dap_enc_key_type_t l_key_types[] = {
-        DAP_ENC_KEY_TYPE_IAES,
-        DAP_ENC_KEY_TYPE_OAES
-        // Note: Chipmunk keys are signature-only, not for encryption
+        DAP_ENC_KEY_TYPE_IAES,        // AES symmetric encryption
+        DAP_ENC_KEY_TYPE_OAES,        // OAES symmetric encryption  
+        DAP_ENC_KEY_TYPE_SALSA2012,   // SALSA2012 stream cipher
     };
     const size_t l_num_types = sizeof(l_key_types) / sizeof(l_key_types[0]);
 
@@ -293,7 +293,7 @@ int main(void) {
     bool l_all_passed = true;
 
     // Run all tests
-    l_all_passed &= s_test_chipmunk_encryption();
+    l_all_passed &= s_test_iaes_encryption();
     l_all_passed &= s_test_encryption_data_sizes();
     l_all_passed &= s_test_encryption_consistency();
     l_all_passed &= s_test_multiple_key_types();
