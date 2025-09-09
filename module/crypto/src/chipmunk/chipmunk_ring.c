@@ -236,8 +236,41 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
 
     DAP_FREE(l_combined_data);
 
-    // Copy hash to commitment value (take first 32 bytes)
-    memcpy(a_commitment->value, &l_commitment_hash, sizeof(a_commitment->value));
+    // Copy hash to commitment value and apply modulo operation
+    uint256_t l_hash_as_uint256 = uint256_0;
+    memcpy(&l_hash_as_uint256, &l_commitment_hash, sizeof(a_commitment->value));
+    
+    // Apply proper modulo operation using DIV_256 (which returns remainder)
+    uint256_t l_commitment_mod;
+    
+    if (s_debug_more) {
+        log_it(L_INFO, "Applying modulo operation with DIV_256");
+        log_it(L_INFO, "Initial value: %08x %08x %08x %08x", 
+               ((uint32_t*)&l_hash_as_uint256)[0], ((uint32_t*)&l_hash_as_uint256)[1],
+               ((uint32_t*)&l_hash_as_uint256)[2], ((uint32_t*)&l_hash_as_uint256)[3]);
+        log_it(L_INFO, "RING_MODULUS: %08x %08x %08x %08x", 
+               ((uint32_t*)&RING_MODULUS)[0], ((uint32_t*)&RING_MODULUS)[1],
+               ((uint32_t*)&RING_MODULUS)[2], ((uint32_t*)&RING_MODULUS)[3]);
+    }
+    
+    // Apply modulo only if value is actually larger than modulus
+    if (compare256(l_hash_as_uint256, RING_MODULUS) >= 0) {
+        // Use DIV_256 for proper modulo: DIV_256(dividend, divisor, remainder)
+        DIV_256(l_hash_as_uint256, RING_MODULUS, &l_commitment_mod);
+    } else {
+        // Value is already smaller than modulus, keep as-is
+        l_commitment_mod = l_hash_as_uint256;
+    }
+    
+    if (s_debug_more) {
+        log_it(L_INFO, "After modulo: %08x %08x %08x %08x", 
+               ((uint32_t*)&l_commitment_mod)[0], ((uint32_t*)&l_commitment_mod)[1],
+               ((uint32_t*)&l_commitment_mod)[2], ((uint32_t*)&l_commitment_mod)[3]);
+        log_it(L_INFO, "Final comparison: %d", compare256(l_commitment_mod, RING_MODULUS));
+    }
+    
+    // Copy the reduced value back
+    memcpy(a_commitment->value, &l_commitment_mod, sizeof(a_commitment->value));
 
     return 0;
 }
@@ -307,8 +340,23 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
         return -1;
     }
 
-    // Convert back to byte array
-    memcpy(a_response->value, &l_response, sizeof(a_response->value));
+    // Apply modulo operation to response value only if needed
+    uint256_t l_response_mod;
+    if (compare256(l_response, RING_MODULUS) >= 0) {
+        DIV_256(l_response, RING_MODULUS, &l_response_mod);
+    } else {
+        l_response_mod = l_response;
+    }
+    
+    if (s_debug_more) {
+        log_it(L_INFO, "Response modulo: %08x %08x %08x %08x -> %08x %08x %08x %08x", 
+               ((uint32_t*)&l_response)[0], ((uint32_t*)&l_response)[1],
+               ((uint32_t*)&l_response)[2], ((uint32_t*)&l_response)[3],
+               ((uint32_t*)&l_response_mod)[0], ((uint32_t*)&l_response_mod)[1],
+               ((uint32_t*)&l_response_mod)[2], ((uint32_t*)&l_response_mod)[3]);
+    }
+    
+    memcpy(a_response->value, &l_response_mod, sizeof(a_response->value));
 
     return 0;
 }
@@ -516,10 +564,14 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     // Ring signature verification uses zero-knowledge proof approach
     // No direct verification against individual keys to preserve anonymity
     debug_if(s_debug_more, L_INFO, "Starting ring signature zero-knowledge verification");
+    debug_if(s_debug_more, L_INFO, "Ring size: %u, signer_index: %u", a_ring->size, a_signature->signer_index);
 
     // Verify responses for all participants
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
+        debug_if(s_debug_more, L_INFO, "Verifying participant %u (signer=%u)", l_i, a_signature->signer_index);
+        
         if (l_i == a_signature->signer_index) {
+            debug_if(s_debug_more, L_INFO, "Processing real signer %u", l_i);
             // For real signer, verify the Schnorr-like equation
             // response = (randomness - challenge * private_key) mod modulus
             // Since we can't access private key, we verify via cryptographic reconstruction

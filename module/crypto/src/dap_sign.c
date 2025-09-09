@@ -1697,7 +1697,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
     log_it(L_INFO, "dap_sign_verify_ring: created ring container successfully");
 
     // Deserialize signature
-    chipmunk_ring_signature_t *l_signature = DAP_NEW_Z_SIZE(chipmunk_ring_signature_t, 1);
+    chipmunk_ring_signature_t *l_signature = DAP_NEW_Z(chipmunk_ring_signature_t);
     if (!l_signature) {
         log_it(L_CRITICAL, "Failed to allocate memory for signature deserialization");
         chipmunk_ring_container_free(&l_ring);
