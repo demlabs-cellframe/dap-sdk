@@ -44,7 +44,7 @@
 #define LOG_TAG "chipmunk"
 
 // Детальное логирование для Chipmunk модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Определение MIN для использования в функциях работы с массивами
 #ifndef MIN

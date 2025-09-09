@@ -43,7 +43,8 @@ static bool s_test_ring_size_limits(void) {
         );
         dap_assert(l_min_signature != NULL, "Min ring signature creation should succeed");
 
-        int l_verify_result = dap_sign_verify(l_min_signature, &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_min_signature, &l_message_hash, sizeof(l_message_hash),
+                                                  l_min_ring_keys, MIN_RING_SIZE);
         dap_assert(l_verify_result == 0, "Min ring signature verification should succeed");
 
         // Test different signer positions in min ring
@@ -55,7 +56,8 @@ static bool s_test_ring_size_limits(void) {
         );
         dap_assert(l_min_signature_pos1 != NULL, "Min ring signature creation (pos 1) should succeed");
 
-        l_verify_result = dap_sign_verify(l_min_signature_pos1, &l_message_hash, sizeof(l_message_hash));
+        l_verify_result = dap_sign_verify_ring(l_min_signature_pos1, &l_message_hash, sizeof(l_message_hash),
+                                              l_min_ring_keys, MIN_RING_SIZE);
         dap_assert(l_verify_result == 0, "Min ring signature verification (pos 1) should succeed");
 
         // Cleanup
@@ -84,7 +86,8 @@ static bool s_test_ring_size_limits(void) {
         );
         dap_assert(l_max_signature != NULL, "Max ring signature creation should succeed");
 
-        int l_verify_result = dap_sign_verify(l_max_signature, &l_message_hash, sizeof(l_message_hash));
+        int l_verify_result = dap_sign_verify_ring(l_max_signature, &l_message_hash, sizeof(l_message_hash),
+                                                  l_max_ring_keys, MAX_RING_SIZE);
         dap_assert(l_verify_result == 0, "Max ring signature verification should succeed");
 
         // Cleanup

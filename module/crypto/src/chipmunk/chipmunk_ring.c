@@ -39,7 +39,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 
 // Modulus for ring signature operations
