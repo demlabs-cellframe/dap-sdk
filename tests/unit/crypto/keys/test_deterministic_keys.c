@@ -145,7 +145,8 @@ static bool s_test_chipmunk_ring_deterministic_keys(void) {
     DAP_TEST_ASSERT_NOT_NULL(l_ring_sig, "Ring signature creation should succeed");
 
     // Verify ring signature
-    int l_verify_result = dap_sign_verify(l_ring_sig, &l_message_hash, sizeof(l_message_hash));
+    int l_verify_result = dap_sign_verify_ring(l_ring_sig, &l_message_hash, sizeof(l_message_hash),
+                                              l_ring_keys, l_ring_size);
     DAP_TEST_ASSERT(l_verify_result == 0, "Ring signature should verify");
 
     // Test with different seed

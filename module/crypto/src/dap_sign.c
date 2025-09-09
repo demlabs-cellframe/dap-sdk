@@ -1676,14 +1676,31 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
 
     log_it(L_INFO, "dap_sign_verify_ring: allocated public keys array");
 
-    // Copy public keys
+    // Copy public keys with enhanced safety checks
     for (size_t i = 0; i < a_ring_size; i++) {
-        if (!a_ring_keys[i] || !a_ring_keys[i]->pub_key_data) {
-            log_it(L_ERROR, "Invalid ring key at index %zu", i);
+        if (!a_ring_keys) {
+            log_it(L_ERROR, "Ring keys array is NULL");
             DAP_FREE(l_public_keys);
             return -EINVAL;
         }
-        memcpy(l_public_keys[i].data, a_ring_keys[i]->pub_key_data, sizeof(l_public_keys[i].data) );
+        if (!a_ring_keys[i]) {
+            log_it(L_ERROR, "Ring key at index %zu is NULL", i);
+            DAP_FREE(l_public_keys);
+            return -EINVAL;
+        }
+        if (!a_ring_keys[i]->pub_key_data) {
+            log_it(L_ERROR, "Ring key %zu has NULL pub_key_data", i);
+            DAP_FREE(l_public_keys);
+            return -EINVAL;
+        }
+        if (a_ring_keys[i]->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+            log_it(L_ERROR, "Ring key %zu has wrong size: expected %d, got %zu",
+                   i, CHIPMUNK_PUBLIC_KEY_SIZE, a_ring_keys[i]->pub_key_data_size);
+            DAP_FREE(l_public_keys);
+            return -EINVAL;
+        }
+        
+        memcpy(l_public_keys[i].data, a_ring_keys[i]->pub_key_data, sizeof(l_public_keys[i].data));
     }
 
     log_it(L_INFO, "dap_sign_verify_ring: copied %zu public keys", a_ring_size);
