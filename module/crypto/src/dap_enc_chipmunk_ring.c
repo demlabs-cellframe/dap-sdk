@@ -161,6 +161,11 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                               uint8_t *a_signature,
                               size_t a_signature_size)
 {
+    debug_if(s_debug_more, L_INFO, "=== dap_enc_chipmunk_ring_sign START ===");
+    debug_if(s_debug_more, L_INFO, "priv_key=%p, data=%p, data_size=%zu", a_priv_key, a_data, a_data_size);
+    debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu, signer_index=%zu", a_ring_pub_keys, a_ring_size, a_signer_index);
+    debug_if(s_debug_more, L_INFO, "signature=%p, signature_size=%zu", a_signature, a_signature_size);
+
     if (!a_priv_key || !a_data || !a_ring_pub_keys || !a_signature) {
         log_it(L_ERROR, "Invalid parameters for Chipmunk_Ring signature");
         return -EINVAL;
@@ -205,7 +210,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     memset(&l_ring, 0, sizeof(l_ring));
     l_ring.size = (uint32_t)a_ring_size;
 
-    size_t key_size = sizeof(chipmunk_ring_public_key_t);
+    size_t key_size = CHIPMUNK_PUBLIC_KEY_SIZE; // Use actual data size, not struct size
     size_t total_size = key_size * a_ring_size;
 
     // Check for potential issues
@@ -214,7 +219,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -EINVAL;
     }
     if (key_size == 0) {
-        debug_if(s_debug_more, L_ERROR, "Key size is 0 - struct definition problem");
+        debug_if(s_debug_more, L_ERROR, "Key size is 0 - invalid CHIPMUNK_PUBLIC_KEY_SIZE");
         return -EINVAL;
     }
     if (total_size / key_size != a_ring_size) {
@@ -226,7 +231,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     debug_if(s_debug_more, L_INFO, "About to allocate %zu public keys, key_size=%zu, total_size=%zu",
               a_ring_size, key_size, total_size);
 
-    l_ring.public_keys = (chipmunk_ring_public_key_t*)DAP_NEW_SIZE(chipmunk_ring_public_key_t, a_ring_size);
+    // Use calloc to allocate array of structs (safer than DAP_NEW_Z_SIZE for structs with padding)
+    l_ring.public_keys = (chipmunk_ring_public_key_t*)calloc(a_ring_size, sizeof(chipmunk_ring_public_key_t));
     debug_if(s_debug_more, L_INFO, "Allocation result: %p", l_ring.public_keys);
 
     if (!l_ring.public_keys) {
@@ -238,23 +244,49 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     for (size_t i = 0; i < a_ring_size; i++) {
         if (!a_ring_pub_keys[i]) {
             log_it(L_ERROR, "Null public key at index %zu", i);
-            DAP_DEL_MULTY(l_ring.public_keys);
+            free(l_ring.public_keys);
             return -EINVAL;
         }
+
         memcpy(l_ring.public_keys[i].data, a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
     }
 
+    debug_if(s_debug_more, L_INFO, "All keys copied successfully, preparing for ring hash generation");
+
     // Generate ring hash for verification consistency
     // Hash all public keys together to create unique ring identifier
-    uint8_t *l_combined_keys = DAP_NEW_Z_SIZE(uint8_t, a_ring_size * CHIPMUNK_PUBLIC_KEY_SIZE);
+    size_t l_combined_size = a_ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
+
+    // TEMPORARY: Try a smaller allocation first to test heap integrity
+    debug_if(s_debug_more, L_INFO, "Testing heap integrity with small allocation");
+    void *l_test_alloc = malloc(1024);
+    if (!l_test_alloc) {
+        log_it(L_ERROR, "Heap integrity test failed - cannot allocate 1024 bytes");
+        free(l_ring.public_keys);
+        return -ENOMEM;
+    }
+    free(l_test_alloc);
+    debug_if(s_debug_more, L_INFO, "Heap integrity test passed");
+
+    debug_if(s_debug_more, L_INFO, "About to allocate combined_keys: ring_size=%zu, key_size=%d, total=%zu",
+             a_ring_size, CHIPMUNK_PUBLIC_KEY_SIZE, l_combined_size);
+
+    uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_combined_size);
+    debug_if(s_debug_more, L_INFO, "Combined keys allocation result: %p", l_combined_keys);
     if (!l_combined_keys) {
-        log_it(L_ERROR, "Failed to allocate memory for combined keys");
-        DAP_DEL_MULTY(l_ring.public_keys);
+        log_it(L_ERROR, "Failed to allocate memory for combined keys: size=%zu", l_combined_size);
+        free(l_ring.public_keys);
         return -ENOMEM;
     }
 
     // Concatenate all public keys
     for (size_t i = 0; i < a_ring_size; i++) {
+        if (!a_ring_pub_keys[i]) {
+            log_it(L_ERROR, "Ring public key %zu is NULL", i);
+            DAP_DEL_MULTY(l_combined_keys);
+            free(l_ring.public_keys);
+            return -EINVAL;
+        }
         memcpy(l_combined_keys + i * CHIPMUNK_PUBLIC_KEY_SIZE,
                a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
     }
@@ -266,7 +298,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
 
     if (l_hash_result != 0) {
         log_it(L_ERROR, "Failed to hash ring public keys");
-        DAP_DEL_MULTY(l_ring.public_keys);
+        free(l_ring.public_keys);
         return -EFAULT;
     }
 
@@ -278,7 +310,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                                      &l_ring, (uint32_t)a_signer_index, &l_ring_sig);
 
     // Clean up ring container
-    DAP_DEL_MULTY(l_ring.public_keys);
+    free(l_ring.public_keys);
 
     if (l_result != 0) {
         log_it(L_ERROR, "Chipmunk_Ring signature creation failed: %d", l_result);
@@ -324,7 +356,14 @@ int dap_enc_chipmunk_ring_get_sign(struct dap_enc_key *a_key, const void *a_data
 
 int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_data,
                                      size_t a_data_size, void *a_sign, size_t a_sign_size) {
-    log_it(L_ERROR, "Chipmunk_Ring verification not implemented via this callback");
+    // For ring signatures, we need the ring public keys to be available in the signature data
+    // Since DAP SDK doesn't store ring information in the signature, ring verification
+    // is not supported through this callback mechanism.
+
+    // Ring signatures require the full ring context for verification, which is not
+    // available in the standard DAP signature verification flow.
+
+    log_it(L_ERROR, "Chipmunk_Ring verification requires ring context - not supported via standard callback");
     return -1;
 }
 

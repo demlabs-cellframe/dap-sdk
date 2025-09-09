@@ -21,7 +21,12 @@ static void test_minimal_key_generation() {
     assert(key != NULL);
     assert(key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
 
-    log_it(L_INFO, "Key generated successfully");
+    log_it(L_INFO, "Key generated successfully: pub_key_data=%p, priv_key_data=%p",
+           key->pub_key_data, key->priv_key_data);
+
+    // Verify that pointers are valid
+    assert(key->pub_key_data != NULL);
+    assert(key->priv_key_data != NULL);
 
     // Free the key
     dap_enc_key_delete(key);

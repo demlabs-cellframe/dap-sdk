@@ -131,6 +131,18 @@ DAP_STATIC_INLINE int dap_sign_verify_all(dap_sign_t *a_sign, const size_t a_sig
     return dap_sign_verify_size(a_sign, a_sign_size_max) ? -2 : dap_sign_verify(a_sign, a_data, a_data_size) ? -1 : 0;
 }
 
+/**
+ * @brief Verify ring signature with provided ring public keys
+ * @param a_sign Ring signature to verify
+ * @param a_data Data that was signed
+ * @param a_data_size Size of data
+ * @param a_ring_keys Array of public keys forming the ring
+ * @param a_ring_size Number of keys in the ring
+ * @return 0 if signature is valid, negative value otherwise
+ */
+int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
+                        dap_enc_key_t **a_ring_keys, size_t a_ring_size);
+
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)

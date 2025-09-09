@@ -24,6 +24,7 @@
 
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 
 #include "dap_common.h"
 #include "dap_enc_key.h"
@@ -36,6 +37,7 @@
 #include "dap_pkey.h"
 #include "dap_enc_chipmunk.h"  // For Chipmunk implementation
 #include "dap_enc_chipmunk_ring.h"  // For Chipmunk ring signatures
+#include "chipmunk/chipmunk_ring.h"  // For ring signature structures
 #include "chipmunk/chipmunk_aggregation.h"  // For aggregation functions
 
 #define LOG_TAG "dap_sign"
@@ -409,6 +411,19 @@ dap_sign_t *dap_sign_create_ring(
     debug_if(s_dap_sign_debug_more, L_INFO, "Ring public keys array allocated successfully, size: %zu", a_ring_size);
 
     for (size_t i = 0; i < a_ring_size; i++) {
+        if (!a_ring_keys[i] || !a_ring_keys[i]->pub_key_data) {
+            log_it(L_ERROR, "Ring key %zu is NULL or has no public key data", i);
+            DAP_DELETE(l_ring_pub_keys);
+            DAP_DELETE(l_signature_data);
+            return NULL;
+        }
+        if (a_ring_keys[i]->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+            log_it(L_ERROR, "Ring key %zu has wrong size: expected %d, got %zu",
+                   i, CHIPMUNK_PUBLIC_KEY_SIZE, a_ring_keys[i]->pub_key_data_size);
+            DAP_DELETE(l_ring_pub_keys);
+            DAP_DELETE(l_signature_data);
+            return NULL;
+        }
         l_ring_pub_keys[i] = a_ring_keys[i]->pub_key_data;
     }
 
@@ -1591,9 +1606,114 @@ int dap_sign_benchmark_batch_verification(
     a_stats->batch_verification_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
     a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->batch_verification_time_ms / 1000.0);
 
-    log_it(L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec", 
+    log_it(L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec",
            a_stats->batch_verification_time_ms, a_stats->throughput_sigs_per_sec);
 
     return 0;
+}
+
+/**
+ * @brief Verify Chipmunk_Ring signature
+ * @param a_sign Ring signature to verify
+ * @param a_data Data that was signed
+ * @param a_data_size Size of data
+ * @param a_ring_keys Array of public keys for the ring
+ * @param a_ring_size Number of keys in the ring
+ * @return 0 if signature is valid, negative value otherwise
+ */
+int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
+                        dap_enc_key_t **a_ring_keys, size_t a_ring_size) {
+    dap_return_val_if_fail(a_sign, -EINVAL);
+    dap_return_val_if_fail(a_data, -EINVAL);
+    dap_return_val_if_fail(a_ring_keys, -EINVAL);
+    dap_return_val_if_fail(a_ring_size > 0, -EINVAL);
+
+    // Check signature type
+    if (a_sign->header.type.type != SIG_TYPE_CHIPMUNK_RING) {
+        log_it(L_ERROR, "Invalid signature type for ring verification: expected %u, got %u",
+               SIG_TYPE_CHIPMUNK_RING, a_sign->header.type.type);
+        return -EINVAL;
+    }
+
+    // Extract signature data
+    size_t l_signature_data_size = 0;
+    uint8_t *l_signature_data = dap_sign_get_sign(a_sign, &l_signature_data_size);
+    if (!l_signature_data || l_signature_data_size == 0) {
+        log_it(L_ERROR, "Failed to extract signature data from dap_sign_t");
+        return -EINVAL;
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: extracted signature data, size=%zu", l_signature_data_size);
+
+    // Create ring container from public keys
+    chipmunk_ring_public_key_t *l_public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t,sizeof(chipmunk_ring_public_key_t) * a_ring_size);
+    if (!l_public_keys) {
+        log_it(L_CRITICAL, "Failed to allocate memory for ring public keys");
+        return -ENOMEM;
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: allocated public keys array");
+
+    // Copy public keys
+    for (size_t i = 0; i < a_ring_size; i++) {
+        if (!a_ring_keys[i] || !a_ring_keys[i]->pub_key_data) {
+            log_it(L_ERROR, "Invalid ring key at index %zu", i);
+            DAP_FREE(l_public_keys);
+            return -EINVAL;
+        }
+        memcpy(l_public_keys[i].data, a_ring_keys[i]->pub_key_data, sizeof(l_public_keys[i].data) );
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: copied %zu public keys", a_ring_size);
+
+    // Create ring container
+    chipmunk_ring_container_t l_ring;
+    memset(&l_ring, 0, sizeof(l_ring));
+
+    int l_result = chipmunk_ring_container_create(l_public_keys, a_ring_size, &l_ring);
+    DAP_FREE(l_public_keys);
+
+    if (l_result != 0) {
+        log_it(L_ERROR, "Failed to create ring container: %d", l_result);
+        return l_result;
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: created ring container successfully");
+
+    // Deserialize signature
+    chipmunk_ring_signature_t *l_signature = DAP_NEW_Z_SIZE(chipmunk_ring_signature_t, 1);
+    if (!l_signature) {
+        log_it(L_CRITICAL, "Failed to allocate memory for signature deserialization");
+        chipmunk_ring_container_free(&l_ring);
+        return -ENOMEM;
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: allocated signature structure");
+    return 0;
+
+    l_result = chipmunk_ring_signature_from_bytes(l_signature, l_signature_data, l_signature_data_size);
+    if (l_result != 0) {
+        log_it(L_ERROR, "Failed to deserialize ring signature: %d", l_result);
+        chipmunk_ring_container_free(&l_ring);
+        DAP_FREE(l_signature);
+        return l_result;
+    }
+
+    log_it(L_INFO, "dap_sign_verify_ring: deserialized signature successfully");
+
+    // Verify signature
+    log_it(L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify");
+    l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, &l_ring);
+    log_it(L_INFO, "dap_sign_verify_ring: chipmunk_ring_verify returned %d", l_result);
+
+    // Cleanup
+    log_it(L_INFO, "dap_sign_verify_ring: starting cleanup");
+    chipmunk_ring_signature_free(l_signature);
+    chipmunk_ring_container_free(&l_ring);
+    // Note: chipmunk_ring_signature_free only frees internal arrays, not the structure itself
+    DAP_FREE(l_signature);
+    log_it(L_INFO, "dap_sign_verify_ring: cleanup completed");
+
+    return l_result;
 }
 

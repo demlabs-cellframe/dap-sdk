@@ -109,6 +109,11 @@ int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed
     dap_return_val_if_fail(a_seed, -EINVAL);
     dap_return_val_if_fail(a_seed_size == 32, -EINVAL);
 
+    // Validate key size parameter (for future extensibility)
+    if (a_key_size > 0 && a_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_WARNING, "Key size %zu may not be compatible with Chipmunk algorithm", a_key_size);
+    }
+
     // Use deterministic Chipmunk key generation
     return chipmunk_keypair_from_seed(a_seed,
                                      a_key->pub_key_data, a_key->pub_key_data_size,
@@ -124,22 +129,33 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     dap_return_val_if_fail(a_ring, -EINVAL);
     dap_return_val_if_fail(a_num_keys > 0 && a_num_keys <= CHIPMUNK_RING_MAX_RING_SIZE, -EINVAL);
 
+    // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
+    const size_t l_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
+
+    // Prevent integer overflow: check if a_num_keys * CHIPMUNK_PUBLIC_KEY_SIZE would overflow
+    if (a_num_keys > (SIZE_MAX / l_key_data_size)) {
+        log_it(L_CRITICAL, "Integer overflow detected: num_keys %zu would overflow combined keys allocation", a_num_keys);
+        return -EOVERFLOW;
+    }
+
     a_ring->size = a_num_keys;
-    a_ring->public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t, a_num_keys);
+    a_ring->public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t, sizeof(chipmunk_ring_public_key_t)*a_num_keys);
     if (!a_ring->public_keys) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -ENOMEM;
     }
 
-    // Copy public keys
-    memcpy(a_ring->public_keys, a_public_keys, a_num_keys * sizeof(chipmunk_ring_public_key_t));
+    // Copy public keys data, not the whole struct (to avoid padding issues)
+    for (size_t i = 0; i < a_num_keys; i++) {
+        memcpy(a_ring->public_keys[i].data, a_public_keys[i].data, l_key_data_size);
+    }
 
     // Compute ring hash - hash of all public keys
     dap_hash_fast_t l_ring_hash;
     memset(&l_ring_hash, 0, sizeof(l_ring_hash));
 
-    // Create concatenated data of all public keys
-    size_t l_total_size = a_num_keys * CHIPMUNK_PUBLIC_KEY_SIZE;
+    // Create concatenated data of all public keys with overflow protection
+    size_t l_total_size = a_num_keys * l_key_data_size;
     uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_total_size);
     if (!l_combined_keys) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -187,6 +203,8 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring) {
  */
 int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
                                  const chipmunk_ring_public_key_t *a_public_key) {
+    debug_if(s_debug_more, L_INFO, "chipmunk_ring_commitment_create: a_commitment=%p, a_public_key=%p",
+             a_commitment, a_public_key);
     dap_return_val_if_fail(a_commitment, -EINVAL);
     dap_return_val_if_fail(a_public_key, -EINVAL);
 
@@ -313,7 +331,28 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     a_signature->ring_size = a_ring->size;
     a_signature->signer_index = a_signer_index;
 
-    // Allocate memory for commitments and responses
+    // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
+    // Check for potential overflow before allocating memory for commitments and responses
+    const size_t l_commitment_size = sizeof(chipmunk_ring_commitment_t);
+    const size_t l_response_size = sizeof(chipmunk_ring_response_t);
+
+    // Prevent integer overflow: check if a_ring->size * sizeof(struct) would overflow
+    if (a_ring->size > (SIZE_MAX / l_commitment_size)) {
+        log_it(L_CRITICAL, "Integer overflow detected: ring size %u would overflow commitment allocation", a_ring->size);
+        return -EOVERFLOW;
+    }
+    if (a_ring->size > (SIZE_MAX / l_response_size)) {
+        log_it(L_CRITICAL, "Integer overflow detected: ring size %u would overflow response allocation", a_ring->size);
+        return -EOVERFLOW;
+    }
+
+    // Additional validation: ensure ring size doesn't exceed maximum allowed
+    if (a_ring->size > CHIPMUNK_RING_MAX_RING_SIZE) {
+        log_it(L_ERROR, "Ring size %u exceeds maximum allowed size %u", a_ring->size, CHIPMUNK_RING_MAX_RING_SIZE);
+        return -EINVAL;
+    }
+
+    // Allocate memory for commitments and responses with overflow protection
     a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
     a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
 
@@ -336,7 +375,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     // Create combined data: message || ring_hash || commitments
     size_t l_message_size = a_message ? a_message_size : 0;
     size_t l_ring_hash_size = sizeof(a_ring->ring_hash);
-    size_t l_commitments_size = a_ring->size * sizeof(a_signature->commitments[0].value);
+    size_t l_commitments_size = a_ring->size * sizeof(chipmunk_ring_commitment_t);
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
 
     uint8_t *l_combined_data = DAP_NEW_SIZE(uint8_t, l_total_size);
@@ -360,9 +399,9 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
 
     // Add all commitments
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        memcpy(l_combined_data + l_offset, a_signature->commitments[l_i].value,
-               sizeof(a_signature->commitments[l_i].value));
-        l_offset += sizeof(a_signature->commitments[l_i].value);
+        memcpy(l_combined_data + l_offset, &a_signature->commitments[l_i],
+               sizeof(chipmunk_ring_commitment_t));
+        l_offset += sizeof(chipmunk_ring_commitment_t);
     }
 
     // Hash the combined data to get challenge
@@ -454,6 +493,12 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     dap_return_val_if_fail(a_ring, -EINVAL);
     dap_return_val_if_fail(a_signature->ring_size == a_ring->size, -EINVAL);
     dap_return_val_if_fail(a_signature->signer_index < a_ring->size, -EINVAL);
+
+    // Validate message size parameter
+    if (a_message_size == 0) {
+        log_it(L_ERROR, "Empty message provided for ring signature verification");
+        return -1;
+    }
 
     // Verify Chipmunk signature of the challenge
     int l_result = chipmunk_verify(a_ring->public_keys[a_signature->signer_index].data,
@@ -683,6 +728,21 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         return -EINVAL;
     }
 
+    // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
+    // Check for potential overflow before allocating memory for commitments and responses
+    const size_t l_commitment_size = sizeof(chipmunk_ring_commitment_t);
+    const size_t l_response_size = sizeof(chipmunk_ring_response_t);
+
+    // Prevent integer overflow: check if a_sig->ring_size * sizeof(struct) would overflow
+    if (a_sig->ring_size > (SIZE_MAX / l_commitment_size)) {
+        log_it(L_CRITICAL, "Integer overflow detected in deserialization: ring size %u would overflow commitment allocation", a_sig->ring_size);
+        return -EOVERFLOW;
+    }
+    if (a_sig->ring_size > (SIZE_MAX / l_response_size)) {
+        log_it(L_CRITICAL, "Integer overflow detected in deserialization: ring size %u would overflow response allocation", a_sig->ring_size);
+        return -EOVERFLOW;
+    }
+
     // Deserialize signer_index
     if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
     memcpy(&a_sig->signer_index, a_input + l_offset, sizeof(uint32_t));
@@ -698,7 +758,7 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     memcpy(a_sig->challenge, a_input + l_offset, 32);
     l_offset += 32;
 
-    // Allocate memory for commitments and responses
+    // Allocate memory for commitments and responses with overflow protection
     a_sig->commitments = DAP_NEW_SIZE(chipmunk_ring_commitment_t, a_sig->ring_size);
     a_sig->responses = DAP_NEW_SIZE(chipmunk_ring_response_t, a_sig->ring_size);
 

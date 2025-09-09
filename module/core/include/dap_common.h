@@ -46,6 +46,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#include <malloc.h>
 #ifdef __USE_GNU
 # undef __USE_GNU
 # define NEED_GNU_REENABLE
