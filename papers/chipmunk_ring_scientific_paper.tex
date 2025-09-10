@@ -47,23 +47,23 @@ In this paper, we introduce ChipmunkRing, a post-quantum ring signature scheme t
 
 \subsection{Classical Ring Signatures}
 
-Ring signatures were first introduced by Rivest, Shamir, and Tauman \cite{rst01} as a method to provide unconditional anonymity for digital signatures. The original RST construction, while elegant, relies on the hardness of integer factorization and discrete logarithm problems, making it vulnerable to quantum attacks.
+Ring signatures were introduced by Rivest, Shamir, and Tauman \cite{rst01} to provide unconditional anonymity for digital signatures. The original RST construction relies on the computational hardness of integer factorization and discrete logarithm problems, which are vulnerable to quantum attacks via Shor's algorithm.
 
-Linkable Spontaneous Anonymous Group (LSAG) signatures \cite{lsag04} extended ring signatures with linkability properties, enabling detection of double-spending while preserving anonymity. These schemes form the cryptographic foundation for privacy coins like Monero, but remain vulnerable to quantum adversaries.
+Linkable Spontaneous Anonymous Group (LSAG) signatures \cite{lsag04} extend ring signatures with linkability properties to enable double-spending detection while preserving anonymity. LSAG schemes provide the cryptographic foundation for privacy-preserving cryptocurrencies but remain vulnerable to quantum attacks.
 
 \subsection{Post-Quantum Ring Signatures}
 
-The transition to post-quantum cryptography has motivated several attempts at quantum-resistant ring signature constructions:
+The development of post-quantum cryptography has led to several quantum-resistant ring signature constructions:
 
-\textbf{Lattice-based approaches} have explored adaptations of schemes like NTRU and Ring-LWE to ring signature settings \cite{lattice-rings}. However, these constructions typically result in signature sizes exceeding 100KB, making them impractical for blockchain applications.
+\textbf{Lattice-based approaches} adapt schemes based on NTRU and Ring-LWE assumptions to ring signature settings \cite{lattice-rings}. These constructions typically produce signature sizes exceeding 100KB, which limits their applicability to blockchain environments.
 
-\textbf{Hash-based ring signatures} leverage the quantum resistance of cryptographic hash functions but suffer from large key sizes and limited signing capabilities \cite{hash-rings}.
+\textbf{Hash-based ring signatures} utilize the quantum resistance of cryptographic hash functions but require large key sizes and impose restrictions on the number of signatures per key \cite{hash-rings}.
 
-\textbf{Code-based ring signatures} provide strong security guarantees but exhibit even larger signature sizes than lattice-based approaches \cite{code-rings}.
+\textbf{Code-based ring signatures} rely on error-correcting codes for security but generate signature sizes larger than lattice-based approaches \cite{code-rings}.
 
 \subsection{Blockchain Privacy Requirements}
 
-Modern blockchain systems require privacy mechanisms that satisfy several constraints:
+Blockchain deployment of ring signatures requires satisfaction of several technical constraints:
 \begin{itemize}
 \item \textbf{Compactness}: Signature sizes must be reasonable for network transmission and storage
 \item \textbf{Performance}: Signing and verification must complete within consensus time bounds
@@ -71,7 +71,7 @@ Modern blockchain systems require privacy mechanisms that satisfy several constr
 \item \textbf{Security}: 112-bit post-quantum security is the minimum acceptable level
 \end{itemize}
 
-No existing post-quantum ring signature scheme satisfies all these requirements simultaneously.
+Existing post-quantum ring signature schemes do not simultaneously satisfy all these requirements, creating a gap between theoretical constructions and practical deployment needs.
 
 \section{ChipmunkRing Construction}
 
@@ -139,19 +139,24 @@ Key generation remains identical to the base Chipmunk scheme:
 \begin{algorithm}
 \caption{ChipmunkRing Signature Generation}
 \begin{algorithmic}[1]
-\REQUIRE Signer's private key $SK_\pi$, message $M$, ring public keys $\{PK_1, \ldots, PK_k\}$
-\STATE Choose signer index $\pi \in [1,k]$
-\FOR{$i = 1$ to $k$, $i \neq \pi$}
-    \STATE Choose random $r_i$
-    \STATE Compute commitment $c_i = H(PK_i \| r_i)$
+\REQUIRE Signer's private key $SK_\pi$, message $M$, ring container $\mathcal{R} = \{PK_1, \ldots, PK_k\}$
+\STATE Initialize signature structure with $\text{ring\_size} = k$, $\text{signer\_index} = \pi$
+\STATE Allocate memory for commitments and responses arrays
+\FOR{$i = 1$ to $k$}
+    \STATE Generate commitment $c_i$ using $\text{chipmunk\_ring\_commitment\_create}(PK_i)$
 \ENDFOR
-\STATE Compute challenge $c = H(M \| \{PK_1 \ldots PK_k\} \| \{c_1 \ldots c_k\})$
-\FOR{$i = 1$ to $k$, $i \neq \pi$}
-    \STATE Compute response $r_i = c_i \oplus H(SK_i \| c)$
+\STATE Compute ring hash $h_{\mathcal{R}} = H(\{PK_1, \ldots, PK_k\})$
+\STATE Compute challenge $c = H(M \| h_{\mathcal{R}} \| \{c_1, \ldots, c_k\})$
+\FOR{$i = 1$ to $k$}
+    \IF{$i = \pi$}
+        \STATE Compute Schnorr response $r_i = \text{randomness}_i - c \cdot SK_\pi \pmod{q}$
+    \ELSE
+        \STATE Set $r_i = \text{randomness}_i$ (from commitment)
+    \ENDIF
 \ENDFOR
-\STATE Create Chipmunk signature $\sigma_\pi$ on $(M, c)$ using $SK_\pi$
-\STATE Set linkability tag $I = H(PK_\pi)$ (optional)
-\RETURN $\sigma = (I, c, \{r_1, \ldots, r_k\}, \sigma_\pi)$
+\STATE Create Chipmunk signature $\sigma_{\text{chip}}$ on challenge $c$ using $SK_\pi$
+\STATE Compute linkability tag $I = H(PK_\pi \| M \| c)$ (optional)
+\RETURN $\sigma = (\text{ring\_size}, \pi, I, c, \{c_1, \ldots, c_k\}, \{r_1, \ldots, r_k\}, \sigma_{\text{chip}})$
 \end{algorithmic}
 \end{algorithm}
 
@@ -159,11 +164,19 @@ Key generation remains identical to the base Chipmunk scheme:
 \begin{algorithm}
 \caption{ChipmunkRing Signature Verification}
 \begin{algorithmic}[1]
-\REQUIRE Signature $\sigma = (I, c, \{r_1, \ldots, r_k\}, \sigma_\pi)$, message $M$, ring $\{PK_1, \ldots, PK_k\}$
-\STATE Parse signature components
-\STATE Verify Chipmunk signature $\sigma_\pi$ on $(M, c)$ against ring (anonymously)
-\STATE Recompute challenge $c' = H(M \| \{PK_1 \ldots PK_k\} \| \{c_1 \ldots c_k\})$
-\IF{$c' = c$ and Chipmunk verification succeeds}
+\REQUIRE Signature $\sigma$, message $M$, ring keys $\{PK_1, \ldots, PK_k\}$
+\STATE Parse $\sigma = (\text{ring\_size}, \pi, I, c, \{c_1, \ldots, c_k\}, \{r_1, \ldots, r_k\}, \sigma_{\text{chip}})$
+\STATE Validate $\text{ring\_size} = k$ and $\pi < k$
+\STATE Create ring container and compute ring hash $h_{\mathcal{R}} = H(\{PK_1, \ldots, PK_k\})$
+\STATE Recompute challenge $c' = H(M \| h_{\mathcal{R}} \| \{c_1, \ldots, c_k\})$
+\IF{$c' \neq c$}
+    \RETURN Reject (challenge verification failed)
+\ENDIF
+\FOR{$i = 1$ to $k$}
+    \STATE Verify response consistency for participant $i$
+\ENDFOR
+\STATE Verify Chipmunk signature $\sigma_{\text{chip}}$ on challenge $c$ (anonymously within ring)
+\IF{All verifications succeed}
     \RETURN Accept
 \ELSE
     \RETURN Reject
