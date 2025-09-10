@@ -321,14 +321,15 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
 
     if (l_result != 0) {
         log_it(L_ERROR, "Chipmunk_Ring signature creation failed: %d", l_result);
-        chipmunk_ring_signature_free(&l_ring_sig);
+        // Only call signature_free if chipmunk_ring_sign allocated something
+        // chipmunk_ring_sign handles its own cleanup on error, so we don't need to call free here
         return l_result;
     }
 
     // Serialize signature to output buffer
     l_result = chipmunk_ring_signature_to_bytes(&l_ring_sig, a_signature, a_signature_size);
 
-    // Clean up signature
+    // Clean up signature (must be done after serialization)
     chipmunk_ring_signature_free(&l_ring_sig);
 
     if (l_result != 0) {

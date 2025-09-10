@@ -75,7 +75,7 @@
     "context": {
       "context_loading_policy": {
         "auto_load": [
-                      ".context/modules/core/manifest.json",
+            ".context/modules/core/manifest.json",
             ".context/modules/core/standards.json",
             ".context/modules/core/development_standards.json",
             ".context/modules/core/project.json",
@@ -727,6 +727,48 @@
             "Полная документация"
           ],
           "status": "PLANNED"
+        },
+        {
+          "phase": 10,
+          "title": "Отладка test_unit_crypto_chipmunk_ring_parameter_comparison",
+          "description": "Исправление ошибок в тесте test_unit_crypto_chipmunk_ring_parameter_comparison с заменой фиксированных размеров буферов на динамическую аллокацию",
+          "estimated_time": "1 неделя",
+          "subphases": [
+            {
+              "title": "Анализ проблемы malloc invalid size",
+              "tasks": [
+                "Воспроизвести ошибку 'malloc(): invalid size (unsorted)'",
+                "Найти все места с фиксированными размерами буферов в тесте",
+                "Проанализировать причины некорректных размеров аллокации"
+              ],
+              "estimated_time": "2 дня"
+            },
+            {
+              "title": "Замена фиксированных буферов на динамическую аллокацию",
+              "tasks": [
+                "Заменить статические массивы на динамическую аллокацию",
+                "Обновить функции создания и освобождения структур",
+                "Добавить проверки корректности размеров буферов"
+              ],
+              "estimated_time": "3 дня"
+            },
+            {
+              "title": "Тестирование и валидация исправлений",
+              "tasks": [
+                "Запустить тест с valgrind для проверки на утечки",
+                "Убедиться в 100% прохождении теста",
+                "Проверить производительность исправлений"
+              ],
+              "estimated_time": "2 дня"
+            }
+          ],
+          "deliverables": [
+            "Исправленный тест без ошибок malloc",
+            "Динамическая аллокация всех буферов",
+            "Отсутствие утечек памяти",
+            "Документация изменений"
+          ],
+          "status": "ACTIVE"
         }
       ],
       "milestones": [

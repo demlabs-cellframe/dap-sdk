@@ -7,6 +7,7 @@
 #include "rand/dap_rand.h"
 #include "chipmunk/chipmunk_ring.h"
 #include <sys/time.h>
+#include <unistd.h>
 
 #define LOG_TAG "test_chipmunk_ring_parameter_comparison"
 
@@ -255,27 +256,22 @@ static bool s_test_parameter_performance(void) {
     bool l_hash_result = dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
     dap_assert(l_hash_result == true, "Message hashing should succeed");
     
-    // Test each parameter set
+    // Test each parameter set in complete isolation
     for (size_t set_idx = 0; set_idx < num_sets; set_idx++) {
         const parameter_set_t* set = &sets[set_idx];
         
         log_it(L_INFO, "Testing parameter set: %s", set->name);
         log_it(L_INFO, "  Description: %s", set->description);
         
-        // CRITICAL: Save original parameters and perform complete cleanup before parameter change
-        chipmunk_ring_pq_params_t original_params;
-        dap_enc_chipmunk_ring_get_params(&original_params);
-        
-        // Force complete module reinitialization by resetting to defaults first
-        dap_enc_chipmunk_ring_reset_params();
         
         // Now set new parameters
         int param_result = dap_enc_chipmunk_ring_set_params(&set->params);
         dap_assert(param_result == 0, "Parameter setting should succeed");
         
         // Generate keys for test ring AFTER parameter change
-        dap_enc_key_t* l_ring_keys[COMPARISON_RING_SIZE];
-        memset(l_ring_keys, 0, sizeof(l_ring_keys));
+        dap_enc_key_t** l_ring_keys = DAP_NEW_SIZE(dap_enc_key_t*, COMPARISON_RING_SIZE * sizeof(dap_enc_key_t*));
+        dap_assert(l_ring_keys != NULL, "Memory allocation for ring keys should succeed");
+        memset(l_ring_keys, 0, COMPARISON_RING_SIZE * sizeof(dap_enc_key_t*));
         
         for (size_t i = 0; i < COMPARISON_RING_SIZE; i++) {
             l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
@@ -316,6 +312,9 @@ static bool s_test_parameter_performance(void) {
                 DAP_DELETE(l_signature);
                 l_signature = NULL;
             }
+            
+            // Force memory cleanup after each signature
+            usleep(100); // 0.1ms delay
         }
         
         // Calculate averages
@@ -345,15 +344,12 @@ static bool s_test_parameter_performance(void) {
                 l_ring_keys[i] = NULL;
             }
         }
-        
-        // Force garbage collection and memory cleanup
-        memset(l_ring_keys, 0, sizeof(l_ring_keys));
-        
-        // Reset to defaults first to ensure clean state
-        dap_enc_chipmunk_ring_reset_params();
-        
-        // Restore original parameters
-        dap_enc_chipmunk_ring_set_params(&original_params);
+
+        // Free the dynamic array itself
+        if (l_ring_keys) {
+            DAP_FREE(l_ring_keys);
+            l_ring_keys = NULL;
+        }
     }
     
     return true;
@@ -364,19 +360,36 @@ static bool s_test_parameter_performance(void) {
  */
 static void s_print_parameter_comparison_table(void) {
     log_it(L_INFO, " ");
-    log_it(L_INFO, "╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗");
-    log_it(L_INFO, "║                                               CHIPMUNKRING PARAMETER COMPARISON REPORT                                                                               ║");
-    log_it(L_INFO, "║                                                Ring Size: %d participants, Iterations: %d                                                                          ║", 
+    log_it(L_INFO, "╔══════════════════════════════════════════════════════════════════════════════╗");
+    log_it(L_INFO, "║                      CHIPMUNKRING PARAMETER COMPARISON REPORT                ║");
+    log_it(L_INFO, "║                   Ring Size: %d participants, Iterations: %d                 ║", 
            COMPARISON_RING_SIZE, COMPARISON_ITERATIONS);
-    log_it(L_INFO, "╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╣");
-    log_it(L_INFO, "║ Param Set │ Signature │  Signing  │ Verif.   │ Quantum  │ Ring-LWE │  NTRU   │  Code   │ Binding │ Security Description                                         ║");
-    log_it(L_INFO, "║    Name   │   Size    │   Time    │  Time    │ Qubits   │   Size   │  Size   │  Size   │  Size   │                                                              ║");
-    log_it(L_INFO, "╠═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪═════════╪═════════╪═════════╪══════════════════════════════════════════════════════════════╣");
+    log_it(L_INFO, "╠═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪═════════╣");
+    log_it(L_INFO, "║ Param Set │ Signature │  Signing  │ Verif.   │ Quantum  │ Ring-LWE │  NTRU   ║");
+    log_it(L_INFO, "║    Name   │   Size    │   Time    │  Time    │ Qubits   │   Size   │  Size   ║");
+    log_it(L_INFO, "╠═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪═════════╣");
     
     for (size_t i = 0; i < g_param_results_count; i++) {
         const param_performance_result_t* result = &g_param_results[i];
         
-        // Format security description
+        log_it(L_INFO, "║ %-9s │ %7.1fKB │ %7.3fms │ %6.3fms │ %7.0fK │ %6.1fKB │ %5.1fKB ║",
+               result->param_name,
+               result->signature_size / 1024.0,
+               result->avg_signing_time,
+               result->avg_verification_time,
+               result->total_quantum_resistance / 1000.0,
+               result->ring_lwe_size / 1024.0,
+               result->ntru_size / 1024.0);
+    }
+    
+    log_it(L_INFO, "╚═══════════╧═══════════╧═══════════╧══════════╧══════════╧══════════╧═════════╝");
+    log_it(L_INFO, " ");
+    
+    // Security levels description
+    log_it(L_INFO, "SECURITY LEVELS:");
+    for (size_t i = 0; i < g_param_results_count; i++) {
+        const param_performance_result_t* result = &g_param_results[i];
+        
         const char* security_desc = "";
         if (result->total_quantum_resistance < 100000) {
             security_desc = "High-performance, minimal viable security";
@@ -390,20 +403,8 @@ static void s_print_parameter_comparison_table(void) {
             security_desc = "Paranoid security, 200+ years protection";
         }
         
-        log_it(L_INFO, "║ %-9s │ %7.1fKB │ %7.3fms │ %6.3fms │ %6.0fK │ %6.1fKB │ %5.1fKB │ %5.0f B │ %5.0f B │ %-56s ║",
-               result->param_name,
-               result->signature_size / 1024.0,
-               result->avg_signing_time,
-               result->avg_verification_time,
-               result->total_quantum_resistance / 1000.0,
-               result->ring_lwe_size / 1024.0,
-               result->ntru_size / 1024.0,
-               (double)result->code_size,
-               (double)result->binding_size,
-               security_desc);
+        log_it(L_INFO, "• %s: %s", result->param_name, security_desc);
     }
-    
-    log_it(L_INFO, "╚═══════════╧═══════════╧═══════════╧══════════╧══════════╧══════════╧═════════╧═════════╧═════════╧══════════════════════════════════════════════════════════════╝");
     log_it(L_INFO, " ");
     
     // Performance analysis

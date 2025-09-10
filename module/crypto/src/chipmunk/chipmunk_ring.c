@@ -86,7 +86,7 @@ static size_t get_private_key_size(void) {
 }
 
 static size_t get_signature_size(void) {
-    return CHIPMUNK_RING_SIGNATURE_SIZE(s_pq_params.chipmunk_n, s_pq_params.chipmunk_gamma);
+    return CHIPMUNK_N * 4 * CHIPMUNK_GAMMA; // Use actual CHIPMUNK constants, not parameters
 }
 
 /**
@@ -699,8 +699,17 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
     a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
     
-    // Allocate dynamic chipmunk signature
-    a_signature->chipmunk_signature_size = get_signature_size();
+    // Initialize all response structures (they have dynamic fields)
+    if (a_signature->responses) {
+        for (uint32_t i = 0; i < a_ring->size; i++) {
+            a_signature->responses[i].value = NULL;
+            a_signature->responses[i].value_size = 0;
+        }
+    }
+    
+    // Allocate dynamic chipmunk signature (use actual CHIPMUNK constants, not parameters!)
+    // CRITICAL: chipmunk_sign() uses hardcoded CHIPMUNK_N=256, CHIPMUNK_GAMMA=6
+    a_signature->chipmunk_signature_size = CHIPMUNK_N * 4 * CHIPMUNK_GAMMA; // 256*4*6 = 6144 bytes
     a_signature->chipmunk_signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->chipmunk_signature_size);
 
     if (!a_signature->commitments || !a_signature->responses || !a_signature->chipmunk_signature) {
