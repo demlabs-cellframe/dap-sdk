@@ -398,6 +398,61 @@
               "Статья готова к отправке в peer-reviewed журнал"
             ],
             "status": "PLANNED"
+          },
+          {
+            "phase": 6,
+            "title": "Детальный анализ квантовой устойчивости анонимности",
+            "description": "Критическое исследование квантовой устойчивости анонимности ring signatures с формальными оценками сложности квантовых атак",
+            "estimated_time": "2 недели",
+            "subphases": [
+              {
+                "title": "Анализ различий unforgeability vs anonymity под квантовыми атаками",
+                "tasks": [
+                  "Исследовать различные квантовые сложности для unforgeability и anonymity",
+                  "Проанализировать применимость алгоритма Гровера к breaking anonymity",
+                  "Оценить квантовые ресурсы для атак на commitment schemes",
+                  "Изучить vulnerability анонимности к quantum period finding"
+                ],
+                "estimated_time": "3 дня"
+              },
+              {
+                "title": "Формальные оценки квантовых ресурсов",
+                "tasks": [
+                  "Рассчитать точное количество логических кубитов для различных атак",
+                  "Оценить количество физических кубитов с учетом error correction",
+                  "Проанализировать временную сложность квантовых атак",
+                  "Сравнить с возможностями современных квантовых компьютеров"
+                ],
+                "estimated_time": "4 дня"
+              },
+              {
+                "title": "Анализ практических квантовых угроз",
+                "tasks": [
+                  "Оценить timeline развития квантовых компьютеров",
+                  "Проанализировать feasibility атак с текущими технологиями",
+                  "Рассчитать quantum advantage для различных размеров колец",
+                  "Определить минимальные размеры колец для quantum resistance"
+                ],
+                "estimated_time": "3 дня"
+              },
+              {
+                "title": "Стратегии mitigation и future work",
+                "tasks": [
+                  "Разработать рекомендации по размерам колец для quantum resistance",
+                  "Предложить hybrid approaches для усиления анонимности", 
+                  "Исследовать post-quantum anonymity amplification techniques",
+                  "Определить направления future research"
+                ],
+                "estimated_time": "4 дня"
+              }
+            ],
+            "deliverables": [
+              "Детальный раздел 'Quantum Resistance Analysis'",
+              "Формальные оценки квантовой сложности для anonymity и unforgeability",
+              "Практические рекомендации по quantum-resistant deployment",
+              "Roadmap для future quantum resistance improvements"
+            ],
+            "status": "ACTIVE"
           }
         ]
       },

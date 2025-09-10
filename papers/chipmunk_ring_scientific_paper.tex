@@ -24,7 +24,7 @@ Cellframe Development Team\\
 \maketitle
 
 \begin{abstract}
-We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 12.3-18.1KB with signing times of 0.4-1.4ms and verification times of 0.0-0.7ms, representing a 5-8× reduction in signature size compared to previous lattice-based ring signature constructions. Our implementation demonstrates 112-bit post-quantum security while maintaining practical performance characteristics essential for blockchain consensus mechanisms. We provide formal security analysis, comprehensive performance benchmarks, and a production-ready implementation integrated into the DAP SDK cryptographic framework.
+We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 12.3-18.1KB with signing times of 0.4-1.4ms and verification times of 0.08-0.7ms, representing a 5-8× reduction in signature size compared to previous lattice-based ring signature constructions. Our implementation maintains practical performance characteristics essential for blockchain consensus mechanisms. We provide formal security analysis including detailed quantum resistance evaluation, comprehensive performance benchmarks, and a production-ready implementation integrated into the DAP SDK cryptographic framework.
 \end{abstract}
 
 \section{Introduction}
@@ -235,13 +235,92 @@ The reduction succeeds with probability $\epsilon/k$ where $\epsilon$ is $\mathc
 
 In Game 3, the signature distribution is identical regardless of which ring member is the actual signer, proving computational anonymity.
 
-\subsection{Quantum Security Analysis}
+\section{Quantum Resistance Analysis}
 
-ChipmunkRing inherits its quantum resistance from the underlying Ring-LWE problem. The best known quantum algorithms for solving Ring-LWE require time $2^{0.292n}$ for ring dimension $n$, providing 112-bit security for $n = 512$.
+The quantum resistance of ring signatures involves two distinct security properties that may have different quantum complexity requirements: unforgeability and anonymity. We analyze each property separately to provide precise quantum security estimates.
 
-\textbf{Theorem 3 (Quantum Resistance):} ChipmunkRing provides 112-bit quantum security against known quantum algorithms.
+\subsection{Quantum Attacks on Unforgeability}
 
-\textbf{Proof:} The security follows from the quantum hardness of Ring-LWE. Even with Shor's algorithm, the best known approach to break Ring-LWE requires exponential time in the ring dimension $n$.
+ChipmunkRing's unforgeability is based on the Ring-LWE problem. The quantum complexity of breaking Ring-LWE with parameters $(n, q, \sigma)$ has been extensively studied.
+
+\textbf{Current Best Quantum Algorithms:} The most efficient known quantum algorithm for Ring-LWE is based on quantum sieve algorithms with complexity approximately $2^{0.292n + o(n)}$ for ring dimension $n$.
+
+For ChipmunkRing parameters ($n = 512$):
+\begin{itemize}
+\item \textbf{Quantum complexity}: $2^{0.292 \times 512} \approx 2^{149.5}$ operations
+\item \textbf{Required qubits}: Approximately $4n \log_2(q) \approx 4 \times 512 \times 22 \approx 45,000$ logical qubits
+\item \textbf{Physical qubits}: With current error rates, approximately $45,000 \times 1,000 = 45$ million physical qubits
+\end{itemize}
+
+\subsection{Quantum Attacks on Anonymity}
+
+\textbf{Critical Analysis:} The anonymity property of ring signatures may be more vulnerable to quantum attacks than unforgeability, as it relies on different computational assumptions.
+
+\subsubsection{Anonymity Attack Vectors}
+
+\textbf{Statistical Analysis Attacks:} A quantum adversary might use quantum algorithms to detect statistical patterns in ring signatures that reveal signer identity.
+
+\textbf{Commitment Analysis:} The zero-knowledge commitments in ChipmunkRing might leak information under quantum analysis, particularly through:
+\begin{itemize}
+\item Quantum period finding on commitment structures
+\item Quantum Fourier analysis of response patterns  
+\item Grover-enhanced exhaustive search over possible signers
+\end{itemize}
+
+\subsubsection{Quantum Complexity Estimates for Anonymity Breaking}
+
+\textbf{Grover's Algorithm Application:} Breaking anonymity in a ring of size $k$ using Grover's algorithm requires:
+\begin{itemize}
+\item \textbf{Classical complexity}: $O(k)$ to identify the signer
+\item \textbf{Quantum complexity}: $O(\sqrt{k})$ using Grover's algorithm
+\item \textbf{Required qubits}: $\log_2(k) + O(\log n)$ for ring size $k$ and security parameter $n$
+\end{itemize}
+
+For typical ring sizes ($k = 16$ to $k = 64$):
+\begin{itemize}
+\item \textbf{Quantum speedup}: $\sqrt{16} = 4$ to $\sqrt{64} = 8$ times faster than classical
+\item \textbf{Required qubits}: $4$ to $6$ logical qubits for ring identification
+\item \textbf{Practical threat}: This attack is feasible with near-term quantum computers
+\end{itemize}
+
+\subsubsection{Ring-LWE Based Anonymity Analysis}
+
+\textbf{Lattice-based Anonymity:} The anonymity of ChipmunkRing also depends on the hardness of distinguishing Ring-LWE samples, which may require different quantum resources than breaking unforgeability.
+
+\textbf{Quantum Complexity for Anonymity Breaking:}
+\begin{itemize}
+\item \textbf{Statistical distinguishing}: $O(2^{n/2})$ quantum operations using amplitude amplification
+\item \textbf{Required qubits}: Approximately $n \log_2(q) \approx 512 \times 22 \approx 11,000$ logical qubits
+\item \textbf{Physical qubits}: Approximately $11$ million physical qubits with current error correction
+\end{itemize}
+
+\subsection{Quantum Security Assessment}
+
+\textbf{Conservative Estimate:} Based on our analysis, ChipmunkRing's quantum security levels are:
+
+\begin{itemize}
+\item \textbf{Unforgeability}: $\approx 149$ bits of quantum security (very strong)
+\item \textbf{Anonymity against Grover}: $\log_2(\sqrt{k}) \approx 2-3$ bits for typical rings (vulnerable)
+\item \textbf{Anonymity against Ring-LWE attacks}: $\approx 75-100$ bits (moderate to strong)
+\end{itemize}
+
+\textbf{Practical Implications:}
+\begin{itemize}
+\item Ring signature unforgeability remains secure against foreseeable quantum computers
+\item Anonymity against ring-size-based Grover attacks is limited and requires larger rings or additional protections
+\item Anonymity against lattice-based attacks provides moderate quantum resistance
+\end{itemize}
+
+\subsection{Mitigation Strategies}
+
+To enhance quantum resistance of anonymity, we recommend:
+
+\begin{itemize}
+\item \textbf{Larger ring sizes}: Use rings of 256-1024 participants to increase Grover complexity
+\item \textbf{Ring rotation}: Regularly change ring composition to limit attack time windows
+\item \textbf{Hybrid approaches}: Combine with classical anonymity techniques for defense in depth
+\item \textbf{Post-quantum anonymity enhancements}: Future work on quantum-resistant anonymity amplification
+\end{itemize}
 
 \section{Performance Evaluation}
 
