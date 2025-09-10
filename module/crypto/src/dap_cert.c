@@ -28,7 +28,7 @@
 #include <unistd.h>
 #include <ctype.h>
 
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_common.h"
 #include "dap_config.h"

@@ -22,7 +22,7 @@
 #define _ENC_KS_H_
 #include <time.h>
 #include <pthread.h>
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "stdbool.h"

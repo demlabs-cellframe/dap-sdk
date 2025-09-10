@@ -28,7 +28,7 @@
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_config.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include "dap_json.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply, int a_version);

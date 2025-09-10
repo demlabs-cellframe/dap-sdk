@@ -5,7 +5,7 @@
 #include "dap_json.h"
 
 #include "dap_plugin_manifest.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include <string.h>
 
 #define LOG_TAG "dap_plugin_manifest"
