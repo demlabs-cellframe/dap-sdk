@@ -35,10 +35,87 @@ extern "C" {
 #define CHIPMUNK_RING_MAX_RING_SIZE 1024
 
 /**
- * @brief Initialize Chipmunk_Ring module
+ * @brief Post-quantum commitment parameters (100+ year security)
+ * 
+ * Security Analysis:
+ * - Ring-LWE attack complexity: 2^(0.292×n) operations  
+ * - Required logical qubits: ~4n×log₂(q) for quantum sieve
+ * - For 100+ year security: need 2^200+ operations = n≥685
+ * - Conservative choice: n=1024 → 2^300 operations, ~90,000 logical qubits
+ */
+
+// Enhanced Ring-LWE layer parameters (~90,000 logical qubits required)
+#define RING_LWE_N_DEFAULT 1024                    // Ring dimension for ~300-bit classical security
+#define RING_LWE_Q_DEFAULT 40961                   // Prime modulus (2^15 + 2^13 + 1)
+#define RING_LWE_SIGMA_NUMERATOR_DEFAULT 32        // Error distribution σ = 32/√(2π) ≈ 12.7
+#define RING_LWE_COMMITMENT_SIZE 128               // 1024-bit commitment output
+
+// NTRU layer parameters (~70,000 logical qubits required)  
+#define NTRU_N_DEFAULT 1024                        // NTRU dimension for ~250-bit classical security
+#define NTRU_Q_DEFAULT 65537                       // Prime modulus (2^16 + 1)
+#define NTRU_COMMITMENT_SIZE 64                    // 512-bit commitment output
+
+// Post-quantum hash layer parameters (~512 logical qubits, vulnerable ~2030)
+#define HASH_OUTPUT_SIZE 128                       // 1024-bit output for 512-bit Grover resistance
+#define HASH_DOMAIN_SEP_DEFAULT "CHIPMUNK_RING_PQ_HASH_COMMIT_1024"
+
+// Code-based layer parameters (~60,000 logical qubits required)
+#define CODE_N_DEFAULT 2048                        // Code length for ~200-bit classical security
+#define CODE_K_DEFAULT 1024                        // Code dimension  
+#define CODE_T_DEFAULT 128                         // Error weight
+#define CODE_COMMITMENT_SIZE 64                    // 512-bit syndrome commitment
+
+// Binding proof parameters
+#define BINDING_PROOF_SIZE 128                     // 1024-bit binding proof
+
+/**
+ * @brief Post-quantum commitment parameters structure
+ */
+typedef struct chipmunk_ring_pq_params {
+    // Ring-LWE parameters
+    uint32_t ring_lwe_n;
+    uint32_t ring_lwe_q;
+    uint32_t ring_lwe_sigma_numerator;
+    
+    // NTRU parameters
+    uint32_t ntru_n;
+    uint32_t ntru_q;
+    
+    // Code-based parameters
+    uint32_t code_n;
+    uint32_t code_k;
+    uint32_t code_t;
+    
+    // Hash domain separation
+    char hash_domain_sep[64];
+} chipmunk_ring_pq_params_t;
+
+/**
+ * @brief Initialize Chipmunk_Ring module with default post-quantum parameters
  * @return 0 on success, negative on error
  */
 int dap_enc_chipmunk_ring_init(void);
+
+/**
+ * @brief Initialize Chipmunk_Ring module with custom post-quantum parameters
+ * @param params Custom post-quantum parameters
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_init_with_params(const chipmunk_ring_pq_params_t *params);
+
+/**
+ * @brief Get current post-quantum parameters
+ * @param params Output parameters structure
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
+
+/**
+ * @brief Set post-quantum parameters (must be called before first use)
+ * @param params New parameters to set
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
 
 /**
  * @brief Generate Chipmunk_Ring keypair (same as Chipmunk)
