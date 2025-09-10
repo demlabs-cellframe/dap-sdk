@@ -532,7 +532,7 @@ static int s_db_mdbx_shrink(void)
     snprintf(l_backup_path, sizeof(l_backup_path), "%s/%s.backup", l_parent_dir, l_base_name);
 
     dap_rm_rf(l_compact_path);
-    rc = mdbx_env_copy(s_mdbx_env, l_compact_path, MDBX_CP_COMPACT);
+    rc = mdbx_env_copy(s_mdbx_env, l_compact_path, MDBX_CP_COMPACT | MDBX_CP_FORCE_DYNAMIC_SIZE);
     if (rc != MDBX_SUCCESS)
         return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_ERROR, "mdbx_env_copy to '%s' failed: (%d) %s", l_compact_path, rc, mdbx_strerror(rc)), -2;
 
