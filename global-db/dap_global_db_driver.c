@@ -171,6 +171,19 @@ int dap_global_db_driver_flush(void)
     return 0;
 }
 
+/**
+ * @brief Shrinks/compacts database storage.
+ * @return Returns 0, if successful; otherwise <0.
+ */
+int dap_global_db_driver_shrink(void)
+{
+    if (s_drv_callback.shrink)
+        return s_drv_callback.shrink();
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have shrink callback", s_used_driver);
+    return 0;
+}
+
 static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
 {
     *a_store_obj_dst = *a_store_obj_src;

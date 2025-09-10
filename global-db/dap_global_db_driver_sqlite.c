@@ -30,6 +30,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <pthread.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <sys/stat.h>
 
 #ifdef DAP_OS_UNIX
 #include <unistd.h>
@@ -1028,6 +1029,20 @@ clean_and_ret:
 }
 
 /**
+ * @brief Gets a physical size of a SQLite database.
+ * @return Returns a size of database file.
+ */
+static size_t s_db_sqlite_physical_size()
+{
+    struct stat st;
+    if (stat(s_filename_db, &st) == 0) {
+        return st.st_size;
+    }
+    log_it(L_WARNING, "Can't stat database file '%s': %s", s_filename_db, strerror(errno));
+    return 0;
+}
+
+/**
  * @brief Flushes a SQLite database cahce to disk
  * @note The function closes and opens the database connection
  * @return result code.
@@ -1053,6 +1068,19 @@ static int s_db_sqlite_flush()
     s_db_sqlite_free_connection(l_conn, false);
     s_db_sqlite_free_connection(l_conn, true);
     return 0;
+}
+
+/**
+ * @brief Shrinks SQLite database (VACUUM)
+ * @return result code.
+ */
+static int s_db_sqlite_shrink()
+{
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
+    dap_return_val_if_pass(!l_conn, -1);
+    int l_ret = s_db_sqlite_exec(l_conn->conn, "VACUUM", NULL, NULL, 0, NULL);
+    s_db_sqlite_free_connection(l_conn, false);
+    return l_ret == SQLITE_OK ? 0 : -1;
 }
 
 /**
@@ -1156,11 +1184,12 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     a_drv_callback->is_obj                       = s_db_sqlite_is_obj;
     a_drv_callback->deinit                       = s_db_sqlite_deinit;
     a_drv_callback->flush                        = s_db_sqlite_flush;
+    a_drv_callback->shrink                       = s_db_sqlite_shrink;
     a_drv_callback->get_by_hash                  = s_db_sqlite_get_by_hash;
     a_drv_callback->read_hashes                  = s_db_sqlite_read_hashes;
     a_drv_callback->is_hash                      = s_db_sqlite_is_hash;
     a_drv_callback->read_size_store              = s_db_sqlite_read_size_store;
-    a_drv_callback->read_physical_size                = NULL;
+    a_drv_callback->read_physical_size           = s_db_sqlite_physical_size;
     s_db_inited = true;
 
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);

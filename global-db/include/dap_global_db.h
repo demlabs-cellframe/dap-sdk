@@ -168,6 +168,8 @@ int dap_global_db_unpin_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync_ex(const char *a_group, const char *a_key, const char * a_value, size_t a_value_size);
 int dap_global_db_flush_sync();
+int dap_global_db_shrink_sync();
+size_t dap_global_db_read_physical_size(void);
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);

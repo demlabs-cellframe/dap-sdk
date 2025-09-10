@@ -91,6 +91,7 @@ static char s_db_path[MAX_PATH];                                            /* A
 /* Forward declarations of action routines */
 static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
+static int              s_db_mdbx_shrink(void);
 static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group, bool a_with_holes);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
@@ -450,6 +451,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->is_hash                     = s_db_mdbx_is_hash;
     a_drv_dpt->deinit                      = s_db_mdbx_deinit;
     a_drv_dpt->flush                       = s_db_mdbx_flush;
+    a_drv_dpt->shrink                      = s_db_mdbx_shrink;
     a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
     a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
     a_drv_dpt->read_size_store             = s_db_mdbx_read_size_store;
@@ -511,6 +513,102 @@ dap_db_ctx_t *l_db_ctx = NULL;
 static  int s_db_mdbx_flush(void)
 {
     return  log_it(L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
+}
+
+static int s_db_mdbx_shrink(void)
+{
+    int rc = 0;
+    char l_compact_path[MAX_PATH];
+    char l_backup_path[MAX_PATH];
+    char l_db_path_no_slash[MAX_PATH];
+    size_t l_len = dap_strlen(s_db_path);
+    dap_strncpy(l_db_path_no_slash, s_db_path, sizeof(l_db_path_no_slash));
+    while (l_len && l_db_path_no_slash[l_len - 1] == '/')
+        l_db_path_no_slash[--l_len] = '\0';
+
+    char *l_parent_dir = dap_path_get_dirname(l_db_path_no_slash);
+    char *l_base_name = dap_path_get_basename(l_db_path_no_slash);
+    snprintf(l_compact_path, sizeof(l_compact_path), "%s/%s.compact", l_parent_dir, l_base_name);
+    snprintf(l_backup_path, sizeof(l_backup_path), "%s/%s.backup", l_parent_dir, l_base_name);
+
+    dap_rm_rf(l_compact_path);
+    rc = mdbx_env_copy(s_mdbx_env, l_compact_path, MDBX_CP_COMPACT);
+    if (rc != MDBX_SUCCESS)
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_ERROR, "mdbx_env_copy to '%s' failed: (%d) %s", l_compact_path, rc, mdbx_strerror(rc)), -2;
+
+    s_db_mdbx_deinit();
+
+    dap_rm_rf(l_backup_path);
+    if (rename(l_db_path_no_slash, l_backup_path)) {
+        int l_err = errno;
+        log_it(L_ERROR, "Can't rename '%s' to '%s': %d (%s)", l_db_path_no_slash, l_backup_path, l_err, dap_strerror(l_err));
+        // try to re-open original environment to continue working
+        // best-effort fallback
+    }
+    if (rename(l_compact_path, l_db_path_no_slash)) {
+        int l_err = errno;
+        // rollback
+        rename(l_backup_path, l_db_path_no_slash);
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_ERROR, "Can't rename '%s' to '%s': %d (%s)", l_compact_path, l_db_path_no_slash, l_err, dap_strerror(l_err)), -3;
+    }
+    // cleanup backup silently
+    dap_rm_rf(l_backup_path);
+
+    // Re-open environment (minimal re-init)
+    size_t l_upper_limit_of_db_size = 0x100000 * dap_config_get_item_uint32_default(g_config, "global_db", "mdbx_upper_limit_of_db_size", 1024);
+    if ( MDBX_SUCCESS != (rc = mdbx_env_create(&s_mdbx_env)) )
+        return log_it(L_CRITICAL, "mdbx_env_create: (%d) %s", rc, mdbx_strerror(rc)), -ENOENT;
+
+    if ( MDBX_SUCCESS != (rc = mdbx_env_set_maxdbs(s_mdbx_env, DAP_GLOBAL_DB_GROUPS_COUNT_MAX)) )
+        return log_it(L_CRITICAL, "mdbx_env_set_maxdbs: (%d) %s", rc, mdbx_strerror(rc)), -EINVAL;
+
+    if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
+        return log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
+
+    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, l_db_path_no_slash, MDBX_CREATE | MDBX_SAFE_NOSYNC, 0664)) )
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", l_db_path_no_slash, rc, mdbx_strerror(rc)),  -EINVAL;
+
+    MDBX_txn *l_txn;
+    if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, s_db_master_tbl, MDBX_CREATE, &s_db_master_dbi)) ) {
+        mdbx_txn_abort(l_txn);
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+    if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) )
+        return DAP_DEL_MULTY(l_parent_dir, l_base_name), log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+
+    // Load groups from MASTER and rebuild DB contexts list
+    MDBX_cursor *l_cursor = NULL;
+    MDBX_val l_key_iov = {}, l_data_iov = {};
+    dap_list_t *l_slist = NULL, *l_el, *l_tmp;
+    char *l_cp = NULL;
+    if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+        log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
+    else if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, s_db_master_dbi, &l_cursor)) )
+        log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
+    else {
+        for ( ; !(rc = mdbx_cursor_get(l_cursor, &l_key_iov, &l_data_iov, MDBX_NEXT)); ) {
+            l_cp = dap_strdup(l_data_iov.iov_base);
+            l_data_iov.iov_len = strlen(l_cp);
+            l_slist = dap_list_append(l_slist, l_cp);
+        }
+        mdbx_cursor_close(l_cursor);
+    }
+    if (l_txn)
+        mdbx_txn_commit(l_txn);
+
+    DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
+        l_data_iov.iov_base = l_el->data;
+        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
+        DL_DELETE(l_slist, l_el);
+        DAP_DELETE(l_el->data);
+        DAP_DELETE(l_el);
+    }
+
+    log_it(L_INFO, "MDBX shrink completed successfully for '%s'", s_db_path);
+    DAP_DEL_MULTY(l_parent_dir, l_base_name);
+    return 0;
 }
 
 /*
@@ -616,13 +714,32 @@ DAP_STATIC_INLINE bool s_is_hole(struct driver_record *a_record)
 
 static size_t s_db_mdbx_physical_size()
 {
-    MDBX_envinfo l_info;
-    int rc = mdbx_env_info_ex(s_mdbx_env, NULL, &l_info, sizeof(l_info));
-    if (rc != MDBX_SUCCESS) {
-        log_it(L_ERROR, "mdbx_env_info_ex: (%d) %s", rc, mdbx_strerror(rc));
+    size_t total_size = 0;
+    DIR *dir = opendir(s_db_path);
+    if (!dir) {
+        log_it(L_ERROR, "Can't open database directory '%s': %s", s_db_path, strerror(errno));
         return 0;
     }
-    return (size_t) l_info.mi_mapsize;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char filepath[MAX_PATH];
+        snprintf(filepath, sizeof(filepath), "%s/%s", s_db_path, entry->d_name);
+
+        struct stat st;
+        if (stat(filepath, &st) == 0) {
+            total_size += st.st_size;
+        } else {
+            log_it(L_WARNING, "Can't stat file '%s': %s", filepath, strerror(errno));
+        }
+    }
+
+    closedir(dir);
+    return total_size;
 }
 
 static size_t s_db_mdbx_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)

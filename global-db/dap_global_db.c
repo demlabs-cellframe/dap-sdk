@@ -1503,6 +1503,15 @@ int dap_global_db_flush_sync()
 }
 
 /**
+ * @brief dap_global_db_shrink_sync
+ * @return
+ */
+int dap_global_db_shrink_sync()
+{
+    return dap_global_db_driver_shrink();
+}
+
+/**
  * @brief dap_global_db_flush
  * @param a_callback
  * @param a_arg
@@ -2145,5 +2154,14 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
                a_obj->group, dap_strlen(a_obj->group), a_obj->key, dap_strlen(a_obj->key), l_ts);
     }
     return ret;
+}
+
+/**
+ * @brief dap_global_db_read_physical_size
+ * @return
+ */
+size_t dap_global_db_read_physical_size()
+{
+    return dap_global_db_driver_physical_size();
 }
 

@@ -846,6 +846,44 @@ clean_and_ret:
     return l_ret ? *l_ret : false;
 }
 
+static size_t s_db_pgsql_physical_size()
+{
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!(l_conn = s_db_pgsql_get_connection(false)), 0);
+
+    const char *l_db_name = PQdb(l_conn->conn);
+    if (!l_db_name) {
+        log_it(L_ERROR, "Could not get database name from connection");
+        s_db_pgsql_free_connection(l_conn, false);
+        return 0;
+    }
+
+    char *l_query_str = dap_strdup_printf("SELECT pg_database_size('%s');", l_db_name);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error forming pg_database_size query string");
+        s_db_pgsql_free_connection(l_conn, false);
+        return 0;
+    }
+
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
+    DAP_DELETE(l_query_str);
+
+    size_t l_ret_size = 0;
+    if (l_query_res && PQntuples(l_query_res) > 0) {
+        char *l_size_str = PQgetvalue(l_query_res, 0, 0);
+        if (l_size_str) {
+            l_ret_size = (size_t)strtoull(l_size_str, NULL, 10);
+        }
+    }
+
+    if (l_query_res) {
+        PQclear(l_query_res);
+    }
+    s_db_pgsql_free_connection(l_conn, false);
+
+    return l_ret_size;
+}
+
 static size_t s_db_pgsql_read_size_store(const char *a_group, const char *a_key, bool a_with_holes)
 {
     conn_list_item_t *l_conn = NULL;
@@ -921,6 +959,19 @@ static int s_db_pgsql_flush()
 }
 
 /**
+ * @brief Shrinks PGSQL database (VACUUM)
+ * @return pass - 0, error - other.
+ */
+static int s_db_pgsql_shrink()
+{
+    conn_list_item_t *l_conn = s_db_pgsql_get_connection(false);
+    dap_return_val_if_pass(!l_conn, -1);
+    int l_ret = s_db_pgsql_exec_command(l_conn->conn, "VACUUM", NULL, NULL, 0, NULL, "vacuum");
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
+
+/**
  * @brief Starts a outstanding transaction in database.
  * @return pass - 0, error - other.
  */
@@ -992,11 +1043,12 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
     a_drv_callback->deinit                  = s_db_pqsql_deinit;
     a_drv_callback->flush                   = s_db_pgsql_flush;
+    a_drv_callback->shrink                  = s_db_pgsql_shrink;
     a_drv_callback->get_by_hash             = s_db_pgsql_get_by_hash;
     a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
     a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
     a_drv_callback->read_size_store         = s_db_pgsql_read_size_store;
-    a_drv_callback->physical_size           = NULL;
+    a_drv_callback->read_physical_size      = s_db_pgsql_physical_size;
     s_db_inited = true;
 
     return 0;

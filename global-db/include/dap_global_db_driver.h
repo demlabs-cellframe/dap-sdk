@@ -169,6 +169,7 @@ typedef struct dap_global_db_driver_callbacks {
 
     dap_global_db_driver_callback_t            deinit;
     dap_global_db_driver_callback_t            flush;
+    dap_global_db_driver_callback_t            shrink;
     dap_global_db_driver_read_size_callback_t  read_size_store;
     dap_global_db_driver_physical_size_callback_t read_physical_size;
 } dap_global_db_driver_callbacks_t;
@@ -182,6 +183,7 @@ dap_store_obj_t *dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_stor
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
 int     dap_global_db_driver_flush(void);
+int     dap_global_db_driver_shrink(void);
 
 int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);
