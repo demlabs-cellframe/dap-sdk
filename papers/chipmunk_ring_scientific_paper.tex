@@ -24,19 +24,19 @@ Cellframe Development Team\\
 \maketitle
 
 \begin{abstract}
-We present ChipmunkRing, the first sufficiently compact and performant post-quantum ring signature scheme suitable for practical blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 12.3-18.1KB with sub-millisecond signing and verification times, representing a 5-8× improvement in compactness over previous lattice-based ring signature constructions. Our implementation demonstrates 112-bit post-quantum security while maintaining practical performance characteristics essential for blockchain consensus mechanisms. We provide formal security analysis, comprehensive performance benchmarks, and a production-ready implementation integrated into the DAP SDK cryptographic framework.
+We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 12.3-18.1KB with signing times of 0.4-1.4ms and verification times of 0.0-0.7ms, representing a 5-8× reduction in signature size compared to previous lattice-based ring signature constructions. Our implementation demonstrates 112-bit post-quantum security while maintaining practical performance characteristics essential for blockchain consensus mechanisms. We provide formal security analysis, comprehensive performance benchmarks, and a production-ready implementation integrated into the DAP SDK cryptographic framework.
 \end{abstract}
 
 \section{Introduction}
 
 The advent of quantum computing poses a significant threat to the cryptographic foundations of modern blockchain systems. While post-quantum signature schemes like Dilithium and Falcon provide quantum-resistant authentication, they lack the anonymity properties essential for privacy-preserving blockchain applications. Ring signatures, which allow a member of a group to sign messages anonymously, represent a crucial primitive for anonymous transactions and privacy-preserving consensus mechanisms.
 
-However, existing post-quantum ring signature schemes suffer from prohibitive signature sizes (often exceeding 100KB) and computational overhead that make them impractical for blockchain deployment. The challenge lies in achieving the delicate balance between post-quantum security, anonymity guarantees, and the performance constraints imposed by blockchain environments.
+However, existing post-quantum ring signature schemes exhibit large signature sizes (typically exceeding 100KB) and computational overhead that limit their applicability to blockchain deployment. The challenge is achieving the required balance between post-quantum security, anonymity guarantees, and the performance constraints imposed by blockchain environments.
 
-In this paper, we introduce ChipmunkRing, a novel post-quantum ring signature scheme that addresses these limitations. Our contributions include:
+In this paper, we introduce ChipmunkRing, a post-quantum ring signature scheme that addresses these limitations. Our contributions include:
 
 \begin{itemize}
-\item The first practical post-quantum ring signature scheme with signatures under 20KB
+\item A post-quantum ring signature scheme with signatures of 12.3-18.1KB
 \item Sub-millisecond signing and verification performance suitable for blockchain consensus
 \item Formal security analysis proving 112-bit post-quantum security
 \item Production-ready implementation with comprehensive test coverage
@@ -81,10 +81,10 @@ ChipmunkRing builds upon the Chipmunk lattice-based signature scheme \cite{chipm
 
 \subsubsection{Preliminaries}
 
-\textbf{Definition 1 (Ring-LWE Problem):} Let $R = \mathbb{Z}[X]/(X^n + 1)$ be the ring of integers modulo the $n$-th cyclotomic polynomial, and $R_q = R/qR$. The Ring-LWE problem asks to distinguish between samples $(a_i, b_i)$ where either:
+\textbf{Definition 1 (Ring-LWE Problem):} Let $R = \mathbb{Z}[X]/(X^n + 1)$ be the ring of integers modulo the $n$-th cyclotomic polynomial, and $R_q = R/qR$ for prime $q$. The Ring-LWE problem with parameters $(n, q, \chi)$ asks to distinguish between samples $(a_i, b_i)$ where either:
 \begin{itemize}
-\item $(a_i, b_i)$ are uniformly random in $R_q \times R_q$, or
-\item $b_i = a_i \cdot s + e_i$ for fixed secret $s \in R_q$ and error terms $e_i$ sampled from a Gaussian distribution
+\item $(a_i, b_i)$ are uniformly random in $R_q \times R_q$, or  
+\item $b_i = a_i \cdot s + e_i$ for fixed secret $s \in R_q$ and error terms $e_i$ sampled from error distribution $\chi$ (typically discrete Gaussian with parameter $\sigma$)
 \end{itemize}
 
 \textbf{Definition 2 (Chipmunk HOTS):} The Chipmunk Homomorphic One-Time Signature operates over polynomial rings $R_q = \mathbb{Z}_q[X]/(X^n + 1)$ with parameters:
@@ -101,7 +101,9 @@ A Chipmunk key pair consists of:
 \end{itemize}
 
 The signature on message $M$ is computed as:
-$$\sigma = s_0 \cdot H(M) + s_1$$
+\begin{equation}
+\sigma = s_0 \cdot H(M) + s_1
+\end{equation}
 where $H: \{0,1\}^* \rightarrow R_q$ is a hash-to-polynomial function.
 
 \textbf{Definition 3 (Ring Signature):} A ring signature scheme $\mathcal{RS} = (\text{KeyGen}, \text{Sign}, \text{Verify})$ satisfies:
@@ -277,14 +279,14 @@ LSAG (classical) \cite{lsag04} & Discrete log & $1$KB & $<10$ms & None \\
 \end{tabular}
 \end{table}
 
-ChipmunkRing demonstrates significant advantages over existing post-quantum ring signature schemes:
+ChipmunkRing exhibits the following measured improvements over existing post-quantum ring signature schemes:
 
 \begin{itemize}
-\item \textbf{Compactness}: 5-8× smaller signatures than previous lattice-based constructions
-\item \textbf{Performance}: 100-1000× faster than existing post-quantum implementations
-\item \textbf{Scalability}: Linear signature size growth with ring size (vs quadratic in some schemes)
-\item \textbf{Practicality}: First post-quantum ring signature with sub-millisecond performance
-\item \textbf{Blockchain Ready}: Signature sizes and timing suitable for real-world blockchain deployment
+\item \textbf{Signature Size}: 5-8× reduction compared to previous lattice-based constructions (12.3-18.1KB vs >100KB)
+\item \textbf{Signing Performance}: 0.4-1.4ms signing time vs >500ms in existing post-quantum implementations  
+\item \textbf{Verification Performance}: 0.0-0.7ms verification time vs >200ms in existing schemes
+\item \textbf{Size Scaling}: Linear growth O(k) with ring size k vs O(k²) in some constructions
+\item \textbf{Blockchain Compatibility}: Signature sizes under 20KB and verification times under 1ms meet typical blockchain requirements
 \end{itemize}
 
 \subsection{Blockchain Suitability Analysis}
@@ -322,9 +324,9 @@ ChipmunkRing is fully integrated into the DAP SDK cryptographic framework, provi
 
 \section{Conclusion}
 
-ChipmunkRing represents a significant advancement in post-quantum ring signatures, achieving the first practical implementation suitable for blockchain deployment. With signature sizes under 20KB and sub-millisecond performance, ChipmunkRing enables privacy-preserving blockchain applications without sacrificing the security guarantees required for the post-quantum era.
+ChipmunkRing provides a post-quantum ring signature scheme with measured signature sizes of 12.3-18.1KB and performance characteristics of 0.4-1.4ms signing and 0.0-0.7ms verification. These metrics enable deployment in blockchain applications while maintaining 112-bit post-quantum security based on the Ring-LWE assumption.
 
-The successful integration into the DAP SDK and comprehensive test validation demonstrate the production readiness of our approach. Future work will explore optimizations for larger ring sizes and integration with specific blockchain consensus mechanisms.
+The integration into the DAP SDK framework and validation through comprehensive testing (26/26 tests passing) demonstrate the implementation's correctness and stability. Future work will focus on optimizations for larger ring sizes (>64 participants) and integration with specific blockchain consensus mechanisms.
 
 \section{Acknowledgments}
 
