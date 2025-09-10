@@ -84,7 +84,8 @@ typedef struct chipmunk_ring_commitment {
  * @brief Response for ZKP
  */
 typedef struct chipmunk_ring_response {
-    uint8_t value[32];                      ///< Response value
+    uint8_t *value;                         ///< Response value (dynamic size)
+    size_t value_size;                      ///< Size of response value
 } chipmunk_ring_response_t;
 
 /**
@@ -97,7 +98,8 @@ typedef struct chipmunk_ring_signature {
     uint8_t challenge[32];                             ///< Fiat-Shamir challenge
     chipmunk_ring_commitment_t *commitments;            ///< Commitments for each participant
     chipmunk_ring_response_t *responses;                ///< Responses for each participant
-    uint8_t chipmunk_signature[CHIPMUNK_SIGNATURE_SIZE]; ///< Real Chipmunk signature
+    uint8_t *chipmunk_signature;                       ///< Real Chipmunk signature (dynamic size)
+    size_t chipmunk_signature_size;                    ///< Size of Chipmunk signature
 } chipmunk_ring_signature_t;
 
 /**

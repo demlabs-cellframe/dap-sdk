@@ -563,7 +563,13 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
 
     // For dummy participants (no private key), use commitment randomness
     if (!a_private_key) {
-        memcpy(a_response->value, a_commitment->randomness, sizeof(a_response->value));
+        // Allocate response value with same size as randomness
+        a_response->value_size = a_commitment->randomness_size;
+        a_response->value = DAP_NEW_Z_SIZE(uint8_t, a_response->value_size);
+        if (!a_response->value) {
+            return -ENOMEM;
+        }
+        memcpy(a_response->value, a_commitment->randomness, a_response->value_size);
         return 0;
     }
 
@@ -586,8 +592,8 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
     memcpy(&l_private_key, a_private_key->data, l_key_size);
 
     // Convert commitment randomness to uint256_t
-    size_t l_randomness_size = (sizeof(a_commitment->randomness) < sizeof(uint256_t)) ?
-                              sizeof(a_commitment->randomness) : sizeof(uint256_t);
+    size_t l_randomness_size = (a_commitment->randomness_size < sizeof(uint256_t)) ?
+                              a_commitment->randomness_size : sizeof(uint256_t);
     memcpy(&l_randomness, a_commitment->randomness, l_randomness_size);
 
     // Step 1: Compute challenge * private_key mod modulus
@@ -634,9 +640,17 @@ int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
         DIV_256(l_response, RING_MODULUS, &l_response);
     }
 
-    // Convert back to byte array
-    // Note: Temporarily removing modulo operation to test cryptographic integrity  
-    memcpy(a_response->value, &l_response, sizeof(a_response->value));
+    // Allocate response value with randomness size
+    a_response->value_size = a_commitment->randomness_size;
+    a_response->value = DAP_NEW_Z_SIZE(uint8_t, a_response->value_size);
+    if (!a_response->value) {
+        return -ENOMEM;
+    }
+    
+    // Convert back to byte array (use minimum size to prevent overflow)
+    size_t copy_size = (a_response->value_size < sizeof(uint256_t)) ? 
+                      a_response->value_size : sizeof(uint256_t);
+    memcpy(a_response->value, &l_response, copy_size);
 
     return 0;
 }
@@ -681,11 +695,15 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         return -EINVAL;
     }
 
-    // Allocate memory for commitments and responses with overflow protection
+    // Allocate memory for commitments, responses, and chipmunk signature
     a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
     a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
+    
+    // Allocate dynamic chipmunk signature
+    a_signature->chipmunk_signature_size = get_signature_size();
+    a_signature->chipmunk_signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->chipmunk_signature_size);
 
-    if (!a_signature->commitments || !a_signature->responses) {
+    if (!a_signature->commitments || !a_signature->responses || !a_signature->chipmunk_signature) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         chipmunk_ring_signature_free(a_signature);
         return -ENOMEM;
@@ -801,7 +819,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                                 a_signature->chipmunk_signature);
     
     if (s_debug_more && l_result == CHIPMUNK_ERROR_SUCCESS) {
-        dump_it(a_signature->chipmunk_signature, "chipmunk_ring_sign CREATED SIGNATURE", CHIPMUNK_SIGNATURE_SIZE);
+        dump_it(a_signature->chipmunk_signature, "chipmunk_ring_sign CREATED SIGNATURE", a_signature->chipmunk_signature_size);
     }
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to create Chipmunk signature");
@@ -997,8 +1015,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             memcpy(&l_challenge, a_signature->challenge, l_challenge_size);
 
             // Convert response to uint256_t
-            size_t l_response_size = (sizeof(a_signature->responses[l_i].value) < sizeof(uint256_t)) ?
-                                    sizeof(a_signature->responses[l_i].value) : sizeof(uint256_t);
+            size_t l_response_size = (a_signature->responses[l_i].value_size < sizeof(uint256_t)) ?
+                                    a_signature->responses[l_i].value_size : sizeof(uint256_t);
             memcpy(&l_response, a_signature->responses[l_i].value, l_response_size);
 
             // For quantum-resistant verification, we use the code layer as commitment value
@@ -1047,9 +1065,11 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // Since we can't access private_key, we verify through the ring structure integrity
         } else {
             // For non-signers, check that response equals commitment randomness
+            size_t compare_size = (a_signature->responses[l_i].value_size < a_signature->commitments[l_i].randomness_size) ?
+                                 a_signature->responses[l_i].value_size : a_signature->commitments[l_i].randomness_size;
             if (memcmp(a_signature->responses[l_i].value,
                       a_signature->commitments[l_i].randomness,
-                      s_pq_params.randomness_size) != 0) {
+                      compare_size) != 0) {
                 log_it(L_ERROR, "Response verification failed for participant %u", l_i);
                 return -1;
             }
@@ -1068,20 +1088,22 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     }
 
     size_t sig_size = get_signature_size();
-    size_t commitment_size_per_participant = sizeof(size_t) + s_pq_params.randomness_size + // randomness size + data
-                                           4 * sizeof(size_t) + // 4 layer sizes (Hash removed)
+    size_t commitment_size_per_participant = sizeof(uint32_t) + s_pq_params.randomness_size + // randomness size + data
+                                           4 * sizeof(uint32_t) + // 4 layer sizes (Hash removed, using uint32_t)
                                            s_ring_lwe_commitment_size +
                                            s_ntru_commitment_size +
                                            s_code_commitment_size +
                                            s_binding_proof_size;
 
-    return sizeof(uint32_t) + // ring_size
+    return sizeof(uint32_t) + // format_version
+           3 * sizeof(uint32_t) + // chipmunk_n, chipmunk_gamma, randomness_size
+           sizeof(uint32_t) + // ring_size
            sizeof(uint32_t) + // signer_index
            CHIPMUNK_RING_LINKABILITY_TAG_SIZE + // linkability_tag
            CHIPMUNK_RING_CHALLENGE_SIZE +       // challenge
            a_ring_size * commitment_size_per_participant + // quantum-resistant commitments
-           a_ring_size * s_pq_params.randomness_size +     // responses
-           sig_size;          // chipmunk_signature
+           a_ring_size * (sizeof(uint32_t) + s_pq_params.randomness_size) + // responses (size + data, using uint32_t)
+           sizeof(uint32_t) + sig_size; // chipmunk_signature (size + data)
 }
 
 /**
@@ -1108,10 +1130,20 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
             DAP_FREE(a_signature->commitments);
             a_signature->commitments = NULL;
         }
+        // Free dynamic arrays inside each response
         if (a_signature->responses) {
+            for (uint32_t i = 0; i < a_signature->ring_size; i++) {
+                DAP_FREE(a_signature->responses[i].value);
+                a_signature->responses[i].value = NULL;
+                a_signature->responses[i].value_size = 0;
+            }
             DAP_FREE(a_signature->responses);
             a_signature->responses = NULL;
         }
+        // Free dynamic chipmunk signature
+        DAP_FREE(a_signature->chipmunk_signature);
+        a_signature->chipmunk_signature = NULL;
+        a_signature->chipmunk_signature_size = 0;
     }
 }
 
@@ -1131,6 +1163,23 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
     }
 
     size_t l_offset = 0;
+
+    // Serialize format version for future compatibility
+    uint32_t format_version = 1;
+    memcpy(a_output + l_offset, &format_version, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+
+    // Serialize current parameters (critical for correct deserialization)
+    uint32_t chipmunk_n = s_pq_params.chipmunk_n;
+    uint32_t chipmunk_gamma = s_pq_params.chipmunk_gamma;
+    uint32_t randomness_size = s_pq_params.randomness_size;
+    
+    memcpy(a_output + l_offset, &chipmunk_n, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    memcpy(a_output + l_offset, &chipmunk_gamma, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    memcpy(a_output + l_offset, &randomness_size, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
 
     // Serialize ring_size
     memcpy(a_output + l_offset, &a_sig->ring_size, sizeof(uint32_t));
@@ -1152,21 +1201,27 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
         const chipmunk_ring_commitment_t *commitment = &a_sig->commitments[l_i];
 
-        // Serialize randomness size first, then randomness data
-        memcpy(a_output + l_offset, &commitment->randomness_size, sizeof(size_t));
-        l_offset += sizeof(size_t);
+        // Serialize randomness size first, then randomness data (using fixed-width types)
+        uint32_t randomness_size_32 = (uint32_t)commitment->randomness_size;
+        memcpy(a_output + l_offset, &randomness_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
         memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
         l_offset += commitment->randomness_size;
 
-        // Serialize layer sizes (Hash layer removed, now 4 sizes)
-        memcpy(a_output + l_offset, &commitment->ring_lwe_size, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(a_output + l_offset, &commitment->ntru_size, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(a_output + l_offset, &commitment->code_size, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(a_output + l_offset, &commitment->binding_proof_size, sizeof(size_t));
-        l_offset += sizeof(size_t);
+        // Serialize layer sizes (Hash layer removed, now 4 sizes, using fixed-width types)
+        uint32_t ring_lwe_size_32 = (uint32_t)commitment->ring_lwe_size;
+        uint32_t ntru_size_32 = (uint32_t)commitment->ntru_size;
+        uint32_t code_size_32 = (uint32_t)commitment->code_size;
+        uint32_t binding_proof_size_32 = (uint32_t)commitment->binding_proof_size;
+        
+        memcpy(a_output + l_offset, &ring_lwe_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
+        memcpy(a_output + l_offset, &ntru_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
+        memcpy(a_output + l_offset, &code_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
+        memcpy(a_output + l_offset, &binding_proof_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
 
         // Serialize dynamic arrays content
         memcpy(a_output + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
@@ -1183,16 +1238,23 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
         l_offset += commitment->binding_proof_size;
     }
 
-    // Serialize responses
+    // Serialize responses (dynamic size, using fixed-width types)
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        memcpy(a_output + l_offset, a_sig->responses[l_i].value, s_pq_params.randomness_size);
-        l_offset += s_pq_params.randomness_size;
+        // Serialize response size first (using fixed-width type)
+        uint32_t response_size_32 = (uint32_t)a_sig->responses[l_i].value_size;
+        memcpy(a_output + l_offset, &response_size_32, sizeof(uint32_t));
+        l_offset += sizeof(uint32_t);
+        // Serialize response value
+        memcpy(a_output + l_offset, a_sig->responses[l_i].value, a_sig->responses[l_i].value_size);
+        l_offset += a_sig->responses[l_i].value_size;
     }
 
-    // Serialize chipmunk_signature
-    size_t sig_size = get_signature_size();
-    memcpy(a_output + l_offset, a_sig->chipmunk_signature, sig_size);
-    l_offset += sig_size;
+    // Serialize chipmunk_signature (dynamic size with length prefix)
+    uint32_t sig_size_32 = (uint32_t)a_sig->chipmunk_signature_size;
+    memcpy(a_output + l_offset, &sig_size_32, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    memcpy(a_output + l_offset, a_sig->chipmunk_signature, a_sig->chipmunk_signature_size);
+    l_offset += a_sig->chipmunk_signature_size;
 
     return 0;
 }
@@ -1209,6 +1271,28 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
 
     // Clear signature structure
     memset(a_sig, 0, sizeof(chipmunk_ring_signature_t));
+
+    // Deserialize format version
+    if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
+    uint32_t format_version;
+    memcpy(&format_version, a_input + l_offset, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    
+    if (format_version != 1) {
+        log_it(L_ERROR, "Unsupported signature format version: %u", format_version);
+        return -EINVAL;
+    }
+
+    // Deserialize parameters used to create this signature
+    if (l_offset + 3 * sizeof(uint32_t) > a_input_size) return -EINVAL;
+    uint32_t sig_chipmunk_n, sig_chipmunk_gamma, sig_randomness_size;
+    
+    memcpy(&sig_chipmunk_n, a_input + l_offset, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    memcpy(&sig_chipmunk_gamma, a_input + l_offset, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
+    memcpy(&sig_randomness_size, a_input + l_offset, sizeof(uint32_t));
+    l_offset += sizeof(uint32_t);
 
     // Deserialize ring_size
     if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
@@ -1278,13 +1362,15 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
 
     // Deserialize commitments (quantum-resistant format)
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        // Deserialize randomness size first
-        if (l_offset + sizeof(size_t) > a_input_size) {
+        // Deserialize randomness size first (using fixed-width type)
+        if (l_offset + sizeof(uint32_t) > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        memcpy(&a_sig->commitments[l_i].randomness_size, a_input + l_offset, sizeof(size_t));
-        l_offset += sizeof(size_t);
+        uint32_t randomness_size_32;
+        memcpy(&randomness_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->commitments[l_i].randomness_size = (size_t)randomness_size_32;
+        l_offset += sizeof(uint32_t);
 
         // Allocate and deserialize randomness data
         a_sig->commitments[l_i].randomness = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].randomness_size);
@@ -1300,19 +1386,29 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         memcpy(a_sig->commitments[l_i].randomness, a_input + l_offset, a_sig->commitments[l_i].randomness_size);
         l_offset += a_sig->commitments[l_i].randomness_size;
 
-        // Deserialize layer sizes (Hash layer removed, now 4 sizes)
-        if (l_offset + 4 * sizeof(size_t) > a_input_size) {
+        // Deserialize layer sizes 
+        if (l_offset + 4 * sizeof(uint32_t) > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        memcpy(&a_sig->commitments[l_i].ring_lwe_size, a_input + l_offset, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(&a_sig->commitments[l_i].ntru_size, a_input + l_offset, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(&a_sig->commitments[l_i].code_size, a_input + l_offset, sizeof(size_t));
-        l_offset += sizeof(size_t);
-        memcpy(&a_sig->commitments[l_i].binding_proof_size, a_input + l_offset, sizeof(size_t));
-        l_offset += sizeof(size_t);
+        
+        uint32_t ring_lwe_size_32, ntru_size_32, code_size_32, binding_proof_size_32;
+        
+        memcpy(&ring_lwe_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->commitments[l_i].ring_lwe_size = (size_t)ring_lwe_size_32;
+        l_offset += sizeof(uint32_t);
+        
+        memcpy(&ntru_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->commitments[l_i].ntru_size = (size_t)ntru_size_32;
+        l_offset += sizeof(uint32_t);
+        
+        memcpy(&code_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->commitments[l_i].code_size = (size_t)code_size_32;
+        l_offset += sizeof(uint32_t);
+        
+        memcpy(&binding_proof_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->commitments[l_i].binding_proof_size = (size_t)binding_proof_size_32;
+        l_offset += sizeof(uint32_t);
 
         // Allocate memory for quantum-resistant layers
         a_sig->commitments[l_i].ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ring_lwe_size);
@@ -1355,24 +1451,56 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
                  a_sig->commitments[l_i].code_size, a_sig->commitments[l_i].binding_proof_size);
     }
 
-    // Deserialize responses
+    // Deserialize responses (dynamic size, using fixed-width types)
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        if (l_offset + s_pq_params.randomness_size > a_input_size) {
+        // Deserialize response size (using fixed-width type)
+        if (l_offset + sizeof(uint32_t) > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        memcpy(a_sig->responses[l_i].value, a_input + l_offset, s_pq_params.randomness_size);
-        l_offset += s_pq_params.randomness_size;
+        uint32_t response_size_32;
+        memcpy(&response_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->responses[l_i].value_size = (size_t)response_size_32;
+        l_offset += sizeof(uint32_t);
+        
+        // Allocate and deserialize response value
+        a_sig->responses[l_i].value = DAP_NEW_Z_SIZE(uint8_t, a_sig->responses[l_i].value_size);
+        if (!a_sig->responses[l_i].value) {
+            chipmunk_ring_signature_free(a_sig);
+            return -ENOMEM;
+        }
+        
+        if (l_offset + a_sig->responses[l_i].value_size > a_input_size) {
+            chipmunk_ring_signature_free(a_sig);
+            return -EINVAL;
+        }
+        memcpy(a_sig->responses[l_i].value, a_input + l_offset, a_sig->responses[l_i].value_size);
+        l_offset += a_sig->responses[l_i].value_size;
     }
 
-    // Deserialize chipmunk_signature
-    size_t sig_size = get_signature_size();
-    if (l_offset + sig_size > a_input_size) {
+    // Deserialize chipmunk_signature (dynamic size with length prefix)
+    if (l_offset + sizeof(uint32_t) > a_input_size) {
         chipmunk_ring_signature_free(a_sig);
         return -EINVAL;
     }
-    memcpy(a_sig->chipmunk_signature, a_input + l_offset, sig_size);
-    l_offset += sig_size;
+    uint32_t sig_size_32;
+    memcpy(&sig_size_32, a_input + l_offset, sizeof(uint32_t));
+    a_sig->chipmunk_signature_size = (size_t)sig_size_32;
+    l_offset += sizeof(uint32_t);
+    
+    // Allocate and read chipmunk signature
+    a_sig->chipmunk_signature = DAP_NEW_Z_SIZE(uint8_t, a_sig->chipmunk_signature_size);
+    if (!a_sig->chipmunk_signature) {
+        chipmunk_ring_signature_free(a_sig);
+        return -ENOMEM;
+    }
+    
+    if (l_offset + a_sig->chipmunk_signature_size > a_input_size) {
+        chipmunk_ring_signature_free(a_sig);
+        return -EINVAL;
+    }
+    memcpy(a_sig->chipmunk_signature, a_input + l_offset, a_sig->chipmunk_signature_size);
+    l_offset += a_sig->chipmunk_signature_size;
 
     return 0;
 }
