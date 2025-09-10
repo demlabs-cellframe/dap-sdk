@@ -148,13 +148,12 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,
                               size_t a_ring_size,
-                              size_t a_signer_index,
                               uint8_t *a_signature,
                               size_t a_signature_size)
 {
     debug_if(s_debug_more, L_INFO, "=== dap_enc_chipmunk_ring_sign START ===");
     debug_if(s_debug_more, L_INFO, "priv_key=%p, data=%p, data_size=%zu", a_priv_key, a_data, a_data_size);
-    debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu, signer_index=%zu", a_ring_pub_keys, a_ring_size, a_signer_index);
+    debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu (anonymous)", a_ring_pub_keys, a_ring_size);
     debug_if(s_debug_more, L_INFO, "signature=%p, signature_size=%zu", a_signature, a_signature_size);
 
     if (!a_priv_key || !a_ring_pub_keys || !a_signature) {
@@ -168,8 +167,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -EINVAL;
     }
 
-    if (a_ring_size == 0 || a_signer_index >= a_ring_size) {
-        log_it(L_ERROR, "Invalid ring size or signer index");
+    if (a_ring_size == 0) {
+        log_it(L_ERROR, "Invalid ring size");
         return -EINVAL;
     }
 
@@ -247,9 +246,9 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
 
         memcpy(l_ring.public_keys[i].data, a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
         
-        // Debug: show what public key is stored in ring for signer
-        if (s_debug_more && i == a_signer_index) {
-            log_it(L_INFO, "=== RING CREATION: SIGNER PUBLIC KEY STORED ===");
+        // Debug: show what public key is stored in ring (anonymous)
+        if (s_debug_more) {
+            log_it(L_INFO, "=== RING CREATION: PUBLIC KEY STORED ===");
             log_it(L_INFO, "StoredPubKey[%zu] first 16 bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
                    i, a_ring_pub_keys[i][0], a_ring_pub_keys[i][1], a_ring_pub_keys[i][2], a_ring_pub_keys[i][3],
                    a_ring_pub_keys[i][4], a_ring_pub_keys[i][5], a_ring_pub_keys[i][6], a_ring_pub_keys[i][7],
@@ -314,7 +313,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     memset(&l_ring_sig, 0, sizeof(l_ring_sig));
 
     int l_result = chipmunk_ring_sign(&l_priv_key, a_data, a_data_size,
-                                     &l_ring, (uint32_t)a_signer_index, &l_ring_sig);
+                                     &l_ring, &l_ring_sig);
 
     // Clean up ring container
     free(l_ring.public_keys);
@@ -337,8 +336,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return l_result;
     }
 
-    log_it(L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, signer: %zu)",
-           a_ring_size, a_signer_index);
+    log_it(L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, anonymous)",
+           a_ring_size);
 
     return 0;
 }

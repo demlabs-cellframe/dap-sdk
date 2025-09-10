@@ -38,7 +38,7 @@ typedef struct chipmunk_ring_pq_params {
     uint32_t chipmunk_n;           // Chipmunk security parameter N
     uint32_t chipmunk_gamma;       // Chipmunk gamma parameter
 
-    // Randomness parameters
+    // Randomness parameters (always deterministic for anonymity)
     uint32_t randomness_size;      // Size of randomness in bytes (default 32)
 
     // Ring-LWE parameters
@@ -151,13 +151,12 @@ int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_d
                                      size_t a_data_size, void *a_sign, size_t a_sign_size);
 
 /**
- * @brief Create Chipmunk_Ring signature
+ * @brief Create Chipmunk_Ring signature (anonymous)
  * @param a_priv_key Private key of the signer
  * @param a_data Data to sign
  * @param a_data_size Size of data to sign
  * @param a_ring_pub_keys Array of public keys for the ring
  * @param a_ring_size Number of participants in the ring
- * @param a_signer_index Index of the actual signer in the ring
  * @param a_signature Output buffer for signature
  * @param a_signature_size Size of signature buffer
  * @return 0 on success, negative on error
@@ -167,7 +166,6 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,
                               size_t a_ring_size,
-                              size_t a_signer_index,
                               uint8_t *a_signature,
                               size_t a_signature_size);
 

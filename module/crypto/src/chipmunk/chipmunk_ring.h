@@ -93,7 +93,7 @@ typedef struct chipmunk_ring_response {
  */
 typedef struct chipmunk_ring_signature {
     uint32_t ring_size;                                ///< Number of participants in ring
-    uint32_t signer_index;                             ///< Index of actual signer (for verification)
+    // REMOVED: uint32_t signer_index - breaks anonymity!
     uint8_t linkability_tag[32];                       ///< H(PK_signer) for optional linkability
     uint8_t challenge[32];                             ///< Fiat-Shamir challenge
     chipmunk_ring_commitment_t *commitments;            ///< Commitments for each participant
@@ -154,7 +154,7 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring);
  */
 int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                      const void *a_message, size_t a_message_size,
-                     const chipmunk_ring_container_t *a_ring, uint32_t a_signer_index,
+                     const chipmunk_ring_container_t *a_ring, 
                      chipmunk_ring_signature_t *a_signature);
 
 /**
@@ -182,14 +182,6 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size);
  */
 void chipmunk_ring_key_delete(struct dap_enc_key *a_key);
 
-/**
- * @brief Create commitment for ZKP
- * @param commitment Output commitment
- * @param public_key Public key to commit to
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
-                                 const chipmunk_ring_public_key_t *a_public_key);
 
 /**
  * @brief Create response for ZKP
