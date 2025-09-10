@@ -30,7 +30,7 @@ static bool s_test_ring_size_limits(void) {
         dap_enc_key_t* l_min_ring_keys[MIN_RING_SIZE];
         memset(l_min_ring_keys, 0, sizeof(l_min_ring_keys));
         for (size_t i = 0; i < MIN_RING_SIZE; i++) {
-            l_min_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
+            l_min_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_min_ring_keys[i] != NULL, "Min ring key generation should succeed");
         }
 
@@ -49,8 +49,7 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_min_signature_pos1 = dap_sign_create_ring(
             l_min_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_min_ring_keys, MIN_RING_SIZE,
-            1
+            l_min_ring_keys, MIN_RING_SIZE
         );
         dap_assert(l_min_signature_pos1 != NULL, "Min ring signature creation (pos 1) should succeed");
 
@@ -72,15 +71,14 @@ static bool s_test_ring_size_limits(void) {
         dap_enc_key_t* l_max_ring_keys[MAX_RING_SIZE];
         memset(l_max_ring_keys, 0, sizeof(l_max_ring_keys));
         for (size_t i = 0; i < MAX_RING_SIZE; i++) {
-            l_max_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
+            l_max_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_max_ring_keys[i] != NULL, "Max ring key generation should succeed");
         }
 
         dap_sign_t* l_max_signature = dap_sign_create_ring(
             l_max_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_max_ring_keys, MAX_RING_SIZE,
-            0
+            l_max_ring_keys, MAX_RING_SIZE
         );
         dap_assert(l_max_signature != NULL, "Max ring signature creation should succeed");
 
@@ -102,7 +100,7 @@ static bool s_test_ring_size_limits(void) {
         dap_enc_key_t* l_ring_keys[MAX_RING_SIZE];
         memset(l_ring_keys, 0, sizeof(l_ring_keys));
         for (size_t i = 0; i < MAX_RING_SIZE; i++) {
-            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
+            l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
             dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
         }
 
@@ -110,8 +108,7 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_max_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, MAX_RING_SIZE,
-            0
+            l_ring_keys, MAX_RING_SIZE
         );
         dap_assert(l_max_signature != NULL, "Max ring signature creation should succeed");
 
@@ -119,8 +116,7 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_min_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, MIN_RING_SIZE,
-            0
+            l_ring_keys, MIN_RING_SIZE
         );
         dap_assert(l_min_signature != NULL, "Min ring signature creation should succeed");
 
@@ -153,7 +149,7 @@ static bool s_test_invalid_inputs(void) {
     log_it(L_INFO, "Testing Chipmunk Ring invalid inputs...");
 
     // Test ring size too small
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
     dap_hash_fast_t l_message_hash = {0};
@@ -161,11 +157,11 @@ static bool s_test_invalid_inputs(void) {
     dap_assert(l_hash_result == true, "Message hashing should succeed");
 
     // Test with ring size 1 (should fail)
+    dap_enc_key_t* l_ring_keys_1[1] = {l_signer_key};
     dap_sign_t* l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        &l_signer_key, 1,
-        0
+        l_ring_keys_1, 1
     );
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size 1");
 
@@ -173,8 +169,7 @@ static bool s_test_invalid_inputs(void) {
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        NULL, 0,
-        0
+        NULL, 0
     );
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size 0");
 
@@ -183,19 +178,17 @@ static bool s_test_invalid_inputs(void) {
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys, 3,
-        10  // Invalid index
+        l_ring_keys, 3
     );
-    dap_assert(l_signature == NULL, "Signature creation should fail with invalid signer index");
+    dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
 
     // Test with negative signer index (size_t overflow)
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys, 3,
-        (size_t)-1  // Invalid index
+        l_ring_keys, 3
     );
-    dap_assert(l_signature == NULL, "Signature creation should fail with negative signer index");
+    dap_assert(l_signature != NULL, "Anonymous signature creation should succeed");
 
     // Cleanup
     dap_enc_key_delete(l_signer_key);
@@ -210,24 +203,24 @@ static bool s_test_invalid_inputs(void) {
 static bool s_test_empty_messages(void) {
     log_it(L_INFO, "Testing Chipmunk Ring with empty/null messages...");
 
-    // Generate keys
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
-    dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
-
+    // Generate ring keys first
     const size_t l_ring_size = 4;
     dap_enc_key_t* l_ring_keys[l_ring_size];
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < l_ring_size; i++) {
-        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0);
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
     }
+
+    // Use first ring key as signer (must be one of the ring participants)
+    dap_enc_key_t* l_signer_key = l_ring_keys[0];
+    dap_assert(l_signer_key != NULL, "Signer key should be valid");
 
     // Test with empty message
     dap_sign_t* l_signature = dap_sign_create_ring(
         l_signer_key,
         NULL, 0,
-        l_ring_keys, l_ring_size,
-        0
+        l_ring_keys, l_ring_size
     );
     dap_assert(l_signature != NULL, "Signature creation should succeed with empty message");
 
@@ -236,7 +229,7 @@ static bool s_test_empty_messages(void) {
 
     // Cleanup
     DAP_DELETE(l_signature);
-    dap_enc_key_delete(l_signer_key);
+    // Don't delete l_signer_key - it's a reference to l_ring_keys[0]
     for (size_t i = 0; i < l_ring_size; i++) {
         dap_enc_key_delete(l_ring_keys[i]);
     }
