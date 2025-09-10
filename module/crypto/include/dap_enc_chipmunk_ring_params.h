@@ -43,19 +43,22 @@
 #define CHIPMUNK_RING_RING_LWE_N_DEFAULT 1024                    // Ring dimension for ~300-bit classical security
 #define CHIPMUNK_RING_RING_LWE_Q_DEFAULT 40961                   // Prime modulus (2^15 + 2^13 + 1)
 #define CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT 32        // Error distribution σ = 32/√(2π) ≈ 12.7
-#define CHIPMUNK_RING_RING_LWE_COMMITMENT_SIZE_DEFAULT 128       // 1024-bit commitment output
+#define CHIPMUNK_RING_RING_LWE_BYTES_PER_COEFF_DEFAULT 2         // Conservative: 2 bytes per coefficient
+#define CHIPMUNK_RING_RING_LWE_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_RING_LWE_N_DEFAULT * CHIPMUNK_RING_RING_LWE_BYTES_PER_COEFF_DEFAULT)
 
 // ================ NTRU LAYER PARAMETERS ================
 
 // NTRU layer parameters (~70,000 logical qubits required)
 #define CHIPMUNK_RING_NTRU_N_DEFAULT 1024                        // NTRU dimension for ~250-bit classical security
 #define CHIPMUNK_RING_NTRU_Q_DEFAULT 65537                       // Prime modulus (2^16 + 1)
-#define CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT 64            // 512-bit commitment output
+#define CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT 2             // Conservative: 2 bytes per coefficient
+#define CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_NTRU_N_DEFAULT * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT)
 
 // ================ POST-QUANTUM HASH LAYER PARAMETERS ================
 
 // Post-quantum hash layer parameters
-#define CHIPMUNK_RING_HASH_OUTPUT_SIZE_DEFAULT 128               // 1024-bit output for 512-bit Grover resistance
+#define CHIPMUNK_RING_HASH_BIT_SIZE_DEFAULT 1024                 // 1024-bit output for 512-bit Grover resistance
+#define CHIPMUNK_RING_HASH_BYTE_SIZE_DEFAULT (CHIPMUNK_RING_HASH_BIT_SIZE_DEFAULT / 8)
 #define CHIPMUNK_RING_HASH_DOMAIN_SEP_DEFAULT "CHIPMUNK_RING_PQ_HASH_COMMIT_1024"
 
 // ================ CODE-BASED LAYER PARAMETERS ================
@@ -64,12 +67,14 @@
 #define CHIPMUNK_RING_CODE_N_DEFAULT 2048                        // Code length for ~200-bit classical security
 #define CHIPMUNK_RING_CODE_K_DEFAULT 1024                        // Code dimension
 #define CHIPMUNK_RING_CODE_T_DEFAULT 128                         // Error weight
-#define CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT 64            // 512-bit syndrome commitment
+#define CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT 512             // Syndrome size in bits
+#define CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT / 8)
 
 // ================ BINDING PROOF PARAMETERS ================
 
 // Binding proof parameters
-#define CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT 128             // 1024-bit binding proof
+#define CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT 1024        // 1024-bit binding proof
+#define CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT (CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT / 8)
 
 // ================ COMPUTED PARAMETERS ================
 

@@ -59,21 +59,21 @@ static chipmunk_ring_pq_params_t s_pq_params = {
 };
 
 // Computed layer sizes (initialized during module startup)
-static size_t s_ring_lwe_commitment_size;
-static size_t s_ntru_commitment_size;
-static size_t s_hash_output_size;
-static size_t s_code_commitment_size;
-static size_t s_binding_proof_size;
+static size_t s_ring_lwe_commitment_size = CHIPMUNK_RING_RING_LWE_COMMITMENT_SIZE_DEFAULT;
+static size_t s_ntru_commitment_size = CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT;
+static size_t s_hash_output_size = CHIPMUNK_RING_HASH_BYTE_SIZE_DEFAULT;
+static size_t s_code_commitment_size = CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT;
+static size_t s_binding_proof_size = CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT;
 
 /**
  * @brief Update computed layer sizes based on current parameters
  */
 static void update_layer_sizes(void) {
-    s_ring_lwe_commitment_size = s_pq_params.ring_lwe_n * 2;  // Conservative: 2 bytes per coefficient
-    s_ntru_commitment_size = s_pq_params.ntru_n * 2;          // Conservative: 2 bytes per coefficient
-    s_hash_output_size = 64;                                  // 512-bit hash output
-    s_code_commitment_size = s_pq_params.code_n / 8;          // Syndrome size in bytes
-    s_binding_proof_size = 128;                               // Fixed 1024-bit binding proof
+    s_ring_lwe_commitment_size = s_pq_params.ring_lwe_n * CHIPMUNK_RING_RING_LWE_BYTES_PER_COEFF_DEFAULT;
+    s_ntru_commitment_size = s_pq_params.ntru_n * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT;
+    s_hash_output_size = CHIPMUNK_RING_HASH_BYTE_SIZE_DEFAULT;
+    s_code_commitment_size = CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT;
+    s_binding_proof_size = CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT;
 }
 
 /**

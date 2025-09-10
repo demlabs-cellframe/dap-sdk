@@ -31,7 +31,8 @@
  * @brief Chipmunk_Ring ring signature parameters
  */
 #define CHIPMUNK_RING_MAX_RING_SIZE 1024
-#define CHIPMUNK_RING_SIGNATURE_SIZE (sizeof(uint32_t) + CHIPMUNK_SIGNATURE_SIZE + CHIPMUNK_RING_MAX_RING_SIZE * 32)
+// Note: CHIPMUNK_RING_SIGNATURE_SIZE is now defined in dap_enc_chipmunk_ring_params.h
+// with parametric form: CHIPMUNK_RING_SIGNATURE_SIZE(chipmunk_n, chipmunk_gamma)
 
 
 /**
