@@ -453,6 +453,74 @@
               "Roadmap для future quantum resistance improvements"
             ],
             "status": "ACTIVE"
+          },
+          {
+            "phase": 7,
+            "title": "Исследование долгосрочной квантовой устойчивости анонимности",
+            "description": "Комплексное исследование квантовых угроз анонимности с прогнозированием развития квантовых технологий и разработкой улучшенных схем",
+            "estimated_time": "4 недели",
+            "subphases": [
+              {
+                "title": "Анализ развития квантовых компьютеров и прогнозирование",
+                "tasks": [
+                  "Исследовать текущее состояние квантовых компьютеров (IBM, Google, IonQ, Rigetti)",
+                  "Проанализировать исторические данные роста количества кубитов (2019-2024)",
+                  "Построить экспоненциальную модель роста квантовых возможностей",
+                  "Спрогнозировать развитие на 20-30 лет (2045-2055)",
+                  "Экстраполировать долгосрочные тренды на 100-200 лет (2125-2225)",
+                  "Оценить когда quantum computers достигнут критических threshold'ов для атак на анонимность"
+                ],
+                "estimated_time": "1 неделя",
+                "focus": "Временные рамки квантовых угроз"
+              },
+              {
+                "title": "Детальный анализ квантовых атак на анонимность",
+                "tasks": [
+                  "Формализовать Grover-based атаки на ring anonymity",
+                  "Проанализировать quantum period finding применительно к commitments",
+                  "Исследовать amplitude amplification атаки на zero-knowledge proofs",
+                  "Оценить quantum Fourier analysis применительно к response patterns",
+                  "Рассчитать точные quantum resource requirements для каждого типа атак",
+                  "Определить минимальные размеры колец для resistance к каждой атаке"
+                ],
+                "estimated_time": "1 неделя",
+                "focus": "Формальная квантовая криптоаналитика"
+              },
+              {
+                "title": "Разработка quantum-resistant anonymity enhancements",
+                "tasks": [
+                  "Исследовать quantum-resistant commitment schemes для улучшения анонимности",
+                  "Разработать hybrid classical+post-quantum anonymity amplification",
+                  "Проанализировать использование quantum error correcting codes для защиты",
+                  "Исследовать lattice-based anonymity strengthening techniques",
+                  "Оценить computational overhead предложенных улучшений",
+                  "Сравнить trade-offs между quantum resistance и performance"
+                ],
+                "estimated_time": "1.5 недели",
+                "focus": "Практические улучшения для quantum era"
+              },
+              {
+                "title": "Создание roadmap для quantum-resistant ChipmunkRing evolution",
+                "tasks": [
+                  "Определить timeline для внедрения quantum resistance improvements",
+                  "Создать backward compatibility strategy для existing deployments",
+                  "Разработать migration path от current ChipmunkRing к quantum-enhanced версии",
+                  "Оценить impact на blockchain integration и consensus mechanisms",
+                  "Создать monitoring framework для detection quantum threats",
+                  "Подготовить emergency response procedures для quantum breakthrough scenarios"
+                ],
+                "estimated_time": "0.5 недели",
+                "focus": "Практическое планирование quantum transition"
+              }
+            ],
+            "deliverables": [
+              "Comprehensive quantum threat timeline (20-200 years)",
+              "Formal analysis of quantum attacks on ring anonymity",
+              "Quantum-resistant anonymity enhancement proposals",
+              "Practical roadmap for quantum-era deployment",
+              "Emergency response procedures for quantum breakthroughs"
+            ],
+            "status": "PLANNED"
           }
         ]
       },
