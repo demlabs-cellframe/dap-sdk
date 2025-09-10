@@ -195,11 +195,11 @@ static bool s_test_multiple_key_types(void) {
 
     char msg[100];
 
-    // Test with working symmetric encryption algorithms only
+    // Test with symmetric encryption algorithms
     dap_enc_key_type_t l_key_types[] = {
         DAP_ENC_KEY_TYPE_IAES,        // AES symmetric encryption (verified working)
         DAP_ENC_KEY_TYPE_SALSA2012,   // SALSA2012 stream cipher
-        // Note: OAES has key generation issues, temporarily excluded
+        
     };
     const size_t l_num_types = sizeof(l_key_types) / sizeof(l_key_types[0]);
 

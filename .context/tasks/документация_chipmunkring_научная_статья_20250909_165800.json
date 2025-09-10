@@ -521,6 +521,57 @@
               "Emergency response procedures for quantum breakthroughs"
             ],
             "status": "PLANNED"
+          },
+          {
+            "phase": 8,
+            "title": "Реализация quantum-resistant commitments в текущем коде",
+            "description": "Прямая реализация многослойных квантово-устойчивых commitments в существующем ChipmunkRing коде для защиты малых колец",
+            "estimated_time": "3 недели",
+            "subphases": [
+              {
+                "title": "Модификация структур данных для многослойных commitments",
+                "tasks": [
+                  "Расширить chipmunk_ring_commitment_t для поддержки 4 слоев",
+                  "Добавить enhanced Ring-LWE layer с параметрами n=1024, q=12289",
+                  "Интегрировать NTRU commitment layer с параметрами n=509",
+                  "Добавить post-quantum hash layer с SHAKE256",
+                  "Реализовать code-based commitment layer",
+                  "Добавить binding proof между всеми слоями"
+                ],
+                "estimated_time": "1 неделя"
+              },
+              {
+                "title": "Реализация quantum-resistant commitment creation",
+                "tasks": [
+                  "Модифицировать chipmunk_ring_commitment_create() для многослойности",
+                  "Реализовать enhanced Ring-LWE commitment generation",
+                  "Добавить NTRU commitment computation",
+                  "Интегрировать post-quantum hash commitments",
+                  "Реализовать syndrome-based code commitments",
+                  "Создать binding proof generation между слоями"
+                ],
+                "estimated_time": "1 неделя"
+              },
+              {
+                "title": "Интеграция с verification и performance optimization",
+                "tasks": [
+                  "Обновить chipmunk_ring_verify() для проверки всех слоев",
+                  "Оптимизировать параллельное вычисление слоев",
+                  "Добавить SIMD оптимизации для polynomial operations",
+                  "Реализовать caching для frequently used operations",
+                  "Обновить все тесты для поддержки enhanced commitments",
+                  "Измерить и оптимизировать performance impact"
+                ],
+                "estimated_time": "1 неделя"
+              }
+            ],
+            "deliverables": [
+              "Quantum-resistant commitments интегрированы в текущий код",
+              "100+ bit quantum security для колец любого размера",
+              "Backward compatibility с существующими подписями",
+              "Performance overhead <2× при quantum protection"
+            ],
+            "status": "ACTIVE"
           }
         ]
       },

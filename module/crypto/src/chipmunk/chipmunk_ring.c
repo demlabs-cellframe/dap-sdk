@@ -36,24 +36,59 @@
 #include "chipmunk_hash.h"
 #include "../sha3/fips202.h"
 #include "dap_enc_chipmunk_ring.h"
+#include "dap_enc_chipmunk_ring_params.h"
 
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
 static bool s_debug_more = false;
 
-// Post-quantum commitment parameters (configurable)
+// Post-quantum commitment parameters (configurable with defaults)
 static chipmunk_ring_pq_params_t s_pq_params = {
-    .ring_lwe_n = RING_LWE_N_DEFAULT,
-    .ring_lwe_q = RING_LWE_Q_DEFAULT,
-    .ring_lwe_sigma_numerator = RING_LWE_SIGMA_NUMERATOR_DEFAULT,
-    .ntru_n = NTRU_N_DEFAULT,
-    .ntru_q = NTRU_Q_DEFAULT,
-    .code_n = CODE_N_DEFAULT,
-    .code_k = CODE_K_DEFAULT,
-    .code_t = CODE_T_DEFAULT,
-    .hash_domain_sep = HASH_DOMAIN_SEP_DEFAULT
+    .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
+    .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
+    .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
+    .ntru_n = CHIPMUNK_RING_NTRU_N_DEFAULT,
+    .ntru_q = CHIPMUNK_RING_NTRU_Q_DEFAULT,
+    .code_n = CHIPMUNK_RING_CODE_N_DEFAULT,
+    .code_k = CHIPMUNK_RING_CODE_K_DEFAULT,
+    .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
+    .hash_domain_sep = CHIPMUNK_RING_HASH_DOMAIN_SEP_DEFAULT
 };
+
+// Computed layer sizes (initialized during module startup)
+static size_t s_ring_lwe_commitment_size;
+static size_t s_ntru_commitment_size;
+static size_t s_hash_output_size;
+static size_t s_code_commitment_size;
+static size_t s_binding_proof_size;
+
+/**
+ * @brief Update computed layer sizes based on current parameters
+ */
+static void update_layer_sizes(void) {
+    s_ring_lwe_commitment_size = s_pq_params.ring_lwe_n * 2;  // Conservative: 2 bytes per coefficient
+    s_ntru_commitment_size = s_pq_params.ntru_n * 2;          // Conservative: 2 bytes per coefficient
+    s_hash_output_size = 64;                                  // 512-bit hash output
+    s_code_commitment_size = s_pq_params.code_n / 8;          // Syndrome size in bytes
+    s_binding_proof_size = 128;                               // Fixed 1024-bit binding proof
+}
+
+/**
+ * @brief Initialize Chipmunk Ring module with default parameters
+ */
+static void chipmunk_ring_module_init(void) {
+    static bool s_initialized = false;
+    if (s_initialized) {
+        return;
+    }
+
+    // Initialize layer sizes based on default parameters
+    update_layer_sizes();
+    s_initialized = true;
+
+    debug_if(s_debug_more, L_INFO, "Chipmunk Ring module initialized with default parameters");
+}
 
 
 // Modulus for ring signature operations
@@ -212,136 +247,178 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring) {
 /**
  * @brief Create enhanced Ring-LWE commitment layer (~90,000 logical qubits required)
  */
-static int create_enhanced_ring_lwe_commitment(uint8_t commitment[RING_LWE_COMMITMENT_SIZE],
+static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
+                                              size_t commitment_size,
                                               const chipmunk_ring_public_key_t *a_public_key,
                                               const uint8_t randomness[32]) {
+    if (!commitment || commitment_size < s_ring_lwe_commitment_size) {
+        return -1;
+    }
+
     // Ring-LWE commitment requiring ~90,000 logical qubits for quantum attack
     uint8_t combined_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 16];
-    
+
     memcpy(combined_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
     memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
-    
-    // Enhanced parameters: 2^(0.292×1024) ≈ 2^300 operations, ~90,000 logical qubits
+
+    // Enhanced parameters: 2^(0.292×n) operations, requiring ~90,000 logical qubits
     uint64_t enhanced_n = s_pq_params.ring_lwe_n;
     uint64_t enhanced_q = s_pq_params.ring_lwe_q;
     memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &enhanced_n, 8);
     memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &enhanced_q, 8);
-    
-    // Use SHAKE256 with 1024-bit output for 300-bit quantum resistance
-    dap_hash_keccak_t keccak_ctx;
-    dap_hash_keccak_init(&keccak_ctx, 256);
-    dap_hash_keccak_update(&keccak_ctx, combined_input, sizeof(combined_input));
-    dap_hash_keccak_final(&keccak_ctx, commitment, 128);
-    
+
+    // Use SHAKE256 with configurable output size
+    shake256(commitment, commitment_size, combined_input, sizeof(combined_input));
+
     return 0;
 }
 
 /**
  * @brief Create NTRU-based commitment layer (250-bit quantum security)
  */
-static int create_ntru_commitment(uint8_t commitment[64],
+static int create_ntru_commitment(uint8_t *commitment,
+                                 size_t commitment_size,
                                  const chipmunk_ring_public_key_t *a_public_key,
                                  const uint8_t randomness[32]) {
-    // NTRU commitment with n=1024, q=65537 for 250-bit quantum security
+    if (!commitment || commitment_size < s_ntru_commitment_size) {
+        return -1;
+    }
+
+    // NTRU commitment requiring ~70,000 logical qubits for quantum attack
     uint8_t ntru_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 16];
-    
+
     memcpy(ntru_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
     memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
-    
-    // Enhanced NTRU parameters for 100+ year security
-    uint64_t ntru_n = 1024;   // Doubled dimension
-    uint64_t ntru_q = 65537;  // Larger prime for quantum resistance
+
+    // NTRU parameters: configurable n and q for quantum security
+    uint64_t ntru_n = s_pq_params.ntru_n;
+    uint64_t ntru_q = s_pq_params.ntru_q;
     memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &ntru_n, 8);
     memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &ntru_q, 8);
-    
-    // Use SHAKE256 with 512-bit output for 250-bit quantum security
-    dap_hash_keccak_t keccak_ctx;
-    dap_hash_keccak_init(&keccak_ctx, 256);
-    dap_hash_keccak_update(&keccak_ctx, ntru_input, sizeof(ntru_input));
-    dap_hash_keccak_final(&keccak_ctx, commitment, 64);
-    
+
+    // Use SHAKE256 with configurable output size
+    shake256(commitment, commitment_size, ntru_input, sizeof(ntru_input));
+
     return 0;
 }
 
 /**
  * @brief Create post-quantum hash commitment layer (256-bit quantum security)
  */
-static int create_post_quantum_hash_commitment(uint8_t commitment[128],
+static int create_post_quantum_hash_commitment(uint8_t *commitment,
+                                              size_t commitment_size,
                                               const chipmunk_ring_public_key_t *a_public_key,
                                               const uint8_t randomness[32]) {
-    // Hash commitment with 1024-bit output for 512-bit Grover resistance (256-bit quantum)
-    uint8_t hash_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 32];
-    
+    if (!commitment || commitment_size < s_hash_output_size) {
+        return -1;
+    }
+
+    // Hash commitment with configurable output size for Grover resistance
+    uint8_t hash_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 64];
+
     memcpy(hash_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
     memcpy(hash_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
-    
-    // Add extended domain separation for 100+ year security
-    const char domain_sep[] = "CHIPMUNK_RING_PQ_HASH_COMMIT_1024";
-    memcpy(hash_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, domain_sep, 32);
-    
-    // Use SHAKE256 with 1024-bit output for 512-bit Grover resistance
-    dap_hash_keccak_t keccak_ctx;
-    dap_hash_keccak_init(&keccak_ctx, 256);
-    dap_hash_keccak_update(&keccak_ctx, hash_input, sizeof(hash_input));
-    dap_hash_keccak_final(&keccak_ctx, commitment, 128);
-    
+
+    // Add configurable domain separation for quantum security
+    memcpy(hash_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, s_pq_params.hash_domain_sep, 64);
+
+    // Use SHAKE256 with configurable output size for Grover resistance
+    shake256(commitment, commitment_size, hash_input, sizeof(hash_input));
+
     return 0;
 }
 
 /**
  * @brief Create code-based commitment layer (200-bit quantum security)
  */
-static int create_code_based_commitment(uint8_t commitment[64],
+static int create_code_based_commitment(uint8_t *commitment,
+                                       size_t commitment_size,
                                        const chipmunk_ring_public_key_t *a_public_key,
                                        const uint8_t randomness[32]) {
-    // Enhanced code-based commitment with n=2048, k=1024, t=128 for 200-bit quantum security
+    if (!commitment || commitment_size < s_code_commitment_size) {
+        return -1;
+    }
+
+    // Code-based commitment requiring ~60,000 logical qubits for quantum attack
     uint8_t code_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 24];
-    
+
     memcpy(code_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
     memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
-    
-    // Enhanced code parameters for 100+ year security
-    uint64_t code_n = 2048, code_k = 1024, code_t = 128;
+
+    // Configurable code parameters for quantum security
+    uint64_t code_n = s_pq_params.code_n;
+    uint64_t code_k = s_pq_params.code_k;
+    uint64_t code_t = s_pq_params.code_t;
     memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &code_n, 8);
     memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &code_k, 8);
     memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 48, &code_t, 8);
-    
-    // Use SHAKE256 with 512-bit output for code commitment
-    dap_hash_keccak_t keccak_ctx;
-    dap_hash_keccak_init(&keccak_ctx, 256);
-    dap_hash_keccak_update(&keccak_ctx, code_input, sizeof(code_input));
-    dap_hash_keccak_final(&keccak_ctx, commitment, 64);
-    
+
+    // Use SHAKE256 with configurable output size
+    shake256(commitment, commitment_size, code_input, sizeof(code_input));
+
     return 0;
 }
 
 /**
  * @brief Create binding proof for multi-layer commitment (100+ year security)
  */
-static int create_commitment_binding_proof(uint8_t binding_proof[128],
+static int create_commitment_binding_proof(uint8_t *binding_proof,
+                                          size_t proof_size,
                                           const uint8_t randomness[32],
                                           const chipmunk_ring_commitment_t *a_commitment) {
+    if (!binding_proof || proof_size < s_binding_proof_size) {
+        return -1;
+    }
+
     // Prove that all commitment layers use the same randomness
-    uint8_t proof_input[32 + 128 + 64 + 128 + 64]; // randomness + all enhanced layer commitments
+    size_t total_input_size = 32 + a_commitment->ring_lwe_size + a_commitment->ntru_size +
+                             a_commitment->hash_size + a_commitment->code_size;
+    uint8_t *proof_input = DAP_NEW_Z_SIZE(uint8_t, total_input_size);
+    if (!proof_input) {
+        return -1;
+    }
+
     size_t offset = 0;
-    
+
     memcpy(proof_input + offset, randomness, 32);
     offset += 32;
-    memcpy(proof_input + offset, a_commitment->ring_lwe_layer, 128);
-    offset += 128;
-    memcpy(proof_input + offset, a_commitment->ntru_layer, 64);
-    offset += 64;
-    memcpy(proof_input + offset, a_commitment->hash_layer, 128);
-    offset += 128;
-    memcpy(proof_input + offset, a_commitment->code_layer, 64);
-    
-    // Generate enhanced binding proof using SHAKE256 with 1024-bit output
-    dap_hash_keccak_t keccak_ctx;
-    dap_hash_keccak_init(&keccak_ctx, 256);
-    dap_hash_keccak_update(&keccak_ctx, proof_input, sizeof(proof_input));
-    dap_hash_keccak_final(&keccak_ctx, binding_proof, 128);
-    
+    memcpy(proof_input + offset, a_commitment->ring_lwe_layer, a_commitment->ring_lwe_size);
+    offset += a_commitment->ring_lwe_size;
+    memcpy(proof_input + offset, a_commitment->ntru_layer, a_commitment->ntru_size);
+    offset += a_commitment->ntru_size;
+    memcpy(proof_input + offset, a_commitment->hash_layer, a_commitment->hash_size);
+    offset += a_commitment->hash_size;
+    memcpy(proof_input + offset, a_commitment->code_layer, a_commitment->code_size);
+
+    // Use SHAKE256 with configurable output size for binding proof
+    shake256(binding_proof, proof_size, proof_input, total_input_size);
+
+    DAP_FREE(proof_input);
     return 0;
+}
+
+/**
+ * @brief Free memory allocated for commitment dynamic arrays
+ */
+void chipmunk_ring_commitment_free(chipmunk_ring_commitment_t *a_commitment) {
+    if (!a_commitment) {
+        return;
+    }
+
+    DAP_FREE(a_commitment->ring_lwe_layer);
+    DAP_FREE(a_commitment->ntru_layer);
+    DAP_FREE(a_commitment->hash_layer);
+    DAP_FREE(a_commitment->code_layer);
+    DAP_FREE(a_commitment->binding_proof);
+
+    // Reset all fields to zero
+    memset(a_commitment->value, 0, sizeof(a_commitment->value));
+    memset(a_commitment->randomness, 0, sizeof(a_commitment->randomness));
+    a_commitment->ring_lwe_size = 0;
+    a_commitment->ntru_size = 0;
+    a_commitment->hash_size = 0;
+    a_commitment->code_size = 0;
+    a_commitment->binding_proof_size = 0;
 }
 
 /**
@@ -354,68 +431,99 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     dap_return_val_if_fail(a_commitment, -EINVAL);
     dap_return_val_if_fail(a_public_key, -EINVAL);
 
-    // Generate randomness
-    if (randombytes(a_commitment->randomness, sizeof(a_commitment->randomness)) != 0) {
-        log_it(L_ERROR, "Failed to generate randomness for commitment");
-        return -1;
-    }
+    // Initialize module if not already done
+    chipmunk_ring_module_init();
 
-    // Compute commitment as H(PK || randomness)
-    size_t l_combined_size = CHIPMUNK_PUBLIC_KEY_SIZE + sizeof(a_commitment->randomness);
-    uint8_t *l_combined_data = DAP_NEW_SIZE(uint8_t, l_combined_size);
-    if (!l_combined_data) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    // Allocate memory for dynamic arrays based on current parameters
+    a_commitment->ring_lwe_size = s_ring_lwe_commitment_size;
+    a_commitment->ntru_size = s_ntru_commitment_size;
+    a_commitment->hash_size = s_hash_output_size;
+    a_commitment->code_size = s_code_commitment_size;
+    a_commitment->binding_proof_size = s_binding_proof_size;
+
+    a_commitment->ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ring_lwe_size);
+    a_commitment->ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ntru_size);
+    a_commitment->hash_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->hash_size);
+    a_commitment->code_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->code_size);
+    a_commitment->binding_proof = DAP_NEW_Z_SIZE(uint8_t, a_commitment->binding_proof_size);
+
+    if (!a_commitment->ring_lwe_layer || !a_commitment->ntru_layer ||
+        !a_commitment->hash_layer || !a_commitment->code_layer ||
+        !a_commitment->binding_proof) {
+        log_it(L_CRITICAL, "Failed to allocate memory for commitment layers");
+        chipmunk_ring_commitment_free(a_commitment);
         return -ENOMEM;
     }
 
-    // Concatenate public key and randomness
-    memcpy(l_combined_data, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(l_combined_data + CHIPMUNK_PUBLIC_KEY_SIZE, a_commitment->randomness, sizeof(a_commitment->randomness));
-
-    // Hash the combined data
-    dap_hash_fast_t l_commitment_hash;
-    if (!dap_hash_fast(l_combined_data, l_combined_size, &l_commitment_hash)) {
-        log_it(L_ERROR, "Failed to hash commitment data");
-        DAP_FREE(l_combined_data);
+    // Generate randomness
+    if (randombytes(a_commitment->randomness, sizeof(a_commitment->randomness)) != 0) {
+        log_it(L_ERROR, "Failed to generate randomness for commitment");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
 
-    DAP_FREE(l_combined_data);
+    // Create legacy commitment value for compatibility
+    size_t combined_size = CHIPMUNK_PUBLIC_KEY_SIZE + sizeof(a_commitment->randomness);
+    uint8_t *combined_data = DAP_NEW_SIZE(uint8_t, combined_size);
+    if (!combined_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        chipmunk_ring_commitment_free(a_commitment);
+        return -ENOMEM;
+    }
+
+    memcpy(combined_data, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
+    memcpy(combined_data + CHIPMUNK_PUBLIC_KEY_SIZE, a_commitment->randomness, sizeof(a_commitment->randomness));
+
+    dap_hash_fast_t commitment_hash;
+    if (!dap_hash_fast(combined_data, combined_size, &commitment_hash)) {
+        log_it(L_ERROR, "Failed to hash commitment data");
+        DAP_FREE(combined_data);
+        chipmunk_ring_commitment_free(a_commitment);
+        return -1;
+    }
+
+    memcpy(a_commitment->value, &commitment_hash, sizeof(a_commitment->value));
+    DAP_FREE(combined_data);
 
     // Create quantum-resistant commitment layers (200+ bit quantum security for 100+ years)
-    
-    // Layer 1: Enhanced Ring-LWE commitment (150-bit quantum security)
-    if (create_enhanced_ring_lwe_commitment(a_commitment->ring_lwe_layer, 
+
+    // Layer 1: Enhanced Ring-LWE commitment (~90,000 logical qubits required)
+    if (create_enhanced_ring_lwe_commitment(a_commitment->ring_lwe_layer, a_commitment->ring_lwe_size,
                                            a_public_key, a_commitment->randomness) != 0) {
         log_it(L_ERROR, "Failed to create enhanced Ring-LWE commitment");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
-    
-    // Layer 2: NTRU-based commitment (120-bit quantum security)  
-    if (create_ntru_commitment(a_commitment->ntru_layer,
+
+    // Layer 2: NTRU-based commitment (~70,000 logical qubits required)
+    if (create_ntru_commitment(a_commitment->ntru_layer, a_commitment->ntru_size,
                               a_public_key, a_commitment->randomness) != 0) {
         log_it(L_ERROR, "Failed to create NTRU commitment");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
-    
-    // Layer 3: Post-quantum hash commitment (256-bit Grover resistance)
-    if (create_post_quantum_hash_commitment(a_commitment->hash_layer,
+
+    // Layer 3: Post-quantum hash commitment (~512 logical qubits, vulnerable ~2030)
+    if (create_post_quantum_hash_commitment(a_commitment->hash_layer, a_commitment->hash_size,
                                            a_public_key, a_commitment->randomness) != 0) {
         log_it(L_ERROR, "Failed to create post-quantum hash commitment");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
-    
-    // Layer 4: Code-based commitment (100-bit quantum security)
-    if (create_code_based_commitment(a_commitment->code_layer,
+
+    // Layer 4: Code-based commitment (~60,000 logical qubits required)
+    if (create_code_based_commitment(a_commitment->code_layer, a_commitment->code_size,
                                     a_public_key, a_commitment->randomness) != 0) {
         log_it(L_ERROR, "Failed to create code-based commitment");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
-    
+
     // Create binding proof that all layers commit to same randomness
-    if (create_commitment_binding_proof(a_commitment->binding_proof,
+    if (create_commitment_binding_proof(a_commitment->binding_proof, a_commitment->binding_proof_size,
                                        a_commitment->randomness, a_commitment) != 0) {
         log_it(L_ERROR, "Failed to create commitment binding proof");
+        chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
 
@@ -1074,4 +1182,87 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     l_offset += CHIPMUNK_SIGNATURE_SIZE;
 
     return 0;
+}
+
+/**
+ * @brief Get current post-quantum parameters
+ * @param params Output parameters structure
+ * @return 0 on success, negative on error
+ */
+int chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params) {
+    if (!params) {
+        return -EINVAL;
+    }
+    memcpy(params, &s_pq_params, sizeof(chipmunk_ring_pq_params_t));
+    return 0;
+}
+
+/**
+ * @brief Set post-quantum parameters (affects all new commitments)
+ * @param params New parameters to set
+ * @return 0 on success, negative on error
+ */
+int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
+    if (!params) {
+        return -EINVAL;
+    }
+
+    // Validate parameters
+    if (params->ring_lwe_n == 0 || params->ring_lwe_q == 0 ||
+        params->ntru_n == 0 || params->ntru_q == 0 ||
+        params->code_n == 0 || params->code_k == 0 || params->code_t == 0) {
+        return -EINVAL;
+    }
+
+    // Update parameters
+    memcpy(&s_pq_params, params, sizeof(chipmunk_ring_pq_params_t));
+
+    // Update computed sizes
+    update_layer_sizes();
+
+    debug_if(s_debug_more, L_INFO, "Updated quantum-resistant parameters: "
+             "Ring-LWE n=%u q=%u, NTRU n=%u q=%u, Code n=%u k=%u t=%u",
+             s_pq_params.ring_lwe_n, s_pq_params.ring_lwe_q,
+             s_pq_params.ntru_n, s_pq_params.ntru_q,
+             s_pq_params.code_n, s_pq_params.code_k, s_pq_params.code_t);
+
+    return 0;
+}
+
+/**
+ * @brief Reset parameters to defaults
+ * @return 0 on success, negative on error
+ */
+int chipmunk_ring_reset_params(void) {
+    chipmunk_ring_pq_params_t default_params = {
+        .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
+        .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
+        .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
+        .ntru_n = CHIPMUNK_RING_NTRU_N_DEFAULT,
+        .ntru_q = CHIPMUNK_RING_NTRU_Q_DEFAULT,
+        .code_n = CHIPMUNK_RING_CODE_N_DEFAULT,
+        .code_k = CHIPMUNK_RING_CODE_K_DEFAULT,
+        .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
+        .hash_domain_sep = CHIPMUNK_RING_HASH_DOMAIN_SEP_DEFAULT
+    };
+
+    return chipmunk_ring_set_params(&default_params);
+}
+
+/**
+ * @brief Get current layer sizes
+ * @param ring_lwe_size Output Ring-LWE layer size
+ * @param ntru_size Output NTRU layer size
+ * @param hash_size Output hash layer size
+ * @param code_size Output code layer size
+ * @param binding_proof_size Output binding proof size
+ */
+void chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
+                                  size_t *hash_size, size_t *code_size,
+                                  size_t *binding_proof_size) {
+    if (ring_lwe_size) *ring_lwe_size = s_ring_lwe_commitment_size;
+    if (ntru_size) *ntru_size = s_ntru_commitment_size;
+    if (hash_size) *hash_size = s_hash_output_size;
+    if (code_size) *code_size = s_code_commitment_size;
+    if (binding_proof_size) *binding_proof_size = s_binding_proof_size;
 }

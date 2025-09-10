@@ -334,7 +334,6 @@ static int s_bit_reverse_9(int a_x) {
  * @brief Transform polynomial to NTT form - exact copy of original Rust algorithm
  */
 void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
-    log_it(L_DEBUG, "NTT: Starting forward transform (exact Rust algorithm)");
     
     // Rust code: let mut t = $dim;
     int l_t = CHIPMUNK_N; // 512
@@ -364,9 +363,15 @@ void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
             
             // Rust code: while j < j2 {
             while (l_j < l_j2) {
+                // Bounds checking to prevent heap corruption
+                if (l_j >= CHIPMUNK_N || l_j + l_ht >= CHIPMUNK_N) {
+                    log_it(L_ERROR, "NTT bounds violation: l_j=%d, l_j+ht=%d, CHIPMUNK_N=%d", l_j, l_j + l_ht, CHIPMUNK_N);
+                    return; // Exit to prevent corruption
+                }
+
                 // Rust code: let u = p[j];
                 int32_t l_u = a_r[l_j];
-                
+
                 // Rust code: let v = ((p[j + ht] as i64) * (s as i64) % $modulus as i64) as i32;
                 int64_t l_v_temp = ((int64_t)a_r[l_j + l_ht] * (int64_t)l_s) % (int64_t)CHIPMUNK_Q;
                 int32_t l_v = (int32_t)l_v_temp;
@@ -390,14 +395,12 @@ void chipmunk_ntt(int32_t a_r[CHIPMUNK_N]) {
         l_t = l_ht;
     }
     
-    log_it(L_DEBUG, "NTT: Forward transform completed (exact Rust algorithm)");
 }
 
 /**
  * @brief Inverse transform from NTT form - exact copy of original Rust algorithm
  */
 void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
-    log_it(L_DEBUG, "InvNTT: Starting inverse transform (exact Rust algorithm)");
     
     // Rust code: let mut t = 1; let mut m = N;
     int l_t = 1;
@@ -466,7 +469,6 @@ void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
             a_r[i] += CHIPMUNK_Q;
     }
     
-    log_it(L_DEBUG, "InvNTT: Inverse transform completed (exact Rust algorithm)");
 }
 
 /**
@@ -475,16 +477,11 @@ void chipmunk_invntt(int32_t a_r[CHIPMUNK_N]) {
 int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
                                      const int32_t a_a[CHIPMUNK_N], 
                                      const int32_t a_b[CHIPMUNK_N]) {
-    log_it(L_DEBUG, "=== CHIPMUNK NTT POINTWISE MONTGOMERY CALLED ===");
-    log_it(L_DEBUG, "chipmunk_ntt_pointwise_montgomery: Function entry");
     
     if (!a_c || !a_a || !a_b) {
-        log_it(L_ERROR, "NULL pointer in chipmunk_ntt_pointwise_montgomery");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    log_it(L_DEBUG, "chipmunk_ntt_pointwise_montgomery: Pointers validated");
-    log_it(L_DEBUG, "Starting pointwise multiplication in NTT domain");
     
     // Проверяем входные данные
     int a_zeros = 0, b_zeros = 0;
@@ -492,23 +489,11 @@ int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
         if (a_a[i] == 0) a_zeros++;
         if (a_b[i] == 0) b_zeros++;
     }
-    log_it(L_DEBUG, "Input A has %d zeros out of %d coefficients", a_zeros, CHIPMUNK_N);
-    log_it(L_DEBUG, "Input B has %d zeros out of %d coefficients", b_zeros, CHIPMUNK_N);
     
-    // Показываем первые несколько коэффициентов для отладки
-    log_it(L_DEBUG, "First 4 coeffs of A: %d, %d, %d, %d", a_a[0], a_a[1], a_a[2], a_a[3]);
-    log_it(L_DEBUG, "First 4 coeffs of B: %d, %d, %d, %d", a_b[0], a_b[1], a_b[2], a_b[3]);
     
     // Simple pointwise multiplication in NTT domain using Montgomery multiplication
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Принудительная отладка для первых нескольких элементов
-        if (l_i < 5) {
-            log_it(L_DEBUG, "About to call Montgomery multiply for element %d: %d * %d", l_i, a_a[l_i], a_b[l_i]);
-        }
         a_c[l_i] = chipmunk_ntt_montgomery_multiply(a_a[l_i], a_b[l_i]);
-        if (l_i < 5) {
-            log_it(L_DEBUG, "Montgomery multiply result for element %d: %d", l_i, a_c[l_i]);
-        }
     }
     
     // Проверяем результат
@@ -516,10 +501,6 @@ int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
     for (int i = 0; i < CHIPMUNK_N; i++) {
         if (a_c[i] == 0) c_zeros++;
     }
-    log_it(L_DEBUG, "Result C has %d zeros out of %d coefficients", c_zeros, CHIPMUNK_N);
-    log_it(L_DEBUG, "First 4 coeffs of C: %d, %d, %d, %d", a_c[0], a_c[1], a_c[2], a_c[3]);
-    
-    log_it(L_DEBUG, "chipmunk_ntt_pointwise_montgomery: Function exit with success");
     return CHIPMUNK_ERROR_SUCCESS;
 } 
 

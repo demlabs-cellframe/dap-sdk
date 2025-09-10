@@ -29,7 +29,7 @@
 #include <dap_sign.h>
 #include <dap_hash.h>
 #include "rand/dap_rand.h"
-#include <dap_math_mod.h>
+
 
 #define LOG_TAG "test_chipmunk_ring"
 
@@ -950,11 +950,7 @@ int main(void) {
         return -1;
     }
 
-    // Initialize math module for modular arithmetic tests
-    if (dap_math_mod_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize math module");
-        return -1;
-    }
+
 
     bool l_all_passed = true;
 

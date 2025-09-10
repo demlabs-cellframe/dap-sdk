@@ -2,7 +2,6 @@
 #include <dap_test.h>
 #include <dap_enc_key.h>
 #include <dap_hash.h>
-#include <dap_math_mod.h>
 #include "../../../fixtures/utilities/test_helpers.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_hots.h"
