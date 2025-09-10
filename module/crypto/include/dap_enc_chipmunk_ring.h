@@ -54,9 +54,6 @@ typedef struct chipmunk_ring_pq_params {
     uint32_t code_n;
     uint32_t code_k;
     uint32_t code_t;
-
-    // Hash domain separation
-    char hash_domain_sep[64];
 } chipmunk_ring_pq_params_t;
 
 /**

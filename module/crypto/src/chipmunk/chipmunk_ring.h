@@ -69,14 +69,12 @@ typedef struct chipmunk_ring_commitment {
     // Quantum-resistant commitment layers (dynamic sizes based on parameters)
     uint8_t *ring_lwe_layer;         ///< Ring-LWE commitment (~90,000 qubits required)
     uint8_t *ntru_layer;             ///< NTRU commitment (~70,000 qubits required)
-    uint8_t *hash_layer;             ///< Hash commitment (~512 qubits, vulnerable ~2030)
-    uint8_t *code_layer;             ///< Code commitment (~60,000 qubits required)
-    uint8_t *binding_proof;          ///< Multi-layer binding proof
+    uint8_t *code_layer;             ///< Code commitment (~80,000 qubits required, strengthened)
+    uint8_t *binding_proof;          ///< Optimized binding proof (Merkle tree or FusionHash)
 
     // Layer sizes for memory management
     size_t ring_lwe_size;
     size_t ntru_size;
-    size_t hash_size;
     size_t code_size;
     size_t binding_proof_size;
 } chipmunk_ring_commitment_t;

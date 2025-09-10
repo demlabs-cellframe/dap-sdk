@@ -54,26 +54,20 @@
 #define CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT 2             // Conservative: 2 bytes per coefficient
 #define CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_NTRU_N_DEFAULT * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT)
 
-// ================ POST-QUANTUM HASH LAYER PARAMETERS ================
-
-// Post-quantum hash layer parameters
-#define CHIPMUNK_RING_HASH_BIT_SIZE_DEFAULT 1024                 // 1024-bit output for 512-bit Grover resistance
-#define CHIPMUNK_RING_HASH_BYTE_SIZE_DEFAULT (CHIPMUNK_RING_HASH_BIT_SIZE_DEFAULT / 8)
-#define CHIPMUNK_RING_HASH_DOMAIN_SEP_DEFAULT "CHIPMUNK_RING_PQ_HASH_COMMIT_1024"
 
 // ================ CODE-BASED LAYER PARAMETERS ================
 
-// Code-based layer parameters (~60,000 logical qubits required)
-#define CHIPMUNK_RING_CODE_N_DEFAULT 2048                        // Code length for ~200-bit classical security
-#define CHIPMUNK_RING_CODE_K_DEFAULT 1024                        // Code dimension
-#define CHIPMUNK_RING_CODE_T_DEFAULT 128                         // Error weight
-#define CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT 512             // Syndrome size in bits
-#define CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT / 8)
+// Code-based layer parameters (~80,000 logical qubits required)
+#define CHIPMUNK_RING_CODE_N_DEFAULT 3072                        // Code length strengthened (+1024 from Hash)
+#define CHIPMUNK_RING_CODE_K_DEFAULT 1536                        // Code dimension (proportional increase)
+#define CHIPMUNK_RING_CODE_T_DEFAULT 192                         // Error weight (proportional increase)
+#define CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT 1536            // Syndrome size strengthened (+1024 bits)
+#define CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_CODE_SYNDROME_BITS_DEFAULT / 8)  // 192 bytes (+128)
 
 // ================ BINDING PROOF PARAMETERS ================
 
-// Binding proof parameters
-#define CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT 1024        // 1024-bit binding proof
+// Optimized Merkle Tree binding proof parameters  
+#define CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT 256         // 256-bit Merkle root (sufficient for binding)
 #define CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT (CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT / 8)
 
 // ================ COMPUTED PARAMETERS ================

@@ -136,17 +136,8 @@ void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key) {
  * @brief Get signature size for given ring size
  */
 size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size) {
-    if (a_ring_size > CHIPMUNK_RING_MAX_RING_SIZE) {
-        return 0;
-    }
-
-    return sizeof(uint32_t) + // ring_size
-           sizeof(uint32_t) + // signer_index
-           32 +              // linkability_tag
-           32 +              // challenge
-           a_ring_size * (32 + 32) + // commitments (value + randomness)
-           a_ring_size * 32 +  // responses
-           CHIPMUNK_SIGNATURE_SIZE; // chipmunk_signature
+    // Use the quantum-resistant signature size calculation
+    return chipmunk_ring_get_signature_size(a_ring_size);
 }
 
 /**
