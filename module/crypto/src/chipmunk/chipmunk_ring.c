@@ -1310,7 +1310,7 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         memcpy(&a_sig->commitments[l_i].binding_proof_size, a_input + l_offset, sizeof(size_t));
         l_offset += sizeof(size_t);
 
-        // Allocate memory for quantum-resistant layers (Hash layer removed)
+        // Allocate memory for quantum-resistant layers
         a_sig->commitments[l_i].ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ring_lwe_size);
         a_sig->commitments[l_i].ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ntru_size);
         a_sig->commitments[l_i].code_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].code_size);
