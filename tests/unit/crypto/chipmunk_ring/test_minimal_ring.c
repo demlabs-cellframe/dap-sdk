@@ -59,7 +59,7 @@ static void test_minimal_ring_signature() {
 
     // Create signature
     log_it(L_INFO, "Creating signature...");
-    dap_sign_t* signature = dap_sign_create_ring(signer_key, (uint8_t*)message, message_len, ring_keys, 2, 0);
+    dap_sign_t* signature = dap_sign_create_ring(signer_key, (uint8_t*)message, message_len, ring_keys, 2);
     assert(signature != NULL);
 
     log_it(L_INFO, "Signature created successfully");

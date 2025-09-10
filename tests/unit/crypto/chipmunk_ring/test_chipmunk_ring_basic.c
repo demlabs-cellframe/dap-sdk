@@ -83,8 +83,7 @@ static bool s_test_basic_ring_operations(void) {
     dap_sign_t* l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys, TEST_RING_SIZE,
-        0  // Signer is at position 0
+        l_ring_keys, TEST_RING_SIZE
     );
     dap_assert(l_signature != NULL, "Ring signature creation should succeed");
 
@@ -139,32 +138,35 @@ static bool s_test_error_handling(void) {
     log_it(L_INFO, "Testing Chipmunk Ring error handling...");
 
     // Test with NULL parameters
-    dap_sign_t* l_signature = dap_sign_create_ring(NULL, NULL, 0, NULL, 0, 0);
+    dap_sign_t* l_signature = dap_sign_create_ring(NULL, NULL, 0, NULL, 0);
     dap_assert(l_signature == NULL, "Signature creation should fail with NULL parameters");
 
     // Test with valid signer but NULL message
     dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
 
-    l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0, 0);
+    l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0);
     dap_assert(l_signature == NULL, "Signature creation should fail with NULL message");
 
     // Test with empty ring
     dap_hash_fast_t l_message_hash = {0};
-    l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash), NULL, 0, 0);
+    l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash), NULL, 0);
     dap_assert(l_signature == NULL, "Signature creation should fail with empty ring");
 
     // Test with invalid ring size
     dap_enc_key_t* l_ring_keys[1] = {l_signer_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
-                                      l_ring_keys, 1, 0);
+                                      l_ring_keys, 1);
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size < 2");
 
-    // Test with invalid signer index
+    // Test with valid ring of size 2 (anonymous signature)
     dap_enc_key_t* l_ring_keys_2[2] = {l_signer_key, l_signer_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
-                                      l_ring_keys_2, 2, 5); // Index out of bounds
-    dap_assert(l_signature == NULL, "Signature creation should fail with invalid signer index");
+                                      l_ring_keys_2, 2); // Anonymous ring signature
+    dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
+    if (l_signature) {
+        DAP_DELETE(l_signature);
+    }
 
     // Test verification with NULL signature
     int l_verify_result = dap_sign_verify(NULL, &l_message_hash, sizeof(l_message_hash));

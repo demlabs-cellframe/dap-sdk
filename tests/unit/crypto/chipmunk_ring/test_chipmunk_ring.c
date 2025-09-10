@@ -446,21 +446,21 @@ static bool s_test_error_handling(void) {
     log_it(L_INFO, "Testing comprehensive Chipmunk Ring error handling...");
 
     // Test with NULL parameters
-    dap_sign_t* l_signature = dap_sign_create_ring(NULL, NULL, 0, NULL, 0, 0);
+    dap_sign_t* l_signature = dap_sign_create_ring(NULL, NULL, 0, NULL, 0);
     dap_assert(l_signature, "Signature creation should fail with NULL parameters");
 
     // Test with valid signer but NULL message
     dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     dap_assert(l_signer_key, "Signer key generation should succeed");
 
-    l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0, 0);
+    l_signature = dap_sign_create_ring(l_signer_key, NULL, 0, NULL, 0);
     dap_assert(l_signature, "Signature creation should fail with NULL message");
 
     // Test with empty ring
     dap_hash_fast_t l_message_hash = {0};
     dap_hash_fast(TEST_MESSAGE, TEST_MESSAGE_LEN, &l_message_hash);
 
-    l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash), NULL, 0, 0);
+    l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash), NULL, 0);
     dap_assert(l_signature, "Signature creation should fail with empty ring");
 
     // Test with invalid ring size

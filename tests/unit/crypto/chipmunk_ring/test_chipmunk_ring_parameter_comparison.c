@@ -289,8 +289,7 @@ static bool s_test_parameter_performance(void) {
             dap_sign_t* l_signature = dap_sign_create_ring(
                 l_ring_keys[iter % COMPARISON_RING_SIZE],
                 &l_message_hash, sizeof(l_message_hash),
-                l_ring_keys, COMPARISON_RING_SIZE,
-                iter % COMPARISON_RING_SIZE
+                l_ring_keys, COMPARISON_RING_SIZE
             );
             double l_sign_end = get_time_ms();
             

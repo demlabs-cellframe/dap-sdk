@@ -40,7 +40,7 @@ static bool test_single_key_generation() {
     // Create ring with just one key
     dap_enc_key_t* ring_keys[1] = {key};
 
-    dap_sign_t* signature = dap_sign_create_ring(key, (uint8_t*)message, message_len, ring_keys, 1, 0);
+    dap_sign_t* signature = dap_sign_create_ring(key, (uint8_t*)message, message_len, ring_keys, 1);
 
     if (signature) {
         log_it(L_INFO, "Single-key ring signature created successfully");
