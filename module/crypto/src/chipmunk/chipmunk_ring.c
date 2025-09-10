@@ -41,12 +41,13 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 // Post-quantum commitment parameters (configurable with defaults)
 static chipmunk_ring_pq_params_t s_pq_params = {
     .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
     .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
+    .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
     .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
     .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
     .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
@@ -274,23 +275,24 @@ static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
 
     // Ring-LWE commitment requiring ~90,000 logical qubits for quantum attack
     size_t pub_key_size = get_public_key_size();
-    uint8_t *combined_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 16);
+    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_RING_LWE_INPUT_EXTRA;
+    uint8_t *combined_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
 
     if (!combined_input) {
         return -1;
     }
 
     memcpy(combined_input, a_public_key->data, pub_key_size);
-    memcpy(combined_input + pub_key_size, randomness, 32);
+    memcpy(combined_input + pub_key_size, randomness, s_pq_params.randomness_size);
 
     // Enhanced parameters: 2^(0.292×n) operations, requiring ~90,000 logical qubits
     uint64_t enhanced_n = s_pq_params.ring_lwe_n;
     uint64_t enhanced_q = s_pq_params.ring_lwe_q;
-    memcpy(combined_input + pub_key_size + 32, &enhanced_n, 8);
-    memcpy(combined_input + pub_key_size + 40, &enhanced_q, 8);
+    memcpy(combined_input + pub_key_size + s_pq_params.randomness_size, &enhanced_n, 8);
+    memcpy(combined_input + pub_key_size + s_pq_params.randomness_size + 8, &enhanced_q, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, combined_input, pub_key_size + 32 + 16);
+    shake256(commitment, commitment_size, combined_input, input_size);
 
     DAP_FREE(combined_input);
     return 0;
@@ -309,23 +311,24 @@ static int create_ntru_commitment(uint8_t *commitment,
 
     // NTRU commitment requiring ~70,000 logical qubits for quantum attack
     size_t pub_key_size = get_public_key_size();
-    uint8_t *ntru_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 16);
+    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_NTRU_INPUT_EXTRA;
+    uint8_t *ntru_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
 
     if (!ntru_input) {
         return -1;
     }
 
     memcpy(ntru_input, a_public_key->data, pub_key_size);
-    memcpy(ntru_input + pub_key_size, randomness, 32);
+    memcpy(ntru_input + pub_key_size, randomness, s_pq_params.randomness_size);
 
     // NTRU parameters: configurable n and q for quantum security
     uint64_t ntru_n = s_pq_params.ntru_n;
     uint64_t ntru_q = s_pq_params.ntru_q;
-    memcpy(ntru_input + pub_key_size + 32, &ntru_n, 8);
-    memcpy(ntru_input + pub_key_size + 40, &ntru_q, 8);
+    memcpy(ntru_input + pub_key_size + s_pq_params.randomness_size, &ntru_n, 8);
+    memcpy(ntru_input + pub_key_size + s_pq_params.randomness_size + 8, &ntru_q, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, ntru_input, pub_key_size + 32 + 16);
+    shake256(commitment, commitment_size, ntru_input, input_size);
 
     DAP_FREE(ntru_input);
 
@@ -345,20 +348,21 @@ static int create_post_quantum_hash_commitment(uint8_t *commitment,
 
     // Hash commitment with configurable output size for Grover resistance
     size_t pub_key_size = get_public_key_size();
-    uint8_t *hash_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 64);
+    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_HASH_INPUT_EXTRA;
+    uint8_t *hash_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
 
     if (!hash_input) {
         return -1;
     }
 
     memcpy(hash_input, a_public_key->data, pub_key_size);
-    memcpy(hash_input + pub_key_size, randomness, 32);
+    memcpy(hash_input + pub_key_size, randomness, s_pq_params.randomness_size);
 
     // Add configurable domain separation for quantum security
-    memcpy(hash_input + pub_key_size + 32, s_pq_params.hash_domain_sep, 64);
+    memcpy(hash_input + pub_key_size + s_pq_params.randomness_size, s_pq_params.hash_domain_sep, CHIPMUNK_RING_HASH_INPUT_EXTRA);
 
     // Use SHAKE256 with configurable output size for Grover resistance
-    shake256(commitment, commitment_size, hash_input, pub_key_size + 32 + 64);
+    shake256(commitment, commitment_size, hash_input, input_size);
 
     DAP_FREE(hash_input);
 
@@ -378,25 +382,26 @@ static int create_code_based_commitment(uint8_t *commitment,
 
     // Code-based commitment requiring ~60,000 logical qubits for quantum attack
     size_t pub_key_size = get_public_key_size();
-    uint8_t *code_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 24);
+    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_CODE_INPUT_EXTRA;
+    uint8_t *code_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
 
     if (!code_input) {
         return -1;
     }
 
     memcpy(code_input, a_public_key->data, pub_key_size);
-    memcpy(code_input + pub_key_size, randomness, 32);
+    memcpy(code_input + pub_key_size, randomness, s_pq_params.randomness_size);
 
     // Configurable code parameters for quantum security
     uint64_t code_n = s_pq_params.code_n;
     uint64_t code_k = s_pq_params.code_k;
     uint64_t code_t = s_pq_params.code_t;
-    memcpy(code_input + pub_key_size + 32, &code_n, 8);
-    memcpy(code_input + pub_key_size + 40, &code_k, 8);
-    memcpy(code_input + pub_key_size + 48, &code_t, 8);
+    memcpy(code_input + pub_key_size + s_pq_params.randomness_size, &code_n, 8);
+    memcpy(code_input + pub_key_size + s_pq_params.randomness_size + 8, &code_k, 8);
+    memcpy(code_input + pub_key_size + s_pq_params.randomness_size + 16, &code_t, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, code_input, pub_key_size + 32 + 24);
+    shake256(commitment, commitment_size, code_input, input_size);
 
     DAP_FREE(code_input);
 
@@ -415,7 +420,7 @@ static int create_commitment_binding_proof(uint8_t *binding_proof,
     }
 
     // Prove that all commitment layers use the same randomness
-    size_t total_input_size = 32 + a_commitment->ring_lwe_size + a_commitment->ntru_size +
+    size_t total_input_size = s_pq_params.randomness_size + a_commitment->ring_lwe_size + a_commitment->ntru_size +
                              a_commitment->hash_size + a_commitment->code_size;
     uint8_t *proof_input = DAP_NEW_Z_SIZE(uint8_t, total_input_size);
     if (!proof_input) {
@@ -424,8 +429,8 @@ static int create_commitment_binding_proof(uint8_t *binding_proof,
 
     size_t offset = 0;
 
-    memcpy(proof_input + offset, randomness, 32);
-    offset += 32;
+    memcpy(proof_input + offset, randomness, s_pq_params.randomness_size);
+    offset += s_pq_params.randomness_size;
     memcpy(proof_input + offset, a_commitment->ring_lwe_layer, a_commitment->ring_lwe_size);
     offset += a_commitment->ring_lwe_size;
     memcpy(proof_input + offset, a_commitment->ntru_layer, a_commitment->ntru_size);
@@ -449,6 +454,7 @@ void chipmunk_ring_commitment_free(chipmunk_ring_commitment_t *a_commitment) {
         return;
     }
 
+    DAP_FREE(a_commitment->randomness);
     DAP_FREE(a_commitment->ring_lwe_layer);
     DAP_FREE(a_commitment->ntru_layer);
     DAP_FREE(a_commitment->hash_layer);
@@ -456,8 +462,13 @@ void chipmunk_ring_commitment_free(chipmunk_ring_commitment_t *a_commitment) {
     DAP_FREE(a_commitment->binding_proof);
 
     // Reset all fields to zero
-    memset(a_commitment->value, 0, sizeof(a_commitment->value));
-    memset(a_commitment->randomness, 0, sizeof(a_commitment->randomness));
+    a_commitment->randomness = NULL;
+    a_commitment->ring_lwe_layer = NULL;
+    a_commitment->ntru_layer = NULL;
+    a_commitment->hash_layer = NULL;
+    a_commitment->code_layer = NULL;
+    a_commitment->binding_proof = NULL;
+    a_commitment->randomness_size = 0;
     a_commitment->ring_lwe_size = 0;
     a_commitment->ntru_size = 0;
     a_commitment->hash_size = 0;
@@ -479,19 +490,21 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     chipmunk_ring_module_init();
 
     // Allocate memory for dynamic arrays based on current parameters
+    a_commitment->randomness_size = s_pq_params.randomness_size;
     a_commitment->ring_lwe_size = s_ring_lwe_commitment_size;
     a_commitment->ntru_size = s_ntru_commitment_size;
     a_commitment->hash_size = s_hash_output_size;
     a_commitment->code_size = s_code_commitment_size;
     a_commitment->binding_proof_size = s_binding_proof_size;
 
+    a_commitment->randomness = DAP_NEW_Z_SIZE(uint8_t, a_commitment->randomness_size);
     a_commitment->ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ring_lwe_size);
     a_commitment->ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ntru_size);
     a_commitment->hash_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->hash_size);
     a_commitment->code_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->code_size);
     a_commitment->binding_proof = DAP_NEW_Z_SIZE(uint8_t, a_commitment->binding_proof_size);
 
-    if (!a_commitment->ring_lwe_layer || !a_commitment->ntru_layer ||
+    if (!a_commitment->randomness || !a_commitment->ring_lwe_layer || !a_commitment->ntru_layer ||
         !a_commitment->hash_layer || !a_commitment->code_layer ||
         !a_commitment->binding_proof) {
         log_it(L_CRITICAL, "Failed to allocate memory for commitment layers");
@@ -500,35 +513,12 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     }
 
     // Generate randomness
-    if (randombytes(a_commitment->randomness, sizeof(a_commitment->randomness)) != 0) {
+    if (randombytes(a_commitment->randomness, a_commitment->randomness_size) != 0) {
         log_it(L_ERROR, "Failed to generate randomness for commitment");
         chipmunk_ring_commitment_free(a_commitment);
         return -1;
     }
 
-    // Create legacy commitment value for compatibility
-    size_t pub_key_size = get_public_key_size();
-    size_t combined_size = pub_key_size + sizeof(a_commitment->randomness);
-    uint8_t *combined_data = DAP_NEW_SIZE(uint8_t, combined_size);
-    if (!combined_data) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        chipmunk_ring_commitment_free(a_commitment);
-        return -ENOMEM;
-    }
-
-    memcpy(combined_data, a_public_key->data, pub_key_size);
-    memcpy(combined_data + pub_key_size, a_commitment->randomness, sizeof(a_commitment->randomness));
-
-    dap_hash_fast_t commitment_hash;
-    if (!dap_hash_fast(combined_data, combined_size, &commitment_hash)) {
-        log_it(L_ERROR, "Failed to hash commitment data");
-        DAP_FREE(combined_data);
-        chipmunk_ring_commitment_free(a_commitment);
-        return -1;
-    }
-
-    memcpy(a_commitment->value, &commitment_hash, sizeof(a_commitment->value));
-    DAP_FREE(combined_data);
 
     // Create quantum-resistant commitment layers (200+ bit quantum security for 100+ years)
 
@@ -868,11 +858,33 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     debug_if(s_debug_more, L_INFO, "Starting ring signature zero-knowledge verification");
     debug_if(s_debug_more, L_INFO, "Ring size: %u, signer_index: %u", a_ring->size, a_signature->signer_index);
 
+    // Debug: Check commitment sizes
+    if(s_debug_more)
+        for (uint32_t i = 0; i < a_ring->size; i++) {
+            debug_if(s_debug_more, L_INFO, "Commitment %u sizes: ring_lwe=%zu, ntru=%zu, hash=%zu, code=%zu, binding=%zu",
+                    i, a_signature->commitments[i].ring_lwe_size,
+                    a_signature->commitments[i].ntru_size,
+                    a_signature->commitments[i].hash_size,
+                    a_signature->commitments[i].code_size,
+                    a_signature->commitments[i].binding_proof_size);
+        }
+
     // CRITICAL: Verify that challenge was generated from this message
     // Recreate challenge using same method as in chipmunk_ring_sign
     size_t l_message_size = a_message ? a_message_size : 0;
     size_t l_ring_hash_size = sizeof(a_ring->ring_hash);
-    size_t l_commitments_size = a_ring->size * sizeof(chipmunk_ring_commitment_t);
+
+    // Calculate actual size of all commitments (pure quantum-resistant format)
+    size_t l_commitments_size = 0;
+    for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
+        l_commitments_size += s_pq_params.randomness_size; // randomness
+        // Add sizes of dynamic arrays
+        l_commitments_size += a_signature->commitments[l_i].ring_lwe_size;
+        l_commitments_size += a_signature->commitments[l_i].ntru_size;
+        l_commitments_size += a_signature->commitments[l_i].hash_size;
+        l_commitments_size += a_signature->commitments[l_i].code_size;
+        l_commitments_size += a_signature->commitments[l_i].binding_proof_size;
+    }
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
     
     debug_if(s_debug_more, L_INFO, "Challenge verification input sizes: message=%zu, ring_hash=%zu, commitments=%zu, total=%zu",
@@ -898,11 +910,29 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     // Add ring hash
     memcpy(l_combined_data + l_offset, a_ring->ring_hash, sizeof(a_ring->ring_hash));
     l_offset += sizeof(a_ring->ring_hash);
-    // Add all commitments
+    // Add all commitments (including dynamic arrays)
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        memcpy(l_combined_data + l_offset, &a_signature->commitments[l_i],
-               sizeof(chipmunk_ring_commitment_t));
-        l_offset += sizeof(chipmunk_ring_commitment_t);
+        const chipmunk_ring_commitment_t *commitment = &a_signature->commitments[l_i];
+
+        // Copy randomness (dynamic size)
+        memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
+        l_offset += commitment->randomness_size;
+
+        // Copy dynamic arrays content
+        memcpy(l_combined_data + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
+        l_offset += commitment->ring_lwe_size;
+
+        memcpy(l_combined_data + l_offset, commitment->ntru_layer, commitment->ntru_size);
+        l_offset += commitment->ntru_size;
+
+        memcpy(l_combined_data + l_offset, commitment->hash_layer, commitment->hash_size);
+        l_offset += commitment->hash_size;
+
+        memcpy(l_combined_data + l_offset, commitment->code_layer, commitment->code_size);
+        l_offset += commitment->code_size;
+
+        memcpy(l_combined_data + l_offset, commitment->binding_proof, commitment->binding_proof_size);
+        l_offset += commitment->binding_proof_size;
     }
 
     // Hash to get expected challenge
@@ -930,6 +960,12 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     // Compare with challenge from signature
     if (memcmp(a_signature->challenge, &l_expected_challenge_hash, sizeof(a_signature->challenge)) != 0) {
         debug_if(s_debug_more, L_ERROR, "Challenge verification failed - message doesn't match signature");
+        debug_if(s_debug_more, L_ERROR, "Expected challenge hash: %02x%02x%02x%02x...",
+                 ((uint8_t*)&l_expected_challenge_hash)[0], ((uint8_t*)&l_expected_challenge_hash)[1],
+                 ((uint8_t*)&l_expected_challenge_hash)[2], ((uint8_t*)&l_expected_challenge_hash)[3]);
+        debug_if(s_debug_more, L_ERROR, "Actual signature challenge: %02x%02x%02x%02x...",
+                 a_signature->challenge[0], a_signature->challenge[1],
+                 a_signature->challenge[2], a_signature->challenge[3]);
         return -1;
     }
     debug_if(s_debug_more, L_INFO, "Challenge verification passed - message matches signature");
@@ -959,10 +995,11 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                                     sizeof(a_signature->responses[l_i].value) : sizeof(uint256_t);
             memcpy(&l_response, a_signature->responses[l_i].value, l_response_size);
 
-            // Convert commitment value to uint256_t
-            size_t l_commitment_size = (sizeof(a_signature->commitments[l_i].value) < sizeof(uint256_t)) ?
-                                      sizeof(a_signature->commitments[l_i].value) : sizeof(uint256_t);
-            memcpy(&l_commitment_value, a_signature->commitments[l_i].value, l_commitment_size);
+            // For quantum-resistant verification, we use the hash layer as commitment value
+            // This provides compatibility with legacy verification logic
+            size_t l_commitment_size = (a_signature->commitments[l_i].hash_size < sizeof(uint256_t)) ?
+                                      a_signature->commitments[l_i].hash_size : sizeof(uint256_t);
+            memcpy(&l_commitment_value, a_signature->commitments[l_i].hash_layer, l_commitment_size);
 
             // Step 1: Reconstruct the commitment from PK and response
             // commitment should equal H(PK || (response + challenge * public_key) mod modulus)
@@ -1011,7 +1048,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // For non-signers, check that response equals commitment randomness
             if (memcmp(a_signature->responses[l_i].value,
                       a_signature->commitments[l_i].randomness,
-                      sizeof(a_signature->responses[l_i].value)) != 0) {
+                      s_pq_params.randomness_size) != 0) {
                 log_it(L_ERROR, "Response verification failed for participant %u", l_i);
                 return -1;
             }
@@ -1029,13 +1066,22 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
         return 0;
     }
 
+    size_t sig_size = get_signature_size();
+    size_t commitment_size_per_participant = sizeof(size_t) + s_pq_params.randomness_size + // randomness size + data
+                                           5 * sizeof(size_t) + // 5 layer sizes
+                                           s_ring_lwe_commitment_size +
+                                           s_ntru_commitment_size +
+                                           s_hash_output_size +
+                                           s_code_commitment_size +
+                                           s_binding_proof_size;
+
     return sizeof(uint32_t) + // ring_size
            sizeof(uint32_t) + // signer_index
-           32 +              // linkability_tag
-           32 +              // challenge
-           a_ring_size * (32 + 32) + // commitments (value + randomness)
-           a_ring_size * 32 +  // responses
-           CHIPMUNK_SIGNATURE_SIZE; // chipmunk_signature
+           CHIPMUNK_RING_LINKABILITY_TAG_SIZE + // linkability_tag
+           CHIPMUNK_RING_CHALLENGE_SIZE +       // challenge
+           a_ring_size * commitment_size_per_participant + // quantum-resistant commitments
+           a_ring_size * s_pq_params.randomness_size +     // responses
+           sig_size;          // chipmunk_signature
 }
 
 /**
@@ -1089,30 +1135,62 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
     l_offset += sizeof(uint32_t);
 
     // Serialize linkability_tag
-    memcpy(a_output + l_offset, a_sig->linkability_tag, 32);
-    l_offset += 32;
+    memcpy(a_output + l_offset, a_sig->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+    l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 
     // Serialize challenge
-    memcpy(a_output + l_offset, a_sig->challenge, 32);
-    l_offset += 32;
+    memcpy(a_output + l_offset, a_sig->challenge, CHIPMUNK_RING_CHALLENGE_SIZE);
+    l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
 
-    // Serialize commitments
+    // Serialize commitments (quantum-resistant format)
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        memcpy(a_output + l_offset, a_sig->commitments[l_i].value, 32);
-        l_offset += 32;
-        memcpy(a_output + l_offset, a_sig->commitments[l_i].randomness, 32);
-        l_offset += 32;
+        const chipmunk_ring_commitment_t *commitment = &a_sig->commitments[l_i];
+
+        // Serialize randomness size first, then randomness data
+        memcpy(a_output + l_offset, &commitment->randomness_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
+        l_offset += commitment->randomness_size;
+
+        // Serialize layer sizes first
+        memcpy(a_output + l_offset, &commitment->ring_lwe_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(a_output + l_offset, &commitment->ntru_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(a_output + l_offset, &commitment->hash_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(a_output + l_offset, &commitment->code_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(a_output + l_offset, &commitment->binding_proof_size, sizeof(size_t));
+        l_offset += sizeof(size_t);
+
+        // Serialize dynamic arrays content
+        memcpy(a_output + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
+        l_offset += commitment->ring_lwe_size;
+
+        memcpy(a_output + l_offset, commitment->ntru_layer, commitment->ntru_size);
+        l_offset += commitment->ntru_size;
+
+        memcpy(a_output + l_offset, commitment->hash_layer, commitment->hash_size);
+        l_offset += commitment->hash_size;
+
+        memcpy(a_output + l_offset, commitment->code_layer, commitment->code_size);
+        l_offset += commitment->code_size;
+
+        memcpy(a_output + l_offset, commitment->binding_proof, commitment->binding_proof_size);
+        l_offset += commitment->binding_proof_size;
     }
 
     // Serialize responses
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        memcpy(a_output + l_offset, a_sig->responses[l_i].value, 32);
-        l_offset += 32;
+        memcpy(a_output + l_offset, a_sig->responses[l_i].value, s_pq_params.randomness_size);
+        l_offset += s_pq_params.randomness_size;
     }
 
     // Serialize chipmunk_signature
-    memcpy(a_output + l_offset, a_sig->chipmunk_signature, CHIPMUNK_SIGNATURE_SIZE);
-    l_offset += CHIPMUNK_SIGNATURE_SIZE;
+    size_t sig_size = get_signature_size();
+    memcpy(a_output + l_offset, a_sig->chipmunk_signature, sig_size);
+    l_offset += sig_size;
 
     return 0;
 }
@@ -1169,14 +1247,14 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     l_offset += sizeof(uint32_t);
 
     // Deserialize linkability_tag
-    if (l_offset + 32 > a_input_size) return -EINVAL;
-    memcpy(a_sig->linkability_tag, a_input + l_offset, 32);
-    l_offset += 32;
+    if (l_offset + CHIPMUNK_RING_LINKABILITY_TAG_SIZE > a_input_size) return -EINVAL;
+    memcpy(a_sig->linkability_tag, a_input + l_offset, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+    l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 
     // Deserialize challenge
-    if (l_offset + 32 > a_input_size) return -EINVAL;
-    memcpy(a_sig->challenge, a_input + l_offset, 32);
-    l_offset += 32;
+    if (l_offset + CHIPMUNK_RING_CHALLENGE_SIZE > a_input_size) return -EINVAL;
+    memcpy(a_sig->challenge, a_input + l_offset, CHIPMUNK_RING_CHALLENGE_SIZE);
+    l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
 
     // Allocate memory for commitments and responses with overflow protection
     a_sig->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_sig->ring_size);
@@ -1196,35 +1274,112 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         return -ENOMEM;
     }
 
-    // Deserialize commitments
+    // Deserialize commitments (quantum-resistant format)
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        if (l_offset + 64 > a_input_size) {
+        // Deserialize randomness size first
+        if (l_offset + sizeof(size_t) > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        memcpy(a_sig->commitments[l_i].value, a_input + l_offset, 32);
-        l_offset += 32;
-        memcpy(a_sig->commitments[l_i].randomness, a_input + l_offset, 32);
-        l_offset += 32;
+        memcpy(&a_sig->commitments[l_i].randomness_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+
+        // Allocate and deserialize randomness data
+        a_sig->commitments[l_i].randomness = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].randomness_size);
+        if (!a_sig->commitments[l_i].randomness) {
+            chipmunk_ring_signature_free(a_sig);
+            return -ENOMEM;
+        }
+
+        if (l_offset + a_sig->commitments[l_i].randomness_size > a_input_size) {
+            chipmunk_ring_signature_free(a_sig);
+            return -EINVAL;
+        }
+        memcpy(a_sig->commitments[l_i].randomness, a_input + l_offset, a_sig->commitments[l_i].randomness_size);
+        l_offset += a_sig->commitments[l_i].randomness_size;
+
+        // Deserialize layer sizes
+        if (l_offset + 5 * sizeof(size_t) > a_input_size) {
+            chipmunk_ring_signature_free(a_sig);
+            return -EINVAL;
+        }
+        memcpy(&a_sig->commitments[l_i].ring_lwe_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(&a_sig->commitments[l_i].ntru_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(&a_sig->commitments[l_i].hash_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(&a_sig->commitments[l_i].code_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+        memcpy(&a_sig->commitments[l_i].binding_proof_size, a_input + l_offset, sizeof(size_t));
+        l_offset += sizeof(size_t);
+
+        // Allocate memory for quantum-resistant layers
+        a_sig->commitments[l_i].ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ring_lwe_size);
+        a_sig->commitments[l_i].ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ntru_size);
+        a_sig->commitments[l_i].hash_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].hash_size);
+        a_sig->commitments[l_i].code_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].code_size);
+        a_sig->commitments[l_i].binding_proof = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].binding_proof_size);
+
+        if (!a_sig->commitments[l_i].ring_lwe_layer || !a_sig->commitments[l_i].ntru_layer ||
+            !a_sig->commitments[l_i].hash_layer || !a_sig->commitments[l_i].code_layer ||
+            !a_sig->commitments[l_i].binding_proof) {
+            debug_if(s_debug_more, L_ERROR, "Failed to allocate quantum-resistant layers for commitment %zu", l_i);
+            chipmunk_ring_signature_free(a_sig);
+            return -ENOMEM;
+        }
+
+        // Deserialize dynamic arrays content
+        size_t total_layer_size = a_sig->commitments[l_i].ring_lwe_size +
+                                 a_sig->commitments[l_i].ntru_size +
+                                 a_sig->commitments[l_i].hash_size +
+                                 a_sig->commitments[l_i].code_size +
+                                 a_sig->commitments[l_i].binding_proof_size;
+
+        if (l_offset + total_layer_size > a_input_size) {
+            chipmunk_ring_signature_free(a_sig);
+            return -EINVAL;
+        }
+
+        memcpy(a_sig->commitments[l_i].ring_lwe_layer, a_input + l_offset, a_sig->commitments[l_i].ring_lwe_size);
+        l_offset += a_sig->commitments[l_i].ring_lwe_size;
+
+        memcpy(a_sig->commitments[l_i].ntru_layer, a_input + l_offset, a_sig->commitments[l_i].ntru_size);
+        l_offset += a_sig->commitments[l_i].ntru_size;
+
+        memcpy(a_sig->commitments[l_i].hash_layer, a_input + l_offset, a_sig->commitments[l_i].hash_size);
+        l_offset += a_sig->commitments[l_i].hash_size;
+
+        memcpy(a_sig->commitments[l_i].code_layer, a_input + l_offset, a_sig->commitments[l_i].code_size);
+        l_offset += a_sig->commitments[l_i].code_size;
+
+        memcpy(a_sig->commitments[l_i].binding_proof, a_input + l_offset, a_sig->commitments[l_i].binding_proof_size);
+        l_offset += a_sig->commitments[l_i].binding_proof_size;
+
+        debug_if(s_debug_more, L_INFO, "Deserialized quantum-resistant commitment %zu with layers: ring_lwe=%zu, ntru=%zu, hash=%zu, code=%zu, binding=%zu",
+                 l_i, a_sig->commitments[l_i].ring_lwe_size, a_sig->commitments[l_i].ntru_size,
+                 a_sig->commitments[l_i].hash_size, a_sig->commitments[l_i].code_size,
+                 a_sig->commitments[l_i].binding_proof_size);
     }
 
     // Deserialize responses
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        if (l_offset + 32 > a_input_size) {
+        if (l_offset + s_pq_params.randomness_size > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        memcpy(a_sig->responses[l_i].value, a_input + l_offset, 32);
-        l_offset += 32;
+        memcpy(a_sig->responses[l_i].value, a_input + l_offset, s_pq_params.randomness_size);
+        l_offset += s_pq_params.randomness_size;
     }
 
     // Deserialize chipmunk_signature
-    if (l_offset + CHIPMUNK_SIGNATURE_SIZE > a_input_size) {
+    size_t sig_size = get_signature_size();
+    if (l_offset + sig_size > a_input_size) {
         chipmunk_ring_signature_free(a_sig);
         return -EINVAL;
     }
-    memcpy(a_sig->chipmunk_signature, a_input + l_offset, CHIPMUNK_SIGNATURE_SIZE);
-    l_offset += CHIPMUNK_SIGNATURE_SIZE;
+    memcpy(a_sig->chipmunk_signature, a_input + l_offset, sig_size);
+    l_offset += sig_size;
 
     return 0;
 }
@@ -1253,7 +1408,8 @@ int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
     }
 
     // Validate parameters
-    if (params->ring_lwe_n == 0 || params->ring_lwe_q == 0 ||
+    if (params->randomness_size == 0 || params->randomness_size > 256 ||
+        params->ring_lwe_n == 0 || params->ring_lwe_q == 0 ||
         params->ntru_n == 0 || params->ntru_q == 0 ||
         params->code_n == 0 || params->code_k == 0 || params->code_t == 0) {
         return -EINVAL;
@@ -1282,6 +1438,7 @@ int chipmunk_ring_reset_params(void) {
     chipmunk_ring_pq_params_t default_params = {
         .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
         .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
+        .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
         .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
         .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
         .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,

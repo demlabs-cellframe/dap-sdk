@@ -78,8 +78,17 @@
 
 // ================ COMPUTED PARAMETERS ================
 
-// Randomness size 
-#define CHIPMUNK_RING_RANDOMNESS_SIZE 32                         // 256-bit randomness for commitment
+// Randomness and configurable sizes
+#define CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT 32                 // 256-bit randomness for commitment (default)
+#define CHIPMUNK_RING_CHALLENGE_SIZE 32                          // 256-bit challenge size
+#define CHIPMUNK_RING_LINKABILITY_TAG_SIZE 32                    // 256-bit linkability tag
+#define CHIPMUNK_RING_RESPONSE_SIZE 32                           // 256-bit response size
+
+// Input buffer size constants for commitment creation
+#define CHIPMUNK_RING_RING_LWE_INPUT_EXTRA 16                    // Extra bytes for Ring-LWE parameters (2×8 bytes)
+#define CHIPMUNK_RING_NTRU_INPUT_EXTRA 16                        // Extra bytes for NTRU parameters (2×8 bytes)
+#define CHIPMUNK_RING_HASH_INPUT_EXTRA 64                        // Extra bytes for hash domain separation
+#define CHIPMUNK_RING_CODE_INPUT_EXTRA 24                        // Extra bytes for code parameters (3×8 bytes)
 
 // Maximum ring size
 #define CHIPMUNK_RING_MAX_RING_SIZE 1024

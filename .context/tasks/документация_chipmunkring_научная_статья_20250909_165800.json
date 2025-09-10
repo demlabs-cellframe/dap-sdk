@@ -313,19 +313,26 @@
               ],
               "estimated_time": "2 недели"
             }
-          ],
-          "deliverables": [
-            "Camera-ready научная статья",
-            "Supplementary materials",
-            "Peer review feedback incorporation",
-            "Journal submission package"
-          ],
-                "status": "PLANNED"
-              }
-            ]
-          },
-          {
-            "phase": 5,
+            ],
+            "deliverables": [
+              "Camera-ready научная статья",
+              "Supplementary materials",
+              "Peer review feedback incorporation",
+              "Journal submission package"
+            ],
+            "status": "PLANNED"
+          }
+        ],
+        "deliverables": [
+          "Complete scientific paper in LaTeX",
+          "Implementation documentation",
+          "Performance benchmarks",
+          "Security analysis report"
+        ],
+        "status": "PLANNED"
+      },
+      {
+        "phase": 5,
             "title": "Итеративное улучшение и научная строгость",
             "description": "Пять итеративных проходов по статье для устранения субъективности, проверки формул и повышения научной строгости",
             "estimated_time": "3 недели",
@@ -573,8 +580,60 @@
             ],
             "status": "ACTIVE"
           }
-        ]
-      },
+        },
+        {
+          "phase": 6,
+          "title": "Обновление логики верификации для динамических массивов",
+          "description": "Исправление логики верификации ChipmunkRing для работы с новой параметрической архитектурой и динамическими массивами quantum-resistant commitments",
+          "estimated_time": "2 недели",
+          "subphases": [
+            {
+              "title": "Анализ проблем верификации",
+              "tasks": [
+                "Проанализировать текущие ошибки верификации",
+                "Определить необходимые изменения в структуре commitment",
+                "Документировать требования к верификации quantum-resistant layers"
+              ],
+              "estimated_time": "3 дня"
+            },
+            {
+              "title": "Обновление функций commitment",
+              "tasks": [
+                "Исправить chipmunk_ring_commitment_create для корректной работы",
+                "Обновить chipmunk_ring_commitment_free для правильной очистки",
+                "Протестировать создание и удаление commitment структур"
+              ],
+              "estimated_time": "4 дня"
+            },
+            {
+              "title": "Реализация верификации quantum layers",
+              "tasks": [
+                "Обновить chipmunk_ring_verify для работы с динамическими массивами",
+                "Реализовать верификацию Ring-LWE, NTRU и Hash слоев",
+                "Добавить верификацию binding proof между слоями"
+              ],
+              "estimated_time": "5 дней"
+            },
+            {
+              "title": "Тестирование и отладка",
+              "tasks": [
+                "Запустить полный набор тестов ChipmunkRing",
+                "Исправить все выявленные ошибки верификации",
+                "Достичь 100% прохождения тестов",
+                "Оптимизировать производительность верификации"
+              ],
+              "estimated_time": "4 дня"
+            }
+          ],
+          "deliverables": [
+            "Исправленная логика верификации ChipmunkRing",
+            "Работающие quantum-resistant commitment слои",
+            "100% прохождение всех тестов",
+            "Обновленная документация по верификации"
+          ],
+          "status": "ACTIVE"
+        }
+      ],
     "documentation_structure": {
       "scientific_paper": {
         "format": "LaTeX",

@@ -62,15 +62,16 @@ typedef struct chipmunk_ring_container {
  * @brief Quantum-resistant commitment for ZKP (Zero-Knowledge Proof)
  */
 typedef struct chipmunk_ring_commitment {
-    uint8_t value[32];               ///< Commitment value H(PK_i || randomness) for compatibility
-    uint8_t randomness[32];          ///< Randomness used in commitment
+    // Dynamic randomness (configurable size)
+    uint8_t *randomness;             ///< Randomness used in commitment (dynamic size)
+    size_t randomness_size;          ///< Size of randomness in bytes
 
-    // Dynamic post-quantum commitment layers (sizes depend on parameters)
-    uint8_t *ring_lwe_layer;         ///< Ring-LWE commitment (dynamic size)
-    uint8_t *ntru_layer;             ///< NTRU commitment (dynamic size)
-    uint8_t *hash_layer;             ///< Hash commitment (dynamic size)
-    uint8_t *code_layer;             ///< Code commitment (dynamic size)
-    uint8_t *binding_proof;          ///< Multi-layer binding proof (dynamic size)
+    // Quantum-resistant commitment layers (dynamic sizes based on parameters)
+    uint8_t *ring_lwe_layer;         ///< Ring-LWE commitment (~90,000 qubits required)
+    uint8_t *ntru_layer;             ///< NTRU commitment (~70,000 qubits required)
+    uint8_t *hash_layer;             ///< Hash commitment (~512 qubits, vulnerable ~2030)
+    uint8_t *code_layer;             ///< Code commitment (~60,000 qubits required)
+    uint8_t *binding_proof;          ///< Multi-layer binding proof
 
     // Layer sizes for memory management
     size_t ring_lwe_size;

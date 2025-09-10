@@ -38,6 +38,9 @@ typedef struct chipmunk_ring_pq_params {
     uint32_t chipmunk_n;           // Chipmunk security parameter N
     uint32_t chipmunk_gamma;       // Chipmunk gamma parameter
 
+    // Randomness parameters
+    uint32_t randomness_size;      // Size of randomness in bytes (default 32)
+
     // Ring-LWE parameters
     uint32_t ring_lwe_n;
     uint32_t ring_lwe_q;
