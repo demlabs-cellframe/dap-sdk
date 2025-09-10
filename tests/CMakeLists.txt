@@ -139,6 +139,10 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
     add_dap_test(test_unit_crypto_chipmunk_ring_performance unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
     register_dap_test(test_unit_crypto_chipmunk_ring_performance "unit;crypto;ring;performance")
+    
+    # ChipmunkRing parameter comparison test
+    add_dap_test(test_unit_crypto_chipmunk_ring_parameter_comparison unit/crypto/chipmunk_ring/test_chipmunk_ring_parameter_comparison.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_parameter_comparison "unit;crypto;ring;parameters")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_edge_cases.c)

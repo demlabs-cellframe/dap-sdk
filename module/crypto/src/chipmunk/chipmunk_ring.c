@@ -41,7 +41,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Post-quantum commitment parameters (configurable with defaults)
 static chipmunk_ring_pq_params_t s_pq_params = {
@@ -1100,7 +1100,11 @@ void chipmunk_ring_key_delete(struct dap_enc_key *a_key) {
  */
 void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
     if (a_signature) {
+        // Free dynamic arrays inside each commitment
         if (a_signature->commitments) {
+            for (uint32_t i = 0; i < a_signature->ring_size; i++) {
+                chipmunk_ring_commitment_free(&a_signature->commitments[i]);
+            }
             DAP_FREE(a_signature->commitments);
             a_signature->commitments = NULL;
         }

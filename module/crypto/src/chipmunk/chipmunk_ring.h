@@ -26,6 +26,7 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "chipmunk.h"
+#include "dap_enc_chipmunk_ring.h"
 
 /**
  * @brief Chipmunk_Ring ring signature parameters
@@ -226,3 +227,24 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
  */
 int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
                                      const uint8_t *a_input, size_t a_input_size);
+
+/**
+ * @brief Get current post-quantum parameters
+ */
+int chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
+
+/**
+ * @brief Set post-quantum parameters
+ */
+int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
+
+/**
+ * @brief Get current layer sizes
+ */
+void chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
+                                  size_t *code_size, size_t *binding_proof_size);
+
+/**
+ * @brief Reset parameters to defaults
+ */
+int chipmunk_ring_reset_params(void);

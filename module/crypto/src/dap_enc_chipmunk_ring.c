@@ -435,3 +435,32 @@ void dap_enc_chipmunk_ring_public_key_delete(uint8_t *a_pub_key) {
 void dap_enc_chipmunk_ring_private_key_delete(uint8_t *a_priv_key) {
     DAP_DELETE(a_priv_key);
 }
+
+/**
+ * @brief Get current post-quantum parameters (wrapper)
+ */
+int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params) {
+    return chipmunk_ring_get_params(params);
+}
+
+/**
+ * @brief Set post-quantum parameters (wrapper)  
+ */
+int dap_enc_chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
+    return chipmunk_ring_set_params(params);
+}
+
+/**
+ * @brief Get current layer sizes (wrapper)
+ */
+void dap_enc_chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
+                                          size_t *code_size, size_t *binding_proof_size) {
+    chipmunk_ring_get_layer_sizes(ring_lwe_size, ntru_size, code_size, binding_proof_size);
+}
+
+/**
+ * @brief Reset parameters to defaults (wrapper)
+ */
+int dap_enc_chipmunk_ring_reset_params(void) {
+    return chipmunk_ring_reset_params();
+}

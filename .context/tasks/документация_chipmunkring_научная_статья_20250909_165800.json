@@ -34,6 +34,10 @@
           ".context/modules/methodologies/documentation_systems.json",
           ".context/modules/methodologies/live_documentation.json",
           ".context/modules/methodologies/scientific_writing_cryptography.json",
+          ".context/modules/languages/c/c_debugging.json",
+          ".context/modules/languages/c/c_development.json",
+          ".context/modules/methodologies/debugging_strategies.json",
+          ".context/modules/standards/testing_standards.json",
           ".context/tasks/разработка_chipmunkring_-_кольцевой_подп_20250905_153100.json"
         ],
         "conditional_load": {
