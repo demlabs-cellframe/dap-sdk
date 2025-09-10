@@ -34,6 +34,10 @@ extern "C" {
  * @brief Post-quantum commitment parameters structure
  */
 typedef struct chipmunk_ring_pq_params {
+    // Chipmunk base parameters
+    uint32_t chipmunk_n;           // Chipmunk security parameter N
+    uint32_t chipmunk_gamma;       // Chipmunk gamma parameter
+
     // Ring-LWE parameters
     uint32_t ring_lwe_n;
     uint32_t ring_lwe_q;

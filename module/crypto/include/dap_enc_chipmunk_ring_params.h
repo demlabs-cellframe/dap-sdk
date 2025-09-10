@@ -33,6 +33,10 @@
  * - Conservative choice: n=1024 → 2^300 operations, ~90,000 logical qubits
  */
 
+// Chipmunk base parameters (must match chipmunk.h definitions)
+#define CHIPMUNK_RING_CHIPMUNK_N_DEFAULT 256       // Chipmunk security parameter N
+#define CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT 4     // Chipmunk gamma parameter
+
 // ================ RING-LWE LAYER PARAMETERS ================
 
 // Enhanced Ring-LWE layer parameters (~90,000 logical qubits required)
@@ -50,7 +54,7 @@
 
 // ================ POST-QUANTUM HASH LAYER PARAMETERS ================
 
-// Post-quantum hash layer parameters (~512 logical qubits, vulnerable ~2030)
+// Post-quantum hash layer parameters
 #define CHIPMUNK_RING_HASH_OUTPUT_SIZE_DEFAULT 128               // 1024-bit output for 512-bit Grover resistance
 #define CHIPMUNK_RING_HASH_DOMAIN_SEP_DEFAULT "CHIPMUNK_RING_PQ_HASH_COMMIT_1024"
 
@@ -69,7 +73,7 @@
 
 // ================ COMPUTED PARAMETERS ================
 
-// Randomness size (fixed)
+// Randomness size 
 #define CHIPMUNK_RING_RANDOMNESS_SIZE 32                         // 256-bit randomness for commitment
 
 // Maximum ring size
@@ -100,6 +104,13 @@
                                              CHIPMUNK_RING_NTRU_QUBITS_REQUIRED + \
                                              CHIPMUNK_RING_CODE_QUBITS_REQUIRED + \
                                              CHIPMUNK_RING_HASH_QUBITS_REQUIRED)
+
+// ================ COMPUTED SIZES BASED ON PARAMETERS ================
+
+// Dynamic size calculations based on chipmunk parameters
+#define CHIPMUNK_RING_PUBLIC_KEY_SIZE(chipmunk_n)  (32 + (chipmunk_n)*4*2)  // rho_seed + v0 + v1
+#define CHIPMUNK_RING_PRIVATE_KEY_SIZE(chipmunk_n) (32 + 48 + CHIPMUNK_RING_PUBLIC_KEY_SIZE(chipmunk_n))  // key_seed + tr + public_key
+#define CHIPMUNK_RING_SIGNATURE_SIZE(chipmunk_n, chipmunk_gamma) ((chipmunk_n)*4*(chipmunk_gamma))  // sigma[GAMMA]
 
 // ================ PERFORMANCE CONSTANTS ================
 

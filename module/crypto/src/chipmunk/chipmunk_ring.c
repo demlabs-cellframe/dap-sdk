@@ -45,6 +45,8 @@ static bool s_debug_more = false;
 
 // Post-quantum commitment parameters (configurable with defaults)
 static chipmunk_ring_pq_params_t s_pq_params = {
+    .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
+    .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
     .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
     .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
     .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
@@ -72,6 +74,21 @@ static void update_layer_sizes(void) {
     s_hash_output_size = 64;                                  // 512-bit hash output
     s_code_commitment_size = s_pq_params.code_n / 8;          // Syndrome size in bytes
     s_binding_proof_size = 128;                               // Fixed 1024-bit binding proof
+}
+
+/**
+ * @brief Get computed sizes based on current parameters
+ */
+static size_t get_public_key_size(void) {
+    return CHIPMUNK_RING_PUBLIC_KEY_SIZE(s_pq_params.chipmunk_n);
+}
+
+static size_t get_private_key_size(void) {
+    return CHIPMUNK_RING_PRIVATE_KEY_SIZE(s_pq_params.chipmunk_n);
+}
+
+static size_t get_signature_size(void) {
+    return CHIPMUNK_RING_SIGNATURE_SIZE(s_pq_params.chipmunk_n, s_pq_params.chipmunk_gamma);
 }
 
 /**
@@ -256,20 +273,26 @@ static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
     }
 
     // Ring-LWE commitment requiring ~90,000 logical qubits for quantum attack
-    uint8_t combined_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 16];
+    size_t pub_key_size = get_public_key_size();
+    uint8_t *combined_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 16);
 
-    memcpy(combined_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
+    if (!combined_input) {
+        return -1;
+    }
+
+    memcpy(combined_input, a_public_key->data, pub_key_size);
+    memcpy(combined_input + pub_key_size, randomness, 32);
 
     // Enhanced parameters: 2^(0.292×n) operations, requiring ~90,000 logical qubits
     uint64_t enhanced_n = s_pq_params.ring_lwe_n;
     uint64_t enhanced_q = s_pq_params.ring_lwe_q;
-    memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &enhanced_n, 8);
-    memcpy(combined_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &enhanced_q, 8);
+    memcpy(combined_input + pub_key_size + 32, &enhanced_n, 8);
+    memcpy(combined_input + pub_key_size + 40, &enhanced_q, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, combined_input, sizeof(combined_input));
+    shake256(commitment, commitment_size, combined_input, pub_key_size + 32 + 16);
 
+    DAP_FREE(combined_input);
     return 0;
 }
 
@@ -285,19 +308,26 @@ static int create_ntru_commitment(uint8_t *commitment,
     }
 
     // NTRU commitment requiring ~70,000 logical qubits for quantum attack
-    uint8_t ntru_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 16];
+    size_t pub_key_size = get_public_key_size();
+    uint8_t *ntru_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 16);
 
-    memcpy(ntru_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
+    if (!ntru_input) {
+        return -1;
+    }
+
+    memcpy(ntru_input, a_public_key->data, pub_key_size);
+    memcpy(ntru_input + pub_key_size, randomness, 32);
 
     // NTRU parameters: configurable n and q for quantum security
     uint64_t ntru_n = s_pq_params.ntru_n;
     uint64_t ntru_q = s_pq_params.ntru_q;
-    memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &ntru_n, 8);
-    memcpy(ntru_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &ntru_q, 8);
+    memcpy(ntru_input + pub_key_size + 32, &ntru_n, 8);
+    memcpy(ntru_input + pub_key_size + 40, &ntru_q, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, ntru_input, sizeof(ntru_input));
+    shake256(commitment, commitment_size, ntru_input, pub_key_size + 32 + 16);
+
+    DAP_FREE(ntru_input);
 
     return 0;
 }
@@ -314,16 +344,23 @@ static int create_post_quantum_hash_commitment(uint8_t *commitment,
     }
 
     // Hash commitment with configurable output size for Grover resistance
-    uint8_t hash_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 64];
+    size_t pub_key_size = get_public_key_size();
+    uint8_t *hash_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 64);
 
-    memcpy(hash_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(hash_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
+    if (!hash_input) {
+        return -1;
+    }
+
+    memcpy(hash_input, a_public_key->data, pub_key_size);
+    memcpy(hash_input + pub_key_size, randomness, 32);
 
     // Add configurable domain separation for quantum security
-    memcpy(hash_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, s_pq_params.hash_domain_sep, 64);
+    memcpy(hash_input + pub_key_size + 32, s_pq_params.hash_domain_sep, 64);
 
     // Use SHAKE256 with configurable output size for Grover resistance
-    shake256(commitment, commitment_size, hash_input, sizeof(hash_input));
+    shake256(commitment, commitment_size, hash_input, pub_key_size + 32 + 64);
+
+    DAP_FREE(hash_input);
 
     return 0;
 }
@@ -340,21 +377,28 @@ static int create_code_based_commitment(uint8_t *commitment,
     }
 
     // Code-based commitment requiring ~60,000 logical qubits for quantum attack
-    uint8_t code_input[CHIPMUNK_PUBLIC_KEY_SIZE + 32 + 24];
+    size_t pub_key_size = get_public_key_size();
+    uint8_t *code_input = DAP_NEW_Z_SIZE(uint8_t, pub_key_size + 32 + 24);
 
-    memcpy(code_input, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE, randomness, 32);
+    if (!code_input) {
+        return -1;
+    }
+
+    memcpy(code_input, a_public_key->data, pub_key_size);
+    memcpy(code_input + pub_key_size, randomness, 32);
 
     // Configurable code parameters for quantum security
     uint64_t code_n = s_pq_params.code_n;
     uint64_t code_k = s_pq_params.code_k;
     uint64_t code_t = s_pq_params.code_t;
-    memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 32, &code_n, 8);
-    memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 40, &code_k, 8);
-    memcpy(code_input + CHIPMUNK_PUBLIC_KEY_SIZE + 48, &code_t, 8);
+    memcpy(code_input + pub_key_size + 32, &code_n, 8);
+    memcpy(code_input + pub_key_size + 40, &code_k, 8);
+    memcpy(code_input + pub_key_size + 48, &code_t, 8);
 
     // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, code_input, sizeof(code_input));
+    shake256(commitment, commitment_size, code_input, pub_key_size + 32 + 24);
+
+    DAP_FREE(code_input);
 
     return 0;
 }
@@ -463,7 +507,8 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     }
 
     // Create legacy commitment value for compatibility
-    size_t combined_size = CHIPMUNK_PUBLIC_KEY_SIZE + sizeof(a_commitment->randomness);
+    size_t pub_key_size = get_public_key_size();
+    size_t combined_size = pub_key_size + sizeof(a_commitment->randomness);
     uint8_t *combined_data = DAP_NEW_SIZE(uint8_t, combined_size);
     if (!combined_data) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -471,8 +516,8 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
         return -ENOMEM;
     }
 
-    memcpy(combined_data, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    memcpy(combined_data + CHIPMUNK_PUBLIC_KEY_SIZE, a_commitment->randomness, sizeof(a_commitment->randomness));
+    memcpy(combined_data, a_public_key->data, pub_key_size);
+    memcpy(combined_data + pub_key_size, a_commitment->randomness, sizeof(a_commitment->randomness));
 
     dap_hash_fast_t commitment_hash;
     if (!dap_hash_fast(combined_data, combined_size, &commitment_hash)) {
@@ -1235,6 +1280,8 @@ int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
  */
 int chipmunk_ring_reset_params(void) {
     chipmunk_ring_pq_params_t default_params = {
+        .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
+        .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
         .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
         .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
         .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
