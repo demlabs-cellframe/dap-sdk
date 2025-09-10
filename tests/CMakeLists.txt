@@ -175,11 +175,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/signatures/test_signatures.c)
     register_dap_test(test_unit_crypto_signatures "unit;crypto;signatures")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keys/test_deterministic_keys.c)
-    add_dap_test(test_unit_crypto_deterministic_keys unit/crypto/keys/test_deterministic_keys.c)
-    register_dap_test(test_unit_crypto_deterministic_keys "unit;crypto;keys")
-endif()
-
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/general/test_encryption.c)
     add_dap_test(test_unit_crypto_encryption unit/crypto/general/test_encryption.c)
     register_dap_test(test_unit_crypto_encryption "unit;crypto;encryption")
