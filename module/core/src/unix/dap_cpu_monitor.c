@@ -28,9 +28,9 @@ static ssize_t android_getline(char **a_lineptr, size_t *a_n, FILE *a_stream) {
 #define LOG_TAG "dap_cpu_monitor"
 
 static FILE * _proc_stat = NULL;
-static dap_cpu_stats_t _cpu_stats = {{0}};
-static dap_cpu_t _cpu_old_stats[MAX_CPU_COUNT] = {{0}};
-static dap_cpu_t _cpu_summary_old = {{0}};
+static dap_cpu_stats_t _cpu_stats = {0};
+static dap_cpu_t _cpu_old_stats[MAX_CPU_COUNT] = {0};
+static dap_cpu_t _cpu_summary_old = {0};
 
 typedef struct proc_stat_line
 {
@@ -93,7 +93,7 @@ dap_cpu_stats_t dap_cpu_get_stats()
     }
 
     char *line = NULL;
-    proc_stat_line_t l_stat = {{0}};
+    proc_stat_line_t l_stat = {0};
 
     /** get summary cpu stat **/
     size_t mem_size;
