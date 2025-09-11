@@ -118,6 +118,19 @@ int chipmunk_ring_verify_share(const chipmunk_ring_share_t *a_share,
                               const chipmunk_ring_container_t *a_ring_context);
 
 /**
+ * @brief Verify a secret share with signature parameters
+ * @details Validates share using same parameters as generation
+ * 
+ * @param a_share Share to verify
+ * @param a_signature Signature containing ZK parameters
+ * @param a_ring_context Ring context for verification
+ * @return 0 if valid, negative on error
+ */
+int chipmunk_ring_verify_share_with_params(const chipmunk_ring_share_t *a_share,
+                                          const chipmunk_ring_signature_t *a_signature,
+                                          const chipmunk_ring_container_t *a_ring_context);
+
+/**
  * @brief Aggregate partial signatures from multiple shares
  * @details Combines t partial signatures into final ring signature
  * 
@@ -136,53 +149,21 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
                                      chipmunk_ring_signature_t *a_signature);
 
 /**
- * @brief Generate ZK proof with configurable size and parameters
- * @details Uses universal dap_hash with configurable algorithms and parameters
+ * @brief Generate ZK proof using signature parameters
+ * @details Universal function that uses all parameters from signature structure
  * 
  * @param a_input Input data for proof
  * @param a_input_size Size of input data
- * @param a_proof_size Desired proof size (32, 64, 128, etc.)
+ * @param a_signature Signature containing all ZK parameters (size, iterations, domain, etc.)
+ * @param a_salt Optional salt for enhanced security
+ * @param a_salt_size Size of salt
  * @param a_output Output buffer for ZK proof
  * @return 0 on success, negative on error
  */
 int chipmunk_ring_generate_zk_proof(const uint8_t *a_input, size_t a_input_size,
-                                   size_t a_proof_size, uint8_t *a_output);
-
-/**
- * @brief Generate ZK proof with signature parameters
- * @details Uses ZK parameters from signature structure (zk_proof_size_per_participant, zk_iterations)
- * 
- * @param a_input Input data for proof
- * @param a_input_size Size of input data
- * @param a_signature Signature containing ZK parameters
- * @param a_salt Optional salt for enhanced security
- * @param a_salt_size Size of salt
- * @param a_output Output buffer for ZK proof
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_generate_zk_proof_from_signature(const uint8_t *a_input, size_t a_input_size,
-                                                  const chipmunk_ring_signature_t *a_signature,
-                                                  const uint8_t *a_salt, size_t a_salt_size,
-                                                  uint8_t *a_output);
-
-/**
- * @brief Generate enterprise-grade ZK proof with enhanced security
- * @details Uses iterative hashing and salt for maximum security
- * 
- * @param a_input Input data for proof
- * @param a_input_size Size of input data
- * @param a_proof_size Desired proof size
- * @param a_salt Optional salt for enhanced security
- * @param a_salt_size Size of salt
- * @param a_iterations Number of hash iterations (0 = default)
- * @param a_output Output buffer for ZK proof
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_generate_zk_proof_enterprise(const uint8_t *a_input, size_t a_input_size,
-                                              size_t a_proof_size,
-                                              const uint8_t *a_salt, size_t a_salt_size,
-                                              uint32_t a_iterations,
-                                              uint8_t *a_output);
+                                   const chipmunk_ring_signature_t *a_signature,
+                                   const uint8_t *a_salt, size_t a_salt_size,
+                                   uint8_t *a_output);
 
 /**
  * @brief Free secret share resources

@@ -236,7 +236,7 @@ static bool s_test_distributed_consensus_workflow(void) {
         sizeof(l_proposal_hash),
         l_ring_keys,
         l_signatures_count,
-        l_actual_signer_index
+        1  // Traditional ring signature (required_signers=1)
     );
     DAP_TEST_ASSERT_NOT_NULL(l_ring_signature, "Chipmunk Ring signature creation");
     
@@ -295,7 +295,7 @@ static bool s_test_distributed_consensus_workflow(void) {
         sizeof(l_proposal_hash),
         l_ring_keys,
         l_signatures_count,
-        l_second_signer_index
+        1  // Traditional ring signature (required_signers=1)
     );
     DAP_TEST_ASSERT_NOT_NULL(l_second_ring_signature, "Second ring signature creation");
 

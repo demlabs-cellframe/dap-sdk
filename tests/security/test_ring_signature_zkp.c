@@ -81,7 +81,7 @@ static bool s_test_zkp_soundness(void) {
                 sizeof(l_message_hash),
                 l_ring_keys,
                 SECURITY_RING_SIZE,
-                l_pos
+                1  // Traditional ring signature (required_signers=1)
             );
             DAP_TEST_ASSERT_NOT_NULL(l_signatures[msg_idx][signer_idx],
                                    "Ring signature creation should succeed");
@@ -170,7 +170,7 @@ static bool s_test_anonymity_property(void) {
             sizeof(l_message_hash),
             l_ring_keys,
             l_ring_size,
-            l_pos
+            1  // Traditional ring signature (required_signers=1)
         );
         DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Ring signature creation should succeed");
 
@@ -218,10 +218,7 @@ static bool s_test_anonymity_property(void) {
 static bool s_test_linkability_prevention(void) {
     log_it(L_INFO, "Testing linkability for double-spending prevention...");
 
-    // Generate signer key and ring
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
-    DAP_TEST_ASSERT_NOT_NULL(l_signer_key, "Signer key generation should succeed");
-
+    // Generate ring with signer key included
     const size_t l_ring_size = 12;
     dap_enc_key_t* l_ring_keys[l_ring_size];
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
@@ -229,6 +226,9 @@ static bool s_test_linkability_prevention(void) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         DAP_TEST_ASSERT_NOT_NULL(l_ring_keys[i], "Ring key generation should succeed");
     }
+    
+    // Use first ring key as signer (must be part of the ring)
+    dap_enc_key_t* l_signer_key = l_ring_keys[0];
 
     // Create message
     const char* l_message = "Prevent double-spending test";
@@ -247,7 +247,7 @@ static bool s_test_linkability_prevention(void) {
             sizeof(l_message_hash),
             l_ring_keys,
             l_ring_size,
-            0
+            1  // Traditional ring signature (required_signers=1)
         );
         DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Ring signature creation should succeed");
 
@@ -280,7 +280,7 @@ static bool s_test_linkability_prevention(void) {
             dap_enc_key_delete(l_ring_keys[i]);
         }
     }
-    DAP_DELETE(l_signer_key);
+    // l_signer_key is now l_ring_keys[0], no separate cleanup needed
     log_it(L_INFO, "✓ Linkability prevention tests passed");
     return true;
 }
@@ -319,7 +319,7 @@ static bool s_test_ring_size_security(void) {
             sizeof(l_message_hash),
             l_ring_keys,
             l_ring_size,
-            0
+            1  // Traditional ring signature (required_signers=1)
         );
         DAP_TEST_ASSERT_NOT_NULL(l_signature, "Ring signature creation should succeed");
 
@@ -380,7 +380,7 @@ static bool s_test_cryptographic_randomness(void) {
             sizeof(l_message_hash),
             l_ring_keys,
             l_ring_size,
-            0
+            1  // Traditional ring signature (required_signers=1)
         );
         DAP_TEST_ASSERT_NOT_NULL(l_signatures[i], "Ring signature creation should succeed");
     }
