@@ -37,7 +37,8 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_min_signature = dap_sign_create_ring(
             l_min_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_min_ring_keys, MIN_RING_SIZE
+            l_min_ring_keys, MIN_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_min_signature != NULL, "Min ring signature creation should succeed");
 
@@ -49,7 +50,9 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_min_signature_pos1 = dap_sign_create_ring(
             l_min_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_min_ring_keys, MIN_RING_SIZE
+            l_min_ring_keys,
+            MIN_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_min_signature_pos1 != NULL, "Min ring signature creation (pos 1) should succeed");
 
@@ -78,7 +81,9 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_max_signature = dap_sign_create_ring(
             l_max_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_max_ring_keys, MAX_RING_SIZE
+            l_max_ring_keys,
+            MAX_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_max_signature != NULL, "Max ring signature creation should succeed");
 
@@ -108,7 +113,8 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_max_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, MAX_RING_SIZE
+            l_ring_keys, MAX_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_max_signature != NULL, "Max ring signature creation should succeed");
 
@@ -116,7 +122,8 @@ static bool s_test_ring_size_limits(void) {
         dap_sign_t* l_min_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, MIN_RING_SIZE
+            l_ring_keys, MIN_RING_SIZE,
+        1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_min_signature != NULL, "Min ring signature creation should succeed");
 
@@ -161,7 +168,9 @@ static bool s_test_invalid_inputs(void) {
     dap_sign_t* l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys_1, 1
+        l_ring_keys_1,
+            1,
+            1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size 1");
 
@@ -169,7 +178,9 @@ static bool s_test_invalid_inputs(void) {
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        NULL, 0
+        NULL,
+            0,
+            1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size 0");
 
@@ -178,7 +189,9 @@ static bool s_test_invalid_inputs(void) {
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys, 3
+        l_ring_keys,
+            3,
+            1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
 
@@ -186,7 +199,9 @@ static bool s_test_invalid_inputs(void) {
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
-        l_ring_keys, 3
+        l_ring_keys,
+            3,
+            1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed");
 
@@ -220,7 +235,8 @@ static bool s_test_empty_messages(void) {
     dap_sign_t* l_signature = dap_sign_create_ring(
         l_signer_key,
         NULL, 0,
-        l_ring_keys, l_ring_size
+        l_ring_keys, l_ring_size,
+        1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature != NULL, "Signature creation should succeed with empty message");
 

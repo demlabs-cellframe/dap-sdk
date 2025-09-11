@@ -157,6 +157,7 @@ int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_d
  * @param a_data_size Size of data to sign
  * @param a_ring_pub_keys Array of public keys for the ring
  * @param a_ring_size Number of participants in the ring
+ * @param a_required_signers Required signers (1 = traditional ring, >1 = multi-signer)
  * @param a_signature Output buffer for signature
  * @param a_signature_size Size of signature buffer
  * @return 0 on success, negative on error
@@ -166,6 +167,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,
                               size_t a_ring_size,
+                              uint32_t a_required_signers,
                               uint8_t *a_signature,
                               size_t a_signature_size);
 

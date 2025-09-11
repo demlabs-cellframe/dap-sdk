@@ -35,8 +35,34 @@
 
 typedef enum dap_hash_type {
     DAP_HASH_TYPE_KECCAK = 0,
-    DAP_HASH_TYPE_SLOW_0 = 1
+    DAP_HASH_TYPE_SLOW_0 = 1,
+    DAP_HASH_TYPE_SHA3_256 = 2,
+    DAP_HASH_TYPE_SHA3_384 = 3,
+    DAP_HASH_TYPE_SHA3_512 = 4,
+    DAP_HASH_TYPE_SHAKE128 = 5,
+    DAP_HASH_TYPE_SHAKE256 = 6
 } dap_hash_type_t;
+
+/**
+ * @brief Hash function flags for extended functionality
+ */
+typedef enum dap_hash_flags {
+    DAP_HASH_FLAG_NONE = 0,
+    DAP_HASH_FLAG_DOMAIN_SEPARATION = 1,  ///< Add domain separation prefix
+    DAP_HASH_FLAG_SALT = 2,               ///< Use provided salt/context
+    DAP_HASH_FLAG_ITERATIVE = 4           ///< Multiple hash iterations
+} dap_hash_flags_t;
+
+/**
+ * @brief Extended parameters for hash function
+ */
+typedef struct dap_hash_params {
+    const uint8_t *salt;                  ///< Salt/context data (can be NULL)
+    size_t salt_size;                     ///< Size of salt data
+    const char *domain_separator;         ///< Domain separation string (can be NULL)
+    uint32_t iterations;                  ///< Number of iterations for iterative hashing (0 = single)
+    uint32_t security_level;              ///< Desired security level in bits
+} dap_hash_params_t;
 
 typedef union dap_chain_hash_fast{
     uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE];
@@ -64,6 +90,25 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
  * @return false
  */
 bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out );
+
+/**
+ * @brief Configurable hash function with arbitrary output size
+ * @details Supports different hash algorithms and arbitrary output length
+ * 
+ * @param a_hash_type Hash algorithm type (SHA3-256, SHA3-512, SHAKE-128, etc.)
+ * @param a_input Input data to hash
+ * @param a_input_size Size of input data
+ * @param a_output Output buffer for hash
+ * @param a_output_size Desired output size (for SHAKE functions)
+ * @param a_flags Additional flags (domain separation, salt, etc.)
+ * @param a_params Extended parameters structure (can be NULL for defaults)
+ * @return 0 on success, negative on error
+ */
+int dap_hash(dap_hash_type_t a_hash_type,
+            const void *a_input, size_t a_input_size,
+            uint8_t *a_output, size_t a_output_size,
+            dap_hash_flags_t a_flags,
+            const dap_hash_params_t *a_params);
 
 
 /**

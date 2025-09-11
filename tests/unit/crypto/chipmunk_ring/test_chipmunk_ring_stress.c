@@ -39,7 +39,8 @@ static bool s_test_stress_signatures(void) {
         l_stress_signatures[i] = dap_sign_create_ring(
             l_ring_keys[i % STRESS_RING_SIZE],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, STRESS_RING_SIZE
+            l_ring_keys, STRESS_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_stress_signatures[i] != NULL, "Stress signature creation should succeed");
     }
@@ -110,7 +111,8 @@ static bool s_test_memory_stress(void) {
         dap_sign_t* l_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, l_ring_size
+            l_ring_keys, l_ring_size,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signature != NULL, "Signature creation should succeed");
 
@@ -171,7 +173,8 @@ static bool s_test_concurrent_operations(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_ring_keys[l_signer_idx],
             &l_message_hashes[l_msg_idx], sizeof(dap_hash_fast_t),
-            l_ring_keys, l_ring_size
+            l_ring_keys, l_ring_size,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signatures[i] != NULL, "Concurrent signature creation should succeed");
 

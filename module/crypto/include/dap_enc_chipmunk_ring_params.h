@@ -76,7 +76,72 @@
 #define CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT 32                 // 256-bit randomness for commitment (default)
 #define CHIPMUNK_RING_CHALLENGE_SIZE 32                          // 256-bit challenge size
 #define CHIPMUNK_RING_LINKABILITY_TAG_SIZE 32                    // 256-bit linkability tag
-#define CHIPMUNK_RING_RESPONSE_SIZE 32                           // 256-bit response size
+#define CHIPMUNK_RING_RESPONSE_SIZE_DEFAULT 64                   // Default response size (matches ZK proof default)
+#define CHIPMUNK_RING_RESPONSE_SIZE_MIN 32                       // Minimum response size
+#define CHIPMUNK_RING_RESPONSE_SIZE_MAX 128                      // Maximum response size
+
+// Hash sizes for different components
+#define CHIPMUNK_RING_HASH_SIZE 32                               // Standard hash size (SHA3-256)
+#define CHIPMUNK_RING_KEY_HASH_SIZE 32                           // Public key hash size
+#define CHIPMUNK_RING_RING_HASH_SIZE 32                          // Ring hash size
+
+// ================ ZK PROOF PARAMETERS ================
+
+// Zero-Knowledge proof sizes (configurable for different security levels)
+#define CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT 64   ///< Default ZK proof size (SHA3-512)
+#define CHIPMUNK_RING_ZK_PROOF_SIZE_MIN     32   ///< Minimum ZK proof size (SHA3-256)
+#define CHIPMUNK_RING_ZK_PROOF_SIZE_MAX     128  ///< Maximum ZK proof size (SHAKE-128 extended)
+#define CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE 96  ///< Enterprise-grade ZK proof size
+
+// ZK proof serialization format: [uint32_t length][proof_data]
+#define CHIPMUNK_RING_ZK_PROOF_LENGTH_PREFIX_SIZE 4  ///< Size of length prefix (uint32_t)
+
+// ZK proof iterations for enhanced security
+#define CHIPMUNK_RING_ZK_ITERATIONS_DEFAULT     100   ///< Default iterations (fast)
+#define CHIPMUNK_RING_ZK_ITERATIONS_SECURE      1000  ///< Secure iterations (medium)
+#define CHIPMUNK_RING_ZK_ITERATIONS_ENTERPRISE  10000 ///< Enterprise iterations (slow but secure)
+#define CHIPMUNK_RING_ZK_ITERATIONS_MAX         50000 ///< Maximum allowed iterations
+
+// Security levels for different modes
+#define CHIPMUNK_RING_SECURITY_LEVEL_SINGLE     256   ///< Security level for single signer mode
+#define CHIPMUNK_RING_SECURITY_LEVEL_MULTI      512   ///< Security level for multi-signer mode
+#define CHIPMUNK_RING_SECURITY_LEVEL_ENTERPRISE 1024  ///< Security level for enterprise mode
+
+// Hash algorithm preferences
+#define CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL  DAP_HASH_TYPE_SHAKE256  ///< Universal hash for all ZK proofs
+
+// Domain separators for different contexts
+#define CHIPMUNK_RING_DOMAIN_ZK_PROOF           "ChipmunkRing-ZK-Proof"
+#define CHIPMUNK_RING_DOMAIN_ENTERPRISE_ZK      "ChipmunkRing-Enterprise-ZK"
+#define CHIPMUNK_RING_DOMAIN_SIGNATURE_ZK       "ChipmunkRing-Signature-ZK"
+#define CHIPMUNK_RING_DOMAIN_COORDINATION       "ChipmunkRing-Coordination"
+
+// Scalability thresholds
+#define CHIPMUNK_RING_SMALL_RING_THRESHOLD      16    ///< Threshold for embedded vs external keys
+#define CHIPMUNK_RING_LARGE_RING_THRESHOLD      64    ///< Threshold for performance optimization
+#define CHIPMUNK_RING_MASSIVE_RING_THRESHOLD    256   ///< Threshold for special handling
+
+// ================ SERIALIZATION FLAGS ================
+
+/**
+ * @brief Scalability flags for signature serialization
+ */
+typedef enum chipmunk_ring_scalability_flags {
+    CHIPMUNK_RING_FLAG_NONE = 0x00,
+    CHIPMUNK_RING_FLAG_EMBEDDED_KEYS = 0x01,      ///< Bit 0: embedded keys mode
+    CHIPMUNK_RING_FLAG_COORDINATED = 0x02,        ///< Bit 1: coordination completed
+    CHIPMUNK_RING_FLAG_MULTI_SIGNER = 0x04,       ///< Bit 2: multi-signer mode
+    CHIPMUNK_RING_FLAG_ENTERPRISE = 0x08,         ///< Bit 3: enterprise security level
+    CHIPMUNK_RING_FLAG_EXTERNAL_KEYS = 0x10,      ///< Bit 4: external key storage
+    CHIPMUNK_RING_FLAG_ZK_ENHANCED = 0x20,        ///< Bit 5: enhanced ZK proofs
+    CHIPMUNK_RING_FLAG_LINKABILITY_ENABLED = 0x40, ///< Bit 6: linkability tag enabled
+    CHIPMUNK_RING_FLAG_FUTURE_2 = 0x80            ///< Bit 7: reserved for future use
+} chipmunk_ring_scalability_flags_t;
+
+// Linkability options
+#define CHIPMUNK_RING_LINKABILITY_DISABLED     0     ///< No linkability tag (maximum anonymity)
+#define CHIPMUNK_RING_LINKABILITY_MESSAGE_ONLY 1     ///< Link only same message (anti-replay)
+#define CHIPMUNK_RING_LINKABILITY_FULL         2     ///< Full linkability (anti-double-spend)
 
 // Input buffer size constants for commitment creation
 #define CHIPMUNK_RING_RING_LWE_INPUT_EXTRA 16                    // Extra bytes for Ring-LWE parameters (2×8 bytes)

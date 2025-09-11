@@ -371,14 +371,18 @@ dap_sign_t *dap_sign_create_ring(
     const void *a_data,
     size_t a_data_size,
     dap_enc_key_t **a_ring_keys,
-    size_t a_ring_size
+    size_t a_ring_size,
+    uint32_t a_required_signers
 ) {
-    log_it(L_INFO, "dap_sign_create_ring ENTRY: ring_size=%zu (anonymous)", a_ring_size);
+    log_it(L_INFO, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
+           a_ring_size, a_required_signers);
     dap_return_val_if_fail(a_signer_key, NULL);
     // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, NULL);
     dap_return_val_if_fail(a_ring_keys, NULL);
     dap_return_val_if_fail(a_ring_size >= 2, NULL);
+    dap_return_val_if_fail(a_required_signers >= 1, NULL);
+    dap_return_val_if_fail(a_required_signers <= a_ring_size, NULL);
     // ANONYMITY: No signer index validation needed for anonymous signatures
 
     // Verify all ring keys are of correct type (only CHIPMUNK_RING for ring signatures)
@@ -428,13 +432,14 @@ dap_sign_t *dap_sign_create_ring(
         l_ring_pub_keys[i] = a_ring_keys[i]->pub_key_data;
     }
 
-    // Create ring signature (anonymous)
+    // Create ring signature with required_signers support
     int l_result = dap_enc_chipmunk_ring_sign(
         a_signer_key->priv_key_data,
         a_data,
         a_data_size,
         l_ring_pub_keys,
         a_ring_size,
+        a_required_signers,
         l_signature_data,
         l_signature_size
     );
@@ -1738,9 +1743,18 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
 
     log_it(L_INFO, "dap_sign_verify_ring: deserialized signature successfully");
 
-    // Verify signature
-    log_it(L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify");
-    l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, &l_ring);
+    // Verify signature with adaptive key handling
+    log_it(L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify (embedded_keys=%s)", 
+           l_signature->use_embedded_keys ? "true" : "false");
+    
+    if (l_signature->use_embedded_keys) {
+        // Use embedded keys - pass NULL as ring parameter
+        l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, NULL);
+    } else {
+        // Use external keys - pass ring container
+        l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, &l_ring);
+    }
+    
     log_it(L_INFO, "dap_sign_verify_ring: chipmunk_ring_verify returned %d", l_result);
 
     // Cleanup

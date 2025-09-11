@@ -46,7 +46,8 @@ static bool s_test_ring_anonymity(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_signer_key,
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, TEST_RING_SIZE
+            l_ring_keys, TEST_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signatures[i] != NULL, "Ring signature creation should succeed");
 
@@ -155,7 +156,8 @@ static bool s_test_linkability_prevention(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_signer_key,
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, TEST_RING_SIZE
+            l_ring_keys, TEST_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signatures[i] != NULL, "Ring signature creation should succeed");
 
@@ -242,7 +244,8 @@ static bool s_test_cryptographic_strength(void) {
         l_signatures[i] = dap_sign_create_ring(
             l_ring_keys[0],  // Same signer
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, TEST_RING_SIZE
+            l_ring_keys, TEST_RING_SIZE,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signatures[i] != NULL, "Signature creation should succeed");
 
@@ -262,7 +265,7 @@ static bool s_test_cryptographic_strength(void) {
             }
         }
         double l_zero_ratio = (double)l_zero_bytes / l_signatures[i]->header.sign_size;
-        log_it(L_INFO, "Signature %zu: %zu zero bytes / %u total = %.2f%% zeros", 
+        log_it(L_INFO, "Signature %zu: %zu zero bytes / %u total = %.2f%% zeros",
                i, l_zero_bytes, l_signatures[i]->header.sign_size, l_zero_ratio * 100.0);
         
         // Ring signatures have structured data with some zero padding - adjust threshold accordingly

@@ -148,16 +148,23 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,
                               size_t a_ring_size,
+                              uint32_t a_required_signers,
                               uint8_t *a_signature,
                               size_t a_signature_size)
 {
     debug_if(s_debug_more, L_INFO, "=== dap_enc_chipmunk_ring_sign START ===");
     debug_if(s_debug_more, L_INFO, "priv_key=%p, data=%p, data_size=%zu", a_priv_key, a_data, a_data_size);
-    debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu (anonymous)", a_ring_pub_keys, a_ring_size);
+    debug_if(s_debug_more, L_INFO, "ring_pub_keys=%p, ring_size=%zu, required_signers=%u", 
+             a_ring_pub_keys, a_ring_size, a_required_signers);
     debug_if(s_debug_more, L_INFO, "signature=%p, signature_size=%zu", a_signature, a_signature_size);
 
     if (!a_priv_key || !a_ring_pub_keys || !a_signature) {
         log_it(L_ERROR, "Invalid parameters for Chipmunk_Ring signature");
+        return -EINVAL;
+    }
+    
+    if (a_required_signers < 1 || a_required_signers > a_ring_size) {
+        log_it(L_ERROR, "Invalid required_signers: %u (ring_size=%zu)", a_required_signers, a_ring_size);
         return -EINVAL;
     }
     
@@ -312,8 +319,11 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     chipmunk_ring_signature_t l_ring_sig;
     memset(&l_ring_sig, 0, sizeof(l_ring_sig));
 
+    // Determine if we should use embedded keys based on ring size
+    bool use_embedded_keys = (a_ring_size <= CHIPMUNK_RING_SMALL_RING_THRESHOLD); // Embed for small rings, external for large
+    
     int l_result = chipmunk_ring_sign(&l_priv_key, a_data, a_data_size,
-                                     &l_ring, &l_ring_sig);
+                                     &l_ring, a_required_signers, use_embedded_keys, &l_ring_sig);
 
     // Clean up ring container
     free(l_ring.public_keys);
@@ -336,8 +346,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return l_result;
     }
 
-    log_it(L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, anonymous)",
-           a_ring_size);
+    log_it(L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, required_signers: %u, embedded_keys: %s)",
+           a_ring_size, a_required_signers, use_embedded_keys ? "true" : "false");
 
     return 0;
 }

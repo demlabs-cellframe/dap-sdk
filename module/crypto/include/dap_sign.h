@@ -160,6 +160,7 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
  * @param a_data_size Size of data to sign
  * @param a_ring_keys Array of public keys in the ring (including signer's key)
  * @param a_ring_size Number of keys in the ring (must be >= 2)
+ * @param a_required_signers Required signers 
  * @return New ring signature or NULL on error
  */
 dap_sign_t *dap_sign_create_ring(
@@ -167,7 +168,8 @@ dap_sign_t *dap_sign_create_ring(
     const void *a_data,
     size_t a_data_size,
     dap_enc_key_t **a_ring_keys,
-    size_t a_ring_size
+    size_t a_ring_size,
+    uint32_t a_required_signers
 );
 
 //Create sign on raw data without hashing. Singing algorythm is key provided

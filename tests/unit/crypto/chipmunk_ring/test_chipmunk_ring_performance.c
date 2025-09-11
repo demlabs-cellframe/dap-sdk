@@ -83,7 +83,8 @@ static bool s_test_performance_detailed(void) {
             dap_sign_t* l_signature = dap_sign_create_ring(
                 l_ring_keys[iter % l_ring_size],  // Anonymous signer
                 &l_message_hash, sizeof(l_message_hash),
-                l_ring_keys, l_ring_size
+                l_ring_keys, l_ring_size,
+                1  // Traditional ring signature (required_signers=1)
             );
             double l_sign_end = get_time_ms();
             
@@ -192,7 +193,8 @@ static bool s_test_size_scaling(void) {
         dap_sign_t* l_signature = dap_sign_create_ring(
             l_ring_keys[0],
             &l_message_hash, sizeof(l_message_hash),
-            l_ring_keys, l_ring_size
+            l_ring_keys, l_ring_size,
+            1  // Traditional ring signature (required_signers=1)
         );
         dap_assert(l_signature != NULL, "Signature creation should succeed");
 
