@@ -161,13 +161,24 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type);
 **Пример**:
 ```c
 #include "dap_enc_key.h"
+#include "dap_common.h"
+
+// Инициализация
+if (dap_enc_key_init() != 0) {
+    fprintf(stderr, "Failed to initialize crypto module\n");
+    return EXIT_FAILURE;
+}
 
 // Создание AES ключа
 dap_enc_key_t *aes_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_IAES);
 if (!aes_key) {
     fprintf(stderr, "Failed to create AES key\n");
-    return NULL;
+    return EXIT_FAILURE;
 }
+
+// Очистка
+dap_enc_key_delete(aes_key);
+dap_enc_key_deinit();
 ```
 
 #### dap_enc_key_new_generate()
@@ -191,6 +202,15 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type,
 
 **Пример**:
 ```c
+#include "dap_enc_key.h"
+#include "dap_common.h"
+
+// Инициализация
+if (dap_enc_key_init() != 0) {
+    fprintf(stderr, "Failed to initialize crypto module\n");
+    return EXIT_FAILURE;
+}
+
 // Генерация Dilithium ключа для подписей
 dap_enc_key_t *sign_key = dap_enc_key_new_generate(
     DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
@@ -201,7 +221,12 @@ dap_enc_key_t *sign_key = dap_enc_key_new_generate(
 
 if (!sign_key) {
     fprintf(stderr, "Failed to generate Dilithium key\n");
+    return EXIT_FAILURE;
 }
+
+// Очистка
+dap_enc_key_delete(sign_key);
+dap_enc_key_deinit();
 ```
 
 ### Сериализация ключей

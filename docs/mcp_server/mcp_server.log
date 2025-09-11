@@ -10615,3 +10615,2028 @@ INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сбо
 ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
 ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
 INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...
+INFO:dap-mcp-daemon:Запуск MCP сервера...
+INFO:dap-mcp-daemon:Запуск MCP сервера для проекта: /home/naeper/work/cellframe-node/dap-sdk
+INFO:dap-mcp-server:Starting DAP SDK MCP Server...
+INFO:dap-mcp-server:Available tools:
+INFO:dap-mcp-server:  - search_documentation: Поиск по документации DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - get_coding_style_guide: Получение руководства по стилю кодирования DAP SDK
+INFO:dap-mcp-server:  - get_module_structure_info: Информация о структуре и назначении модулей DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - search_functions_and_apis: Поиск функций и API по запросу с рекомендациями по использованию
+INFO:dap-mcp-server:  - find_code_examples: Поиск примеров кода по запросу
+INFO:dap-mcp-server:  - get_project_overview: Получение общего обзора проектов DAP SDK и CellFrame SDK
+INFO:dap-mcp-server:  - show_sdk_architecture: Показать архитектуру DAP SDK и CellFrame SDK с описанием слоев и компонентов
+INFO:dap-mcp-server:  - get_build_and_integration_help: Помощь по сборке, установке, интеграции и использованию DAP SDK
+ERROR:dap-mcp-daemon:Ошибка при запуске сервера: I/O operation on closed file
+ERROR:dap-mcp-daemon:Ошибка в работе сервера: I/O operation on closed file
+INFO:dap-mcp-daemon:Перезапуск через 5 секунд...

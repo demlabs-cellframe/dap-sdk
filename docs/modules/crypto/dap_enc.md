@@ -129,12 +129,24 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,                  // Ключ деш�
 ```c
 #include "dap_enc.h"
 #include "dap_enc_key.h"
+#include "dap_common.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 // Инициализация
-dap_enc_init();
+if (dap_enc_init() != 0) {
+    fprintf(stderr, "Failed to initialize encryption module\n");
+    return EXIT_FAILURE;
+}
 
 // Создание ключа
-dap_enc_key_t *key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_AES, 256, NULL, 0, NULL);
+dap_enc_key_t *key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, 256, NULL, 0, "secure_seed", 11, 32);
+if (!key) {
+    fprintf(stderr, "Failed to create AES key\n");
+    dap_enc_deinit();
+    return EXIT_FAILURE;
+}
 
 // Подготовка данных
 const char *plaintext = "Hello, World!";
@@ -145,19 +157,42 @@ size_t encrypted_size = dap_enc_code_out_size(key, plaintext_len, DAP_ENC_DATA_T
 
 // Шифрование
 uint8_t *encrypted = malloc(encrypted_size);
+if (!encrypted) {
+    fprintf(stderr, "Memory allocation failed\n");
+    dap_enc_key_delete(key);
+    dap_enc_deinit();
+    return EXIT_FAILURE;
+}
+
 size_t actual_encrypted_size = dap_enc_code(key, plaintext, plaintext_len,
                                            encrypted, encrypted_size, DAP_ENC_DATA_TYPE_RAW);
 
 // Дешифрование
 size_t decrypted_size = dap_enc_decode_out_size(key, actual_encrypted_size, DAP_ENC_DATA_TYPE_RAW);
 uint8_t *decrypted = malloc(decrypted_size);
+if (!decrypted) {
+    fprintf(stderr, "Memory allocation failed\n");
+    free(encrypted);
+    dap_enc_key_delete(key);
+    dap_enc_deinit();
+    return EXIT_FAILURE;
+}
+
 size_t actual_decrypted_size = dap_enc_decode(key, encrypted, actual_encrypted_size,
                                              decrypted, decrypted_size, DAP_ENC_DATA_TYPE_RAW);
 
+// Проверка результата
+if (actual_decrypted_size == plaintext_len &&
+    memcmp(decrypted, plaintext, plaintext_len) == 0) {
+    printf("✓ Encryption/decryption successful\n");
+} else {
+    printf("✗ Encryption/decryption failed\n");
+}
+
 // Очистка
-dap_enc_key_delete(key);
 free(encrypted);
 free(decrypted);
+dap_enc_key_delete(key);
 dap_enc_deinit();
 ```
 
