@@ -53,6 +53,7 @@ typedef struct dap_stream_ch {
     pthread_mutex_t mutex;
     bool ready_to_write;
     bool ready_to_read;
+    bool closing;
     dap_stream_t * stream;
     dap_stream_ch_uuid_t uuid;
     dap_stream_worker_t * stream_worker;
