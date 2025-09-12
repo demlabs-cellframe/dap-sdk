@@ -420,6 +420,22 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 
 #define DAP_CLIENT_PROTOCOL_VERSION   26
 
+/* Cross-platform secure memory clearing */
+#ifdef HAVE_EXPLICIT_BZERO
+#include <strings.h>  // For explicit_bzero on systems that have it
+#else
+// Provide explicit_bzero implementation for platforms that don't have it (macOS, etc.)
+DAP_STATIC_INLINE void explicit_bzero(void *s, size_t n) {
+    memset(s, 0, n);
+    // Memory barrier to prevent compiler optimization
+#if defined(_MSC_VER)
+    __asm;
+#else
+    __asm__ __volatile__("" : : "r"(s) : "memory");
+#endif
+}
+#endif
+
 /* Crossplatform print formats for integers and others */
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)

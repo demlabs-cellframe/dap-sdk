@@ -2,7 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
+include(CheckFunctionExists)
 include(cmake/OS_Detection.cmake)
+
+# Check for explicit_bzero availability
+check_function_exists(explicit_bzero HAVE_EXPLICIT_BZERO)
+if(HAVE_EXPLICIT_BZERO)
+    add_definitions(-DHAVE_EXPLICIT_BZERO)
+endif()
 
 if (NOT DEFINED DAP_VERSION)
     message(WARNING "DAP_VERSION is not defined")
