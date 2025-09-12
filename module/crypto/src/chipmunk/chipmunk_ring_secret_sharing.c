@@ -849,10 +849,13 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
             return -ENOMEM;
         }
         
-        // Initialize minimal commitments for serialization (empty but valid)
+        // Initialize responses for serialization (commitments already exist from signature creation)
         for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-            memset(&a_signature->commitments[i], 0, sizeof(chipmunk_ring_commitment_t));
-            memset(&a_signature->responses[i], 0, sizeof(chipmunk_ring_response_t));
+            // DON'T zero commitments - they contain valid data from signature creation!
+            // Only initialize responses if they're not already set
+            if (!a_signature->responses[i].value) {
+                memset(&a_signature->responses[i], 0, sizeof(chipmunk_ring_response_t));
+            }
         }
         
         log_it(L_INFO, "Multi-signer signature aggregation completed successfully");

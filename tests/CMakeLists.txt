@@ -125,9 +125,9 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_dap_hash_universal.c)
-    add_dap_test(test_unit_crypto_dap_hash_universal unit/crypto/test_dap_hash_universal.c)
-    register_dap_test(test_unit_crypto_dap_hash_universal "unit;crypto;hash;universal")
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_dap_hash.c)
+    add_dap_test(test_unit_crypto_dap_hash unit/crypto/test_dap_hash.c)
+    register_dap_test(test_unit_crypto_dap_hash "unit;crypto;hash")
 endif()
 
 # Chipmunk Ring tests
@@ -138,7 +138,7 @@ endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
     add_dap_test(test_unit_crypto_chipmunk_ring_anonymity unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_anonymity "unit;crypto;ring;anonymity")
+    register_dap_test(test_unit_crypto_chipmunk_ring_anonymity "unit;crypto;ring;anonymity;statistical")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
@@ -176,10 +176,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_coordination "unit;crypto;ring;coordination")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity_advanced.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_anonymity_advanced unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity_advanced.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_anonymity_advanced "unit;crypto;ring;anonymity;statistical")
-endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)

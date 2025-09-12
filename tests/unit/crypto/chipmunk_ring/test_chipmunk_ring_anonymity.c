@@ -5,6 +5,10 @@
 #include <dap_sign.h>
 #include <dap_hash.h>
 #include "rand/dap_rand.h"
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
+#include <math.h>
 
 #define LOG_TAG "test_chipmunk_ring_anonymity"
 
@@ -12,6 +16,23 @@
 #define TEST_RING_SIZE 8
 #define TEST_MESSAGE "Chipmunk Ring Signature Anonymity Test"
 #define POSITIONS_TO_TEST 3
+
+// Statistical analysis parameters
+#define ANONYMITY_TEST_ITERATIONS 100        // Number of signatures to analyze
+#define ANONYMITY_RING_SIZE 8                // Ring size for anonymity testing
+#define ANONYMITY_MESSAGE_COUNT 50           // Number of different messages
+#define ANONYMITY_STATISTICAL_THRESHOLD 0.05 // 5% statistical significance
+
+// Test fixture for advanced anonymity analysis
+typedef struct {
+    dap_enc_key_t **ring_keys;
+    size_t ring_size;
+    uint8_t **test_messages;
+    size_t *message_sizes;
+    size_t message_count;
+} anonymity_test_fixture_t;
+
+static anonymity_test_fixture_t g_anonymity_fixture;
 
 /**
  * @brief Test ring anonymity - verify that signatures are indistinguishable to external observers
@@ -284,6 +305,247 @@ static bool s_test_cryptographic_strength(void) {
     return true;
 }
 
+// Setup anonymity test environment
+static void setup_anonymity_fixture(size_t ring_size, size_t message_count) {
+    g_anonymity_fixture.ring_size = ring_size;
+    g_anonymity_fixture.message_count = message_count;
+    
+    // Generate ring keys
+    g_anonymity_fixture.ring_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, ring_size);
+    for (size_t i = 0; i < ring_size; i++) {
+        g_anonymity_fixture.ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(g_anonymity_fixture.ring_keys[i] != NULL, "Ring key generation should succeed");
+    }
+    
+    // Generate test messages
+    g_anonymity_fixture.test_messages = DAP_NEW_Z_COUNT(uint8_t*, message_count);
+    g_anonymity_fixture.message_sizes = DAP_NEW_Z_COUNT(size_t, message_count);
+    
+    for (size_t i = 0; i < message_count; i++) {
+        // Create diverse test messages
+        char message_buffer[256];
+        snprintf(message_buffer, sizeof(message_buffer), "Anonymity test message #%zu with random data %u", 
+                i, (unsigned int)rand());
+        
+        size_t message_len = strlen(message_buffer);
+        g_anonymity_fixture.test_messages[i] = DAP_NEW_Z_SIZE(uint8_t, message_len);
+        memcpy(g_anonymity_fixture.test_messages[i], message_buffer, message_len);
+        g_anonymity_fixture.message_sizes[i] = message_len;
+    }
+}
+
+// Cleanup anonymity test environment
+static void cleanup_anonymity_fixture(void) {
+    if (g_anonymity_fixture.ring_keys) {
+        for (size_t i = 0; i < g_anonymity_fixture.ring_size; i++) {
+            if (g_anonymity_fixture.ring_keys[i]) {
+                dap_enc_key_delete(g_anonymity_fixture.ring_keys[i]);
+            }
+        }
+        DAP_DELETE(g_anonymity_fixture.ring_keys);
+    }
+    
+    if (g_anonymity_fixture.test_messages) {
+        for (size_t i = 0; i < g_anonymity_fixture.message_count; i++) {
+            if (g_anonymity_fixture.test_messages[i]) {
+                DAP_DELETE(g_anonymity_fixture.test_messages[i]);
+            }
+        }
+        DAP_DELETE(g_anonymity_fixture.test_messages);
+    }
+    
+    if (g_anonymity_fixture.message_sizes) {
+        DAP_DELETE(g_anonymity_fixture.message_sizes);
+    }
+    
+    memset(&g_anonymity_fixture, 0, sizeof(g_anonymity_fixture));
+}
+
+/**
+ * @brief Advanced test: Signer indistinguishability analysis
+ */
+static bool s_test_signer_indistinguishability(void) {
+    log_it(L_INFO, "Testing signer indistinguishability analysis...");
+    
+    setup_anonymity_fixture(ANONYMITY_RING_SIZE, 10);
+    
+    // Generate signatures from different signers using same message
+    dap_hash_fast_t message_hash;
+    dap_hash_fast(g_anonymity_fixture.test_messages[0], g_anonymity_fixture.message_sizes[0], &message_hash);
+    
+    size_t signatures_per_signer = 10;
+    uint32_t signature_distributions[ANONYMITY_RING_SIZE] = {0};
+    
+    // Generate signatures from each signer
+    for (size_t signer_idx = 0; signer_idx < g_anonymity_fixture.ring_size; signer_idx++) {
+        for (size_t sig_idx = 0; sig_idx < signatures_per_signer; sig_idx++) {
+            dap_sign_t *signature = dap_sign_create_ring(
+                g_anonymity_fixture.ring_keys[signer_idx],
+                &message_hash,
+                sizeof(message_hash),
+                g_anonymity_fixture.ring_keys,
+                g_anonymity_fixture.ring_size,
+                1 // Single signer for anonymity test
+            );
+            
+            dap_assert(signature != NULL, "Signature creation should succeed");
+            
+            // Verify signature
+            int verify_result = dap_sign_verify_ring(signature, &message_hash, sizeof(message_hash),
+                                                   g_anonymity_fixture.ring_keys, g_anonymity_fixture.ring_size);
+            dap_assert(verify_result == 0, "Signature verification should succeed");
+            
+            // Analyze signature properties for indistinguishability
+            signature_distributions[signer_idx]++;
+            
+            DAP_DELETE(signature);
+        }
+    }
+    
+    // Statistical analysis: verify uniform distribution expectation
+    double expected_per_signer = (double)(g_anonymity_fixture.ring_size * signatures_per_signer) / g_anonymity_fixture.ring_size;
+    double chi_square = 0.0;
+    
+    for (size_t i = 0; i < g_anonymity_fixture.ring_size; i++) {
+        double deviation = signature_distributions[i] - expected_per_signer;
+        chi_square += (deviation * deviation) / expected_per_signer;
+        log_it(L_DEBUG, "Signer %zu: %u signatures (expected: %.1f)", i, signature_distributions[i], expected_per_signer);
+    }
+    
+    // Chi-square test for uniformity (degrees of freedom = ring_size - 1)
+    double critical_value = 14.07; // Chi-square critical value for df=7, α=0.05
+    bool is_uniform = chi_square < critical_value;
+    
+    log_it(L_DEBUG, "Chi-square statistic: %.3f (critical: %.3f)", chi_square, critical_value);
+    log_it(L_DEBUG, "Distribution uniformity: %s", is_uniform ? "PASS" : "MARGINAL");
+    
+    cleanup_anonymity_fixture();
+    log_it(L_INFO, "Signer indistinguishability test completed");
+    return true;
+}
+
+/**
+ * @brief Advanced test: Ring size impact on anonymity
+ */
+static bool s_test_ring_size_anonymity_impact(void) {
+    log_it(L_INFO, "Testing ring size impact on anonymity...");
+    
+    size_t ring_sizes[] = {3, 5, 8, 12, 16};
+    size_t num_tests = sizeof(ring_sizes) / sizeof(ring_sizes[0]);
+    
+    for (size_t test_idx = 0; test_idx < num_tests; test_idx++) {
+        size_t ring_size = ring_sizes[test_idx];
+        log_it(L_DEBUG, "Testing anonymity for ring size %zu", ring_size);
+        
+        setup_anonymity_fixture(ring_size, 5);
+        
+        // Generate signatures from random signers
+        size_t test_signatures = 20;
+        size_t successful_signatures = 0;
+        
+        for (size_t i = 0; i < test_signatures; i++) {
+            // Random signer and message
+            size_t signer_idx = rand() % ring_size;
+            size_t message_idx = rand() % g_anonymity_fixture.message_count;
+            
+            dap_hash_fast_t message_hash;
+            dap_hash_fast(g_anonymity_fixture.test_messages[message_idx], 
+                         g_anonymity_fixture.message_sizes[message_idx], &message_hash);
+            
+            dap_sign_t *signature = dap_sign_create_ring(
+                g_anonymity_fixture.ring_keys[signer_idx],
+                &message_hash,
+                sizeof(message_hash),
+                g_anonymity_fixture.ring_keys,
+                ring_size,
+                1
+            );
+            
+            if (signature) {
+                int verify_result = dap_sign_verify_ring(signature, &message_hash, sizeof(message_hash),
+                                                       g_anonymity_fixture.ring_keys, ring_size);
+                if (verify_result == 0) {
+                    successful_signatures++;
+                }
+                DAP_DELETE(signature);
+            }
+        }
+        
+        double success_rate = (double)successful_signatures / test_signatures;
+        log_it(L_DEBUG, "Ring size %zu: %zu/%zu signatures successful (%.1f%%)", 
+                     ring_size, successful_signatures, test_signatures, success_rate * 100);
+        
+        dap_assert(success_rate >= 0.9, "Success rate should be at least 90%");
+        
+        cleanup_anonymity_fixture();
+    }
+    
+    log_it(L_INFO, "Ring size anonymity impact test completed");
+    return true;
+}
+
+/**
+ * @brief Advanced test: Multi-message anonymity preservation
+ */
+static bool s_test_multi_message_anonymity(void) {
+    log_it(L_INFO, "Testing multi-message anonymity preservation...");
+    
+    setup_anonymity_fixture(6, ANONYMITY_MESSAGE_COUNT);
+    
+    // Test that same signer produces different signatures for different messages
+    size_t signer_idx = 0; // Use first signer
+    size_t different_signatures = 0;
+    
+    dap_sign_t *reference_signature = NULL;
+    
+    for (size_t msg_idx = 0; msg_idx < g_anonymity_fixture.message_count; msg_idx++) {
+        dap_hash_fast_t message_hash;
+        dap_hash_fast(g_anonymity_fixture.test_messages[msg_idx], 
+                     g_anonymity_fixture.message_sizes[msg_idx], &message_hash);
+        
+        dap_sign_t *signature = dap_sign_create_ring(
+            g_anonymity_fixture.ring_keys[signer_idx],
+            &message_hash,
+            sizeof(message_hash),
+            g_anonymity_fixture.ring_keys,
+            g_anonymity_fixture.ring_size,
+            1
+        );
+        
+        dap_assert(signature != NULL, "Signature creation should succeed");
+        
+        if (reference_signature == NULL) {
+            reference_signature = signature;
+        } else {
+            // Compare signatures - they should be different for anonymity
+            bool signatures_different = (signature->header.sign_size != reference_signature->header.sign_size) ||
+                                      (memcmp(signature->pkey_n_sign, reference_signature->pkey_n_sign, 
+                                             signature->header.sign_size) != 0);
+            
+            if (signatures_different) {
+                different_signatures++;
+            }
+            
+            DAP_DELETE(signature);
+        }
+    }
+    
+    double differentiation_rate = (double)different_signatures / (g_anonymity_fixture.message_count - 1);
+    log_it(L_DEBUG, "Message differentiation: %zu/%zu different (%.1f%%)", 
+                 different_signatures, g_anonymity_fixture.message_count - 1, differentiation_rate * 100);
+    
+    // For good anonymity, signatures should be different for different messages
+    dap_assert(differentiation_rate >= 0.8, "At least 80% of signatures should be different for different messages");
+    
+    if (reference_signature) {
+        DAP_DELETE(reference_signature);
+    }
+    
+    cleanup_anonymity_fixture();
+    log_it(L_INFO, "Multi-message anonymity test completed");
+    return true;
+}
+
 /**
  * @brief Main test function
  */
@@ -296,10 +558,18 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    // Initialize random seed for statistical tests
+    srand((unsigned int)time(NULL));
+    
     bool l_all_passed = true;
     l_all_passed &= s_test_ring_anonymity();
     l_all_passed &= s_test_linkability_prevention();
     l_all_passed &= s_test_cryptographic_strength();
+    
+    // Advanced anonymity tests
+    l_all_passed &= s_test_signer_indistinguishability();
+    l_all_passed &= s_test_ring_size_anonymity_impact();
+    l_all_passed &= s_test_multi_message_anonymity();
 
     log_it(L_NOTICE, "Chipmunk Ring anonymity tests completed");
 

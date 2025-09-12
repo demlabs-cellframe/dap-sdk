@@ -8,6 +8,9 @@ set(TEST_NAMES
     test_chipmunk_ring_edge_cases
     test_chipmunk_ring_stress
     test_minimal_ring
+    test_chipmunk_ring_multi_signer
+    test_chipmunk_ring_threshold_coordination
+    test_chipmunk_ring_lagrange_interpolation
 )
 
 set(TEST_SOURCES
@@ -17,6 +20,9 @@ set(TEST_SOURCES
     test_chipmunk_ring_edge_cases.c
     test_chipmunk_ring_stress.c
     test_minimal_ring.c
+    test_chipmunk_ring_multi_signer.c
+    test_chipmunk_ring_threshold_coordination.c
+    test_chipmunk_ring_lagrange_interpolation.c
 )
 
 # Create test executables
