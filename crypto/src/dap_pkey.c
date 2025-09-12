@@ -88,7 +88,7 @@ dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str)
     // Validate that the parsed pkey structure is valid and size is correct
     if (l_out_size < sizeof(dap_pkey_t) || 
         l_ret->header.type.type == DAP_PKEY_TYPE_NULL || 
-        l_ret->header.size > l_str_len / 2 ||
+        l_ret->header.size > (uint32_t)(l_str_len / 2) ||
         sizeof(dap_pkey_t) + l_ret->header.size != l_out_size) {
         log_it(L_ERROR, "Error in read pkey from hex string - invalid structure or size");
         DAP_DEL_Z(l_ret);

@@ -425,15 +425,11 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #include <strings.h>  // For explicit_bzero on systems that have it
 #else
 // Provide explicit_bzero implementation for platforms that don't have it (macOS, etc.)
-DAP_STATIC_INLINE void explicit_bzero(void *s, size_t n) {
-    memset(s, 0, n);
-    // Memory barrier to prevent compiler optimization
-#if defined(_MSC_VER)
-    __asm;
-#else
-    __asm__ __volatile__("" : : "r"(s) : "memory");
-#endif
-}
+// Use macro to avoid conflicts with system declarations
+#define explicit_bzero(s, n) do { \
+    memset((s), 0, (n)); \
+    __asm__ __volatile__("" : : "r"(s) : "memory"); \
+} while(0)
 #endif
 
 /* Crossplatform print formats for integers and others */

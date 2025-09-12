@@ -26,6 +26,10 @@
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_hash.h"
+#include "uthash.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #ifdef __cplusplus
 extern "C" {

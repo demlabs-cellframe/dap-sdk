@@ -88,6 +88,25 @@ endif()
 # Core, add it always
 add_subdirectory(core)
 
+# DAP SDK main library (moved from core to root)
+if (DAPSDK_MODULES MATCHES "core")
+    add_library(dap_sdk STATIC dap_sdk.c)
+    target_include_directories(dap_sdk PRIVATE 
+        core/include
+        io/include  
+        crypto/include
+        net/stream/stream/include
+        net/stream/session/include
+        net/stream/ch/include
+        net/client/include
+        net/server/http_server/include
+        global-db/include
+        plugin/include
+    )
+    target_link_libraries(dap_sdk dap_core)
+    message("[+] DAP SDK main library")
+endif()
+
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
     add_subdirectory(crypto)

@@ -26,6 +26,7 @@
 
 #include "dap_common.h"
 #include "KeccakHash.h"
+#include "SimpleFIPS202.h"
 
 
 #define DAP_HASH_FAST_SIZE          32

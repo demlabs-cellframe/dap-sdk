@@ -272,6 +272,10 @@ endif()
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
+target_include_directories(dap_crypto PUBLIC XKCP/lib/high/Keccak/FIPS202)
+
+# Define XKCP configuration for KeccakP1600 implementation
+target_compile_definitions(dap_crypto PUBLIC XKCP_has_KeccakP1600)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 

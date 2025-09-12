@@ -163,9 +163,10 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     }
     
     // Security fix: proper overflow detection for size validation
-    if (a_pkt->group_len > SIZE_MAX - a_pkt->key_len ||
-        a_pkt->group_len + a_pkt->key_len > SIZE_MAX - a_pkt->value_len ||
-        a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
+    size_t total_size = 0;
+    if (__builtin_add_overflow(a_pkt->group_len, a_pkt->key_len, &total_size) ||
+        __builtin_add_overflow(total_size, a_pkt->value_len, &total_size) ||
+        total_size > a_pkt->data_len) {
         log_it(L_ERROR, "Broken GDB element: integer overflow or size mismatch");
         return NULL;
     }

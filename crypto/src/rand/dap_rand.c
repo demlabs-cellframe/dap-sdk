@@ -4,6 +4,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+#define LOG_TAG "dap_rand"
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 

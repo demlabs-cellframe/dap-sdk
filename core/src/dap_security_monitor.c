@@ -28,6 +28,9 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define LOG_TAG "security_monitor"
 

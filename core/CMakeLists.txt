@@ -25,11 +25,35 @@ if (DAP_USE_RPMALLOC)
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
+
+# Define XKCP configuration for hash functions
+add_definitions(-DXKCP_has_KeccakP1600)
+
 #This paths will be used by project-dependent project libraries
+# Cross-platform KeccakP-1600 implementation selection
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(KECCAK_IMPL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/low/KeccakP-1600/x86-64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(KECCAK_IMPL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/low/KeccakP-1600/ARMv8A")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+    set(KECCAK_IMPL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/low/KeccakP-1600/ARM")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    # 64-bit fallback
+    set(KECCAK_IMPL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/low/KeccakP-1600/ref-64bits")
+else()
+    # 32-bit fallback
+    set(KECCAK_IMPL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/low/KeccakP-1600/ref-32bits")
+endif()
+
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../crypto/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/high/Keccak/FIPS202
+    ${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/high/Keccak
+    ${CMAKE_CURRENT_SOURCE_DIR}/../crypto/XKCP/lib/common
+    ${KECCAK_IMPL_PATH})
 if (DAP_USE_RPMALLOC)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc/rpmalloc/)
     target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
@@ -54,6 +78,11 @@ if (BUILD_WITH_ZIP)
 endif()
 add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
+
+# Add dependency on XKCP for hash functions used by security monitor
+if (DAPSDK_MODULES MATCHES "crypto")
+    add_dependencies(${PROJECT_NAME} dap_crypto_XKCP)
+endif()
 
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")
