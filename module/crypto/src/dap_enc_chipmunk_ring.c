@@ -126,9 +126,19 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
  */
 void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key) {
     if (a_key) {
-        // Use standard cleanup for sensitive data
-        memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
-        memset(a_key->pub_key_data, 0, a_key->pub_key_data_size);
+        // Securely zero sensitive data before freeing
+        if (a_key->priv_key_data) {
+            memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
+            DAP_DELETE(a_key->priv_key_data);
+            a_key->priv_key_data = NULL;
+            a_key->priv_key_data_size = 0;
+        }
+        if (a_key->pub_key_data) {
+            memset(a_key->pub_key_data, 0, a_key->pub_key_data_size);
+            DAP_DELETE(a_key->pub_key_data);
+            a_key->pub_key_data = NULL;
+            a_key->pub_key_data_size = 0;
+        }
     }
 }
 

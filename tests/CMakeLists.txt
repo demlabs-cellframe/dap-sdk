@@ -176,6 +176,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_coordination "unit;crypto;ring;coordination")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_error_handling unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_error_handling "unit;crypto;ring;error_handling")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_input_validation unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_input_validation "unit;crypto;ring;input_validation")
+endif()
+
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)

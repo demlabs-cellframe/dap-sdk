@@ -26,6 +26,7 @@
 #include "chipmunk_ring_secret_sharing.h"
 #include "chipmunk_aggregation.h"
 #include "dap_enc_chipmunk_ring_params.h"
+#include "chipmunk_ring_errors.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -45,7 +46,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Post-quantum commitment parameters (configurable with defaults)
 // Made non-static for chipmunk_ring_commitment.c access
@@ -83,7 +84,7 @@ static void update_layer_sizes(void) {
                                            s_pq_params.computed.public_key_size; // key_seed + tr + public_key
     s_pq_params.computed.signature_size = s_pq_params.chipmunk_n * CHIPMUNK_RING_COEFF_SIZE * s_pq_params.chipmunk_gamma; // sigma[GAMMA]
     
-    log_it(L_DEBUG, "Updated computed sizes: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu, pubkey=%zu, privkey=%zu, sig=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Updated computed sizes: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu, pubkey=%zu, privkey=%zu, sig=%zu",
            s_pq_params.computed.ring_lwe_commitment_size, s_pq_params.computed.ntru_commitment_size,
            s_pq_params.computed.code_commitment_size, s_pq_params.computed.binding_proof_size,
            s_pq_params.computed.public_key_size, s_pq_params.computed.private_key_size,
@@ -139,14 +140,16 @@ int chipmunk_ring_init(void) {
 
     // Initialize Chipmunk (underlying signature scheme)
     if (chipmunk_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize Chipmunk for Chipmunk_Ring");
-        return -1;
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_INIT_FAILED, __func__, 
+                               "Failed to initialize underlying Chipmunk algorithm");
+        return CHIPMUNK_RING_ERROR_INIT_FAILED;
     }
 
     // Initialize Chipmunk hash functions
     if (dap_chipmunk_hash_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize Chipmunk hash functions for Chipmunk_Ring");
-        return -1;
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_INIT_FAILED, __func__, 
+                               "Failed to initialize Chipmunk hash functions");
+        return CHIPMUNK_RING_ERROR_INIT_FAILED;
     }
 
     // Initialize module parameters and layer sizes
@@ -185,9 +188,9 @@ int chipmunk_ring_key_new(struct dap_enc_key *a_key) {
  */
 int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,
                                  size_t a_seed_size, size_t a_key_size) {
-    dap_return_val_if_fail(a_key, -EINVAL);
-    dap_return_val_if_fail(a_seed, -EINVAL);
-    dap_return_val_if_fail(a_seed_size == 32, -EINVAL);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_key, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_seed, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_seed_size == 32, CHIPMUNK_RING_ERROR_INVALID_SIZE);
 
     // Validate key size parameter (for future extensibility)
     if (a_key_size > 0 && a_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
@@ -205,24 +208,26 @@ int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed
  */
 int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_keys,
                            size_t a_num_keys, chipmunk_ring_container_t *a_ring) {
-    dap_return_val_if_fail(a_public_keys, -EINVAL);
-    dap_return_val_if_fail(a_ring, -EINVAL);
-    dap_return_val_if_fail(a_num_keys > 0 && a_num_keys <= CHIPMUNK_RING_MAX_RING_SIZE, -EINVAL);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_public_keys, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_ring, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_INVALID_SIZE(a_num_keys, 2, CHIPMUNK_RING_MAX_RING_SIZE);
 
     // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
     const size_t l_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
 
     // Prevent integer overflow: check if a_num_keys * CHIPMUNK_PUBLIC_KEY_SIZE would overflow
     if (a_num_keys > (SIZE_MAX / l_key_data_size)) {
-        log_it(L_CRITICAL, "Integer overflow detected: num_keys %zu would overflow combined keys allocation", a_num_keys);
-        return -EOVERFLOW;
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_OVERFLOW, __func__, 
+                               "Ring size would cause integer overflow in memory allocation");
+        return CHIPMUNK_RING_ERROR_MEMORY_OVERFLOW;
     }
 
     a_ring->size = a_num_keys;
     a_ring->public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t, sizeof(chipmunk_ring_public_key_t)*a_num_keys);
     if (!a_ring->public_keys) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return -ENOMEM;
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
+                               "Failed to allocate memory for ring public keys");
+        return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
     // Copy public keys data, not the whole struct (to avoid padding issues)
@@ -238,9 +243,10 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     size_t l_total_size = a_num_keys * l_key_data_size;
     uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_total_size);
     if (!l_combined_keys) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
+                               "Failed to allocate memory for combined keys");
         DAP_FREE(a_ring->public_keys);
-        return -ENOMEM;
+        return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
     // Concatenate all public keys
@@ -251,10 +257,11 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
 
     // Hash the combined public keys
     if (!dap_hash_fast(l_combined_keys, l_total_size, &l_ring_hash)) {
-        log_it(L_ERROR, "Failed to hash ring public keys");
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_HASH_FAILED, __func__, 
+                               "Failed to hash ring public keys");
         DAP_FREE(l_combined_keys);
         DAP_FREE(a_ring->public_keys);
-        return -1;
+        return CHIPMUNK_RING_ERROR_HASH_FAILED;
     }
 
     DAP_FREE(l_combined_keys);
@@ -541,13 +548,27 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                      uint32_t a_required_signers,
                      bool a_use_embedded_keys,
                      chipmunk_ring_signature_t *a_signature) {
-    dap_return_val_if_fail(a_private_key, -EINVAL);
-    // Allow empty messages (a_message can be NULL if a_message_size is 0)
-    dap_return_val_if_fail(a_message || a_message_size == 0, -EINVAL);
-    dap_return_val_if_fail(a_ring, -EINVAL);
-    dap_return_val_if_fail(a_signature, -EINVAL);
-    dap_return_val_if_fail(a_required_signers >= 1, -EINVAL);
-    dap_return_val_if_fail(a_required_signers <= a_ring->size, -EINVAL);
+    // Enhanced input validation with specific error codes
+    CHIPMUNK_RING_RETURN_IF_NULL(a_private_key, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_ring, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_signature, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    
+    // Allow empty messages but validate consistency
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_message || a_message_size == 0, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    
+    // Validate ring size
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_ring->size >= 2, CHIPMUNK_RING_ERROR_RING_TOO_SMALL);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_ring->size <= CHIPMUNK_RING_MAX_RING_SIZE, CHIPMUNK_RING_ERROR_RING_TOO_LARGE);
+    
+    // Validate threshold parameters
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_required_signers >= 1, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_required_signers <= a_ring->size, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
+    
+    // Validate message size constraints
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_message_size <= CHIPMUNK_RING_MAX_MESSAGE_SIZE, CHIPMUNK_RING_ERROR_INVALID_MESSAGE_SIZE);
+    
+    // Validate ring has public keys
+    CHIPMUNK_RING_RETURN_IF_NULL(a_ring->public_keys, CHIPMUNK_RING_ERROR_INVALID_PARAM);
 
     // Initialize signature structure
     memset(a_signature, 0, sizeof(chipmunk_ring_signature_t));
@@ -571,7 +592,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     
     // ANONYMITY: Do not store signer_index - breaks anonymity!
     
-    log_it(L_INFO, "Creating ChipmunkRing signature (ring_size=%u, required_signers=%u, embedded_keys=%s)", 
+    debug_if(s_debug_more, L_INFO, "Creating ChipmunkRing signature (ring_size=%u, required_signers=%u, embedded_keys=%s)", 
            a_ring->size, a_required_signers, a_use_embedded_keys ? "true" : "false");
     
     // SCALABILITY: Handle key storage based on ring size and user preference
@@ -589,7 +610,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                    sizeof(chipmunk_ring_public_key_t));
         }
         
-        log_it(L_DEBUG, "Embedded %u public keys in signature", a_ring->size);
+        debug_if(s_debug_more, L_DEBUG, "Embedded %u public keys in signature", a_ring->size);
         
     } else {
         // Large rings: store only hashes of public keys
@@ -614,7 +635,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             memcpy(a_signature->ring_key_hashes + i * CHIPMUNK_RING_KEY_HASH_SIZE, &key_hash, CHIPMUNK_RING_KEY_HASH_SIZE);
         }
         
-        log_it(L_DEBUG, "Generated hashes for %u public keys (external storage mode)", a_ring->size);
+        debug_if(s_debug_more, L_DEBUG, "Generated hashes for %u public keys (external storage mode)", a_ring->size);
     }
     
     // Copy ring hash for verification
@@ -629,7 +650,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     // ADAPTIVE ALLOCATION: Based on required_signers
     if (a_required_signers == 1) {
         // Single signer mode: minimal allocation
-        log_it(L_DEBUG, "Single signer mode: minimal allocation");
+        debug_if(s_debug_more, L_DEBUG, "Single signer mode: minimal allocation");
     a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
     a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
     
@@ -643,7 +664,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     
     } else {
         // Multi-signer mode: full allocation for coordination
-        log_it(L_DEBUG, "Multi-signer mode: full allocation for coordination");
+        debug_if(s_debug_more, L_DEBUG, "Multi-signer mode: full allocation for coordination");
         a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
         a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
         a_signature->is_coordinated = false;
@@ -929,12 +950,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         a_signature->is_coordinated = false; // Will be set to true after successful coordination
         a_signature->coordination_round = 1;  // Commit phase completed
         
-        log_it(L_DEBUG, "Multi-signer signature ready for coordination protocol with %u ZK proofs", a_required_signers);
+        debug_if(s_debug_more, L_DEBUG, "Multi-signer signature ready for coordination protocol with %u ZK proofs", a_required_signers);
         
         a_signature->is_coordinated = true; // Coordination completed
         a_signature->coordination_round = 3; // Aggregation phase completed
         
-        log_it(L_INFO, "Multi-signer coordination completed successfully");
+        debug_if(s_debug_more, L_INFO, "Multi-signer coordination completed successfully");
     }
     
     int l_result = 0;
@@ -950,50 +971,50 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             l_tag_combined_size = CHIPMUNK_RING_RING_HASH_SIZE + a_message_size + CHIPMUNK_RING_CHALLENGE_SIZE;
         }
         
-    uint8_t *l_tag_combined_data = DAP_NEW_SIZE(uint8_t, l_tag_combined_size);
-    if (!l_tag_combined_data) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        chipmunk_ring_signature_free(a_signature);
-        return -ENOMEM;
-    }
+        uint8_t *l_tag_combined_data = DAP_NEW_SIZE(uint8_t, l_tag_combined_size);
+        if (!l_tag_combined_data) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            chipmunk_ring_signature_free(a_signature);
+            return -ENOMEM;
+        }
 
-    size_t l_tag_offset = 0;
+        size_t l_tag_offset = 0;
         
         // Add ring hash (not individual key for anonymity)
         memcpy(l_tag_combined_data + l_tag_offset, a_ring->ring_hash, CHIPMUNK_RING_RING_HASH_SIZE);
         l_tag_offset += CHIPMUNK_RING_RING_HASH_SIZE;
 
-    // Add message
-    if (a_message && a_message_size > 0) {
-        memcpy(l_tag_combined_data + l_tag_offset, a_message, a_message_size);
-        l_tag_offset += a_message_size;
-    }
+        // Add message
+        if (a_message && a_message_size > 0) {
+            memcpy(l_tag_combined_data + l_tag_offset, a_message, a_message_size);
+            l_tag_offset += a_message_size;
+        }
 
         // Add challenge only for full linkability
         if (a_signature->linkability_mode == CHIPMUNK_RING_LINKABILITY_FULL) {
             memcpy(l_tag_combined_data + l_tag_offset, a_signature->challenge, CHIPMUNK_RING_CHALLENGE_SIZE);
         }
 
-    // Hash to get linkability tag
-    dap_hash_fast_t l_tag_hash;
-    if (!dap_hash_fast(l_tag_combined_data, l_tag_combined_size, &l_tag_hash)) {
-        log_it(L_ERROR, "Failed to generate linkability tag");
-        DAP_FREE(l_tag_combined_data);
-        chipmunk_ring_signature_free(a_signature);
-        return -1;
-    }
+        // Hash to get linkability tag
+        dap_hash_fast_t l_tag_hash;
+        if (!dap_hash_fast(l_tag_combined_data, l_tag_combined_size, &l_tag_hash)) {
+            log_it(L_CRITICAL, "Failed to generate linkability tag");
+            DAP_FREE(l_tag_combined_data);
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
 
-    DAP_FREE(l_tag_combined_data);
+        DAP_FREE(l_tag_combined_data);
 
         // Copy hash to linkability tag
         memcpy(a_signature->linkability_tag, &l_tag_hash, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
         
-        log_it(L_DEBUG, "Generated linkability tag (mode=%u)", a_signature->linkability_mode);
+        debug_if(s_debug_more, L_DEBUG, "Generated linkability tag (mode=%u)", a_signature->linkability_mode);
         
     } else {
-        // No linkability tag for maximum anonymity
+        // No linkability tag without anonymity
         memset(a_signature->linkability_tag, 0, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-        log_it(L_DEBUG, "Linkability disabled - maximum anonymity mode");
+        debug_if(s_debug_more, L_WARNING, "Linkability disabled - now its possible to replay the signature");
     }
 
     return 0;
@@ -1005,11 +1026,23 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
 int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                        const chipmunk_ring_signature_t *a_signature,
                        const chipmunk_ring_container_t *a_ring) {
-    // Allow empty messages (a_message can be NULL if a_message_size is 0)
-    dap_return_val_if_fail(a_message || a_message_size == 0, -EINVAL);
-    dap_return_val_if_fail(a_signature, -EINVAL);
-    // SCALABILITY: ring can be NULL if using embedded keys
-    dap_return_val_if_fail(a_ring || a_signature->use_embedded_keys, -EINVAL);
+    // Enhanced input validation with specific error codes
+    CHIPMUNK_RING_RETURN_IF_NULL(a_signature, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    
+    // Allow empty messages but validate consistency
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_message || a_message_size == 0, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    
+    // Validate message size constraints
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_message_size <= CHIPMUNK_RING_MAX_MESSAGE_SIZE, CHIPMUNK_RING_ERROR_INVALID_MESSAGE_SIZE);
+    
+    // SCALABILITY: ring can be NULL if using embedded keys, but signature must be valid
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_ring || a_signature->use_embedded_keys, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    
+    // Validate signature structure integrity
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->ring_size >= 2, CHIPMUNK_RING_ERROR_RING_TOO_SMALL);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, CHIPMUNK_RING_ERROR_RING_TOO_LARGE);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->required_signers >= 1, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->required_signers <= a_signature->ring_size, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
     
     // SCALABILITY: Handle different key storage modes
     chipmunk_ring_container_t l_effective_ring;
@@ -1585,15 +1618,24 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
  */
 int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
                                    uint8_t *a_output, size_t a_output_size) {
-    dap_return_val_if_fail(a_sig, -EINVAL);
-    dap_return_val_if_fail(a_output, -EINVAL);
-
+    // Enhanced input validation with specific error codes
+    CHIPMUNK_RING_RETURN_IF_NULL(a_sig, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_output, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    
+    // Validate signature structure integrity
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->ring_size >= 2, CHIPMUNK_RING_ERROR_RING_TOO_SMALL);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, CHIPMUNK_RING_ERROR_RING_TOO_LARGE);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->required_signers >= 1, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->required_signers <= a_sig->ring_size, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
+    
+    // Validate output buffer size
     size_t l_required_size = chipmunk_ring_get_signature_size(a_sig->ring_size);
     debug_if(s_debug_more, L_INFO, "Serialization: required_size=%zu, available_size=%zu", l_required_size, a_output_size);
-    if (a_output_size < l_required_size) {
-        log_it(L_ERROR, "Buffer too small for serialization: required=%zu, available=%zu", l_required_size, a_output_size);
-        return -EINVAL;
-    }
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_output_size >= l_required_size, CHIPMUNK_RING_ERROR_BUFFER_TOO_SMALL);
+    
+    // Validate signature has required arrays
+    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->commitments, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->responses, CHIPMUNK_RING_ERROR_INVALID_PARAM);
 
     size_t l_offset = 0;
 
@@ -1786,8 +1828,15 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
  */
 int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
                                      const uint8_t *a_input, size_t a_input_size) {
-    dap_return_val_if_fail(a_sig, -EINVAL);
-    dap_return_val_if_fail(a_input, -EINVAL);
+    // Enhanced input validation with specific error codes
+    CHIPMUNK_RING_RETURN_IF_NULL(a_sig, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_input, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    
+    // Validate minimum input size for header
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_input_size >= 102, CHIPMUNK_RING_ERROR_BUFFER_TOO_SMALL); // Minimum header size
+    
+    // Validate input size is reasonable (not too large)
+    CHIPMUNK_RING_RETURN_IF_FAIL(a_input_size <= 10 * 1024 * 1024, CHIPMUNK_RING_ERROR_INVALID_SIZE); // Max 10MB
 
     log_it(L_INFO, "chipmunk_ring_signature_from_bytes: START deserialization, input_size=%zu", a_input_size);
     size_t l_offset = 0;

@@ -24,11 +24,13 @@ static double get_time_ms(void) {
 // Structure to store performance results
 typedef struct {
     size_t ring_size;
+    size_t required_signers;
     size_t pub_key_size;
     size_t priv_key_size;
     size_t signature_size;
     double avg_signing_time;
     double avg_verification_time;
+    const char* mode_name;
 } performance_result_t;
 
 // Global results storage
@@ -110,11 +112,13 @@ static bool s_test_performance_detailed(void) {
 
         // Store results in global array
         g_performance_results[g_results_count].ring_size = l_ring_size;
+        g_performance_results[g_results_count].required_signers = 1; // Single signer mode
         g_performance_results[g_results_count].pub_key_size = l_pub_key_size;
         g_performance_results[g_results_count].priv_key_size = l_priv_key_size;
         g_performance_results[g_results_count].signature_size = l_signature_size;
         g_performance_results[g_results_count].avg_signing_time = l_avg_signing_time;
         g_performance_results[g_results_count].avg_verification_time = l_avg_verification_time;
+        g_performance_results[g_results_count].mode_name = "Single signer";
         g_results_count++;
 
         log_it(L_DEBUG, "Completed ring size %zu: sign=%.1fms, verify=%.1fms, sig_size=%.1fKB",
@@ -134,24 +138,25 @@ static bool s_test_performance_detailed(void) {
  */
 static void s_print_final_performance_table(void) {
     log_it(L_INFO, " ");
-    log_it(L_INFO, "╔════════════════════════════════════════════════════════════════╗");
-    log_it(L_INFO, "║                 CHIPMUNKRING PERFORMANCE REPORT                ║");
-    log_it(L_INFO, "╠════════════════════════════════════════════════════════════════╣");
-    log_it(L_INFO, "║ Ring │ Pub Key │ Priv Key │ Signature │  Signing  │ Verif.     ║");
-    log_it(L_INFO, "║ Size │  Size   │   Size   │   Size    │   Time    │  Time      ║");
-    log_it(L_INFO, "╠══════╪═════════╪══════════╪═══════════╪═══════════╪════════════╣");
+    log_it(L_INFO, "╔═══════════════════════════════════════════════════════════════════════════════════╗");
+    log_it(L_INFO, "║                        CHIPMUNKRING PERFORMANCE REPORT                            ║");
+    log_it(L_INFO, "╠═══════════════════════════════════════════════════════════════════════════════════╣");
+    log_it(L_INFO, "║ Ring │Thresh│ Signature │  Signing  │ Verif.    │ Mode                           ║");
+    log_it(L_INFO, "║ Size │ old  │   Size    │   Time    │  Time     │                                ║");
+    log_it(L_INFO, "╠══════╪══════╪═══════════╪═══════════╪═══════════╪════════════════════════════════╣");
 
     for (size_t i = 0; i < g_results_count; i++) {
-        log_it(L_INFO, "║ %4zu │ %5.1fKB │ %6.1fKB │ %7.1fKB │ %7.3fms │   %6.3fms ║",
+        const char* mode_display = g_performance_results[i].mode_name ? g_performance_results[i].mode_name : "Single";
+        log_it(L_INFO, "║ %4zu │ %4zu │ %7.1fKB │ %7.3fms │ %7.3fms │ %-30.30s ║",
                g_performance_results[i].ring_size,
-               g_performance_results[i].pub_key_size / 1024.0,
-               g_performance_results[i].priv_key_size / 1024.0,
+               g_performance_results[i].required_signers,
                g_performance_results[i].signature_size / 1024.0,
                g_performance_results[i].avg_signing_time,
-               g_performance_results[i].avg_verification_time);
+               g_performance_results[i].avg_verification_time,
+               mode_display);
     }
 
-    log_it(L_INFO, "╚══════╧═════════╧══════════╧═══════════╧═══════════╧════════════╝");
+    log_it(L_INFO, "╚══════╧══════╧═══════════╧═══════════╧═══════════╧════════════════════════════════╝");
     log_it(L_INFO, " ");
     log_it(L_INFO, "PERFORMANCE SUMMARY:");
     log_it(L_INFO, "- Iterations per ring size: %d", PERFORMANCE_ITERATIONS);
@@ -225,6 +230,135 @@ static bool s_test_size_scaling(void) {
 }
 
 /**
+ * @brief Performance test for threshold signatures with different ring sizes
+ */
+static bool s_test_threshold_performance(void) {
+    log_it(L_INFO, "=== THRESHOLD SIGNATURES PERFORMANCE BENCHMARK ===");
+    log_it(L_INFO, "Testing performance of threshold signatures with varying ring sizes and thresholds...");
+    
+    // Define test configurations: {ring_size, required_signers}
+    struct {
+        size_t ring_size;
+        size_t required_signers;
+        const char* description;
+    } threshold_configs[] = {
+        {4, 2, "Small ring, 50% threshold"},
+        {8, 3, "Medium ring, 37.5% threshold"},
+        {8, 5, "Medium ring, 62.5% threshold"},
+        {16, 4, "Large ring, 25% threshold"},
+        {16, 8, "Large ring, 50% threshold"},
+        {16, 12, "Large ring, 75% threshold"},
+        {32, 8, "Very large ring, 25% threshold"},
+        {32, 16, "Very large ring, 50% threshold"}
+    };
+    
+    size_t num_configs = sizeof(threshold_configs) / sizeof(threshold_configs[0]);
+    
+    // Hash the test message
+    dap_hash_fast_t l_message_hash = {0};
+    bool l_hash_result = dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+    dap_assert(l_hash_result == true, "Message hashing should succeed");
+    
+    log_it(L_INFO, "| Ring Size | Threshold | Signature Size | Signing Time | Verification Time | Description |");
+    log_it(L_INFO, "|-----------|-----------|----------------|--------------|-------------------|-------------|");
+    
+    for (size_t config_idx = 0; config_idx < num_configs; config_idx++) {
+        size_t ring_size = threshold_configs[config_idx].ring_size;
+        size_t required_signers = threshold_configs[config_idx].required_signers;
+        const char* description = threshold_configs[config_idx].description;
+        
+        log_it(L_DEBUG, "Testing configuration: %s (ring_size=%zu, required_signers=%zu)", 
+               description, ring_size, required_signers);
+        
+        // Generate ring keys
+        dap_enc_key_t* ring_keys[ring_size];
+        memset(ring_keys, 0, sizeof(ring_keys));
+        
+        for (size_t i = 0; i < ring_size; i++) {
+            ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+            dap_assert(ring_keys[i] != NULL, "Ring key generation should succeed");
+        }
+        
+        // Measure signing performance
+        double total_signing_time = 0.0;
+        double total_verification_time = 0.0;
+        size_t successful_iterations = 0;
+        
+        const size_t iterations = (ring_size <= 16) ? 10 : 5; // Fewer iterations for large rings
+        
+        for (size_t iter = 0; iter < iterations; iter++) {
+            // Signing performance
+            double signing_start = get_time_ms();
+            
+            dap_sign_t* signature = dap_sign_create_ring(
+                ring_keys[0],
+                &l_message_hash, sizeof(l_message_hash),
+                ring_keys, ring_size,
+                required_signers
+            );
+            
+            double signing_end = get_time_ms();
+            
+            if (signature) {
+                total_signing_time += (signing_end - signing_start);
+                
+                // Verification performance
+                double verification_start = get_time_ms();
+                
+                int verify_result = dap_sign_verify_ring(signature, &l_message_hash, sizeof(l_message_hash),
+                                                        ring_keys, ring_size);
+                
+                double verification_end = get_time_ms();
+                
+                if (verify_result == 0) {
+                    total_verification_time += (verification_end - verification_start);
+                    successful_iterations++;
+                }
+                
+                DAP_DELETE(signature);
+            }
+        }
+        
+        // Calculate averages
+        double avg_signing_time = (successful_iterations > 0) ? 
+                                 (total_signing_time / successful_iterations) : 0.0;
+        double avg_verification_time = (successful_iterations > 0) ? 
+                                      (total_verification_time / successful_iterations) : 0.0;
+        
+        // Get signature size
+        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size);
+        
+        // Store results
+        if (g_results_count < sizeof(g_performance_results) / sizeof(g_performance_results[0])) {
+            g_performance_results[g_results_count].ring_size = ring_size;
+            g_performance_results[g_results_count].required_signers = required_signers;
+            g_performance_results[g_results_count].signature_size = signature_size;
+            g_performance_results[g_results_count].avg_signing_time = avg_signing_time;
+            g_performance_results[g_results_count].avg_verification_time = avg_verification_time;
+            g_performance_results[g_results_count].mode_name = description;
+            g_results_count++;
+        }
+        
+        // Log results
+        log_it(L_INFO, "| %9zu | %9zu | %14zu | %12.2f | %17.2f | %s |",
+               ring_size, required_signers, signature_size, 
+               avg_signing_time, avg_verification_time, description);
+        
+        dap_assert(successful_iterations > 0, "At least some iterations should succeed");
+        dap_assert(avg_signing_time > 0.0, "Signing time should be positive");
+        dap_assert(avg_verification_time > 0.0, "Verification time should be positive");
+        
+        // Cleanup
+        for (size_t i = 0; i < ring_size; i++) {
+            dap_enc_key_delete(ring_keys[i]);
+        }
+    }
+    
+    log_it(L_INFO, "Threshold signatures performance test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(int argc, char** argv) {
@@ -239,6 +373,7 @@ int main(int argc, char** argv) {
     bool l_all_passed = true;
     l_all_passed &= s_test_performance_detailed();
     l_all_passed &= s_test_size_scaling();
+    l_all_passed &= s_test_threshold_performance();
 
     // Print final performance table after all tests
     s_print_final_performance_table();

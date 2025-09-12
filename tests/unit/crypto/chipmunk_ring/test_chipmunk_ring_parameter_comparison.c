@@ -37,6 +37,7 @@ typedef struct {
 // Performance result for parameter comparison
 typedef struct {
     const char* param_name;
+    size_t required_signers;
     size_t signature_size;
     double avg_signing_time;
     double avg_verification_time;
@@ -45,6 +46,7 @@ typedef struct {
     size_t ntru_size;
     size_t code_size;
     size_t binding_size;
+    const char* mode_description;
 } param_performance_result_t;
 
 // Global results storage
@@ -457,6 +459,117 @@ static void s_print_parameter_comparison_table(void) {
 }
 
 /**
+ * @brief Test threshold signatures with different parameters
+ */
+static bool s_test_threshold_parameter_performance(void) {
+    log_it(L_INFO, "=== THRESHOLD SIGNATURES PARAMETER COMPARISON ===");
+    log_it(L_INFO, "Testing threshold signatures with different parameter sets...");
+    
+    // Test configurations for threshold signatures
+    struct {
+        size_t ring_size;
+        size_t required_signers;
+        const char* description;
+    } threshold_configs[] = {
+        {8, 2, "8 participants, 2 required (25%)"},
+        {8, 4, "8 participants, 4 required (50%)"},
+        {8, 6, "8 participants, 6 required (75%)"},
+        {16, 4, "16 participants, 4 required (25%)"},
+        {16, 8, "16 participants, 8 required (50%)"},
+        {16, 12, "16 participants, 12 required (75%)"},
+        {32, 24, "32 participants, 24 required (75%)"}
+    };
+    
+    size_t num_configs = sizeof(threshold_configs) / sizeof(threshold_configs[0]);
+    
+    // Hash the test message
+    dap_hash_fast_t l_message_hash = {0};
+    bool l_hash_result = dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+    dap_assert(l_hash_result == true, "Message hashing should succeed");
+    
+    log_it(L_INFO, "| Ring Size | Threshold | Signature Size | Signing Time | Verification Time | Efficiency |");
+    log_it(L_INFO, "|-----------|-----------|----------------|--------------|-------------------|------------|");
+    
+    for (size_t config_idx = 0; config_idx < num_configs; config_idx++) {
+        size_t ring_size = threshold_configs[config_idx].ring_size;
+        size_t required_signers = threshold_configs[config_idx].required_signers;
+        const char* description = threshold_configs[config_idx].description;
+        
+        // Generate ring keys
+        dap_enc_key_t* ring_keys[ring_size];
+        memset(ring_keys, 0, sizeof(ring_keys));
+        
+        for (size_t i = 0; i < ring_size; i++) {
+            ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+            dap_assert(ring_keys[i] != NULL, "Ring key generation should succeed");
+        }
+        
+        // Measure performance
+        double total_signing_time = 0.0;
+        double total_verification_time = 0.0;
+        size_t successful_iterations = 0;
+        
+        const size_t iterations = 5; // Fewer iterations for parameter comparison
+        
+        for (size_t iter = 0; iter < iterations; iter++) {
+            double signing_start = get_time_ms();
+            
+            dap_sign_t* signature = dap_sign_create_ring(
+                ring_keys[0],
+                &l_message_hash, sizeof(l_message_hash),
+                ring_keys, ring_size,
+                required_signers
+            );
+            
+            double signing_end = get_time_ms();
+            
+            if (signature) {
+                total_signing_time += (signing_end - signing_start);
+                
+                double verification_start = get_time_ms();
+                
+                int verify_result = dap_sign_verify_ring(signature, &l_message_hash, sizeof(l_message_hash),
+                                                        ring_keys, ring_size);
+                
+                double verification_end = get_time_ms();
+                
+                if (verify_result == 0) {
+                    total_verification_time += (verification_end - verification_start);
+                    successful_iterations++;
+                }
+                
+                DAP_DELETE(signature);
+            }
+        }
+        
+        // Calculate metrics
+        double avg_signing_time = (successful_iterations > 0) ? 
+                                 (total_signing_time / successful_iterations) : 0.0;
+        double avg_verification_time = (successful_iterations > 0) ? 
+                                      (total_verification_time / successful_iterations) : 0.0;
+        
+        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size);
+        double efficiency = (signature_size > 0) ? 
+                           (1000.0 / (avg_signing_time + avg_verification_time)) : 0.0;
+        
+        // Log results
+        log_it(L_INFO, "| %9zu | %9zu | %14zu | %12.2f | %17.2f | %10.2f |",
+               ring_size, required_signers, signature_size, 
+               avg_signing_time, avg_verification_time, efficiency);
+        
+        dap_assert(successful_iterations > 0, "At least some iterations should succeed");
+        
+        // Cleanup
+        for (size_t i = 0; i < ring_size; i++) {
+            dap_enc_key_delete(ring_keys[i]);
+        }
+    }
+    
+    log_it(L_INFO, "Threshold parameter performance test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 bool test_chipmunk_ring_parameter_comparison(void) {
@@ -464,6 +577,9 @@ bool test_chipmunk_ring_parameter_comparison(void) {
     
     // Test different parameter sets
     dap_assert(s_test_parameter_performance(), "Parameter performance test should succeed");
+    
+    // Test threshold signatures with parameters
+    dap_assert(s_test_threshold_parameter_performance(), "Threshold parameter performance test should succeed");
     
     // Print comprehensive comparison table
     s_print_parameter_comparison_table();

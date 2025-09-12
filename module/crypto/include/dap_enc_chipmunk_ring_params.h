@@ -185,6 +185,7 @@ typedef enum chipmunk_ring_scalability_flags {
 
 // Maximum ring size
 #define CHIPMUNK_RING_MAX_RING_SIZE 1024
+#define CHIPMUNK_RING_MAX_MESSAGE_SIZE (1024 * 1024)  // 1MB maximum message size
 
 // ================ COMPUTED SECURITY LEVELS ================
 

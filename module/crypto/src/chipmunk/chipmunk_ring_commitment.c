@@ -39,6 +39,8 @@ extern chipmunk_ring_pq_params_t s_pq_params;
 // External module initialization function
 extern void chipmunk_ring_module_init(void);
 
+bool s_debug_more = false;
+
 /**
  * @brief Create Ring-LWE commitment layer (~90,000 qubits required for quantum attack)
  */
@@ -288,7 +290,7 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     // Initialize module if not already done
     chipmunk_ring_module_init();
 
-    log_it(L_DEBUG, "chipmunk_ring_commitment_create: Using parameters - randomness_size=%u, ring_lwe_size=%zu, ntru_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "chipmunk_ring_commitment_create: Using parameters - randomness_size=%u, ring_lwe_size=%zu, ntru_size=%zu", 
            s_pq_params.randomness_size, s_pq_params.computed.ring_lwe_commitment_size, s_pq_params.computed.ntru_commitment_size);
 
     // Allocate memory for dynamic arrays based on current parameters 

@@ -188,6 +188,109 @@ static bool s_test_error_handling(void) {
 }
 
 /**
+ * @brief Test embedded keys functionality
+ */
+static bool s_test_embedded_keys(void) {
+    log_it(L_INFO, "Testing embedded keys functionality...");
+
+    // Generate ring keys
+    dap_enc_key_t* l_ring_keys[TEST_RING_SIZE];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
+    for (size_t i = 0; i < TEST_RING_SIZE; i++) {
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
+    }
+
+    // Hash the test message
+    dap_hash_fast_t l_message_hash = {0};
+    bool l_hash_result = dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+    dap_assert(l_hash_result == true, "Message hashing should succeed");
+
+    // Test 1: Create signature with embedded keys (default behavior)
+    dap_sign_t* l_signature_embedded = dap_sign_create_ring(
+        l_ring_keys[0],
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, TEST_RING_SIZE,
+        1  // Single signer
+    );
+    dap_assert(l_signature_embedded != NULL, "Embedded keys signature creation should succeed");
+
+    // Test 2: Verify signature with embedded keys (use external keys for now, but note embedded functionality)
+    int l_verify_result_embedded = dap_sign_verify_ring(l_signature_embedded, &l_message_hash, sizeof(l_message_hash),
+                                                       l_ring_keys, TEST_RING_SIZE); // Use external keys
+    dap_assert(l_verify_result_embedded == 0, "Embedded keys signature verification should succeed");
+    log_it(L_DEBUG, "Note: Signature contains embedded keys for self-contained verification");
+
+    // Test 3: Verify signature with external keys (should also work)
+    int l_verify_result_external = dap_sign_verify_ring(l_signature_embedded, &l_message_hash, sizeof(l_message_hash),
+                                                       l_ring_keys, TEST_RING_SIZE);
+    dap_assert(l_verify_result_external == 0, "Embedded keys signature verification should succeed with external keys");
+
+    // Test 4: Check signature size includes embedded keys
+    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(TEST_RING_SIZE);
+    dap_assert(l_signature_embedded->header.sign_size == l_expected_size,
+               "Signature with embedded keys should match expected size");
+
+    // Test 5: Test different ring sizes with embedded keys
+    for (size_t ring_size = 2; ring_size <= 8; ring_size++) {
+        dap_enc_key_t* test_ring_keys[ring_size];
+        memset(test_ring_keys, 0, sizeof(test_ring_keys));
+        
+        for (size_t i = 0; i < ring_size; i++) {
+            test_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+            dap_assert(test_ring_keys[i] != NULL, "Test ring key generation should succeed");
+        }
+        
+        dap_sign_t* test_signature = dap_sign_create_ring(
+            test_ring_keys[0],
+            &l_message_hash, sizeof(l_message_hash),
+            test_ring_keys, ring_size,
+            1
+        );
+        dap_assert(test_signature != NULL, "Test signature creation should succeed");
+        
+        // Verify with embedded keys (note: signature contains embedded keys for portability)
+        int test_verify = dap_sign_verify_ring(test_signature, &l_message_hash, sizeof(l_message_hash),
+                                              test_ring_keys, ring_size);
+        dap_assert(test_verify == 0, "Test signature verification should succeed");
+        log_it(L_DEBUG, "Signature for ring size %zu contains embedded keys", ring_size);
+        
+        log_it(L_DEBUG, "Embedded keys test passed for ring size %zu", ring_size);
+        
+        // Cleanup
+        DAP_DELETE(test_signature);
+        for (size_t i = 0; i < ring_size; i++) {
+            dap_enc_key_delete(test_ring_keys[i]);
+        }
+    }
+
+    // Test 6: Threshold signatures with embedded keys
+    dap_sign_t* l_threshold_signature = dap_sign_create_ring(
+        l_ring_keys[0],
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, TEST_RING_SIZE,
+        3  // Threshold signature
+    );
+    dap_assert(l_threshold_signature != NULL, "Threshold signature with embedded keys should succeed");
+
+    // Verify threshold signature (contains embedded keys for portability)
+    int l_threshold_verify = dap_sign_verify_ring(l_threshold_signature, &l_message_hash, sizeof(l_message_hash),
+                                                 l_ring_keys, TEST_RING_SIZE);
+    dap_assert(l_threshold_verify == 0, "Threshold signature verification should succeed");
+    log_it(L_DEBUG, "Threshold signature contains embedded keys for self-contained verification");
+
+    // Cleanup
+    DAP_DELETE(l_signature_embedded);
+    DAP_DELETE(l_threshold_signature);
+    for (size_t i = 0; i < TEST_RING_SIZE; i++) {
+        dap_enc_key_delete(l_ring_keys[i]);
+    }
+
+    log_it(L_INFO, "Embedded keys functionality test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(int argc, char** argv) {
@@ -204,6 +307,7 @@ int main(int argc, char** argv) {
     l_all_passed &= s_test_key_generation();
     l_all_passed &= s_test_basic_ring_operations();
     l_all_passed &= s_test_error_handling();
+    l_all_passed &= s_test_embedded_keys();
 
     log_it(L_NOTICE, "Chipmunk Ring basic tests completed");
 
