@@ -1,6 +1,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdint.h>
+#include <ctype.h>
 #include "dap_config.h"
 #include "uthash.h"
 #include "dap_strfuncs.h"
@@ -305,6 +306,21 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         log_it(L_ERROR, "Empty config name!");
         return NULL;
     }
+    
+    // Security check: prevent path traversal attacks
+    if (strstr(a_file_path, "..") || strstr(a_file_path, "/") || strstr(a_file_path, "\\")) {
+        log_it(L_ERROR, "Invalid config path contains path traversal characters: %s", a_file_path);
+        return NULL;
+    }
+    
+    // Additional validation: allow only alphanumeric, underscore, hyphen
+    for (const char *p = a_file_path; *p; p++) {
+        if (!isalnum(*p) && *p != '_' && *p != '-') {
+            log_it(L_ERROR, "Invalid character in config name: %c", *p);
+            return NULL;
+        }
+    }
+    
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH + 1] = "";
     int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)

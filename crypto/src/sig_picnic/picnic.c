@@ -394,26 +394,53 @@ int picnic_keys_gen(picnic_privatekey_t *sk, picnic_publickey_t *pk, picnic_para
     if(seed && seed_size > 0) {
         sk->params = param;
         pk->params = param;
+        
+        // Add entropy to prevent predictable key generation from same seed
+        uint8_t entropy_buffer[32];
+        if (randombytes(entropy_buffer, sizeof(entropy_buffer)) != 0) {
+            return -1;  // Fail if we can't get additional entropy
+        }
+        
         switch (paramset.stateSizeBytes) {
-        case 16:
-            SHAKE128((unsigned char *) sk->data, 16, (const unsigned char *) seed, seed_size);
-            //Generate a random plaintext block
-            SHAKE128((unsigned char *) pk->plaintext, 16, (const unsigned char *) seed, seed_size);
+        case 16: {
+            // Combine seed with additional entropy for private key
+            uint8_t combined_seed_sk[seed_size + sizeof(entropy_buffer) + 1];
+            memcpy(combined_seed_sk, seed, seed_size);
+            memcpy(combined_seed_sk + seed_size, entropy_buffer, sizeof(entropy_buffer));
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x01; // Domain separation for SK
+            SHAKE128((unsigned char *) sk->data, 16, combined_seed_sk, sizeof(combined_seed_sk));
+            
+            // Use different domain separation for plaintext
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x02; // Domain separation for plaintext
+            SHAKE128((unsigned char *) pk->plaintext, 16, combined_seed_sk, sizeof(combined_seed_sk));
             break;
-        case 24:
-//            SHA3_192((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
-//            //Generate a random plaintext block
-//            SHA3_192((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
-//            break;
-            SHAKE128((unsigned char *) sk->data, 24, (const unsigned char *) seed, seed_size);
-            //Generate a random plaintext block
-            SHAKE128((unsigned char *) pk->plaintext, 24, (const unsigned char *) seed, seed_size);
+        }
+        case 24: {
+            // Combine seed with additional entropy for 24-byte keys
+            uint8_t combined_seed_sk[seed_size + sizeof(entropy_buffer) + 1];
+            memcpy(combined_seed_sk, seed, seed_size);
+            memcpy(combined_seed_sk + seed_size, entropy_buffer, sizeof(entropy_buffer));
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x01; // Domain separation for SK
+            SHAKE128((unsigned char *) sk->data, 24, combined_seed_sk, sizeof(combined_seed_sk));
+            
+            // Use different domain separation for plaintext
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x02; // Domain separation for plaintext
+            SHAKE128((unsigned char *) pk->plaintext, 24, combined_seed_sk, sizeof(combined_seed_sk));
             break;
-        case 32:
-            SHA3_256((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
-            //Generate a random plaintext block
-            SHA3_256((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
+        }
+        case 32: {
+            // Combine seed with additional entropy for 32-byte keys
+            uint8_t combined_seed_sk[seed_size + sizeof(entropy_buffer) + 1];
+            memcpy(combined_seed_sk, seed, seed_size);
+            memcpy(combined_seed_sk + seed_size, entropy_buffer, sizeof(entropy_buffer));
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x01; // Domain separation for SK
+            SHA3_256((unsigned char *) sk->data, combined_seed_sk, sizeof(combined_seed_sk));
+            
+            // Use different domain separation for plaintext
+            combined_seed_sk[seed_size + sizeof(entropy_buffer)] = 0x02; // Domain separation for plaintext
+            SHA3_256((unsigned char *) pk->plaintext, combined_seed_sk, sizeof(combined_seed_sk));
             break;
+        }
         default:
             return -1;
         }

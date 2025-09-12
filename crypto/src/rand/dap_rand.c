@@ -1,7 +1,9 @@
 #include "dap_rand.h"
 #include "dap_enc_base64.h"
+#include "dap_common.h"
 
 #include <stdlib.h>
+#include <string.h>
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
@@ -50,11 +52,18 @@ int randombytes(void* random_array, unsigned int nbytes)
     while (bytes_read < (int)nbytes) {
         int r = read(s_urandom_fd, (char*)random_array + bytes_read, 
                     nbytes - bytes_read);
-        if (r > 0)
+        if (r > 0) {
             bytes_read += r;
-        else if (!r || errno != EINTR)
+        } else if (r == 0) {
+            // EOF on /dev/urandom should never happen, this is a critical error
+            log_it(L_CRITICAL, "Unexpected EOF on /dev/urandom");
             return failed;
-        continue;
+        } else if (errno != EINTR) {
+            // Any error other than EINTR is critical for crypto security
+            log_it(L_CRITICAL, "Critical error reading from /dev/urandom: %s", strerror(errno));
+            return failed;
+        }
+        // Only EINTR continues the loop
     }
 #endif
     return passed;

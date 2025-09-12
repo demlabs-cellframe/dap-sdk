@@ -61,7 +61,16 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
     size_t l_sign_len = a_store_obj->sign ? dap_sign_get_size(a_store_obj->sign) : 0;
-    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
+    
+    // Security check: prevent integer overflow in size calculation
+    size_t l_data_size_out = 0;
+    if (l_group_len > SIZE_MAX - l_key_len ||
+        l_group_len + l_key_len > SIZE_MAX - a_store_obj->value_len ||
+        l_group_len + l_key_len + a_store_obj->value_len > SIZE_MAX - l_sign_len) {
+        log_it(L_ERROR, "Integer overflow in packet size calculation");
+        return NULL;
+    }
+    l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
     dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t), NULL);
 
     /* Fill packet header */

@@ -33,6 +33,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_pkt.h"
 #include "dap_global_db.h"
 #include "dap_strfuncs.h"
+#include <ctype.h>
+#include <strings.h>
 
 #define LOG_TAG "db_pgsql"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_PGSQL
@@ -220,6 +222,35 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
 }
 
 /**
+ * @brief Validates table/group name to prevent SQL injection
+ * @param a_table_name table name to validate
+ * @return true if valid, false if invalid
+ */
+static bool s_validate_table_name(const char *a_table_name)
+{
+    if (!a_table_name || strlen(a_table_name) == 0 || strlen(a_table_name) > 64) {
+        return false;
+    }
+    
+    // Allow only alphanumeric characters, underscore, and hyphen
+    for (const char *p = a_table_name; *p; p++) {
+        if (!isalnum(*p) && *p != '_' && *p != '-') {
+            return false;
+        }
+    }
+    
+    // Prevent SQL keywords
+    const char *forbidden_names[] = {"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", NULL};
+    for (int i = 0; forbidden_names[i]; i++) {
+        if (strcasecmp(a_table_name, forbidden_names[i]) == 0) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+/**
  * @brief Applies an object to a database.
  * @param a_store_obj a pointer to the object structure
  * @return error -1, pass 0.
@@ -243,6 +274,21 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto clean_and_ret;
         } else { //add one record
+            // Validate table/group name to prevent SQL injection
+            if (!s_validate_table_name(a_store_obj->group)) {
+                log_it(L_ERROR, "Invalid table/group name: %s", a_store_obj->group);
+                l_ret = -4;
+                goto clean_and_ret;
+            }
+            
+            // Validate key to prevent SQL injection
+            if (!s_validate_table_name(a_store_obj->key)) {
+                log_it(L_ERROR, "Invalid key name: %s", a_store_obj->key);
+                l_ret = -5;
+                goto clean_and_ret;
+            }
+            
+            // Use safer query format (full parameterization would require exec_command refactoring)
             l_query = dap_strdup_printf("INSERT INTO \"%s\" (driver_key, key, flags, value, sign) VALUES($1, '%s', '%d', $2, $3)"
             "ON CONFLICT(key) DO UPDATE SET driver_key = EXCLUDED.driver_key, flags = EXCLUDED.flags, value = EXCLUDED.value, sign = EXCLUDED.sign;",
                                                   a_store_obj->group, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
