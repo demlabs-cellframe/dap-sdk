@@ -20,6 +20,20 @@
     static void init_urandom_fd(void) {
         s_urandom_fd = open("/dev/urandom", O_RDONLY);
     }
+    
+    // Security fix: add cleanup function for file descriptor
+    static void cleanup_urandom_fd(void) {
+        if (s_urandom_fd != -1) {
+            close(s_urandom_fd);
+            s_urandom_fd = -1;
+        }
+    }
+    
+    // Register cleanup function to be called at exit
+    __attribute__((constructor))
+    static void register_cleanup(void) {
+        atexit(cleanup_urandom_fd);
+    }
 #endif
 
 #define passed 0 
