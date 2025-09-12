@@ -33,12 +33,8 @@
 
 #define LOG_TAG "chipmunk_ring_commitment"
 
-// External references to parameters and sizes from main module
+// External references to parameters from main module
 extern chipmunk_ring_pq_params_t s_pq_params;
-extern size_t s_ring_lwe_commitment_size;
-extern size_t s_ntru_commitment_size; 
-extern size_t s_code_commitment_size;
-extern size_t s_binding_proof_size;
 
 // External module initialization function
 extern void chipmunk_ring_module_init(void);
@@ -292,12 +288,15 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     // Initialize module if not already done
     chipmunk_ring_module_init();
 
+    log_it(L_DEBUG, "chipmunk_ring_commitment_create: Using parameters - randomness_size=%u, ring_lwe_size=%zu, ntru_size=%zu", 
+           s_pq_params.randomness_size, s_pq_params.computed.ring_lwe_commitment_size, s_pq_params.computed.ntru_commitment_size);
+
     // Allocate memory for dynamic arrays based on current parameters 
     a_commitment->randomness_size = s_pq_params.randomness_size;
-    a_commitment->ring_lwe_size = s_ring_lwe_commitment_size;
-    a_commitment->ntru_size = s_ntru_commitment_size;
-    a_commitment->code_size = s_code_commitment_size;
-    a_commitment->binding_proof_size = s_binding_proof_size;
+    a_commitment->ring_lwe_size = s_pq_params.computed.ring_lwe_commitment_size;
+    a_commitment->ntru_size = s_pq_params.computed.ntru_commitment_size;
+    a_commitment->code_size = s_pq_params.computed.code_commitment_size;
+    a_commitment->binding_proof_size = s_pq_params.computed.binding_proof_size;
 
     a_commitment->randomness = DAP_NEW_Z_SIZE(uint8_t, a_commitment->randomness_size);
     a_commitment->ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ring_lwe_size);

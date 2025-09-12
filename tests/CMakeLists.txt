@@ -125,6 +125,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_dap_hash_universal.c)
+    add_dap_test(test_unit_crypto_dap_hash_universal unit/crypto/test_dap_hash_universal.c)
+    register_dap_test(test_unit_crypto_dap_hash_universal "unit;crypto;hash;universal")
+endif()
+
 # Chipmunk Ring tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
     add_dap_test(test_unit_crypto_chipmunk_ring_basic unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
@@ -158,6 +163,17 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_minimal_ring.c)
     add_dap_test(test_minimal_ring unit/crypto/chipmunk_ring/test_minimal_ring.c)
     register_dap_test(test_minimal_ring "unit;crypto;ring;minimal;debug")
+endif()
+
+# New comprehensive multi-signer tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_multi_signer.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_multi_signer unit/crypto/chipmunk_ring/test_chipmunk_ring_multi_signer.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_multi_signer "unit;crypto;ring;multi_signer;threshold")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_coordination.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_coordination unit/crypto/chipmunk_ring/test_chipmunk_ring_coordination.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_coordination "unit;crypto;ring;coordination")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)

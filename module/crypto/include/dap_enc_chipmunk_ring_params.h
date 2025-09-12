@@ -70,6 +70,14 @@
 #define CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT 256         // 256-bit Merkle root (sufficient for binding)
 #define CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT (CHIPMUNK_RING_BINDING_PROOF_BIT_SIZE_DEFAULT / 8)
 
+// ================ COMPUTED COMMITMENT LAYER SIZES ================
+
+// Ring-LWE commitment layer size (computed from parameters)
+#define CHIPMUNK_RING_RING_LWE_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_RING_LWE_N_DEFAULT * CHIPMUNK_RING_RING_LWE_BYTES_PER_COEFF_DEFAULT)
+
+// NTRU commitment layer size (computed from parameters)
+#define CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_NTRU_N_DEFAULT * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT)
+
 // ================ COMPUTED PARAMETERS ================
 
 // Randomness and configurable sizes

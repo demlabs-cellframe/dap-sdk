@@ -31,6 +31,19 @@ extern "C" {
 #endif
 
 /**
+ * @brief Computed layer sizes structure (auto-calculated from base parameters)
+ */
+typedef struct chipmunk_ring_computed_sizes {
+    size_t ring_lwe_commitment_size;    // Computed: ring_lwe_n * bytes_per_coeff
+    size_t ntru_commitment_size;        // Computed: ntru_n * bytes_per_coeff
+    size_t code_commitment_size;        // Computed: code syndrome size
+    size_t binding_proof_size;          // Computed: binding proof size
+    size_t public_key_size;             // Computed: chipmunk_n dependent
+    size_t private_key_size;            // Computed: chipmunk_n dependent
+    size_t signature_size;              // Computed: chipmunk_n * gamma dependent
+} chipmunk_ring_computed_sizes_t;
+
+/**
  * @brief Post-quantum commitment parameters structure
  */
 typedef struct chipmunk_ring_pq_params {
@@ -54,6 +67,9 @@ typedef struct chipmunk_ring_pq_params {
     uint32_t code_n;
     uint32_t code_k;
     uint32_t code_t;
+    
+    // Computed sizes (auto-updated when base parameters change)
+    chipmunk_ring_computed_sizes_t computed;
 } chipmunk_ring_pq_params_t;
 
 /**
