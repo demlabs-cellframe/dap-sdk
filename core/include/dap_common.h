@@ -424,8 +424,8 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #ifdef HAVE_EXPLICIT_BZERO
 #include <strings.h>  // For explicit_bzero on systems that have it
 #else
-// Provide explicit_bzero implementation using C11 memset_s or fallback
-DAP_STATIC_INLINE void explicit_bzero(void *s, size_t n) {
+// Create our own secure memory clearing function to avoid conflicts
+DAP_STATIC_INLINE void dap_secure_bzero(void *s, size_t n) {
 #ifdef __STDC_LIB_EXT1__
     // Use C11 memset_s if available - guaranteed not to be optimized away
     if (memset_s(s, n, 0, n) != 0) {
@@ -443,6 +443,8 @@ DAP_STATIC_INLINE void explicit_bzero(void *s, size_t n) {
 #endif
 #endif
 }
+// Define explicit_bzero as alias to our secure function
+#define explicit_bzero dap_secure_bzero
 #endif
 
 /* Crossplatform print formats for integers and others */
