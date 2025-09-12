@@ -101,6 +101,7 @@
 
 // Acorn Verification scheme constants
 #define CHIPMUNK_RING_ACORN_VERIFICATION_VERSION 1     // Version of Acorn scheme
+#define CHIPMUNK_RING_ACORN_PROOF_SIZE 96              // Standard Acorn proof size (96 bytes)
 #define CHIPMUNK_RING_ACORN_MIN_ENTROPY_RATIO 0.1      // Minimum entropy ratio for valid proofs
 #define CHIPMUNK_RING_ACORN_PROOF_PREFIX "ACORN_"      // Prefix for domain separation
 

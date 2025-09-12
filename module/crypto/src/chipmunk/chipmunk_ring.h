@@ -57,37 +57,29 @@ typedef struct chipmunk_ring_private_key {
 typedef struct chipmunk_ring_container {
     uint32_t size;                                      ///< Number of keys in ring
     chipmunk_ring_public_key_t *public_keys;             ///< Array of public keys
-    uint8_t ring_hash[32];                              ///< Hash of all public keys for verification
+    uint8_t *ring_hash;                                 ///< Hash of all public keys (dynamic size)
+    size_t ring_hash_size;                              ///< Size of ring hash (from hash algorithm)
 } chipmunk_ring_container_t;
 
 /**
- * @brief Quantum-resistant commitment for ZKP (Zero-Knowledge Proof)
+ * @brief Acorn verification structure 
  */
-typedef struct chipmunk_ring_commitment {
-    // Dynamic randomness (configurable size)
+typedef struct chipmunk_ring_acorn {
+    // Acorn proof data (uses signature parameters for size)
+    uint8_t *acorn_proof;            ///< Acorn verification proof (dynamic size from signature)
+    size_t acorn_proof_size;         ///< Size of Acorn proof (from signature->zk_proof_size_per_participant)
+    
+    // Commitment randomness
     uint8_t *randomness;             ///< Randomness used in commitment (dynamic size)
     size_t randomness_size;          ///< Size of randomness in bytes
+    
+    // Linkability tag for replay protection (dynamic size)
+    uint8_t *linkability_tag;                          ///< Linkability tag to prevent double-spending (dynamic)
+    size_t linkability_tag_size;                       ///< Size of linkability tag
 
-    // Quantum-resistant commitment layers (dynamic sizes based on parameters)
-    uint8_t *ring_lwe_layer;         ///< Ring-LWE commitment (~90,000 qubits required)
-    uint8_t *ntru_layer;             ///< NTRU commitment (~70,000 qubits required)
-    uint8_t *code_layer;             ///< Code commitment (~80,000 qubits required, strengthened)
-    uint8_t *binding_proof;          ///< Binding proof 
+ } chipmunk_ring_acorn_t;
 
-    // Layer sizes for memory management
-    size_t ring_lwe_size;
-    size_t ntru_size;
-    size_t code_size;
-    size_t binding_proof_size;
-} chipmunk_ring_commitment_t;
-
-/**
- * @brief Response for ZKP and threshold coordination
- */
-typedef struct chipmunk_ring_response {
-    uint8_t *value;                         ///< Response value (dynamic size)
-    size_t value_size;                      ///< Size of response value
-} chipmunk_ring_response_t;
+// NOTE: Response structure removed - Acorn Verification handles all ZKP needs
 
 /**
  * @brief Chipmunk_Ring signature structure (now supports threshold)
@@ -96,23 +88,21 @@ typedef struct chipmunk_ring_response {
 typedef struct chipmunk_ring_signature {
     uint32_t ring_size;                                ///< Number of participants in ring
     uint32_t required_signers;                         ///< Required signers (1 = single, >1 = multi-signer)
-    // REMOVED: uint32_t signer_index - breaks anonymity!
     
     // ZK Components (needed for threshold coordination and ZK schemes)
-    uint8_t challenge[32];                             ///< Fiat-Shamir challenge (needed for ZK)
-    chipmunk_ring_commitment_t *commitments;           ///< ZK commitments (needed for threshold coordination)
-    chipmunk_ring_response_t *responses;               ///< ZK responses (needed for threshold reconstruction)
+    uint8_t *challenge;                                ///< Acorn challenge (dynamic size)
+    size_t challenge_size;                             ///< Size of challenge (from hash algorithm)
+    chipmunk_ring_acorn_t *acorn_proofs;               ///< Acorn verification proofs
     
     // Core signature
-    uint8_t *chipmunk_signature;                       ///< Real Chipmunk signature (dynamic size)
-    size_t chipmunk_signature_size;                    ///< Size of Chipmunk signature
+    uint8_t *signature;                                ///< Core signature data (dynamic size)
+    size_t signature_size;                             ///< Size of signature data
     
     // Ring public keys storage (scalability optimization)
     bool use_embedded_keys;                            ///< True = keys in signature, False = external storage
     chipmunk_ring_public_key_t *ring_public_keys;      ///< Embedded public keys (NULL if external)
-    uint8_t *ring_key_hashes;                          ///< Hashes of public keys (for external storage)
-    size_t ring_key_hashes_size;                       ///< Size of key hashes array
-    uint8_t ring_hash[32];                             ///< Hash of all ring public keys
+    uint8_t *ring_hash;                                ///< Hash of all ring public keys (dynamic size, serves both purposes)
+    size_t ring_hash_size;                             ///< Size of ring hash (from hash algorithm)
     
     // Multi-signer extensions (only used when required_signers > 1)
     uint8_t *threshold_zk_proofs;                      ///< ZK proofs from participating signers (dynamic)
@@ -120,9 +110,7 @@ typedef struct chipmunk_ring_signature {
     uint32_t *zk_proof_lengths;                        ///< Length of each individual ZK proof (dynamic array)
     uint32_t participating_count;                      ///< Actual number of participants who signed
     
-    // Participating signer identification (for multi-signer verification)
-    uint8_t *participating_key_hashes;                 ///< Hashes of participating signers' keys
-    size_t participating_hashes_size;                  ///< Size of participating hashes array
+    // NOTE: Participating signer identification is handled through ring_hash and ZK proofs
     
     // Coordination state (for threshold schemes)
     bool is_coordinated;                               ///< True if threshold coordination completed
@@ -132,7 +120,8 @@ typedef struct chipmunk_ring_signature {
     
     // Linkability control (configurable for anonymity vs double-spend protection)
     uint8_t linkability_mode;                          ///< Linkability mode (0=disabled, 1=message-only, 2=full)
-    uint8_t linkability_tag[32];                       ///< Optional linkability tag (empty if disabled)
+    uint8_t *linkability_tag;                          ///< Optional linkability tag (dynamic size)
+    size_t linkability_tag_size;                       ///< Size of linkability tag
 } chipmunk_ring_signature_t;
 
 /**
@@ -248,15 +237,7 @@ void chipmunk_ring_key_delete(struct dap_enc_key *a_key);
  * @param private_key Private key (NULL for dummy participants)
  * @return 0 on success, negative on error
  */
-/**
- * @brief Create response for ZKP and threshold coordination
- * @details Uses signature parameters for adaptive response size (signature can be NULL for defaults)
- */
-int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
-                               const chipmunk_ring_commitment_t *a_commitment,
-                               const uint8_t a_challenge[32],
-                               const chipmunk_ring_private_key_t *a_private_key,
-                               const chipmunk_ring_signature_t *a_signature);
+// NOTE: Response creation removed - Acorn Verification handles all ZKP coordination
 
 /**
  * @brief Free signature resources

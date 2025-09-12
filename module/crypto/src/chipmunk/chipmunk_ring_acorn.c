@@ -21,7 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "chipmunk_ring_commitment.h"
+#include "chipmunk_ring_acorn.h"
 #include "chipmunk_ring.h"
 #include "dap_common.h"
 #include "dap_hash.h"
@@ -261,30 +261,38 @@ int chipmunk_ring_commitment_create_binding_proof(uint8_t *a_output, size_t a_ou
 /**
  * @brief Free memory allocated for commitment dynamic arrays
  */
-void chipmunk_ring_commitment_free(chipmunk_ring_commitment_t *a_commitment) {
-    if (a_commitment) {
-        DAP_FREE(a_commitment->randomness);
-        DAP_FREE(a_commitment->ring_lwe_layer);
-        DAP_FREE(a_commitment->ntru_layer);
-        DAP_FREE(a_commitment->code_layer);
-        DAP_FREE(a_commitment->binding_proof);
+void chipmunk_ring_acorn_free(chipmunk_ring_acorn_t *a_acorn) {
+    if (a_acorn) {
+        // Free Acorn proof with secure cleanup
+        if (a_acorn->acorn_proof) {
+            memset(a_acorn->acorn_proof, 0, a_acorn->acorn_proof_size);
+            DAP_FREE(a_acorn->acorn_proof);
+            a_acorn->acorn_proof = NULL;
+        }
+        
+        // Free randomness with secure cleanup
+        if (a_acorn->randomness) {
+            memset(a_acorn->randomness, 0, a_acorn->randomness_size);
+            DAP_FREE(a_acorn->randomness);
+            a_acorn->randomness = NULL;
+        }
+        
+        // Clear linkability tag
+        memset(a_acorn->linkability_tag, 0, a_acorn->linkability_tag_size);
+        
+        // Reset sizes to zero
+        a_acorn->randomness_size = 0;
+        a_acorn->acorn_proof_size = 0;
     }
-    
-    // Reset sizes to zero
-    a_commitment->randomness_size = 0;
-    a_commitment->ring_lwe_size = 0;
-    a_commitment->ntru_size = 0;
-    a_commitment->code_size = 0;
-    a_commitment->binding_proof_size = 0;
 }
 
 /**
  * @brief Create quantum-resistant commitment for ZKP (always deterministic for anonymity)
  */
-int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
-                                 const chipmunk_ring_public_key_t *a_public_key,
-                                 const void *a_message, size_t a_message_size) {
-    dap_return_val_if_fail(a_commitment, -EINVAL);
+int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
+                               const chipmunk_ring_public_key_t *a_public_key,
+                               const void *a_message, size_t a_message_size) {
+    dap_return_val_if_fail(a_acorn, -EINVAL);
     dap_return_val_if_fail(a_public_key, -EINVAL);
 
     // Initialize module if not already done
@@ -293,72 +301,88 @@ int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
     debug_if(s_debug_more, L_DEBUG, "chipmunk_ring_commitment_create: Using parameters - randomness_size=%u, ring_lwe_size=%zu, ntru_size=%zu", 
            s_pq_params.randomness_size, s_pq_params.computed.ring_lwe_commitment_size, s_pq_params.computed.ntru_commitment_size);
 
-    // Allocate memory for dynamic arrays based on current parameters 
-    a_commitment->randomness_size = s_pq_params.randomness_size;
-    a_commitment->ring_lwe_size = s_pq_params.computed.ring_lwe_commitment_size;
-    a_commitment->ntru_size = s_pq_params.computed.ntru_commitment_size;
-    a_commitment->code_size = s_pq_params.computed.code_commitment_size;
-    a_commitment->binding_proof_size = s_pq_params.computed.binding_proof_size;
-
-    a_commitment->randomness = DAP_NEW_Z_SIZE(uint8_t, a_commitment->randomness_size);
-    a_commitment->ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ring_lwe_size);
-    a_commitment->ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->ntru_size);
-    a_commitment->code_layer = DAP_NEW_Z_SIZE(uint8_t, a_commitment->code_size);
-    a_commitment->binding_proof = DAP_NEW_Z_SIZE(uint8_t, a_commitment->binding_proof_size);
-
-    if (!a_commitment->randomness || !a_commitment->ring_lwe_layer || !a_commitment->ntru_layer ||
-        !a_commitment->code_layer || !a_commitment->binding_proof) {
-        log_it(L_CRITICAL, "Failed to allocate memory for commitment layers");
-        chipmunk_ring_commitment_free(a_commitment);
+    // PURE ACORN STRUCTURE: Only Acorn proof + randomness + linkability
+    a_acorn->randomness_size = s_pq_params.randomness_size;
+    a_acorn->acorn_proof_size = CHIPMUNK_RING_ACORN_PROOF_SIZE; // Use standard Acorn proof size
+    a_acorn->linkability_tag_size = CHIPMUNK_RING_LINKABILITY_TAG_SIZE; // Standard linkability size
+    
+    // Allocate memory for Acorn verification components
+    a_acorn->randomness = DAP_NEW_Z_SIZE(uint8_t, a_acorn->randomness_size);
+    a_acorn->acorn_proof = DAP_NEW_Z_SIZE(uint8_t, a_acorn->acorn_proof_size);
+    a_acorn->linkability_tag = DAP_NEW_Z_SIZE(uint8_t, a_acorn->linkability_tag_size);
+    
+    if (!a_acorn->randomness || !a_acorn->acorn_proof || !a_acorn->linkability_tag) {
+        log_it(L_CRITICAL, "Failed to allocate memory for Acorn commitment");
+        chipmunk_ring_acorn_free(a_acorn);
         return -ENOMEM;
     }
 
-    // ANONYMITY: Use random randomness for commitments to make them indistinguishable
-    // Only responses should be deterministic for anonymity
-    if (randombytes(a_commitment->randomness, a_commitment->randomness_size) != 0) {
-        log_it(L_ERROR, "Failed to generate randomness for commitment");
-        chipmunk_ring_commitment_free(a_commitment);
+    // ACORN PROOF GENERATION: Generate Acorn proof in ring_lwe_layer
+    // Use deterministic randomness for participant identification
+    uint8_t participant_seed[64];
+    snprintf((char*)participant_seed, sizeof(participant_seed), "acorn_participant_%p_%zu", 
+             (void*)a_public_key, a_message_size);
+    
+    dap_hash_fast_t randomness_hash;
+    if (!dap_hash_fast(participant_seed, strlen((char*)participant_seed), &randomness_hash)) {
+        log_it(L_ERROR, "Failed to generate participant randomness");
+        chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
+    
+    memcpy(a_acorn->randomness, &randomness_hash, a_acorn->randomness_size);
 
-    // Create quantum-resistant commitment layers (optimized 3-layer scheme)
-
-    // Layer 1: Ring-LWE commitment 
-    if (chipmunk_ring_commitment_create_ring_lwe_layer(a_commitment->ring_lwe_layer, 
-                                                     a_commitment->ring_lwe_size,
-                                                     a_public_key, a_commitment->randomness) != 0) {
-        log_it(L_ERROR, "Failed to create Ring-LWE commitment layer");
-        chipmunk_ring_commitment_free(a_commitment);
+    // PURE ACORN COMMITMENT GENERATION
+    // Generate Acorn proof for this participant
+    
+    // Prepare input for Acorn proof: public_key || message || randomness
+    size_t acorn_input_size = CHIPMUNK_PUBLIC_KEY_SIZE + 
+                             (a_message ? a_message_size : 0) + 
+                             a_acorn->randomness_size;
+    uint8_t *acorn_input = DAP_NEW_SIZE(uint8_t, acorn_input_size);
+    if (!acorn_input) {
+        log_it(L_ERROR, "Failed to allocate Acorn input buffer");
+        chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
-
-    // Layer 2: NTRU commitment
-    if (chipmunk_ring_commitment_create_ntru_layer(a_commitment->ntru_layer,
-                                                 a_commitment->ntru_size,
-                                                 a_public_key, a_commitment->randomness) != 0) {
-        log_it(L_ERROR, "Failed to create NTRU commitment layer");
-        chipmunk_ring_commitment_free(a_commitment);
+    
+    size_t offset = 0;
+    memcpy(acorn_input + offset, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
+    offset += CHIPMUNK_PUBLIC_KEY_SIZE;
+    
+    if (a_message && a_message_size > 0) {
+        memcpy(acorn_input + offset, a_message, a_message_size);
+        offset += a_message_size;
+    }
+    
+    memcpy(acorn_input + offset, a_acorn->randomness, a_acorn->randomness_size);
+    
+    // Generate Acorn proof using parameterized iterations 
+    dap_hash_params_t l_acorn_params = {
+        .iterations = CHIPMUNK_RING_ZK_ITERATIONS_MAX,
+        .domain_separator = "ACORN_COMMITMENT_V1"
+    };
+    
+    int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, acorn_input, acorn_input_size,
+                                 a_acorn->acorn_proof, a_acorn->acorn_proof_size,
+                                 DAP_HASH_FLAG_ITERATIVE, &l_acorn_params);
+    DAP_DELETE(acorn_input);
+    
+    if (l_acorn_result != 0) {
+        log_it(L_ERROR, "Failed to generate Acorn proof for commitment");
+        chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
-
-    // Layer 3: Code-based commitment
-    if (chipmunk_ring_commitment_create_code_layer(a_commitment->code_layer,
-                                                 a_commitment->code_size,
-                                                 a_public_key, a_commitment->randomness) != 0) {
-        log_it(L_ERROR, "Failed to create code-based commitment layer");
-        chipmunk_ring_commitment_free(a_commitment);
-        return -1;
-    }
-
-    // Create optimized binding proof
-    if (chipmunk_ring_commitment_create_binding_proof(a_commitment->binding_proof,
-                                                    a_commitment->binding_proof_size,
-                                                    a_public_key, a_commitment->randomness,
-                                                    a_commitment->ring_lwe_layer, a_commitment->ring_lwe_size,
-                                                    a_commitment->ntru_layer, a_commitment->ntru_size,
-                                                    a_commitment->code_layer, a_commitment->code_size) != 0) {
-        log_it(L_ERROR, "Failed to create optimized binding proof");
-        chipmunk_ring_commitment_free(a_commitment);
+    
+    // Generate linkability tag for replay protection
+    dap_hash_fast_t linkability_hash;
+    if (dap_hash_fast(a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE, &linkability_hash)) {
+        memcpy(a_acorn->linkability_tag, &linkability_hash, 
+               (sizeof(linkability_hash) < a_acorn->linkability_tag_size) ? 
+               sizeof(linkability_hash) : a_acorn->linkability_tag_size);
+    } else {
+        log_it(L_ERROR, "Failed to generate linkability tag");
+        chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
 

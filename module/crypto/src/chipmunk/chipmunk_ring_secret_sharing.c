@@ -22,7 +22,8 @@
 */
 
 #include "chipmunk_ring_secret_sharing.h"
-#include "chipmunk_ring_commitment.h"
+#include "chipmunk_ring_acorn.h"
+#include "dap_math.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
@@ -30,24 +31,7 @@
 #include "rand/dap_rand.h"
 
 // Optimized modular arithmetic helper functions
-static int64_t chipmunk_ring_mod_inverse(int64_t a, int64_t b, int64_t mod) {
-    // Extended Euclidean Algorithm for modular inverse
-    // Returns (a/b) mod mod, or 1 if b=0
-    if (b == 0) return 1;
-    
-    // Simplified implementation for performance
-    // For production: use proper extended Euclidean algorithm
-    int64_t result = a;
-    for (int i = 0; i < 10; i++) { // Limited iterations for performance
-        result = (result * a) % mod;
-        if ((result * b) % mod == a % mod) {
-            return result;
-        }
-    }
-    
-    // Fallback: return simplified result
-    return (a % mod);
-}
+// NOTE: Modular inverse moved to dap_math module as dap_mod_inverse_u64
 
 #include <errno.h>
 #include <stdio.h>
@@ -128,7 +112,7 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
             share->is_valid = true;
             
             // Use ZK proof size from parameters
-            share->zk_proof_size = a_zk_proof_size;
+            share->acorn_proof.acorn_proof_size = a_zk_proof_size;
             
             // Copy original key (no actual sharing needed for single signer)
             memcpy(&share->ring_private_key, a_ring_key, sizeof(chipmunk_ring_private_key_t));
@@ -136,7 +120,7 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
             memcpy(share->ring_public_key.data, a_ring_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
             
             // Create ZK commitment for consistency
-            int result = chipmunk_ring_commitment_create(&share->zk_commitment,
+            int result = chipmunk_ring_acorn_create(&share->acorn_proof,
                                                        &share->ring_public_key,
                                                        &share->share_id, sizeof(share->share_id));
             if (result != 0) {
@@ -145,8 +129,8 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
             }
             
             // Allocate dynamic ZK proof
-            share->zk_proof = DAP_NEW_Z_SIZE(uint8_t, share->zk_proof_size);
-            if (!share->zk_proof) {
+            share->acorn_proof.acorn_proof = DAP_NEW_Z_SIZE(uint8_t, share->acorn_proof.acorn_proof_size);
+            if (!share->acorn_proof.acorn_proof) {
                 log_it(L_CRITICAL, "Failed to allocate ZK proof for share %u", i);
                 return -ENOMEM;
             }
@@ -154,7 +138,7 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
             // Create temporary signature structure with ZK parameters for generation
             chipmunk_ring_signature_t temp_sig = {0};
             temp_sig.required_signers = a_required_signers;
-            temp_sig.zk_proof_size_per_participant = share->zk_proof_size;
+            temp_sig.zk_proof_size_per_participant = share->acorn_proof.acorn_proof_size;
             temp_sig.zk_iterations = a_zk_iterations;
             
             // Generate ZK proof using signature parameters
@@ -162,15 +146,15 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
                                                    sizeof(share->ring_private_key),
                                                    &temp_sig,
                                                    NULL, 0, // no salt for single signer
-                                                   share->zk_proof);
+                                                   share->acorn_proof.acorn_proof);
             if (result != 0) {
                 log_it(L_ERROR, "Failed to generate ZK proof for share %u", i);
-                DAP_DELETE(share->zk_proof);
+                DAP_DELETE(share->acorn_proof.acorn_proof);
                 return result;
             }
             
             debug_if(s_debug_more, L_DEBUG, "Generated dynamic ZK proof (%zu bytes) for share %u", 
-                   share->zk_proof_size, i + 1);
+                   share->acorn_proof.acorn_proof_size, i + 1);
             
                    debug_if(s_debug_more, L_DEBUG, "Generated traditional ring share %u", i + 1);
         }
@@ -306,7 +290,7 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
         memcpy(share->ring_public_key.data, &l_share_key->pk, CHIPMUNK_PUBLIC_KEY_SIZE);
         
         // Create ZK commitment for share validity
-        int result = chipmunk_ring_commitment_create(&share->zk_commitment,
+        int result = chipmunk_ring_acorn_create(&share->acorn_proof,
                                                    &share->ring_public_key,
                                                    &share->share_id, sizeof(share->share_id));
         if (result != 0) {
@@ -315,11 +299,11 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
         }
         
         // Use ZK proof size from parameters
-        share->zk_proof_size = a_zk_proof_size;
+        share->acorn_proof.acorn_proof_size = a_zk_proof_size;
         
         // Allocate dynamic ZK proof
-        share->zk_proof = DAP_NEW_Z_SIZE(uint8_t, share->zk_proof_size);
-        if (!share->zk_proof) {
+        share->acorn_proof.acorn_proof = DAP_NEW_Z_SIZE(uint8_t, share->acorn_proof.acorn_proof_size);
+        if (!share->acorn_proof.acorn_proof) {
             log_it(L_CRITICAL, "Failed to allocate ZK proof for multi-signer share %u", i);
             return -ENOMEM;
         }
@@ -336,17 +320,17 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
         // Create temporary signature structure with ZK parameters for generation
         chipmunk_ring_signature_t temp_sig = {0};
         temp_sig.required_signers = a_required_signers;
-        temp_sig.zk_proof_size_per_participant = share->zk_proof_size;
+        temp_sig.zk_proof_size_per_participant = share->acorn_proof.acorn_proof_size;
         temp_sig.zk_iterations = a_zk_iterations;
         
         // Use unified ZK proof generation with signature parameters
         result = chipmunk_ring_generate_zk_proof(proof_input, sizeof(proof_input),
                                                 &temp_sig,
                                                 NULL, 0, // salt will be used during verification
-                                                share->zk_proof);
+                                                share->acorn_proof.acorn_proof);
         if (result != 0) {
             log_it(L_ERROR, "Failed to generate ZK proof for multi-signer share %u", i);
-            DAP_DELETE(share->zk_proof);
+            DAP_DELETE(share->acorn_proof.acorn_proof);
             return result;
         }
         
@@ -394,7 +378,7 @@ int chipmunk_ring_verify_share(const chipmunk_ring_share_t *a_share,
         }
         
         // Compare only the hash part (first 32 bytes) of 64-byte ZK proof
-        if (memcmp(a_share->zk_proof, &expected_proof, sizeof(expected_proof)) != 0) {
+        if (memcmp(a_share->acorn_proof.acorn_proof, &expected_proof, sizeof(expected_proof)) != 0) {
             log_it(L_ERROR, "ZK proof verification failed for traditional ring share %u", a_share->share_id);
             return -1;
         }
@@ -416,7 +400,7 @@ int chipmunk_ring_verify_share(const chipmunk_ring_share_t *a_share,
         }
         
         // Compare only the hash part (first 32 bytes) of 64-byte ZK proof
-        if (memcmp(a_share->zk_proof, &expected_proof, sizeof(expected_proof)) != 0) {
+        if (memcmp(a_share->acorn_proof.acorn_proof, &expected_proof, sizeof(expected_proof)) != 0) {
             log_it(L_ERROR, "ZK proof verification failed for multi-signer share %u", a_share->share_id);
             return -1;
         }
@@ -462,7 +446,7 @@ int chipmunk_ring_verify_share_with_params(const chipmunk_ring_share_t *a_share,
         }
         
         // Compare with stored proof
-        if (memcmp(a_share->zk_proof, expected_proof, expected_proof_size) != 0) {
+        if (memcmp(a_share->acorn_proof.acorn_proof, expected_proof, expected_proof_size) != 0) {
             log_it(L_ERROR, "ZK proof verification failed for traditional ring share %u", a_share->share_id);
             DAP_DELETE(expected_proof);
             return -1;
@@ -499,7 +483,7 @@ int chipmunk_ring_verify_share_with_params(const chipmunk_ring_share_t *a_share,
         }
         
         // Compare with stored proof
-        if (memcmp(a_share->zk_proof, expected_proof, expected_proof_size) != 0) {
+        if (memcmp(a_share->acorn_proof.acorn_proof, expected_proof, expected_proof_size) != 0) {
             log_it(L_ERROR, "ZK proof verification failed for multi-signer share %u", a_share->share_id);
             DAP_DELETE(expected_proof);
             return -1;
@@ -577,9 +561,9 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         
         // Step 2: Use existing Chipmunk signing to create proper signature
         // This creates a real Chipmunk signature using the share's private key
-        a_signature->chipmunk_signature_size = CHIPMUNK_SIGNATURE_SIZE;
-        a_signature->chipmunk_signature = DAP_NEW_SIZE(uint8_t, a_signature->chipmunk_signature_size);
-        if (!a_signature->chipmunk_signature) {
+        a_signature->signature_size = CHIPMUNK_SIGNATURE_SIZE;
+        a_signature->signature = DAP_NEW_SIZE(uint8_t, a_signature->signature_size);
+        if (!a_signature->signature) {
             log_it(L_ERROR, "Failed to allocate memory for aggregated signature");
             return -ENOMEM;
         }
@@ -588,10 +572,10 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         // chipmunk_sign expects (private_key_bytes, message, message_len, signature_buffer)
         int l_sign_result = chipmunk_sign((const uint8_t*)l_share_private_key, 
                                          a_message, a_message_size, 
-                                         a_signature->chipmunk_signature);
+                                         a_signature->signature);
         if (l_sign_result != CHIPMUNK_ERROR_SUCCESS) {
             log_it(L_ERROR, "Failed to create Chipmunk signature from share: error %d", l_sign_result);
-            DAP_DELETE(a_signature->chipmunk_signature);
+            DAP_DELETE(a_signature->signature);
             return -1;
         }
         
@@ -611,7 +595,7 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         
         if (l_challenge_result != 0) {
             log_it(L_ERROR, "Failed to generate challenge for aggregated signature");
-            DAP_DELETE(a_signature->chipmunk_signature);
+            DAP_DELETE(a_signature->signature);
             return -1;
         }
         
@@ -622,24 +606,24 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         a_signature->coordination_round = 2; // Completed aggregation
         
         // Copy ZK proof from the valid share (even in traditional mode, we maintain ZK properties)
-        if (valid_share->zk_proof && valid_share->zk_proof_size > 0) {
-            a_signature->zk_proofs_size = valid_share->zk_proof_size;
+        if (valid_share->acorn_proof.acorn_proof && valid_share->acorn_proof.acorn_proof_size > 0) {
+            a_signature->zk_proofs_size = valid_share->acorn_proof.acorn_proof_size;
             a_signature->threshold_zk_proofs = DAP_NEW_SIZE(uint8_t, a_signature->zk_proofs_size);
             if (!a_signature->threshold_zk_proofs) {
                 log_it(L_ERROR, "Failed to allocate memory for ZK proofs");
-                DAP_DELETE(a_signature->chipmunk_signature);
+                DAP_DELETE(a_signature->signature);
                 return -ENOMEM;
             }
             
-            memcpy(a_signature->threshold_zk_proofs, valid_share->zk_proof, 
+            memcpy(a_signature->threshold_zk_proofs, valid_share->acorn_proof.acorn_proof, 
                    a_signature->zk_proofs_size);
             
-            a_signature->zk_proof_size_per_participant = valid_share->zk_proof_size;
+            a_signature->zk_proof_size_per_participant = valid_share->acorn_proof.acorn_proof_size;
             // Keep iterations from signature (already set during creation)
         }
         
         debug_if(s_debug_more, L_INFO, "Traditional ring signature aggregation completed successfully (signature_size: %zu)", 
-               a_signature->chipmunk_signature_size);
+               a_signature->signature_size);
         return 0;
         
     } else {
@@ -661,7 +645,7 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         }
         
         // Allocate ZK proofs storage
-        size_t total_zk_size = a_share_count * sizeof(a_shares[0].zk_proof);
+        size_t total_zk_size = a_share_count * a_shares[0].acorn_proof.acorn_proof_size;
         a_signature->threshold_zk_proofs = DAP_NEW_SIZE(uint8_t, total_zk_size);
         if (!a_signature->threshold_zk_proofs) {
             log_it(L_CRITICAL, "Failed to allocate ZK proofs storage");
@@ -677,8 +661,8 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
                 return -1;
             }
             
-            memcpy(a_signature->threshold_zk_proofs + i * sizeof(a_shares[0].zk_proof),
-                   a_shares[i].zk_proof, sizeof(a_shares[0].zk_proof));
+            memcpy(a_signature->threshold_zk_proofs + i * a_shares[0].acorn_proof.acorn_proof_size,
+                   a_shares[i].acorn_proof.acorn_proof, a_shares[i].acorn_proof.acorn_proof_size);
         }
         
         // FULL IMPLEMENTATION: Multi-signer lattice-based signature aggregation
@@ -731,7 +715,7 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
             int64_t lagrange_coeff = 1;
             if (lagrange_denominator != 0) {
                 // Proper modular inverse implementation
-                lagrange_coeff = chipmunk_ring_mod_inverse(lagrange_numerator, lagrange_denominator, CHIPMUNK_Q);
+                lagrange_coeff = dap_mod_inverse_u64(lagrange_numerator, lagrange_denominator, CHIPMUNK_Q);
             }
             
             lagrange_coeffs[i] = lagrange_coeff;
@@ -821,15 +805,15 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
             return -1;
         }
         
-        memcpy(l_signer_ring.ring_hash, &ring_hash, sizeof(l_signer_ring.ring_hash));
+        memcpy(l_signer_ring.ring_hash, &ring_hash, l_signer_ring.ring_hash_size);
         
         // Step 4: Create signature directly using reconstructed key (bypass ring matching)
         // In threshold schemes, reconstructed key doesn't need to match original ring
         
         // Allocate signature buffer
-        a_signature->chipmunk_signature_size = CHIPMUNK_SIGNATURE_SIZE;
-        a_signature->chipmunk_signature = DAP_NEW_SIZE(uint8_t, a_signature->chipmunk_signature_size);
-        if (!a_signature->chipmunk_signature) {
+        a_signature->signature_size = CHIPMUNK_SIGNATURE_SIZE;
+        a_signature->signature = DAP_NEW_SIZE(uint8_t, a_signature->signature_size);
+        if (!a_signature->signature) {
             log_it(L_ERROR, "Failed to allocate memory for aggregated signature");
             DAP_DELETE(l_signer_ring.public_keys);
             DAP_DELETE(a_signature->threshold_zk_proofs);
@@ -838,14 +822,14 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         
         // Create signature directly using reconstructed private key
         int l_sign_result = chipmunk_sign(l_ring_priv_key.data, a_message, a_message_size, 
-                                         a_signature->chipmunk_signature);
+                                         a_signature->signature);
         
         DAP_DELETE(l_signer_ring.public_keys);
         DAP_DELETE(lagrange_coeffs); // Clean up pre-computed coefficients
         
         if (l_sign_result != CHIPMUNK_ERROR_SUCCESS) {
             log_it(L_ERROR, "Failed to create Chipmunk signature from reconstructed key: error %d", l_sign_result);
-            DAP_DELETE(a_signature->chipmunk_signature);
+            DAP_DELETE(a_signature->signature);
             DAP_DELETE(a_signature->threshold_zk_proofs);
             return -1;
         }
@@ -866,30 +850,22 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
         
         if (l_challenge_result != 0) {
             log_it(L_ERROR, "Failed to generate challenge for aggregated signature");
-            DAP_DELETE(a_signature->chipmunk_signature);
+            DAP_DELETE(a_signature->signature);
             DAP_DELETE(a_signature->threshold_zk_proofs);
             return -1;
         }
         
-        // Step 5: Initialize commitments and responses for serialization compatibility
-        a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_signature->ring_size);
-        a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_signature->ring_size);
+        // Step 5: Initialize Acorn proofs for serialization compatibility
+        a_signature->acorn_proofs = DAP_NEW_Z_COUNT(chipmunk_ring_acorn_t, a_signature->ring_size);
         
-        if (!a_signature->commitments || !a_signature->responses) {
-            log_it(L_ERROR, "Failed to allocate commitments/responses for aggregated signature");
-            DAP_DELETE(a_signature->chipmunk_signature);
+        if (!a_signature->acorn_proofs) {
+            log_it(L_ERROR, "Failed to allocate Acorn proofs for aggregated signature");
+            DAP_DELETE(a_signature->signature);
             DAP_DELETE(a_signature->threshold_zk_proofs);
             return -ENOMEM;
         }
         
-        // Initialize responses for serialization (commitments already exist from signature creation)
-        for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-            // DON'T zero commitments - they contain valid data from signature creation!
-            // Only initialize responses if they're not already set
-            if (!a_signature->responses[i].value) {
-                memset(&a_signature->responses[i], 0, sizeof(chipmunk_ring_response_t));
-            }
-        }
+
         
         debug_if(s_debug_more, L_INFO, "Multi-signer signature aggregation completed successfully");
         return 0;
@@ -905,13 +881,13 @@ void chipmunk_ring_share_free(chipmunk_ring_share_t *a_share) {
     }
     
     // Free ZK commitment
-    chipmunk_ring_commitment_free(&a_share->zk_commitment);
+    chipmunk_ring_acorn_free(&a_share->acorn_proof);
     
     // Free dynamic ZK proof
-    if (a_share->zk_proof) {
-        DAP_DELETE(a_share->zk_proof);
-        a_share->zk_proof = NULL;
-        a_share->zk_proof_size = 0;
+    if (a_share->acorn_proof.acorn_proof) {
+        DAP_DELETE(a_share->acorn_proof.acorn_proof);
+        a_share->acorn_proof.acorn_proof = NULL;
+        a_share->acorn_proof.acorn_proof_size = 0;
     }
     
     // Clear sensitive data

@@ -119,6 +119,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/dap_json/dap_json_tests.c)
     register_dap_test(test_unit_dap_json "unit;core")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/test_dap_serialize.c)
+    add_dap_test(test_unit_core_dap_serialize unit/core/test_dap_serialize.c)
+    register_dap_test(test_unit_core_dap_serialize "unit;core;serialize")
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)

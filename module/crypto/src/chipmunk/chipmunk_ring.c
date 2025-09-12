@@ -22,7 +22,7 @@
 */
 
 #include "chipmunk_ring.h"
-#include "chipmunk_ring_commitment.h"
+#include "chipmunk_ring_acorn.h"
 #include "chipmunk_ring_secret_sharing.h"
 #include "chipmunk_aggregation.h"
 #include "dap_enc_chipmunk_ring_params.h"
@@ -223,10 +223,21 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     }
 
     a_ring->size = a_num_keys;
+    
+    // Allocate dynamic ring hash (use standard hash size)
+    a_ring->ring_hash_size = CHIPMUNK_RING_LINKABILITY_TAG_SIZE; // Standard hash output size
+    a_ring->ring_hash = DAP_NEW_Z_SIZE(uint8_t, a_ring->ring_hash_size);
+    if (!a_ring->ring_hash) {
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
+                               "Failed to allocate memory for ring hash");
+        return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
+    }
+    
     a_ring->public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t, sizeof(chipmunk_ring_public_key_t)*a_num_keys);
     if (!a_ring->public_keys) {
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
                                "Failed to allocate memory for ring public keys");
+        DAP_FREE(a_ring->ring_hash);
         return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
@@ -266,8 +277,8 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
 
     DAP_FREE(l_combined_keys);
 
-    // Copy hash to ring structure (take first 32 bytes)
-    memcpy(a_ring->ring_hash, &l_ring_hash, sizeof(a_ring->ring_hash));
+    // Copy hash to ring structure (use dynamic size)
+    memcpy(a_ring->ring_hash, &l_ring_hash, a_ring->ring_hash_size);
 
     return 0;
 }
@@ -281,7 +292,12 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring) {
             DAP_FREE(a_ring->public_keys);
             a_ring->public_keys = NULL;
         }
+        if (a_ring->ring_hash) {
+            DAP_FREE(a_ring->ring_hash);
+            a_ring->ring_hash = NULL;
+        }
         a_ring->size = 0;
+        a_ring->ring_hash_size = 0;
     }
 }
 
@@ -413,7 +429,7 @@ static int create_code_based_commitment(uint8_t *commitment,
 static int create_optimized_binding_proof(uint8_t *binding_proof,
                                          size_t proof_size,
                                          const uint8_t *randomness,
-                                         const chipmunk_ring_commitment_t *a_commitment) {
+                                         const chipmunk_ring_acorn_t *a_commitment) {
     if (!binding_proof || proof_size < s_pq_params.computed.binding_proof_size) {
         return -1;
     }
@@ -421,9 +437,9 @@ static int create_optimized_binding_proof(uint8_t *binding_proof,
     // Step 1: Hash each layer individually (prevents layer substitution)
     dap_hash_fast_t ring_lwe_hash, ntru_hash, code_hash;
     
-    if (!dap_hash_fast(a_commitment->ring_lwe_layer, a_commitment->ring_lwe_size, &ring_lwe_hash) ||
-        !dap_hash_fast(a_commitment->ntru_layer, a_commitment->ntru_size, &ntru_hash) ||
-        !dap_hash_fast(a_commitment->code_layer, a_commitment->code_size, &code_hash)) {
+    if (!dap_hash_fast(a_commitment->acorn_proof, a_commitment->acorn_proof_size, &ring_lwe_hash) ||
+        !dap_hash_fast(a_commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE, &ntru_hash) ||
+        !dap_hash_fast(a_commitment->randomness, a_commitment->randomness_size, &code_hash)) {
         log_it(L_ERROR, "Failed to hash commitment layers");
         return -1;
     }
@@ -473,71 +489,7 @@ static int create_optimized_binding_proof(uint8_t *binding_proof,
 /**
  * @brief Create response for ZKP
  */
-/**
- * @brief Create response for ZKP and threshold coordination
- * @details Adaptive implementation based on required_signers
- */
-int chipmunk_ring_response_create(chipmunk_ring_response_t *a_response,
-                               const chipmunk_ring_commitment_t *a_commitment,
-                               const uint8_t a_challenge[32],
-                               const chipmunk_ring_private_key_t *a_private_key,
-                               const chipmunk_ring_signature_t *a_signature) {
-    dap_return_val_if_fail(a_response, -EINVAL);
-    dap_return_val_if_fail(a_commitment, -EINVAL);
-    dap_return_val_if_fail(a_challenge, -EINVAL);
-
-    // For single signer mode (required_signers=1): minimal response
-    if (!a_private_key) {
-        // Dummy participant: use commitment randomness
-        a_response->value_size = a_commitment->randomness_size;
-        a_response->value = DAP_NEW_Z_SIZE(uint8_t, a_response->value_size);
-        if (!a_response->value) {
-            return -ENOMEM;
-        }
-        memcpy(a_response->value, a_commitment->randomness, a_response->value_size);
-        return 0;
-    }
-
-    // For multi-signer mode (required_signers>1): full ZK response
-    // Implement Schnorr-like response: response = (randomness - challenge * private_key) mod q
-    
-    // Simplified implementation using hash-based response
-    uint8_t response_input[CHIPMUNK_PRIVATE_KEY_SIZE + 32 + a_commitment->randomness_size];
-    size_t offset = 0;
-    
-    memcpy(response_input + offset, a_private_key->data, CHIPMUNK_PRIVATE_KEY_SIZE);
-    offset += CHIPMUNK_PRIVATE_KEY_SIZE;
-    memcpy(response_input + offset, a_challenge, 32);
-    offset += 32;
-    memcpy(response_input + offset, a_commitment->randomness, a_commitment->randomness_size);
-    
-    dap_hash_fast_t response_hash;
-    bool hash_result = dap_hash_fast(response_input, sizeof(response_input), &response_hash);
-    if (!hash_result) {
-        log_it(L_ERROR, "Failed to generate response hash");
-        return -1;
-    }
-    
-    // Use response size from signature parameters or default
-    if (a_signature) {
-        a_response->value_size = a_signature->zk_proof_size_per_participant;
-    } else {
-        a_response->value_size = CHIPMUNK_RING_RESPONSE_SIZE_DEFAULT;
-    }
-    a_response->value = DAP_NEW_Z_SIZE(uint8_t, a_response->value_size);
-    if (!a_response->value) {
-        return -ENOMEM;
-    }
-    
-    // Copy hash and pad with zeros if needed
-    size_t copy_size = (sizeof(response_hash) < a_response->value_size) ? 
-                      sizeof(response_hash) : a_response->value_size;
-    memcpy(a_response->value, &response_hash, copy_size);
-    if (copy_size < a_response->value_size) {
-        memset(a_response->value + copy_size, 0, a_response->value_size - copy_size);
-    }
-    return 0;
-}
+// NOTE: Response creation removed - Acorn Verification handles all ZKP needs
 
 /**
  * @brief Create Chipmunk_Ring signature
@@ -614,32 +566,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         
     } else {
         // Large rings: store only hashes of public keys
-        a_signature->ring_key_hashes_size = a_ring->size * CHIPMUNK_RING_KEY_HASH_SIZE;
-        a_signature->ring_key_hashes = DAP_NEW_Z_SIZE(uint8_t, a_signature->ring_key_hashes_size);
-        if (!a_signature->ring_key_hashes) {
-            log_it(L_CRITICAL, "Failed to allocate key hashes storage");
-            return -ENOMEM;
-        }
-        
-        // Generate hash for each public key
-        for (uint32_t i = 0; i < a_ring->size; i++) {
-            dap_hash_fast_t key_hash;
-            bool hash_result = dap_hash_fast(&a_ring->public_keys[i], 
-                                           sizeof(chipmunk_ring_public_key_t), &key_hash);
-            if (!hash_result) {
-                log_it(L_ERROR, "Failed to hash public key %u", i);
-                DAP_DELETE(a_signature->ring_key_hashes);
-                return -1;
-            }
-            
-            memcpy(a_signature->ring_key_hashes + i * CHIPMUNK_RING_KEY_HASH_SIZE, &key_hash, CHIPMUNK_RING_KEY_HASH_SIZE);
-        }
-        
-        debug_if(s_debug_more, L_DEBUG, "Generated hashes for %u public keys (external storage mode)", a_ring->size);
+        // External storage mode: only ring_hash is stored, individual keys resolved externally
+        debug_if(s_debug_more, L_DEBUG, "External storage mode for %u public keys", a_ring->size);
     }
     
     // Copy ring hash for verification
-    memcpy(a_signature->ring_hash, a_ring->ring_hash, sizeof(a_signature->ring_hash));
+    memcpy(a_signature->ring_hash, a_ring->ring_hash, a_signature->ring_hash_size);
 
     // Additional validation: ensure ring size doesn't exceed maximum allowed
     if (a_ring->size > CHIPMUNK_RING_MAX_RING_SIZE) {
@@ -651,39 +583,23 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     if (a_required_signers == 1) {
         // Single signer mode: minimal allocation
         debug_if(s_debug_more, L_DEBUG, "Single signer mode: minimal allocation");
-    a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
-    a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
-    
-        // Initialize responses
-    if (a_signature->responses) {
-        for (uint32_t i = 0; i < a_ring->size; i++) {
-            a_signature->responses[i].value = NULL;
-            a_signature->responses[i].value_size = 0;
-        }
-    }
+    a_signature->acorn_proofs = DAP_NEW_Z_COUNT(chipmunk_ring_acorn_t, a_ring->size);
+    // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
     
     } else {
         // Multi-signer mode: full allocation for coordination
         debug_if(s_debug_more, L_DEBUG, "Multi-signer mode: full allocation for coordination");
-        a_signature->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_ring->size);
-        a_signature->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_ring->size);
+        a_signature->acorn_proofs = DAP_NEW_Z_COUNT(chipmunk_ring_acorn_t, a_ring->size);
         a_signature->is_coordinated = false;
         a_signature->coordination_round = 0; // Start with commit phase
-        
-        // Initialize responses
-        if (a_signature->responses) {
-            for (uint32_t i = 0; i < a_ring->size; i++) {
-                a_signature->responses[i].value = NULL;
-                a_signature->responses[i].value_size = 0;
-            }
-        }
+        // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
     }
     
     // Allocate chipmunk signature
-    a_signature->chipmunk_signature_size = CHIPMUNK_SIGNATURE_SIZE;
-    a_signature->chipmunk_signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->chipmunk_signature_size);
+    a_signature->signature_size = CHIPMUNK_SIGNATURE_SIZE;
+    a_signature->signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->signature_size);
 
-    if (!a_signature->commitments || !a_signature->responses || !a_signature->chipmunk_signature) {
+    if (!a_signature->acorn_proofs || !a_signature->signature) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         chipmunk_ring_signature_free(a_signature);
         return -ENOMEM;
@@ -693,24 +609,24 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     if (a_required_signers == 1) {
         // Single signer: random commitments for anonymity (not deterministic!)
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-            if (chipmunk_ring_commitment_create(&a_signature->commitments[l_i], 
+            if (chipmunk_ring_acorn_create(&a_signature->acorn_proofs[l_i], 
                                               &a_ring->public_keys[l_i],
                                               a_message, a_message_size) != 0) {
             log_it(L_ERROR, "Failed to create commitment for participant %u", l_i);
             chipmunk_ring_signature_free(a_signature);
-            return -1;
+            return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
         }
         }
     } else {
         // Multi-signer: coordination-based commitments
         // Phase 1: Generate commitments for coordination protocol
         for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-            if (chipmunk_ring_commitment_create(&a_signature->commitments[l_i], 
+            if (chipmunk_ring_acorn_create(&a_signature->acorn_proofs[l_i], 
                                               &a_ring->public_keys[l_i],
                                               a_message, a_message_size) != 0) {
                 log_it(L_ERROR, "Failed to create coordination commitment for participant %u", l_i);
                 chipmunk_ring_signature_free(a_signature);
-                return -1;
+                return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
             }
         }
         a_signature->coordination_round = 1; // Completed commit phase
@@ -725,11 +641,11 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     size_t l_commitments_size = 0;
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
         l_commitments_size += s_pq_params.randomness_size; // randomness
-        // Add sizes of dynamic arrays
-        l_commitments_size += a_signature->commitments[l_i].ring_lwe_size;
-        l_commitments_size += a_signature->commitments[l_i].ntru_size;
-        l_commitments_size += a_signature->commitments[l_i].code_size;
-        l_commitments_size += a_signature->commitments[l_i].binding_proof_size;
+        // Add sizes of Acorn commitment components
+        l_commitments_size += a_signature->acorn_proofs[l_i].acorn_proof_size;
+        l_commitments_size += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
+        l_commitments_size += a_signature->acorn_proofs[l_i].randomness_size;
+        // No binding_proof - included in acorn_proof
     }
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
 
@@ -754,25 +670,25 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
 
     // Add all commitments - same as verification
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        const chipmunk_ring_commitment_t *commitment = &a_signature->commitments[l_i];
+        const chipmunk_ring_acorn_t *commitment = &a_signature->acorn_proofs[l_i];
 
         // Copy randomness (dynamic size)
         memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
         l_offset += commitment->randomness_size;
 
         // Copy dynamic arrays content
-        memcpy(l_combined_data + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
-        l_offset += commitment->ring_lwe_size;
+        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
 
-        memcpy(l_combined_data + l_offset, commitment->ntru_layer, commitment->ntru_size);
-        l_offset += commitment->ntru_size;
+        memcpy(l_combined_data + l_offset, commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+        l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 
 
-        memcpy(l_combined_data + l_offset, commitment->code_layer, commitment->code_size);
-        l_offset += commitment->code_size;
+        memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
+        l_offset += commitment->randomness_size;
 
-        memcpy(l_combined_data + l_offset, commitment->binding_proof, commitment->binding_proof_size);
-        l_offset += commitment->binding_proof_size;
+        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
     }
 
     // Hash the combined data to get challenge
@@ -787,7 +703,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     DAP_FREE(l_combined_data);
 
     // Copy hash to challenge (take first 32 bytes)
-    memcpy(a_signature->challenge, &l_challenge_hash, sizeof(a_signature->challenge));
+    memcpy(a_signature->challenge, &l_challenge_hash, a_signature->challenge_size);
 
     // Find real signer first (needed for both modes)
     uint32_t l_real_signer_index = UINT32_MAX;
@@ -804,9 +720,9 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                                sizeof(a_signature->challenge), l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
                 l_real_signer_index = l_i;
                 // Copy the real signature
-                memcpy(a_signature->chipmunk_signature, l_test_signature, 
-                       (a_signature->chipmunk_signature_size < sizeof(l_test_signature)) ?
-                       a_signature->chipmunk_signature_size : sizeof(l_test_signature));
+                memcpy(a_signature->signature, l_test_signature, 
+                       (a_signature->signature_size < sizeof(l_test_signature)) ?
+                       a_signature->signature_size : sizeof(l_test_signature));
                 break;
             }
         }
@@ -820,39 +736,15 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     
     debug_if(s_debug_more, L_INFO, "Found real signer at index %u (internal only)", l_real_signer_index);
 
-    // ADAPTIVE RESPONSES: Different strategies based on mode
+    // All verification happens through acorn_proof in commitments, no separate responses needed
+    
     if (a_required_signers == 1) {
-        // Single signer: create minimal responses for anonymity
-        for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        if (chipmunk_ring_response_create(&a_signature->responses[l_i],
-                                       &a_signature->commitments[l_i],
-                                           a_signature->challenge, NULL, a_signature) != 0) {
-            log_it(L_ERROR, "Failed to create response for participant %u", l_i);
-            chipmunk_ring_signature_free(a_signature);
-            return -1;
-        }
-    }
+        debug_if(s_debug_more, L_INFO, "Single signer mode: Using Acorn proofs in commitments");
     } else {
-        // Multi-signer: coordination-based responses (Phase 2: Reveal)
-        // Create responses for all participants (coordination protocol)
-        for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-            // For multi-signer mode, create responses using the commitment data
-            // The actual private key is only used for the real signer (first participant for simplicity)
-            const chipmunk_ring_private_key_t *participant_key = (l_i == 0) ? a_private_key : NULL;
-            
-            if (chipmunk_ring_response_create(&a_signature->responses[l_i],
-                                           &a_signature->commitments[l_i],
-                                           a_signature->challenge, participant_key, a_signature) != 0) {
-                log_it(L_ERROR, "Failed to create coordination response for participant %u", l_i);
-                chipmunk_ring_signature_free(a_signature);
-                return -1;
-            }
-        }
+        debug_if(s_debug_more, L_INFO, "Multi-signer mode: Using Acorn proofs for coordination");
         a_signature->coordination_round = 2; // Completed reveal phase
     }
 
-    // ANONYMITY: OR-proof construction completed above
-    // Real signer already found and signature created
     
     // ADAPTIVE COORDINATION: Handle different signing modes
     if (a_required_signers == 1) {
@@ -863,7 +755,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         a_signature->coordination_round = 3; // Skip to completed state
         
         if (s_debug_more) {
-        dump_it(a_signature->chipmunk_signature, "chipmunk_ring_sign CREATED SIGNATURE", a_signature->chipmunk_signature_size);
+        dump_it(a_signature->signature, "chipmunk_ring_sign CREATED SIGNATURE", a_signature->signature_size);
     }
         
     } else {
@@ -891,16 +783,16 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             uint8_t *current_proof = a_signature->threshold_zk_proofs + i * a_signature->zk_proof_size_per_participant;
             
             // Use commitment-based proof generation (matches verification)
-            const chipmunk_ring_commitment_t *commitment = &a_signature->commitments[i];
+            const chipmunk_ring_acorn_t *commitment = &a_signature->acorn_proofs[i];
             
             // Create challenge verification input (same as in verification)
-            uint8_t challenge_verification_input[sizeof(a_signature->challenge) + 
+            uint8_t *challenge_verification_input = DAP_NEW_SIZE(uint8_t, a_signature->challenge_size + 
                                                 sizeof(a_signature->required_signers) + 
-                                                sizeof(a_signature->ring_size)];
+                                                sizeof(a_signature->ring_size));
             size_t challenge_offset = 0;
             
-            memcpy(challenge_verification_input + challenge_offset, a_signature->challenge, sizeof(a_signature->challenge));
-            challenge_offset += sizeof(a_signature->challenge);
+            memcpy(challenge_verification_input + challenge_offset, a_signature->challenge, a_signature->challenge_size);
+            challenge_offset += a_signature->challenge_size;
             memcpy(challenge_verification_input + challenge_offset, &a_signature->required_signers, sizeof(a_signature->required_signers));
             challenge_offset += sizeof(a_signature->required_signers);
             memcpy(challenge_verification_input + challenge_offset, &a_signature->ring_size, sizeof(a_signature->ring_size));
@@ -925,11 +817,14 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             response_offset += sizeof(uint32_t);
             
             // Generate ZK proof using same algorithm as verification
+            size_t challenge_verification_input_size = a_signature->challenge_size + 
+                                                      sizeof(a_signature->required_signers) + 
+                                                      sizeof(a_signature->ring_size);
             dap_hash_params_t response_params = {
                 .iterations = a_signature->zk_iterations,
                 .domain_separator = CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
                 .salt = challenge_verification_input,
-                .salt_size = sizeof(challenge_verification_input)
+                .salt_size = challenge_verification_input_size
             };
             
             int zk_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
@@ -940,10 +835,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             
             if (zk_result != 0) {
                 log_it(L_ERROR, "Failed to generate ZK proof for multi-signer participant %u", i);
+                DAP_FREE(challenge_verification_input);
                 chipmunk_ring_signature_free(a_signature);
                 return -1;
             }
             
+            DAP_FREE(challenge_verification_input);
             debug_if(s_debug_more, L_INFO, "Generated Acorn proof for participant %u", i);
         }
         
@@ -1082,7 +979,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             return -1;
         }
         
-        memcpy(l_effective_ring.ring_hash, &ring_hash, sizeof(l_effective_ring.ring_hash));
+        memcpy(l_effective_ring.ring_hash, &ring_hash, l_effective_ring.ring_hash_size);
         
         l_ring_to_use = &l_effective_ring;
         
@@ -1122,11 +1019,10 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     // Debug: Check commitment sizes
     if(s_debug_more)
         for (uint32_t i = 0; i < l_ring_to_use->size; i++) {
-        debug_if(s_debug_more, L_INFO, "Commitment %u sizes: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu",
-                 i, a_signature->commitments[i].ring_lwe_size,
-                 a_signature->commitments[i].ntru_size,
-                 a_signature->commitments[i].code_size,
-                 a_signature->commitments[i].binding_proof_size);
+        debug_if(s_debug_more, L_INFO, "Acorn commitment %u sizes: acorn_proof=%zu, randomness=%zu, linkability=%zu",
+                 i, a_signature->acorn_proofs[i].acorn_proof_size,
+                 a_signature->acorn_proofs[i].randomness_size,
+                 a_signature->acorn_proofs[i].linkability_tag_size);
         }
 
     // CRITICAL: Verify that challenge was generated from this message
@@ -1139,10 +1035,9 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     for (uint32_t l_i = 0; l_i < l_ring_to_use->size; l_i++) {
         l_commitments_size += s_pq_params.randomness_size; // randomness
         // Add sizes of dynamic arrays
-        l_commitments_size += a_signature->commitments[l_i].ring_lwe_size;
-        l_commitments_size += a_signature->commitments[l_i].ntru_size;
-        l_commitments_size += a_signature->commitments[l_i].code_size;
-        l_commitments_size += a_signature->commitments[l_i].binding_proof_size;
+        l_commitments_size += a_signature->acorn_proofs[l_i].acorn_proof_size;
+        l_commitments_size += a_signature->acorn_proofs[l_i].randomness_size;
+        l_commitments_size += a_signature->acorn_proofs[l_i].linkability_tag_size;
     }
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
     
@@ -1171,25 +1066,25 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     l_offset += CHIPMUNK_RING_RING_HASH_SIZE;
     // Add all commitments (including dynamic arrays)
     for (uint32_t l_i = 0; l_i < l_ring_to_use->size; l_i++) {
-        const chipmunk_ring_commitment_t *commitment = &a_signature->commitments[l_i];
+        const chipmunk_ring_acorn_t *commitment = &a_signature->acorn_proofs[l_i];
 
         // Copy randomness (dynamic size)
         memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
         l_offset += commitment->randomness_size;
 
         // Copy dynamic arrays content
-        memcpy(l_combined_data + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
-        l_offset += commitment->ring_lwe_size;
+        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
 
-        memcpy(l_combined_data + l_offset, commitment->ntru_layer, commitment->ntru_size);
-        l_offset += commitment->ntru_size;
+        memcpy(l_combined_data + l_offset, commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+        l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 
 
-        memcpy(l_combined_data + l_offset, commitment->code_layer, commitment->code_size);
-        l_offset += commitment->code_size;
+        memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
+        l_offset += commitment->randomness_size;
 
-        memcpy(l_combined_data + l_offset, commitment->binding_proof, commitment->binding_proof_size);
-        l_offset += commitment->binding_proof_size;
+        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
     }
 
     // Hash to get expected challenge
@@ -1208,14 +1103,17 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
              ((uint8_t*)&l_expected_challenge_hash)[4], ((uint8_t*)&l_expected_challenge_hash)[5], ((uint8_t*)&l_expected_challenge_hash)[6], ((uint8_t*)&l_expected_challenge_hash)[7],
              ((uint8_t*)&l_expected_challenge_hash)[8], ((uint8_t*)&l_expected_challenge_hash)[9], ((uint8_t*)&l_expected_challenge_hash)[10], ((uint8_t*)&l_expected_challenge_hash)[11],
              ((uint8_t*)&l_expected_challenge_hash)[12], ((uint8_t*)&l_expected_challenge_hash)[13], ((uint8_t*)&l_expected_challenge_hash)[14], ((uint8_t*)&l_expected_challenge_hash)[15]);
-    debug_if(s_debug_more, L_INFO, "Signature challenge: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+    debug_if(s_debug_more, L_INFO, "Signature challenge (%zu bytes): %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+             a_signature->challenge_size,
              a_signature->challenge[0], a_signature->challenge[1], a_signature->challenge[2], a_signature->challenge[3],
              a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
              a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
              a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
 
-    // Compare with challenge from signature
-    if (memcmp(a_signature->challenge, &l_expected_challenge_hash, sizeof(a_signature->challenge)) != 0) {
+    // Compare with challenge from signature (use minimum of both sizes for safety)
+    size_t l_compare_size = (a_signature->challenge_size < sizeof(l_expected_challenge_hash)) ? 
+                           a_signature->challenge_size : sizeof(l_expected_challenge_hash);
+    if (memcmp(a_signature->challenge, &l_expected_challenge_hash, l_compare_size) != 0) {
         debug_if(s_debug_more, L_ERROR, "Challenge verification failed - message doesn't match signature");
         debug_if(s_debug_more, L_ERROR, "Expected challenge hash: %02x%02x%02x%02x...",
                  ((uint8_t*)&l_expected_challenge_hash)[0], ((uint8_t*)&l_expected_challenge_hash)[1],
@@ -1234,20 +1132,76 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         // Traditional ring mode: OR-proof verification
         debug_if(s_debug_more, L_INFO, "Traditional ring verification (required_signers=1)");
         
-        // Try to verify signature against each participant (preserves anonymity)
+        // UNIFIED ACORN VERIFICATION: Same as multi-signer but expect threshold=1
+        debug_if(s_debug_more, L_INFO, "Applying Acorn verification (threshold=1)");
+        
+        uint32_t valid_acorn_proofs = 0;
+        
         for (uint32_t l_i = 0; l_i < l_ring_to_use->size; l_i++) {
-            debug_if(s_debug_more, L_INFO, "Trying to verify signature against participant %u", l_i);
-            
-            // OR-PROOF VERIFICATION: Try to verify against this participant's public key
-            int l_chipmunk_result = chipmunk_verify(l_ring_to_use->public_keys[l_i].data,
-                                                   a_signature->challenge, sizeof(a_signature->challenge),
-                                                   a_signature->chipmunk_signature);
-            
-            if (l_chipmunk_result == CHIPMUNK_ERROR_SUCCESS) {
-                debug_if(s_debug_more, L_INFO, "Signature verified against participant %u", l_i);
-                l_signature_verified = true;
-                break; // Found valid signer, stop here (but don't reveal who)
+            // Check if this participant has an Acorn proof
+            if (a_signature->acorn_proofs[l_i].acorn_proof && 
+                a_signature->acorn_proofs[l_i].acorn_proof_size > 0) {
+                
+                // Prepare Acorn verification input (same as creation) with DAP SDK naming
+                size_t l_acorn_input_size = CHIPMUNK_PUBLIC_KEY_SIZE + 
+                                          (a_message ? a_message_size : 0) + 
+                                          a_signature->acorn_proofs[l_i].randomness_size;
+                uint8_t *l_acorn_input = DAP_NEW_SIZE(uint8_t, l_acorn_input_size);
+                if (!l_acorn_input) {
+                    log_it(L_ERROR, "Failed to allocate Acorn verification input");
+                    return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
+                }
+                
+                size_t l_offset = 0;
+                memcpy(l_acorn_input + l_offset, l_ring_to_use->public_keys[l_i].data, CHIPMUNK_PUBLIC_KEY_SIZE);
+                l_offset += CHIPMUNK_PUBLIC_KEY_SIZE;
+                
+                if (a_message && a_message_size > 0) {
+                    memcpy(l_acorn_input + l_offset, a_message, a_message_size);
+                    l_offset += a_message_size;
+                }
+                
+                memcpy(l_acorn_input + l_offset, a_signature->acorn_proofs[l_i].randomness, 
+                       a_signature->acorn_proofs[l_i].randomness_size);
+                
+                // Generate expected Acorn proof using signature parameters (not hardcoded)
+                uint8_t *l_expected_acorn_proof = DAP_NEW_SIZE(uint8_t, a_signature->acorn_proofs[l_i].acorn_proof_size);
+                if (!l_expected_acorn_proof) {
+                    DAP_DELETE(l_acorn_input);
+                    log_it(L_ERROR, "Failed to allocate expected Acorn proof");
+                    return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
+                }
+                
+                dap_hash_params_t l_acorn_params = {
+                    .iterations = a_signature->zk_iterations, // Use signature parameter, not magic number
+                    .domain_separator = "ACORN_COMMITMENT_V1" // Same as creation
+                };
+                
+                int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, l_acorn_input, l_acorn_input_size,
+                                             l_expected_acorn_proof, a_signature->acorn_proofs[l_i].acorn_proof_size,
+                                             DAP_HASH_FLAG_ITERATIVE, &l_acorn_params);
+                DAP_DELETE(l_acorn_input);
+                
+                if (l_acorn_result == 0) {
+                    // Compare Acorn proofs
+                    if (memcmp(a_signature->acorn_proofs[l_i].acorn_proof, l_expected_acorn_proof, 
+                              a_signature->acorn_proofs[l_i].acorn_proof_size) == 0) {
+                        valid_acorn_proofs++;
+                        debug_if(s_debug_more, L_INFO, "Acorn proof %u verified successfully", l_i);
+                    }
+                }
+                
+                DAP_DELETE(l_expected_acorn_proof);
             }
+        }
+        
+        // Threshold=1: expect exactly one valid Acorn proof
+        if (valid_acorn_proofs == 1) {
+            debug_if(s_debug_more, L_INFO, "Threshold=1 Acorn verification successful (1/1 proof valid)");
+            l_signature_verified = true;
+        } else {
+            log_it(L_WARNING, "Threshold=1 Acorn verification failed - expected 1 valid proof, got %u", valid_acorn_proofs);
+            l_signature_verified = false;
         }
         
     } else {
@@ -1302,8 +1256,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                 
                 // Reconstruct the same input that was used during generation
                 // Based on commitment randomness + context (matches generation logic)
-                if (i < a_signature->ring_size && a_signature->commitments) {
-                    const chipmunk_ring_commitment_t *commitment = &a_signature->commitments[i];
+                if (i < a_signature->ring_size && a_signature->acorn_proofs) {
+                    const chipmunk_ring_acorn_t *commitment = &a_signature->acorn_proofs[i];
                     
                     // Create the same input structure as used in generation
                     size_t verify_input_size = commitment->randomness_size + a_message_size + sizeof(uint32_t);
@@ -1420,7 +1374,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // Try to verify partial contribution from this participant
             int l_partial_result = chipmunk_verify(l_ring_to_use->public_keys[l_i].data,
                                                   a_signature->challenge, sizeof(a_signature->challenge),
-                                                  a_signature->chipmunk_signature);
+                                                  a_signature->signature);
             
             if (l_partial_result == CHIPMUNK_ERROR_SUCCESS) {
                 debug_if(s_debug_more, L_INFO, "Partial verification succeeded for participant %u", l_i);
@@ -1523,7 +1477,7 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     // Calculate total size with all components
     size_t total_size = header_size +
                        a_ring_size * commitment_size_per_participant + // commitments
-                       a_ring_size * response_size_per_participant +   // responses
+                       // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
                        chipmunk_sig_size +                            // chipmunk signature
                        ring_hash_size +                               // ring hash
                        keys_storage_size +                            // embedded keys/hashes
@@ -1532,10 +1486,9 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     // Add safety margin for dynamic content (10% overhead)
     total_size = total_size + (total_size / 10);
 
-    log_it(L_DEBUG, "chipmunk_ring_get_signature_size: calculated=%zu (ring_size=%zu, header=%zu, commitments=%zu, responses=%zu, keys=%zu)",
+    log_it(L_DEBUG, "chipmunk_ring_get_signature_size: calculated=%zu (ring_size=%zu, header=%zu, commitments=%zu, keys=%zu)",
            total_size, a_ring_size, header_size, 
            a_ring_size * commitment_size_per_participant,
-           a_ring_size * response_size_per_participant,
            keys_storage_size);
 
     return total_size;
@@ -1558,29 +1511,20 @@ void chipmunk_ring_key_delete(struct dap_enc_key *a_key) {
 void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
     if (a_signature) {
         // Free dynamic arrays inside each commitment
-        if (a_signature->commitments) {
+        if (a_signature->acorn_proofs) {
             for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-                chipmunk_ring_commitment_free(&a_signature->commitments[i]);
+                chipmunk_ring_acorn_free(&a_signature->acorn_proofs[i]);
             }
-            DAP_FREE(a_signature->commitments);
-            a_signature->commitments = NULL;
+            DAP_FREE(a_signature->acorn_proofs);
+            a_signature->acorn_proofs = NULL;
         }
         
-        // Free responses (needed for threshold coordination)
-        if (a_signature->responses) {
-            for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-                DAP_FREE(a_signature->responses[i].value);
-                a_signature->responses[i].value = NULL;
-                a_signature->responses[i].value_size = 0;
-            }
-            DAP_FREE(a_signature->responses);
-            a_signature->responses = NULL;
-        }
+        // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
         
         // Free dynamic chipmunk signature
-        DAP_FREE(a_signature->chipmunk_signature);
-        a_signature->chipmunk_signature = NULL;
-        a_signature->chipmunk_signature_size = 0;
+        DAP_FREE(a_signature->signature);
+        a_signature->signature = NULL;
+        a_signature->signature_size = 0;
         
         // Free scalability fields
         if (a_signature->ring_public_keys) {
@@ -1588,11 +1532,7 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
             a_signature->ring_public_keys = NULL;
         }
         
-        if (a_signature->ring_key_hashes) {
-            DAP_DELETE(a_signature->ring_key_hashes);
-            a_signature->ring_key_hashes = NULL;
-            a_signature->ring_key_hashes_size = 0;
-        }
+        // NOTE: ring_key_hashes removed - only ring_hash is used now
         
         // Free multi-signer fields
         if (a_signature->threshold_zk_proofs) {
@@ -1601,11 +1541,7 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
             a_signature->zk_proofs_size = 0;
         }
         
-        if (a_signature->participating_key_hashes) {
-            DAP_DELETE(a_signature->participating_key_hashes);
-            a_signature->participating_key_hashes = NULL;
-            a_signature->participating_hashes_size = 0;
-        }
+        // NOTE: participating_key_hashes removed - identification handled through ring_hash and ZK proofs
         
         // Reset coordination state
         a_signature->is_coordinated = false;
@@ -1634,8 +1570,8 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
     CHIPMUNK_RING_RETURN_IF_FAIL(a_output_size >= l_required_size, CHIPMUNK_RING_ERROR_BUFFER_TOO_SMALL);
     
     // Validate signature has required arrays
-    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->commitments, CHIPMUNK_RING_ERROR_INVALID_PARAM);
-    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->responses, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->acorn_proofs, CHIPMUNK_RING_ERROR_INVALID_PARAM);
+    // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
 
     size_t l_offset = 0;
 
@@ -1714,16 +1650,16 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
     l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
 
     // Serialize commitments (quantum-resistant format)
-    if (!a_sig->commitments) {
+    if (!a_sig->acorn_proofs) {
         log_it(L_ERROR, "Commitments not initialized for serialization");
         return -EINVAL;
     }
     
     for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        const chipmunk_ring_commitment_t *commitment = &a_sig->commitments[l_i];
+        const chipmunk_ring_acorn_t *commitment = &a_sig->acorn_proofs[l_i];
 
-        log_it(L_DEBUG, "Serialization: commitment %zu has randomness_size=%zu, ring_lwe_size=%zu", 
-               l_i, commitment->randomness_size, commitment->ring_lwe_size);
+        log_it(L_DEBUG, "Serialization: commitment %zu has randomness_size=%zu, acorn_proof_size=%zu", 
+               l_i, commitment->randomness_size, commitment->acorn_proof_size);
 
         // Serialize randomness size first, then randomness data (using fixed-width types)
         uint32_t randomness_size_32 = (uint32_t)commitment->randomness_size;
@@ -1732,53 +1668,40 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
         memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
         l_offset += commitment->randomness_size;
 
-        // Serialize quantum-resistant layer sizes (using fixed-width types)
-        uint32_t ring_lwe_size_32 = (uint32_t)commitment->ring_lwe_size;
-        uint32_t ntru_size_32 = (uint32_t)commitment->ntru_size;
-        uint32_t code_size_32 = (uint32_t)commitment->code_size;
-        uint32_t binding_proof_size_32 = (uint32_t)commitment->binding_proof_size;
+        // Serialize Acorn commitment components (clean structure)
+        uint32_t l_acorn_proof_size_32 = (uint32_t)commitment->acorn_proof_size;
+        uint32_t l_randomness_size_32 = (uint32_t)commitment->randomness_size;
         
-        memcpy(a_output + l_offset, &ring_lwe_size_32, sizeof(uint32_t));
+        // Serialize sizes first
+        memcpy(a_output + l_offset, &l_acorn_proof_size_32, sizeof(uint32_t));
         l_offset += sizeof(uint32_t);
-        memcpy(a_output + l_offset, &ntru_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        memcpy(a_output + l_offset, &code_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        memcpy(a_output + l_offset, &binding_proof_size_32, sizeof(uint32_t));
+        memcpy(a_output + l_offset, &l_randomness_size_32, sizeof(uint32_t));
         l_offset += sizeof(uint32_t);
 
-        // Serialize dynamic arrays content
-        memcpy(a_output + l_offset, commitment->ring_lwe_layer, commitment->ring_lwe_size);
-        l_offset += commitment->ring_lwe_size;
+        // Serialize Acorn proof
+        memcpy(a_output + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
 
-        memcpy(a_output + l_offset, commitment->ntru_layer, commitment->ntru_size);
-        l_offset += commitment->ntru_size;
+        // Serialize linkability tag (fixed size)
+        memcpy(a_output + l_offset, commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+        l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 
 
-        memcpy(a_output + l_offset, commitment->code_layer, commitment->code_size);
-        l_offset += commitment->code_size;
+        memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
+        l_offset += commitment->randomness_size;
 
-        memcpy(a_output + l_offset, commitment->binding_proof, commitment->binding_proof_size);
-        l_offset += commitment->binding_proof_size;
+        memcpy(a_output + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+        l_offset += commitment->acorn_proof_size;
     }
 
-    // Serialize responses (dynamic size, using fixed-width types)
-    for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        // Serialize response size first (using fixed-width type)
-        uint32_t response_size_32 = (uint32_t)a_sig->responses[l_i].value_size;
-        memcpy(a_output + l_offset, &response_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        // Serialize response value
-        memcpy(a_output + l_offset, a_sig->responses[l_i].value, a_sig->responses[l_i].value_size);
-        l_offset += a_sig->responses[l_i].value_size;
-    }
+    // NOTE: Response serialization removed - Acorn proofs in commitments handle all ZKP
 
-    // Serialize chipmunk_signature (dynamic size with length prefix)
-    uint32_t sig_size_32 = (uint32_t)a_sig->chipmunk_signature_size;
+    // Serialize signature (dynamic size with length prefix)
+    uint32_t sig_size_32 = (uint32_t)a_sig->signature_size;
     memcpy(a_output + l_offset, &sig_size_32, sizeof(uint32_t));
     l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, a_sig->chipmunk_signature, a_sig->chipmunk_signature_size);
-    l_offset += a_sig->chipmunk_signature_size;
+    memcpy(a_output + l_offset, a_sig->signature, a_sig->signature_size);
+    l_offset += a_sig->signature_size;
     
     // Serialize ring hash
     memcpy(a_output + l_offset, a_sig->ring_hash, sizeof(a_sig->ring_hash));
@@ -1814,10 +1737,7 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
         }
     } else {
         // Serialize key hashes
-        if (a_sig->ring_key_hashes && a_sig->ring_key_hashes_size > 0) {
-            memcpy(a_output + l_offset, a_sig->ring_key_hashes, a_sig->ring_key_hashes_size);
-            l_offset += a_sig->ring_key_hashes_size;
-        }
+        // NOTE: ring_key_hashes serialization removed - only ring_hash is serialized
     }
 
     return 0;
@@ -1916,18 +1836,15 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
 
     // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
     // Check for potential overflow before allocating memory for commitments and responses
-    const size_t l_commitment_size = sizeof(chipmunk_ring_commitment_t);
-    const size_t l_response_size = sizeof(chipmunk_ring_response_t);
+    const size_t l_commitment_size = sizeof(chipmunk_ring_acorn_t);
+    // NOTE: response_size removed - responses no longer used
 
     // Prevent integer overflow: check if a_sig->ring_size * sizeof(struct) would overflow
     if (a_sig->ring_size > (SIZE_MAX / l_commitment_size)) {
         log_it(L_CRITICAL, "Integer overflow detected in deserialization: ring size %u would overflow commitment allocation", a_sig->ring_size);
         return -EOVERFLOW;
     }
-    if (a_sig->ring_size > (SIZE_MAX / l_response_size)) {
-        log_it(L_CRITICAL, "Integer overflow detected in deserialization: ring size %u would overflow response allocation", a_sig->ring_size);
-        return -EOVERFLOW;
-    }
+    // NOTE: Response overflow check removed - responses no longer used
 
     // ANONYMITY: Do not deserialize signer_index for anonymity
 
@@ -1941,21 +1858,16 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     memcpy(a_sig->challenge, a_input + l_offset, CHIPMUNK_RING_CHALLENGE_SIZE);
     l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
 
-    // Allocate memory for commitments and responses with overflow protection
+    // Allocate memory for commitments with overflow protection
     log_it(L_INFO, "chipmunk_ring_signature_from_bytes: Allocating arrays for ring_size=%u", a_sig->ring_size);
-    a_sig->commitments = DAP_NEW_Z_COUNT(chipmunk_ring_commitment_t, a_sig->ring_size);
-    a_sig->responses = DAP_NEW_Z_COUNT(chipmunk_ring_response_t, a_sig->ring_size);
+    a_sig->acorn_proofs = DAP_NEW_Z_COUNT(chipmunk_ring_acorn_t, a_sig->ring_size);
 
-    if (!a_sig->commitments || !a_sig->responses) {
-        log_it(L_CRITICAL, "Failed to allocate commitments/responses arrays for ring_size=%u", a_sig->ring_size);
+    if (!a_sig->acorn_proofs) {
+        log_it(L_CRITICAL, "Failed to allocate commitments array for ring_size=%u", a_sig->ring_size);
         // Manual cleanup to avoid double-free
-        if (a_sig->commitments) {
-            DAP_FREE(a_sig->commitments);
-            a_sig->commitments = NULL;
-        }
-        if (a_sig->responses) {
-            DAP_FREE(a_sig->responses);
-            a_sig->responses = NULL;
+        if (a_sig->acorn_proofs) {
+            DAP_FREE(a_sig->acorn_proofs);
+            a_sig->acorn_proofs = NULL;
         }
         return -ENOMEM;
     }
@@ -1973,165 +1885,94 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
-        uint32_t randomness_size_32;
-        memcpy(&randomness_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->commitments[l_i].randomness_size = (size_t)randomness_size_32;
-        l_offset += sizeof(uint32_t);
+        // NOTE: Old randomness deserialization removed - now handled in Acorn block below
         
-        log_it(L_DEBUG, "chipmunk_ring_signature_from_bytes: Read randomness_size=%zu for commitment %zu", 
-               a_sig->commitments[l_i].randomness_size, l_i);
-
-        // Allocate and deserialize randomness data
-        if (a_sig->commitments[l_i].randomness_size > 0) {
-        a_sig->commitments[l_i].randomness = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].randomness_size);
-        if (!a_sig->commitments[l_i].randomness) {
-                log_it(L_ERROR, "Failed to allocate randomness for commitment %zu (size=%zu)", l_i, a_sig->commitments[l_i].randomness_size);
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-            }
-        } else {
-            // Zero-size randomness is invalid for cryptographic security
-            log_it(L_ERROR, "Zero-size randomness for commitment %zu is invalid", l_i);
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-
-        if (l_offset + a_sig->commitments[l_i].randomness_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        
-        // Copy randomness data only if size > 0
-        if (a_sig->commitments[l_i].randomness_size > 0) {
-        memcpy(a_sig->commitments[l_i].randomness, a_input + l_offset, a_sig->commitments[l_i].randomness_size);
-        }
-        l_offset += a_sig->commitments[l_i].randomness_size;
-
-        // Deserialize layer sizes 
+        // Deserialize Acorn commitment sizes 
         if (l_offset + CHIPMUNK_RING_QR_LAYER_COUNT * sizeof(uint32_t) > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
         
-        uint32_t ring_lwe_size_32, ntru_size_32, code_size_32, binding_proof_size_32;
+        uint32_t acorn_proof_size_32, randomness_size_32, linkability_tag_size_32;
         
-        memcpy(&ring_lwe_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->commitments[l_i].ring_lwe_size = (size_t)ring_lwe_size_32;
+        memcpy(&acorn_proof_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->acorn_proofs[l_i].acorn_proof_size = (size_t)acorn_proof_size_32;
         l_offset += sizeof(uint32_t);
         
-        memcpy(&ntru_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->commitments[l_i].ntru_size = (size_t)ntru_size_32;
+        memcpy(&randomness_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->acorn_proofs[l_i].randomness_size = (size_t)randomness_size_32;
         l_offset += sizeof(uint32_t);
         
-        memcpy(&code_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->commitments[l_i].code_size = (size_t)code_size_32;
-        l_offset += sizeof(uint32_t);
-        
-        memcpy(&binding_proof_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->commitments[l_i].binding_proof_size = (size_t)binding_proof_size_32;
+        memcpy(&linkability_tag_size_32, a_input + l_offset, sizeof(uint32_t));
+        a_sig->acorn_proofs[l_i].linkability_tag_size = (size_t)linkability_tag_size_32;
         l_offset += sizeof(uint32_t);
 
-        // Allocate memory for quantum-resistant layers
-        log_it(L_DEBUG, "Allocating quantum-resistant layers for commitment %zu: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu", 
-               l_i, a_sig->commitments[l_i].ring_lwe_size, a_sig->commitments[l_i].ntru_size,
-               a_sig->commitments[l_i].code_size, a_sig->commitments[l_i].binding_proof_size);
-        a_sig->commitments[l_i].ring_lwe_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ring_lwe_size);
-        a_sig->commitments[l_i].ntru_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].ntru_size);
-        a_sig->commitments[l_i].code_layer = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].code_size);
-        a_sig->commitments[l_i].binding_proof = DAP_NEW_Z_SIZE(uint8_t, a_sig->commitments[l_i].binding_proof_size);
+        // Allocate memory for Acorn commitment components
+        log_it(L_DEBUG, "Allocating Acorn commitment %zu: acorn_proof=%zu, randomness=%zu, linkability=%zu", 
+               l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
+               a_sig->acorn_proofs[l_i].linkability_tag_size);
+        a_sig->acorn_proofs[l_i].acorn_proof = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].acorn_proof_size);
+        a_sig->acorn_proofs[l_i].randomness = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].randomness_size);
+        a_sig->acorn_proofs[l_i].linkability_tag = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].linkability_tag_size);
 
-        if (!a_sig->commitments[l_i].ring_lwe_layer || !a_sig->commitments[l_i].ntru_layer ||
-            !a_sig->commitments[l_i].code_layer || !a_sig->commitments[l_i].binding_proof) {
-            log_it(L_ERROR, "Failed to allocate quantum-resistant layers for commitment %zu (ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu)", 
-                   l_i, a_sig->commitments[l_i].ring_lwe_size, a_sig->commitments[l_i].ntru_size,
-                   a_sig->commitments[l_i].code_size, a_sig->commitments[l_i].binding_proof_size);
+        if (!a_sig->acorn_proofs[l_i].acorn_proof || !a_sig->acorn_proofs[l_i].randomness ||
+            !a_sig->acorn_proofs[l_i].linkability_tag) {
+            log_it(L_ERROR, "Failed to allocate Acorn commitment %zu (acorn_proof=%zu, randomness=%zu, linkability=%zu)", 
+                   l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
+                   a_sig->acorn_proofs[l_i].linkability_tag_size);
             chipmunk_ring_signature_free(a_sig);
             return -ENOMEM;
         }
 
-        // Deserialize dynamic arrays content
-        size_t total_layer_size = a_sig->commitments[l_i].ring_lwe_size +
-                                 a_sig->commitments[l_i].ntru_size +
-                                 a_sig->commitments[l_i].code_size +
-                                 a_sig->commitments[l_i].binding_proof_size;
+        // Deserialize Acorn commitment content
+        size_t total_acorn_size = a_sig->acorn_proofs[l_i].acorn_proof_size +
+                                 a_sig->acorn_proofs[l_i].randomness_size +
+                                 a_sig->acorn_proofs[l_i].linkability_tag_size;
 
-        if (l_offset + total_layer_size > a_input_size) {
+        if (l_offset + total_acorn_size > a_input_size) {
             chipmunk_ring_signature_free(a_sig);
             return -EINVAL;
         }
 
-        memcpy(a_sig->commitments[l_i].ring_lwe_layer, a_input + l_offset, a_sig->commitments[l_i].ring_lwe_size);
-        l_offset += a_sig->commitments[l_i].ring_lwe_size;
+        memcpy(a_sig->acorn_proofs[l_i].acorn_proof, a_input + l_offset, a_sig->acorn_proofs[l_i].acorn_proof_size);
+        l_offset += a_sig->acorn_proofs[l_i].acorn_proof_size;
 
-        memcpy(a_sig->commitments[l_i].ntru_layer, a_input + l_offset, a_sig->commitments[l_i].ntru_size);
-        l_offset += a_sig->commitments[l_i].ntru_size;
+        memcpy(a_sig->acorn_proofs[l_i].randomness, a_input + l_offset, a_sig->acorn_proofs[l_i].randomness_size);
+        l_offset += a_sig->acorn_proofs[l_i].randomness_size;
 
-        memcpy(a_sig->commitments[l_i].code_layer, a_input + l_offset, a_sig->commitments[l_i].code_size);
-        l_offset += a_sig->commitments[l_i].code_size;
+        memcpy(a_sig->acorn_proofs[l_i].linkability_tag, a_input + l_offset, a_sig->acorn_proofs[l_i].linkability_tag_size);
+        l_offset += a_sig->acorn_proofs[l_i].linkability_tag_size;
 
-        memcpy(a_sig->commitments[l_i].binding_proof, a_input + l_offset, a_sig->commitments[l_i].binding_proof_size);
-        l_offset += a_sig->commitments[l_i].binding_proof_size;
-
-        debug_if(s_debug_more, L_INFO, "Deserialized optimized quantum-resistant commitment %zu: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu",
-                 l_i, a_sig->commitments[l_i].ring_lwe_size, a_sig->commitments[l_i].ntru_size,
-                 a_sig->commitments[l_i].code_size, a_sig->commitments[l_i].binding_proof_size);
+        debug_if(s_debug_more, L_INFO, "Deserialized Acorn commitment %zu: acorn_proof=%zu, randomness=%zu, linkability=%zu",
+                 l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
+                 a_sig->acorn_proofs[l_i].linkability_tag_size);
     }
 
-    // Deserialize responses (dynamic size, using fixed-width types)
-    log_it(L_INFO, "chipmunk_ring_signature_from_bytes: Starting responses deserialization, ring_size=%u", a_sig->ring_size);
-    for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        log_it(L_DEBUG, "chipmunk_ring_signature_from_bytes: Processing response %zu, offset=%zu", l_i, l_offset);
-        // Deserialize response size (using fixed-width type)
-        if (l_offset + sizeof(uint32_t) > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        uint32_t response_size_32;
-        memcpy(&response_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->responses[l_i].value_size = (size_t)response_size_32;
-        l_offset += sizeof(uint32_t);
-        
-        log_it(L_DEBUG, "chipmunk_ring_signature_from_bytes: Read response_size=%zu for response %zu", 
-               a_sig->responses[l_i].value_size, l_i);
-        
-        // Allocate and deserialize response value
-        a_sig->responses[l_i].value = DAP_NEW_Z_SIZE(uint8_t, a_sig->responses[l_i].value_size);
-        if (!a_sig->responses[l_i].value) {
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-        }
-        
-        if (l_offset + a_sig->responses[l_i].value_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        memcpy(a_sig->responses[l_i].value, a_input + l_offset, a_sig->responses[l_i].value_size);
-        l_offset += a_sig->responses[l_i].value_size;
-    }
+    // NOTE: Response deserialization removed - Acorn proofs in commitments handle all ZKP
 
-    // Deserialize chipmunk_signature (dynamic size with length prefix)
+    // Deserialize signature (dynamic size with length prefix)
     if (l_offset + sizeof(uint32_t) > a_input_size) {
         chipmunk_ring_signature_free(a_sig);
         return -EINVAL;
     }
     uint32_t sig_size_32;
     memcpy(&sig_size_32, a_input + l_offset, sizeof(uint32_t));
-    a_sig->chipmunk_signature_size = (size_t)sig_size_32;
+    a_sig->signature_size = (size_t)sig_size_32;
     l_offset += sizeof(uint32_t);
     
     // Allocate and read chipmunk signature
-    a_sig->chipmunk_signature = DAP_NEW_Z_SIZE(uint8_t, a_sig->chipmunk_signature_size);
-    if (!a_sig->chipmunk_signature) {
+    a_sig->signature = DAP_NEW_Z_SIZE(uint8_t, a_sig->signature_size);
+    if (!a_sig->signature) {
         chipmunk_ring_signature_free(a_sig);
         return -ENOMEM;
     }
     
-    if (l_offset + a_sig->chipmunk_signature_size > a_input_size) {
+    if (l_offset + a_sig->signature_size > a_input_size) {
         chipmunk_ring_signature_free(a_sig);
         return -EINVAL;
     }
-    memcpy(a_sig->chipmunk_signature, a_input + l_offset, a_sig->chipmunk_signature_size);
-    l_offset += a_sig->chipmunk_signature_size;
+    memcpy(a_sig->signature, a_input + l_offset, a_sig->signature_size);
+    l_offset += a_sig->signature_size;
     
     // Deserialize ring hash
     if (l_offset + CHIPMUNK_RING_RING_HASH_SIZE > a_input_size) {
@@ -2194,20 +2035,7 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         
     } else {
         // Deserialize key hashes
-        a_sig->ring_key_hashes_size = a_sig->ring_size * CHIPMUNK_RING_KEY_HASH_SIZE;
-        if (l_offset + a_sig->ring_key_hashes_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        
-        a_sig->ring_key_hashes = DAP_NEW_Z_SIZE(uint8_t, a_sig->ring_key_hashes_size);
-        if (!a_sig->ring_key_hashes) {
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-        }
-        
-        memcpy(a_sig->ring_key_hashes, a_input + l_offset, a_sig->ring_key_hashes_size);
-        l_offset += a_sig->ring_key_hashes_size;
+        // NOTE: ring_key_hashes deserialization removed - only ring_hash is deserialized
         
         log_it(L_DEBUG, "Deserialized %u key hashes", a_sig->ring_size);
     }
@@ -2311,48 +2139,58 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
     dap_return_val_if_fail(a_signature, -EINVAL);
     dap_return_val_if_fail(a_key_resolver, -EINVAL);
     dap_return_val_if_fail(!a_signature->use_embedded_keys, -EINVAL);
-    dap_return_val_if_fail(a_signature->ring_key_hashes, -EINVAL);
     
-    log_it(L_INFO, "External key verification for ring_size=%u", a_signature->ring_size);
+    log_it(L_INFO, "External key verification for ring_size=%u using ring hash", a_signature->ring_size);
     
-    // Resolve all public keys from hashes using callback
+    // Resolve all public keys using ring hash with callback
     chipmunk_ring_container_t l_resolved_ring;
     memset(&l_resolved_ring, 0, sizeof(l_resolved_ring));
     l_resolved_ring.size = a_signature->ring_size;
+    l_resolved_ring.ring_hash_size = a_signature->ring_hash_size;
+    l_resolved_ring.ring_hash = DAP_NEW_Z_SIZE(uint8_t, l_resolved_ring.ring_hash_size);
+    l_resolved_ring.public_keys = DAP_NEW_Z_COUNT(chipmunk_ring_public_key_t, l_resolved_ring.size);
     
-    // Allocate public keys array
-    l_resolved_ring.public_keys = DAP_NEW_Z_COUNT(chipmunk_ring_public_key_t, a_signature->ring_size);
-    if (!l_resolved_ring.public_keys) {
-        log_it(L_CRITICAL, "Failed to allocate resolved public keys");
+    if (!l_resolved_ring.public_keys || !l_resolved_ring.ring_hash) {
+        DAP_DELETE(l_resolved_ring.public_keys);
+        DAP_DELETE(l_resolved_ring.ring_hash);
         return -ENOMEM;
     }
     
-    // Resolve each public key from its hash
-    for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-        const uint8_t *key_hash = a_signature->ring_key_hashes + i * 32;
-        
-        int resolve_result = a_key_resolver(key_hash, &l_resolved_ring.public_keys[i], a_resolver_context);
-        if (resolve_result != 0) {
-            log_it(L_ERROR, "Failed to resolve public key %u from hash", i);
-            DAP_DELETE(l_resolved_ring.public_keys);
-            return resolve_result;
-        }
-        
-        // Verify that resolved key hash matches stored hash
-        dap_hash_fast_t verify_hash;
-        bool hash_result = dap_hash_fast(&l_resolved_ring.public_keys[i], 
-                                       sizeof(chipmunk_ring_public_key_t), &verify_hash);
-        if (!hash_result || memcmp(&verify_hash, key_hash, 32) != 0) {
-            log_it(L_ERROR, "Resolved key %u hash mismatch", i);
-            DAP_DELETE(l_resolved_ring.public_keys);
-            return -EINVAL;
-        }
-        
-        log_it(L_DEBUG, "Resolved and verified public key %u", i);
+    // Use ring hash to resolve all keys via external resolver
+    // The resolver should return all keys that match this ring hash
+    int resolve_result = a_key_resolver(a_signature->ring_hash, l_resolved_ring.public_keys, a_resolver_context);
+    if (resolve_result != 0) {
+        log_it(L_ERROR, "Failed to resolve public keys from ring hash");
+        DAP_DELETE(l_resolved_ring.public_keys);
+        DAP_DELETE(l_resolved_ring.ring_hash);
+        return resolve_result;
     }
     
+    // Verify that resolved keys produce the same ring hash
+    dap_hash_fast_t l_verify_ring_hash;
+    bool l_hash_result = dap_hash_fast(l_resolved_ring.public_keys, 
+                                     l_resolved_ring.size * sizeof(chipmunk_ring_public_key_t), 
+                                     &l_verify_ring_hash);
+    if (!l_hash_result) {
+        log_it(L_ERROR, "Failed to compute ring hash for verification");
+        DAP_DELETE(l_resolved_ring.public_keys);
+        DAP_DELETE(l_resolved_ring.ring_hash);
+        return -1;
+    }
+    
+    size_t l_hash_compare_size = (a_signature->ring_hash_size < sizeof(l_verify_ring_hash)) ? 
+                                a_signature->ring_hash_size : sizeof(l_verify_ring_hash);
+    if (memcmp(&l_verify_ring_hash, a_signature->ring_hash, l_hash_compare_size) != 0) {
+        log_it(L_ERROR, "Resolved keys ring hash mismatch - invalid key set");
+        DAP_DELETE(l_resolved_ring.public_keys);
+        DAP_DELETE(l_resolved_ring.ring_hash);
+        return -EINVAL;
+    }
+    
+    log_it(L_DEBUG, "Successfully resolved and verified %u public keys", l_resolved_ring.size);
+    
     // Copy ring hash from signature
-    memcpy(l_resolved_ring.ring_hash, a_signature->ring_hash, sizeof(l_resolved_ring.ring_hash));
+    memcpy(l_resolved_ring.ring_hash, a_signature->ring_hash, l_resolved_ring.ring_hash_size);
     
     // Use standard verification with resolved ring
     int verify_result = chipmunk_ring_verify(a_message, a_message_size, a_signature, &l_resolved_ring);

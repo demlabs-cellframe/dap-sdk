@@ -49,15 +49,15 @@ extern "C" {
  * @param a_message_size Size of message
  * @return 0 on success, negative on error
  */
-int chipmunk_ring_commitment_create(chipmunk_ring_commitment_t *a_commitment,
-                                 const chipmunk_ring_public_key_t *a_public_key,
-                                 const void *a_message, size_t a_message_size);
+int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
+                               const chipmunk_ring_public_key_t *a_public_key,
+                               const void *a_message, size_t a_message_size);
 
 /**
- * @brief Free memory allocated for commitment dynamic arrays
- * @param a_commitment Commitment to free
+ * @brief Free memory allocated for Acorn verification dynamic arrays
+ * @param a_acorn Acorn verification to free
  */
-void chipmunk_ring_commitment_free(chipmunk_ring_commitment_t *a_commitment);
+void chipmunk_ring_acorn_free(chipmunk_ring_acorn_t *a_acorn);
 
 /**
  * @brief Create Ring-LWE commitment layer (~90,000 qubits required for quantum attack)

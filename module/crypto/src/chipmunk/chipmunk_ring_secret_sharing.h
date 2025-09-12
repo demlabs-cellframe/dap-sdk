@@ -70,10 +70,8 @@ typedef struct chipmunk_ring_share {
     uint32_t required_signers;                   ///< Required signers count
     uint32_t total_participants;                 ///< Total participants n
     
-    // Zero-knowledge components (integrated with existing commitment)
-    chipmunk_ring_commitment_t zk_commitment;    ///< ZK commitment using existing system
-    uint8_t *zk_proof;                           ///< ZK proof of correct share generation (dynamic size)
-    size_t zk_proof_size;                        ///< Size of ZK proof (configurable)
+    // Zero-knowledge components (integrated Acorn verification)
+    chipmunk_ring_acorn_t acorn_proof;           ///< Acorn verification proof handles all ZK needs
     
     // Metadata
     bool is_valid;                               ///< Share validity flag

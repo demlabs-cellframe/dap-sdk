@@ -329,8 +329,9 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     chipmunk_ring_signature_t l_ring_sig;
     memset(&l_ring_sig, 0, sizeof(l_ring_sig));
 
-    // Determine if we should use embedded keys based on ring size
-    bool use_embedded_keys = (a_ring_size <= CHIPMUNK_RING_SMALL_RING_THRESHOLD); // Embed for small rings, external for large
+    // USER CHOICE: Always use embedded keys by default (user can override via extended API)
+    // Embedded keys provide self-contained signatures suitable for any ring size
+    bool use_embedded_keys = true; // Default: embed keys for portability and simplicity
     
     int l_result = chipmunk_ring_sign(&l_priv_key, a_data, a_data_size,
                                      &l_ring, a_required_signers, use_embedded_keys, &l_ring_sig);
