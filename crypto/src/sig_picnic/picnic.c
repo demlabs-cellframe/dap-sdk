@@ -121,6 +121,10 @@ int picnic_sign(picnic_privatekey_t* sk, const uint8_t* message, size_t message_
 {
     int ret;
     signature_t* sig = (signature_t*)malloc(sizeof(signature_t));
+    // Security fix: check malloc result
+    if (!sig) {
+        return -1;
+    }
     paramset_t paramset;
 
     ret = get_param_set(sk->params, &paramset);
@@ -187,6 +191,10 @@ int picnic_verify(picnic_publickey_t* pk, const uint8_t* message, size_t message
     }
 
     signature_t* sig = (signature_t*)malloc(sizeof(signature_t));
+    // Security fix: check malloc result
+    if (!sig) {
+        return -1;
+    }
     allocateSignature(sig, &paramset);
     if (sig == NULL) {
         return -1;

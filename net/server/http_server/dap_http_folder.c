@@ -202,10 +202,17 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 
 #ifndef _WIN32
 
-  struct stat file_stat;
-
-  if ( stat(cl_ht_file->local_path, &file_stat) != 0 ) 
+  // Security fix: use fstat after fopen to prevent TOCTOU attack
+  FILE *l_temp_file = fopen(cl_ht_file->local_path, "rb");
+  if (!l_temp_file)
     goto err;
+  
+  struct stat file_stat;
+  if (fstat(fileno(l_temp_file), &file_stat) != 0) {
+    fclose(l_temp_file);
+    goto err;
+  }
+  fclose(l_temp_file);
 
   cl_ht->out_last_modified  = file_stat.st_mtime;
   cl_ht->out_content_length = file_stat.st_size;

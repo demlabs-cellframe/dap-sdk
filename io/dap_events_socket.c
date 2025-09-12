@@ -1871,7 +1871,8 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
+    // Security fix: use safe vsprintf with size limit
+    l_data_size = vsnprintf(l_msg->data, l_msg->data_size, a_format, ap_copy);
     va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send_to_input(a_es_input, l_msg );
