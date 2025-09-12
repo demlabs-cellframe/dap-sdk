@@ -97,6 +97,13 @@
 #define CHIPMUNK_RING_HEADER_PARAMS_COUNT 3        // chipmunk_n, chipmunk_gamma, randomness_size
 #define CHIPMUNK_RING_ZK_PARAMS_COUNT 3            // zk_proof_size, zk_iterations, coordination_round
 
+// ================ ACORN VERIFICATION PARAMETERS ================
+
+// Acorn Verification scheme constants
+#define CHIPMUNK_RING_ACORN_VERIFICATION_VERSION 1     // Version of Acorn scheme
+#define CHIPMUNK_RING_ACORN_MIN_ENTROPY_RATIO 0.1      // Minimum entropy ratio for valid proofs
+#define CHIPMUNK_RING_ACORN_PROOF_PREFIX "ACORN_"      // Prefix for domain separation
+
 // ================ COMPUTED PARAMETERS ================
 
 // Randomness and configurable sizes

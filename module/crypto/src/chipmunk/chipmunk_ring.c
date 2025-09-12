@@ -865,7 +865,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         }
         a_signature->zk_proofs_size = total_zk_size;
         
-        // Generate ZK proofs for coordination protocol using commitment-based approach
+        // Generate ZK proofs using Acorn Verification scheme (commitment-based approach)
         for (uint32_t i = 0; i < a_required_signers; i++) {
             uint8_t *current_proof = a_signature->threshold_zk_proofs + i * a_signature->zk_proof_size_per_participant;
             
@@ -923,7 +923,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                 return -1;
             }
             
-            debug_if(s_debug_more, L_INFO, "Generated commitment-based ZK proof for participant %u", i);
+            debug_if(s_debug_more, L_INFO, "Generated Acorn proof for participant %u", i);
         }
         
         a_signature->is_coordinated = false; // Will be set to true after successful coordination
@@ -1254,8 +1254,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             // Extract ZK proof for this participant
             size_t l_proof_size = a_signature->zk_proof_size_per_participant;
             
-            // LATTICE-BASED CUSTOM ZK PROOF VERIFICATION
-            // Implementation: Hash-based ZK using our custom lattice scheme (NOT Fiat-Shamir)
+            // ACORN VERIFICATION: ChipmunkRing Custom ZK Proof Verification
+            // Implementation: Lattice-based hash verification using Acorn scheme
             bool l_zk_valid = false;
             
             // Step 1: Basic validation
@@ -1264,8 +1264,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                          i, l_proof_size, CHIPMUNK_RING_ZK_PROOF_SIZE_MIN);
                 l_zk_valid = false;
             } else {
-                // Step 2: Lattice-based ZK verification using our custom scheme
-                // This matches the generation algorithm in chipmunk_ring_sign
+                // Step 2: Acorn Verification using lattice-based hash scheme
+                // Each proof is compact like an acorn but contains full verification data
                 
                 // Reconstruct the same input that was used during generation
                 // Based on commitment randomness + context (matches generation logic)
@@ -1296,7 +1296,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                         memcpy(verify_input + verify_offset, &participant_context, sizeof(uint32_t));
                         verify_offset += sizeof(uint32_t);
                         
-                        // Generate expected ZK proof using our custom hash-based scheme
+                        // Generate expected Acorn proof using lattice-based hash scheme
                         // Use the same salt structure as in generation
                         uint8_t challenge_salt[sizeof(a_signature->challenge) + 
                                              sizeof(a_signature->required_signers) + 
@@ -1316,28 +1316,39 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                             .salt_size = sizeof(challenge_salt)
                         };
                         
-                        uint8_t expected_proof[CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE];
-                        int hash_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                                  verify_input, verify_offset,
-                                                  expected_proof, sizeof(expected_proof),
+                        // Use dynamic proof size from signature (not constant)
+                        uint8_t *expected_proof = DAP_NEW_Z_SIZE(uint8_t, a_signature->zk_proof_size_per_participant);
+                        if (!expected_proof) {
+                            debug_if(s_debug_more, L_WARNING, "ZK proof %u: failed to allocate expected proof", i);
+                            DAP_DELETE(verify_input);
+                            l_zk_valid = false;
+                        } else {
+                            int hash_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
+                                                      verify_input, verify_offset,
+                                                      expected_proof, a_signature->zk_proof_size_per_participant,
                                                   DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
                                                   &verify_params);
                         
-                        if (hash_result == 0) {
-                            // Constant-time comparison (security critical)
-                            size_t compare_size = l_proof_size < sizeof(expected_proof) ? l_proof_size : sizeof(expected_proof);
-                            
-                            uint8_t verification_diff = 0;
-                            for (size_t j = 0; j < compare_size; j++) {
-                                verification_diff |= (l_current_zk_proof[j] ^ expected_proof[j]);
+                            if (hash_result == 0) {
+                                // Constant-time comparison (security critical)
+                                // Use actual proof size from signature
+                                size_t compare_size = l_proof_size < a_signature->zk_proof_size_per_participant ? 
+                                                    l_proof_size : a_signature->zk_proof_size_per_participant;
+                                
+                                uint8_t verification_diff = 0;
+                                for (size_t j = 0; j < compare_size; j++) {
+                                    verification_diff |= (l_current_zk_proof[j] ^ expected_proof[j]);
+                                }
+                                
+                                l_zk_valid = (verification_diff == 0);
+                                
+                                debug_if(s_debug_more, L_INFO, "ZK proof %u: Acorn verification %s (size=%zu)", 
+                                         i, l_zk_valid ? "SUCCESS" : "FAILED", compare_size);
+                            } else {
+                                debug_if(s_debug_more, L_WARNING, "ZK proof %u: Acorn hash generation failed", i);
                             }
                             
-                            l_zk_valid = (verification_diff == 0);
-                            
-                            debug_if(s_debug_more, L_INFO, "ZK proof %u: Custom lattice verification %s", 
-                                     i, l_zk_valid ? "SUCCESS" : "FAILED");
-                        } else {
-                            debug_if(s_debug_more, L_WARNING, "ZK proof %u: hash generation failed", i);
+                            DAP_DELETE(expected_proof);
                         }
                         
                         DAP_DELETE(verify_input);
@@ -1390,8 +1401,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         l_signature_verified = (l_valid_zk_proofs >= a_signature->required_signers && l_aggregation_valid);
         
         if (l_signature_verified) {
-            log_it(L_INFO, "Multi-signer ZK verification completed successfully (%u/%u ZK proofs valid)", 
-                   l_valid_zk_proofs, a_signature->required_signers);
+        log_it(L_INFO, "Multi-signer Acorn verification completed successfully (%u/%u Acorn proofs valid)", 
+               l_valid_zk_proofs, a_signature->required_signers);
         } else {
             log_it(L_ERROR, "Multi-signer ZK verification failed (aggregation: %s, ZK proofs: %u/%u)", 
                    l_aggregation_valid ? "valid" : "invalid", l_valid_zk_proofs, a_signature->required_signers);
