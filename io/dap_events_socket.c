@@ -963,6 +963,12 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
         debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
                      atomic_load(&l_thd_count), (uint64_t)l_thread, a_es, a_arg);
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
+        // Security fix: check for integer overflow before size addition
+        if (a_es->buf_out_size_max > SIZE_MAX - l_basic_buf_size) {
+            log_it(L_ERROR, "Integer overflow in buffer size calculation (queue)");
+            pthread_rwlock_unlock(&a_es->buf_out_lock);
+            return;
+        }
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
         debug_if(g_debug_reactor, L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",

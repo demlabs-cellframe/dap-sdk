@@ -228,7 +228,12 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
  */
 static bool s_validate_table_name(const char *a_table_name)
 {
-    if (!a_table_name || strlen(a_table_name) == 0 || strlen(a_table_name) > 64) {
+    if (!a_table_name) {
+        return false;
+    }
+    // Security fix: use single strlen call to avoid race conditions
+    size_t table_name_len = strlen(a_table_name);
+    if (table_name_len == 0 || table_name_len > 64) {
         return false;
     }
     
