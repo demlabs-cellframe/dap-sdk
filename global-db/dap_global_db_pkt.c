@@ -157,10 +157,16 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
 static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t *a_obj, size_t a_bound_size, dap_stream_node_addr_t *a_addr)
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
-            dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len < a_pkt->value_len ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
+            dap_global_db_pkt_get_size(a_pkt) > a_bound_size) {
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
+        return NULL;
+    }
+    
+    // Security fix: proper overflow detection for size validation
+    if (a_pkt->group_len > SIZE_MAX - a_pkt->key_len ||
+        a_pkt->group_len + a_pkt->key_len > SIZE_MAX - a_pkt->value_len ||
+        a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
+        log_it(L_ERROR, "Broken GDB element: integer overflow or size mismatch");
         return NULL;
     }
     if (!a_pkt->group_len || a_pkt->group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {

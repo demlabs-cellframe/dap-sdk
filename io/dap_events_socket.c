@@ -2011,7 +2011,13 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
     byte_t *l_buf_out;
     
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
-        a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_required_size);
+        // Security fix: check for integer overflow before size calculation
+        size_t l_increase = dap_max(l_basic_buf_size, a_required_size);
+        if (a_es->buf_out_size_max > SIZE_MAX - l_increase) {
+            log_it(L_ERROR, "Integer overflow in buffer size calculation");
+            return NULL;
+        }
+        a_es->buf_out_size_max += l_increase;
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;
