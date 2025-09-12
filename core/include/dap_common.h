@@ -424,12 +424,25 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #ifdef HAVE_EXPLICIT_BZERO
 #include <strings.h>  // For explicit_bzero on systems that have it
 #else
-// Provide explicit_bzero implementation for platforms that don't have it (macOS, etc.)
-// Use macro to avoid conflicts with system declarations
-#define explicit_bzero(s, n) do { \
-    memset((s), 0, (n)); \
-    __asm__ __volatile__("" : : "r"(s) : "memory"); \
-} while(0)
+// Provide explicit_bzero implementation using C11 memset_s or fallback
+DAP_STATIC_INLINE void explicit_bzero(void *s, size_t n) {
+#ifdef __STDC_LIB_EXT1__
+    // Use C11 memset_s if available - guaranteed not to be optimized away
+    if (memset_s(s, n, 0, n) != 0) {
+        // Fallback if memset_s fails
+        volatile unsigned char *p = (volatile unsigned char *)s;
+        while (n--) *p++ = 0;
+    }
+#else
+    // Fallback implementation with memory barrier
+    memset(s, 0, n);
+#if defined(_MSC_VER)
+    __asm;
+#else
+    __asm__ __volatile__("" : : "r"(s) : "memory");
+#endif
+#endif
+}
 #endif
 
 /* Crossplatform print formats for integers and others */

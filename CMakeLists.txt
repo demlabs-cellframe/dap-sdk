@@ -5,10 +5,17 @@ set(DAP_SDK_NATIVE_VERSION "2.4-0")
 include(CheckFunctionExists)
 include(cmake/OS_Detection.cmake)
 
-# Check for explicit_bzero availability
+# Check for secure memory clearing functions
 check_function_exists(explicit_bzero HAVE_EXPLICIT_BZERO)
 if(HAVE_EXPLICIT_BZERO)
     add_definitions(-DHAVE_EXPLICIT_BZERO)
+endif()
+
+# Check for C11 memset_s availability
+include(CheckSymbolExists)
+check_symbol_exists(memset_s "string.h" HAVE_MEMSET_S)
+if(HAVE_MEMSET_S)
+    add_definitions(-D__STDC_LIB_EXT1__)
 endif()
 
 if (NOT DEFINED DAP_VERSION)
