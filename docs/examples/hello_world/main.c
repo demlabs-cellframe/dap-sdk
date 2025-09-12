@@ -40,7 +40,8 @@ int main(int argc, char *argv[]) {
     printf("\nMemory Management Example:\n");
     void *test_memory = DAP_NEW_Z_SIZE(char, 100);
     if (test_memory) {
-        strcpy((char*)test_memory, "Hello from DAP SDK!");
+        // Security fix: use safe string copy
+        dap_strncpy((char*)test_memory, "Hello from DAP SDK!", 99);
         printf("  Allocated memory: %s\n", (char*)test_memory);
         DAP_FREE(test_memory);
         printf("  ✓ Memory freed successfully\n");

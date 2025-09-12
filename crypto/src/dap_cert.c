@@ -116,7 +116,8 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
         return 0;
     }
     // Second pass we parse them all
-    strcpy(l_certs_str_dup, a_certs_str);
+    // Security fix: use safe string copy
+    dap_strncpy(l_certs_str_dup, a_certs_str, l_certs_str_len);
     l_cert_str = strtok_r(l_certs_str_dup, ",", &l_certs_tmp_ptrs);
 
     size_t l_certs_pos = 0;
