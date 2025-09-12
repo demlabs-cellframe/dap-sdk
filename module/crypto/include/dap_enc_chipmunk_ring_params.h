@@ -33,6 +33,16 @@
  * - Conservative choice: n=1024 → 2^300 operations, ~90,000 logical qubits
  */
 
+// ================ CHIPMUNK CORE CONSTANTS ================
+
+// Cryptographic constants (replace magic numbers)
+#define CHIPMUNK_RING_RHO_SEED_SIZE 32             // Size of rho_seed in bytes
+#define CHIPMUNK_RING_KEY_SEED_SIZE 32             // Size of key_seed in bytes  
+#define CHIPMUNK_RING_TR_SIZE 48                   // Size of tr (public key commitment) in bytes
+#define CHIPMUNK_RING_COEFF_SIZE 4                 // Size of polynomial coefficient in bytes (int32_t)
+#define CHIPMUNK_RING_POLY_COUNT_PUBLIC 2          // Number of polynomials in public key (v0, v1)
+#define CHIPMUNK_RING_MODULUS_BYTES 4              // Size of modulus in bytes (32-bit)
+
 // Chipmunk base parameters (must match chipmunk.h definitions)
 #define CHIPMUNK_RING_CHIPMUNK_N_DEFAULT 256       // Chipmunk security parameter N
 #define CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT 4     // Chipmunk gamma parameter
@@ -77,6 +87,15 @@
 
 // NTRU commitment layer size (computed from parameters)
 #define CHIPMUNK_RING_NTRU_COMMITMENT_SIZE_DEFAULT (CHIPMUNK_RING_NTRU_N_DEFAULT * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT)
+
+// ================ QUANTUM-RESISTANT LAYER CONSTANTS ================
+
+// Number of quantum-resistant layers (replace magic number 4)
+#define CHIPMUNK_RING_QR_LAYER_COUNT 4             // ring_lwe, ntru, code, binding
+
+// Header field counts (replace magic numbers)
+#define CHIPMUNK_RING_HEADER_PARAMS_COUNT 3        // chipmunk_n, chipmunk_gamma, randomness_size
+#define CHIPMUNK_RING_ZK_PARAMS_COUNT 3            // zk_proof_size, zk_iterations, coordination_round
 
 // ================ COMPUTED PARAMETERS ================
 
