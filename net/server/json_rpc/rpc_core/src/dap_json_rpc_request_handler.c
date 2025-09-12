@@ -3,6 +3,7 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_json_rpc.h"
+#include "dap_security_monitor.h"
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
@@ -59,6 +60,10 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     if (l_http_request->header.data_size > MAX_REQUEST_DATA_SIZE) {
         log_it(L_ERROR, "Request data size %u exceeds maximum allowed %d", 
                l_http_request->header.data_size, MAX_REQUEST_DATA_SIZE);
+        // Security monitoring: report suspicious packet size
+        DAP_SECURITY_REPORT_SUSPICIOUS_SIZE("unknown", 
+            dap_strdup_printf("Request size %u exceeds limit %d", 
+                             l_http_request->header.data_size, MAX_REQUEST_DATA_SIZE));
         dap_json_rpc_http_request_free(l_http_request);
         return NULL;
     }
