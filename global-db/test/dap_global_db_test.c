@@ -28,9 +28,7 @@ static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     "mdbx",
 #endif
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-    "pgsql",
-#endif
+    // Не тестируем pgsql - требует внешний сервер PostgreSQL
     "none"
 };
 
