@@ -31,7 +31,6 @@
 /**
  * @brief Chipmunk_Ring ring signature parameters
  */
-#define CHIPMUNK_RING_MAX_RING_SIZE 1024
 // Note: ZK proof parameters moved to dap_enc_chipmunk_ring_params.h
 // Note: CHIPMUNK_RING_SIGNATURE_SIZE is now defined in dap_enc_chipmunk_ring_params.h
 // with parametric form: CHIPMUNK_RING_SIGNATURE_SIZE(chipmunk_n, chipmunk_gamma)
@@ -79,6 +78,8 @@ typedef struct chipmunk_ring_acorn {
 
  } chipmunk_ring_acorn_t;
 
+// NOTE: chipmunk_ring_pq_params_t defined in dap_enc_chipmunk_ring.h
+
 // NOTE: Response structure removed - Acorn Verification handles all ZKP needs
 
 /**
@@ -118,9 +119,8 @@ typedef struct chipmunk_ring_signature {
     uint32_t zk_proof_size_per_participant;            ///< Configurable ZK proof size (default: 64)
     uint32_t zk_iterations;                            ///< Number of SHAKE-256 iterations for ZK proofs
     
-    // Linkability control (configurable for anonymity vs double-spend protection)
-    uint8_t linkability_mode;                          ///< Linkability mode (0=disabled, 1=message-only, 2=full)
-    uint8_t *linkability_tag;                          ///< Optional linkability tag (dynamic size)
+    // Linkability control 
+    uint8_t *linkability_tag;                          ///< Linkability tag for anti-replay protection (dynamic size)
     size_t linkability_tag_size;                       ///< Size of linkability tag
 } chipmunk_ring_signature_t;
 
@@ -275,11 +275,7 @@ int chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
  */
 int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
 
-/**
- * @brief Get current layer sizes
- */
-void chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
-                                  size_t *code_size, size_t *binding_proof_size);
+// REMOVED: chipmunk_ring_get_layer_sizes - quantum layers replaced by Acorn Verification
 
 /**
  * @brief Reset parameters to defaults

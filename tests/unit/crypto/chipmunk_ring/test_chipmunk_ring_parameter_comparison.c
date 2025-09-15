@@ -325,7 +325,8 @@ static bool s_test_parameter_performance(void) {
         
         // Get layer sizes
         size_t ring_lwe_size, ntru_size, code_size, binding_size;
-        dap_enc_chipmunk_ring_get_layer_sizes(&ring_lwe_size, &ntru_size, &code_size, &binding_size);
+        // REMOVED: quantum layer sizes - Acorn Verification handles all security
+        ring_lwe_size = 0; ntru_size = 0; code_size = 0; binding_size = 0;
         
         // Store results
         g_param_results[g_param_results_count].param_name = set->name;
@@ -591,6 +592,12 @@ bool test_chipmunk_ring_parameter_comparison(void) {
 int main(void) {
     // Initialize test framework
     dap_log_level_set(L_INFO);
+    
+    // Initialize ChipmunkRing
+    if (dap_enc_chipmunk_ring_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize ChipmunkRing");
+        return -1;
+    }
     
     // Run parameter comparison tests
     bool result = test_chipmunk_ring_parameter_comparison();

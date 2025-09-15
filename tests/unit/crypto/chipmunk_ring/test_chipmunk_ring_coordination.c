@@ -172,6 +172,12 @@ int main(void) {
     // Initialize DAP
     dap_enc_key_init();
     
+    // Initialize ChipmunkRing
+    if (dap_enc_chipmunk_ring_init() != 0) {
+        dap_test_msg("Failed to initialize ChipmunkRing");
+        return -1;
+    }
+    
     // Run tests
     test_basic_coordination();
     test_coordination_thresholds();

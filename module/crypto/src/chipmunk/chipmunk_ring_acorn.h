@@ -51,7 +51,10 @@ extern "C" {
  */
 int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
                                const chipmunk_ring_public_key_t *a_public_key,
-                               const void *a_message, size_t a_message_size);
+                               const void *a_message, size_t a_message_size,
+                               size_t a_randomness_size,
+                               size_t a_acorn_proof_size,
+                               size_t a_linkability_tag_size);
 
 /**
  * @brief Free memory allocated for Acorn verification dynamic arrays
@@ -59,62 +62,11 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
  */
 void chipmunk_ring_acorn_free(chipmunk_ring_acorn_t *a_acorn);
 
-/**
- * @brief Create Ring-LWE commitment layer (~90,000 qubits required for quantum attack)
- * @param a_output Output buffer for commitment
- * @param a_output_size Size of output buffer
- * @param a_public_key Public key
- * @param randomness Randomness for commitment
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_commitment_create_ring_lwe_layer(uint8_t *a_output, size_t a_output_size,
-                                                 const chipmunk_ring_public_key_t *a_public_key,
-                                                 const uint8_t *randomness);
+// NOTE: Ring-LWE layer function removed - Acorn Verification handles all needs
 
-/**
- * @brief Create NTRU commitment layer (~70,000 qubits required for quantum attack)
- * @param a_output Output buffer for commitment
- * @param a_output_size Size of output buffer
- * @param a_public_key Public key
- * @param randomness Randomness for commitment
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_commitment_create_ntru_layer(uint8_t *a_output, size_t a_output_size,
-                                             const chipmunk_ring_public_key_t *a_public_key,
-                                             const uint8_t *randomness);
+// NOTE: NTRU layer function removed - Acorn Verification handles all needs
 
-/**
- * @brief Create code-based commitment layer (~80,000 qubits required for quantum attack)
- * @param a_output Output buffer for commitment
- * @param a_output_size Size of output buffer
- * @param a_public_key Public key
- * @param randomness Randomness for commitment
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_commitment_create_code_layer(uint8_t *a_output, size_t a_output_size,
-                                             const chipmunk_ring_public_key_t *a_public_key,
-                                             const uint8_t *randomness);
-
-/**
- * @brief Create binding proof for multi-layer commitment (100+ year security)
- * @param a_output Output buffer for binding proof
- * @param a_output_size Size of output buffer
- * @param a_public_key Public key
- * @param randomness Randomness for commitment
- * @param ring_lwe_layer Ring-LWE layer data
- * @param ring_lwe_size Ring-LWE layer size
- * @param ntru_layer NTRU layer data
- * @param ntru_size NTRU layer size
- * @param code_layer Code layer data
- * @param code_size Code layer size
- * @return 0 on success, negative on error
- */
-int chipmunk_ring_commitment_create_binding_proof(uint8_t *a_output, size_t a_output_size,
-                                                const chipmunk_ring_public_key_t *a_public_key,
-                                                const uint8_t *randomness,
-                                                const uint8_t *ring_lwe_layer, size_t ring_lwe_size,
-                                                const uint8_t *ntru_layer, size_t ntru_size,
-                                                const uint8_t *code_layer, size_t code_size);
+// NOTE: All old quantum layer functions removed - Acorn Verification handles all needs
 
 #ifdef __cplusplus
 }

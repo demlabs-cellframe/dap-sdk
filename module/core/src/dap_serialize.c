@@ -29,10 +29,11 @@ This file is part of DAP SDK the open source project
 
 #define LOG_TAG "dap_serialize"
 
+// Debug flag for detailed logging
+static bool s_debug_more = false;
+
 // Internal helper functions
-static size_t s_calc_field_size(const dap_serialize_field_t *a_field, 
-                                const void *a_object, 
-                                void *a_context);
+// Removed: legacy s_calc_field_size wrapper - consolidated into main function
 static int s_serialize_field(const dap_serialize_field_t *a_field,
                             const void *a_object,
                             dap_serialize_context_t *a_ctx);
@@ -50,16 +51,24 @@ static void s_write_uint16_le(uint8_t *a_buffer, uint16_t a_value);
 static uint16_t s_read_uint16_le(const uint8_t *a_buffer);
 static void s_write_bigint_le(uint8_t *a_buffer, const uint8_t *a_value, size_t a_size);
 static void s_read_bigint_le(const uint8_t *a_buffer, uint8_t *a_value, size_t a_size);
+static size_t s_calc_field_size(const dap_serialize_field_t *a_field, 
+                                const void *a_object,
+                                const dap_serialize_size_params_t *a_params,
+                                size_t a_field_index,
+                                void *a_context,
+                                const dap_serialize_schema_t *a_parent_schema);
 
 /**
  * @brief Calculate required buffer size for serialization
+ * @details Supports both object-based and parameter-based calculation
  */
 size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
+                               const dap_serialize_size_params_t *a_params,
                                const void *a_object,
                                void *a_context)
 {
-    if (!a_schema || !a_object) {
-        log_it(L_ERROR, "Invalid parameters for size calculation");
+    if (!a_schema || (!a_params && !a_object)) {
+        log_it(L_ERROR, "Invalid parameters for size calculation - need either params or object");
         return 0;
     }
     
@@ -75,23 +84,135 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
     total_size += sizeof(uint32_t) * 3;
     
     // Calculate size for each field
+    debug_if(s_debug_more, L_DEBUG, "Starting field loop, field_count=%zu, using %s mode", 
+             a_schema->field_count, a_params ? "parameter" : "object");
+    
     for (size_t i = 0; i < a_schema->field_count; i++) {
-        const dap_serialize_field_t *field = &a_schema->fields[i];
+        const dap_serialize_field_t *l_field = &a_schema->fields[i];
+        debug_if(s_debug_more, L_DEBUG, "Processing field %zu/%zu: name=%s, type=%d", 
+                 i, a_schema->field_count, l_field->name ? l_field->name : "NULL", l_field->type);
         
         // Check if field should be included
-        if (!s_check_condition(field, a_object, a_context)) {
+        if (!s_check_condition(l_field, a_object, a_context)) {
+            debug_if(s_debug_more, L_DEBUG, "Field %zu skipped due to condition", i);
             continue;
         }
         
-        size_t field_size = s_calc_field_size(field, a_object, a_context);
-        if (field_size == 0 && field->type != DAP_SERIALIZE_TYPE_PADDING) {
-            log_it(L_WARNING, "Field '%s' has zero size", field->name);
+        size_t l_field_size = s_calc_field_size(l_field, a_object, a_params, i, a_context, a_schema);
+        debug_if(s_debug_more, L_DEBUG, "Field %zu size: %zu", i, l_field_size);
+        
+        if (l_field_size == 0 && l_field->type != DAP_SERIALIZE_TYPE_PADDING) {
+            log_it(L_WARNING, "Field '%s' has zero size", l_field->name);
+        }
+        
+        total_size += l_field_size;
+        debug_if(s_debug_more, L_DEBUG, "Total size after field %zu: %zu", i, total_size);
+    }
+    
+    log_it(L_DEBUG, "Calculated serialization size: %zu bytes for schema '%s'", 
+           total_size, a_schema->name);
+    
+    return total_size;
+}
+
+/**
+ * @brief Calculate size using parameters or object (extended version)
+ */
+size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
+                                  const dap_serialize_size_params_t *a_params,
+                                  const void *a_object,
+                                  void *a_context)
+{
+    if (!a_schema || !a_params) {
+        log_it(L_ERROR, "Invalid parameters for size calculation by params");
+        return 0;
+    }
+    
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
+        log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X)", 
+               a_schema->magic, DAP_SERIALIZE_MAGIC_NUMBER);
+        return 0;
+    }
+    
+    size_t total_size = 0;
+    
+    // Add header size (version + magic + field count)
+    total_size += sizeof(uint32_t) * 3;
+    
+    // Calculate size for each field using parameters
+    for (size_t i = 0; i < a_schema->field_count && i < 16; i++) {
+        const dap_serialize_field_t *field = &a_schema->fields[i];
+        
+        // Check if field should be included
+        if (field->flags & DAP_SERIALIZE_FLAG_OPTIONAL && !a_params->field_present[i]) {
+            continue;
+        }
+        
+        size_t field_size = 0;
+        
+        switch (field->type) {
+            case DAP_SERIALIZE_TYPE_UINT8:
+            case DAP_SERIALIZE_TYPE_INT8:
+            case DAP_SERIALIZE_TYPE_BOOL:
+                field_size = 1;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT16:
+            case DAP_SERIALIZE_TYPE_INT16:
+                field_size = 2;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT32:
+            case DAP_SERIALIZE_TYPE_INT32:
+            case DAP_SERIALIZE_TYPE_FLOAT32:
+            case DAP_SERIALIZE_TYPE_VERSION:
+                field_size = 4;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT64:
+            case DAP_SERIALIZE_TYPE_INT64:
+            case DAP_SERIALIZE_TYPE_FLOAT64:
+                field_size = 8;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT128:
+                field_size = 16;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT256:
+                field_size = 32;
+                break;
+            case DAP_SERIALIZE_TYPE_UINT512:
+                field_size = 64;
+                break;
+            case DAP_SERIALIZE_TYPE_BYTES_FIXED:
+                field_size = field->size;
+                break;
+            case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC:
+            case DAP_SERIALIZE_TYPE_STRING_DYNAMIC:
+                field_size = sizeof(uint32_t) + a_params->data_sizes[i];
+                break;
+            case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC:
+                field_size = sizeof(uint32_t); // count prefix
+                if (field->nested_schema) {
+                    // For nested structures, multiply element size by count
+                    size_t element_size = dap_serialize_calc_size(field->nested_schema, a_params, NULL, a_context);
+                    field_size += element_size * a_params->array_counts[i];
+                } else {
+                    // Simple array of fixed-size elements
+                    field_size += a_params->array_counts[i] * field->size;
+                }
+                break;
+            case DAP_SERIALIZE_TYPE_CHECKSUM:
+                field_size = field->size;
+                break;
+            case DAP_SERIALIZE_TYPE_PADDING:
+                field_size = field->size;
+                break;
+            default:
+                log_it(L_WARNING, "Unknown field type %d for field '%s'", field->type, field->name);
+                break;
         }
         
         total_size += field_size;
     }
     
-    log_it(L_DEBUG, "Calculated serialization size: %zu bytes for schema '%s'", 
+    log_it(L_DEBUG, "Calculated size by params: %zu bytes for schema '%s'", 
            total_size, a_schema->name);
     
     return total_size;
@@ -317,93 +438,181 @@ bool dap_serialize_validate_buffer(const dap_serialize_schema_t *a_schema,
 // Internal helper functions
 
 static size_t s_calc_field_size(const dap_serialize_field_t *a_field, 
-                                const void *a_object, 
-                                void *a_context)
+                                const void *a_object,
+                                const dap_serialize_size_params_t *a_params,
+                                size_t a_field_index,
+                                void *a_context,
+                                const dap_serialize_schema_t *a_parent_schema)
 {
-    const uint8_t *obj_ptr = (const uint8_t*)a_object;
-    size_t size = 0;
+    debug_if(s_debug_more, L_DEBUG, "Calculating field size: name=%s, type=%d, index=%zu", 
+             a_field->name ? a_field->name : "NULL", a_field->type, a_field_index);
+    
+    const uint8_t *l_obj_ptr = (const uint8_t*)a_object;
+    size_t l_size = 0;
     
     switch (a_field->type) {
         case DAP_SERIALIZE_TYPE_UINT8:
         case DAP_SERIALIZE_TYPE_INT8:
         case DAP_SERIALIZE_TYPE_BOOL:
-            size = 1;
+            l_size = 1;
             break;
         case DAP_SERIALIZE_TYPE_UINT16:
         case DAP_SERIALIZE_TYPE_INT16:
-            size = 2;
+            l_size = 2;
             break;
         case DAP_SERIALIZE_TYPE_UINT32:
         case DAP_SERIALIZE_TYPE_INT32:
         case DAP_SERIALIZE_TYPE_FLOAT32:
         case DAP_SERIALIZE_TYPE_VERSION:
-            size = 4;
+            l_size = 4;
             break;
         case DAP_SERIALIZE_TYPE_UINT64:
         case DAP_SERIALIZE_TYPE_INT64:
         case DAP_SERIALIZE_TYPE_FLOAT64:
-            size = 8;
+            l_size = 8;
             break;
         case DAP_SERIALIZE_TYPE_UINT128:
-            size = 16;
+            l_size = 16;
             break;
         case DAP_SERIALIZE_TYPE_UINT256:
-            size = 32;
+            l_size = 32;
             break;
         case DAP_SERIALIZE_TYPE_UINT512:
-            size = 64;
+            l_size = 64;
             break;
         case DAP_SERIALIZE_TYPE_BYTES_FIXED:
-            size = a_field->size;
+            l_size = a_field->size;
             break;
         case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC: {
-            const size_t *size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
-            size = sizeof(uint32_t) + *size_ptr;  // size prefix + data
+            if (a_params && a_field_index < a_params->field_count) {
+                // Parameter-based calculation
+                debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC parameter mode, using data_sizes[%zu] = %zu", 
+                         a_field_index, a_params->data_sizes[a_field_index]);
+                l_size = sizeof(uint32_t) + a_params->data_sizes[a_field_index];  // size prefix + data size
+            } else if (l_obj_ptr) {
+                // Object-based calculation
+                const size_t *l_size_ptr = (const size_t*)(l_obj_ptr + a_field->size_offset);
+                l_size = sizeof(uint32_t) + *l_size_ptr;  // size prefix + data size
+            } else {
+                debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC: no object and no params, using size prefix only");
+                l_size = sizeof(uint32_t);  // Just size prefix
+            }
             break;
         }
         case DAP_SERIALIZE_TYPE_STRING_FIXED:
-            size = a_field->size;
+            l_size = a_field->size;
             break;
         case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
-            const size_t *size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
-            size = sizeof(uint32_t) + *size_ptr;  // length prefix + string data
+            if (a_params && a_field_index < a_params->field_count) {
+                // Parameter-based calculation
+                l_size = sizeof(uint32_t) + a_params->data_sizes[a_field_index];  // length prefix + string data
+            } else if (l_obj_ptr) {
+                // Object-based calculation
+                const size_t *l_size_ptr = (const size_t*)(l_obj_ptr + a_field->size_offset);
+                l_size = sizeof(uint32_t) + *l_size_ptr;  // length prefix + string data
+            } else {
+                l_size = sizeof(uint32_t);  // Just length prefix
+            }
             if (a_field->flags & DAP_SERIALIZE_FLAG_NULL_TERMINATED) {
-                size += 1;  // null terminator
+                l_size += 1;  // null terminator
             }
             break;
         }
         case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
-            const size_t *count_ptr = (const size_t*)(obj_ptr + a_field->count_offset);
-            size = sizeof(uint32_t);  // count prefix
-            if (a_field->nested_schema) {
-                // For nested structures, need to calculate each element
-                const void **array_ptr = (const void**)(obj_ptr + a_field->offset);
-                if (*array_ptr) {
-                    const uint8_t *element_ptr = (const uint8_t*)*array_ptr;
-                    for (size_t i = 0; i < *count_ptr; i++) {
-                        size += dap_serialize_calc_size(a_field->nested_schema, 
-                                                       element_ptr + i * a_field->nested_schema->struct_size,
-                                                       a_context);
-                    }
+            size_t l_count_value = 0;
+            
+            if (a_params && a_field_index < a_params->field_count) {
+                // Parameter-based calculation
+                l_count_value = a_params->array_counts[a_field_index];
+                debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC parameter mode, using array_counts[%zu] = %zu", 
+                         a_field_index, l_count_value);
+            } else if (l_obj_ptr) {
+                // Object-based calculation
+                const size_t *l_count_ptr = (const size_t*)(l_obj_ptr + a_field->count_offset);
+                
+                // Validate count_ptr before dereferencing
+                if ((uintptr_t)l_count_ptr < (uintptr_t)a_object || 
+                    (uintptr_t)l_count_ptr >= (uintptr_t)a_object + 4096) {
+                    log_it(L_WARNING, "Array field '%s' count_ptr out of bounds, using 0", a_field->name);
+                    l_size = sizeof(uint32_t);  // Just count prefix
+                    break;
                 }
+                
+                l_count_value = *l_count_ptr;
             } else {
-                // Simple array of fixed-size elements
-                size += (*count_ptr) * a_field->size;
+                debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC: no object and no params, using count prefix only");
+                l_size = sizeof(uint32_t);  // Just count prefix
+                break;
+            }
+            
+            
+            debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC count=%zu", l_count_value);
+            
+            l_size = sizeof(uint32_t);  // count prefix
+            
+            if (a_params && a_field_index < a_params->field_count) {
+                // Parameter-based calculation for arrays
+                if (a_field->nested_schema) {
+                    // For nested structures, multiply element size by count
+                    debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC nested schema calculation");
+                    
+                    // Check for circular dependency to prevent infinite recursion
+                    if (a_field->nested_schema == a_parent_schema) {
+                        debug_if(s_debug_more, L_DEBUG, "Circular dependency detected, using struct size");
+                        l_size += a_field->nested_schema->struct_size * l_count_value;
+                    } else {
+                        size_t l_element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
+                        debug_if(s_debug_more, L_DEBUG, "Element size: %zu, count: %zu", l_element_size, l_count_value);
+                        l_size += l_element_size * l_count_value;
+                    }
+                } else {
+                    // Simple array of fixed-size elements
+                    debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC simple array: count=%zu, element_size=%zu", 
+                             l_count_value, a_field->size);
+                    l_size += l_count_value * a_field->size;
+                }
+            } else if (l_obj_ptr) {
+                // Object-based calculation
+                const void **l_array_ptr = (const void**)(l_obj_ptr + a_field->offset);
+                
+                // If array pointer is NULL, only count prefix
+                if (!*l_array_ptr) {
+                    break;
+                }
+                
+                if (a_field->nested_schema) {
+                    // For nested structures, calculate each element
+                    const uint8_t *l_element_ptr = (const uint8_t*)*l_array_ptr;
+                    
+                    // Check for circular dependency to prevent infinite recursion
+                    if (a_field->nested_schema == a_parent_schema) {
+                        debug_if(s_debug_more, L_DEBUG, "Circular dependency detected in object mode, using struct size");
+                        l_size += a_field->nested_schema->struct_size * l_count_value;
+                    } else {
+                        for (size_t i = 0; i < l_count_value; i++) {
+                            const uint8_t *l_current_element = l_element_ptr + i * a_field->nested_schema->struct_size;
+                            l_size += dap_serialize_calc_size(a_field->nested_schema, NULL, l_current_element, a_context);
+                        }
+                    }
+                } else {
+                    // Simple array of fixed-size elements
+                    l_size += l_count_value * a_field->size;
+                }
             }
             break;
         }
         case DAP_SERIALIZE_TYPE_CHECKSUM:
-            size = a_field->size;  // Usually 32 bytes for SHA256
+            l_size = a_field->size;  // Usually 32 bytes for SHA3-256 
             break;
         case DAP_SERIALIZE_TYPE_PADDING:
-            size = a_field->size;
+            l_size = a_field->size;
             break;
         default:
             log_it(L_WARNING, "Unknown field type %d for field '%s'", a_field->type, a_field->name);
             break;
     }
     
-    return size;
+    return l_size;
 }
 
 static bool s_check_condition(const dap_serialize_field_t *a_field,
@@ -424,28 +633,65 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
     const uint8_t *obj_ptr = (const uint8_t*)a_object;
     
     // Check buffer space
-    size_t field_size = s_calc_field_size(a_field, a_object, a_ctx->user_context);
-    if (a_ctx->offset + field_size > a_ctx->buffer_size) {
+    size_t l_field_size = s_calc_field_size(a_field, a_object, NULL, 0, a_ctx->user_context, NULL);
+    if (a_ctx->offset + l_field_size > a_ctx->buffer_size) {
         return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
     }
     
     switch (a_field->type) {
-        case DAP_SERIALIZE_TYPE_UINT8: {
+        case DAP_SERIALIZE_TYPE_UINT8:
+        case DAP_SERIALIZE_TYPE_INT8:
+        case DAP_SERIALIZE_TYPE_BOOL: {
             const uint8_t *value = (const uint8_t*)(obj_ptr + a_field->offset);
             a_ctx->buffer[a_ctx->offset] = *value;
             a_ctx->offset += 1;
             break;
         }
+        case DAP_SERIALIZE_TYPE_UINT16:
+        case DAP_SERIALIZE_TYPE_INT16: {
+            const uint16_t *value = (const uint16_t*)(obj_ptr + a_field->offset);
+            s_write_uint16_le(a_ctx->buffer + a_ctx->offset, *value);
+            a_ctx->offset += 2;
+            break;
+        }
         case DAP_SERIALIZE_TYPE_UINT32:
+        case DAP_SERIALIZE_TYPE_INT32:
         case DAP_SERIALIZE_TYPE_VERSION: {
             const uint32_t *value = (const uint32_t*)(obj_ptr + a_field->offset);
             s_write_uint32_le(a_ctx->buffer + a_ctx->offset, *value);
             a_ctx->offset += 4;
             break;
         }
-        case DAP_SERIALIZE_TYPE_UINT64: {
+        case DAP_SERIALIZE_TYPE_UINT64:
+        case DAP_SERIALIZE_TYPE_INT64: {
             const uint64_t *value = (const uint64_t*)(obj_ptr + a_field->offset);
             s_write_uint64_le(a_ctx->buffer + a_ctx->offset, *value);
+            a_ctx->offset += 8;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_UINT128:
+        case DAP_SERIALIZE_TYPE_UINT256:
+        case DAP_SERIALIZE_TYPE_UINT512: {
+            const uint8_t *value = (const uint8_t*)(obj_ptr + a_field->offset);
+            size_t type_size = (a_field->type == DAP_SERIALIZE_TYPE_UINT128) ? 16 :
+                              (a_field->type == DAP_SERIALIZE_TYPE_UINT256) ? 32 : 64;
+            s_write_bigint_le(a_ctx->buffer + a_ctx->offset, value, type_size);
+            a_ctx->offset += type_size;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_FLOAT32: {
+            const float *value = (const float*)(obj_ptr + a_field->offset);
+            // Convert float to uint32 for endianness handling
+            union { float f; uint32_t u; } converter = { .f = *value };
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, converter.u);
+            a_ctx->offset += 4;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_FLOAT64: {
+            const double *value = (const double*)(obj_ptr + a_field->offset);
+            // Convert double to uint64 for endianness handling
+            union { double d; uint64_t u; } converter = { .d = *value };
+            s_write_uint64_le(a_ctx->buffer + a_ctx->offset, converter.u);
             a_ctx->offset += 8;
             break;
         }
@@ -457,14 +703,50 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*size_ptr);
             a_ctx->offset += sizeof(uint32_t);
             
-            // Write data
+            // Write data - if NULL, write zeros
             if (*data_ptr && *size_ptr > 0) {
                 memcpy(a_ctx->buffer + a_ctx->offset, *data_ptr, *size_ptr);
+            } else if (*size_ptr > 0) {
+                // NULL pointer but non-zero size - write zeros
+                memset(a_ctx->buffer + a_ctx->offset, 0, *size_ptr);
+            }
+            a_ctx->offset += *size_ptr;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
+            const char **string_ptr = (const char**)(obj_ptr + a_field->offset);
+            const size_t *size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
+            
+            // Write length prefix
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*size_ptr);
+            a_ctx->offset += sizeof(uint32_t);
+            
+            // Write string data
+            if (*string_ptr && *size_ptr > 0) {
+                memcpy(a_ctx->buffer + a_ctx->offset, *string_ptr, *size_ptr);
                 a_ctx->offset += *size_ptr;
+                
+                // Add null terminator if requested
+                if (a_field->flags & DAP_SERIALIZE_FLAG_NULL_TERMINATED) {
+                    a_ctx->buffer[a_ctx->offset] = '\0';
+                    a_ctx->offset += 1;
+                }
             }
             break;
         }
-        // TODO: Implement other field types
+        case DAP_SERIALIZE_TYPE_BYTES_FIXED: {
+            const uint8_t *value = (const uint8_t*)(obj_ptr + a_field->offset);
+            memcpy(a_ctx->buffer + a_ctx->offset, value, a_field->size);
+            a_ctx->offset += a_field->size;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_STRING_FIXED: {
+            const char *value = (const char*)(obj_ptr + a_field->offset);
+            memcpy(a_ctx->buffer + a_ctx->offset, value, a_field->size);
+            a_ctx->offset += a_field->size;
+            break;
+        }
+        // TODO: Implement array and nested struct types
         default:
             log_it(L_WARNING, "Serialization not implemented for field type %d", a_field->type);
             return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
@@ -480,7 +762,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
     uint8_t *obj_ptr = (uint8_t*)a_object;
     
     switch (a_field->type) {
-        case DAP_SERIALIZE_TYPE_UINT8: {
+        case DAP_SERIALIZE_TYPE_UINT8:
+        case DAP_SERIALIZE_TYPE_INT8:
+        case DAP_SERIALIZE_TYPE_BOOL: {
             if (a_ctx->offset + 1 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
@@ -489,7 +773,18 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             a_ctx->offset += 1;
             break;
         }
+        case DAP_SERIALIZE_TYPE_UINT16:
+        case DAP_SERIALIZE_TYPE_INT16: {
+            if (a_ctx->offset + 2 > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            uint16_t *value = (uint16_t*)(obj_ptr + a_field->offset);
+            *value = s_read_uint16_le(a_ctx->buffer + a_ctx->offset);
+            a_ctx->offset += 2;
+            break;
+        }
         case DAP_SERIALIZE_TYPE_UINT32:
+        case DAP_SERIALIZE_TYPE_INT32:
         case DAP_SERIALIZE_TYPE_VERSION: {
             if (a_ctx->offset + 4 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
@@ -499,12 +794,48 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             a_ctx->offset += 4;
             break;
         }
-        case DAP_SERIALIZE_TYPE_UINT64: {
+        case DAP_SERIALIZE_TYPE_UINT64:
+        case DAP_SERIALIZE_TYPE_INT64: {
             if (a_ctx->offset + 8 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             uint64_t *value = (uint64_t*)(obj_ptr + a_field->offset);
             *value = s_read_uint64_le(a_ctx->buffer + a_ctx->offset);
+            a_ctx->offset += 8;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_UINT128:
+        case DAP_SERIALIZE_TYPE_UINT256:
+        case DAP_SERIALIZE_TYPE_UINT512: {
+            size_t type_size = (a_field->type == DAP_SERIALIZE_TYPE_UINT128) ? 16 :
+                              (a_field->type == DAP_SERIALIZE_TYPE_UINT256) ? 32 : 64;
+            if (a_ctx->offset + type_size > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            uint8_t *value = (uint8_t*)(obj_ptr + a_field->offset);
+            s_read_bigint_le(a_ctx->buffer + a_ctx->offset, value, type_size);
+            a_ctx->offset += type_size;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_FLOAT32: {
+            if (a_ctx->offset + 4 > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            float *value = (float*)(obj_ptr + a_field->offset);
+            union { float f; uint32_t u; } converter;
+            converter.u = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+            *value = converter.f;
+            a_ctx->offset += 4;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_FLOAT64: {
+            if (a_ctx->offset + 8 > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            double *value = (double*)(obj_ptr + a_field->offset);
+            union { double d; uint64_t u; } converter;
+            converter.u = s_read_uint64_le(a_ctx->buffer + a_ctx->offset);
+            *value = converter.d;
             a_ctx->offset += 8;
             break;
         }
@@ -539,7 +870,64 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             }
             break;
         }
-        // TODO: Implement other field types
+        case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
+            if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            
+            // Read length
+            uint32_t length = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+            a_ctx->offset += sizeof(uint32_t);
+            
+            if (a_ctx->offset + length > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            
+            // Set length field
+            size_t *size_ptr = (size_t*)(obj_ptr + a_field->size_offset);
+            *size_ptr = length;
+            
+            // Allocate and copy string
+            char **string_ptr = (char**)(obj_ptr + a_field->offset);
+            if (length > 0) {
+                *string_ptr = DAP_NEW_SIZE(char, length + 1);  // +1 for null terminator
+                if (!*string_ptr) {
+                    return DAP_SERIALIZE_ERROR_MEMORY_ALLOCATION;
+                }
+                memcpy(*string_ptr, a_ctx->buffer + a_ctx->offset, length);
+                (*string_ptr)[length] = '\0';  // Ensure null termination
+                a_ctx->offset += length;
+                
+                // Skip null terminator if present in data
+                if (a_field->flags & DAP_SERIALIZE_FLAG_NULL_TERMINATED) {
+                    if (a_ctx->offset < a_ctx->buffer_size && a_ctx->buffer[a_ctx->offset] == '\0') {
+                        a_ctx->offset += 1;
+                    }
+                }
+            } else {
+                *string_ptr = NULL;
+            }
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_BYTES_FIXED: {
+            if (a_ctx->offset + a_field->size > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            uint8_t *value = (uint8_t*)(obj_ptr + a_field->offset);
+            memcpy(value, a_ctx->buffer + a_ctx->offset, a_field->size);
+            a_ctx->offset += a_field->size;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_STRING_FIXED: {
+            if (a_ctx->offset + a_field->size > a_ctx->buffer_size) {
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            char *value = (char*)(obj_ptr + a_field->offset);
+            memcpy(value, a_ctx->buffer + a_ctx->offset, a_field->size);
+            a_ctx->offset += a_field->size;
+            break;
+        }
+        // TODO: Implement array and nested struct types
         default:
             log_it(L_WARNING, "Deserialization not implemented for field type %d", a_field->type);
             return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
@@ -576,4 +964,31 @@ static uint64_t s_read_uint64_le(const uint8_t *a_buffer)
     uint64_t low = s_read_uint32_le(a_buffer);
     uint64_t high = s_read_uint32_le(a_buffer + 4);
     return low | (high << 32);
+}
+
+static void s_write_uint16_le(uint8_t *a_buffer, uint16_t a_value)
+{
+    a_buffer[0] = (uint8_t)(a_value & 0xFF);
+    a_buffer[1] = (uint8_t)((a_value >> 8) & 0xFF);
+}
+
+static uint16_t s_read_uint16_le(const uint8_t *a_buffer)
+{
+    return (uint16_t)a_buffer[0] | ((uint16_t)a_buffer[1] << 8);
+}
+
+static void s_write_bigint_le(uint8_t *a_buffer, const uint8_t *a_value, size_t a_size)
+{
+    // For big integers, we store in little-endian byte order
+    for (size_t i = 0; i < a_size; i++) {
+        a_buffer[i] = a_value[i];
+    }
+}
+
+static void s_read_bigint_le(const uint8_t *a_buffer, uint8_t *a_value, size_t a_size)
+{
+    // For big integers, we read from little-endian byte order
+    for (size_t i = 0; i < a_size; i++) {
+        a_value[i] = a_buffer[i];
+    }
 }

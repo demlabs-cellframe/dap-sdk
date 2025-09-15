@@ -155,16 +155,28 @@ typedef struct dap_serialize_result {
     const char *failed_field;               ///< Field name that caused failure (if any)
 } dap_serialize_result_t;
 
+/**
+ * @brief Size parameters for calculation without full object initialization
+ */
+typedef struct dap_serialize_size_params {
+    size_t field_count;             ///< Number of fields with parameters
+    size_t *array_counts;           ///< Counts for dynamic arrays (dynamic array)
+    size_t *data_sizes;             ///< Sizes for dynamic data (dynamic array)
+    bool *field_present;            ///< Which fields are present (dynamic array)
+} dap_serialize_size_params_t;
+
 // API Functions
 
 /**
  * @brief Calculate required buffer size for serialization
  * @param a_schema Serialization schema
- * @param a_object Object to serialize
+ * @param a_params Size parameters (if NULL, requires a_object)
+ * @param a_object Object to serialize (if NULL, requires a_params)
  * @param a_context User context (optional)
  * @return Required buffer size in bytes, 0 on error
  */
 size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
+                               const dap_serialize_size_params_t *a_params,
                                const void *a_object,
                                void *a_context);
 

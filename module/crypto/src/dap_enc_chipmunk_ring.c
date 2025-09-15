@@ -46,6 +46,12 @@ int dap_enc_chipmunk_ring_init(void) {
         log_it(L_ERROR, "Failed to initialize Chipmunk for Chipmunk_Ring");
         return -1;
     }
+    // Initialize Chipmunk_Ring if not already done
+    if (chipmunk_ring_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize Chipmunk_Ring");
+        return -EFAULT;
+    }
+
 
     log_it(L_INFO, "Chipmunk_Ring initialized successfully");
     return 0;
@@ -203,12 +209,6 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -EINVAL;
     }
 
-    // Initialize Chipmunk_Ring if not already done
-    if (chipmunk_ring_init() != 0) {
-        log_it(L_ERROR, "Failed to initialize Chipmunk_Ring");
-        return -EFAULT;
-    }
-
     // Convert private key
     chipmunk_ring_private_key_t l_priv_key;
     if (sizeof(l_priv_key.data) != CHIPMUNK_PRIVATE_KEY_SIZE) {
@@ -222,6 +222,14 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
     l_ring.size = (uint32_t)a_ring_size;
+    
+    // Allocate memory for ring hash (dynamic size)
+    l_ring.ring_hash_size = CHIPMUNK_RING_RING_HASH_SIZE;
+    l_ring.ring_hash = DAP_NEW_Z_SIZE(uint8_t, l_ring.ring_hash_size);
+    if (!l_ring.ring_hash) {
+        log_it(L_ERROR, "Failed to allocate memory for ring hash");
+        return -ENOMEM;
+    }
 
     size_t key_size = CHIPMUNK_PUBLIC_KEY_SIZE; // Use actual data size, not struct size
     size_t total_size = key_size * a_ring_size;
@@ -257,7 +265,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     for (size_t i = 0; i < a_ring_size; i++) {
         if (!a_ring_pub_keys[i]) {
             log_it(L_ERROR, "Null public key at index %zu", i);
-            free(l_ring.public_keys);
+            DAP_DELETE(l_ring.public_keys);
+            DAP_DELETE(l_ring.ring_hash);
             return -EINVAL;
         }
 
@@ -285,7 +294,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     void *l_test_alloc = malloc(1024);
     if (!l_test_alloc) {
         log_it(L_ERROR, "Heap integrity test failed - cannot allocate 1024 bytes");
-        free(l_ring.public_keys);
+        DAP_DELETE(l_ring.public_keys);
+        DAP_DELETE(l_ring.ring_hash);
         return -ENOMEM;
     }
     free(l_test_alloc);
@@ -298,7 +308,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
     debug_if(s_debug_more, L_INFO, "Combined keys allocation result: %p", l_combined_keys);
     if (!l_combined_keys) {
         log_it(L_ERROR, "Failed to allocate memory for combined keys: size=%zu", l_combined_size);
-        free(l_ring.public_keys);
+        DAP_DELETE(l_ring.public_keys);
+        DAP_DELETE(l_ring.ring_hash);
         return -ENOMEM;
     }
 
@@ -307,7 +318,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         if (!a_ring_pub_keys[i]) {
             log_it(L_ERROR, "Ring public key %zu is NULL", i);
             DAP_DEL_MULTY(l_combined_keys);
-            free(l_ring.public_keys);
+            DAP_DELETE(l_ring.public_keys);
+        DAP_DELETE(l_ring.ring_hash);
             return -EINVAL;
         }
         memcpy(l_combined_keys + i * CHIPMUNK_PUBLIC_KEY_SIZE,
@@ -321,7 +333,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
 
     if (l_hash_result != 0) {
         log_it(L_ERROR, "Failed to hash ring public keys");
-        free(l_ring.public_keys);
+        DAP_DELETE(l_ring.public_keys);
+        DAP_DELETE(l_ring.ring_hash);
         return -EFAULT;
     }
 
@@ -338,6 +351,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
 
     // Clean up ring container
     free(l_ring.public_keys);
+    DAP_DELETE(l_ring.ring_hash);
 
     if (l_result != 0) {
         log_it(L_ERROR, "Chipmunk_Ring signature creation failed: %d", l_result);
@@ -471,13 +485,7 @@ int dap_enc_chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
     return chipmunk_ring_set_params(params);
 }
 
-/**
- * @brief Get current layer sizes (wrapper)
- */
-void dap_enc_chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
-                                          size_t *code_size, size_t *binding_proof_size) {
-    chipmunk_ring_get_layer_sizes(ring_lwe_size, ntru_size, code_size, binding_proof_size);
-}
+// REMOVED: dap_enc_chipmunk_ring_get_layer_sizes - quantum layers replaced by Acorn Verification
 
 /**
  * @brief Reset parameters to defaults (wrapper)

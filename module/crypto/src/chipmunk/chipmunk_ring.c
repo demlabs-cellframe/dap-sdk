@@ -23,7 +23,12 @@
 
 #include "chipmunk_ring.h"
 #include "chipmunk_ring_acorn.h"
+#include "dap_enc_chipmunk_ring.h"
+#include "chipmunk_ring_serialize_schema.h"
 #include "chipmunk_ring_secret_sharing.h"
+#include "dap_math.h"
+
+
 #include "chipmunk_aggregation.h"
 #include "dap_enc_chipmunk_ring_params.h"
 #include "chipmunk_ring_errors.h"
@@ -48,45 +53,29 @@
 // Детальное логирование для Chipmunk Ring модуля
 static bool s_debug_more = false;
 
-// Post-quantum commitment parameters (configurable with defaults)
-// Made non-static for chipmunk_ring_commitment.c access
-chipmunk_ring_pq_params_t s_pq_params = {
+// Acorn-only parameters
+static chipmunk_ring_pq_params_t s_pq_params = {
     .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
     .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
     .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
-    .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
-    .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
-    .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
-    .ntru_n = CHIPMUNK_RING_NTRU_N_DEFAULT,
-    .ntru_q = CHIPMUNK_RING_NTRU_Q_DEFAULT,
-    .code_n = CHIPMUNK_RING_CODE_N_DEFAULT,
-    .code_k = CHIPMUNK_RING_CODE_K_DEFAULT,
-    .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
+    // Legacy quantum layer parameters removed - Acorn handles all security
     // Computed sizes (will be calculated in update_layer_sizes)
     .computed = {0}
 };
 
 /**
- * @brief Update computed layer sizes based on current parameters
- * @details Automatically recalculates all dependent sizes when base parameters change
+ * @brief Update computed sizes based on current Acorn parameters
+ * @details Only calculates Acorn-related sizes 
  */
 static void update_layer_sizes(void) {
-    // Calculate quantum-resistant layer sizes
-    s_pq_params.computed.ring_lwe_commitment_size = s_pq_params.ring_lwe_n * CHIPMUNK_RING_RING_LWE_BYTES_PER_COEFF_DEFAULT;
-    s_pq_params.computed.ntru_commitment_size = s_pq_params.ntru_n * CHIPMUNK_RING_NTRU_BYTES_PER_COEFF_DEFAULT;
-    s_pq_params.computed.code_commitment_size = CHIPMUNK_RING_CODE_COMMITMENT_SIZE_DEFAULT;
-    s_pq_params.computed.binding_proof_size = CHIPMUNK_RING_BINDING_PROOF_SIZE_DEFAULT;
-    
-    // Calculate Chipmunk-dependent sizes using constants
+    // Calculate Acorn-dependent sizes using constants
     s_pq_params.computed.public_key_size = CHIPMUNK_RING_RHO_SEED_SIZE + 
                                           s_pq_params.chipmunk_n * CHIPMUNK_RING_COEFF_SIZE * CHIPMUNK_RING_POLY_COUNT_PUBLIC; // rho_seed + v0 + v1
     s_pq_params.computed.private_key_size = CHIPMUNK_RING_KEY_SEED_SIZE + CHIPMUNK_RING_TR_SIZE + 
                                            s_pq_params.computed.public_key_size; // key_seed + tr + public_key
     s_pq_params.computed.signature_size = s_pq_params.chipmunk_n * CHIPMUNK_RING_COEFF_SIZE * s_pq_params.chipmunk_gamma; // sigma[GAMMA]
     
-    debug_if(s_debug_more, L_DEBUG, "Updated computed sizes: ring_lwe=%zu, ntru=%zu, code=%zu, binding=%zu, pubkey=%zu, privkey=%zu, sig=%zu",
-           s_pq_params.computed.ring_lwe_commitment_size, s_pq_params.computed.ntru_commitment_size,
-           s_pq_params.computed.code_commitment_size, s_pq_params.computed.binding_proof_size,
+    debug_if(s_debug_more, L_DEBUG, "Updated computed sizes: pubkey=%zu, privkey=%zu, sig=%zu",
            s_pq_params.computed.public_key_size, s_pq_params.computed.private_key_size,
            s_pq_params.computed.signature_size);
 }
@@ -337,82 +326,10 @@ static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
     return 0;
 }
 
-/**
- * @brief Create NTRU-based commitment layer (250-bit quantum security)
- */
-static int create_ntru_commitment(uint8_t *commitment,
-                                 size_t commitment_size,
-                                 const chipmunk_ring_public_key_t *a_public_key,
-                                 const uint8_t randomness[32]) {
-    if (!commitment || commitment_size < s_pq_params.computed.ntru_commitment_size) {
-        return -1;
-    }
-
-    // NTRU commitment requiring ~70,000 logical qubits for quantum attack
-    size_t pub_key_size = get_public_key_size();
-    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_NTRU_INPUT_EXTRA;
-    uint8_t *ntru_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
-
-    if (!ntru_input) {
-        return -1;
-    }
-
-    memcpy(ntru_input, a_public_key->data, pub_key_size);
-    memcpy(ntru_input + pub_key_size, randomness, s_pq_params.randomness_size);
-
-    // NTRU parameters: configurable n and q for quantum security
-    uint64_t ntru_n = s_pq_params.ntru_n;
-    uint64_t ntru_q = s_pq_params.ntru_q;
-    memcpy(ntru_input + pub_key_size + s_pq_params.randomness_size, &ntru_n, 8);
-    memcpy(ntru_input + pub_key_size + s_pq_params.randomness_size + 8, &ntru_q, 8);
-
-    // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, ntru_input, input_size);
-
-    DAP_FREE(ntru_input);
-
-    return 0;
-}
+// REMOVED: create_ntru_commitment - replaced by Acorn Verification
 
 
-/**
- * @brief Create enhanced code-based commitment layer 
- */
-static int create_code_based_commitment(uint8_t *commitment,
-                                       size_t commitment_size,
-                                       const chipmunk_ring_public_key_t *a_public_key,
-                                       const uint8_t randomness[32]) {
-    if (!commitment || commitment_size < s_pq_params.computed.code_commitment_size) {
-        return -1;
-    }
-
-    // Code-based commitment requiring ~60,000 logical qubits for quantum attack
-    size_t pub_key_size = get_public_key_size();
-    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_CODE_INPUT_EXTRA;
-    uint8_t *code_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
-
-    if (!code_input) {
-        return -1;
-    }
-
-    memcpy(code_input, a_public_key->data, pub_key_size);
-    memcpy(code_input + pub_key_size, randomness, s_pq_params.randomness_size);
-
-    // Configurable code parameters for quantum security
-    uint64_t code_n = s_pq_params.code_n;
-    uint64_t code_k = s_pq_params.code_k;
-    uint64_t code_t = s_pq_params.code_t;
-    memcpy(code_input + pub_key_size + s_pq_params.randomness_size, &code_n, 8);
-    memcpy(code_input + pub_key_size + s_pq_params.randomness_size + 8, &code_k, 8);
-    memcpy(code_input + pub_key_size + s_pq_params.randomness_size + 16, &code_t, 8);
-
-    // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, code_input, input_size);
-
-    DAP_FREE(code_input);
-
-    return 0;
-}
+// REMOVED: create_code_based_commitment - replaced by Acorn Verification
 
 /**
  * @brief Create binding proof for multi-layer commitment (100+ year security)
@@ -534,12 +451,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         // Single signer: fast ZK proofs, message-only linkability for anti-replay
         a_signature->zk_proof_size_per_participant = CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT;
         a_signature->zk_iterations = CHIPMUNK_RING_ZK_ITERATIONS_DEFAULT;
-        a_signature->linkability_mode = CHIPMUNK_RING_LINKABILITY_MESSAGE_ONLY; // Anti-replay protection
+        // Linkability always full for maximum security
     } else {
         // Multi-signer: secure ZK proofs, full linkability for anti-double-spend
         a_signature->zk_proof_size_per_participant = CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE;
         a_signature->zk_iterations = CHIPMUNK_RING_ZK_ITERATIONS_SECURE;
-        a_signature->linkability_mode = CHIPMUNK_RING_LINKABILITY_FULL; // Full anti-double-spend protection
+        // Linkability always full for maximum security
     }
     
     // ANONYMITY: Do not store signer_index - breaks anonymity!
@@ -570,8 +487,33 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         debug_if(s_debug_more, L_DEBUG, "External storage mode for %u public keys", a_ring->size);
     }
     
-    // Copy ring hash for verification
+    // Initialize and copy ring hash for verification
+    a_signature->ring_hash_size = a_ring->ring_hash_size;
+    a_signature->ring_hash = DAP_NEW_Z_SIZE(uint8_t, a_signature->ring_hash_size);
+    if (!a_signature->ring_hash) {
+        log_it(L_ERROR, "Failed to allocate memory for signature ring hash");
+        chipmunk_ring_signature_free(a_signature);
+        return -ENOMEM;
+    }
     memcpy(a_signature->ring_hash, a_ring->ring_hash, a_signature->ring_hash_size);
+    
+    // Initialize challenge (dynamic size)
+    a_signature->challenge_size = CHIPMUNK_RING_CHALLENGE_SIZE;
+    a_signature->challenge = DAP_NEW_Z_SIZE(uint8_t, a_signature->challenge_size);
+    if (!a_signature->challenge) {
+        log_it(L_ERROR, "Failed to allocate memory for challenge");
+        chipmunk_ring_signature_free(a_signature);
+        return -ENOMEM;
+    }
+    
+    // Initialize linkability tag (dynamic size)
+    a_signature->linkability_tag_size = CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
+    a_signature->linkability_tag = DAP_NEW_Z_SIZE(uint8_t, a_signature->linkability_tag_size);
+    if (!a_signature->linkability_tag) {
+        log_it(L_ERROR, "Failed to allocate memory for linkability tag");
+        chipmunk_ring_signature_free(a_signature);
+        return -ENOMEM;
+    }
 
     // Additional validation: ensure ring size doesn't exceed maximum allowed
     if (a_ring->size > CHIPMUNK_RING_MAX_RING_SIZE) {
@@ -604,6 +546,11 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         chipmunk_ring_signature_free(a_signature);
         return -ENOMEM;
     }
+    
+    // Initialize all acorn_proofs structures
+    for (uint32_t i = 0; i < a_ring->size; i++) {
+        memset(&a_signature->acorn_proofs[i], 0, sizeof(chipmunk_ring_acorn_t));
+    }
 
     // ADAPTIVE COMMITMENTS: Different strategies based on mode
     if (a_required_signers == 1) {
@@ -611,7 +558,10 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
             if (chipmunk_ring_acorn_create(&a_signature->acorn_proofs[l_i], 
                                               &a_ring->public_keys[l_i],
-                                              a_message, a_message_size) != 0) {
+                                              a_message, a_message_size,
+                                              s_pq_params.randomness_size,
+                                              a_signature->zk_proof_size_per_participant,
+                                              a_signature->linkability_tag_size) != 0) {
             log_it(L_ERROR, "Failed to create commitment for participant %u", l_i);
             chipmunk_ring_signature_free(a_signature);
             return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
@@ -623,7 +573,10 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
             if (chipmunk_ring_acorn_create(&a_signature->acorn_proofs[l_i], 
                                               &a_ring->public_keys[l_i],
-                                              a_message, a_message_size) != 0) {
+                                              a_message, a_message_size,
+                                              s_pq_params.randomness_size,
+                                              a_signature->zk_proof_size_per_participant,
+                                              a_signature->linkability_tag_size) != 0) {
                 log_it(L_ERROR, "Failed to create coordination commitment for participant %u", l_i);
                 chipmunk_ring_signature_free(a_signature);
                 return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
@@ -633,20 +586,25 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     }
 
     // Generate Fiat-Shamir challenge based on all commitments and message
-    // Create combined data: message || ring_hash || commitments (quantum-resistant format)
-    size_t l_message_size = a_message ? a_message_size : 0;
-    size_t l_ring_hash_size = sizeof(a_ring->ring_hash);
+    // MOVED: Size calculation after acorn_proofs creation for correct sizes
     
-    // Calculate actual size of all commitments (pure quantum-resistant format)
+    // Calculate actual size of all commitments (pure Acorn format) - AFTER creation
+    size_t l_message_size = a_message ? a_message_size : 0;
+    size_t l_ring_hash_size = a_ring->ring_hash_size;
     size_t l_commitments_size = 0;
+    
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        l_commitments_size += s_pq_params.randomness_size; // randomness
-        // Add sizes of Acorn commitment components
-        l_commitments_size += a_signature->acorn_proofs[l_i].acorn_proof_size;
-        l_commitments_size += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
-        l_commitments_size += a_signature->acorn_proofs[l_i].randomness_size;
-        // No binding_proof - included in acorn_proof
+        // Add sizes of Acorn commitment components (use actual sizes from created structures)
+        size_t acorn_size = a_signature->acorn_proofs[l_i].acorn_proof_size;
+        size_t linkability_size = a_signature->acorn_proofs[l_i].linkability_tag_size;
+        size_t randomness_size = a_signature->acorn_proofs[l_i].randomness_size;
+        
+        debug_if(s_debug_more, L_DEBUG, "Commitment %u sizes: acorn=%zu, linkability=%zu, randomness=%zu", 
+                 l_i, acorn_size, linkability_size, randomness_size);
+        
+        l_commitments_size += acorn_size + linkability_size + randomness_size;
     }
+    
     size_t l_total_size = l_message_size + l_ring_hash_size + l_commitments_size;
 
     uint8_t *l_combined_data = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
@@ -668,27 +626,28 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     memcpy(l_combined_data + l_offset, a_ring->ring_hash, sizeof(a_ring->ring_hash));
     l_offset += sizeof(a_ring->ring_hash);
 
-    // Add all commitments - same as verification
+    // Add all commitments for challenge generation (raw data, not schema-based)
     for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
         const chipmunk_ring_acorn_t *commitment = &a_signature->acorn_proofs[l_i];
 
-        // Copy randomness (dynamic size)
+        // Copy commitment data in deterministic order for challenge
+        if (commitment->randomness && commitment->randomness_size > 0) {
         memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
         l_offset += commitment->randomness_size;
-
-        // Copy dynamic arrays content
-        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
-        l_offset += commitment->acorn_proof_size;
-
-        memcpy(l_combined_data + l_offset, commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-        l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
-
-
-        memcpy(l_combined_data + l_offset, commitment->randomness, commitment->randomness_size);
-        l_offset += commitment->randomness_size;
-
-        memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
-        l_offset += commitment->acorn_proof_size;
+        }
+        
+        if (commitment->acorn_proof && commitment->acorn_proof_size > 0) {
+            memcpy(l_combined_data + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
+            l_offset += commitment->acorn_proof_size;
+        }
+        
+        if (commitment->linkability_tag && commitment->linkability_tag_size > 0) {
+            memcpy(l_combined_data + l_offset, commitment->linkability_tag, commitment->linkability_tag_size);
+            l_offset += commitment->linkability_tag_size;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "Added commitment %u data: randomness=%zu, acorn=%zu, linkability=%zu", 
+                 l_i, commitment->randomness_size, commitment->acorn_proof_size, commitment->linkability_tag_size);
     }
 
     // Hash the combined data to get challenge
@@ -713,11 +672,11 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         memset(l_test_signature, 0, sizeof(l_test_signature));
         
         // Create test signature with our private key
-        if (chipmunk_sign(a_private_key->data, a_signature->challenge, sizeof(a_signature->challenge), 
+        if (chipmunk_sign(a_private_key->data, a_signature->challenge, a_signature->challenge_size, 
                          l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
             // Test if it verifies against this public key
             if (chipmunk_verify(a_ring->public_keys[l_i].data, a_signature->challenge, 
-                               sizeof(a_signature->challenge), l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
+                               a_signature->challenge_size, l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
                 l_real_signer_index = l_i;
                 // Copy the real signature
                 memcpy(a_signature->signature, l_test_signature, 
@@ -856,63 +815,44 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     }
     
     int l_result = 0;
-
-    // CONDITIONAL LINKABILITY: Generate linkability tag based on mode
-    if (a_signature->linkability_mode != CHIPMUNK_RING_LINKABILITY_DISABLED) {
-        size_t l_tag_combined_size = 0;
+        size_t l_tag_combined_size = CHIPMUNK_RING_RING_HASH_SIZE + a_message_size + CHIPMUNK_RING_CHALLENGE_SIZE;
         
-        // Calculate size based on linkability mode
-        if (a_signature->linkability_mode == CHIPMUNK_RING_LINKABILITY_MESSAGE_ONLY) {
-            l_tag_combined_size = CHIPMUNK_RING_RING_HASH_SIZE + a_message_size;
-        } else if (a_signature->linkability_mode == CHIPMUNK_RING_LINKABILITY_FULL) {
-            l_tag_combined_size = CHIPMUNK_RING_RING_HASH_SIZE + a_message_size + CHIPMUNK_RING_CHALLENGE_SIZE;
-        }
-        
-        uint8_t *l_tag_combined_data = DAP_NEW_SIZE(uint8_t, l_tag_combined_size);
-        if (!l_tag_combined_data) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            chipmunk_ring_signature_free(a_signature);
-            return -ENOMEM;
-        }
+    uint8_t *l_tag_combined_data = DAP_NEW_SIZE(uint8_t, l_tag_combined_size);
+    if (!l_tag_combined_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        chipmunk_ring_signature_free(a_signature);
+        return -ENOMEM;
+    }
 
-        size_t l_tag_offset = 0;
+    size_t l_tag_offset = 0;
         
         // Add ring hash (not individual key for anonymity)
         memcpy(l_tag_combined_data + l_tag_offset, a_ring->ring_hash, CHIPMUNK_RING_RING_HASH_SIZE);
         l_tag_offset += CHIPMUNK_RING_RING_HASH_SIZE;
 
-        // Add message
-        if (a_message && a_message_size > 0) {
-            memcpy(l_tag_combined_data + l_tag_offset, a_message, a_message_size);
-            l_tag_offset += a_message_size;
-        }
+    // Add message
+    if (a_message && a_message_size > 0) {
+        memcpy(l_tag_combined_data + l_tag_offset, a_message, a_message_size);
+        l_tag_offset += a_message_size;
+    }
 
-        // Add challenge only for full linkability
-        if (a_signature->linkability_mode == CHIPMUNK_RING_LINKABILITY_FULL) {
+        // Always add challenge for full linkability
             memcpy(l_tag_combined_data + l_tag_offset, a_signature->challenge, CHIPMUNK_RING_CHALLENGE_SIZE);
-        }
 
-        // Hash to get linkability tag
-        dap_hash_fast_t l_tag_hash;
-        if (!dap_hash_fast(l_tag_combined_data, l_tag_combined_size, &l_tag_hash)) {
+    // Hash to get linkability tag
+    dap_hash_fast_t l_tag_hash;
+    if (!dap_hash_fast(l_tag_combined_data, l_tag_combined_size, &l_tag_hash)) {
             log_it(L_CRITICAL, "Failed to generate linkability tag");
-            DAP_FREE(l_tag_combined_data);
-            chipmunk_ring_signature_free(a_signature);
-            return -1;
-        }
-
         DAP_FREE(l_tag_combined_data);
+        chipmunk_ring_signature_free(a_signature);
+        return -1;
+    }
+
+    DAP_FREE(l_tag_combined_data);
 
         // Copy hash to linkability tag
         memcpy(a_signature->linkability_tag, &l_tag_hash, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
         
-        debug_if(s_debug_more, L_DEBUG, "Generated linkability tag (mode=%u)", a_signature->linkability_mode);
-        
-    } else {
-        // No linkability tag without anonymity
-        memset(a_signature->linkability_tag, 0, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-        debug_if(s_debug_more, L_WARNING, "Linkability disabled - now its possible to replay the signature");
-    }
 
     return 0;
 }
@@ -1418,81 +1358,45 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
         return 0;
     }
 
-    // Ensure module is initialized for correct parameter values
-    chipmunk_ring_module_init();
-
-    // Calculate fixed header size
-    size_t header_size = sizeof(uint32_t) + // format_version
-                        CHIPMUNK_RING_HEADER_PARAMS_COUNT * sizeof(uint32_t) + // chipmunk_n, chipmunk_gamma, randomness_size
-           sizeof(uint32_t) + // ring_size
-                        sizeof(uint32_t) + // required_signers
-                        sizeof(uint8_t) +  // scalability_flags
-                        sizeof(uint8_t) +  // linkability_mode
-                        CHIPMUNK_RING_ZK_PARAMS_COUNT * sizeof(uint32_t) + // ZK parameters: zk_proof_size, zk_iterations, coordination_round
-           CHIPMUNK_RING_LINKABILITY_TAG_SIZE + // linkability_tag
-                        CHIPMUNK_RING_CHALLENGE_SIZE;       // challenge
-
-    // Calculate commitment size per participant 
-    size_t commitment_size_per_participant = 
-        sizeof(uint32_t) + s_pq_params.randomness_size + // randomness size + data
-        CHIPMUNK_RING_QR_LAYER_COUNT * sizeof(uint32_t) + // quantum-resistant layer sizes
-        s_pq_params.computed.ring_lwe_commitment_size +     // Ring-LWE layer data
-        s_pq_params.computed.ntru_commitment_size +         // NTRU layer data  
-        s_pq_params.computed.code_commitment_size +         // Code layer data
-        s_pq_params.computed.binding_proof_size;            // Binding proof data
-
-    // Calculate response size per participant 
-    // Responses use ZK proof size in multi-signer mode, randomness size in single signer
-    size_t response_size_per_participant = 
-        sizeof(uint32_t) + // response size prefix
-        CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // Use max possible response size for safety
-
-    // Calculate chipmunk signature size
-    size_t chipmunk_sig_size = sizeof(uint32_t) + CHIPMUNK_SIGNATURE_SIZE; // size prefix + data
-
-    // Calculate ring hash size
-    size_t ring_hash_size = CHIPMUNK_RING_RING_HASH_SIZE;
-
-    // Calculate embedded keys or key hashes size 
-    size_t keys_storage_size = 0;
-    if (a_ring_size <= CHIPMUNK_RING_SMALL_RING_THRESHOLD) {
-        // Embedded keys mode - use actual CHIPMUNK_PUBLIC_KEY_SIZE
-        keys_storage_size = a_ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
-    } else {
-        // External keys mode (key hashes)
-        keys_storage_size = a_ring_size * CHIPMUNK_RING_KEY_HASH_SIZE;
+    // Use new parameter-based size calculation (no dummy objects needed)
+    const size_t l_field_count = 7;  // Number of dynamic fields we need to specify
+    
+    size_t l_array_counts[7] = {a_ring_size, a_ring_size, 0, 0, 0, 0, 0};
+    size_t l_data_sizes[7] = {
+        CHIPMUNK_RING_CHALLENGE_SIZE,           // challenge
+        CHIPMUNK_RING_RING_HASH_SIZE,           // ring_hash  
+        CHIPMUNK_SIGNATURE_SIZE,                // signature
+        CHIPMUNK_RING_LINKABILITY_TAG_SIZE,     // linkability_tag
+        CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT,    // acorn_proof per element
+        CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,  // randomness per element
+        CHIPMUNK_RING_LINKABILITY_TAG_SIZE      // linkability_tag per element
+    };
+    bool l_field_present[7] = {true, true, true, true, true, true, true};
+    
+    dap_serialize_size_params_t l_size_params = {
+        .field_count = l_field_count,
+        .array_counts = l_array_counts,
+        .data_sizes = l_data_sizes,
+        .field_present = l_field_present
+    };
+    
+    // Use parameter-based size calculation (no object initialization needed)
+    debug_if(s_debug_more, L_DEBUG, "Calculating signature size for ring_size=%zu using serializer", a_ring_size);
+    size_t l_calculated_size = dap_serialize_calc_size(&chipmunk_ring_signature_schema, &l_size_params, NULL, NULL);
+    debug_if(s_debug_more, L_DEBUG, "Serializer returned size: %zu", l_calculated_size);
+    
+    if (l_calculated_size == 0) {
+        log_it(L_ERROR, "Failed to calculate signature size for ring_size=%zu", a_ring_size);
+        return 0;
     }
-
-    // Calculate ZK proofs size for multi-signer mode
-    size_t zk_proofs_size = 0;
-    // Assume worst case: all rings could be multi-signer with max required_signers
-    // For actual calculation, we use conservative estimate
-    if (a_ring_size > 1) {
-        // Multi-signer mode: ZK proofs for coordination
-        size_t max_required_signers = a_ring_size; // worst case: all signers required
-        zk_proofs_size = sizeof(uint32_t) + // zk_proofs_size field
-                        max_required_signers * CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE;
-    }
-
-    // Calculate total size with all components
-    size_t total_size = header_size +
-                       a_ring_size * commitment_size_per_participant + // commitments
-                       // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
-                       chipmunk_sig_size +                            // chipmunk signature
-                       ring_hash_size +                               // ring hash
-                       keys_storage_size +                            // embedded keys/hashes
-                       zk_proofs_size;                                // ZK proofs for multi-signer
-
-    // Add safety margin for dynamic content (10% overhead)
-    total_size = total_size + (total_size / 10);
-
-    log_it(L_DEBUG, "chipmunk_ring_get_signature_size: calculated=%zu (ring_size=%zu, header=%zu, commitments=%zu, keys=%zu)",
-           total_size, a_ring_size, header_size, 
-           a_ring_size * commitment_size_per_participant,
-           keys_storage_size);
-
-    return total_size;
+    
+    debug_if(s_debug_more, L_DEBUG, "Calculated signature size: %zu bytes for ring_size=%zu", 
+             l_calculated_size, a_ring_size);
+    
+    return l_calculated_size;
 }
+
+// Condition functions moved to chipmunk_ring_serialize_schema.c
 
 /**
  * @brief Delete Chipmunk_Ring key
@@ -1532,7 +1436,18 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
             a_signature->ring_public_keys = NULL;
         }
         
-        // NOTE: ring_key_hashes removed - only ring_hash is used now
+        // Free dynamic core fields
+        DAP_DELETE(a_signature->challenge);
+        a_signature->challenge = NULL;
+        a_signature->challenge_size = 0;
+        
+        DAP_DELETE(a_signature->ring_hash);
+        a_signature->ring_hash = NULL;
+        a_signature->ring_hash_size = 0;
+        
+        DAP_DELETE(a_signature->linkability_tag);
+        a_signature->linkability_tag = NULL;
+        a_signature->linkability_tag_size = 0;
         
         // Free multi-signer fields
         if (a_signature->threshold_zk_proofs) {
@@ -1554,492 +1469,36 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
  */
 int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
                                    uint8_t *a_output, size_t a_output_size) {
-    // Enhanced input validation with specific error codes
-    CHIPMUNK_RING_RETURN_IF_NULL(a_sig, CHIPMUNK_RING_ERROR_NULL_PARAM);
-    CHIPMUNK_RING_RETURN_IF_NULL(a_output, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    // Use universal serializer with schema-based approach
+    dap_serialize_result_t result = chipmunk_ring_signature_serialize(a_sig, a_output, a_output_size);
     
-    // Validate signature structure integrity
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->ring_size >= 2, CHIPMUNK_RING_ERROR_RING_TOO_SMALL);
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, CHIPMUNK_RING_ERROR_RING_TOO_LARGE);
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->required_signers >= 1, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_sig->required_signers <= a_sig->ring_size, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
-    
-    // Validate output buffer size
-    size_t l_required_size = chipmunk_ring_get_signature_size(a_sig->ring_size);
-    debug_if(s_debug_more, L_INFO, "Serialization: required_size=%zu, available_size=%zu", l_required_size, a_output_size);
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_output_size >= l_required_size, CHIPMUNK_RING_ERROR_BUFFER_TOO_SMALL);
-    
-    // Validate signature has required arrays
-    CHIPMUNK_RING_RETURN_IF_NULL(a_sig->acorn_proofs, CHIPMUNK_RING_ERROR_INVALID_PARAM);
-    // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
-
-    size_t l_offset = 0;
-
-    // Serialize format version for future compatibility
-    uint32_t format_version = 1;
-    memcpy(a_output + l_offset, &format_version, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // Serialize current parameters (critical for correct deserialization)
-    uint32_t chipmunk_n = s_pq_params.chipmunk_n;
-    uint32_t chipmunk_gamma = s_pq_params.chipmunk_gamma;
-    uint32_t randomness_size = s_pq_params.randomness_size;
-    
-    memcpy(a_output + l_offset, &chipmunk_n, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, &chipmunk_gamma, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, &randomness_size, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // Serialize ring_size
-    memcpy(a_output + l_offset, &a_sig->ring_size, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // Serialize required_signers
-    memcpy(a_output + l_offset, &a_sig->required_signers, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    
-    // Serialize scalability flags using enum
-    uint8_t scalability_flags = CHIPMUNK_RING_FLAG_NONE;
-    if (a_sig->use_embedded_keys) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_EMBEDDED_KEYS;
-    }
-    if (a_sig->is_coordinated) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_COORDINATED;
-    }
-    if (a_sig->required_signers > 1) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_MULTI_SIGNER;
-    }
-    if (!a_sig->use_embedded_keys) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_EXTERNAL_KEYS;
-    }
-    if (a_sig->zk_iterations >= CHIPMUNK_RING_ZK_ITERATIONS_ENTERPRISE) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_ENTERPRISE;
-    }
-    if (a_sig->zk_proof_size_per_participant > CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_ZK_ENHANCED;
-    }
-    if (a_sig->linkability_mode != CHIPMUNK_RING_LINKABILITY_DISABLED) {
-        scalability_flags |= CHIPMUNK_RING_FLAG_LINKABILITY_ENABLED;
+    if (result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Signature serialization failed: %s", result.error_message);
+        return result.error_code;
     }
     
-    memcpy(a_output + l_offset, &scalability_flags, sizeof(uint8_t));
-    l_offset += sizeof(uint8_t);
-    
-    // Serialize linkability mode
-    memcpy(a_output + l_offset, &a_sig->linkability_mode, sizeof(uint8_t));
-    l_offset += sizeof(uint8_t);
-    
-    // Serialize ZK parameters
-    memcpy(a_output + l_offset, &a_sig->zk_proof_size_per_participant, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, &a_sig->zk_iterations, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, &a_sig->coordination_round, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // ANONYMITY: Do not serialize signer_index for anonymity
-
-    // Serialize linkability_tag
-    memcpy(a_output + l_offset, a_sig->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-    l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
-
-    // Serialize challenge
-    memcpy(a_output + l_offset, a_sig->challenge, CHIPMUNK_RING_CHALLENGE_SIZE);
-    l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
-
-    // Serialize commitments (quantum-resistant format)
-    if (!a_sig->acorn_proofs) {
-        log_it(L_ERROR, "Commitments not initialized for serialization");
-        return -EINVAL;
-    }
-    
-    for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        const chipmunk_ring_acorn_t *commitment = &a_sig->acorn_proofs[l_i];
-
-        log_it(L_DEBUG, "Serialization: commitment %zu has randomness_size=%zu, acorn_proof_size=%zu", 
-               l_i, commitment->randomness_size, commitment->acorn_proof_size);
-
-        // Serialize randomness size first, then randomness data (using fixed-width types)
-        uint32_t randomness_size_32 = (uint32_t)commitment->randomness_size;
-        memcpy(a_output + l_offset, &randomness_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
-        l_offset += commitment->randomness_size;
-
-        // Serialize Acorn commitment components (clean structure)
-        uint32_t l_acorn_proof_size_32 = (uint32_t)commitment->acorn_proof_size;
-        uint32_t l_randomness_size_32 = (uint32_t)commitment->randomness_size;
-        
-        // Serialize sizes first
-        memcpy(a_output + l_offset, &l_acorn_proof_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        memcpy(a_output + l_offset, &l_randomness_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-
-        // Serialize Acorn proof
-        memcpy(a_output + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
-        l_offset += commitment->acorn_proof_size;
-
-        // Serialize linkability tag (fixed size)
-        memcpy(a_output + l_offset, commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-        l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
-
-
-        memcpy(a_output + l_offset, commitment->randomness, commitment->randomness_size);
-        l_offset += commitment->randomness_size;
-
-        memcpy(a_output + l_offset, commitment->acorn_proof, commitment->acorn_proof_size);
-        l_offset += commitment->acorn_proof_size;
-    }
-
-    // NOTE: Response serialization removed - Acorn proofs in commitments handle all ZKP
-
-    // Serialize signature (dynamic size with length prefix)
-    uint32_t sig_size_32 = (uint32_t)a_sig->signature_size;
-    memcpy(a_output + l_offset, &sig_size_32, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(a_output + l_offset, a_sig->signature, a_sig->signature_size);
-    l_offset += a_sig->signature_size;
-    
-    // Serialize ring hash
-    memcpy(a_output + l_offset, a_sig->ring_hash, sizeof(a_sig->ring_hash));
-    l_offset += sizeof(a_sig->ring_hash);
-    
-    // Serialize ZK proofs for multi-signer mode
-    if (a_sig->required_signers > 1 && a_sig->threshold_zk_proofs) {
-        // Serialize ZK proofs size
-        uint32_t zk_proofs_size_32 = (uint32_t)a_sig->zk_proofs_size;
-        memcpy(a_output + l_offset, &zk_proofs_size_32, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-        
-        // Serialize ZK proofs data
-        memcpy(a_output + l_offset, a_sig->threshold_zk_proofs, a_sig->zk_proofs_size);
-        l_offset += a_sig->zk_proofs_size;
-        
-        log_it(L_DEBUG, "Serialized %zu bytes of ZK proofs for multi-signer", a_sig->zk_proofs_size);
-    } else {
-        // Single signer mode: serialize zero ZK proofs size
-        uint32_t zero_zk_size = 0;
-        memcpy(a_output + l_offset, &zero_zk_size, sizeof(uint32_t));
-        l_offset += sizeof(uint32_t);
-    }
-    
-    // Serialize embedded keys or key hashes based on mode
-    if (a_sig->use_embedded_keys) {
-        // Serialize embedded public keys
-        if (a_sig->ring_public_keys) {
-            for (uint32_t i = 0; i < a_sig->ring_size; i++) {
-                memcpy(a_output + l_offset, a_sig->ring_public_keys[i].data, CHIPMUNK_PUBLIC_KEY_SIZE);
-                l_offset += CHIPMUNK_PUBLIC_KEY_SIZE;
-            }
-        }
-    } else {
-        // Serialize key hashes
-        // NOTE: ring_key_hashes serialization removed - only ring_hash is serialized
-    }
-
+    debug_if(s_debug_more, L_DEBUG, "Serialized signature: %zu bytes", result.bytes_written);
     return 0;
 }
+
 
 /**
  * @brief Deserialize signature from bytes
  */
 int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
                                      const uint8_t *a_input, size_t a_input_size) {
-    // Enhanced input validation with specific error codes
-    CHIPMUNK_RING_RETURN_IF_NULL(a_sig, CHIPMUNK_RING_ERROR_NULL_PARAM);
-    CHIPMUNK_RING_RETURN_IF_NULL(a_input, CHIPMUNK_RING_ERROR_NULL_PARAM);
+    // Use universal deserializer with schema-based approach
+    dap_serialize_result_t result = chipmunk_ring_signature_deserialize(a_input, a_input_size, a_sig);
     
-    // Validate minimum input size for header
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_input_size >= 102, CHIPMUNK_RING_ERROR_BUFFER_TOO_SMALL); // Minimum header size
-    
-    // Validate input size is reasonable (not too large)
-    CHIPMUNK_RING_RETURN_IF_FAIL(a_input_size <= 10 * 1024 * 1024, CHIPMUNK_RING_ERROR_INVALID_SIZE); // Max 10MB
-
-    log_it(L_INFO, "chipmunk_ring_signature_from_bytes: START deserialization, input_size=%zu", a_input_size);
-    size_t l_offset = 0;
-
-    // Clear signature structure
-    memset(a_sig, 0, sizeof(chipmunk_ring_signature_t));
-
-    // Deserialize format version
-    if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
-    uint32_t format_version;
-    memcpy(&format_version, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    
-    if (format_version != 1) {
-        log_it(L_ERROR, "Unsupported signature format version: %u", format_version);
-        return -EINVAL;
-    }
-
-    // Deserialize parameters used to create this signature
-    if (l_offset + CHIPMUNK_RING_HEADER_PARAMS_COUNT * sizeof(uint32_t) > a_input_size) return -EINVAL;
-    uint32_t sig_chipmunk_n, sig_chipmunk_gamma, sig_randomness_size;
-    
-    memcpy(&sig_chipmunk_n, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(&sig_chipmunk_gamma, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(&sig_randomness_size, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // Deserialize ring_size
-    if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
-    memcpy(&a_sig->ring_size, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    // Deserialize required_signers
-    if (l_offset + sizeof(uint32_t) > a_input_size) return -EINVAL;
-    memcpy(&a_sig->required_signers, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    
-    // Deserialize scalability flags
-    if (l_offset + sizeof(uint8_t) > a_input_size) return -EINVAL;
-    uint8_t scalability_flags;
-    memcpy(&scalability_flags, a_input + l_offset, sizeof(uint8_t));
-    l_offset += sizeof(uint8_t);
-    
-    a_sig->use_embedded_keys = (scalability_flags & CHIPMUNK_RING_FLAG_EMBEDDED_KEYS) != 0;
-    a_sig->is_coordinated = (scalability_flags & CHIPMUNK_RING_FLAG_COORDINATED) != 0;
-    
-    // Deserialize linkability mode
-    if (l_offset + sizeof(uint8_t) > a_input_size) return -EINVAL;
-    memcpy(&a_sig->linkability_mode, a_input + l_offset, sizeof(uint8_t));
-    l_offset += sizeof(uint8_t);
-    
-    // Deserialize ZK parameters
-    if (l_offset + CHIPMUNK_RING_ZK_PARAMS_COUNT * sizeof(uint32_t) > a_input_size) return -EINVAL;
-    memcpy(&a_sig->zk_proof_size_per_participant, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(&a_sig->zk_iterations, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-    memcpy(&a_sig->coordination_round, a_input + l_offset, sizeof(uint32_t));
-    l_offset += sizeof(uint32_t);
-
-    debug_if(s_debug_more, L_INFO, "Deserialized: ring_size=%u, required_signers=%u, embedded_keys=%s, zk_size=%u, iterations=%u", 
-             a_sig->ring_size, a_sig->required_signers, a_sig->use_embedded_keys ? "true" : "false",
-             a_sig->zk_proof_size_per_participant, a_sig->zk_iterations);
-
-    // Check ring size
-    if (a_sig->ring_size > CHIPMUNK_RING_MAX_RING_SIZE) {
-        log_it(L_ERROR, "Ring size %u exceeds maximum %u", a_sig->ring_size, CHIPMUNK_RING_MAX_RING_SIZE);
-        return -EINVAL;
-    }
-    
-    if (a_sig->ring_size == 0) {
-        log_it(L_ERROR, "Ring size is 0 - invalid");
-        return -EINVAL;
-    }
-
-    // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
-    // Check for potential overflow before allocating memory for commitments and responses
-    const size_t l_commitment_size = sizeof(chipmunk_ring_acorn_t);
-    // NOTE: response_size removed - responses no longer used
-
-    // Prevent integer overflow: check if a_sig->ring_size * sizeof(struct) would overflow
-    if (a_sig->ring_size > (SIZE_MAX / l_commitment_size)) {
-        log_it(L_CRITICAL, "Integer overflow detected in deserialization: ring size %u would overflow commitment allocation", a_sig->ring_size);
-        return -EOVERFLOW;
-    }
-    // NOTE: Response overflow check removed - responses no longer used
-
-    // ANONYMITY: Do not deserialize signer_index for anonymity
-
-    // Deserialize linkability_tag
-    if (l_offset + CHIPMUNK_RING_LINKABILITY_TAG_SIZE > a_input_size) return -EINVAL;
-    memcpy(a_sig->linkability_tag, a_input + l_offset, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-    l_offset += CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
-
-    // Deserialize challenge
-    if (l_offset + CHIPMUNK_RING_CHALLENGE_SIZE > a_input_size) return -EINVAL;
-    memcpy(a_sig->challenge, a_input + l_offset, CHIPMUNK_RING_CHALLENGE_SIZE);
-    l_offset += CHIPMUNK_RING_CHALLENGE_SIZE;
-
-    // Allocate memory for commitments with overflow protection
-    log_it(L_INFO, "chipmunk_ring_signature_from_bytes: Allocating arrays for ring_size=%u", a_sig->ring_size);
-    a_sig->acorn_proofs = DAP_NEW_Z_COUNT(chipmunk_ring_acorn_t, a_sig->ring_size);
-
-    if (!a_sig->acorn_proofs) {
-        log_it(L_CRITICAL, "Failed to allocate commitments array for ring_size=%u", a_sig->ring_size);
-        // Manual cleanup to avoid double-free
-        if (a_sig->acorn_proofs) {
-            DAP_FREE(a_sig->acorn_proofs);
-            a_sig->acorn_proofs = NULL;
+    if (result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Signature deserialization failed: %s", result.error_message);
+        if (result.failed_field) {
+            log_it(L_ERROR, "Failed field: %s", result.failed_field);
         }
-        return -ENOMEM;
-    }
-
-    // Deserialize commitments (quantum-resistant format)
-    log_it(L_INFO, "chipmunk_ring_signature_from_bytes: Starting commitments deserialization, ring_size=%u", a_sig->ring_size);
-    for (size_t l_i = 0; l_i < a_sig->ring_size; l_i++) {
-        log_it(L_DEBUG, "chipmunk_ring_signature_from_bytes: Processing commitment %zu, offset=%zu", l_i, l_offset);
-        // Deserialize randomness size first (using fixed-width type)
-        log_it(L_DEBUG, "chipmunk_ring_signature_from_bytes: Checking buffer bounds: offset=%zu + %zu <= input_size=%zu", 
-               l_offset, sizeof(uint32_t), a_input_size);
-        if (l_offset + sizeof(uint32_t) > a_input_size) {
-            log_it(L_ERROR, "chipmunk_ring_signature_from_bytes: Buffer overflow at commitment %zu: offset=%zu + %zu > input_size=%zu", 
-                   l_i, l_offset, sizeof(uint32_t), a_input_size);
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        // NOTE: Old randomness deserialization removed - now handled in Acorn block below
-        
-        // Deserialize Acorn commitment sizes 
-        if (l_offset + CHIPMUNK_RING_QR_LAYER_COUNT * sizeof(uint32_t) > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        
-        uint32_t acorn_proof_size_32, randomness_size_32, linkability_tag_size_32;
-        
-        memcpy(&acorn_proof_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->acorn_proofs[l_i].acorn_proof_size = (size_t)acorn_proof_size_32;
-        l_offset += sizeof(uint32_t);
-        
-        memcpy(&randomness_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->acorn_proofs[l_i].randomness_size = (size_t)randomness_size_32;
-        l_offset += sizeof(uint32_t);
-        
-        memcpy(&linkability_tag_size_32, a_input + l_offset, sizeof(uint32_t));
-        a_sig->acorn_proofs[l_i].linkability_tag_size = (size_t)linkability_tag_size_32;
-        l_offset += sizeof(uint32_t);
-
-        // Allocate memory for Acorn commitment components
-        log_it(L_DEBUG, "Allocating Acorn commitment %zu: acorn_proof=%zu, randomness=%zu, linkability=%zu", 
-               l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
-               a_sig->acorn_proofs[l_i].linkability_tag_size);
-        a_sig->acorn_proofs[l_i].acorn_proof = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].acorn_proof_size);
-        a_sig->acorn_proofs[l_i].randomness = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].randomness_size);
-        a_sig->acorn_proofs[l_i].linkability_tag = DAP_NEW_Z_SIZE(uint8_t, a_sig->acorn_proofs[l_i].linkability_tag_size);
-
-        if (!a_sig->acorn_proofs[l_i].acorn_proof || !a_sig->acorn_proofs[l_i].randomness ||
-            !a_sig->acorn_proofs[l_i].linkability_tag) {
-            log_it(L_ERROR, "Failed to allocate Acorn commitment %zu (acorn_proof=%zu, randomness=%zu, linkability=%zu)", 
-                   l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
-                   a_sig->acorn_proofs[l_i].linkability_tag_size);
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-        }
-
-        // Deserialize Acorn commitment content
-        size_t total_acorn_size = a_sig->acorn_proofs[l_i].acorn_proof_size +
-                                 a_sig->acorn_proofs[l_i].randomness_size +
-                                 a_sig->acorn_proofs[l_i].linkability_tag_size;
-
-        if (l_offset + total_acorn_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-
-        memcpy(a_sig->acorn_proofs[l_i].acorn_proof, a_input + l_offset, a_sig->acorn_proofs[l_i].acorn_proof_size);
-        l_offset += a_sig->acorn_proofs[l_i].acorn_proof_size;
-
-        memcpy(a_sig->acorn_proofs[l_i].randomness, a_input + l_offset, a_sig->acorn_proofs[l_i].randomness_size);
-        l_offset += a_sig->acorn_proofs[l_i].randomness_size;
-
-        memcpy(a_sig->acorn_proofs[l_i].linkability_tag, a_input + l_offset, a_sig->acorn_proofs[l_i].linkability_tag_size);
-        l_offset += a_sig->acorn_proofs[l_i].linkability_tag_size;
-
-        debug_if(s_debug_more, L_INFO, "Deserialized Acorn commitment %zu: acorn_proof=%zu, randomness=%zu, linkability=%zu",
-                 l_i, a_sig->acorn_proofs[l_i].acorn_proof_size, a_sig->acorn_proofs[l_i].randomness_size,
-                 a_sig->acorn_proofs[l_i].linkability_tag_size);
-    }
-
-    // NOTE: Response deserialization removed - Acorn proofs in commitments handle all ZKP
-
-    // Deserialize signature (dynamic size with length prefix)
-    if (l_offset + sizeof(uint32_t) > a_input_size) {
-        chipmunk_ring_signature_free(a_sig);
-        return -EINVAL;
-    }
-    uint32_t sig_size_32;
-    memcpy(&sig_size_32, a_input + l_offset, sizeof(uint32_t));
-    a_sig->signature_size = (size_t)sig_size_32;
-    l_offset += sizeof(uint32_t);
-    
-    // Allocate and read chipmunk signature
-    a_sig->signature = DAP_NEW_Z_SIZE(uint8_t, a_sig->signature_size);
-    if (!a_sig->signature) {
-        chipmunk_ring_signature_free(a_sig);
-        return -ENOMEM;
+        return result.error_code;
     }
     
-    if (l_offset + a_sig->signature_size > a_input_size) {
-        chipmunk_ring_signature_free(a_sig);
-        return -EINVAL;
-    }
-    memcpy(a_sig->signature, a_input + l_offset, a_sig->signature_size);
-    l_offset += a_sig->signature_size;
-    
-    // Deserialize ring hash
-    if (l_offset + CHIPMUNK_RING_RING_HASH_SIZE > a_input_size) {
-        chipmunk_ring_signature_free(a_sig);
-        return -EINVAL;
-    }
-    memcpy(a_sig->ring_hash, a_input + l_offset, CHIPMUNK_RING_RING_HASH_SIZE);
-    l_offset += CHIPMUNK_RING_RING_HASH_SIZE;
-    
-    // Deserialize ZK proofs for multi-signer mode
-    if (l_offset + sizeof(uint32_t) > a_input_size) {
-        chipmunk_ring_signature_free(a_sig);
-        return -EINVAL;
-    }
-    uint32_t zk_proofs_size_32;
-    memcpy(&zk_proofs_size_32, a_input + l_offset, sizeof(uint32_t));
-    a_sig->zk_proofs_size = (size_t)zk_proofs_size_32;
-    l_offset += sizeof(uint32_t);
-    
-    if (a_sig->zk_proofs_size > 0) {
-        // Deserialize ZK proofs data
-        if (l_offset + a_sig->zk_proofs_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        
-        a_sig->threshold_zk_proofs = DAP_NEW_Z_SIZE(uint8_t, a_sig->zk_proofs_size);
-        if (!a_sig->threshold_zk_proofs) {
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-        }
-        
-        memcpy(a_sig->threshold_zk_proofs, a_input + l_offset, a_sig->zk_proofs_size);
-        l_offset += a_sig->zk_proofs_size;
-        
-        log_it(L_DEBUG, "Deserialized %zu bytes of ZK proofs for multi-signer", a_sig->zk_proofs_size);
-    }
-    
-    // Deserialize embedded keys or key hashes based on mode
-    if (a_sig->use_embedded_keys) {
-        // Deserialize embedded public keys
-        size_t keys_size = a_sig->ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
-        if (l_offset + keys_size > a_input_size) {
-            chipmunk_ring_signature_free(a_sig);
-            return -EINVAL;
-        }
-        
-        a_sig->ring_public_keys = DAP_NEW_Z_COUNT(chipmunk_ring_public_key_t, a_sig->ring_size);
-        if (!a_sig->ring_public_keys) {
-            chipmunk_ring_signature_free(a_sig);
-            return -ENOMEM;
-        }
-        
-        for (uint32_t i = 0; i < a_sig->ring_size; i++) {
-            memcpy(a_sig->ring_public_keys[i].data, a_input + l_offset, CHIPMUNK_PUBLIC_KEY_SIZE);
-            l_offset += CHIPMUNK_PUBLIC_KEY_SIZE;
-        }
-        
-        log_it(L_DEBUG, "Deserialized %u embedded public keys", a_sig->ring_size);
-        
-    } else {
-        // Deserialize key hashes
-        // NOTE: ring_key_hashes deserialization removed - only ring_hash is deserialized
-        
-        log_it(L_DEBUG, "Deserialized %u key hashes", a_sig->ring_size);
-    }
-
+    debug_if(s_debug_more, L_DEBUG, "Deserialized signature: %zu bytes", result.bytes_read);
     return 0;
 }
 
@@ -2098,34 +1557,14 @@ int chipmunk_ring_reset_params(void) {
         .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
         .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
         .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
-        .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
-        .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
-        .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
-        .ntru_n = CHIPMUNK_RING_NTRU_N_DEFAULT,
-        .ntru_q = CHIPMUNK_RING_NTRU_Q_DEFAULT,
-        .code_n = CHIPMUNK_RING_CODE_N_DEFAULT,
-        .code_k = CHIPMUNK_RING_CODE_K_DEFAULT,
-        .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
+        // Legacy quantum layer parameters removed - Acorn handles all security
         .computed = {0} // Will be recalculated in set_params
     };
 
     return chipmunk_ring_set_params(&default_params);
 }
 
-/**
- * @brief Get current layer sizes
- * @param ring_lwe_size Output Ring-LWE layer size
- * @param ntru_size Output NTRU layer size
- * @param code_size Output enhanced code layer size
- * @param binding_proof_size Output optimized binding proof size
- */
-void chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
-                                  size_t *code_size, size_t *binding_proof_size) {
-    if (ring_lwe_size) *ring_lwe_size = s_pq_params.computed.ring_lwe_commitment_size;
-    if (ntru_size) *ntru_size = s_pq_params.computed.ntru_commitment_size;
-    if (code_size) *code_size = s_pq_params.computed.code_commitment_size;
-    if (binding_proof_size) *binding_proof_size = s_pq_params.computed.binding_proof_size;
-}
+// REMOVED: get_layer_sizes - quantum layers replaced by Acorn Verification
 
 
 /**
@@ -2159,13 +1598,13 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
     // Use ring hash to resolve all keys via external resolver
     // The resolver should return all keys that match this ring hash
     int resolve_result = a_key_resolver(a_signature->ring_hash, l_resolved_ring.public_keys, a_resolver_context);
-    if (resolve_result != 0) {
+        if (resolve_result != 0) {
         log_it(L_ERROR, "Failed to resolve public keys from ring hash");
-        DAP_DELETE(l_resolved_ring.public_keys);
+            DAP_DELETE(l_resolved_ring.public_keys);
         DAP_DELETE(l_resolved_ring.ring_hash);
-        return resolve_result;
-    }
-    
+            return resolve_result;
+        }
+        
     // Verify that resolved keys produce the same ring hash
     dap_hash_fast_t l_verify_ring_hash;
     bool l_hash_result = dap_hash_fast(l_resolved_ring.public_keys, 
@@ -2173,7 +1612,7 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
                                      &l_verify_ring_hash);
     if (!l_hash_result) {
         log_it(L_ERROR, "Failed to compute ring hash for verification");
-        DAP_DELETE(l_resolved_ring.public_keys);
+            DAP_DELETE(l_resolved_ring.public_keys);
         DAP_DELETE(l_resolved_ring.ring_hash);
         return -1;
     }

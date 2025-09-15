@@ -106,15 +106,7 @@ int dap_enc_chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
  */
 int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
 
-/**
- * @brief Get current layer sizes
- * @param ring_lwe_size Output Ring-LWE layer size
- * @param ntru_size Output NTRU layer size
- * @param code_size Output code layer size
- * @param binding_proof_size Output binding proof size
- */
-void dap_enc_chipmunk_ring_get_layer_sizes(size_t *ring_lwe_size, size_t *ntru_size,
-                                          size_t *code_size, size_t *binding_proof_size);
+// REMOVED: dap_enc_chipmunk_ring_get_layer_sizes - quantum layers replaced by Acorn Verification
 
 /**
  * @brief Reset parameters to defaults

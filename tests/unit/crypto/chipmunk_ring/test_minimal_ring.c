@@ -82,6 +82,8 @@ int main(int argc, char* argv[]) {
         log_it(L_ERROR, "Failed to initialize DAP SDK");
         return -1;
     }
+    
+    dap_enc_chipmunk_ring_init();
 
     // Test minimal key generation
     test_minimal_key_generation();

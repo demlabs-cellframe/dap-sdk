@@ -124,6 +124,46 @@ static const dap_serialize_field_t test_conditional_fields[] = {
 
 DAP_SERIALIZE_SCHEMA_DEFINE(test_conditional_schema, test_conditional_struct_t, test_conditional_fields);
 
+// Structures for complex nested test
+typedef struct test_acorn {
+    uint8_t *acorn_proof;
+    size_t acorn_proof_size;
+    uint8_t *randomness;
+    size_t randomness_size;
+    uint8_t *linkability_tag;
+    size_t linkability_tag_size;
+} test_acorn_t;
+
+typedef struct test_complex_signature {
+    uint32_t ring_size;
+    uint32_t required_signers;
+    uint8_t *challenge;
+    size_t challenge_size;
+    test_acorn_t *acorn_proofs;
+    uint8_t *signature;
+    size_t signature_size;
+} test_complex_signature_t;
+
+// Schema for nested acorn structure
+static const dap_serialize_field_t test_acorn_fields[] = {
+    DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(test_acorn_t, acorn_proof, acorn_proof_size),
+    DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(test_acorn_t, randomness, randomness_size),
+    DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(test_acorn_t, linkability_tag, linkability_tag_size)
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(test_acorn_schema, test_acorn_t, test_acorn_fields);
+
+// Schema for complex signature
+static const dap_serialize_field_t test_complex_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(test_complex_signature_t, ring_size, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(test_complex_signature_t, required_signers, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(test_complex_signature_t, challenge, challenge_size),
+    DAP_SERIALIZE_FIELD_DYNAMIC_ARRAY(test_complex_signature_t, acorn_proofs, ring_size, &test_acorn_schema),
+    DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(test_complex_signature_t, signature, signature_size)
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(test_complex_schema, test_complex_signature_t, test_complex_fields);
+
 // Test functions
 
 /**
@@ -141,7 +181,7 @@ static void test_simple_serialization(void) {
     };
     
     // Calculate required buffer size
-    size_t required_size = dap_serialize_calc_size(&test_simple_schema, &original, NULL);
+    size_t required_size = dap_serialize_calc_size(&test_simple_schema, NULL, &original, NULL);
     assert(required_size > 0);
     log_it(L_DEBUG, "Required buffer size: %zu bytes", required_size);
     
@@ -199,7 +239,7 @@ static void test_dynamic_serialization(void) {
     memcpy(original.data, test_data, sizeof(test_data));
     
     // Calculate required buffer size
-    size_t required_size = dap_serialize_calc_size(&test_dynamic_schema, &original, NULL);
+    size_t required_size = dap_serialize_calc_size(&test_dynamic_schema, NULL, &original, NULL);
     assert(required_size > 0);
     log_it(L_DEBUG, "Required buffer size for dynamic: %zu bytes", required_size);
     
@@ -262,7 +302,7 @@ static void test_conditional_serialization(void) {
     memcpy(original1.conditional_data, test_conditional_data, sizeof(test_conditional_data));
     
     // Serialize with conditions
-    size_t required_size1 = dap_serialize_calc_size(&test_conditional_schema, &original1, NULL);
+    size_t required_size1 = dap_serialize_calc_size(&test_conditional_schema, NULL, &original1, NULL);
     uint8_t *buffer1 = DAP_NEW_SIZE(uint8_t, required_size1);
     
     dap_serialize_result_t result1 = dap_serialize_to_buffer(
@@ -278,7 +318,7 @@ static void test_conditional_serialization(void) {
         .conditional_data_size = 0
     };
     
-    size_t required_size2 = dap_serialize_calc_size(&test_conditional_schema, &original2, NULL);
+    size_t required_size2 = dap_serialize_calc_size(&test_conditional_schema, NULL, &original2, NULL);
     uint8_t *buffer2 = DAP_NEW_SIZE(uint8_t, required_size2);
     
     dap_serialize_result_t result2 = dap_serialize_to_buffer(
@@ -373,7 +413,7 @@ static void test_buffer_validation(void) {
     test_simple_struct_t test_obj = {0x12, 0x3456, 0x789ABCDE, 0xFEDCBA9876543210ULL};
     
     // Serialize valid data
-    size_t required_size = dap_serialize_calc_size(&test_simple_schema, &test_obj, NULL);
+    size_t required_size = dap_serialize_calc_size(&test_simple_schema, NULL, &test_obj, NULL);
     uint8_t *buffer = DAP_NEW_SIZE(uint8_t, required_size);
     
     dap_serialize_result_t result = dap_serialize_to_buffer(
@@ -426,7 +466,7 @@ static void test_performance(void) {
         test_obj.data[i] = (uint8_t)(i & 0xFF);
     }
     
-    size_t required_size = dap_serialize_calc_size(&test_dynamic_schema, &test_obj, NULL);
+    size_t required_size = dap_serialize_calc_size(&test_dynamic_schema, NULL, &test_obj, NULL);
     uint8_t *buffer = DAP_NEW_SIZE(uint8_t, required_size);
     
     // Time serialization
@@ -479,6 +519,57 @@ static void test_performance(void) {
 }
 
 /**
+ * @brief Test complex nested structures with NULL pointers (ChipmunkRing case)
+ */
+static void test_complex_nested_with_nulls(void) {
+    log_it(L_INFO, "Testing complex nested structures with NULL pointers...");
+    
+    // Create test structure with NULL pointers (like ChipmunkRing dummy)
+    test_complex_signature_t test_sig = {0};
+    test_sig.ring_size = 2;
+    test_sig.required_signers = 1;
+    test_sig.challenge_size = 32;
+    test_sig.signature_size = 64;
+    
+    // Leave pointers as NULL - test serializer NULL handling
+    test_sig.challenge = NULL;
+    test_sig.acorn_proofs = NULL;
+    test_sig.signature = NULL;
+    
+    // Test size calculation with NULL pointers
+    size_t calculated_size = dap_serialize_calc_size(&test_complex_schema, NULL, &test_sig, NULL);
+    
+    log_it(L_DEBUG, "Complex structure with NULLs: calculated size = %zu", calculated_size);
+    
+    assert(calculated_size > 0);
+    
+    // Test with stack-allocated array (ChipmunkRing case)
+    test_acorn_t stack_acorns[2] = {0};
+    stack_acorns[0].acorn_proof_size = 64;
+    stack_acorns[0].randomness_size = 32;
+    stack_acorns[0].linkability_tag_size = 32;
+    stack_acorns[0].acorn_proof = NULL;
+    stack_acorns[0].randomness = NULL;
+    stack_acorns[0].linkability_tag = NULL;
+    
+    stack_acorns[1] = stack_acorns[0];  // Same sizes
+    
+    test_sig.acorn_proofs = stack_acorns;
+    
+    log_it(L_DEBUG, "About to test stack array: ring_size=%u, sizeof(test_acorn_t)=%zu, array_size=%zu", 
+           test_sig.ring_size, sizeof(test_acorn_t), sizeof(stack_acorns));
+    log_it(L_DEBUG, "Schema struct_size=%zu", test_acorn_schema.struct_size);
+    
+    // Test size calculation with stack array and NULL pointers
+    size_t stack_calculated_size = dap_serialize_calc_size(&test_complex_schema, NULL, &test_sig, NULL);
+    
+    log_it(L_DEBUG, "Complex structure with stack array: calculated size = %zu", stack_calculated_size);
+    
+    assert(stack_calculated_size > 0);
+    log_it(L_INFO, "Complex nested structures with NULL test passed");
+}
+
+/**
  * @brief Main test function
  */
 int main(int argc, char *argv[]) {
@@ -493,6 +584,7 @@ int main(int argc, char *argv[]) {
     test_error_conditions();
     test_buffer_validation();
     test_performance();
+    test_complex_nested_with_nulls();  // New test for ChipmunkRing case
     
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     
