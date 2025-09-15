@@ -540,6 +540,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     // Allocate chipmunk signature
     a_signature->signature_size = CHIPMUNK_SIGNATURE_SIZE;
     a_signature->signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->signature_size);
+    debug_if(s_debug_more, L_DEBUG, "Allocated signature field: size=%zu, ptr=%p", 
+             a_signature->signature_size, a_signature->signature);
 
     if (!a_signature->acorn_proofs || !a_signature->signature) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -679,9 +681,12 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                                a_signature->challenge_size, l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
                 l_real_signer_index = l_i;
                 // Copy the real signature
-                memcpy(a_signature->signature, l_test_signature, 
-                       (a_signature->signature_size < sizeof(l_test_signature)) ?
-                       a_signature->signature_size : sizeof(l_test_signature));
+                size_t l_copy_size = (a_signature->signature_size < sizeof(l_test_signature)) ?
+                                   a_signature->signature_size : sizeof(l_test_signature);
+                memcpy(a_signature->signature, l_test_signature, l_copy_size);
+                debug_if(s_debug_more, L_DEBUG, "Copied signature data: size=%zu, first_bytes=%02x%02x%02x%02x", 
+                         l_copy_size, l_test_signature[0], l_test_signature[1], 
+                         l_test_signature[2], l_test_signature[3]);
                 break;
             }
         }
@@ -1359,19 +1364,21 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     }
 
     // Use new parameter-based size calculation (no dummy objects needed)
-    const size_t l_field_count = 7;  // Number of dynamic fields we need to specify
+    // Schema fields order: ring_size, required_signers, use_embedded_keys, challenge, ring_hash, signature, acorn_proofs, linkability_tag
+    const size_t l_field_count = 8;  // Number of fields we need to specify
     
-    size_t l_array_counts[7] = {a_ring_size, a_ring_size, 0, 0, 0, 0, 0};
-    size_t l_data_sizes[7] = {
-        CHIPMUNK_RING_CHALLENGE_SIZE,           // challenge
-        CHIPMUNK_RING_RING_HASH_SIZE,           // ring_hash  
-        CHIPMUNK_SIGNATURE_SIZE,                // signature
-        CHIPMUNK_RING_LINKABILITY_TAG_SIZE,     // linkability_tag
-        CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT,    // acorn_proof per element
-        CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,  // randomness per element
-        CHIPMUNK_RING_LINKABILITY_TAG_SIZE      // linkability_tag per element
+    size_t l_array_counts[8] = {0, 0, 0, 0, 0, 0, a_ring_size, 0};  // Only acorn_proofs is array
+    size_t l_data_sizes[8] = {
+        0,                                      // ring_size (uint32)
+        0,                                      // required_signers (uint32)
+        0,                                      // use_embedded_keys (uint8)
+        CHIPMUNK_RING_CHALLENGE_SIZE,           // challenge (BYTES_DYNAMIC)
+        CHIPMUNK_RING_RING_HASH_SIZE,           // ring_hash (BYTES_DYNAMIC)
+        CHIPMUNK_SIGNATURE_SIZE,                // signature (BYTES_DYNAMIC)
+        0,                                      // acorn_proofs (ARRAY_DYNAMIC) - handled by array_counts
+        CHIPMUNK_RING_LINKABILITY_TAG_SIZE      // linkability_tag (BYTES_DYNAMIC)
     };
-    bool l_field_present[7] = {true, true, true, true, true, true, true};
+    bool l_field_present[8] = {true, true, true, true, true, true, true, true};
     
     dap_serialize_size_params_t l_size_params = {
         .field_count = l_field_count,
@@ -1390,10 +1397,11 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
         return 0;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Calculated signature size: %zu bytes for ring_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "Calculated signature size: %zu bytes for ring_size=%zu",
              l_calculated_size, a_ring_size);
     
-    return l_calculated_size;
+    // Add small safety margin for serialization overhead
+    return l_calculated_size + 64;
 }
 
 // Condition functions moved to chipmunk_ring_serialize_schema.c

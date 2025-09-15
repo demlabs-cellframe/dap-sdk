@@ -17,61 +17,74 @@ static void test_minimal_key_generation() {
     log_it(L_INFO, "Testing minimal key generation...");
 
     // Generate a simple key
-    dap_enc_key_t* key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
-    assert(key != NULL);
-    assert(key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    assert(l_key != NULL);
+    assert(l_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
 
     log_it(L_INFO, "Key generated successfully: pub_key_data=%p, priv_key_data=%p",
-           key->pub_key_data, key->priv_key_data);
+           l_key->pub_key_data, l_key->priv_key_data);
 
     // Verify that pointers are valid
-    assert(key->pub_key_data != NULL);
-    assert(key->priv_key_data != NULL);
+    assert(l_key->pub_key_data != NULL);
+    assert(l_key->priv_key_data != NULL);
 
     // Free the key
-    dap_enc_key_delete(key);
+    dap_enc_key_delete(l_key);
     log_it(L_INFO, "Key freed successfully");
 }
 
-static void test_minimal_ring_signature() {
+static int test_minimal_ring_signature() {
     log_it(L_INFO, "Testing minimal ring signature...");
 
-    // Generate keys
-    dap_enc_key_t* signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
-    assert(signer_key != NULL);
+    // Generate keys - signer must be part of the ring
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    if (!l_signer_key) {
+        log_it(L_ERROR, "Failed to generate signer key");
+        return -1;
+    }
 
-    dap_enc_key_t* ring_keys[2];
-    ring_keys[0] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
-    ring_keys[1] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
-    assert(ring_keys[0] != NULL);
-    assert(ring_keys[1] != NULL);
+    dap_enc_key_t* l_ring_keys[2];
+    l_ring_keys[0] = l_signer_key;  // Signer is part of the ring (critical for anonymity)
+    l_ring_keys[1] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    if (!l_ring_keys[1]) {
+        log_it(L_ERROR, "Failed to generate ring key");
+        dap_enc_key_delete(l_signer_key);
+        return -1;
+    }
 
     log_it(L_INFO, "Keys generated successfully");
 
     // Create a simple message
-    const char* message = "test";
-    size_t message_len = strlen(message);
+    const char* l_message = "test";
+    size_t l_message_len = strlen(l_message);
 
     // Debug key state before signing
-    log_it(L_INFO, "Signer key: pub_key_data=%p, priv_key_data=%p", signer_key->pub_key_data, signer_key->priv_key_data);
-    log_it(L_INFO, "Ring key 0: pub_key_data=%p, priv_key_data=%p", ring_keys[0]->pub_key_data, ring_keys[0]->priv_key_data);
-    log_it(L_INFO, "Ring key 1: pub_key_data=%p, priv_key_data=%p", ring_keys[1]->pub_key_data, ring_keys[1]->priv_key_data);
+    log_it(L_INFO, "Signer key: pub_key_data=%p, priv_key_data=%p", l_signer_key->pub_key_data, l_signer_key->priv_key_data);
+    log_it(L_INFO, "Ring key 0: pub_key_data=%p, priv_key_data=%p", l_ring_keys[0]->pub_key_data, l_ring_keys[0]->priv_key_data);
+    log_it(L_INFO, "Ring key 1: pub_key_data=%p, priv_key_data=%p", l_ring_keys[1]->pub_key_data, l_ring_keys[1]->priv_key_data);
 
     // Create signature
     log_it(L_INFO, "Creating signature...");
-    dap_sign_t* signature = dap_sign_create_ring(signer_key, (uint8_t*)message, message_len, ring_keys, 2, 1);
-    assert(signature != NULL);
+    dap_sign_t* l_signature = dap_sign_create_ring(l_signer_key, (uint8_t*)l_message, l_message_len, l_ring_keys, 2, 1);
+    
+    // FAIL FAST: Return error immediately if signature creation fails
+    if (!l_signature) {
+        log_it(L_ERROR, "Ring signature creation failed - ChipmunkRing implementation has errors");
+        dap_enc_key_delete(l_signer_key);
+        dap_enc_key_delete(l_ring_keys[1]);
+        return -1;  // Return error code immediately
+    }
 
     log_it(L_INFO, "Signature created successfully");
 
     // Free everything
-    DAP_DELETE(signature);
+    DAP_DELETE(l_signature);
 
-    dap_enc_key_delete(signer_key);
-    dap_enc_key_delete(ring_keys[0]);
-    dap_enc_key_delete(ring_keys[1]);
+    dap_enc_key_delete(l_signer_key);  // Only delete signer key once (it's ring_keys[0])
+    dap_enc_key_delete(l_ring_keys[1]);  // Delete only the additional ring key
 
     log_it(L_INFO, "All memory freed successfully");
+    return 0;  // Success
 }
 
 int main(int argc, char* argv[]) {
@@ -83,13 +96,22 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     
-    dap_enc_chipmunk_ring_init();
+    if (dap_enc_chipmunk_ring_init() != 0) {
+        log_it(L_ERROR, "Failed to initialize ChipmunkRing");
+        dap_test_sdk_cleanup();
+        return -1;
+    }
 
-    // Test minimal key generation
+    // Test minimal key generation (void function - uses assert internally)
     test_minimal_key_generation();
 
-    // Test minimal ring signature
-    test_minimal_ring_signature();
+    // Test minimal ring signature - FAIL FAST if error
+    int l_signature_result = test_minimal_ring_signature();
+    if (l_signature_result != 0) {
+        log_it(L_ERROR, "Ring signature test failed with error %d", l_signature_result);
+        dap_test_sdk_cleanup();
+        return l_signature_result;  // Propagate error code
+    }
 
     // Cleanup
     dap_test_sdk_cleanup();

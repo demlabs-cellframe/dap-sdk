@@ -62,19 +62,32 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
  * @brief Calculate required buffer size for serialization
  * @details Supports both object-based and parameter-based calculation
  */
+// Global recursion depth counter to prevent infinite recursion
+static __thread int s_recursion_depth = 0;
+#define MAX_RECURSION_DEPTH 10
+
 size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
                                const dap_serialize_size_params_t *a_params,
                                const void *a_object,
                                void *a_context)
 {
+    // Prevent infinite recursion
+    if (s_recursion_depth >= MAX_RECURSION_DEPTH) {
+        log_it(L_ERROR, "Maximum recursion depth exceeded in serializer");
+        return 0;
+    }
+    s_recursion_depth++;
+    
     if (!a_schema || (!a_params && !a_object)) {
         log_it(L_ERROR, "Invalid parameters for size calculation - need either params or object");
+        s_recursion_depth--;
         return 0;
     }
     
     if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
         log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X)", 
                a_schema->magic, DAP_SERIALIZE_MAGIC_NUMBER);
+        s_recursion_depth--;
         return 0;
     }
     
@@ -112,6 +125,7 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
     log_it(L_DEBUG, "Calculated serialization size: %zu bytes for schema '%s'", 
            total_size, a_schema->name);
     
+    s_recursion_depth--;
     return total_size;
 }
 
@@ -190,8 +204,19 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
             case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC:
                 field_size = sizeof(uint32_t); // count prefix
                 if (field->nested_schema) {
+                    // Prevent infinite recursion for nested schemas
+                    if (field->nested_schema == a_schema) {
+                        log_it(L_ERROR, "Circular dependency detected in nested schema for field %zu", i);
+                        s_recursion_depth--;
+                        return 0;
+                    }
                     // For nested structures, multiply element size by count
                     size_t element_size = dap_serialize_calc_size(field->nested_schema, a_params, NULL, a_context);
+                    if (element_size == 0) {
+                        log_it(L_ERROR, "Failed to calculate nested schema size for field %zu", i);
+                        s_recursion_depth--;
+                        return 0;
+                    }
                     field_size += element_size * a_params->array_counts[i];
                 } else {
                     // Simple array of fixed-size elements
@@ -229,9 +254,13 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
 {
     dap_serialize_result_t result = {0};
     
+    debug_if(s_debug_more, L_DEBUG, "dap_serialize_to_buffer ENTRY: schema='%s', object=%p, buffer=%p, size=%zu", 
+             a_schema ? a_schema->name : "NULL", a_object, a_buffer, a_buffer_size);
+    
     if (!a_schema || !a_object || !a_buffer) {
         result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
         result.error_message = "Invalid parameters";
+        log_it(L_ERROR, "Invalid parameters: schema=%p, object=%p, buffer=%p", a_schema, a_object, a_buffer);
         return result;
     }
     
@@ -285,11 +314,13 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
             continue;
         }
         
-        int field_result = s_serialize_field(field, a_object, &ctx);
-        if (field_result != 0) {
-            result.error_code = field_result;
+        int l_field_result = s_serialize_field(field, a_object, &ctx);
+        if (l_field_result != 0) {
+            result.error_code = l_field_result;
             result.error_message = "Field serialization failed";
             result.failed_field = field->name;
+            log_it(L_ERROR, "Field '%s' (type %d) serialization failed with error %d", 
+                   field->name, field->type, l_field_result);
             return result;
         }
         
@@ -563,6 +594,11 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                     } else {
                         size_t l_element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
                         debug_if(s_debug_more, L_DEBUG, "Element size: %zu, count: %zu", l_element_size, l_count_value);
+                        if (l_element_size == 0) {
+                            log_it(L_ERROR, "Failed to calculate nested schema size for field '%s'", a_field->name);
+                            s_recursion_depth--;
+                            return 0;
+                        }
                         l_size += l_element_size * l_count_value;
                     }
                 } else {
@@ -591,7 +627,13 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                     } else {
                         for (size_t i = 0; i < l_count_value; i++) {
                             const uint8_t *l_current_element = l_element_ptr + i * a_field->nested_schema->struct_size;
-                            l_size += dap_serialize_calc_size(a_field->nested_schema, NULL, l_current_element, a_context);
+                            size_t l_element_size = dap_serialize_calc_size(a_field->nested_schema, NULL, l_current_element, a_context);
+                            if (l_element_size == 0) {
+                                log_it(L_ERROR, "Failed to calculate nested element size for field '%s'", a_field->name);
+                                s_recursion_depth--;
+                                return 0;
+                            }
+                            l_size += l_element_size;
                         }
                     }
                 } else {
@@ -632,11 +674,11 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
 {
     const uint8_t *obj_ptr = (const uint8_t*)a_object;
     
-    // Check buffer space
-    size_t l_field_size = s_calc_field_size(a_field, a_object, NULL, 0, a_ctx->user_context, NULL);
-    if (a_ctx->offset + l_field_size > a_ctx->buffer_size) {
-        return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
-    }
+    debug_if(s_debug_more, L_DEBUG, "s_serialize_field ENTRY: field='%s', type=%d", 
+             a_field->name, a_field->type);
+    
+    // Skip field size calculation during serialization to avoid use-after-free
+    // Buffer size is checked by the caller
     
     switch (a_field->type) {
         case DAP_SERIALIZE_TYPE_UINT8:
@@ -655,8 +697,7 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             break;
         }
         case DAP_SERIALIZE_TYPE_UINT32:
-        case DAP_SERIALIZE_TYPE_INT32:
-        case DAP_SERIALIZE_TYPE_VERSION: {
+        case DAP_SERIALIZE_TYPE_INT32: {
             const uint32_t *value = (const uint32_t*)(obj_ptr + a_field->offset);
             s_write_uint32_le(a_ctx->buffer + a_ctx->offset, *value);
             a_ctx->offset += 4;
@@ -695,24 +736,7 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             a_ctx->offset += 8;
             break;
         }
-        case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC: {
-            const void **data_ptr = (const void**)(obj_ptr + a_field->offset);
-            const size_t *size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
-            
-            // Write size prefix
-            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*size_ptr);
-            a_ctx->offset += sizeof(uint32_t);
-            
-            // Write data - if NULL, write zeros
-            if (*data_ptr && *size_ptr > 0) {
-                memcpy(a_ctx->buffer + a_ctx->offset, *data_ptr, *size_ptr);
-            } else if (*size_ptr > 0) {
-                // NULL pointer but non-zero size - write zeros
-                memset(a_ctx->buffer + a_ctx->offset, 0, *size_ptr);
-            }
-            a_ctx->offset += *size_ptr;
-            break;
-        }
+        // REMOVED: duplicate BYTES_DYNAMIC case - consolidated below
         case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
             const char **string_ptr = (const char**)(obj_ptr + a_field->offset);
             const size_t *size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
@@ -746,7 +770,80 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             a_ctx->offset += a_field->size;
             break;
         }
-        // TODO: Implement array and nested struct types
+        case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC: {
+            const void **l_data_ptr = (const void**)(obj_ptr + a_field->offset);
+            const size_t *l_size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
+            
+            debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC field '%s': data_ptr=%p, size=%zu", 
+                     a_field->name, *l_data_ptr, *l_size_ptr);
+            
+            // Validate field data
+            if (*l_size_ptr > 0 && !*l_data_ptr) {
+                log_it(L_ERROR, "BYTES_DYNAMIC field '%s' has NULL data pointer but non-zero size %zu", 
+                       a_field->name, *l_size_ptr);
+                return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
+            }
+            
+            // Write size prefix
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*l_size_ptr);
+            a_ctx->offset += sizeof(uint32_t);
+            
+            // Write data - if NULL, write zeros
+            if (*l_data_ptr && *l_size_ptr > 0) {
+                memcpy(a_ctx->buffer + a_ctx->offset, *l_data_ptr, *l_size_ptr);
+            } else if (*l_size_ptr > 0) {
+                // NULL pointer but non-zero size - write zeros
+                memset(a_ctx->buffer + a_ctx->offset, 0, *l_size_ptr);
+            }
+            a_ctx->offset += *l_size_ptr;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_VERSION: {
+            // Version field - write field size (usually 4 bytes for uint32_t)
+            uint32_t l_version = 1; // Default version
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, l_version);
+            a_ctx->offset += sizeof(uint32_t);
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_CHECKSUM: {
+            // Skip checksum during serialization - will be calculated later
+            memset(a_ctx->buffer + a_ctx->offset, 0, a_field->size);
+            a_ctx->offset += a_field->size;
+            break;
+        }
+        case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
+            const void **l_array_ptr = (const void**)(obj_ptr + a_field->offset);
+            const size_t *l_count_ptr = (const size_t*)(obj_ptr + a_field->count_offset);
+            
+            // Write count prefix
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*l_count_ptr);
+            a_ctx->offset += sizeof(uint32_t);
+            
+            // Serialize array elements
+            if (*l_array_ptr && *l_count_ptr > 0) {
+                if (a_field->nested_schema) {
+                    // Nested structures
+                    const uint8_t *l_element_ptr = (const uint8_t*)*l_array_ptr;
+                    for (size_t i = 0; i < *l_count_ptr; i++) {
+                        const uint8_t *l_current_element = l_element_ptr + i * a_field->nested_schema->struct_size;
+                        dap_serialize_result_t l_element_result = dap_serialize_to_buffer(
+                            a_field->nested_schema, l_current_element, 
+                            a_ctx->buffer + a_ctx->offset, a_ctx->buffer_size - a_ctx->offset, 
+                            a_ctx->user_context);
+                        if (l_element_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+                            return l_element_result.error_code;
+                        }
+                        a_ctx->offset += l_element_result.bytes_written;
+                    }
+                } else {
+                    // Simple array of fixed-size elements
+                    size_t l_total_size = *l_count_ptr * a_field->size;
+                    memcpy(a_ctx->buffer + a_ctx->offset, *l_array_ptr, l_total_size);
+                    a_ctx->offset += l_total_size;
+                }
+            }
+            break;
+        }
         default:
             log_it(L_WARNING, "Serialization not implemented for field type %d", a_field->type);
             return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;

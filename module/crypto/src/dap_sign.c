@@ -396,8 +396,7 @@ dap_sign_t *dap_sign_create_ring(
 
     // Calculate signature size
     size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size);
-    debug_if(s_dap_sign_debug_more, L_INFO, "Ring signature size for ring_size=%zu: %zu",
-             a_ring_size, l_signature_size);
+    log_it(L_INFO, "Ring signature size for ring_size=%zu: %zu", a_ring_size, l_signature_size);
     dap_return_val_if_fail(l_signature_size > 0, NULL);
 
     // Allocate signature buffer

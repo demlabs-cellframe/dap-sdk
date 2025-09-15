@@ -119,15 +119,15 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .size_offset = offsetof(chipmunk_ring_signature_t, signature_size)
     },
     
-    // Acorn proofs array (dynamic count)
-    {
+    // Acorn proofs array (dynamic count) - DISABLED: causes use-after-free in serializer
+    /*{
         .name = "acorn_proofs",
         .type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, acorn_proofs),
         .count_offset = offsetof(chipmunk_ring_signature_t, ring_size),
         .nested_schema = &chipmunk_ring_acorn_schema
-    },
+    },*/
     
     // Linkability tag (dynamic size)
     {

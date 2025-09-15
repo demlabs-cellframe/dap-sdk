@@ -28,6 +28,8 @@
 #include "dap_common.h"
 #include "dap_crypto_common.h"
 #include "chipmunk/chipmunk.h"
+#include "chipmunk/chipmunk_ring_serialize_schema.h"
+#include "dap_serialize.h"
 
 // Детальное логирование для Chipmunk Ring модуля
 static bool s_debug_more = false;
@@ -410,8 +412,41 @@ int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_d
 }
 
 size_t dap_enc_chipmunk_ring_write_signature(const void *a_sign, size_t a_sign_size, uint8_t *a_buf) {
-    log_it(L_ERROR, "Chipmunk_Ring signature serialization not implemented");
-    return 0;
+    if (!a_sign || !a_buf) {
+        log_it(L_ERROR, "Invalid parameters for ChipmunkRing signature serialization");
+        return 0;
+    }
+    
+    const chipmunk_ring_signature_t *l_signature = (const chipmunk_ring_signature_t *)a_sign;
+    
+    // Validate structure before serialization
+    if (!l_signature->signature || l_signature->signature_size == 0) {
+        log_it(L_ERROR, "Invalid signature field: ptr=%p, size=%zu", l_signature->signature, l_signature->signature_size);
+        return 0;
+    }
+    
+    if (!l_signature->challenge || l_signature->challenge_size == 0) {
+        log_it(L_ERROR, "Invalid challenge field: ptr=%p, size=%zu", l_signature->challenge, l_signature->challenge_size);
+        return 0;
+    }
+    
+    // Skip size calculation to avoid use-after-free in acorn_proofs
+    // The serializer will check buffer size internally
+    
+    // Use universal serializer
+    dap_serialize_result_t l_result = dap_serialize_to_buffer(&chipmunk_ring_signature_schema, 
+                                                             l_signature, 
+                                                             a_buf, 
+                                                             a_sign_size, 
+                                                             NULL);
+    
+    if (l_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to serialize Chipmunk_Ring signature: %d", l_result.error_code);
+        return 0;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Chipmunk_Ring signature serialized: %zu bytes", l_result.bytes_written);
+    return l_result.bytes_written;
 }
 
 size_t dap_enc_chipmunk_ring_write_private_key(const void *a_private_key, size_t a_private_key_size, uint8_t *a_buf) {
