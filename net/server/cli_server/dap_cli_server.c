@@ -221,8 +221,8 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
         return NULL;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
-    l_cmd_item->doc = strdup( a_doc);
-    l_cmd_item->doc_ex = strdup( a_doc_ex);
+    l_cmd_item->doc = a_doc ? strdup( a_doc) : NULL;
+    l_cmd_item->doc_ex = a_doc_ex ? strdup( a_doc_ex) : NULL;
     if (a_arg_func) {
         l_cmd_item->func_ex = a_func;
         l_cmd_item->arg_func = a_arg_func;
@@ -243,7 +243,6 @@ int json_commands(const char * a_name) {
             "ledger",
             "tx_create",
             "tx_create_json",
-            "json_datum_mempool_put",
             "mempool_add",
             "tx_verify",
             "tx_cond_create",
