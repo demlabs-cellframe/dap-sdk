@@ -110,7 +110,7 @@ bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_
         return false;
     
     // For non-empty input, a_data_in must not be NULL and vise versa
-    if (a_data_in == NULL != a_data_in_size == 0)
+    if ((a_data_in == NULL) != (a_data_in_size == 0))
         return false;
 
     // Handle empty input case in order with each other cases
