@@ -204,7 +204,7 @@ static bool s_test_size_scaling(void) {
         dap_assert(l_signature != NULL, "Signature creation should succeed");
 
         // Check size scaling
-        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
         dap_assert(l_signature->header.sign_size == l_expected_size,
                        "Signature size should match expected size");
 
@@ -326,7 +326,7 @@ static bool s_test_threshold_performance(void) {
                                       (total_verification_time / successful_iterations) : 0.0;
         
         // Get signature size
-        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size);
+        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size, 1, true);
         
         // Store results
         if (g_results_count < sizeof(g_performance_results) / sizeof(g_performance_results[0])) {

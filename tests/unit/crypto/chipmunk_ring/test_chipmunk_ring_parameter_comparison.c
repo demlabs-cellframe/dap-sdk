@@ -549,7 +549,7 @@ static bool s_test_threshold_parameter_performance(void) {
         double avg_verification_time = (successful_iterations > 0) ? 
                                       (total_verification_time / successful_iterations) : 0.0;
         
-        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size);
+        size_t signature_size = dap_enc_chipmunk_ring_get_signature_size(ring_size, 1, true);
         double efficiency = (signature_size > 0) ? 
                            (1000.0 / (avg_signing_time + avg_verification_time)) : 0.0;
         

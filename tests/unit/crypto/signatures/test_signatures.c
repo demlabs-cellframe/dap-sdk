@@ -205,13 +205,13 @@ static bool s_test_signature_sizes(void) {
 
     for (size_t i = 0; i < sizeof(l_ring_sizes) / sizeof(l_ring_sizes[0]); i++) {
         size_t l_ring_size = l_ring_sizes[i];
-        size_t l_sig_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+        size_t l_sig_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
 
         DAP_TEST_ASSERT(l_sig_size > 0, "Signature size should be positive");
         DAP_TEST_ASSERT(l_sig_size > 1000, "Ring signature should be large enough for anonymity");
 
         if (l_ring_size < 64) {  // Test for reasonable ring sizes
-            size_t l_next_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size * 2);
+            size_t l_next_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size * 2, 1, true);
             // ChipmunkRing: signature size increases only due to embedded keys array
             // If embedded keys are used, larger ring produces larger signature
             // If external storage is used, signature size is constant

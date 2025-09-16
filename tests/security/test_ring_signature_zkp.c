@@ -184,7 +184,7 @@ static bool s_test_anonymity_property(void) {
     // (an observer cannot determine which position was the actual signer)
 
     // Check signature sizes are consistent
-    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
     for (size_t i = 0; i < l_num_positions; i++) {
         DAP_TEST_ASSERT(l_signatures[i]->header.sign_size == l_expected_size,
                        "All signatures should have the same size");
@@ -329,7 +329,7 @@ static bool s_test_ring_size_security(void) {
         DAP_TEST_ASSERT(l_verify_result == 0, "Signature verification should succeed");
 
         // Check signature size is appropriate for ring size
-        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
         DAP_TEST_ASSERT(l_signature->header.sign_size == l_expected_size,
                        "Signature size should match expected size for ring size");
 

@@ -130,8 +130,8 @@ static bool s_test_ring_size_limits(void) {
         dap_assert(l_min_signature != NULL, "Min ring signature creation should succeed");
 
         // Check sizes
-        size_t l_max_size = dap_enc_chipmunk_ring_get_signature_size(MAX_RING_SIZE);
-        size_t l_min_size = dap_enc_chipmunk_ring_get_signature_size(MIN_RING_SIZE);
+        size_t l_max_size = dap_enc_chipmunk_ring_get_signature_size(MAX_RING_SIZE, 1, true);
+        size_t l_min_size = dap_enc_chipmunk_ring_get_signature_size(MIN_RING_SIZE, 1, true);
 
         dap_assert(l_max_signature->header.sign_size == l_max_size,
                        "Max signature should have correct size");

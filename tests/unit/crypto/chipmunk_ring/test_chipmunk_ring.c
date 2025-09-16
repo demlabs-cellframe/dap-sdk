@@ -173,7 +173,7 @@ static bool s_test_ring_signature_operations(void) {
     dap_assert(l_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
                    "Signature should be CHIPMUNK_RING type");
 
-                size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+                size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
                 dap_assert(l_signature->header.sign_size == l_expected_size,
                                "Signature size should match expected size");
 
@@ -569,7 +569,7 @@ static bool s_test_performance(void) {
         log_it(L_DEBUG, "Ring size %zu: signature verification took %" PRIu64 " microseconds", l_ring_size, l_verify_time);
 
         // Test signature size scaling
-        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size);
+        size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
         dap_assert(l_signature->header.sign_size == l_expected_size,
                        "Signature size should match expected size");
 
@@ -653,8 +653,8 @@ static bool s_test_edge_cases(void) {
     dap_assert(l_verify_result == 0, "Min ring signature verification (pos 1) should succeed");
 
     // Test signature size differences
-    size_t l_max_size = dap_enc_chipmunk_ring_get_signature_size(l_max_ring_size);
-    size_t l_min_size = dap_enc_chipmunk_ring_get_signature_size(2);
+    size_t l_max_size = dap_enc_chipmunk_ring_get_signature_size(l_max_ring_size, 1, true);
+    size_t l_min_size = dap_enc_chipmunk_ring_get_signature_size(2, 1, true);
 
     dap_assert(l_max_signature->header.sign_size == l_max_size,
                    "Max signature should have correct size");
