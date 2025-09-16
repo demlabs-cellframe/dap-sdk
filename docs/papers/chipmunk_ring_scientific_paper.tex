@@ -25,7 +25,7 @@ Dmitrii A. Gerasimov\\
 \maketitle
 
 \begin{abstract}
-We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 20.5-279.7KB with signing times of 1.1-15.1ms and verification times of 0.4-4.5ms for rings of 2-64 participants. Our key innovation is Acorn Verification, a novel zero-knowledge scheme that enables O(n) verification complexity with 96-byte proofs per participant, achieving 17.7× speedup for 32-participant rings. The implementation includes comprehensive error handling (124 error codes), optimized Lagrange interpolation, and support for both traditional ring signatures and threshold signatures. We provide formal security analysis, comprehensive performance benchmarks, and a production-ready implementation with 29 test suites covering all functionality.
+We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 20.5-279.7KB with signing times of 1.1-15.1ms and verification times of 0.4-4.5ms for rings of 2-64 participants. Our key innovation is Acorn Verification, a novel zero-knowledge scheme that replaces the Fiat-Shamir transform, enabling O(n) verification complexity with 96-byte proofs per participant and achieving 17.7× speedup for 32-participant rings compared to traditional approaches. We provide formal security proofs demonstrating 112-bit post-quantum security (NIST Level 1), comprehensive performance analysis, and support for both standard and threshold ring signatures with arbitrary threshold values.
 \end{abstract}
 
 \section{Introduction}
@@ -136,8 +136,8 @@ This layered approach maintains the 112-bit post-quantum security of the underly
 
 A Chipmunk key pair consists of:
 \begin{itemize}
-\item \textbf{Public key}: $PK = (\rho_{seed}, v_0, v_1)$ where $v_0 = A \cdot s_0, v_1 = A \cdot s_1$
-\item \textbf{Private key}: $SK = (s_{seed}, tr, PK)$ where $s_0, s_1$ are secret polynomials with small coefficients
+\item \textbf{Public key}: $pk = (\rho_{seed}, v_0, v_1)$ where $v_0 = A \cdot s_0, v_1 = A \cdot s_1$
+\item \textbf{Private key}: $sk = (s_{seed}, tr, pk)$ where $s_0, s_1$ are secret polynomials with small coefficients
 \end{itemize}
 
 The signature on message $M$ is computed as:
@@ -420,7 +420,7 @@ The key contribution of Acorn Verification is the fundamental simplification of 
 \multirow{2}{*}{Scheme} & Signature & Signing & Verification & Quantum & ZK Proof & Implementation \\
  & Size (16 ring) & Time & Time & Secure & Mechanism & Complexity \\
 \midrule
-\textbf{ChipmunkRing + Acorn} & \textbf{79KB} & \textbf{4.7ms} & \textbf{1.2ms} & \textbf{Yes} & \textbf{Acorn} & \textbf{Simple} \\
+\textbf{ChipmunkRing + Acorn (n=16)} & \textbf{79KB} & \textbf{4.7ms} & \textbf{1.2ms} & \textbf{Yes} & \textbf{Acorn} & \textbf{Simple} \\
 LSAG (Classical) & 1KB & 8ms & 6ms & No & Schnorr & Simple \\
 RST (Classical) & 2KB & 12ms & 10ms & No & RSA-based & Moderate \\
 Lattice-RS \cite{lattice-rings} & >100KB & >1000ms & >500ms & Yes & Fiat-Shamir & Complex \\
@@ -966,12 +966,12 @@ Future work should address practical deployment challenges within Cellframe:
 
 \section{Conclusion}
 
-ChipmunkRing with Acorn Verification achieves the following performance characteristics:
+We have presented ChipmunkRing, a practical post-quantum ring signature scheme that addresses the critical gap between theoretical constructions and deployment requirements. Our main contributions can be summarized as follows:
 
 \begin{itemize}
 \item \textbf{Performance}: 20.5-279.7KB signatures with 1.1-15.1ms signing and 0.4-4.5ms verification for rings of 2-64 participants
 \item \textbf{Acorn Verification}: Replacement of Fiat-Shamir with a hash-based approach using iterative SHAKE256
-\item \textbf{Implementation}: Integration with DAP SDK framework with 29 test suites
+\item \textbf{Implementation}: Production-ready integration with the Cellframe DAP SDK cryptographic framework
 \item \textbf{Security}: 112-bit post-quantum security based on Ring-LWE assumption
 \end{itemize}
 
