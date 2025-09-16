@@ -653,6 +653,18 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
     
     // Generate ZK proofs for multi-signer mode (AFTER challenge is ready)
     if (a_required_signers > 1) {
+        // Allocate memory for threshold ZK proofs
+        a_signature->zk_proofs_size = a_required_signers * a_signature->zk_proof_size_per_participant;
+        a_signature->threshold_zk_proofs = DAP_NEW_Z_SIZE(uint8_t, a_signature->zk_proofs_size);
+        if (!a_signature->threshold_zk_proofs) {
+            log_it(L_CRITICAL, "Failed to allocate memory for threshold ZK proofs");
+            chipmunk_ring_signature_free(a_signature);
+            return -ENOMEM;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "Allocated threshold ZK proofs: size=%zu, participants=%u, proof_size=%u", 
+                 a_signature->zk_proofs_size, a_required_signers, a_signature->zk_proof_size_per_participant);
+        
         for (uint32_t i = 0; i < a_required_signers; i++) {
             uint8_t *current_proof = a_signature->threshold_zk_proofs + i * a_signature->zk_proof_size_per_participant;
             
@@ -712,10 +724,17 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                 .salt_size = challenge_verification_input_size
             };
             
+            // Debug ZK proof generation parameters
+            debug_if(s_debug_more, L_INFO, "ZK proof generation: input=%p, input_size=%zu, output=%p, output_size=%u",
+                     response_input, response_input_size, current_proof, a_signature->zk_proof_size_per_participant);
+            debug_if(s_debug_more, L_INFO, "ZK params: iterations=%u, domain='%s', salt=%p, salt_size=%zu",
+                     response_params.iterations, response_params.domain_separator,
+                     response_params.salt, response_params.salt_size);
+
             int zk_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
                                    response_input, response_input_size,
                                    current_proof, a_signature->zk_proof_size_per_participant,
-                                   DAP_HASH_FLAG_ITERATIVE,
+                                   DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
                                    &response_params);
             
             DAP_DELETE(response_input);
@@ -1380,65 +1399,32 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
 }
 
 /**
- * @brief Get signature size for given ring size (CORRECTED VERSION)
+ * @brief Get signature size for given ring size 
  */
 size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     if (a_ring_size > CHIPMUNK_RING_MAX_RING_SIZE) {
         return 0;
     }
 
-    // Use new parameter-based size calculation (no dummy objects needed)
-    // Schema fields order: format_version, ring_size, required_signers, use_embedded_keys, challenge, ring_hash, signature, ring_public_keys, acorn_proofs, linkability_tag
-    const size_t l_field_count = 10;  // Correct number of fields including format_version
+    // Create arguments for parametric calculation (using enum indices for performance)
+    dap_serialize_arg_t l_args[CHIPMUNK_RING_ARG_COUNT];
+    l_args[CHIPMUNK_RING_ARG_RING_SIZE] = (dap_serialize_arg_t){.value.uint_value = a_ring_size, .type = 0};
+    l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){.value.uint_value = 1, .type = 0};
+    l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){.value.uint_value = 1, .type = 0};
     
-    size_t l_array_counts[10] = {0, 0, 0, 0, 0, 0, 0, a_ring_size, a_ring_size, 0};  // ring_public_keys and acorn_proofs are arrays
-    size_t l_data_sizes[10] = {
-        0,                                      // format_version (VERSION/uint32)
-        0,                                      // ring_size (uint32)
-        0,                                      // required_signers (uint32)
-        0,                                      // use_embedded_keys (uint8)
-        CHIPMUNK_RING_CHALLENGE_SIZE,           // challenge (BYTES_DYNAMIC)
-        CHIPMUNK_RING_RING_HASH_SIZE,           // ring_hash (BYTES_DYNAMIC)
-        CHIPMUNK_SIGNATURE_SIZE,                // signature (BYTES_DYNAMIC)
-        0,                                      // ring_public_keys (ARRAY_DYNAMIC) - handled by array_counts
-        0,                                      // acorn_proofs (ARRAY_DYNAMIC) - handled by array_counts
-        CHIPMUNK_RING_LINKABILITY_TAG_SIZE      // linkability_tag (BYTES_DYNAMIC)
-    };
-    // Set field presence based on ChipmunkRing configuration
-    // ring_public_keys is conditional (only if use_embedded_keys = true)
-    // For parameter-based calculation, assume embedded keys by default
-    bool l_field_present[10] = {
-        true,  // format_version
-        true,  // ring_size
-        true,  // required_signers
-        true,  // use_embedded_keys
-        true,  // challenge
-        true,  // ring_hash
-        true,  // signature
-        true,  // ring_public_keys (conditional - assume embedded keys)
-        true,  // acorn_proofs
-        true   // linkability_tag
+    dap_serialize_size_params_t l_params = {
+        .field_count = 0,
+        .array_counts = NULL,
+        .data_sizes = NULL, 
+        .field_present = NULL,
+        .args = l_args,
+        .args_count = CHIPMUNK_RING_ARG_COUNT
     };
     
-    dap_serialize_size_params_t l_size_params = {
-        .field_count = l_field_count,
-        .array_counts = l_array_counts,
-        .data_sizes = l_data_sizes,
-        .field_present = l_field_present
-    };
-    
-    // Use parameter-based size calculation (no object initialization needed)
-    debug_if(s_debug_more, L_DEBUG, "Calculating signature size for ring_size=%zu using serializer", a_ring_size);
-    size_t l_calculated_size = dap_serialize_calc_size(&chipmunk_ring_signature_schema, &l_size_params, NULL, NULL);
-    debug_if(s_debug_more, L_DEBUG, "Serializer returned size: %zu", l_calculated_size);
-    
-    if (l_calculated_size == 0) {
-        log_it(L_ERROR, "Failed to calculate signature size for ring_size=%zu", a_ring_size);
-        return 0;
-    }
-    
-    debug_if(s_debug_more, L_DEBUG, "Calculated signature size: %zu bytes for ring_size=%zu",
-             l_calculated_size, a_ring_size);
+    // Simple call to schema-based size calculation
+    debug_if(s_debug_more, L_DEBUG, "Calculating signature size for ring_size=%zu using parametric serializer", a_ring_size);
+    size_t l_calculated_size = dap_serialize_calc_size(&chipmunk_ring_signature_schema, &l_params, NULL, NULL);
+    debug_if(s_debug_more, L_DEBUG, "Parametric serializer returned size: %zu", l_calculated_size);
     
     return l_calculated_size;
 }

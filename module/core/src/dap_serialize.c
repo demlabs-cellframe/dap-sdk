@@ -32,6 +32,23 @@ This file is part of DAP SDK the open source project
 // Debug flag for detailed logging
 static bool s_debug_more = true;
 
+// Helper functions for arguments (indexed access for performance)
+const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_size_params_t *a_params, size_t a_index) {
+    if (!a_params || !a_params->args || a_index >= a_params->args_count) {
+        return NULL;
+    }
+    
+    return &a_params->args[a_index];
+}
+
+uint64_t dap_serialize_get_arg_uint_by_index(const dap_serialize_size_params_t *a_params, size_t a_index, uint64_t a_default) {
+    const dap_serialize_arg_t *arg = dap_serialize_get_arg_by_index(a_params, a_index);
+    if (!arg || arg->type != 0) { // type 0 = uint
+        return a_default;
+    }
+    return arg->value.uint_value;
+}
+
 // Internal helper functions
 // Removed: legacy s_calc_field_size wrapper - consolidated into main function
 static int s_serialize_field(const dap_serialize_field_t *a_field,
@@ -521,11 +538,17 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
             l_size = a_field->size;
             break;
         case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC: {
-            if (a_params && a_field_index < a_params->field_count) {
-                // Parameter-based calculation
+            // Check for parametric size function first (priority over legacy arrays)
+            if (a_field->param_size_func && a_params) {
+                size_t data_size = a_field->param_size_func(a_params, a_context);
+                debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC using param_size_func: %zu", data_size);
+                l_size = sizeof(uint32_t) + data_size;  // size prefix + data size
+            } else if (a_params && a_field_index < a_params->field_count) {
+                // Static parameter-based calculation
+                size_t data_size = a_params->data_sizes[a_field_index];
                 debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC parameter mode, using data_sizes[%zu] = %zu", 
-                         a_field_index, a_params->data_sizes[a_field_index]);
-                l_size = sizeof(uint32_t) + a_params->data_sizes[a_field_index];  // size prefix + data size
+                         a_field_index, data_size);
+                l_size = sizeof(uint32_t) + data_size;  // size prefix + data size
             } else if (l_obj_ptr) {
                 // Object-based calculation
                 const size_t *l_size_ptr = (const size_t*)(l_obj_ptr + a_field->size_offset);
@@ -558,8 +581,12 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
         case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
             size_t l_count_value = 0;
             
-            if (a_params && a_field_index < a_params->field_count) {
-                // Parameter-based calculation
+            // Check for parametric count function first (priority over legacy arrays)
+            if (a_field->param_count_func && a_params) {
+                l_count_value = a_field->param_count_func(a_params, a_context);
+                debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC using param_count_func: %zu", l_count_value);
+            } else if (a_params && a_field_index < a_params->field_count) {
+                // Static parameter-based calculation
                 l_count_value = a_params->array_counts[a_field_index];
                 debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC parameter mode, using array_counts[%zu] = %zu", 
                          a_field_index, l_count_value);
@@ -596,114 +623,30 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
             
             l_size = sizeof(uint32_t);  // count prefix
             
-            if (a_params && a_field_index < a_params->field_count) {
-                // Parameter-based calculation for arrays
-                if (a_field->nested_schema) {
-                    // For nested structures, sum sizes of nested fields per element
-                    debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC nested schema calculation");
-                    
-                    // Guard against circular dependency
-                    if (a_field->nested_schema == a_parent_schema) {
-                        debug_if(s_debug_more, L_DEBUG, "Circular dependency detected, using struct size");
-                        l_size += a_field->nested_schema->struct_size * l_count_value;
-                    } else {
-                        size_t l_element_size = 0;
-                        const dap_serialize_schema_t *ns = a_field->nested_schema;
-                        for (size_t nf = 0; nf < ns->field_count; nf++) {
-                            const dap_serialize_field_t *nfld = &ns->fields[nf];
-                            switch (nfld->type) {
-                                case DAP_SERIALIZE_TYPE_UINT8:
-                                case DAP_SERIALIZE_TYPE_INT8:
-                                case DAP_SERIALIZE_TYPE_BOOL:
-                                    l_element_size += 1; break;
-                                case DAP_SERIALIZE_TYPE_UINT16:
-                                case DAP_SERIALIZE_TYPE_INT16:
-                                    l_element_size += 2; break;
-                                case DAP_SERIALIZE_TYPE_UINT32:
-                                case DAP_SERIALIZE_TYPE_INT32:
-                                case DAP_SERIALIZE_TYPE_FLOAT32:
-                                case DAP_SERIALIZE_TYPE_VERSION:
-                                    l_element_size += 4; break;
-                                case DAP_SERIALIZE_TYPE_UINT64:
-                                case DAP_SERIALIZE_TYPE_INT64:
-                                case DAP_SERIALIZE_TYPE_FLOAT64:
-                                    l_element_size += 8; break;
-                                case DAP_SERIALIZE_TYPE_UINT128:
-                                    l_element_size += 16; break;
-                                case DAP_SERIALIZE_TYPE_UINT256:
-                                    l_element_size += 32; break;
-                                case DAP_SERIALIZE_TYPE_UINT512:
-                                    l_element_size += 64; break;
-                                case DAP_SERIALIZE_TYPE_BYTES_FIXED:
-                                case DAP_SERIALIZE_TYPE_STRING_FIXED:
-                                case DAP_SERIALIZE_TYPE_PADDING:
-                                case DAP_SERIALIZE_TYPE_CHECKSUM:
-                                    l_element_size += nfld->size; break;
-                                case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC:
-                                case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
-                                    size_t dyn_sz = 0;
-                                    if (nfld->size_func) {
-                                        dyn_sz = nfld->size_func(NULL, a_context);
-                                    }
-                                    l_element_size += sizeof(uint32_t) + dyn_sz;
-                                    break;
-                                }
-                                case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC:
-                                case DAP_SERIALIZE_TYPE_ARRAY_FIXED:
-                                case DAP_SERIALIZE_TYPE_NESTED_STRUCT:
-                                case DAP_SERIALIZE_TYPE_CONDITIONAL:
-                                case DAP_SERIALIZE_TYPE_UNION:
-                                case DAP_SERIALIZE_TYPE_RESERVED:
-                                default:
-                                    // Unsupported in parameter mode for nested elements; assume zero
-                                    break;
-                            }
-                        }
-                        debug_if(s_debug_more, L_DEBUG, "Element size: %zu, count: %zu", l_element_size, l_count_value);
-                        if (l_element_size == 0 && ns->struct_size > 0) {
-                            l_element_size = ns->struct_size; // conservative fallback
-                        }
-                        l_size += l_element_size * l_count_value;
-                    }
-                } else {
-                    // Simple array of fixed-size elements
-                    debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC simple array: count=%zu, element_size=%zu", 
-                             l_count_value, a_field->size);
-                    l_size += l_count_value * a_field->size;
-                }
-            } else if (l_obj_ptr) {
-                // Object-based calculation
-                const void **l_array_ptr = (const void**)(l_obj_ptr + a_field->offset);
+            // Calculate array element sizes
+            if (a_field->nested_schema) {
+                // For nested structures, calculate element size using nested schema
+                debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC nested schema calculation");
                 
-                // If array pointer is NULL, only count prefix
-                if (!*l_array_ptr) {
-                    break;
-                }
-                
-                if (a_field->nested_schema) {
-                    // For nested structures, calculate each element
-                    const uint8_t *l_element_ptr = (const uint8_t*)*l_array_ptr;
-                    
-                    // Check for circular dependency to prevent infinite recursion
-                    if (a_field->nested_schema == a_parent_schema) {
-                        debug_if(s_debug_more, L_DEBUG, "Circular dependency detected in object mode, using struct size");
-                        l_size += a_field->nested_schema->struct_size * l_count_value;
-                    } else {
-                        for (size_t i = 0; i < l_count_value; i++) {
-                            const uint8_t *l_current_element = l_element_ptr + i * a_field->nested_schema->struct_size;
-                            size_t l_element_size = dap_serialize_calc_size(a_field->nested_schema, NULL, l_current_element, a_context);
-                            if (l_element_size == 0) {
-                                log_it(L_ERROR, "Failed to calculate nested element size for field '%s'", a_field->name);
-                                s_recursion_depth--;
-                                return 0;
-                            }
-                            l_size += l_element_size;
-                        }
-                    }
+                // Guard against circular dependency
+                if (a_field->nested_schema == a_parent_schema) {
+                    debug_if(s_debug_more, L_DEBUG, "Circular dependency detected, using struct size");
+                    l_size += a_field->nested_schema->struct_size * l_count_value;
                 } else {
-                    // Simple array of fixed-size elements
-                    l_size += l_count_value * a_field->size;
+                    // Calculate exact element size using nested schema
+                    size_t element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
+                    if (element_size == 0) {
+                        log_it(L_ERROR, "Failed to calculate nested schema size for field '%s'", a_field->name);
+                        l_size += a_field->nested_schema->struct_size * l_count_value; // fallback
+                    } else {
+                        l_size += element_size * l_count_value;
+                    }
                 }
+            } else {
+                // Simple array of fixed-size elements
+                debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC simple array: count=%zu, element_size=%zu", 
+                         l_count_value, a_field->size);
+                l_size += l_count_value * a_field->size;
             }
             break;
         }

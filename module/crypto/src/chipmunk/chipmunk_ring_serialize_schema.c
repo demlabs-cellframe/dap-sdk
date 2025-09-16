@@ -28,6 +28,7 @@ This file is part of DAP SDK the open source project
 
 #define LOG_TAG "chipmunk_ring_serialize"
 
+
 // Debug flag for detailed logging
 static bool s_debug_more = false;
 
@@ -52,6 +53,71 @@ static size_t s_size_linkability_tag(const void *a_object, void *a_context)
     UNUSED(a_object);
     UNUSED(a_context);
     return (size_t)CHIPMUNK_RING_LINKABILITY_TAG_SIZE; // 32 bytes
+}
+
+// Parametric size functions for ChipmunkRing (use indexed arguments for performance)
+static size_t s_param_size_ring_public_keys(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    uint64_t ring_size = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_RING_SIZE, 1);
+    return ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
+}
+
+static size_t s_param_size_acorn_proofs(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    uint64_t ring_size = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_RING_SIZE, 1);
+    
+    // Calculate EXACT size using nested schema - NO APPROXIMATIONS!
+    size_t single_acorn_size = dap_serialize_calc_size(&chipmunk_ring_acorn_schema, NULL, NULL, NULL);
+    if (single_acorn_size == 0) {
+        log_it(L_ERROR, "Failed to calculate acorn proof size from schema");
+        return 0;
+    }
+    
+    return ring_size * single_acorn_size;
+}
+
+static size_t s_param_size_challenge(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_params);
+    UNUSED(a_context);
+    return CHIPMUNK_RING_CHALLENGE_SIZE;
+}
+
+static size_t s_param_size_ring_hash(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_params);
+    UNUSED(a_context);
+    return CHIPMUNK_RING_RING_HASH_SIZE;
+}
+
+static size_t s_param_size_signature(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_params);
+    UNUSED(a_context);
+    return CHIPMUNK_SIGNATURE_SIZE;
+}
+
+static size_t s_param_size_linkability_tag_param(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_params);
+    UNUSED(a_context);
+    return CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
+}
+
+static size_t s_param_size_acorn_proof(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_params);
+    UNUSED(a_context);
+    return CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
+}
+
+// Parametric count functions for arrays
+static size_t s_param_count_ring_size(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    return dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_RING_SIZE, 1);
 }
 
 
@@ -130,16 +196,16 @@ static const dap_serialize_field_t s_combined_data_fields[] = {
 };
 
 // Schema definitions
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_challenge_salt_schema, 
-                           chipmunk_ring_challenge_salt_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_challenge_salt_schema,
+                           chipmunk_ring_challenge_salt_t,
                            s_challenge_salt_fields);
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_acorn_input_schema, 
-                           chipmunk_ring_acorn_input_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_acorn_input_schema,
+                           chipmunk_ring_acorn_input_t,
                            s_acorn_input_fields);
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_combined_data_schema, 
-                           chipmunk_ring_combined_data_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_combined_data_schema,
+                           chipmunk_ring_combined_data_t,
                            s_combined_data_fields);
 
 
@@ -167,8 +233,8 @@ static const dap_serialize_field_t s_proof_input_fields[] = {
     }
 };
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_proof_input_schema, 
-                           chipmunk_ring_proof_input_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_proof_input_schema,
+                           chipmunk_ring_proof_input_t,
                            s_proof_input_fields);
 
 static const dap_serialize_field_t s_response_input_fields[] = {
@@ -195,8 +261,8 @@ static const dap_serialize_field_t s_response_input_fields[] = {
     }
 };
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_response_input_schema, 
-                           chipmunk_ring_response_input_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_response_input_schema,
+                           chipmunk_ring_response_input_t,
                            s_response_input_fields);
 
 static const dap_serialize_field_t s_linkability_input_fields[] = {
@@ -223,8 +289,8 @@ static const dap_serialize_field_t s_linkability_input_fields[] = {
     }
 };
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_linkability_input_schema, 
-                           chipmunk_ring_linkability_input_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_linkability_input_schema,
+                           chipmunk_ring_linkability_input_t,
                            s_linkability_input_fields);
 
 // Field definitions for Acorn verification structure
@@ -236,7 +302,8 @@ static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_SECURE_CLEAR,
         .offset = offsetof(chipmunk_ring_acorn_t, acorn_proof),
         .size_offset = offsetof(chipmunk_ring_acorn_t, acorn_proof_size),
-        .size_func = s_size_acorn_proof
+        .size_func = s_size_acorn_proof,
+        .param_size_func = s_param_size_acorn_proof
     },
     
     // Randomness (dynamic size)
@@ -246,7 +313,8 @@ static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_SECURE_CLEAR,
         .offset = offsetof(chipmunk_ring_acorn_t, randomness),
         .size_offset = offsetof(chipmunk_ring_acorn_t, randomness_size),
-        .size_func = s_size_randomness
+        .size_func = s_size_randomness,
+        .param_size_func = s_param_size_ring_hash  // Use same size as ring_hash for consistency
     },
     
     // Linkability tag (dynamic size)
@@ -256,7 +324,8 @@ static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_acorn_t, linkability_tag),
         .size_offset = offsetof(chipmunk_ring_acorn_t, linkability_tag_size),
-        .size_func = s_size_linkability_tag
+        .size_func = s_size_linkability_tag,
+        .param_size_func = s_param_size_linkability_tag_param
     }
 };
 
@@ -303,7 +372,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, challenge),
-        .size_offset = offsetof(chipmunk_ring_signature_t, challenge_size)
+        .size_offset = offsetof(chipmunk_ring_signature_t, challenge_size),
+        .param_size_func = s_param_size_challenge
     },
     
     // Ring hash (dynamic size)
@@ -312,7 +382,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, ring_hash),
-        .size_offset = offsetof(chipmunk_ring_signature_t, ring_hash_size)
+        .size_offset = offsetof(chipmunk_ring_signature_t, ring_hash_size),
+        .param_size_func = s_param_size_ring_hash
     },
     
     // Core signature (dynamic size)
@@ -321,7 +392,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, signature),
-        .size_offset = offsetof(chipmunk_ring_signature_t, signature_size)
+        .size_offset = offsetof(chipmunk_ring_signature_t, signature_size),
+        .param_size_func = s_param_size_signature
     },
     
     // Ring public keys array (conditional - only if use_embedded_keys is true)
@@ -332,7 +404,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .offset = offsetof(chipmunk_ring_signature_t, ring_public_keys),
         .count_offset = offsetof(chipmunk_ring_signature_t, ring_size),
         .size = sizeof(chipmunk_ring_public_key_t),
-        .condition = chipmunk_ring_has_embedded_keys
+        .condition = chipmunk_ring_has_embedded_keys,
+        .param_count_func = s_param_count_ring_size
     },
     
     // Acorn proofs array (dynamic count) - CRITICAL: needed for ChipmunkRing functionality
@@ -342,7 +415,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, acorn_proofs),
         .count_offset = offsetof(chipmunk_ring_signature_t, ring_size),
-        .nested_schema = &chipmunk_ring_acorn_schema
+        .nested_schema = &chipmunk_ring_acorn_schema,
+        .param_count_func = s_param_count_ring_size
     },
     
     // Linkability tag (dynamic size)
@@ -351,7 +425,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, linkability_tag),
-        .size_offset = offsetof(chipmunk_ring_signature_t, linkability_tag_size)
+        .size_offset = offsetof(chipmunk_ring_signature_t, linkability_tag_size),
+        .param_size_func = s_param_size_linkability_tag_param
     },
     
     // ZK proof parameters
@@ -369,16 +444,35 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, zk_proof_size_per_participant),
         .size = sizeof(uint64_t)
+    },
+
+    // ZK proofs size (required for multi-signer mode)
+    {
+        .name = "zk_proofs_size",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(chipmunk_ring_signature_t, zk_proofs_size),
+        .size = sizeof(size_t)
+    },
+
+    // Threshold ZK proofs (conditional - only for multi-signer mode)
+    {
+        .name = "threshold_zk_proofs",
+        .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
+        .flags = DAP_SERIALIZE_FLAG_CONDITIONAL,
+        .offset = offsetof(chipmunk_ring_signature_t, threshold_zk_proofs),
+        .size_offset = offsetof(chipmunk_ring_signature_t, zk_proofs_size),
+        .condition = chipmunk_ring_is_threshold_signature
     }
 };
 
 // Global schema definitions for serialization
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_acorn_schema, 
-                           chipmunk_ring_acorn_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_acorn_schema,
+                           chipmunk_ring_acorn_t,
                            s_chipmunk_ring_acorn_fields);
 
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_signature_schema, 
-                           chipmunk_ring_signature_t, 
+DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_signature_schema,
+                           chipmunk_ring_signature_t,
                            s_chipmunk_ring_signature_fields);
 
 /**

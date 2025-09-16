@@ -26,6 +26,14 @@ This file is part of DAP SDK the open source project
 #include "dap_serialize.h"
 #include "chipmunk_ring.h"
 
+// Argument indices for ChipmunkRing parametric calculations (for performance)
+typedef enum chipmunk_ring_arg_index {
+    CHIPMUNK_RING_ARG_RING_SIZE = 0,           ///< Ring size argument
+    CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS = 1,   ///< Use embedded keys flag
+    CHIPMUNK_RING_ARG_REQUIRED_SIGNERS = 2,    ///< Required signers count
+    CHIPMUNK_RING_ARG_COUNT = 3                ///< Total number of arguments
+} chipmunk_ring_arg_index_t;
+
 // Helper structures for universal serialization
 typedef struct chipmunk_ring_challenge_salt {
     uint8_t *challenge;

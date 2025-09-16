@@ -100,6 +100,25 @@ typedef bool (*dap_serialize_condition_func_t)(const void *a_object, void *a_con
  */
 typedef size_t (*dap_serialize_size_func_t)(const void *a_object, void *a_context);
 
+// Forward declaration for parametric size function (defined after dap_serialize_size_params_t)
+typedef struct dap_serialize_size_params dap_serialize_size_params_t;
+
+/**
+ * @brief Parametric size calculation function for dynamic fields
+ * @param a_params Size parameters with user-defined arguments
+ * @param a_context User context passed to serializer
+ * @return Size of the field in bytes
+ */
+typedef size_t (*dap_serialize_param_size_func_t)(const dap_serialize_size_params_t *a_params, void *a_context);
+
+/**
+ * @brief Parametric count calculation function for dynamic arrays
+ * @param a_params Size parameters with user-defined arguments
+ * @param a_context User context passed to serializer
+ * @return Number of elements in array
+ */
+typedef size_t (*dap_serialize_param_count_func_t)(const dap_serialize_size_params_t *a_params, void *a_context);
+
 /**
  * @brief Field descriptor for serialization schema
  */
@@ -113,6 +132,8 @@ typedef struct dap_serialize_field {
     size_t count_offset;                    ///< Offset to count field for arrays
     dap_serialize_condition_func_t condition; ///< Condition function (optional)
     dap_serialize_size_func_t size_func;    ///< Size calculation function (optional)
+    dap_serialize_param_size_func_t param_size_func; ///< Parametric size calculation function (optional)
+    dap_serialize_param_count_func_t param_count_func; ///< Parametric count calculation function (optional)
     const struct dap_serialize_schema *nested_schema; ///< Schema for nested structures
     uint32_t version_min;                   ///< Minimum version supporting this field
     uint32_t version_max;                   ///< Maximum version supporting this field
@@ -157,14 +178,50 @@ typedef struct dap_serialize_result {
 } dap_serialize_result_t;
 
 /**
+ * @brief Argument for schema calculations (indexed access for performance)
+ */
+typedef struct dap_serialize_arg {
+    union {
+        uint64_t uint_value;        ///< Integer value
+        double float_value;         ///< Float value
+        const void *ptr_value;      ///< Pointer value
+        const char *str_value;      ///< String value
+    } value;
+    int type;                       ///< Argument type (0=uint, 1=float, 2=ptr, 3=str)
+} dap_serialize_arg_t;
+
+/**
  * @brief Size parameters for calculation without full object initialization
  */
-typedef struct dap_serialize_size_params {
+struct dap_serialize_size_params {
     size_t field_count;             ///< Number of fields with parameters
     size_t *array_counts;           ///< Counts for dynamic arrays (dynamic array)
     size_t *data_sizes;             ///< Sizes for dynamic data (dynamic array)
     bool *field_present;            ///< Which fields are present (dynamic array)
-} dap_serialize_size_params_t;
+    
+    // Extended parameters for user-defined calculations
+    dap_serialize_arg_t *args;      ///< User-defined arguments
+    size_t args_count;              ///< Number of arguments
+};
+
+// Helper functions for arguments (indexed access for performance)
+
+/**
+ * @brief Get argument by index
+ * @param a_params Size parameters structure
+ * @param a_index Argument index
+ * @return Pointer to argument or NULL if index out of bounds
+ */
+const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_size_params_t *a_params, size_t a_index);
+
+/**
+ * @brief Get argument as uint64 by index
+ * @param a_params Size parameters structure
+ * @param a_index Argument index
+ * @param a_default Default value if index out of bounds or wrong type
+ * @return Argument value or default
+ */
+uint64_t dap_serialize_get_arg_uint_by_index(const dap_serialize_size_params_t *a_params, size_t a_index, uint64_t a_default);
 
 // API Functions
 
