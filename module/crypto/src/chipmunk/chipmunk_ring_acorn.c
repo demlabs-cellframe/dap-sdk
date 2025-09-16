@@ -105,17 +105,28 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     }
 
     // ACORN PROOF GENERATION: Generate Acorn proof in ring_lwe_layer
-    // Use deterministic randomness for participant identification
+    // Generate random seed for true randomness
     uint8_t participant_seed[64];
-    snprintf((char*)participant_seed, sizeof(participant_seed), "acorn_participant_%p_%zu", 
+    uint8_t random_bytes[32];
+    randombytes(random_bytes, sizeof(random_bytes));
+    
+    // Combine public key pointer, message size and random bytes for unique seed
+    snprintf((char*)participant_seed, sizeof(participant_seed), "acorn_%p_%zu_", 
              (void*)a_public_key, a_message_size);
+    size_t prefix_len = strlen((char*)participant_seed);
+    if (prefix_len + sizeof(random_bytes) <= sizeof(participant_seed)) {
+        memcpy(participant_seed + prefix_len, random_bytes, sizeof(random_bytes));
+    }
     
     // Generate randomness of exact required size using dap_hash with domain separation
     dap_hash_params_t randomness_params = {
         .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS
     };
+    // Use full seed length including random bytes
+    size_t seed_len = (prefix_len + sizeof(random_bytes) <= sizeof(participant_seed)) ? 
+                      prefix_len + sizeof(random_bytes) : sizeof(participant_seed);
     int randomness_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                    participant_seed, strlen((char*)participant_seed),
+                                    participant_seed, seed_len,
                                     a_acorn->randomness, a_acorn->randomness_size,
                                     DAP_HASH_FLAG_DOMAIN_SEPARATION, &randomness_params);
     if (randomness_result != 0) {
