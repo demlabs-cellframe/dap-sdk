@@ -761,22 +761,28 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
         }
         case DAP_SERIALIZE_TYPE_UINT16:
         case DAP_SERIALIZE_TYPE_INT16: {
-            const uint16_t *value = (const uint16_t*)(obj_ptr + a_field->offset);
-            s_write_uint16_le(a_ctx->buffer + a_ctx->offset, *value);
+            // Use memcpy to avoid alignment issues
+            uint16_t value;
+            memcpy(&value, obj_ptr + a_field->offset, sizeof(uint16_t));
+            s_write_uint16_le(a_ctx->buffer + a_ctx->offset, value);
             a_ctx->offset += 2;
             break;
         }
         case DAP_SERIALIZE_TYPE_UINT32:
         case DAP_SERIALIZE_TYPE_INT32: {
-            const uint32_t *value = (const uint32_t*)(obj_ptr + a_field->offset);
-            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, *value);
+            // Use memcpy to avoid alignment issues
+            uint32_t value;
+            memcpy(&value, obj_ptr + a_field->offset, sizeof(uint32_t));
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, value);
             a_ctx->offset += 4;
             break;
         }
         case DAP_SERIALIZE_TYPE_UINT64:
         case DAP_SERIALIZE_TYPE_INT64: {
-            const uint64_t *value = (const uint64_t*)(obj_ptr + a_field->offset);
-            s_write_uint64_le(a_ctx->buffer + a_ctx->offset, *value);
+            // Use memcpy to avoid alignment issues
+            uint64_t value;
+            memcpy(&value, obj_ptr + a_field->offset, sizeof(uint64_t));
+            s_write_uint64_le(a_ctx->buffer + a_ctx->offset, value);
             a_ctx->offset += 8;
             break;
         }
@@ -1027,8 +1033,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             if (a_ctx->offset + 2 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
-            uint16_t *value = (uint16_t*)(obj_ptr + a_field->offset);
-            *value = s_read_uint16_le(a_ctx->buffer + a_ctx->offset);
+            // Use memcpy to avoid alignment issues
+            uint16_t value = s_read_uint16_le(a_ctx->buffer + a_ctx->offset);
+            memcpy(obj_ptr + a_field->offset, &value, sizeof(uint16_t));
             a_ctx->offset += 2;
             break;
         }
@@ -1038,8 +1045,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             if (a_ctx->offset + 4 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
-            uint32_t *value = (uint32_t*)(obj_ptr + a_field->offset);
-            *value = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+            // Use memcpy to avoid alignment issues
+            uint32_t value = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+            memcpy(obj_ptr + a_field->offset, &value, sizeof(uint32_t));
             a_ctx->offset += 4;
             break;
         }
@@ -1048,8 +1056,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             if (a_ctx->offset + 8 > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
-            uint64_t *value = (uint64_t*)(obj_ptr + a_field->offset);
-            *value = s_read_uint64_le(a_ctx->buffer + a_ctx->offset);
+            // Use memcpy to avoid alignment issues
+            uint64_t value = s_read_uint64_le(a_ctx->buffer + a_ctx->offset);
+            memcpy(obj_ptr + a_field->offset, &value, sizeof(uint64_t));
             a_ctx->offset += 8;
             break;
         }
