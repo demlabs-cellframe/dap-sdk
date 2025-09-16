@@ -66,7 +66,7 @@ In this paper, we introduce ChipmunkRing, a post-quantum ring signature scheme t
 
 \begin{itemize}
 \item A post-quantum ring signature scheme with signatures of 20.5-279.7KB for rings of 2-64 participants
-\item Sub-millisecond signing and verification performance suitable for blockchain consensus
+\item Millisecond-level signing (1.1--15.1ms) and low-millisecond verification (0.4--4.5ms) suitable for blockchain consensus
 \item Formal security analysis proving 112-bit post-quantum security (NIST Level 1)
 \item Production-ready implementation with comprehensive test coverage
 \item Integration framework for blockchain deployment
@@ -247,7 +247,7 @@ Acorn Verification was designed from the ground up to address these limitations:
 
 \subsubsection{Core Innovation: Iterative Hash-Based Commitments}
 
-Unlike Fiat-Shamir which relies on algebraic challenge-response protocols, Acorn uses iterative hash-based commitments with domain separation. For participant $i$ in ring $\mathcal{R} = \{PK_1, \ldots, PK_n\}$ with message $M$:
+Unlike Fiat-Shamir which relies on algebraic challenge-response protocols, Acorn uses iterative hash-based commitments with domain separation. For participant $i$ in ring $\mathcal{R} = \{pk_1, \ldots, pk_n\}$ with message $M$:
 
 \begin{equation}
 \text{AcornProof}_i(M, \mathcal{R}) = \text{SHAKE256}^{\text{iter}}(\text{SerializedInput}(pk_i, M, r_i))[0..\text{proof\_size}]
@@ -332,12 +332,12 @@ The distribution of simulated proofs is statistically close to real proofs:
 
 This holds because SHAKE256 output is indistinguishable from uniform random.
 
-\textbf{Theorem 5 (Perfect Anonymity):} Acorn Verification provides information-theoretic anonymity among ring participants.
+\textbf{Theorem 5 (Anonymity):} The Acorn ZK layer is computationally zero-knowledge under the random oracle assumption; overall ring anonymity is computational w.r.t. Ring-LWE and the hash assumptions.
 
 \textbf{Proof:} For any two participants $i, j$ in ring $\mathcal{R}$, their Acorn proofs are:
 \begin{align}
-\pi_i &= H^{1000}(PK_i \| M \| r_i) \\
-\pi_j &= H^{1000}(PK_j \| M \| r_j)
+\pi_i &= H^{1000}(pk_i \| M \| r_i) \\
+\pi_j &= H^{1000}(pk_j \| M \| r_j)
 \end{align}
 
 Since $r_i, r_j$ are uniformly random and independent, and the hash function is modeled as a random oracle, the distributions are identical:
@@ -546,7 +546,7 @@ We analyze ChipmunkRing security under the standard definitions for ring signatu
 
 Given a Ring-LWE challenge $(A, b)$, our reduction $\mathcal{B}$ proceeds as follows:
 \begin{enumerate}
-\item \textbf{Setup}: $\mathcal{B}$ generates a ring of public keys $\{PK_1, \ldots, PK_k\}$ where one key embeds the Ring-LWE challenge
+\item \textbf{Setup}: $\mathcal{B}$ generates a ring of public keys $\{pk_1, \ldots, pk_k\}$ where one key embeds the Ring-LWE challenge
 \item \textbf{Signing Queries}: For signing queries on message $M$ with ring $\mathcal{R}$:
    \begin{itemize}
    \item If the challenge key is not in $\mathcal{R}$, simulate using known private keys
@@ -581,10 +581,10 @@ The quantum resistance of ring signatures involves two distinct security propert
 
 \subsection{Security Parameter Clarification}
 
-ChipmunkRing employs different security parameters for different components:
+ChipmunkRing employs different security parameters for different components. Ring-LWE is the hardness assumption for the core Chipmunk signature, while the zero-knowledge layer uses hash-based Acorn Verification:
 
 \begin{itemize}
-\item \textbf{Ring-LWE Security}: 112-bit post-quantum security level
+\item \textbf{Ring-LWE Security (core signature)}: 112-bit post-quantum security level
    \begin{itemize}
    \item Parameters: $n = 512$, $q = 3,168,257$, $\sigma = 2/\sqrt{2\pi}$
    \item This provides security equivalent to AES-128 against quantum adversaries
@@ -688,7 +688,8 @@ To enhance quantum resistance of anonymity, we recommend:
 \item \textbf{Larger ring sizes}: Use rings of 256-1024 participants to increase Grover complexity
 \item \textbf{Ring rotation}: Regularly change ring composition to limit attack time windows
 \item \textbf{Hybrid approaches}: Combine with classical anonymity techniques for defense in depth
-\item \textbf{Post-quantum anonymity enhancements}: Future work on quantum-resistant anonymity amplification
+\item \textbf{Post-quantum anonymity enhancements}: Future work on \\
+quantum-resistant anonymity amplification
 \end{itemize}
 
 \section{Experimental Setup}
@@ -700,15 +701,15 @@ All experiments were conducted on the following hardware and software configurat
 \begin{itemize}
 \item \textbf{Hardware}: 
   \begin{itemize}
-  \item CPU: AMD Ryzen 9 5900X (12 cores, 24 threads, 3.7GHz base)
+  \item CPU: AMD Ryzen 9 7950X3D (3.7GHz base)
   \item RAM: 64GB DDR4-3200
   \item Storage: NVMe SSD
   \end{itemize}
 \item \textbf{Software}:
   \begin{itemize}
-  \item OS: Ubuntu 22.04 LTS (kernel 5.15)
-  \item Compiler: GCC 11.2.0 with -O3 optimization
-  \item Build System: CMake 3.22
+  \item OS: Debian 13 (kernel 6.12)
+  \item Compiler: GCC 14.2.0 with -O3 optimization
+  \item Build System: CMake 3.31
   \item Test Framework: CTest integrated with CMake
   \end{itemize}
 \end{itemize}
@@ -774,6 +775,22 @@ The ChipmunkRing implementation uses:
 \end{itemize}
 
 \section{Performance Evaluation}
+\subsection{ChipmunkRing Parameter Modes}
+
+\begin{table}[h]
+\centering
+\caption{Parameterization by Mode (as implemented)}
+\label{tab:param-modes}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Mode & ZK Proof Size & Iterations (SHAKE256) & Verification Rule \\
+\midrule
+Single-signer ($t=1$) & 64 bytes (default) & 100 (default) & OR: accept if $\ge 1$ proof matches \\
+Multi-signer ($t>1$) & 96 bytes (enterprise) & 1000--10000 & Threshold: verify $t$ ZK proofs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 
 The performance evaluation builds upon the experimental setup described in the previous section. Our implementation is integrated into the Cellframe DAP SDK cryptographic framework \cite{cellframe2023, dapsdk2024}.
 
@@ -783,8 +800,10 @@ Table \ref{tab:performance} presents comprehensive performance metrics for Chipm
 
 \begin{table}[h]
 \centering
+\small
 \caption{ChipmunkRing Performance Metrics (Production Release Build)}
 \label{tab:performance}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{@{}ccccccc@{}}
 \toprule
 Ring Size & Mode & Threshold & Signature Size & Signing Time & Verification Time & Notes \\
@@ -803,7 +822,7 @@ Ring Size & Mode & Threshold & Signature Size & Signing Time & Verification Time
 32 & Threshold & 16 & 149.4KB & 12.97ms & 11.09ms & 50\% threshold \\
 32 & Threshold & 24 & 150.4KB & 14.31ms & 12.18ms & 75\% threshold \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \subsection{Comparison with Existing Schemes}
@@ -812,8 +831,10 @@ Table \ref{tab:comparison} compares ChipmunkRing with existing post-quantum ring
 
 \begin{table}[h]
 \centering
+\small
 \caption{Comparison with Existing Post-Quantum Ring Signatures}
 \label{tab:comparison}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{@{}lcccc@{}}
 \toprule
 Scheme & Security Assumption & Signature Size & Signing Time & Quantum Security \\
@@ -824,18 +845,20 @@ Code-RS \cite{code-rings} & Syndrome decoding & $>150$KB & $>2000$ms & 128-bit \
 LSAG (classical) \cite{lsag04} & Discrete log & $1$KB & $<10$ms & None \\
 \textbf{ChipmunkRing} & Ring-LWE & \textbf{20.5-279.7KB} & \textbf{0.4-4.5ms} & 112-bit \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 ChipmunkRing exhibits the following measured improvements over existing post-quantum ring signature schemes:
 
 \begin{itemize}
 \item \textbf{Signature Size}: 3-5× reduction compared to previous lattice-based constructions (20.5-279.7KB for rings of 2-64 participants vs >100KB for smaller rings in existing schemes)
-\item \textbf{Signing Performance}: 1.1-15.1ms signing time for single-signer mode vs >500ms in existing post-quantum implementations  
+\item \textbf{Signing Performance}: 1.1--15.1ms signing time for single-signer mode \\
+vs $>$500ms in existing post-quantum implementations
 \item \textbf{Verification Performance}: 0.4-4.5ms verification time for single-signer mode vs >200ms in existing schemes
 \item \textbf{Size Scaling}: Near-linear growth with ring size (approximately 4.4KB per participant)
-\item \textbf{Blockchain Compatibility}: Sub-150KB signatures for 32-participant rings and <10ms verification times meet blockchain requirements
-\item \textbf{Acorn Verification}: 96-byte proofs per participant enable efficient large-ring verification
+\item \textbf{Blockchain Compatibility}: $<$150KB signatures for 32-participant rings \\
+and $<$10ms verification meet blockchain requirements
+\item \textbf{Acorn Verification}: Hash-only ZK layer (64B for single-signer by default; 96B for multi-signer/enterprise)
 \end{itemize}
 
 \subsection{Blockchain Suitability Analysis}
@@ -843,8 +866,9 @@ ChipmunkRing exhibits the following measured improvements over existing post-qua
 For blockchain applications, we evaluate ChipmunkRing against critical deployment constraints:
 
 \begin{enumerate}
-\item \textbf{Transaction Size}: With signatures under 20KB, ChipmunkRing transactions remain within reasonable block size limits
-\item \textbf{Consensus Timing}: Sub-millisecond verification enables real-time transaction processing
+\item \textbf{Transaction Size}: With 79KB signatures for 16-participant rings \\
+and \textless150KB for 32, transaction sizes remain practical for CF-based networks
+\item \textbf{Consensus Timing}: Verification is 0.4--4.5ms depending on ring size (real measurements)
 \item \textbf{Network Overhead}: Compact signatures reduce bandwidth requirements for transaction propagation
 \item \textbf{Storage Efficiency}: Linear size scaling allows efficient blockchain storage
 \end{enumerate}
@@ -867,7 +891,8 @@ ChipmunkRing is fully integrated into the DAP SDK cryptographic framework, provi
 \begin{itemize}
 \item \textbf{Constant-time operations}: All cryptographic operations are implemented to resist timing attacks
 \item \textbf{Memory safety}: Secure memory allocation and deallocation with sensitive data zeroing
-\item \textbf{Modular design}: Clean separation between core algorithm and framework integration
+\item \textbf{Modular design}: Clean separation between core algorithm \\
+and framework integration
 \item \textbf{Error resilience}: Comprehensive validation and graceful error handling
 \end{itemize}
 
@@ -877,8 +902,10 @@ ChipmunkRing is fully integrated into the DAP SDK cryptographic framework, provi
 
 ChipmunkRing enables efficient anonymous transactions within the Cellframe ecosystem:
 \begin{itemize}
-\item \textbf{Token Privacy}: Anonymous transfers of CF-based tokens with 79KB signatures for 16-participant rings
-\item \textbf{Multi-Shard Support}: Ring signatures work across Cellframe's sharded architecture
+\item \textbf{Token Privacy}: Anonymous transfers of CF-based tokens \\
+with 79KB signatures for 16-participant rings
+\item \textbf{Multi-Shard Support}: Ring signatures work across Cellframe's \\
+sharded architecture
 \item \textbf{Fast Verification}: 1.2ms verification meets Cellframe's consensus timing requirements
 \item \textbf{Quantum-Safe Privacy}: Post-quantum security ensures long-term transaction confidentiality
 \end{itemize}
@@ -891,7 +918,8 @@ ChipmunkRing enables advanced governance mechanisms for Cellframe-based DAOs:
 \item \textbf{Private Governance Tokens}: Ring signatures enable private transfers and delegation of governance rights
 \item \textbf{Threshold DAO Decisions}: Multi-signature requirements for critical decisions (treasury, upgrades)
 \item \textbf{Whistleblower Protection}: Anonymous submission of proposals and reports with verifiable membership
-\item \textbf{Quantum-Safe Governance}: Long-term security for DAO treasury and voting records
+\item \textbf{Quantum-Safe Governance}: Long-term security for DAO treasury \\
+and voting records
 \end{itemize}
 
 \subsection{Cellframe Service Chain Applications}
@@ -989,7 +1017,8 @@ We thank the Cellframe development team for their support and the cryptographic 
 
 \section*{Author Contributions}
 
-D.A.G. conceived the Acorn Verification scheme, designed the ChipmunkRing protocol, implemented the system, conducted the experiments, and wrote the manuscript.
+D.A.G. conceived the Acorn Verification scheme, designed the ChipmunkRing protocol, \\
+implemented the system, conducted the experiments, and wrote the manuscript.
 o
 \section*{Conflict of Interest}
 
@@ -997,7 +1026,9 @@ The author declares no conflict of interest. This research was conducted as part
 
 \section*{Data Availability Statement}
 
-The source code for ChipmunkRing is available as part of the DAP SDK at https://github.com/demlabs-cellframe/dap-sdk. Performance benchmarks and test vectors are included in the repository under the tests/unit/crypto/chipmunk\_ring directory.
+The source code for ChipmunkRing is available as part of the DAP SDK at \\
+https://github.com/demlabs-cellframe/dap-sdk. Performance benchmarks and test vectors \\
+are included in the repository under the tests/unit/crypto/chipmunk\_ring directory.
 
 \bibliographystyle{plain}
 \bibliography{references}

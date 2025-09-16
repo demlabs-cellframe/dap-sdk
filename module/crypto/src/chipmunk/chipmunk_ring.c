@@ -298,46 +298,7 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring) {
     }
 }
 
-/**
- * @brief Create enhanced Ring-LWE commitment layer (~90,000 logical qubits required)
- */
-static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
-                                              size_t commitment_size,
-                                              const chipmunk_ring_public_key_t *a_public_key,
-                                              const uint8_t randomness[32]) {
-    if (!commitment || commitment_size < s_pq_params.computed.ring_lwe_commitment_size) {
-        return -1;
-    }
-
-    // Ring-LWE commitment requiring ~90,000 logical qubits for quantum attack
-    size_t pub_key_size = get_public_key_size();
-    size_t input_size = pub_key_size + s_pq_params.randomness_size + CHIPMUNK_RING_RING_LWE_INPUT_EXTRA;
-    uint8_t *combined_input = DAP_NEW_Z_SIZE(uint8_t, input_size);
-
-    if (!combined_input) {
-        return -1;
-    }
-
-    memcpy(combined_input, a_public_key->data, pub_key_size);
-    memcpy(combined_input + pub_key_size, randomness, s_pq_params.randomness_size);
-
-    // Enhanced parameters: 2^(0.292×n) operations, requiring ~90,000 logical qubits
-    uint64_t enhanced_n = s_pq_params.ring_lwe_n;
-    uint64_t enhanced_q = s_pq_params.ring_lwe_q;
-    memcpy(combined_input + pub_key_size + s_pq_params.randomness_size, &enhanced_n, 8);
-    memcpy(combined_input + pub_key_size + s_pq_params.randomness_size + 8, &enhanced_q, 8);
-
-    // Use SHAKE256 with configurable output size
-    shake256(commitment, commitment_size, combined_input, input_size);
-
-    DAP_FREE(combined_input);
-    return 0;
-}
-
-// REMOVED: create_ntru_commitment - replaced by Acorn Verification
-
-
-// REMOVED: create_code_based_commitment - replaced by Acorn Verification
+// NOTE: Previous commitment layers (Ring-LWE/NTRU/Code-based) have been fully removed in favor of Acorn.
 
 /**
  * @brief Create binding proof for multi-layer commitment (100+ year security)
@@ -351,65 +312,7 @@ static int create_enhanced_ring_lwe_commitment(uint8_t *commitment,
  * 2. Combine hashes using FusionHash-like structure for better binding
  * 3. Include randomness in final proof to prevent extraction attacks
  */
-static int create_optimized_binding_proof(uint8_t *binding_proof,
-                                         size_t proof_size,
-                                         const uint8_t *randomness,
-                                         const chipmunk_ring_acorn_t *a_commitment) {
-    if (!binding_proof || proof_size < s_pq_params.computed.binding_proof_size) {
-        return -1;
-    }
-
-    // Step 1: Hash each layer individually (prevents layer substitution)
-    dap_hash_fast_t ring_lwe_hash, ntru_hash, code_hash;
-    
-    if (!dap_hash_fast(a_commitment->acorn_proof, a_commitment->acorn_proof_size, &ring_lwe_hash) ||
-        !dap_hash_fast(a_commitment->linkability_tag, CHIPMUNK_RING_LINKABILITY_TAG_SIZE, &ntru_hash) ||
-        !dap_hash_fast(a_commitment->randomness, a_commitment->randomness_size, &code_hash)) {
-        log_it(L_ERROR, "Failed to hash commitment layers");
-        return -1;
-    }
-
-    // Step 2: Create FusionHash-inspired binding structure
-    // Instead of simple concatenation, use structured combination
-    size_t structured_input_size = s_pq_params.randomness_size + 
-                                  sizeof(dap_hash_fast_t) * 3; // 3 layer hashes
-    uint8_t *structured_input = DAP_NEW_Z_SIZE(uint8_t, structured_input_size);
-    if (!structured_input) {
-        return -1;
-    }
-
-    size_t offset = 0;
-    
-    // Add randomness first (prevents randomness extraction)
-    memcpy(structured_input + offset, randomness, s_pq_params.randomness_size);
-    offset += s_pq_params.randomness_size;
-    
-    // Add layer hashes in specific order (prevents mix-and-match)
-    memcpy(structured_input + offset, &ring_lwe_hash, sizeof(dap_hash_fast_t));
-    offset += sizeof(dap_hash_fast_t);
-    memcpy(structured_input + offset, &ntru_hash, sizeof(dap_hash_fast_t));
-    offset += sizeof(dap_hash_fast_t);
-    memcpy(structured_input + offset, &code_hash, sizeof(dap_hash_fast_t));
-
-    // Step 3: Create final binding proof with domain separation
-    uint8_t domain_sep[] = "CHIPMUNK_RING_BINDING_V1";
-    size_t final_input_size = structured_input_size + sizeof(domain_sep);
-    uint8_t *final_input = DAP_NEW_Z_SIZE(uint8_t, final_input_size);
-    if (!final_input) {
-        DAP_FREE(structured_input);
-        return -1;
-    }
-
-    memcpy(final_input, structured_input, structured_input_size);
-    memcpy(final_input + structured_input_size, domain_sep, sizeof(domain_sep));
-
-    // Generate optimized binding proof (32 bytes instead of 128)
-    shake256(binding_proof, proof_size, final_input, final_input_size);
-
-    DAP_FREE(structured_input);
-    DAP_FREE(final_input);
-    return 0;
-}
+// NOTE: Binding proof construction for legacy multi-layer commitments was removed with Acorn adoption.
 
 /**
  * @brief Create response for ZKP
