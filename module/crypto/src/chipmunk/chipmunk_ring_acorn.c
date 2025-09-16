@@ -23,6 +23,7 @@
 
 #include "chipmunk_ring_acorn.h"
 #include "chipmunk_ring.h"
+#include "chipmunk_ring_serialize_schema.h"
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "rand/dap_rand.h"
@@ -115,10 +116,16 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     // PURE ACORN COMMITMENT GENERATION
     // Generate Acorn proof for this participant
     
-    // Prepare input for Acorn proof: public_key || message || randomness
-    size_t acorn_input_size = CHIPMUNK_PUBLIC_KEY_SIZE + 
-                             (a_message ? a_message_size : 0) + 
-                             a_acorn->randomness_size;
+    // Prepare input for Acorn proof using universal serializer
+    chipmunk_ring_acorn_input_t l_acorn_input_data = {
+        .message = (uint8_t*)a_message,
+        .message_size = a_message ? a_message_size : 0,
+        .randomness = a_acorn->randomness,
+        .randomness_size = a_acorn->randomness_size
+    };
+    memcpy(l_acorn_input_data.public_key, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
+    
+    size_t acorn_input_size = dap_serialize_calc_size(&chipmunk_ring_acorn_input_schema, NULL, &l_acorn_input_data, NULL);
     uint8_t *acorn_input = DAP_NEW_SIZE(uint8_t, acorn_input_size);
     if (!acorn_input) {
         log_it(L_ERROR, "Failed to allocate Acorn input buffer");
@@ -126,16 +133,14 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         return -1;
     }
     
-    size_t offset = 0;
-    memcpy(acorn_input + offset, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
-    offset += CHIPMUNK_PUBLIC_KEY_SIZE;
-    
-    if (a_message && a_message_size > 0) {
-        memcpy(acorn_input + offset, a_message, a_message_size);
-        offset += a_message_size;
+    dap_serialize_result_t l_input_result = dap_serialize_to_buffer(&chipmunk_ring_acorn_input_schema, &l_acorn_input_data, acorn_input, acorn_input_size, NULL);
+    if (l_input_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to serialize Acorn input: %s", l_input_result.error_message);
+        DAP_DELETE(acorn_input);
+        chipmunk_ring_acorn_free(a_acorn);
+        return -1;
     }
-    
-    memcpy(acorn_input + offset, a_acorn->randomness, a_acorn->randomness_size);
+    acorn_input_size = l_input_result.bytes_written;
     
     // Generate Acorn proof using parameterized iterations 
     dap_hash_params_t l_acorn_params = {

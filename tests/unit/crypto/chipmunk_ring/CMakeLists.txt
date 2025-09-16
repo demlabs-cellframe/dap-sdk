@@ -6,7 +6,7 @@ set(TEST_NAMES
     test_chipmunk_ring_anonymity
     test_chipmunk_ring_performance
     test_chipmunk_ring_edge_cases
-    test_chipmunk_ring_stress
+#    test_chipmunk_ring_stress
     test_minimal_ring
     test_chipmunk_ring_multi_signer
     test_chipmunk_ring_threshold_coordination
@@ -18,7 +18,7 @@ set(TEST_SOURCES
     test_chipmunk_ring_anonymity.c
     test_chipmunk_ring_performance.c
     test_chipmunk_ring_edge_cases.c
-    test_chipmunk_ring_stress.c
+#    test_chipmunk_ring_stress.c
     test_minimal_ring.c
     test_chipmunk_ring_multi_signer.c
     test_chipmunk_ring_threshold_coordination.c

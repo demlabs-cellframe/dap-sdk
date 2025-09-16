@@ -80,7 +80,8 @@ typedef enum dap_serialize_field_flags {
     DAP_SERIALIZE_FLAG_NO_SIZE_PREFIX = (1 << 5), ///< Don't add size prefix for dynamic data
     DAP_SERIALIZE_FLAG_NULL_TERMINATED = (1 << 6), ///< Add null terminator for strings
     DAP_SERIALIZE_FLAG_ZERO_FILL = (1 << 7), ///< Zero-fill unused space
-    DAP_SERIALIZE_FLAG_SECURE_CLEAR = (1 << 8) ///< Securely clear sensitive data
+    DAP_SERIALIZE_FLAG_SECURE_CLEAR = (1 << 8), ///< Securely clear sensitive data
+    DAP_SERIALIZE_FLAG_CONDITIONAL = (1 << 9) ///< Field included only if condition function returns true
 } dap_serialize_field_flags_t;
 
 /**

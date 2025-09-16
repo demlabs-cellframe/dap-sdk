@@ -23,6 +23,7 @@
 
 #include "chipmunk_ring_secret_sharing.h"
 #include "chipmunk_ring_acorn.h"
+#include "chipmunk_ring_serialize_schema.h"
 #include "dap_math.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
@@ -315,13 +316,24 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
         }
         
         // Generate ZK proof of correct share generation using universal hash
-        uint8_t proof_input[sizeof(share->ring_private_key) + sizeof(uint32_t) * 2];
-        size_t offset = 0;
-        memcpy(proof_input + offset, &share->ring_private_key, sizeof(share->ring_private_key));
-        offset += sizeof(share->ring_private_key);
-        memcpy(proof_input + offset, &share->required_signers, sizeof(share->required_signers));
-        offset += sizeof(share->required_signers);
-        memcpy(proof_input + offset, &share->total_participants, sizeof(share->total_participants));
+        chipmunk_ring_proof_input_t l_proof_data = {
+            .ring_private_key = share->ring_private_key,
+            .required_signers = share->required_signers,
+            .total_participants = share->total_participants
+        };
+        
+        size_t proof_input_size = dap_serialize_calc_size(&chipmunk_ring_proof_input_schema, NULL, &l_proof_data, NULL);
+        uint8_t *proof_input = DAP_NEW_SIZE(uint8_t, proof_input_size);
+        if (!proof_input) {
+            continue;
+        }
+        
+        dap_serialize_result_t l_proof_result = dap_serialize_to_buffer(&chipmunk_ring_proof_input_schema, &l_proof_data, proof_input, proof_input_size, NULL);
+        if (l_proof_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+            DAP_DELETE(proof_input);
+            continue;
+        }
+        proof_input_size = l_proof_result.bytes_written;
         
         // Create temporary signature structure with ZK parameters for generation
         chipmunk_ring_signature_t temp_sig = {0};
@@ -330,10 +342,11 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
         temp_sig.zk_iterations = a_zk_iterations;
         
         // Use unified ZK proof generation with signature parameters
-        result = chipmunk_ring_generate_zk_proof(proof_input, sizeof(proof_input),
+        result = chipmunk_ring_generate_zk_proof(proof_input, proof_input_size,
                                                 &temp_sig,
                                                 NULL, 0, // salt will be used during verification
                                                 share->acorn_proof.acorn_proof);
+        DAP_DELETE(proof_input);
         if (result != 0) {
             log_it(L_ERROR, "Failed to generate ZK proof for multi-signer share %u", i);
             DAP_DELETE(share->acorn_proof.acorn_proof);
@@ -389,17 +402,29 @@ int chipmunk_ring_verify_share(const chipmunk_ring_share_t *a_share,
             return -1;
         }
     } else {
-        // Multi-signer mode verification
-        uint8_t proof_input[sizeof(a_share->ring_private_key) + sizeof(uint32_t) * 2];
-        size_t offset = 0;
-        memcpy(proof_input + offset, &a_share->ring_private_key, sizeof(a_share->ring_private_key));
-        offset += sizeof(a_share->ring_private_key);
-        memcpy(proof_input + offset, &a_share->required_signers, sizeof(a_share->required_signers));
-        offset += sizeof(a_share->required_signers);
-        memcpy(proof_input + offset, &a_share->total_participants, sizeof(a_share->total_participants));
+        // Multi-signer mode verification using universal serializer
+        chipmunk_ring_proof_input_t l_proof_data = {
+            .ring_private_key = a_share->ring_private_key,
+            .required_signers = a_share->required_signers,
+            .total_participants = a_share->total_participants
+        };
+        
+        size_t proof_input_size = dap_serialize_calc_size(&chipmunk_ring_proof_input_schema, NULL, &l_proof_data, NULL);
+        uint8_t *proof_input = DAP_NEW_SIZE(uint8_t, proof_input_size);
+        if (!proof_input) {
+            return -ENOMEM;
+        }
+        
+        dap_serialize_result_t l_proof_result = dap_serialize_to_buffer(&chipmunk_ring_proof_input_schema, &l_proof_data, proof_input, proof_input_size, NULL);
+        if (l_proof_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+            DAP_DELETE(proof_input);
+            return -1;
+        }
+        proof_input_size = l_proof_result.bytes_written;
         
         dap_hash_fast_t expected_proof;
-        bool hash_result = dap_hash_fast(proof_input, sizeof(proof_input), &expected_proof);
+        bool hash_result = dap_hash_fast(proof_input, proof_input_size, &expected_proof);
+        DAP_DELETE(proof_input);
         if (!hash_result) {
             log_it(L_ERROR, "Failed to compute expected ZK proof for multi-signer mode");
             return -1;
@@ -460,14 +485,25 @@ int chipmunk_ring_verify_share_with_params(const chipmunk_ring_share_t *a_share,
         
         DAP_DELETE(expected_proof);
     } else {
-        // Multi-signer mode - use enterprise ZK with signature parameters
-        uint8_t proof_input[sizeof(a_share->ring_private_key) + sizeof(uint32_t) * 2];
-        size_t offset = 0;
-        memcpy(proof_input + offset, &a_share->ring_private_key, sizeof(a_share->ring_private_key));
-        offset += sizeof(a_share->ring_private_key);
-        memcpy(proof_input + offset, &a_share->required_signers, sizeof(a_share->required_signers));
-        offset += sizeof(a_share->required_signers);
-        memcpy(proof_input + offset, &a_share->total_participants, sizeof(a_share->total_participants));
+        // Multi-signer mode using universal serializer
+        chipmunk_ring_proof_input_t l_proof_data = {
+            .ring_private_key = a_share->ring_private_key,
+            .required_signers = a_share->required_signers,
+            .total_participants = a_share->total_participants
+        };
+        
+        size_t proof_input_size = dap_serialize_calc_size(&chipmunk_ring_proof_input_schema, NULL, &l_proof_data, NULL);
+        uint8_t *proof_input = DAP_NEW_SIZE(uint8_t, proof_input_size);
+        if (!proof_input) {
+            return -ENOMEM;
+        }
+        
+        dap_serialize_result_t l_proof_result = dap_serialize_to_buffer(&chipmunk_ring_proof_input_schema, &l_proof_data, proof_input, proof_input_size, NULL);
+        if (l_proof_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+            DAP_DELETE(proof_input);
+            return -1;
+        }
+        proof_input_size = l_proof_result.bytes_written;
         
         size_t expected_proof_size = a_signature->zk_proof_size_per_participant;
         uint8_t *expected_proof = DAP_NEW_Z_SIZE(uint8_t, expected_proof_size);
@@ -478,10 +514,11 @@ int chipmunk_ring_verify_share_with_params(const chipmunk_ring_share_t *a_share,
         
         // Generate expected proof using same parameters as generation
         debug_if(s_debug_more, L_INFO, "Multi-signer verification: using iterations=%u from signature", a_signature->zk_iterations);
-        int result = chipmunk_ring_generate_zk_proof(proof_input, sizeof(proof_input),
+        int result = chipmunk_ring_generate_zk_proof(proof_input, proof_input_size,
                                                     a_signature,
                                                     NULL, 0, // salt handled during verification
                                                     expected_proof);
+        DAP_DELETE(proof_input);
         if (result != 0) {
             log_it(L_ERROR, "Failed to generate expected ZK proof for multi-signer verification");
             DAP_DELETE(expected_proof);

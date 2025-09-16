@@ -26,6 +26,54 @@ This file is part of DAP SDK the open source project
 #include "dap_serialize.h"
 #include "chipmunk_ring.h"
 
+// Helper structures for universal serialization
+typedef struct chipmunk_ring_challenge_salt {
+    uint8_t *challenge;
+    size_t challenge_size;
+    uint32_t required_signers;
+    uint32_t ring_size;
+} chipmunk_ring_challenge_salt_t;
+
+typedef struct chipmunk_ring_acorn_input {
+    uint8_t public_key[CHIPMUNK_PUBLIC_KEY_SIZE];
+    uint8_t *message;
+    size_t message_size;
+    uint8_t *randomness;
+    size_t randomness_size;
+} chipmunk_ring_acorn_input_t;
+
+typedef struct chipmunk_ring_combined_data {
+    uint8_t *message;
+    size_t message_size;
+    uint8_t *ring_hash;
+    size_t ring_hash_size;
+    chipmunk_ring_acorn_t *acorn_proofs;
+    uint32_t acorn_proofs_count;
+} chipmunk_ring_combined_data_t;
+
+typedef struct chipmunk_ring_proof_input {
+    chipmunk_ring_private_key_t ring_private_key;
+    uint32_t required_signers;
+    uint32_t total_participants;
+} chipmunk_ring_proof_input_t;
+
+typedef struct chipmunk_ring_response_input {
+    uint8_t *randomness;
+    size_t randomness_size;
+    uint8_t *message;
+    size_t message_size;
+    uint32_t participant_context;
+} chipmunk_ring_response_input_t;
+
+typedef struct chipmunk_ring_linkability_input {
+    uint8_t *ring_hash;
+    size_t ring_hash_size;
+    uint8_t *message;
+    size_t message_size;
+    uint8_t *challenge;
+    size_t challenge_size;
+} chipmunk_ring_linkability_input_t;
+
 /**
  * @brief Serialization schemas for ChipmunkRing structures
  * @details Demonstrates usage of universal serializer with complex cryptographic structures
@@ -35,6 +83,12 @@ This file is part of DAP SDK the open source project
 extern const dap_serialize_schema_t chipmunk_ring_acorn_schema;
 extern const dap_serialize_schema_t chipmunk_ring_signature_schema;
 extern const dap_serialize_schema_t chipmunk_ring_container_schema;
+extern const dap_serialize_schema_t chipmunk_ring_challenge_salt_schema;
+extern const dap_serialize_schema_t chipmunk_ring_acorn_input_schema;
+extern const dap_serialize_schema_t chipmunk_ring_combined_data_schema;
+extern const dap_serialize_schema_t chipmunk_ring_proof_input_schema;
+extern const dap_serialize_schema_t chipmunk_ring_response_input_schema;
+extern const dap_serialize_schema_t chipmunk_ring_linkability_input_schema;
 
 /**
  * @brief Condition function for embedded keys

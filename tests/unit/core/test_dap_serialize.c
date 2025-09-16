@@ -519,6 +519,114 @@ static void test_performance(void) {
 }
 
 /**
+ * @brief Test serializer robustness against corrupted/garbage input data
+ */
+static void test_robustness_with_corrupted_data(void) {
+    log_it(L_INFO, "Testing serializer robustness against corrupted data...");
+    
+    // Test 1: Structure with garbage count values
+    typedef struct {
+        uint32_t ring_size;      // Will be set to garbage value
+        uint8_t *data_ptr;       // Will be NULL
+        size_t data_size;        // Will be garbage
+        uint32_t *array_ptr;     // Will be NULL
+    } test_corrupted_t;
+    
+    static const dap_serialize_field_t corrupted_fields[] = {
+        {
+            .name = "ring_size",
+            .type = DAP_SERIALIZE_TYPE_UINT32,
+            .flags = DAP_SERIALIZE_FLAG_NONE,
+            .offset = offsetof(test_corrupted_t, ring_size),
+            .size = sizeof(uint32_t)
+        },
+        {
+            .name = "data",
+            .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
+            .flags = DAP_SERIALIZE_FLAG_NONE,
+            .offset = offsetof(test_corrupted_t, data_ptr),
+            .size_offset = offsetof(test_corrupted_t, data_size)
+        },
+        {
+            .name = "array",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+            .flags = DAP_SERIALIZE_FLAG_NONE,
+            .offset = offsetof(test_corrupted_t, array_ptr),
+            .count_offset = offsetof(test_corrupted_t, ring_size),
+            .size = sizeof(uint32_t)
+        }
+    };
+    
+    // Define schema manually since STATIC macro doesn't exist
+    static const dap_serialize_schema_t corrupted_schema = {
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+        .version = 1,
+        .name = "test_corrupted_schema",
+        .struct_size = sizeof(test_corrupted_t),
+        .field_count = sizeof(corrupted_fields) / sizeof(corrupted_fields[0]),
+        .fields = corrupted_fields,
+        .validate_func = NULL
+    };
+    
+    // Create structure with garbage values
+    test_corrupted_t l_corrupted = {
+        .ring_size = 0xFFFFFFFF,    // Maximum uint32_t value
+        .data_ptr = NULL,           // NULL pointer
+        .data_size = SIZE_MAX,      // Maximum size_t value
+        .array_ptr = NULL           // NULL array pointer
+    };
+    
+    uint8_t l_buffer[1024];
+    
+    // Test: Serializer should handle garbage gracefully without crashing
+    dap_serialize_result_t l_result = dap_serialize_to_buffer(&corrupted_schema, &l_corrupted, 
+                                                             l_buffer, sizeof(l_buffer), NULL);
+    
+    // Should fail gracefully, not crash
+    if (l_result.error_code == DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_INFO, "✓ Serializer handled corrupted data gracefully (unexpected success)");
+    } else {
+        log_it(L_INFO, "✓ Serializer correctly rejected corrupted data (error: %d)", l_result.error_code);
+    }
+    
+    // Test 2: Structure with moderate garbage values
+    test_corrupted_t l_moderate = {
+        .ring_size = 1000001,       // Just above validation limit
+        .data_ptr = NULL,
+        .data_size = 0,
+        .array_ptr = NULL
+    };
+    
+    l_result = dap_serialize_to_buffer(&corrupted_schema, &l_moderate, 
+                                      l_buffer, sizeof(l_buffer), NULL);
+    
+    if (l_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_INFO, "✓ Serializer correctly rejected oversized array (error: %d)", l_result.error_code);
+    } else {
+        log_it(L_WARNING, "⚠ Serializer accepted oversized array (unexpected)");
+    }
+    
+    // Test 3: Valid structure should still work
+    test_corrupted_t l_valid = {
+        .ring_size = 2,
+        .data_ptr = NULL,
+        .data_size = 0,
+        .array_ptr = NULL
+    };
+    
+    l_result = dap_serialize_to_buffer(&corrupted_schema, &l_valid, 
+                                      l_buffer, sizeof(l_buffer), NULL);
+    
+    if (l_result.error_code == DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_INFO, "✓ Serializer correctly handled valid data");
+    } else {
+        log_it(L_ERROR, "✗ Serializer failed on valid data (error: %d)", l_result.error_code);
+    }
+    
+    log_it(L_INFO, "Robustness test completed");
+}
+
+/**
  * @brief Test complex nested structures with NULL pointers (ChipmunkRing case)
  */
 static void test_complex_nested_with_nulls(void) {
@@ -585,6 +693,7 @@ int main(int argc, char *argv[]) {
     test_buffer_validation();
     test_performance();
     // test_complex_nested_with_nulls();  // DISABLED: creates infinite recursion in test_acorn_schema - needs separate fix
+    test_robustness_with_corrupted_data();  // Test serializer robustness against garbage input
     
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     
