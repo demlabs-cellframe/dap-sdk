@@ -140,9 +140,9 @@ static bool s_test_performance_detailed(void) {
  */
 static void s_print_final_performance_table(void) {
     log_it(L_INFO, " ");
-    log_it(L_INFO, "╔═══════════════════════════════════════════════════════════════════════════════════╗");
-    log_it(L_INFO, "║                        CHIPMUNKRING PERFORMANCE REPORT                            ║");
-    log_it(L_INFO, "╠═══════════════════════════════════════════════════════════════════════════════════╣");
+    log_it(L_INFO, "╔══════════════════════════════════════════════════════════════════════════════════╗");
+    log_it(L_INFO, "║                        CHIPMUNK RING PERFORMANCE REPORT                          ║");
+    log_it(L_INFO, "╠══════════════════════════════════════════════════════════════════════════════════╣");
     log_it(L_INFO, "║ Ring │Thresh│ Signature │  Signing  │ Verif.    │ Mode                           ║");
     log_it(L_INFO, "║ Size │ old  │   Size    │   Time    │  Time     │                                ║");
     log_it(L_INFO, "╠══════╪══════╪═══════════╪═══════════╪═══════════╪════════════════════════════════╣");
@@ -164,7 +164,7 @@ static void s_print_final_performance_table(void) {
     log_it(L_INFO, "- Iterations per ring size: %d", PERFORMANCE_ITERATIONS);
     log_it(L_INFO, "- Message size: %zu bytes", strlen(TEST_MESSAGE));
     //log_it(L_INFO, "- Security level: 112-bit post-quantum");
-    log_it(L_INFO, "- Algorithm: Chipmunk signature ringed with Fiat-Shamir");
+    log_it(L_INFO, "- Algorithm: Chipmunk Ring signature ringed with Ancor transformation");
     log_it(L_INFO, " ");
 }
 
