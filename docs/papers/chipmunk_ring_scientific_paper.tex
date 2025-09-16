@@ -43,7 +43,7 @@ We begin with formal definitions of the cryptographic primitives used throughout
 \item $\mathsf{Verify}(\sigma, M, \mathcal{R}) \rightarrow \{0,1\}$: Verifies signature validity
 \end{itemize}
 
-\textbf{Definition 2 (Post-Quantum Security):} A cryptographic scheme provides $\lambda$-bit post-quantum security if the best known quantum algorithm requires at least $2^\lambda$ quantum operations to break the scheme with non-negligible probability.
+\textbf{Definition 2 (Post-Quantum Security):} A cryptographic scheme provides $\lambda$-bit post-quantum security if the \textbf{most efficient known} quantum algorithm requires at least $2^\lambda$ quantum operations to break the scheme with non-negligible probability.
 
 \textbf{Definition 3 (Threshold Ring Signature):} A $(t,n)$-threshold ring signature requires exactly $t$ out of $n$ ring members to collaborate to produce a valid signature, where $1 \leq t \leq n$.
 
@@ -54,7 +54,7 @@ We begin with formal definitions of the cryptographic primitives used throughout
 \item \textbf{Zero-Knowledge}: $\exists$ simulator $S$ such that $\{V(x,P(x,w))\} \approx_c \{S(x)\}$
 \end{itemize}
 
-\textbf{Definition 5 (Anonymity Set):} The anonymity set $\mathcal{A}$ of a ring signature is the set of all possible signers who could have created the signature. For perfect anonymity, $|\mathcal{A}| = |\mathcal{R}|$.
+\textbf{Definition 5 (Anonymity Set):} The anonymity set $\mathcal{A}$ of a ring signature is the set of all possible signers who could have created the signature. For \textbf{strong anonymity}, $|\mathcal{A}| = |\mathcal{R}|$.
 
 \subsection{Motivation and Contributions}
 
@@ -189,7 +189,7 @@ Key generation remains identical to the base Chipmunk scheme:
     \COMMENT{$p$ and $I$ are taken from signature parameters: single-signer uses $p=64$ bytes and $I=100$ by default; multi-signer uses $p=96$ bytes and $I\in\{1000,10000\}$}
 \ENDFOR
 \STATE Serialize $D \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$
-\STATE Compute challenge $c = \text{Hash}_{\text{fast}}(D)$ \COMMENT{32-byte fast hash (SHA3-256) of serialized data}
+\STATE Compute challenge $c = \text{SHA3-256}(D)$ \COMMENT{32-byte SHA3-256 hash of serialized data}
 \STATE Create core Chipmunk signature $\sigma_{\text{chip}} = \text{chipmunk\_sign}(sk_\pi, c)$
 \RETURN $\sigma = (\text{ring\_size}=k, \text{required\_signers}=t, c, \{\text{acorn\_proofs}\}, \sigma_{\text{chip}})$
 \end{algorithmic}
@@ -221,7 +221,7 @@ Key generation remains identical to the base Chipmunk scheme:
 
 \section{Acorn Verification: Novel Zero-Knowledge Proof Scheme}
 
-ChipmunkRing introduces \textbf{Acorn Verification}, a novel zero-knowledge proof scheme that completely replaces the traditional Fiat-Shamir transform. Acorn was specifically designed to overcome the limitations of Fiat-Shamir in the post-quantum setting, providing enhanced performance for large ring signatures (32-64+ participants) while strengthening quantum security and maintaining perfect anonymity.
+ChipmunkRing introduces \textbf{Acorn Verification}, a novel zero-knowledge proof scheme that completely replaces the traditional Fiat-Shamir transform. Acorn was specifically designed to overcome the limitations of Fiat-Shamir in the post-quantum setting, providing \textbf{improved performance} for large ring signatures (32-64+ participants) while strengthening quantum security and maintaining \textbf{strong anonymity}.
 
 \subsection{Motivation: Why Replace Fiat-Shamir?}
 
@@ -256,8 +256,15 @@ Unlike Fiat-Shamir which relies on algebraic challenge-response protocols, Acorn
 where:
 \begin{itemize}
 \item $\text{iter}$ is the number of iterations (configurable, typically 1000 for standard security)
-\item $\text{SerializedInput}$ uses our universal serialization schema for consistent encoding (includes $pk_i$, $M$ и $r_i$)
-\item $r_i$ is cryptographically secure randomness generated with domain separation
+\item $\text{SerializedInput}$ uses the \texttt{chipmunk\_ring\_response\_input\_t} structure for consistent encoding, which includes:
+  \begin{itemize}
+  \item \texttt{randomness}: Cryptographically secure randomness (32 bytes)
+  \item \texttt{randomness\_size}: Size of randomness buffer
+  \item \texttt{message}: Message to be signed
+  \item \texttt{message\_size}: Size of message
+  \item \texttt{participant\_context}: Context identifier for the participant
+  \end{itemize}
+\item $r_i$ is cryptographically secure randomness generated with domain separation using \texttt{DOMAIN\_ACORN\_RANDOMNESS}
 \item $\text{proof\_size}$ is configurable based on security requirements (typically 96 bytes)
 \end{itemize}
 
@@ -265,12 +272,44 @@ where:
 
 Acorn employs cryptographic domain separation for different components:
 \begin{itemize}
-\item \texttt{DOMAIN\_ACORN\_RANDOMNESS}: For generating participant randomness
-\item \texttt{DOMAIN\_ACORN\_COMMITMENT}: For generating the main Acorn proof
-\item \texttt{DOMAIN\_ACORN\_LINKABILITY}: For optional linkability tags (derived from public key with domain separation)
+\item \texttt{DOMAIN\_ACORN\_RANDOMNESS} (\texttt{"ACORN\_RANDOMNESS\_V1"}): For generating participant randomness
+\item \texttt{DOMAIN\_ACORN\_COMMITMENT} (\texttt{"ACORN\_COMMITMENT\_V1"}): For generating the main Acorn proof
+\item \texttt{DOMAIN\_ACORN\_LINKABILITY} (\texttt{"ACORN\_LINKABILITY\_V1"}): For optional linkability tags
+\item \texttt{DOMAIN\_SIGNATURE\_ZK} (\texttt{"ChipmunkRing-Signature-ZK"}): For threshold signature coordination
+\item \texttt{DOMAIN\_COORDINATION} (\texttt{"ChipmunkRing-Coordination"}): For multi-signer coordination
+\item \texttt{DOMAIN\_VERIFICATION} (\texttt{"CHIPMUNK\_RING\_ZK\_VERIFY"}): For verification context separation
 \end{itemize}
 
-This prevents cross-protocol attacks and enhances security against quantum adversaries.
+Additionally, the following domain separators are used for specific ZK proof contexts:
+\begin{itemize}
+\item \texttt{ZK\_DOMAIN\_MULTI\_SIGNER}: Multi-signer ZK proofs
+\item \texttt{ZK\_DOMAIN\_SINGLE\_SIGNER}: Single-signer ZK proofs  
+\item \texttt{ZK\_DOMAIN\_THRESHOLD}: Threshold signature ZK proofs
+\item \texttt{ZK\_DOMAIN\_SECRET\_SHARING}: Secret sharing operations
+\item \texttt{ZK\_DOMAIN\_COMMITMENT}: ZK commitment generation
+\item \texttt{ZK\_DOMAIN\_RESPONSE}: ZK response computation
+\item \texttt{ZK\_DOMAIN\_ENTERPRISE}: Enterprise-grade ZK proofs
+\item \texttt{ZK\_DOMAIN\_COORDINATION}: ZK coordination protocol
+\item \texttt{ZK\_DOMAIN\_AGGREGATION}: ZK proof aggregation
+\end{itemize}
+
+This comprehensive domain separation prevents cross-protocol attacks and enhances security against quantum adversaries.
+
+\subsubsection{Linkability Tag Computation}
+
+The linkability tag $I$ provides optional linkability for double-spending prevention and is computed using SHA3-256:
+\begin{align*}
+I &= \text{SHA3-256}(\text{SerializedLinkabilityInput}) \\
+\text{where } \text{SerializedLinkabilityInput} &= \text{Serialize}(\texttt{ring\_hash}, \texttt{message}, \texttt{challenge})
+\end{align*}
+using the \texttt{chipmunk\_ring\_linkability\_input\_t} structure which contains:
+\begin{itemize}
+\item \texttt{ring\_hash}: SHA3-256 hash of the concatenated ring public keys
+\item \texttt{message}: Message being signed (variable size)
+\item \texttt{challenge}: 32-byte cryptographic challenge computed from serialized data
+\end{itemize}
+
+The resulting SHA3-256 hash produces a fixed 32-byte (256-bit) linkability tag, providing collision resistance and quantum security through the SHA3 algorithm. The hash size is configurable via \texttt{CHIPMUNK\_RING\_LINKABILITY\_TAG\_SIZE} parameter.
 
 \subsection{Verification Algorithm}
 
@@ -912,7 +951,7 @@ sharded architecture
 
 \subsection{DAO and Governance Applications in Cellframe}
 
-ChipmunkRing enables advanced governance mechanisms for Cellframe-based DAOs:
+ChipmunkRing enables \textbf{sophisticated governance mechanisms} for Cellframe-based DAOs:
 \begin{itemize}
 \item \textbf{Anonymous DAO Voting}: Members can vote on proposals without revealing identity while preventing double-voting
 \item \textbf{Private Governance Tokens}: Ring signatures enable private transfers and delegation of governance rights
