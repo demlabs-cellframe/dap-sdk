@@ -54,7 +54,8 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
                                const void *a_message, size_t a_message_size,
                                size_t a_randomness_size,
                                size_t a_acorn_proof_size,
-                               size_t a_linkability_tag_size);
+                               size_t a_linkability_tag_size,
+                               uint32_t a_zk_iterations);
 
 /**
  * @brief Free memory allocated for Acorn verification dynamic arrays

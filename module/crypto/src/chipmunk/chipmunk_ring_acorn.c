@@ -75,7 +75,8 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
                                const void *a_message, size_t a_message_size,
                                size_t a_randomness_size,
                                size_t a_acorn_proof_size,
-                               size_t a_linkability_tag_size) {
+                               size_t a_linkability_tag_size,
+                               uint32_t a_zk_iterations) {
     dap_return_val_if_fail(a_acorn, -EINVAL);
     dap_return_val_if_fail(a_public_key, -EINVAL);
 
@@ -142,9 +143,9 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     }
     acorn_input_size = l_input_result.bytes_written;
     
-    // Generate Acorn proof using parameterized iterations 
+    // Generate Acorn proof using parameterized iterations from signature context
     dap_hash_params_t l_acorn_params = {
-        .iterations = CHIPMUNK_RING_ZK_ITERATIONS_MAX,
+        .iterations = a_zk_iterations, // Use context parameter instead of hardcoded maximum
         .domain_separator = "ACORN_COMMITMENT_V1"
     };
     

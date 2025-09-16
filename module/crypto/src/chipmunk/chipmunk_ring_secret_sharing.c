@@ -126,7 +126,8 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
                                                        &share->share_id, sizeof(share->share_id),
                                                        CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
                                                        a_zk_proof_size,
-                                                       CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+                                                       CHIPMUNK_RING_LINKABILITY_TAG_SIZE,
+                                                       a_zk_iterations);
             if (result != 0) {
                 log_it(L_ERROR, "Failed to create ZK commitment for share %u", i);
                 return result;
@@ -299,7 +300,8 @@ static int chipmunk_ring_generate_shares_internal(const chipmunk_ring_private_ke
                                                    &share->share_id, sizeof(share->share_id),
                                                    CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
                                                    a_zk_proof_size,
-                                                   CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
+                                                   CHIPMUNK_RING_LINKABILITY_TAG_SIZE,
+                                                   a_zk_iterations);
         if (result != 0) {
             log_it(L_ERROR, "Failed to create ZK commitment for multi-signer share %u", i);
             return result;

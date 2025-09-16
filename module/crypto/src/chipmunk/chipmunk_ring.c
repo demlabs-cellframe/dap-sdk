@@ -52,7 +52,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Acorn-only parameters
 static chipmunk_ring_pq_params_t s_pq_params = {
@@ -564,7 +564,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                                               a_message, a_message_size,
                                               s_pq_params.randomness_size,
                                               a_signature->zk_proof_size_per_participant,
-                                              a_signature->linkability_tag_size) != 0) {
+                                              a_signature->linkability_tag_size,
+                                              a_signature->zk_iterations) != 0) {
             log_it(L_ERROR, "Failed to create commitment for participant %u", l_i);
             chipmunk_ring_signature_free(a_signature);
             return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
@@ -579,7 +580,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                                               a_message, a_message_size,
                                               s_pq_params.randomness_size,
                                               a_signature->zk_proof_size_per_participant,
-                                              a_signature->linkability_tag_size) != 0) {
+                                              a_signature->linkability_tag_size,
+                                              a_signature->zk_iterations) != 0) {
                 log_it(L_ERROR, "Failed to create coordination commitment for participant %u", l_i);
                 chipmunk_ring_signature_free(a_signature);
                 return CHIPMUNK_RING_ERROR_COMMITMENT_FAILED;
@@ -1131,8 +1133,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                 }
                 
                 dap_hash_params_t l_acorn_params = {
-                    .iterations = CHIPMUNK_RING_ZK_ITERATIONS_MAX, // Same as creation
-                    .domain_separator = "ACORN_COMMITMENT_V1" // Same as creation
+                    .iterations = a_signature->zk_iterations, // Use signature parameters for consistency
+                    .domain_separator = "ACORN_COMMITMENT_V1"
                 };
                 
                 int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, l_acorn_input, l_acorn_input_size,
