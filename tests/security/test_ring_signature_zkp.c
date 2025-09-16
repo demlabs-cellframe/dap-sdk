@@ -276,9 +276,7 @@ static bool s_test_linkability_prevention(void) {
         DAP_DELETE(l_signatures[i]);
     }
     for (size_t i = 0; i < l_ring_size; i++) {
-        if (i != 0) {
-            dap_enc_key_delete(l_ring_keys[i]);
-        }
+        dap_enc_key_delete(l_ring_keys[i]);
     }
     // l_signer_key is now l_ring_keys[0], no separate cleanup needed
     log_it(L_INFO, "✓ Linkability prevention tests passed");

@@ -282,7 +282,6 @@ const chipmunk_ring_pq_params_t* chipmunk_ring_get_current_params(void);
  */
 int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
 
-// REMOVED: chipmunk_ring_get_layer_sizes - quantum layers replaced by Acorn Verification
 
 /**
  * @brief Reset parameters to defaults

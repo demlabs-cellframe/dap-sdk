@@ -196,6 +196,7 @@ static bool s_test_invalid_inputs(void) {
             1  // Traditional ring signature (required_signers=1)
     );
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
+    DAP_DELETE(l_signature);  // Free first signature before creating second
 
     // Test with negative signer index (size_t overflow)
     l_signature = dap_sign_create_ring(
@@ -208,6 +209,7 @@ static bool s_test_invalid_inputs(void) {
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed");
 
     // Cleanup
+    DAP_DELETE(l_signature);
     dap_enc_key_delete(l_signer_key);
 
     log_it(L_INFO, "Invalid inputs test passed");
