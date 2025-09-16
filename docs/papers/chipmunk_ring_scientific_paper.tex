@@ -28,6 +28,8 @@ Dmitrii A. Gerasimov\\
 We present ChipmunkRing, a post-quantum ring signature scheme designed for blockchain deployment. Built upon the Chipmunk lattice-based signature scheme, ChipmunkRing achieves signature sizes of 20.5-279.7KB with signing times of 1.1-15.1ms and verification times of 0.4-4.5ms for rings of 2-64 participants. Our key innovation is Acorn Verification, a novel zero-knowledge scheme that replaces the Fiat-Shamir transform, enabling O(n) verification complexity with 96-byte proofs per participant and achieving 17.7× speedup for 32-participant rings compared to traditional approaches. We provide formal security proofs demonstrating 112-bit post-quantum security (NIST Level 1), comprehensive performance analysis, and support for both standard and threshold ring signatures with arbitrary threshold values.
 \end{abstract}
 
+\noindent\textbf{Keywords:} post-quantum cryptography, ring signatures, zero-knowledge proofs, blockchain, Ring-LWE, Acorn Verification, threshold signatures, privacy-preserving authentication
+
 \section{Introduction}
 
 \subsection{Formal Definitions}
@@ -992,6 +994,18 @@ Future work will focus on:
 
 We thank the Cellframe development team for their support and the cryptographic community for valuable feedback on this work.
 
+\section*{Author Contributions}
+
+D.A.G. conceived the Acorn Verification scheme, designed the ChipmunkRing protocol, implemented the system, conducted the experiments, and wrote the manuscript.
+
+\section*{Conflict of Interest}
+
+The author declares no conflict of interest. This research was conducted as part of the Cellframe Network development but represents independent scientific contribution to the field of post-quantum cryptography.
+
+\section*{Data Availability Statement}
+
+The source code for ChipmunkRing is available as part of the DAP SDK at https://github.com/demlabs-cellframe/dap-sdk. Performance benchmarks and test vectors are included in the repository under the tests/unit/crypto/chipmunk\_ring directory.
+
 \bibliographystyle{plain}
 \bibliography{references}
 
@@ -1064,10 +1078,16 @@ T. P. Pedersen, "A threshold cryptosystem without a trusted party," Proceedings 
 \bibitem{gennaro1999}
 R. Gennaro et al., "Secure distributed key generation for discrete-log based cryptosystems," Journal of Cryptology, vol. 20, no. 1, pp. 51-83, 2007.
 
+\bibitem{sha3-2015}
+NIST, "SHA-3 Standard: Permutation-Based Hash and Extendable-Output Functions," FIPS PUB 202, 2015.
+
+\bibitem{bertoni2013}
+G. Bertoni, J. Daemen, M. Peeters, and G. Van Assche, "Keccak," Proceedings of EUROCRYPT 2013, pp. 313-314, 2013.
+
 \bibitem{cellframe2023}
 Cellframe Network, "Technical whitepaper: Post-quantum blockchain platform," 2023. [Online]. Available: https://cellframe.net/
 
-\bibitem{dap2024}
+\bibitem{dapsdk2024}
 DAP SDK, "Development documentation for decentralized application platform," 2024. [Online]. Available: https://wiki.cellframe.net/
 
 \bibitem{nakamoto2008}

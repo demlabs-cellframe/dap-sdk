@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2025/dev/Debian) (preloaded format=pdflatex 2025.9.16)  16 SEP 2025 19:47
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2025/dev/Debian) (preloaded format=pdflatex 2025.9.16)  16 SEP 2025 19:51
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -680,7 +680,13 @@ LaTeX Font Info:    Trying to load font information for U+msb on input line 26.
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-Overfull \hbox (7.16008pt too wide) in paragraph at lines 35--36
+Overfull \hbox (18.11002pt too wide) in paragraph at lines 31--32
+\OT1/cmr/m/n/10.95 proofs, blockchain, Ring-LWE, Acorn Ver-i-fi-ca-tion, thresh
+-old sig-na-tures, privacy-
+ []
+
+
+Overfull \hbox (7.16008pt too wide) in paragraph at lines 37--38
 \OT1/cmr/m/n/10.95 We be-gin with for-mal def-i-ni-tions of the cryp-to-graphic
  prim-i-tives used through-
  []
@@ -690,7 +696,7 @@ Overfull \hbox (7.16008pt too wide) in paragraph at lines 35--36
 [1
 
 {/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}]
-Overfull \hbox (3.17506pt too wide) in paragraph at lines 52--53
+Overfull \hbox (3.17506pt too wide) in paragraph at lines 54--55
 []\OT1/cmr/bx/n/10.95 Zero-Knowledge\OT1/cmr/m/n/10.95 : $\OMS/cmsy/m/n/10.95 9
 $ \OT1/cmr/m/n/10.95 sim-u-la-tor $\OML/cmm/m/it/10.95 S$ \OT1/cmr/m/n/10.95 su
 ch that $\OMS/cmsy/m/n/10.95 f\OML/cmm/m/it/10.95 V\OT1/cmr/m/n/10.95 (\OML/cmm
@@ -700,19 +706,19 @@ m/m/it/10.95 x\OT1/cmr/m/n/10.95 )\OMS/cmsy/m/n/10.95 g$
  []
 
 
-Overfull \hbox (4.93956pt too wide) in paragraph at lines 59--60
+Overfull \hbox (4.93956pt too wide) in paragraph at lines 61--62
 \OT1/cmr/m/n/10.95 quantum sig-na-ture schemes like Dilithium [[]3[]] and Fal-c
 on [[]4[]] pro-vide quantum-
  []
 
 
-Overfull \hbox (0.98425pt too wide) in paragraph at lines 66--67
+Overfull \hbox (0.98425pt too wide) in paragraph at lines 68--69
 []\OT1/cmr/m/n/10.95 A post-quantum ring sig-na-ture scheme with sig-na-tures o
 f 20.5-279.7KB
  []
 
 
-Overfull \hbox (22.94632pt too wide) in paragraph at lines 67--68
+Overfull \hbox (22.94632pt too wide) in paragraph at lines 69--70
 []\OT1/cmr/m/n/10.95 Sub-millisecond sign-ing and ver-i-fi-ca-tion per-for-manc
 e suit-able for blockchain
  []
@@ -722,13 +728,13 @@ e suit-able for blockchain
 [2]
 
 [3]
-Overfull \hbox (1.95871pt too wide) in paragraph at lines 107--108
+Overfull \hbox (1.95871pt too wide) in paragraph at lines 109--110
 \OT1/cmr/m/n/10.95 Ver-i-fi-ca-tion scheme, which pro-vides en-hanced per-for-m
 ance and se-cu-rity guar-
  []
 
 
-Overfull \hbox (0.86708pt too wide) in paragraph at lines 117--118
+Overfull \hbox (0.86708pt too wide) in paragraph at lines 119--120
 []\OT1/cmr/bx/n/10.95 Definition 2 (Chip-munk HOTS): \OT1/cmr/m/n/10.95 The Chi
 p-munk Ho-mo-mor-phic One-
  []
@@ -737,17 +743,17 @@ p-munk Ho-mo-mor-phic One-
 
 [4]
 Package hyperref Info: bookmark level for unknown algorithm defaults to 0 on in
-put line 165.
+put line 167.
 
 
 [5]
-Overfull \hbox (11.20943pt too wide) in paragraph at lines 186--187
+Overfull \hbox (11.20943pt too wide) in paragraph at lines 188--189
 [] []\OT1/cmr/m/n/10.95 Generate com-mit-ment $\OML/cmm/m/it/10.95 c[]$ \OT1/cm
 r/m/n/10.95 us-ing $[](\OML/cmm/m/it/10.95 PK[]\OT1/cmr/m/n/10.95 )$ 
  []
 
 
-Overfull \hbox (4.83296pt too wide) in paragraph at lines 227--227
+Overfull \hbox (4.83296pt too wide) in paragraph at lines 229--229
 []\OT1/cmr/bx/n/14.4 Acorn Ver-i-fi-ca-tion: Novel Zero-Knowledge Proof
  []
 
@@ -756,7 +762,7 @@ Overfull \hbox (4.83296pt too wide) in paragraph at lines 227--227
 [6]
 
 [7]
-Overfull \hbox (18.61438pt too wide) detected at line 259
+Overfull \hbox (18.61438pt too wide) detected at line 261
 [][][][][]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 M; \OMS/cmsy/m/n/10.95 R\OT1/
 cmr/m/n/10.95 ) = [][]([](\OML/cmm/m/it/10.95 PK[]; M; r[]\OT1/cmr/m/n/10.95 ))
 [0\OML/cmm/m/it/10.95 ::[]\OT1/cmr/m/n/10.95 ]
@@ -767,18 +773,18 @@ cmr/m/n/10.95 ) = [][]([](\OML/cmm/m/it/10.95 PK[]; M; r[]\OT1/cmr/m/n/10.95 ))
 [8]
 
 [9]
-Overfull \hbox (29.11656pt too wide) in paragraph at lines 340--341
+Overfull \hbox (29.11656pt too wide) in paragraph at lines 342--343
 []\OT1/cmr/bx/n/10.95 Theorem 5 (Per-fect Anonymity): \OT1/cmr/m/n/10.95 Acorn 
 Ver-i-fi-ca-tion pro-vides information-
  []
 
 
-Overfull \hbox (79.60051pt too wide) in paragraph at lines 359--370
+Overfull \hbox (79.60051pt too wide) in paragraph at lines 361--372
  [][] 
  []
 
 
-Overfull \hbox (18.14044pt too wide) in paragraph at lines 374--375
+Overfull \hbox (18.14044pt too wide) in paragraph at lines 376--377
 \OT1/cmr/m/n/10.95 per-for-mance im-prove-ments, mak-ing large ring sig-na-ture
 s prac-ti-cal for blockchain
  []
@@ -786,12 +792,12 @@ s prac-ti-cal for blockchain
 
 
 [10]
-Overfull \hbox (104.62276pt too wide) in paragraph at lines 392--406
+Overfull \hbox (104.62276pt too wide) in paragraph at lines 394--408
  [][] 
  []
 
 
-Overfull \hbox (249.47707pt too wide) in paragraph at lines 418--434
+Overfull \hbox (249.47707pt too wide) in paragraph at lines 420--436
  [][] 
  []
 
@@ -799,13 +805,13 @@ Overfull \hbox (249.47707pt too wide) in paragraph at lines 418--434
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Overfull \hbox (1.50255pt too wide) in paragraph at lines 443--444
+Overfull \hbox (1.50255pt too wide) in paragraph at lines 445--446
 []\OT1/cmr/m/n/10.95 Comparable sign-ing/verification times de-spite quan-tum r
 e-sis-tance 
  []
 
 
-Overfull \hbox (6.83344pt too wide) in paragraph at lines 446--447
+Overfull \hbox (6.83344pt too wide) in paragraph at lines 448--449
 []\OT1/cmr/bx/n/10.95 vs Lattice-based Schemes (Lattice-RS, Dilithium-Ring, Fal
 con-
  []
@@ -815,7 +821,7 @@ con-
 [11]
 
 [12]
-Overfull \hbox (9.05222pt too wide) in paragraph at lines 525--526
+Overfull \hbox (9.05222pt too wide) in paragraph at lines 527--528
 []\OT1/cmr/bx/n/10.95 Information-Theoretic Se-cu-rity\OT1/cmr/m/n/10.95 : Shar
 es re-veal no in-for-ma-tion about
  []
@@ -825,7 +831,7 @@ es re-veal no in-for-ma-tion about
 [13]
 
 [14]
-Overfull \hbox (0.3891pt too wide) in paragraph at lines 550--551
+Overfull \hbox (0.3891pt too wide) in paragraph at lines 552--553
 []\OT1/cmr/bx/n/10.95 Proof: \OT1/cmr/m/n/10.95 We con-struct a re-duc-tion tha
 t uses any suc-cess-ful Chip-munkRing
  []
@@ -834,15 +840,8 @@ t uses any suc-cess-ful Chip-munkRing
 
 [15]
 
-LaTeX Warning: Citation `sha3-2015' on page 16 undefined on input line 599.
-
-
-LaTeX Warning: Citation `bertoni2013' on page 16 undefined on input line 599.
-
-
-
 [16]
-Overfull \hbox (1.44788pt too wide) in paragraph at lines 620--621
+Overfull \hbox (1.44788pt too wide) in paragraph at lines 622--623
 []\OT1/cmr/bx/n/10.95 Current Best Quan-tum Al-go-rithms: \OT1/cmr/m/n/10.95 Th
 e most ef-fi-cient known quan-
  []
@@ -852,7 +851,7 @@ e most ef-fi-cient known quan-
 [17]
 
 [18]
-Overfull \hbox (12.65155pt too wide) in paragraph at lines 696--697
+Overfull \hbox (12.65155pt too wide) in paragraph at lines 698--699
 []\OT1/cmr/bx/n/10.95 Post-quantum anonymity en-hance-ments\OT1/cmr/m/n/10.95 :
  Fu-ture work on quantum-
  []
@@ -862,16 +861,12 @@ Overfull \hbox (12.65155pt too wide) in paragraph at lines 696--697
 [19]
 
 [20]
-
-LaTeX Warning: Citation `dapsdk2024' on page 21 undefined on input line 783.
-
-
-Overfull \hbox (145.6206pt too wide) in paragraph at lines 793--812
+Overfull \hbox (145.6206pt too wide) in paragraph at lines 795--814
  [][] 
  []
 
 
-Overfull \hbox (108.76895pt too wide) in paragraph at lines 822--833
+Overfull \hbox (108.76895pt too wide) in paragraph at lines 824--835
  [][] 
  []
 
@@ -881,19 +876,19 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 [21]
-Overfull \hbox (2.61949pt too wide) in paragraph at lines 839--840
+Overfull \hbox (2.61949pt too wide) in paragraph at lines 841--842
 []\OT1/cmr/bx/n/10.95 Signing Per-for-mance\OT1/cmr/m/n/10.95 : 1.1-15.1ms sign
 -ing time for single-signer mode
  []
 
 
-Overfull \hbox (3.69786pt too wide) in paragraph at lines 842--843
+Overfull \hbox (3.69786pt too wide) in paragraph at lines 844--845
 []\OT1/cmr/bx/n/10.95 Blockchain Com-pat-i-bil-ity\OT1/cmr/m/n/10.95 : Sub-150K
 B sig-na-tures for 32-participant
  []
 
 
-Overfull \hbox (7.02405pt too wide) in paragraph at lines 851--852
+Overfull \hbox (7.02405pt too wide) in paragraph at lines 853--854
 []\OT1/cmr/bx/n/10.95 Transaction Size\OT1/cmr/m/n/10.95 : With sig-na-tures un
 -der 20KB, Chip-munkRing trans-
  []
@@ -901,19 +896,19 @@ Overfull \hbox (7.02405pt too wide) in paragraph at lines 851--852
 
 
 [22]
-Overfull \hbox (3.5185pt too wide) in paragraph at lines 875--876
+Overfull \hbox (3.5185pt too wide) in paragraph at lines 877--878
 []\OT1/cmr/bx/n/10.95 Modular de-sign\OT1/cmr/m/n/10.95 : Clean sep-a-ra-tion b
 e-tween core al-go-rithm and frame-
  []
 
 
-Overfull \hbox (14.96864pt too wide) in paragraph at lines 886--887
+Overfull \hbox (14.96864pt too wide) in paragraph at lines 888--889
 []\OT1/cmr/bx/n/10.95 Multi-Shard Sup-port\OT1/cmr/m/n/10.95 : Ring sig-na-ture
 s work across Cell-frame's sharded
  []
 
 
-Overfull \hbox (5.1829pt too wide) in paragraph at lines 893--894
+Overfull \hbox (5.1829pt too wide) in paragraph at lines 895--896
 \OT1/cmr/m/n/10.95 ChipmunkRing en-ables ad-vanced gov-er-nance mech-a-nisms fo
 r Cellframe-based
  []
@@ -927,6 +922,17 @@ r Cellframe-based
 [25]
 
 [26]
+Overfull \hbox (3.98146pt too wide) in paragraph at lines 999--1000
+\OT1/cmr/m/n/10.95 D.A.G. con-ceived the Acorn Ver-i-fi-ca-tion scheme, de-sign
+ed the Chip-munkRing
+ []
+
+
+Overfull \hbox (61.16801pt too wide) in paragraph at lines 1007--1008
+\OT1/cmr/m/n/10.95 and test vec-tors are in-cluded in the repos-i-tory un-der t
+he tests/unit/crypto/chipmunk[]ring
+ []
+
 No file chipmunk_ring_scientific_paper.bbl.
 
 
@@ -934,24 +940,22 @@ No file chipmunk_ring_scientific_paper.bbl.
 
 [28]
 
-[29] (./chipmunk_ring_scientific_paper.aux)
+[29]
+
+[30] (./chipmunk_ring_scientific_paper.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
-
-
-LaTeX Warning: There were undefined references.
-
 Package rerunfilecheck Info: File `chipmunk_ring_scientific_paper.out' has not 
 changed.
 (rerunfilecheck)             Checksum: 30710646DB134FEA11A9DE0532EA3C24;14338.
  ) 
 Here is how much of TeX's memory you used:
- 21064 strings out of 475102
- 385793 string characters out of 5764877
- 759625 words of memory out of 5000000
- 43481 multiletter control sequences out of 15000+600000
+ 21069 strings out of 475102
+ 385854 string characters out of 5764877
+ 759694 words of memory out of 5000000
+ 43480 multiletter control sequences out of 15000+600000
  569420 words of font info for 75 fonts, out of 8000000 for 9000
  59 hyphenation exceptions out of 8191
  84i,10n,91p,864b,591s stack positions out of 10000i,1000n,20000p,200000b,200000s
@@ -973,10 +977,10 @@ usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/sh
 are/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb></usr/share/te
 xlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt12.pfb></usr/share/texlive/
 texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on chipmunk_ring_scientific_paper.pdf (29 pages, 292109 bytes).
+Output written on chipmunk_ring_scientific_paper.pdf (30 pages, 293433 bytes).
 PDF statistics:
- 736 PDF objects out of 1000 (max. 8388607)
- 661 compressed objects within 7 object streams
- 238 named destinations out of 1000 (max. 500000)
+ 749 PDF objects out of 1000 (max. 8388607)
+ 673 compressed objects within 7 object streams
+ 244 named destinations out of 1000 (max. 500000)
  589 words of extra memory for PDF output out of 10000 (max. 10000000)
 

@@ -1,0 +1,32 @@
+Dear Editor,
+
+I am pleased to submit our manuscript entitled "ChipmunkRing: A Practical Post-Quantum Ring Signature Scheme for Blockchain Applications" for consideration for publication in your esteemed journal.
+
+This manuscript presents a novel post-quantum ring signature scheme that addresses the critical gap between theoretical cryptographic constructions and practical deployment requirements. Our main contributions include:
+
+1. **Acorn Verification**: A new zero-knowledge proof scheme that replaces the traditional Fiat-Shamir transform, achieving O(n) verification complexity with 96-byte proofs per participant. This represents a significant improvement over existing approaches, with 17.7× speedup for 32-participant rings.
+
+2. **Practical Performance**: ChipmunkRing achieves signature sizes of 20.5-279.7KB with signing times of 1.1-15.1ms and verification times of 0.4-4.5ms for rings of 2-64 participants, making it suitable for real-world blockchain deployment.
+
+3. **Formal Security Analysis**: We provide rigorous security proofs demonstrating 112-bit post-quantum security (NIST Level 1) based on the Ring-LWE assumption.
+
+4. **Production Implementation**: The scheme is fully implemented and integrated into the Cellframe DAP SDK, with comprehensive benchmarks and test coverage.
+
+The manuscript is original work that has not been published elsewhere and is not under consideration for publication by any other journal. All authors have approved the manuscript and agree with its submission.
+
+We believe this work makes significant contributions to the field of post-quantum cryptography and would be of great interest to the readers of your journal, particularly those working on privacy-preserving blockchain systems and post-quantum security.
+
+The source code and benchmarks are publicly available at https://github.com/demlabs-cellframe/dap-sdk, ensuring reproducibility of our results.
+
+Thank you for considering our manuscript. We look forward to your response.
+
+Sincerely,
+
+Dmitrii A. Gerasimov
+CEO, Cellframe Network
+Email: ceo@cellframe.net
+
+Enclosures:
+- Manuscript (PDF)
+- Supplementary Materials (performance benchmarks, test vectors)
+- Author Declaration Form
