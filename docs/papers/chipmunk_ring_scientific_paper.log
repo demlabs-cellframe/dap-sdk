@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2025/dev/Debian) (preloaded format=pdflatex 2025.9.16)  16 SEP 2025 19:30
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2025/dev/Debian) (preloaded format=pdflatex 2025.9.16)  16 SEP 2025 19:42
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -700,9 +700,15 @@ m/m/it/10.95 x\OT1/cmr/m/n/10.95 )\OMS/cmsy/m/n/10.95 g$
  []
 
 
-Overfull \hbox (15.88957pt too wide) in paragraph at lines 59--60
-\OT1/cmr/m/n/10.95 quantum sig-na-ture schemes like Dilithium [[]14[]] and Fal-
-con [[]15[]] pro-vide quantum-
+Overfull \hbox (4.93956pt too wide) in paragraph at lines 59--60
+\OT1/cmr/m/n/10.95 quantum sig-na-ture schemes like Dilithium [[]3[]] and Fal-c
+on [[]4[]] pro-vide quantum-
+ []
+
+
+Overfull \hbox (0.98425pt too wide) in paragraph at lines 66--67
+[]\OT1/cmr/m/n/10.95 A post-quantum ring sig-na-ture scheme with sig-na-tures o
+f 20.5-279.7KB
  []
 
 
@@ -712,26 +718,16 @@ e suit-able for blockchain
  []
 
 
-LaTeX Warning: Citation `rst01' on page 2 undefined on input line 77.
-
-
 
 [2]
 
-LaTeX Warning: Citation `lsag04' on page 3 undefined on input line 79.
-
-
-LaTeX Warning: Citation `lattice-rings' on page 3 undefined on input line 85.
-
-
-LaTeX Warning: Citation `hash-rings' on page 3 undefined on input line 87.
-
-
-LaTeX Warning: Citation `code-rings' on page 3 undefined on input line 89.
-
-
-
 [3]
+Overfull \hbox (1.95871pt too wide) in paragraph at lines 107--108
+\OT1/cmr/m/n/10.95 Ver-i-fi-ca-tion scheme, which pro-vides en-hanced per-for-m
+ance and se-cu-rity guar-
+ []
+
+
 Overfull \hbox (0.86708pt too wide) in paragraph at lines 117--118
 []\OT1/cmr/bx/n/10.95 Definition 2 (Chip-munk HOTS): \OT1/cmr/m/n/10.95 The Chi
 p-munk Ho-mo-mor-phic One-
@@ -751,9 +747,8 @@ r/m/n/10.95 us-ing $[](\OML/cmm/m/it/10.95 PK[]\OT1/cmr/m/n/10.95 )$
  []
 
 
-Overfull \hbox (18.61116pt too wide) in paragraph at lines 229--230
-\OT1/cmr/m/n/10.95 ChipmunkRing in-tro-duces \OT1/cmr/bx/n/10.95 Acorn Ver-i-fi
--ca-tion\OT1/cmr/m/n/10.95 , a rev-o-lu-tion-ary zero-knowledge
+Overfull \hbox (4.83296pt too wide) in paragraph at lines 227--227
+[]\OT1/cmr/bx/n/14.4 Acorn Ver-i-fi-ca-tion: Novel Zero-Knowledge Proof
  []
 
 
@@ -796,16 +791,6 @@ Overfull \hbox (104.62276pt too wide) in paragraph at lines 392--406
  []
 
 
-LaTeX Warning: Citation `lattice-rings' on page 11 undefined on input line 426.
-
-
-
-LaTeX Warning: Citation `hash-rings' on page 11 undefined on input line 427.
-
-
-LaTeX Warning: Citation `code-rings' on page 11 undefined on input line 428.
-
-
 Overfull \hbox (206.10321pt too wide) in paragraph at lines 418--434
  [][] 
  []
@@ -839,10 +824,6 @@ es re-veal no in-for-ma-tion about
 
 [13]
 
-LaTeX Warning: Citation `rst01' on page 14 undefined on input line 536.
-
-
-
 [14]
 Overfull \hbox (0.3891pt too wide) in paragraph at lines 550--551
 []\OT1/cmr/bx/n/10.95 Proof: \OT1/cmr/m/n/10.95 We con-struct a re-duc-tion tha
@@ -852,6 +833,13 @@ t uses any suc-cess-ful Chip-munkRing
 
 
 [15]
+
+LaTeX Warning: Citation `sha3-2015' on page 16 undefined on input line 599.
+
+
+LaTeX Warning: Citation `bertoni2013' on page 16 undefined on input line 599.
+
+
 
 [16]
 Overfull \hbox (1.44788pt too wide) in paragraph at lines 620--621
@@ -872,72 +860,60 @@ Overfull \hbox (12.65155pt too wide) in paragraph at lines 696--697
 
 
 [19]
-Overfull \hbox (145.6206pt too wide) in paragraph at lines 768--787
- [][] 
- []
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-LaTeX Warning: Citation `lattice-rings' on page 20 undefined on input line 801.
-
-
-
-LaTeX Warning: Citation `hash-rings' on page 20 undefined on input line 802.
-
-
-LaTeX Warning: Citation `code-rings' on page 20 undefined on input line 803.
-
-
-LaTeX Warning: Citation `lsag04' on page 20 undefined on input line 804.
-
-
-Overfull \hbox (103.30971pt too wide) in paragraph at lines 797--808
- [][] 
- []
-
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
 
 [20]
-Overfull \hbox (2.61949pt too wide) in paragraph at lines 814--815
+
+LaTeX Warning: Citation `dapsdk2024' on page 21 undefined on input line 783.
+
+
+Overfull \hbox (145.6206pt too wide) in paragraph at lines 793--812
+ [][] 
+ []
+
+
+Overfull \hbox (108.76895pt too wide) in paragraph at lines 822--833
+ [][] 
+ []
+
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+
+
+[21]
+Overfull \hbox (2.61949pt too wide) in paragraph at lines 839--840
 []\OT1/cmr/bx/n/10.95 Signing Per-for-mance\OT1/cmr/m/n/10.95 : 1.1-15.1ms sign
 -ing time for single-signer mode
  []
 
 
-Overfull \hbox (3.69786pt too wide) in paragraph at lines 817--818
+Overfull \hbox (3.69786pt too wide) in paragraph at lines 842--843
 []\OT1/cmr/bx/n/10.95 Blockchain Com-pat-i-bil-ity\OT1/cmr/m/n/10.95 : Sub-150K
 B sig-na-tures for 32-participant
  []
 
 
-
-[21]
-Overfull \hbox (7.02405pt too wide) in paragraph at lines 826--827
+Overfull \hbox (7.02405pt too wide) in paragraph at lines 851--852
 []\OT1/cmr/bx/n/10.95 Transaction Size\OT1/cmr/m/n/10.95 : With sig-na-tures un
 -der 20KB, Chip-munkRing trans-
  []
 
 
-Overfull \hbox (3.5185pt too wide) in paragraph at lines 850--851
+
+[22]
+Overfull \hbox (3.5185pt too wide) in paragraph at lines 875--876
 []\OT1/cmr/bx/n/10.95 Modular de-sign\OT1/cmr/m/n/10.95 : Clean sep-a-ra-tion b
 e-tween core al-go-rithm and frame-
  []
 
 
-
-[22]
-Overfull \hbox (14.96864pt too wide) in paragraph at lines 861--862
+Overfull \hbox (14.96864pt too wide) in paragraph at lines 886--887
 []\OT1/cmr/bx/n/10.95 Multi-Shard Sup-port\OT1/cmr/m/n/10.95 : Ring sig-na-ture
 s work across Cell-frame's sharded
  []
 
 
-Overfull \hbox (5.1829pt too wide) in paragraph at lines 868--869
+Overfull \hbox (5.1829pt too wide) in paragraph at lines 893--894
 \OT1/cmr/m/n/10.95 ChipmunkRing en-ables ad-vanced gov-er-nance mech-a-nisms fo
 r Cellframe-based
  []
@@ -949,10 +925,10 @@ r Cellframe-based
 [24]
 
 [25]
-No file chipmunk_ring_scientific_paper.bbl.
-
 
 [26]
+No file chipmunk_ring_scientific_paper.bbl.
+
 
 [27]
 
@@ -969,16 +945,16 @@ LaTeX Warning: There were undefined references.
 
 Package rerunfilecheck Info: File `chipmunk_ring_scientific_paper.out' has not 
 changed.
-(rerunfilecheck)             Checksum: 9362D5158E844DF05C9C7601219A2A85;14260.
+(rerunfilecheck)             Checksum: 30710646DB134FEA11A9DE0532EA3C24;14338.
  ) 
 Here is how much of TeX's memory you used:
- 21063 strings out of 475102
- 385773 string characters out of 5764877
+ 21064 strings out of 475102
+ 385793 string characters out of 5764877
  759625 words of memory out of 5000000
  43481 multiletter control sequences out of 15000+600000
  569420 words of font info for 75 fonts, out of 8000000 for 9000
  59 hyphenation exceptions out of 8191
- 84i,10n,91p,910b,591s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 84i,10n,91p,912b,591s stack positions out of 10000i,1000n,20000p,200000b,200000s
  </home/naeper/.texlive2025/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm1095.60
 0pk> </home/naeper/.texlive2025/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm1000.
 600pk></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb>
@@ -997,10 +973,10 @@ usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/sh
 are/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb></usr/share/te
 xlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt12.pfb></usr/share/texlive/
 texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on chipmunk_ring_scientific_paper.pdf (29 pages, 289281 bytes).
+Output written on chipmunk_ring_scientific_paper.pdf (29 pages, 291909 bytes).
 PDF statistics:
- 722 PDF objects out of 1000 (max. 8388607)
- 647 compressed objects within 7 object streams
- 237 named destinations out of 1000 (max. 500000)
- 581 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 736 PDF objects out of 1000 (max. 8388607)
+ 661 compressed objects within 7 object streams
+ 238 named destinations out of 1000 (max. 500000)
+ 589 words of extra memory for PDF output out of 10000 (max. 10000000)
 
