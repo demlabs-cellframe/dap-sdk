@@ -92,7 +92,7 @@ static bool s_test_basic_ring_operations(void) {
     dap_assert(l_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
                    "Signature should be CHIPMUNK_RING type");
 
-    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(TEST_RING_SIZE);
+    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(TEST_RING_SIZE, 1, true);
     dap_assert(l_signature->header.sign_size == l_expected_size,
                    "Signature size should match expected size");
 
@@ -227,7 +227,7 @@ static bool s_test_embedded_keys(void) {
     dap_assert(l_verify_result_external == 0, "Embedded keys signature verification should succeed with external keys");
 
     // Test 4: Check signature size includes embedded keys
-    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(TEST_RING_SIZE);
+    size_t l_expected_size = dap_enc_chipmunk_ring_get_signature_size(TEST_RING_SIZE, 1, true);
     dap_assert(l_signature_embedded->header.sign_size == l_expected_size,
                "Signature with embedded keys should match expected size");
 

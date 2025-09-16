@@ -634,13 +634,29 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                     l_size += a_field->nested_schema->struct_size * l_count_value;
                 } else {
                     // Calculate exact element size using nested schema
-                    size_t element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
-                    if (element_size == 0) {
-                        log_it(L_ERROR, "Failed to calculate nested schema size for field '%s'", a_field->name);
-                        l_size += a_field->nested_schema->struct_size * l_count_value; // fallback
-                    } else {
-                        l_size += element_size * l_count_value;
+                    size_t element_size = 0;
+                    
+                    if (a_object && l_obj_ptr) {
+                        // Object-based calculation: use first element as template for size calculation
+                        const void **l_array_ptr = (const void**)(l_obj_ptr + a_field->offset);
+                        if (*l_array_ptr && l_count_value > 0) {
+                            const uint8_t *l_first_element = (const uint8_t*)*l_array_ptr;
+                            element_size = dap_serialize_calc_size(a_field->nested_schema, NULL, l_first_element, a_context);
+                        }
                     }
+                    
+                    // If object-based calculation failed or no object, try parametric
+                    if (element_size == 0 && a_params) {
+                        element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
+                    }
+                    
+                    // Final fallback to struct size
+                    if (element_size == 0) {
+                        log_it(L_ERROR, "Failed to calculate nested schema size for field '%s', using struct size fallback", a_field->name);
+                        element_size = a_field->nested_schema->struct_size;
+                    }
+                    
+                    l_size += element_size * l_count_value;
                 }
             } else {
                 // Simple array of fixed-size elements

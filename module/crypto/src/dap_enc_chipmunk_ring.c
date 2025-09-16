@@ -151,11 +151,11 @@ void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key) {
 }
 
 /**
- * @brief Get signature size for given ring size
+ * @brief Get signature size for given ring parameters
  */
-size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size) {
-    // Use the quantum-resistant signature size calculation
-    return chipmunk_ring_get_signature_size(a_ring_size);
+size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_signers, bool a_use_embedded_keys) {
+    // Use the quantum-resistant signature size calculation with all parameters
+    return chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, a_use_embedded_keys);
 }
 
 /**
@@ -203,8 +203,8 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -EINVAL;
     }
 
-    // Expected signature size
-    size_t expected_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size);
+    // Expected signature size (assume embedded keys for this interface)
+    size_t expected_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, true);
     if (a_signature_size < expected_size) {
         log_it(L_ERROR, "Signature buffer too small: %zu < %zu",
                a_signature_size, expected_size);

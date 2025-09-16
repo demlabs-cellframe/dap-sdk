@@ -1399,18 +1399,22 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
 }
 
 /**
- * @brief Get signature size for given ring size 
+ * @brief Get signature size for given ring parameters
  */
-size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
+size_t chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_signers, bool a_use_embedded_keys) {
     if (a_ring_size > CHIPMUNK_RING_MAX_RING_SIZE) {
+        return 0;
+    }
+    
+    if (a_required_signers < 1 || a_required_signers > a_ring_size) {
         return 0;
     }
 
     // Create arguments for parametric calculation (using enum indices for performance)
     dap_serialize_arg_t l_args[CHIPMUNK_RING_ARG_COUNT];
     l_args[CHIPMUNK_RING_ARG_RING_SIZE] = (dap_serialize_arg_t){.value.uint_value = a_ring_size, .type = 0};
-    l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){.value.uint_value = 1, .type = 0};
-    l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){.value.uint_value = 1, .type = 0};
+    l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){.value.uint_value = a_use_embedded_keys ? 1 : 0, .type = 0};
+    l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){.value.uint_value = a_required_signers, .type = 0};
     
     dap_serialize_size_params_t l_params = {
         .field_count = 0,
@@ -1422,7 +1426,8 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size) {
     };
     
     // Simple call to schema-based size calculation
-    debug_if(s_debug_more, L_DEBUG, "Calculating signature size for ring_size=%zu using parametric serializer", a_ring_size);
+    debug_if(s_debug_more, L_DEBUG, "Calculating signature size for ring_size=%zu, required_signers=%u, embedded_keys=%s", 
+             a_ring_size, a_required_signers, a_use_embedded_keys ? "true" : "false");
     size_t l_calculated_size = dap_serialize_calc_size(&chipmunk_ring_signature_schema, &l_params, NULL, NULL);
     debug_if(s_debug_more, L_DEBUG, "Parametric serializer returned size: %zu", l_calculated_size);
     

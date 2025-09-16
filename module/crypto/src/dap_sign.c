@@ -394,9 +394,10 @@ dap_sign_t *dap_sign_create_ring(
     // Verify signer key type (only CHIPMUNK_RING for ring signatures)
     dap_return_val_if_fail(a_signer_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL);
 
-    // Calculate signature size
-    size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size);
-    log_it(L_INFO, "Ring signature size for ring_size=%zu: %zu", a_ring_size, l_signature_size);
+    // Calculate signature size with all parameters
+    bool l_use_embedded_keys = true;  // Always use embedded keys for dap_sign interface
+    size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, l_use_embedded_keys);
+    log_it(L_INFO, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
     dap_return_val_if_fail(l_signature_size > 0, NULL);
 
     // Allocate signature buffer

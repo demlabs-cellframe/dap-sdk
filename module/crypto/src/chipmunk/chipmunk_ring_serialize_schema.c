@@ -113,6 +113,16 @@ static size_t s_param_size_acorn_proof(const dap_serialize_size_params_t *a_para
     return CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
 }
 
+static size_t s_param_size_threshold_zk_proofs(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    uint64_t required_signers = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_REQUIRED_SIGNERS, 1);
+    uint64_t proof_size_per_participant = CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
+    
+    // Calculate total size for all threshold ZK proofs
+    return required_signers * proof_size_per_participant;
+}
+
 // Parametric count functions for arrays
 static size_t s_param_count_ring_size(const dap_serialize_size_params_t *a_params, void *a_context)
 {
@@ -177,6 +187,7 @@ static const dap_serialize_field_t s_combined_data_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_combined_data_t, message),
         .size_offset = offsetof(chipmunk_ring_combined_data_t, message_size)
+        // No param_size_func - message size varies and comes from object
     },
     {
         .name = "ring_hash",
@@ -184,6 +195,7 @@ static const dap_serialize_field_t s_combined_data_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_combined_data_t, ring_hash),
         .size_offset = offsetof(chipmunk_ring_combined_data_t, ring_hash_size)
+        // No param_size_func - ring_hash size is fixed and comes from object
     },
     {
         .name = "acorn_proofs",
@@ -192,6 +204,7 @@ static const dap_serialize_field_t s_combined_data_fields[] = {
         .offset = offsetof(chipmunk_ring_combined_data_t, acorn_proofs),
         .count_offset = offsetof(chipmunk_ring_combined_data_t, acorn_proofs_count),
         .nested_schema = &chipmunk_ring_acorn_schema
+        // No param_count_func - acorn_proofs_count comes from object
     }
 };
 
@@ -462,7 +475,8 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .flags = DAP_SERIALIZE_FLAG_CONDITIONAL,
         .offset = offsetof(chipmunk_ring_signature_t, threshold_zk_proofs),
         .size_offset = offsetof(chipmunk_ring_signature_t, zk_proofs_size),
-        .condition = chipmunk_ring_is_threshold_signature
+        .condition = chipmunk_ring_is_threshold_signature,
+        .param_size_func = s_param_size_threshold_zk_proofs
     }
 };
 

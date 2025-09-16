@@ -139,11 +139,13 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
 void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
 
 /**
- * @brief Get signature size for given ring size
+ * @brief Get signature size for given ring parameters
  * @param a_ring_size Number of participants
+ * @param a_required_signers Required signers (1=single, >1=multi-signer)
+ * @param a_use_embedded_keys True if keys embedded in signature
  * @return Required signature buffer size
  */
-size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size);
+size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_signers, bool a_use_embedded_keys);
 
 /* ===== CALLBACK FUNCTIONS ===== */
 

@@ -216,11 +216,13 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
                                  void *a_resolver_context);
 
 /**
- * @brief Get signature size for given ring size
- * @param ring_size Number of participants
+ * @brief Get signature size for given ring parameters
+ * @param a_ring_size Number of participants
+ * @param a_required_signers Required signers (1=single, >1=multi-signer)
+ * @param a_use_embedded_keys True if keys embedded in signature
  * @return Required signature buffer size
  */
-size_t chipmunk_ring_get_signature_size(size_t a_ring_size);
+size_t chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_signers, bool a_use_embedded_keys);
 
 /**
  * @brief Delete Chipmunk_Ring key
