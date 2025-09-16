@@ -171,9 +171,9 @@ Key generation remains identical to the base Chipmunk scheme:
 \STATE Generate matrix $A$ from $\rho_{seed}$
 \STATE Sample secret polynomials $s_0, s_1$ with small coefficients
 \STATE Compute $v_0 = A \cdot s_0, v_1 = A \cdot s_1$
-\STATE Set $PK = (\rho_{seed}, v_0, v_1)$
-\STATE Set $SK = (s, tr, PK)$ where $tr = \text{SHA3-384}(PK)$
-\RETURN $(SK, PK)$
+\STATE Set $pk = (\rho_{seed}, v_0, v_1)$
+\STATE Set $sk = (s, tr, pk)$ where $tr = \text{SHA3-384}(pk)$
+\RETURN $(sk, pk)$
 \end{algorithmic}
 \end{algorithm}
 
@@ -181,24 +181,17 @@ Key generation remains identical to the base Chipmunk scheme:
 \begin{algorithm}
 \caption{ChipmunkRing Signature Generation}
 \begin{algorithmic}[1]
-\REQUIRE Signer's private key $SK_\pi$, message $M$, ring container $\mathcal{R} = \{PK_1, \ldots, PK_k\}$
-\STATE Initialize signature structure with $\text{ring\_size} = k$, $\text{signer\_index} = \pi$
-\STATE Allocate memory for commitments and responses arrays
+\REQUIRE Signer's private key $sk_\pi$, message $M$, ring $\mathcal{R} = \{pk_1, \ldots, pk_k\}$, threshold $t$ (set $t=1$ for single-signer)
+\STATE Initialize signature with $\text{ring\_size}=k$, $\text{required\_signers}=t$
+\STATE Allocate array $\text{acorn\_proofs}[1..k]$
 \FOR{$i = 1$ to $k$}
-    \STATE Generate commitment $c_i$ using $\text{chipmunk\_ring\_commitment\_create}(PK_i)$
+    \STATE $(\text{acorn\_proof}_i, \text{randomness}_i, \text{linkability}_i)$ $\leftarrow$ $\text{chipmunk\_ring\_acorn\_create}(pk_i, M;$ randomness\_size=32, proof\_size=$p$, iterations=$I)$
+    \COMMENT{$p$ and $I$ are taken from signature parameters: single-signer uses $p=64$ bytes and $I=100$ by default; multi-signer uses $p=96$ bytes and $I\in\{1000,10000\}$}
 \ENDFOR
-\STATE Compute ring hash $h_{\mathcal{R}} = H(\{PK_1, \ldots, PK_k\})$
-\STATE Compute challenge $c = H(M \| h_{\mathcal{R}} \| \{c_1, \ldots, c_k\})$
-\FOR{$i = 1$ to $k$}
-    \IF{$i = \pi$}
-        \STATE Compute Schnorr response $r_i = \text{randomness}_i - c \cdot SK_\pi \pmod{q}$
-    \ELSE
-        \STATE Set $r_i = \text{randomness}_i$ (from commitment)
-    \ENDIF
-\ENDFOR
-\STATE Create Chipmunk signature $\sigma_{\text{chip}}$ on challenge $c$ using $SK_\pi$
-\STATE Compute linkability tag $I = H(PK_\pi \| M \| c)$ (optional)
-\RETURN $\sigma = (\text{ring\_size}, \pi, I, c, \{c_1, \ldots, c_k\}, \{r_1, \ldots, r_k\}, \sigma_{\text{chip}})$
+\STATE Serialize $D \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$
+\STATE Compute challenge $c = \text{Hash}_{\text{fast}}(D)$ \COMMENT{32-byte fast hash (SHA3-256) of serialized data}
+\STATE Create core Chipmunk signature $\sigma_{\text{chip}} = \text{chipmunk\_sign}(sk_\pi, c)$
+\RETURN $\sigma = (\text{ring\_size}=k, \text{required\_signers}=t, c, \{\text{acorn\_proofs}\}, \sigma_{\text{chip}})$
 \end{algorithmic}
 \end{algorithm}
 
@@ -206,23 +199,23 @@ Key generation remains identical to the base Chipmunk scheme:
 \begin{algorithm}
 \caption{ChipmunkRing Signature Verification}
 \begin{algorithmic}[1]
-\REQUIRE Signature $\sigma$, message $M$, ring keys $\{PK_1, \ldots, PK_k\}$
-\STATE Parse $\sigma = (\text{ring\_size}, \pi, I, c, \{c_1, \ldots, c_k\}, \{r_1, \ldots, r_k\}, \sigma_{\text{chip}})$
-\STATE Validate $\text{ring\_size} = k$ and $\pi < k$
-\STATE Create ring container and compute ring hash $h_{\mathcal{R}} = H(\{PK_1, \ldots, PK_k\})$
-\STATE Recompute challenge $c' = H(M \| h_{\mathcal{R}} \| \{c_1, \ldots, c_k\})$
-\IF{$c' \neq c$}
-    \RETURN Reject (challenge verification failed)
+\REQUIRE Signature $\sigma$, message $M$, ring keys $\{pk_1, \ldots, pk_k\}$
+\STATE Parse $\sigma = (\text{ring\_size}=k, \text{required\_signers}=t, c, \{\text{acorn\_proofs}\}, \sigma_{\text{chip}})$
+\STATE Validate sizes and parameters; build $\mathcal{R}$ and compute $\text{ring\_hash}$
+\STATE Serialize $D' \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$ and compute $c' = \text{Hash}_{\text{fast}}(D')$
+\IF{$c' \neq c$} \RETURN Reject \ENDIF
+\IF{$t = 1$} \COMMENT{Traditional ring (OR) semantics}
+    \STATE $valid \leftarrow 0$
+    \FOR{$i = 1$ to $k$}
+        \STATE Build Acorn input from $(pk_i, M, \text{randomness}_i)$ and compute $\text{expected}_i = \text{SHAKE256}^{I}(\cdot)$ with domain separation
+        \IF{$\text{expected}_i = \text{acorn\_proof}_i$} $valid \leftarrow valid + 1$ \ENDIF
+    \ENDFOR
+    \STATE Accept iff $valid \ge 1$
+\ELSE \COMMENT{Multi-signer (threshold) mode}
+    \STATE Check size $\text{threshold\_zk\_proofs} = t \times p$ and verify structure
+    \STATE Verify aggregated (threshold) signature using optimized Lagrange interpolation and associated ZK data
 \ENDIF
-\FOR{$i = 1$ to $k$}
-    \STATE Verify response consistency for participant $i$
-\ENDFOR
-\STATE Verify Chipmunk signature $\sigma_{\text{chip}}$ on challenge $c$ (anonymously within ring)
-\IF{All verifications succeed}
-    \RETURN Accept
-\ELSE
-    \RETURN Reject
-\ENDIF
+\STATE Verify core Chipmunk signature $\sigma_{\text{chip}}$ on $c$
 \end{algorithmic}
 \end{algorithm}
 
@@ -245,8 +238,8 @@ Acorn Verification was designed from the ground up to address these limitations:
 
 \begin{itemize}
 \item \textbf{Linear Complexity}: $O(n)$ verification instead of $O(n^2)$
-\item \textbf{Compact Proofs}: 96 bytes per participant vs 2KB+ in traditional schemes
-\item \textbf{Quantum Security}: 90,000+ logical qubits required for attack
+\item \textbf{Compact Proofs}: 64 bytes per participant (single-signer, default) or 96 bytes (multi-signer/enterprise) vs 2KB+ in traditional schemes
+\item \textbf{Quantum Security}: 90,000+ logical qubits required for attack (per implementation parameters)
 \item \textbf{Anonymity Preservation}: Zero information leakage about signer identity
 \end{itemize}
 
@@ -257,13 +250,13 @@ Acorn Verification was designed from the ground up to address these limitations:
 Unlike Fiat-Shamir which relies on algebraic challenge-response protocols, Acorn uses iterative hash-based commitments with domain separation. For participant $i$ in ring $\mathcal{R} = \{PK_1, \ldots, PK_n\}$ with message $M$:
 
 \begin{equation}
-\text{AcornProof}_i(M, \mathcal{R}) = \text{SHAKE256}^{\text{iter}}(\text{SerializedInput}(PK_i, M, r_i))[0..\text{proof\_size}]
+\text{AcornProof}_i(M, \mathcal{R}) = \text{SHAKE256}^{\text{iter}}(\text{SerializedInput}(pk_i, M, r_i))[0..\text{proof\_size}]
 \end{equation}
 
 where:
 \begin{itemize}
 \item $\text{iter}$ is the number of iterations (configurable, typically 1000 for standard security)
-\item $\text{SerializedInput}$ uses our universal serialization schema for consistent encoding
+\item $\text{SerializedInput}$ uses our universal serialization schema for consistent encoding (includes $pk_i$, $M$ и $r_i$)
 \item $r_i$ is cryptographically secure randomness generated with domain separation
 \item $\text{proof\_size}$ is configurable based on security requirements (typically 96 bytes)
 \end{itemize}
@@ -274,7 +267,7 @@ Acorn employs cryptographic domain separation for different components:
 \begin{itemize}
 \item \texttt{DOMAIN\_ACORN\_RANDOMNESS}: For generating participant randomness
 \item \texttt{DOMAIN\_ACORN\_COMMITMENT}: For generating the main Acorn proof
-\item \texttt{DOMAIN\_ACORN\_LINKABILITY}: For optional linkability tags
+\item \texttt{DOMAIN\_ACORN\_LINKABILITY}: For optional linkability tags (derived from public key with domain separation)
 \end{itemize}
 
 This prevents cross-protocol attacks and enhances security against quantum adversaries.
@@ -283,7 +276,7 @@ This prevents cross-protocol attacks and enhances security against quantum adver
 
 \subsubsection{Simplified Verification Process}
 
-One of Acorn's key advantages over Fiat-Shamir is the dramatically simplified verification process:
+One of Acorn's key advantages over Fiat-Shamir is the dramatically simplified verification process within the ZK layer (the core signature remains Chipmunk-based):
 
 \begin{algorithm}
 \caption{Acorn Verification}
@@ -291,7 +284,7 @@ One of Acorn's key advantages over Fiat-Shamir is the dramatically simplified ve
 \REQUIRE Proof $\pi_i$, message $M$, ring $\mathcal{R}$, participant index $i$
 \ENSURE Accept/Reject
 \STATE Reconstruct input using same serialization schema
-\STATE Compute $\text{expected} \leftarrow \text{SHAKE256}^{\text{iter}}(\text{SerializedInput})[0..\text{proof\_size}]$
+\STATE Compute $\text{expected} \leftarrow \text{SHAKE256}^{\text{iter}}(\text{SerializedInput})[0..\text{proof\_size}]$ with domain separation
 \STATE \textbf{return} $\text{ConstantTimeCompare}(\pi_i, \text{expected})$
 \end{algorithmic}
 \end{algorithm}
@@ -475,7 +468,7 @@ Falcon-Ring & >90KB & >700ms & >380ms & Yes & GPV framework & Very Complex \\
 Key advantages of Acorn Verification compared to existing schemes:
 
 \begin{itemize}
-\item \textbf{No Algebraic Operations}: Unlike Fiat-Shamir (used in Lattice-RS, Dilithium-Ring), Schnorr (LSAG), or syndrome decoding (Code-RS), Acorn uses only hash functions
+\item \textbf{Hash-only ZK Layer}: Unlike Fiat-Shamir (used in Lattice-RS, Dilithium-Ring), Schnorr (LSAG), or syndrome decoding (Code-RS), the Acorn zero-knowledge layer uses only hash functions; the core signature remains lattice-based (Chipmunk)
 \item \textbf{Constant-Time by Design}: Inherently resistant to timing attacks without special implementation care
 \item \textbf{Hardware-Friendly}: Can leverage existing SHA3 hardware accelerators present in modern CPUs and crypto chips
 \item \textbf{Parallelizable}: Each participant's proof can be verified independently, enabling massive parallelization
@@ -997,7 +990,7 @@ We thank the Cellframe development team for their support and the cryptographic 
 \section*{Author Contributions}
 
 D.A.G. conceived the Acorn Verification scheme, designed the ChipmunkRing protocol, implemented the system, conducted the experiments, and wrote the manuscript.
-
+o
 \section*{Conflict of Interest}
 
 The author declares no conflict of interest. This research was conducted as part of the Cellframe Network development but represents independent scientific contribution to the field of post-quantum cryptography.
