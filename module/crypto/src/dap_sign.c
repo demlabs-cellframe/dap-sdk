@@ -43,7 +43,7 @@
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
 // Static function declarations for internal implementations
@@ -374,8 +374,8 @@ dap_sign_t *dap_sign_create_ring(
     size_t a_ring_size,
     uint32_t a_required_signers
 ) {
-    debug_if(s_debug_more, L_INFO, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
-           a_ring_size, a_required_signers);
+    debug_if(s_debug_more, L_DEBUG, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
+             a_ring_size, a_required_signers);
     dap_return_val_if_fail(a_signer_key, NULL);
     // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, NULL);
@@ -397,7 +397,7 @@ dap_sign_t *dap_sign_create_ring(
     // Calculate signature size with all parameters
     bool l_use_embedded_keys = true;  // Always use embedded keys for dap_sign interface
     size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, l_use_embedded_keys);
-    debug_if(s_debug_more, L_INFO, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
+    debug_if(s_debug_more, L_DEBUG, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
     dap_return_val_if_fail(l_signature_size > 0, NULL);
 
     // Allocate signature buffer

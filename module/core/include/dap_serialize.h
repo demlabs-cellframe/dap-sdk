@@ -92,6 +92,7 @@ typedef enum dap_serialize_field_flags {
  */
 typedef bool (*dap_serialize_condition_func_t)(const void *a_object, void *a_context);
 
+
 /**
  * @brief Size calculation function for dynamic fields
  * @param a_object Pointer to the object being serialized
@@ -120,6 +121,14 @@ typedef size_t (*dap_serialize_param_size_func_t)(const dap_serialize_size_param
 typedef size_t (*dap_serialize_param_count_func_t)(const dap_serialize_size_params_t *a_params, void *a_context);
 
 /**
+ * @brief Parametric condition function for conditional fields
+ * @param a_params Size parameters with user-defined arguments
+ * @param a_context User context passed to serializer
+ * @return true if field should be included, false otherwise
+ */
+typedef bool (*dap_serialize_param_condition_func_t)(const dap_serialize_size_params_t *a_params, void *a_context);
+
+/**
  * @brief Field descriptor for serialization schema
  */
 typedef struct dap_serialize_field {
@@ -131,6 +140,7 @@ typedef struct dap_serialize_field {
     size_t size_offset;                     ///< Offset to size field for dynamic fields
     size_t count_offset;                    ///< Offset to count field for arrays
     dap_serialize_condition_func_t condition; ///< Condition function (optional)
+    dap_serialize_param_condition_func_t param_condition; ///< Parametric condition function (optional)
     dap_serialize_size_func_t size_func;    ///< Size calculation function (optional)
     dap_serialize_param_size_func_t param_size_func; ///< Parametric size calculation function (optional)
     dap_serialize_param_count_func_t param_count_func; ///< Parametric count calculation function (optional)
@@ -178,7 +188,7 @@ typedef struct dap_serialize_result {
 } dap_serialize_result_t;
 
 /**
- * @brief Argument for schema calculations (indexed access for performance)
+ * @brief Argument for schema calculations
  */
 typedef struct dap_serialize_arg {
     union {

@@ -273,6 +273,11 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
 int chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
 
 /**
+ * @brief Get current post-quantum parameters (direct return)
+ */
+const chipmunk_ring_pq_params_t* chipmunk_ring_get_current_params(void);
+
+/**
  * @brief Set post-quantum parameters
  */
 int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);

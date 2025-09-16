@@ -134,11 +134,37 @@ static inline dap_serialize_result_t chipmunk_ring_signature_serialize(
     uint8_t *a_buffer,
     size_t a_buffer_size) 
 {
+    // Create parameters from signature for proper serialization
+    // This ensures dynamic fields like threshold_zk_proofs are handled correctly
+    dap_serialize_arg_t l_args[CHIPMUNK_RING_ARG_COUNT];
+    l_args[CHIPMUNK_RING_ARG_RING_SIZE] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->ring_size, 
+        .type = 0
+    };
+    l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->use_embedded_keys ? 1 : 0, 
+        .type = 0
+    };
+    l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->required_signers, 
+        .type = 0
+    };
+    
+    dap_serialize_size_params_t l_params = {
+        .field_count = 0,
+        .array_counts = NULL,
+        .data_sizes = NULL,
+        .field_present = NULL,
+        .args = l_args,
+        .args_count = CHIPMUNK_RING_ARG_COUNT
+    };
+    
+    // Pass parameters through context for parametric functions
     return dap_serialize_to_buffer(&chipmunk_ring_signature_schema,
                                    a_signature,
                                    a_buffer,
                                    a_buffer_size,
-                                   NULL);
+                                   &l_params);
 }
 
 // Deserialize signature from buffer  
@@ -158,8 +184,32 @@ static inline dap_serialize_result_t chipmunk_ring_signature_deserialize(
 static inline size_t chipmunk_ring_signature_calc_size(
     const chipmunk_ring_signature_t *a_signature)
 {
+    // Create parameters from signature for accurate size calculation
+    dap_serialize_arg_t l_args[CHIPMUNK_RING_ARG_COUNT];
+    l_args[CHIPMUNK_RING_ARG_RING_SIZE] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->ring_size, 
+        .type = 0
+    };
+    l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->use_embedded_keys ? 1 : 0, 
+        .type = 0
+    };
+    l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){
+        .value.uint_value = a_signature->required_signers, 
+        .type = 0
+    };
+    
+    dap_serialize_size_params_t l_params = {
+        .field_count = 0,
+        .array_counts = NULL,
+        .data_sizes = NULL,
+        .field_present = NULL,
+        .args = l_args,
+        .args_count = CHIPMUNK_RING_ARG_COUNT
+    };
+    
     return dap_serialize_calc_size(&chipmunk_ring_signature_schema,
-                                   NULL,
+                                   &l_params,
                                    a_signature,
-                                   NULL);
+                                   &l_params);
 }

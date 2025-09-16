@@ -30,7 +30,7 @@ This file is part of DAP SDK the open source project
 
 
 // Debug flag for detailed logging
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 // Size helpers for parameter-based size calculation of nested fields
 static size_t s_size_acorn_proof(const void *a_object, void *a_context)
@@ -106,11 +106,32 @@ static size_t s_param_size_linkability_tag_param(const dap_serialize_size_params
     return CHIPMUNK_RING_LINKABILITY_TAG_SIZE;
 }
 
-static size_t s_param_size_acorn_proof(const dap_serialize_size_params_t *a_params, void *a_context)
+static size_t s_param_size_randomness(const dap_serialize_size_params_t *a_params, void *a_context)
 {
     UNUSED(a_params);
     UNUSED(a_context);
-    return CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
+    // Get current randomness size from algorithm parameters
+    // This is set via dap_enc_chipmunk_ring_set_params
+    extern const chipmunk_ring_pq_params_t* chipmunk_ring_get_current_params(void);
+    const chipmunk_ring_pq_params_t* current_params = chipmunk_ring_get_current_params();
+    return current_params->randomness_size;
+}
+
+static size_t s_param_size_acorn_proof(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    // For buffer size calculation, we need to estimate the size
+    // The actual size will be set by the algorithm based on security parameters
+    // We use the maximum expected size to ensure buffer is large enough
+    uint64_t required_signers = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_REQUIRED_SIGNERS, 1);
+    
+    if (required_signers == 1) {
+        // Single signer mode typically uses DEFAULT size
+        return CHIPMUNK_RING_ZK_PROOF_SIZE_DEFAULT; // 64 bytes
+    } else {
+        // Multi-signer mode typically uses ENTERPRISE size
+        return CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
+    }
 }
 
 static size_t s_param_size_threshold_zk_proofs(const dap_serialize_size_params_t *a_params, void *a_context)
@@ -119,8 +140,13 @@ static size_t s_param_size_threshold_zk_proofs(const dap_serialize_size_params_t
     uint64_t required_signers = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_REQUIRED_SIGNERS, 1);
     uint64_t proof_size_per_participant = CHIPMUNK_RING_ZK_PROOF_SIZE_ENTERPRISE; // 96 bytes
     
-    // Calculate total size for all threshold ZK proofs
-    return required_signers * proof_size_per_participant;
+    // Calculate total size for all threshold ZK proofs (just the data, not including the size field)
+    size_t total_size = required_signers * proof_size_per_participant;
+    
+    debug_if(s_debug_more, L_DEBUG, "s_param_size_threshold_zk_proofs: required_signers=%lu, proof_size=%lu, total=%zu", 
+             required_signers, proof_size_per_participant, total_size);
+    
+    return total_size;
 }
 
 // Parametric count functions for arrays
@@ -128,6 +154,19 @@ static size_t s_param_count_ring_size(const dap_serialize_size_params_t *a_param
 {
     UNUSED(a_context);
     return dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_RING_SIZE, 1);
+}
+
+// Parametric condition functions for conditional fields
+static bool s_param_condition_is_threshold(const dap_serialize_size_params_t *a_params, void *a_context)
+{
+    UNUSED(a_context);
+    uint64_t required_signers = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_REQUIRED_SIGNERS, 1);
+    bool is_threshold = required_signers > 1;
+    
+    debug_if(s_debug_more, L_DEBUG, "s_param_condition_is_threshold: required_signers=%lu, is_threshold=%s", 
+             required_signers, is_threshold ? "true" : "false");
+    
+    return is_threshold;
 }
 
 
@@ -327,7 +366,7 @@ static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
         .offset = offsetof(chipmunk_ring_acorn_t, randomness),
         .size_offset = offsetof(chipmunk_ring_acorn_t, randomness_size),
         .size_func = s_size_randomness,
-        .param_size_func = s_param_size_ring_hash  // Use same size as ring_hash for consistency
+        .param_size_func = s_param_size_randomness
     },
     
     // Linkability tag (dynamic size)
@@ -476,6 +515,7 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .offset = offsetof(chipmunk_ring_signature_t, threshold_zk_proofs),
         .size_offset = offsetof(chipmunk_ring_signature_t, zk_proofs_size),
         .condition = chipmunk_ring_is_threshold_signature,
+        .param_condition = s_param_condition_is_threshold,
         .param_size_func = s_param_size_threshold_zk_proofs
     }
 };

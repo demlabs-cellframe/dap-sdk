@@ -44,8 +44,13 @@ const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_si
 uint64_t dap_serialize_get_arg_uint_by_index(const dap_serialize_size_params_t *a_params, size_t a_index, uint64_t a_default) {
     const dap_serialize_arg_t *arg = dap_serialize_get_arg_by_index(a_params, a_index);
     if (!arg || arg->type != 0) { // type 0 = uint
+        debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, arg=%p, returning default=%lu", 
+                 a_index, arg, a_default);
         return a_default;
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, value=%lu", 
+             a_index, arg->value.uint_value);
     return arg->value.uint_value;
 }
 
@@ -123,15 +128,30 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
                  i, a_schema->field_count, l_field->name ? l_field->name : "NULL", l_field->type);
         
         // Check if field should be included
-        // In parameter-based mode (a_object == NULL), include all conditional fields for conservative estimate
-        if (a_object && !s_check_condition(l_field, a_object, a_context)) {
-            debug_if(s_debug_more, L_DEBUG, "Field %zu ('%s') skipped due to condition", i, l_field->name);
-            continue;
+        bool field_included = true;
+        
+        if (l_field->flags & DAP_SERIALIZE_FLAG_CONDITIONAL) {
+            debug_if(s_debug_more, L_DEBUG, "Processing conditional field '%s': a_object=%p, param_condition=%p, a_params=%p", 
+                     l_field->name, a_object, l_field->param_condition, a_params);
+            
+            if (a_object) {
+                // Object-based condition check
+                field_included = s_check_condition(l_field, a_object, a_context);
+                debug_if(s_debug_more, L_DEBUG, "Object-based condition for '%s': %s", l_field->name, field_included ? "included" : "excluded");
+            } else if (l_field->param_condition && a_params) {
+                // Parameter-based condition check
+                field_included = l_field->param_condition(a_params, a_context);
+                debug_if(s_debug_more, L_DEBUG, "Parametric condition for '%s': %s", l_field->name, field_included ? "included" : "excluded");
+            } else {
+                // No parametric condition - include for conservative estimate
+                field_included = true;
+                debug_if(s_debug_more, L_DEBUG, "No parametric condition for '%s', including by default", l_field->name);
+            }
         }
         
-        // In parameter-based mode, include conditional fields for worst-case sizing
-        if (!a_object && (l_field->flags & DAP_SERIALIZE_FLAG_CONDITIONAL)) {
-            debug_if(s_debug_more, L_DEBUG, "Field %zu ('%s') included in parameter-based mode (conditional)", i, l_field->name);
+        if (!field_included) {
+            debug_if(s_debug_more, L_DEBUG, "Field %zu ('%s') skipped due to condition", i, l_field->name);
+            continue;
         }
         
         size_t l_field_size = s_calc_field_size(l_field, a_object, a_params, i, a_context, a_schema);
@@ -824,42 +844,46 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             const void **l_data_ptr = (const void**)(obj_ptr + a_field->offset);
             const size_t *l_size_ptr = (const size_t*)(obj_ptr + a_field->size_offset);
             
+            // ALWAYS use size from object when serializing
+            // Parametric functions are only for buffer size calculation before object exists
+            size_t actual_size = *l_size_ptr;
+            
             debug_if(s_debug_more, L_DEBUG, "BYTES_DYNAMIC field '%s': data_ptr=%p, size=%zu", 
-                     a_field->name, *l_data_ptr, *l_size_ptr);
+                     a_field->name, *l_data_ptr, actual_size);
             
             // Robust validation for BYTES_DYNAMIC fields
-            if (*l_size_ptr > 0 && !*l_data_ptr) {
+            if (actual_size > 0 && !*l_data_ptr) {
                 log_it(L_WARNING, "BYTES_DYNAMIC field '%s' has NULL data pointer but non-zero size %zu, writing zeros", 
-                       a_field->name, *l_size_ptr);
+                       a_field->name, actual_size);
                 // Don't fail - write zeros instead for robustness
             }
             
             // Validate size is reasonable
-            if (*l_size_ptr > 100*1024*1024) {  // 100MB max per field
+            if (actual_size > 100*1024*1024) {  // 100MB max per field
                 log_it(L_ERROR, "BYTES_DYNAMIC field '%s' has unreasonable size %zu (max: 100MB)", 
-                       a_field->name, *l_size_ptr);
+                       a_field->name, actual_size);
                 return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
             }
             
             // Check buffer space
-            if (a_ctx->offset + sizeof(uint32_t) + *l_size_ptr > a_ctx->buffer_size) {
-                log_it(L_ERROR, "Buffer overflow in BYTES_DYNAMIC field '%s': offset=%zu + size=%zu > buffer_size=%zu", 
-                       a_field->name, a_ctx->offset, sizeof(uint32_t) + *l_size_ptr, a_ctx->buffer_size);
+            if (a_ctx->offset + sizeof(uint32_t) + actual_size > a_ctx->buffer_size) {
+                log_it(L_ERROR, "Buffer too small for field '%s': offset=%zu + field_size=%zu > buffer_size=%zu", 
+                       a_field->name, a_ctx->offset, sizeof(uint32_t) + actual_size, a_ctx->buffer_size);
                 return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
             }
             
             // Write size prefix
-            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)*l_size_ptr);
+            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)actual_size);
             a_ctx->offset += sizeof(uint32_t);
             
-            // Write data - if NULL, write zeros
-            if (*l_data_ptr && *l_size_ptr > 0) {
-                memcpy(a_ctx->buffer + a_ctx->offset, *l_data_ptr, *l_size_ptr);
-            } else if (*l_size_ptr > 0) {
-                // NULL pointer but non-zero size - write zeros
-                memset(a_ctx->buffer + a_ctx->offset, 0, *l_size_ptr);
+            // Write data
+            if (*l_data_ptr && actual_size > 0) {
+                memcpy(a_ctx->buffer + a_ctx->offset, *l_data_ptr, actual_size);
+            } else if (actual_size > 0) {
+                // Write zeros if data is NULL but size is non-zero (for robustness)
+                memset(a_ctx->buffer + a_ctx->offset, 0, actual_size);
             }
-            a_ctx->offset += *l_size_ptr;
+            a_ctx->offset += actual_size;
             break;
         }
         case DAP_SERIALIZE_TYPE_VERSION: {

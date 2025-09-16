@@ -151,6 +151,11 @@
 #define CHIPMUNK_RING_DOMAIN_SIGNATURE_ZK       "ChipmunkRing-Signature-ZK"
 #define CHIPMUNK_RING_DOMAIN_COORDINATION       "ChipmunkRing-Coordination"
 
+// Acorn domain separators (must match between creation and verification)
+#define CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS   "ACORN_RANDOMNESS_V1"
+#define CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT   "ACORN_COMMITMENT_V1"
+#define CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY  "ACORN_LINKABILITY_V1"
+
 // Scalability thresholds
 #define CHIPMUNK_RING_SMALL_RING_THRESHOLD      16    ///< Threshold for embedded vs external keys
 #define CHIPMUNK_RING_LARGE_RING_THRESHOLD      64    ///< Threshold for performance optimization

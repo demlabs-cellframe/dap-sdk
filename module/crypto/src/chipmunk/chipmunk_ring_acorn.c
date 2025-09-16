@@ -58,12 +58,17 @@ void chipmunk_ring_acorn_free(chipmunk_ring_acorn_t *a_acorn) {
             a_acorn->randomness = NULL;
         }
         
-        // Clear linkability tag
-        memset(a_acorn->linkability_tag, 0, a_acorn->linkability_tag_size);
+        // Free linkability tag with secure cleanup
+        if (a_acorn->linkability_tag) {
+            memset(a_acorn->linkability_tag, 0, a_acorn->linkability_tag_size);
+            DAP_FREE(a_acorn->linkability_tag);
+            a_acorn->linkability_tag = NULL;
+        }
         
         // Reset sizes to zero
         a_acorn->randomness_size = 0;
         a_acorn->acorn_proof_size = 0;
+        a_acorn->linkability_tag_size = 0;
     }
 }
 
@@ -105,14 +110,19 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     snprintf((char*)participant_seed, sizeof(participant_seed), "acorn_participant_%p_%zu", 
              (void*)a_public_key, a_message_size);
     
-    dap_hash_fast_t randomness_hash;
-    if (!dap_hash_fast(participant_seed, strlen((char*)participant_seed), &randomness_hash)) {
-        log_it(L_ERROR, "Failed to generate participant randomness");
+    // Generate randomness of exact required size using dap_hash with domain separation
+    dap_hash_params_t randomness_params = {
+        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS
+    };
+    int randomness_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
+                                    participant_seed, strlen((char*)participant_seed),
+                                    a_acorn->randomness, a_acorn->randomness_size,
+                                    DAP_HASH_FLAG_DOMAIN_SEPARATION, &randomness_params);
+    if (randomness_result != 0) {
+        log_it(L_ERROR, "Failed to generate participant randomness: %d", randomness_result);
         chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
-    
-    memcpy(a_acorn->randomness, &randomness_hash, a_acorn->randomness_size);
 
     // PURE ACORN COMMITMENT GENERATION
     // Generate Acorn proof for this participant
@@ -146,12 +156,12 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     // Generate Acorn proof using parameterized iterations from signature context
     dap_hash_params_t l_acorn_params = {
         .iterations = a_zk_iterations, // Use context parameter instead of hardcoded maximum
-        .domain_separator = "ACORN_COMMITMENT_V1"
+        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT
     };
     
     int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, acorn_input, acorn_input_size,
                                  a_acorn->acorn_proof, a_acorn->acorn_proof_size,
-                                 DAP_HASH_FLAG_ITERATIVE, &l_acorn_params);
+                                 DAP_HASH_FLAG_ITERATIVE | DAP_HASH_FLAG_DOMAIN_SEPARATION, &l_acorn_params);
     DAP_DELETE(acorn_input);
     
     if (l_acorn_result != 0) {
@@ -160,18 +170,20 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         return -1;
     }
     
-    // Generate linkability tag for replay protection
-    dap_hash_fast_t linkability_hash;
-    if (dap_hash_fast(a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE, &linkability_hash)) {
-        memcpy(a_acorn->linkability_tag, &linkability_hash, 
-               (sizeof(linkability_hash) < a_acorn->linkability_tag_size) ? 
-               sizeof(linkability_hash) : a_acorn->linkability_tag_size);
-    } else {
-        log_it(L_ERROR, "Failed to generate linkability tag");
+    // Generate linkability tag of exact required size using dap_hash with domain separation
+    dap_hash_params_t linkability_params = {
+        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY
+    };
+    int linkability_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
+                                     a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE,
+                                     a_acorn->linkability_tag, a_acorn->linkability_tag_size,
+                                     DAP_HASH_FLAG_DOMAIN_SEPARATION, &linkability_params);
+    if (linkability_result != 0) {
+        log_it(L_ERROR, "Failed to generate linkability tag: %d", linkability_result);
         chipmunk_ring_acorn_free(a_acorn);
         return -1;
     }
 
-    debug_if(false, L_INFO, "Quantum-resistant commitment created successfully (deterministic)");
+    debug_if(false, L_INFO, "Acorn created successfully ");
     return 0;
 }

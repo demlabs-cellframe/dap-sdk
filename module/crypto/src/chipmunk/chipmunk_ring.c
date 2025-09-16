@@ -52,7 +52,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 // Acorn-only parameters
 static chipmunk_ring_pq_params_t s_pq_params = {
@@ -63,6 +63,13 @@ static chipmunk_ring_pq_params_t s_pq_params = {
     // Computed sizes (will be calculated in update_layer_sizes)
     .computed = {0}
 };
+
+/**
+ * @brief Get current PQ parameters
+ */
+const chipmunk_ring_pq_params_t* chipmunk_ring_get_current_params(void) {
+    return &s_pq_params;
+}
 
 /**
  * @brief Update computed sizes based on current Acorn parameters
@@ -1134,12 +1141,12 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                 
                 dap_hash_params_t l_acorn_params = {
                     .iterations = a_signature->zk_iterations, // Use signature parameters for consistency
-                    .domain_separator = "ACORN_COMMITMENT_V1"
+                    .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT
                 };
                 
                 int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, l_acorn_input, l_acorn_input_size,
                                              l_expected_acorn_proof, a_signature->acorn_proofs[l_i].acorn_proof_size,
-                                             DAP_HASH_FLAG_ITERATIVE, &l_acorn_params);
+                                             DAP_HASH_FLAG_ITERATIVE | DAP_HASH_FLAG_DOMAIN_SEPARATION, &l_acorn_params);
                 DAP_DELETE(l_acorn_input);
                 
                 if (l_acorn_result == 0) {
@@ -1418,6 +1425,11 @@ size_t chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_
     l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS] = (dap_serialize_arg_t){.value.uint_value = a_use_embedded_keys ? 1 : 0, .type = 0};
     l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS] = (dap_serialize_arg_t){.value.uint_value = a_required_signers, .type = 0};
     
+    debug_if(s_debug_more, L_DEBUG, "Setting args: ring_size=%lu, use_embedded_keys=%lu, required_signers=%lu", 
+             l_args[CHIPMUNK_RING_ARG_RING_SIZE].value.uint_value,
+             l_args[CHIPMUNK_RING_ARG_USE_EMBEDDED_KEYS].value.uint_value, 
+             l_args[CHIPMUNK_RING_ARG_REQUIRED_SIGNERS].value.uint_value);
+    
     dap_serialize_size_params_t l_params = {
         .field_count = 0,
         .array_counts = NULL,
@@ -1509,6 +1521,10 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
  */
 int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
                                    uint8_t *a_output, size_t a_output_size) {
+    // Debug: Check signature parameters before serialization
+    debug_if(s_debug_more, L_DEBUG, "Serializing signature: ring_size=%u, required_signers=%u, embedded_keys=%s, buffer_size=%zu",
+             a_sig->ring_size, a_sig->required_signers, a_sig->use_embedded_keys ? "true" : "false", a_output_size);
+    
     // Use universal serializer with schema-based approach
     dap_serialize_result_t result = chipmunk_ring_signature_serialize(a_sig, a_output, a_output_size);
     
