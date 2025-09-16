@@ -30,7 +30,7 @@ This file is part of DAP SDK the open source project
 #define LOG_TAG "dap_serialize"
 
 // Debug flag for detailed logging
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Helper functions for arguments (indexed access for performance)
 const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_size_params_t *a_params, size_t a_index) {
@@ -145,7 +145,7 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
         debug_if(s_debug_more, L_DEBUG, "Total size after field %zu: %zu", i, total_size);
     }
     
-    log_it(L_INFO, "CALCULATED TOTAL SIZE: %zu bytes for schema '%s' (header: 12, fields: %zu)", 
+    debug_if(s_debug_more, L_INFO, "CALCULATED TOTAL SIZE: %zu bytes for schema '%s' (header: 12, fields: %zu)", 
            total_size, a_schema->name, total_size - 12);
     
     s_recursion_depth--;
@@ -260,7 +260,7 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
         total_size += field_size;
     }
     
-    log_it(L_DEBUG, "Calculated size by params: %zu bytes for schema '%s'", 
+    debug_if(s_debug_more, L_DEBUG, "Calculated size by params: %zu bytes for schema '%s'", 
            total_size, a_schema->name);
     
     return total_size;
@@ -354,7 +354,7 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
     result.bytes_written = ctx.offset;
     ctx.bytes_processed = ctx.offset;
     
-    log_it(L_DEBUG, "Serialized %zu objects, %zu bytes for schema '%s'",
+    debug_if(s_debug_more, L_DEBUG, "Serialized %zu objects, %zu bytes for schema '%s'",
            ctx.objects_serialized, result.bytes_written, a_schema->name);
     
     return result;
@@ -452,7 +452,7 @@ dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a
     result.bytes_read = ctx.offset;
     ctx.bytes_processed = ctx.offset;
     
-    log_it(L_DEBUG, "Deserialized %zu objects, %zu bytes for schema '%s'",
+    debug_if(s_debug_more, L_DEBUG, "Deserialized %zu objects, %zu bytes for schema '%s'",
            ctx.objects_serialized, result.bytes_read, a_schema->name);
     
     return result;

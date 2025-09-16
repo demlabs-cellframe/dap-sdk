@@ -55,7 +55,7 @@ int dap_enc_chipmunk_ring_init(void) {
     }
 
 
-    log_it(L_INFO, "Chipmunk_Ring initialized successfully");
+    debug_if(s_debug_more, L_INFO, "Chipmunk_Ring initialized successfully");
     return 0;
 }
 
@@ -373,7 +373,7 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return l_result;
     }
 
-    log_it(L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, required_signers: %u, embedded_keys: %s)",
+    debug_if(s_debug_more, L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, required_signers: %u, embedded_keys: %s)",
            a_ring_size, a_required_signers, use_embedded_keys ? "true" : "false");
 
     return 0;

@@ -478,7 +478,7 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
         log_it(L_ERROR, "Failed to parse public key, error code: %d", l_pk_result);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
-    log_it(L_INFO, "chipmunk_verify: public key parsed successfully");
+    debug_if(s_debug_more, L_INFO, "chipmunk_verify: public key parsed successfully");
     
     // Парсим подпись
     chipmunk_signature_t l_sig = {0};
@@ -487,7 +487,7 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
         log_it(L_ERROR, "Failed to parse signature, error code: %d", l_sig_result);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
-    log_it(L_INFO, "chipmunk_verify: signature parsed successfully");
+    debug_if(s_debug_more, L_INFO, "chipmunk_verify: signature parsed successfully");
     
     // Генерируем HOTS параметры из rho_seed
     chipmunk_hots_params_t l_hots_params = {0};

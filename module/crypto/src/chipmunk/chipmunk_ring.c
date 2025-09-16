@@ -158,7 +158,7 @@ int chipmunk_ring_init(void) {
     // Set only the first CHIPMUNK_RING_MODULUS_BYTES for 32-bit modulus, rest remains 0
 
     s_chipmunk_ring_initialized = true;
-    log_it(L_INFO, "Chipmunk_Ring initialized successfully");
+    log_it(L_DEBUG, "Chipmunk_Ring initialized successfully");
     return 0;
 }
 
@@ -947,7 +947,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         
         l_ring_to_use = &l_effective_ring;
         
-        log_it(L_DEBUG, "Using embedded keys for verification (ring_size=%u)", a_signature->ring_size);
+        debug_if(s_debug_more, L_DEBUG, "Using embedded keys for verification (ring_size=%u)", a_signature->ring_size);
         
     } else {
         // Use external keys from ring parameter
@@ -965,7 +965,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         
         l_ring_to_use = a_ring;
         
-        log_it(L_DEBUG, "Using external keys for verification (ring_size=%u)", a_ring->size);
+        debug_if(s_debug_more, L_DEBUG, "Using external keys for verification (ring_size=%u)", a_ring->size);
     }
     
     // Verify ring size consistency
@@ -1372,7 +1372,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         l_signature_verified = (l_valid_zk_proofs >= a_signature->required_signers && l_aggregation_valid);
         
         if (l_signature_verified) {
-        log_it(L_INFO, "Multi-signer Acorn verification completed successfully (%u/%u Acorn proofs valid)", 
+            debug_if(s_debug_more, L_INFO, "Multi-signer Acorn verification completed successfully (%u/%u Acorn proofs valid)", 
                l_valid_zk_proofs, a_signature->required_signers);
         } else {
             log_it(L_ERROR, "Multi-signer ZK verification failed (aggregation: %s, ZK proofs: %u/%u)", 
@@ -1619,7 +1619,7 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
     dap_return_val_if_fail(a_key_resolver, -EINVAL);
     dap_return_val_if_fail(!a_signature->use_embedded_keys, -EINVAL);
     
-    log_it(L_INFO, "External key verification for ring_size=%u using ring hash", a_signature->ring_size);
+    debug_if(s_debug_more, L_INFO, "External key verification for ring_size=%u using ring hash", a_signature->ring_size);
     
     // Resolve all public keys using ring hash with callback
     chipmunk_ring_container_t l_resolved_ring;
@@ -1666,7 +1666,7 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
         return -EINVAL;
     }
     
-    log_it(L_DEBUG, "Successfully resolved and verified %u public keys", l_resolved_ring.size);
+    debug_if(s_debug_more, L_DEBUG, "Successfully resolved and verified %u public keys", l_resolved_ring.size);
     
     // Copy ring hash from signature
     memcpy(l_resolved_ring.ring_hash, a_signature->ring_hash, l_resolved_ring.ring_hash_size);
@@ -1677,7 +1677,7 @@ int chipmunk_ring_verify_external(const void *a_message, size_t a_message_size,
     // Cleanup
     DAP_DELETE(l_resolved_ring.public_keys);
     
-    log_it(L_INFO, "External key verification completed (result=%d)", verify_result);
+    debug_if(s_debug_more, L_INFO, "External key verification completed (result=%d)", verify_result);
     return verify_result;
 }
 

@@ -36,6 +36,7 @@
 
 #define LOG_TAG "dap_hash"
 
+static bool s_debug_more = false;
 /**
  * @brief dap_chain_str_to_hash_fast_to_str
  * @param a_hash_str
@@ -238,7 +239,7 @@ int dap_hash(dap_hash_type_t a_hash_type,
         
         memcpy(temp_output, a_output, temp_size);
         
-        log_it(L_DEBUG, "Applying %u hash iterations for enhanced security", iterations);
+        debug_if(s_debug_more, L_DEBUG, "Applying %u hash iterations for enhanced security", iterations);
         
         for (uint32_t i = 0; i < iterations; i++) {
             switch (a_hash_type) {

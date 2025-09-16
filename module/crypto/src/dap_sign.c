@@ -43,7 +43,7 @@
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
-static bool s_dap_sign_debug_more = false;
+static bool s_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
 // Static function declarations for internal implementations
@@ -71,7 +71,7 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
 int dap_sign_init(uint8_t a_sign_hash_type_default)
 {
     s_sign_hash_type_default = a_sign_hash_type_default;
-    s_dap_sign_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
+    s_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
     return 0;
 }
 
@@ -374,7 +374,7 @@ dap_sign_t *dap_sign_create_ring(
     size_t a_ring_size,
     uint32_t a_required_signers
 ) {
-    log_it(L_INFO, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
+    debug_if(s_debug_more, L_INFO, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
            a_ring_size, a_required_signers);
     dap_return_val_if_fail(a_signer_key, NULL);
     // Allow empty messages (a_data can be NULL if a_data_size is 0)
@@ -397,23 +397,23 @@ dap_sign_t *dap_sign_create_ring(
     // Calculate signature size with all parameters
     bool l_use_embedded_keys = true;  // Always use embedded keys for dap_sign interface
     size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, l_use_embedded_keys);
-    log_it(L_INFO, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
+    debug_if(s_debug_more, L_INFO, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
     dap_return_val_if_fail(l_signature_size > 0, NULL);
 
     // Allocate signature buffer
-    debug_if(s_dap_sign_debug_more, L_INFO, "Allocating signature buffer of size %zu", l_signature_size);
+    debug_if(s_debug_more, L_INFO, "Allocating signature buffer of size %zu", l_signature_size);
     uint8_t *l_signature_data = DAP_NEW_Z_SIZE(uint8_t, l_signature_size);
     dap_return_val_if_fail(l_signature_data, NULL);
-    debug_if(s_dap_sign_debug_more, L_INFO, "Signature buffer allocated successfully");
+    debug_if(s_debug_more, L_INFO, "Signature buffer allocated successfully");
 
     // Extract public keys from ring keys
     uint8_t **l_ring_pub_keys = DAP_NEW_Z_COUNT(uint8_t*, a_ring_size);
     if (!l_ring_pub_keys) {
-        debug_if(s_dap_sign_debug_more, L_ERROR, "Failed to allocate ring public keys array");
+        debug_if(s_debug_more, L_ERROR, "Failed to allocate ring public keys array");
         DAP_DELETE(l_signature_data);
         return NULL;
     }
-    debug_if(s_dap_sign_debug_more, L_INFO, "Ring public keys array allocated successfully, size: %zu", a_ring_size);
+    debug_if(s_debug_more, L_INFO, "Ring public keys array allocated successfully, size: %zu", a_ring_size);
 
     for (size_t i = 0; i < a_ring_size; i++) {
         if (!a_ring_keys[i] || !a_ring_keys[i]->pub_key_data) {
@@ -685,7 +685,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
     if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
-        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
     return (uint64_t)sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size;
@@ -1011,7 +1011,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     // Store multi-signature data
     memcpy(sig_data, multi_sig, sizeof(chipmunk_multi_signature_t));
     
-    log_it(L_INFO, "Successfully aggregated %u Chipmunk signatures", a_signatures_count);
+    debug_if(s_debug_more, L_INFO, "Successfully aggregated %u Chipmunk signatures", a_signatures_count);
     
     // Cleanup
     chipmunk_multi_signature_free(multi_sig);
@@ -1127,7 +1127,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     // Extract multi-signature data
     chipmunk_multi_signature_t *multi_sig = (chipmunk_multi_signature_t*)sig_data;
     
-    log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
+    debug_if(s_debug_more, L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
     
     // For now, verify each message separately as we would need to reconstruct 
     // the original aggregated message. In a full implementation, we would:
@@ -1169,7 +1169,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
         return -4;
     }
     
-    log_it(L_INFO, "Aggregated Chipmunk signature verification completed successfully");
+    debug_if(s_debug_more, L_INFO, "Aggregated Chipmunk signature verification completed successfully");
     return 0;
 }
 
@@ -1213,7 +1213,7 @@ dap_sign_batch_verify_ctx_t *dap_sign_batch_verify_ctx_new(
         return NULL;
     }
 
-    log_it(L_DEBUG, "Created batch verification context for max %u signatures", a_max_signatures);
+    debug_if(s_debug_more, L_DEBUG, "Created batch verification context for max %u signatures", a_max_signatures);
     return l_ctx;
 }
 
@@ -1262,7 +1262,7 @@ int dap_sign_batch_verify_add_signature(
     
     a_ctx->signatures_count++;
     
-    log_it(L_DEBUG, "Added signature %u to batch verification context", index);
+    debug_if(s_debug_more, L_DEBUG, "Added signature %u to batch verification context", index);
     return 0;
 }
 
@@ -1276,7 +1276,7 @@ int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx)
         return -1;
     }
 
-    log_it(L_INFO, "Starting batch verification of %u signatures", a_ctx->signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting batch verification of %u signatures", a_ctx->signatures_count);
     
     // Dispatch to algorithm-specific batch verification
     switch (a_ctx->signature_type.type) {
@@ -1298,7 +1298,7 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
         return -1;
     }
 
-    log_it(L_INFO, "Starting Chipmunk batch verification of %u signatures", a_ctx->signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting Chipmunk batch verification of %u signatures", a_ctx->signatures_count);
 
     // **PRODUCTION-READY**: Реализуем настоящую batch verification вместо fallback
     // Initialize Chipmunk batch context
@@ -1411,7 +1411,7 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
         return -3;
     }
     
-    log_it(L_INFO, "Chipmunk batch verification completed successfully: %u signatures verified", added_count);
+    debug_if(s_debug_more, L_INFO, "Chipmunk batch verification completed successfully: %u signatures verified", added_count);
     return 0;
 }
 
@@ -1438,7 +1438,7 @@ int dap_sign_benchmark_aggregation(
     memset(a_stats, 0, sizeof(dap_sign_performance_stats_t));
     a_stats->signatures_processed = a_signatures_count;
 
-    log_it(L_INFO, "Starting aggregation benchmark with %u signatures", a_signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting aggregation benchmark with %u signatures", a_signatures_count);
 
     clock_t start = clock();
     
@@ -1531,7 +1531,7 @@ int dap_sign_benchmark_aggregation(
     a_stats->aggregation_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
     a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->aggregation_time_ms / 1000.0);
 
-    log_it(L_INFO, "Aggregation benchmark completed: %.2f ms, %.2f sigs/sec", 
+    debug_if(s_debug_more, L_INFO, "Aggregation benchmark completed: %.2f ms, %.2f sigs/sec", 
            a_stats->aggregation_time_ms, a_stats->throughput_sigs_per_sec);
 
     return 0;
@@ -1631,7 +1631,7 @@ int dap_sign_benchmark_batch_verification(
     a_stats->batch_verification_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
     a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->batch_verification_time_ms / 1000.0);
 
-    log_it(L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec",
+    debug_if(s_debug_more, L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec",
            a_stats->batch_verification_time_ms, a_stats->throughput_sigs_per_sec);
 
     return 0;
@@ -1669,7 +1669,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         return -EINVAL;
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: extracted signature data, size=%zu", l_signature_data_size);
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: extracted signature data, size=%zu", l_signature_data_size);
 
     // Create ring container from public keys
     chipmunk_ring_public_key_t *l_public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t,sizeof(chipmunk_ring_public_key_t) * a_ring_size);
@@ -1678,7 +1678,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         return -ENOMEM;
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: allocated public keys array");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: allocated public keys array");
 
     // Copy public keys with enhanced safety checks
     for (size_t i = 0; i < a_ring_size; i++) {
@@ -1707,7 +1707,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         memcpy(l_public_keys[i].data, a_ring_keys[i]->pub_key_data, sizeof(l_public_keys[i].data));
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: copied %zu public keys", a_ring_size);
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: copied %zu public keys", a_ring_size);
 
     // Create ring container
     chipmunk_ring_container_t l_ring;
@@ -1721,7 +1721,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         return l_result;
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: created ring container successfully");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: created ring container successfully");
 
     // Deserialize signature
     chipmunk_ring_signature_t *l_signature = DAP_NEW_Z(chipmunk_ring_signature_t);
@@ -1731,7 +1731,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         return -ENOMEM;
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: allocated signature structure");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: allocated signature structure");
 
     l_result = chipmunk_ring_signature_from_bytes(l_signature, l_signature_data, l_signature_data_size);
     if (l_result != 0) {
@@ -1741,10 +1741,10 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         return l_result;
     }
 
-    log_it(L_INFO, "dap_sign_verify_ring: deserialized signature successfully");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: deserialized signature successfully");
 
     // Verify signature with adaptive key handling
-    log_it(L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify (embedded_keys=%s)", 
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify (embedded_keys=%s)", 
            l_signature->use_embedded_keys ? "true" : "false");
     
     if (l_signature->use_embedded_keys) {
@@ -1755,15 +1755,15 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
         l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, &l_ring);
     }
     
-    log_it(L_INFO, "dap_sign_verify_ring: chipmunk_ring_verify returned %d", l_result);
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: chipmunk_ring_verify returned %d", l_result);
 
     // Cleanup
-    log_it(L_INFO, "dap_sign_verify_ring: starting cleanup");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: starting cleanup");
     chipmunk_ring_signature_free(l_signature);
     chipmunk_ring_container_free(&l_ring);
     // Note: chipmunk_ring_signature_free only frees internal arrays, not the structure itself
     DAP_FREE(l_signature);
-    log_it(L_INFO, "dap_sign_verify_ring: cleanup completed");
+    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: cleanup completed");
 
     return l_result;
 }
