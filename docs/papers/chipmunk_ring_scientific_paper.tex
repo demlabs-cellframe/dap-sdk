@@ -185,8 +185,8 @@ Key generation remains identical to the base Chipmunk scheme:
 \STATE Initialize signature with $\text{ring\_size}=k$, $\text{required\_signers}=t$
 \STATE Allocate array $\text{acorn\_proofs}[1..k]$
 \FOR{$i = 1$ to $k$}
-    \STATE $(\text{acorn\_proof}_i, \text{randomness}_i, \text{linkability}_i)$ $\leftarrow$ $\text{chipmunk\_ring\_acorn\_create}(pk_i, M;$ randomness\_size=32, proof\_size=$p$, iterations=$I)$
-    \COMMENT{$p$ and $I$ are taken from signature parameters: single-signer uses $p=64$ bytes and $I=100$ by default; multi-signer uses $p=96$ bytes and $I\in\{1000,10000\}$}
+\STATE $(\text{acorn\_proof}_i, \text{randomness}_i, \text{linkability}_i)$ $\leftarrow$ $\text{chipmunk\_ring\_acorn\_create}(pk_i, M;$ randomness\_size=32, proof\_size=$p$, iterations=$I)$
+\COMMENT{$p$ and $I$ are taken from signature parameters: single-signer uses $p=64$ bytes and $I=100$ by default; multi-signer uses $p=96$ bytes and $I\in\{1000,10000\}$}
 \ENDFOR
 \STATE Serialize $D \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$
 \STATE Compute challenge $c = \text{SHA3-256}(D)$ \COMMENT{32-byte SHA3-256 hash of serialized data}
@@ -202,18 +202,18 @@ Key generation remains identical to the base Chipmunk scheme:
 \REQUIRE Signature $\sigma$, message $M$, ring keys $\{pk_1, \ldots, pk_k\}$
 \STATE Parse $\sigma = (\text{ring\_size}=k, \text{required\_signers}=t, c, \{\text{acorn\_proofs}\}, \sigma_{\text{chip}})$
 \STATE Validate sizes and parameters; build $\mathcal{R}$ and compute $\text{ring\_hash}$
-\STATE Serialize $D' \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$ and compute $c' = \text{Hash}_{\text{fast}}(D')$
+\STATE Serialize $D' \leftarrow \text{Serialize}(M, \text{ring\_hash}, \{\text{acorn\_proofs}\})$ and compute $c' = \text{SHA3-256}(D')$
 \IF{$c' \neq c$} \RETURN Reject \ENDIF
 \IF{$t = 1$} \COMMENT{Traditional ring (OR) semantics}
-    \STATE $valid \leftarrow 0$
-    \FOR{$i = 1$ to $k$}
-        \STATE Build Acorn input from $(pk_i, M, \text{randomness}_i)$ and compute $\text{expected}_i = \text{SHAKE256}^{I}(\cdot)$ with domain separation
-        \IF{$\text{expected}_i = \text{acorn\_proof}_i$} $valid \leftarrow valid + 1$ \ENDIF
-    \ENDFOR
-    \STATE Accept iff $valid \ge 1$
+\STATE $valid \leftarrow 0$
+\FOR{$i = 1$ to $k$}
+\STATE Build Acorn input from $(pk_i, M, \text{randomness}_i)$ and compute $\text{expected}_i = \text{SHAKE256}^{I}(\cdot)$ with domain separation
+\IF{$\text{expected}_i = \text{acorn\_proof}_i$} $valid \leftarrow valid + 1$ \ENDIF
+\ENDFOR
+\STATE Accept iff $valid \ge 1$
 \ELSE \COMMENT{Multi-signer (threshold) mode}
-    \STATE Check size $\text{threshold\_zk\_proofs} = t \times p$ and verify structure
-    \STATE Verify aggregated (threshold) signature using optimized Lagrange interpolation and associated ZK data
+\STATE Check size $\text{threshold\_zk\_proofs} = t \times p$ and verify structure
+\STATE Verify aggregated (threshold) signature using optimized Lagrange interpolation and associated ZK data
 \ENDIF
 \STATE Verify core Chipmunk signature $\sigma_{\text{chip}}$ on $c$
 \end{algorithmic}
