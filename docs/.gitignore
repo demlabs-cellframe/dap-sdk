@@ -1,0 +1,30 @@
+# LaTeX temporary files
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.bbl
+*.blg
+*.dvi
+*.ps
+*.pdf
+!chipmunk_ring_scientific_paper.pdf
+!chipmunk_ring_signature_v*.pdf
+
+# Backup files
+*~
+*.backup
+*.bak
+
+# Editor temporary files
+.*.swp
+.*.swo
+*.tmp
