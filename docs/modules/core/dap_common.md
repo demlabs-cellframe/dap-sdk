@@ -1,19 +1,19 @@
 # DAP Common Module (dap_common.h/c)
 
-## Обзор
+## Overview
 
-Модуль `dap_common.h/c` является фундаментальным компонентом DAP SDK, предоставляющим основные определения типов, макросы, утилиты и кроссплатформенные абстракции. Этот модуль является основой для всех остальных компонентов SDK.
+The `dap_common.h/c` module is a foundational component of the DAP SDK, providing core type definitions, macros, utilities, and cross‑platform abstractions. It is the basis for all other SDK components.
 
-## Основные возможности
+## Key features
 
-- **Кроссплатформенные определения**: Обеспечивает совместимость между Windows, Linux и macOS
-- **Базовые типы данных**: Определения стандартных типов и структур
-- **Управление памятью**: Макросы и функции для безопасного управления памятью
-- **Атомарные операции**: Поддержка многопоточного программирования
-- **Вспомогательные макросы**: Утилиты для преобразования типов и отладки
-- **Сетевые утилиты**: Функции для работы с сетевыми адресами и данными
+- **Cross‑platform definitions**: Compatibility across Windows, Linux, and macOS
+- **Basic data types**: Standard types and structures
+- **Memory management**: Macros and functions for safe memory handling
+- **Atomic operations**: Multithreading support
+- **Helper macros**: Utilities for type conversion and debugging
+- **Networking utilities**: Functions for working with node addresses and data
 
-## Архитектура
+## Architecture
 
 ```mermaid
 graph TB
@@ -35,29 +35,29 @@ graph TB
     end
 ```
 
-## Основные определения типов
+## Core type definitions
 
-### Базовые типы
+### Basic types
 
 ```c
-// Основные типы данных
-typedef uint8_t byte_t;           // Базовый байтовый тип
-typedef int dap_spinlock_t;       // Спинлок для многопоточной синхронизации
+// Fundamental data types
+typedef uint8_t byte_t;           // Base byte type
+typedef int dap_spinlock_t;       // Spinlock for multithreaded sync
 
-// Платформо-зависимые типы
+// Platform‑dependent types
 #ifdef DAP_OS_WINDOWS
-typedef HANDLE dap_file_handle_t; // Файловый дескриптор Windows
-typedef DWORD dap_errnum_t;       // Код ошибки Windows
+typedef HANDLE dap_file_handle_t; // Windows file handle
+typedef DWORD dap_errnum_t;       // Windows error code
 #else
-typedef int dap_file_handle_t;    // Файловый дескриптор Unix
-typedef int dap_errnum_t;         // Код ошибки Unix
+typedef int dap_file_handle_t;    // Unix file descriptor
+typedef int dap_errnum_t;         // Unix error code
 #endif
 ```
 
-### Атомарные типы
+### Atomic types
 
 ```c
-// Атомарные переменные для многопоточного программирования
+// Atomic variables for multithreaded programming
 #ifndef __cplusplus
 #include <stdatomic.h>
 #define _Atomic(X) std::atomic<X>
@@ -67,56 +67,56 @@ typedef int dap_errnum_t;         // Код ошибки Unix
 #endif
 ```
 
-### Сетевые типы
+### Network types
 
 ```c
-// Структура сетевого адреса узла
+// Node network address structure
 typedef union dap_stream_node_addr {
-    uint64_t uint64;              // 64-битное представление
-    uint16_t words[4];            // Доступ к 16-битным словам
-    uint8_t raw[8];               // Доступ к отдельным байтам
+    uint64_t uint64;              // 64‑bit representation
+    uint16_t words[4];            // 16‑bit word access
+    uint8_t raw[8];               // Raw byte access
 } DAP_ALIGN_PACKED dap_stream_node_addr_t;
 ```
 
-## Управление памятью
+## Memory management
 
-### Основные макросы выделения памяти
+### Core allocation macros
 
 ```c
-// Базовые операции с памятью
-#define DAP_MALLOC(size)         malloc(size)           // Выделение памяти
-#define DAP_FREE(ptr)           free(ptr)              // Освобождение памяти
-#define DAP_CALLOC(n, size)     calloc(n, size)        // Выделение с обнулением
-#define DAP_REALLOC(ptr, size)  realloc(ptr, size)     // Перераспределение
+// Basic memory operations
+#define DAP_MALLOC(size)         malloc(size)           // Allocate
+#define DAP_FREE(ptr)           free(ptr)              // Free
+#define DAP_CALLOC(n, size)     calloc(n, size)        // Zeroed allocation
+#define DAP_REALLOC(ptr, size)  realloc(ptr, size)     // Reallocate
 
-// Безопасные операции (с проверками)
+// Safe operations (with checks)
 #define DAP_NEW(type)           (type*)malloc(sizeof(type))
 #define DAP_NEW_Z(type)         (type*)calloc(1, sizeof(type))
 #define DAP_DELETE(ptr)         do { free(ptr); ptr = NULL; } while(0)
 #define DAP_DEL_Z(ptr)          do { free(ptr); ptr = NULL; } while(0)
 ```
 
-### Отладочная память (только в режиме отладки)
+### Debug memory (debug builds only)
 
 ```c
 #ifdef DAP_SYS_DEBUG
-// Отладочные функции выделения памяти
+// Debug allocation functions
 static inline void *s_vm_get(const char *file, int line, ssize_t size);
 static inline void *s_vm_get_z(const char *file, int line, ssize_t n, ssize_t size);
 static inline void s_vm_free(const char *file, int line, void *ptr);
 
-// Макросы с трассировкой
+// Tracing macros
 #define DAP_MALLOC(size)       s_vm_get(__FILE__, __LINE__, size)
 #define DAP_FREE(ptr)          s_vm_free(__FILE__, __LINE__, ptr)
 #endif
 ```
 
-## Вспомогательные макросы
+## Helper macros
 
-### Преобразование типов
+### Type conversions
 
 ```c
-// Преобразование указатель ↔ целое
+// Pointer ↔ integer conversions
 #define DAP_INT_TO_POINTER(i)      ((void*)(size_t)(i))
 #define DAP_POINTER_TO_INT(p)      ((int)(size_t)(void*)(p))
 #define DAP_UINT_TO_POINTER(u)     ((void*)(unsigned long)(u))
@@ -125,16 +125,16 @@ static inline void s_vm_free(const char *file, int line, void *ptr);
 #define DAP_POINTER_TO_SIZE(p)     ((size_t)(p))
 ```
 
-### Битовые операции
+### Bit operations
 
 ```c
-#define BIT(x) (1 << (x))  // Получение бита по номеру
+#define BIT(x) (1 << (x))  // Get bit by index
 ```
 
-### Выравнивание и упаковка
+### Alignment and packing
 
 ```c
-// GCC/Clang специфичные
+// GCC/Clang specific
 #ifdef __GNUC__
 #define DAP_ALIGN_PACKED        __attribute__((aligned(1),packed))
 #define DAP_PACKED             __attribute__((packed))
@@ -151,10 +151,10 @@ static inline void s_vm_free(const char *file, int line, void *ptr);
 #endif
 ```
 
-## Атомарные операции
+## Atomic operations
 
 ```c
-// Спинлоки для многопоточной синхронизации
+// Spinlocks for multithreaded synchronization
 DAP_STATIC_INLINE void DAP_AtomicLock(dap_spinlock_t *lock) {
     __sync_lock_test_and_set(lock, 1);
 }
@@ -164,33 +164,33 @@ DAP_STATIC_INLINE void DAP_AtomicUnlock(dap_spinlock_t *lock) {
 }
 ```
 
-## Сетевые утилиты
+## Networking utilities
 
-### Работа с сетевыми адресами
+### Node addresses
 
 ```c
-// Форматирование адресов узлов
+// Node address formatting
 #define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
 #define NODE_ADDR_FP_ARGS(a)  (a)->words[3],(a)->words[2],(a)->words[1],(a)->words[0]
 
-// Преобразование строки в адрес
+// String to address
 DAP_STATIC_INLINE int dap_stream_node_addr_from_str(
     dap_stream_node_addr_t *addr,
     const char *addr_str
 );
 
-// Преобразование адреса в строку
+// Address to string
 dap_node_addr_str_t dap_stream_node_addr_to_str_static(dap_stream_node_addr_t addr);
 #define dap_stream_node_addr_to_str_static(a) \
     dap_stream_node_addr_to_str_static_(a).s
 ```
 
-## Математические утилиты
+## Math utilities
 
-### Безопасная арифметика
+### Safe arithmetic
 
 ```c
-// Макросы с проверкой переполнения
+// Overflow‑checked macros
 #define dap_add(a,b) ({ \
     __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
     if (!__builtin_add_overflow_p(_a,_b,_a)) { _a += _b; } \
@@ -204,40 +204,40 @@ dap_node_addr_str_t dap_stream_node_addr_to_str_static(dap_stream_node_addr_t ad
 })
 ```
 
-### Утилиты для работы с числами
+### Numeric helpers
 
 ```c
-// Максимальные/минимальные значения типов
+// Type max/min helpers
 #define dap_maxval(v) _Generic((v), \
     signed char: SCHAR_MAX, \
     unsigned char: UCHAR_MAX, \
     int: INT_MAX, \
     unsigned int: UINT_MAX, \
-    /* ... и т.д. */ \
+    /* ... etc. */ \
 )
 
-// Проверка знака
+// Sign check
 #define dap_is_signed(v) (dap_minval(v) < 0)
 ```
 
-## Строковые функции
+## String utilities
 
-### ASCII-классификация символов
+### ASCII character classes
 
 ```c
-// Таблица ASCII символов (256 элементов)
+// ASCII table (256 entries)
 static const uint16_t s_ascii_table_data[256] = { ... };
 
-// Макросы классификации
+// Classification macros
 #define dap_ascii_isspace(c) (s_ascii_table_data[(unsigned char)(c)] & DAP_ASCII_SPACE)
 #define dap_ascii_isalpha(c) (s_ascii_table_data[(unsigned char)(c)] & DAP_ASCII_ALPHA)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char)(c)] & DAP_ASCII_DIGIT)
 ```
 
-### Преобразование чисел в строки
+### Number‑to‑string conversion
 
 ```c
-// Безопасное преобразование чисел в строки
+// Safe number‑to‑string conversion
 dap_maxint_str_t dap_itoa_(long long i);
 dap_maxint_str_t dap_utoa_(unsigned long long i);
 
@@ -245,191 +245,191 @@ dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_utoa(i) (char*)dap_utoa_(i).s
 ```
 
-## Работа с временем
+## Time utilities
 
-### Таймеры и интервалы
+### Timers and intervals
 
 ```c
 typedef void *dap_interval_timer_t;
 typedef void (*dap_timer_callback_t)(void *param);
 
-// Создание таймера
+// Create timer
 dap_interval_timer_t dap_interval_timer_create(
     unsigned int msec,
     dap_timer_callback_t callback,
     void *param
 );
 
-// Удаление таймера
+// Delete timer
 void dap_interval_timer_delete(dap_interval_timer_t timer);
 ```
 
-### Работа со страницами памяти
+### Memory page utilities
 
 ```c
-// Размер страницы памяти
+// Page size
 DAP_STATIC_INLINE unsigned long dap_pagesize();
 
-// Выравнивание по границам страниц
+// Page‑aligned rounding
 DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a);
 DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a);
 ```
 
-## Логирование
+## Logging
 
-### Уровни логирования
+### Log levels
 
 ```c
 typedef enum dap_log_level {
-    L_DEBUG = 0,      // Отладочная информация
-    L_INFO = 1,       // Информационные сообщения
-    L_NOTICE = 2,     // Уведомления
-    L_MSG = 3,        // Сообщения
-    L_DAP = 4,        // DAP-специфичные сообщения
-    L_WARNING = 5,    // Предупреждения
-    L_ATT = 6,        // Внимание
-    L_ERROR = 7,      // Ошибки
-    L_CRITICAL = 8,   // Критические ошибки
-    L_TOTAL           // Общее количество уровней
+    L_DEBUG = 0,      // Debug info
+    L_INFO = 1,       // Information
+    L_NOTICE = 2,     // Notice
+    L_MSG = 3,        // Message
+    L_DAP = 4,        // DAP‑specific
+    L_WARNING = 5,    // Warning
+    L_ATT = 6,        // Attention
+    L_ERROR = 7,      // Error
+    L_CRITICAL = 8,   // Critical
+    L_TOTAL           // Total number of levels
 } dap_log_level_t;
 ```
 
-### Функции логирования
+### Logging functions
 
 ```c
-// Основная функция логирования
+// Core logging function
 void _log_it(const char *func_name, int line_num, const char *log_tag,
             enum dap_log_level level, const char *format, ...);
 
-// Удобные макросы
+// Convenience macros
 #define log_it(level, ...) _log_it(NULL, 0, LOG_TAG, level, ##__VA_ARGS__)
 #define log_it_fl(level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, level, ##__VA_ARGS__)
 ```
 
-## Примеры использования
+## Usage examples
 
-### 1. Базовое управление памятью
+### 1. Basic memory management
 
 ```c
 #include <dap_common.h>
 
-// Выделение памяти
-int *array = DAP_NEW_Z_COUNT(int, 10);  // Массив из 10 int, инициализированный нулями
+// Allocate
+int *array = DAP_NEW_Z_COUNT(int, 10);  // 10 ints, zero‑initialized
 
-// Освобождение памяти
+// Free
 DAP_DELETE(array);
 ```
 
-### 2. Работа с сетевыми адресами
+### 2. Working with node addresses
 
 ```c
 #include <dap_common.h>
 
 dap_stream_node_addr_t addr;
 
-// Преобразование строки в адрес
+// String to address
 if (dap_stream_node_addr_from_str(&addr, "1234::5678::9ABC::DEF0") == 0) {
-    // Адрес успешно преобразован
+    // Converted successfully
 }
 
-// Преобразование адреса в строку
+// Address to string
 const char *addr_str = dap_stream_node_addr_to_str_static(addr);
 printf("Address: %s\n", addr_str);
 ```
 
-### 3. Атомарные операции
+### 3. Atomic operations
 
 ```c
 #include <dap_common.h>
 
 dap_spinlock_t lock = 0;
 
-// Захват спинлока
+// Acquire spinlock
 DAP_AtomicLock(&lock);
 
-// Критическая секция
-// ... операции с разделяемыми данными ...
+// Critical section
+// ... shared data operations ...
 
-// Освобождение спинлока
+// Release spinlock
 DAP_AtomicUnlock(&lock);
 ```
 
-### 4. Логирование
+### 4. Logging
 
 ```c
 #include <dap_common.h>
 
-// Определение тега для модуля
+// Define module tag
 #define LOG_TAG "MY_MODULE"
 
-// Логирование сообщений разных уровней
+// Log messages of different levels
 log_it(L_INFO, "Module initialized");
 log_it(L_WARNING, "Configuration file not found, using defaults");
 log_it(L_ERROR, "Failed to connect to database: %s", error_msg);
 ```
 
-### 5. Безопасная арифметика
+### 5. Safe arithmetic
 
 ```c
 #include <dap_common.h>
 
 size_t a = 100, b = 50;
 
-// Безопасное сложение с проверкой переполнения
+// Overflow‑checked addition
 size_t result = dap_add(a, b);
 
-// Безопасное вычитание
+// Overflow‑checked subtraction
 size_t diff = dap_sub(a, b);
 ```
 
-## Безопасность
+## Security
 
-### Принципы безопасности
+### Security principles
 
-1. **Защита от переполнения**: Все арифметические операции проверяются на переполнение
-2. **Безопасное освобождение памяти**: Макросы `DAP_DEL_Z` устанавливают указатели в NULL
-3. **Платформо-зависимая безопасность**: Корректная обработка различий между платформами
-4. **Атомарные операции**: Безопасная работа в многопоточном окружении
+1. **Overflow protection**: All arithmetic ops are overflow‑checked
+2. **Safe freeing**: `DAP_DEL_Z` macros set pointers to NULL
+3. **Platform‑aware safety**: Proper handling of platform differences
+4. **Atomic operations**: Safe multithreaded execution
 
-### Рекомендации по использованию
+### Usage recommendations
 
-- Всегда используйте макросы DAP SDK вместо стандартных функций
-- Проверяйте возвращаемые значения операций выделения памяти
-- Используйте атомарные операции для многопоточной синхронизации
-- Применяйте безопасную арифметику для предотвращения переполнений
+- Always use DAP SDK macros instead of raw stdlib calls
+- Check return values of allocation operations
+- Use atomic operations for multithreaded synchronization
+- Use safe arithmetic to prevent overflows
 
-## Производительность
+## Performance
 
-### Оптимизации
+### Optimizations
 
-- **Встраиваемые функции**: Многие утилиты реализованы как `inline` функции
-- **Компиляторные оптимизации**: Использование `__builtin_expect` для branch prediction
-- **SIMD-friendly**: Выравнивание структур для векторных операций
-- **Кэш-эффективные**: Оптимизированные структуры данных
+- **Inlined functions**: Many utilities are `inline`
+- **Compiler optimizations**: `__builtin_expect` for branch prediction
+- **SIMD‑friendly**: Aligned structures for vector ops
+- **Cache‑efficient**: Optimized data structures
 
-### Бенчмарки
+### Benchmarks
 
-| Операция | Производительность | Комментарий |
-|----------|-------------------|-------------|
-| DAP_MALLOC | ~10-50ns | С трассировкой в debug режиме |
-| dap_add/dap_sub | ~5-10ns | С проверкой переполнения |
-| dap_ascii_* | ~1-2ns | Табличные функции |
+| Operation | Performance | Notes |
+|----------|-------------|-------|
+| DAP_MALLOC | ~10-50ns | With tracing in debug |
+| dap_add/dap_sub | ~5-10ns | Overflow‑checked |
+| dap_ascii_* | ~1-2ns | Table‑based |
 
-## Совместимость
+## Compatibility
 
-### Поддерживаемые платформы
+### Supported platforms
 
-- **Linux**: Полная поддержка всех функций
-- **macOS**: Полная поддержка, включая Grand Central Dispatch
-- **Windows**: Поддержка через MinGW и MSVC
-- **Android**: Поддержка через NDK
+- **Linux**: Full support
+- **macOS**: Full support (incl. GCD)
+- **Windows**: MinGW and MSVC
+- **Android**: NDK
 
-### Версии компиляторов
+### Compiler versions
 
 - **GCC**: 4.8+
 - **Clang**: 3.5+
 - **MSVC**: 2015+
 
-## Заключение
+## Conclusion
 
-Модуль `dap_common.h/c` является фундаментом всего DAP SDK, предоставляя надежные и безопасные базовые примитивы для построения высокопроизводительных и кроссплатформенных приложений. Правильное использование этого модуля гарантирует совместимость, безопасность и оптимальную производительность приложений.
+The `dap_common.h/c` module is the foundation of the DAP SDK, providing reliable and safe building blocks for high‑performance, cross‑platform applications. Proper use ensures compatibility, security, and optimal performance.

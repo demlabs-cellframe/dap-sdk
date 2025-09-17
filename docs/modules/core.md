@@ -1,164 +1,162 @@
-# Core Module - Ядро DAP SDK
+# Core Module - DAP SDK Core
 
-## Обзор
+## Overview
 
-Core Module является основой DAP SDK и предоставляет базовую функциональность, общие утилиты и платформо-специфичные реализации.
+The Core Module is the foundation of DAP SDK and provides base functionality, common utilities, and platform-specific implementations.
 
-## Структура модуля
+## Module structure
 
 ```
 core/
-├── include/           # Заголовочные файлы (19 файлов)
-│   ├── dap_binary_tree.h    # Бинарные деревья поиска
-│   ├── dap_cbuf.h          # Циклические буферы
-│   ├── dap_common.h        # Общие определения
-│   ├── dap_config.h        # Система конфигурации
-│   ├── dap_crc64.h         # CRC64 хеширование
-│   ├── dap_file_utils.h    # Утилиты работы с файлами
-│   ├── dap_fnmatch.h       # Поиск файлов по маске
-│   ├── dap_json_rpc_errors.h # Ошибки JSON-RPC
-│   ├── dap_list.h          # Связанные списки
-│   ├── dap_math_convert.h  # Преобразования чисел
-│   ├── dap_math_ops.h      # Математические операции
-│   ├── dap_module.h        # Система модулей
-│   ├── dap_strfuncs.h      # Строковые функции
-│   ├── dap_string.h        # Работа со строками
-│   ├── dap_time.h          # Работа с временем
+├── include/           # Header files (19 files)
+│   ├── dap_binary_tree.h    # Binary search trees
+│   ├── dap_cbuf.h          # Circular buffers
+│   ├── dap_common.h        # Common definitions
+│   ├── dap_config.h        # Configuration system
+│   ├── dap_crc64.h         # CRC64 hashing
+│   ├── dap_file_utils.h    # File utilities
+│   ├── dap_fnmatch.h       # Filename globbing
+│   ├── dap_json_rpc_errors.h # JSON-RPC errors
+│   ├── dap_list.h          # Linked lists
+│   ├── dap_math_convert.h  # Numeric conversions
+│   ├── dap_math_ops.h      # Math operations
+│   ├── dap_module.h        # Modules system
+│   ├── dap_strfuncs.h      # String functions
+│   ├── dap_string.h        # String helpers
+│   ├── dap_time.h          # Time utilities
 │   ├── dap_tsd.h           # Thread-Specific Data
-│   └── portable_endian.h   # Портабельный endian
-├── src/               # Исходный код
-│   ├── common/        # Общие утилиты
-│   ├── unix/          # Unix/Linux реализация
-│   ├── darwin/        # macOS реализация
-│   └── win32/         # Windows реализация
-├── test/              # Тесты
-└── docs/              # Документация
+│   └── portable_endian.h   # Portable endian
+├── src/               # Sources
+│   ├── common/        # Common utilities
+│   ├── unix/          # Unix/Linux implementation
+│   ├── darwin/        # macOS implementation
+│   └── win32/         # Windows implementation
+├── test/              # Tests
+└── docs/              # Documentation
 ```
 
-## Основные компоненты
+## Main components
 
-### 1. Общие утилиты (Common Utilities)
+### 1. Common utilities
 
 #### dap_common.h
-Основные определения и макросы для всего SDK.
+Core definitions and macros for the entire SDK.
 
 ```c
-// Основные типы данных
+// Fundamental data types
 typedef uint8_t dap_byte_t;
 typedef uint32_t dap_uint_t;
 typedef int32_t dap_int_t;
 
-// Макросы для отладки
+// Debug macros
 #define DAP_ASSERT(condition) \
     do { if (!(condition)) { \
         dap_log(L_ERROR, "Assertion failed: %s", #condition); \
         abort(); \
     } } while(0)
 
-// Макросы для управления памятью
+// Memory management macros
 #define DAP_NEW(type) ((type*)dap_malloc(sizeof(type)))
 #define DAP_DELETE(ptr) do { dap_free(ptr); ptr = NULL; } while(0)
 ```
 
 #### dap_list.h
-Реализация связанных списков с поддержкой различных типов данных.
+Linked list implementation supporting various data types.
 
 ```c
-// Создание списка
+// Create list
 dap_list_t* dap_list_new(void);
 
-// Добавление элемента
+// Append element
 dap_list_t* dap_list_append(dap_list_t* list, void* data);
 
-// Удаление элемента
+// Remove element
 dap_list_t* dap_list_remove(dap_list_t* list, void* data);
 
-// Поиск элемента
+// Find element
 dap_list_t* dap_list_find(dap_list_t* list, void* data);
 
-// Освобождение списка
+// Free list
 void dap_list_free(dap_list_t* list);
 ```
 
 #### dap_hash.h
-**⚠️ ВНИМАНИЕ: Этот файл отсутствует в Core Module**
+**⚠️ Note: This header is not in the Core Module**
 
-Хеш-функции вероятно перемещены в Crypto Module (`dap-sdk/crypto/`). Рекомендуется использовать функции из модуля криптографии для всех операций хеширования.
-
-Для хеширования используйте:
-- `dap-sdk/crypto/include/dap_hash.h` - основные хеш-функции
-- `dap-sdk/crypto/include/dap_enc_key.h` - криптографические ключи и подписи
+Hash functions are likely moved to the Crypto Module (`dap-sdk/crypto/`). Use crypto module functions for all hashing operations:
+- `dap-sdk/crypto/include/dap_hash.h` - core hash functions
+- `dap-sdk/crypto/include/dap_enc_key.h` - crypto keys and signatures
 
 #### dap_time.h
-Работа с временем и временными метками.
+Time handling and timestamps.
 
 ```c
-// Получение текущего времени
+// Get current time
 dap_time_t dap_time_now(void);
 
-// Преобразование времени
+// Time conversion
 char* dap_time_to_string(dap_time_t time);
 dap_time_t dap_time_from_string(const char* str);
 
-// Сравнение времени
+// Time comparison
 int dap_time_compare(dap_time_t t1, dap_time_t t2);
 
-// Задержка выполнения
+// Sleep
 void dap_time_sleep(uint32_t milliseconds);
 ```
 
-### 2. Платформо-специфичные реализации
+### 2. Platform-specific implementations
 
 #### Unix/Linux (core/src/unix/)
 ```c
-// Управление процессами
+// Process management
 pid_t dap_process_fork(void);
 int dap_process_wait(pid_t pid);
 
-// Сетевые сокеты
+// Network sockets
 int dap_socket_create(int domain, int type, int protocol);
 int dap_socket_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
 
-// Файловая система
+// File system
 int dap_file_open(const char* path, int flags, mode_t mode);
 ssize_t dap_file_read(int fd, void* buf, size_t count);
 ```
 
 #### macOS (core/src/darwin/)
 ```c
-// Специфичные для macOS функции
+// macOS-specific functions
 int dap_darwin_get_system_info(dap_system_info_t* info);
 int dap_darwin_set_process_name(const char* name);
 ```
 
 #### Windows (core/src/win32/)
 ```c
-// Windows-специфичные функции
+// Windows-specific functions
 HANDLE dap_win32_create_thread(LPTHREAD_START_ROUTINE func, LPVOID param);
 DWORD dap_win32_wait_for_thread(HANDLE thread);
 
-// Unicode поддержка
+// Unicode support
 wchar_t* dap_win32_utf8_to_wide(const char* utf8);
 char* dap_win32_wide_to_utf8(const wchar_t* wide);
 ```
 
-### 3. Система конфигурации (dap_config.h)
+### 3. Configuration system (dap_config.h)
 
-**Назначение**: Управление конфигурационными файлами и настройками приложения.
+**Purpose**: Manage configuration files and application settings.
 
 ```c
-// Структура конфигурации
+// Configuration structure
 typedef struct dap_config {
-    char *section;              // Секция конфигурации
-    char *key;                  // Ключ
-    char *value;                // Значение
-    struct dap_config *next;    // Следующий элемент
+    char *section;              // Configuration section
+    char *key;                  // Key
+    char *value;                // Value
+    struct dap_config *next;    // Next item
 } dap_config_t;
 
-// Загрузка конфигурации
+// Load configuration
 dap_config_t *dap_config_load(const char *filename);
 
-// Получение значений
+// Get values
 const char *dap_config_get_string(dap_config_t *config,
                                   const char *section,
                                   const char *key);
@@ -171,245 +169,245 @@ bool dap_config_get_bool(dap_config_t *config,
                          const char *section,
                          const char *key);
 
-// Сохранение конфигурации
+// Save configuration
 int dap_config_save(dap_config_t *config, const char *filename);
 
-// Освобождение памяти
+// Free memory
 void dap_config_free(dap_config_t *config);
 ```
 
-### 4. Система модулей (dap_module.h)
+### 4. Module system (dap_module.h)
 
-**Назначение**: Динамическая загрузка и управление модулями.
+**Purpose**: Dynamic loading and management of modules.
 
 ```c
-// Структура модуля
+// Module structure
 typedef struct dap_module {
-    char *name;                 // Имя модуля
-    void *handle;               // Дескриптор модуля
-    int (*init)(void);          // Функция инициализации
-    void (*deinit)(void);       // Функция деинициализации
-    struct dap_module *next;    // Следующий модуль
+    char *name;                 // Module name
+    void *handle;               // Module handle
+    int (*init)(void);          // Init function
+    void (*deinit)(void);       // Deinit function
+    struct dap_module *next;    // Next module
 } dap_module_t;
 
-// Загрузка модуля
+// Load module
 dap_module_t *dap_module_load(const char *path);
 
-// Выгрузка модуля
+// Unload module
 int dap_module_unload(dap_module_t *module);
 
-// Поиск модуля
+// Find module
 dap_module_t *dap_module_find(const char *name);
 
-// Вызов функции модуля
+// Call module function
 void *dap_module_call(dap_module_t *module, const char *func_name);
 ```
 
-### 5. Файловые утилиты (dap_file_utils.h)
+### 5. File utilities (dap_file_utils.h)
 
-**Назначение**: Утилиты для работы с файловой системой.
+**Purpose**: Utilities for interacting with the filesystem.
 
 ```c
-// Информация о файле
+// File info
 typedef struct dap_file_info {
-    char *name;                 // Имя файла
-    size_t size;                // Размер файла
-    time_t mtime;               // Время модификации
-    bool is_dir;                // Является ли директорией
+    char *name;                 // File name
+    size_t size;                // File size
+    time_t mtime;               // Modification time
+    bool is_dir;                // Is a directory
 } dap_file_info_t;
 
-// Проверка существования файла
+// Check if file exists
 bool dap_file_exists(const char *filename);
 
-// Получение размера файла
+// Get file size
 size_t dap_file_size(const char *filename);
 
-// Чтение файла
+// Read file
 char *dap_file_read(const char *filename, size_t *size);
 
-// Запись в файл
+// Write file
 int dap_file_write(const char *filename, const void *data, size_t size);
 
-// Создание директории
+// Create directory
 int dap_dir_create(const char *path);
 
-// Получение списка файлов
+// List files
 dap_list_t *dap_dir_list(const char *path);
 
-// Копирование файла
+// Copy file
 int dap_file_copy(const char *src, const char *dst);
 
-// Перемещение файла
+// Move file
 int dap_file_move(const char *src, const char *dst);
 ```
 
-### 6. Математические операции (dap_math_ops.h)
+### 6. Math operations (dap_math_ops.h)
 
-**Назначение**: Безопасные математические операции с проверкой переполнения.
+**Purpose**: Safe math operations with overflow checks.
 
 ```c
-// Безопасное сложение
+// Safe addition
 bool dap_add_u64(uint64_t *result, uint64_t a, uint64_t b);
 bool dap_add_i64(int64_t *result, int64_t a, int64_t b);
 
-// Безопасное вычитание
+// Safe subtraction
 bool dap_sub_u64(uint64_t *result, uint64_t a, uint64_t b);
 bool dap_sub_i64(int64_t *result, int64_t a, int64_t b);
 
-// Безопасное умножение
+// Safe multiplication
 bool dap_mul_u64(uint64_t *result, uint64_t a, uint64_t b);
 bool dap_mul_i64(int64_t *result, int64_t a, int64_t b);
 
-// Безопасное деление
+// Safe division
 bool dap_div_u64(uint64_t *result, uint64_t a, uint64_t b);
 bool dap_div_i64(int64_t *result, int64_t a, int64_t b);
 
-// Проверка переполнения
+// Overflow checks
 bool dap_will_add_overflow(uint64_t a, uint64_t b);
 bool dap_will_mul_overflow(uint64_t a, uint64_t b);
 ```
 
-### 7. Преобразования чисел (dap_math_convert.h)
+### 7. Numeric conversions (dap_math_convert.h)
 
-**Назначение**: Преобразование чисел между различными форматами.
+**Purpose**: Convert numbers between formats.
 
 ```c
-// Преобразование строк в числа
+// String to number
 bool dap_str_to_u64(const char *str, uint64_t *result);
 bool dap_str_to_i64(const char *str, int64_t *result);
 
-// Преобразование чисел в строки
+// Number to string
 char *dap_u64_to_str(uint64_t value);
 char *dap_i64_to_str(int64_t value);
 
-// Преобразование между endian
+// Endian conversions
 uint16_t dap_swap_u16(uint16_t value);
 uint32_t dap_swap_u32(uint32_t value);
 uint64_t dap_swap_u64(uint64_t value);
 
-// Преобразование в/из BCD
+// BCD conversions
 uint8_t dap_to_bcd(uint8_t value);
 uint8_t dap_from_bcd(uint8_t value);
 ```
 
-### 8. Бинарные деревья поиска (dap_binary_tree.h)
+### 8. Binary search trees (dap_binary_tree.h)
 
-**Назначение**: Реализация бинарных деревьев поиска для эффективного хранения данных.
+**Purpose**: Implementation of BSTs for efficient data storage.
 
 ```c
-// Структура узла дерева
+// Tree node structure
 typedef struct dap_binary_tree_node {
-    void *key;                          // Ключ
-    void *value;                        // Значение
-    struct dap_binary_tree_node *left;  // Левое поддерево
-    struct dap_binary_tree_node *right; // Правое поддерево
+    void *key;                          // Key
+    void *value;                        // Value
+    struct dap_binary_tree_node *left;  // Left subtree
+    struct dap_binary_tree_node *right; // Right subtree
 } dap_binary_tree_node_t;
 
-// Структура дерева
+// Tree structure
 typedef struct dap_binary_tree {
-    dap_binary_tree_node_t *root;       // Корень дерева
-    size_t size;                        // Количество элементов
-    int (*compare)(const void*, const void*); // Функция сравнения
+    dap_binary_tree_node_t *root;       // Root
+    size_t size;                        // Number of elements
+    int (*compare)(const void*, const void*); // Compare function
 } dap_binary_tree_t;
 
-// Создание дерева
+// Create tree
 dap_binary_tree_t *dap_binary_tree_new(int (*compare)(const void*, const void*));
 
-// Вставка элемента
+// Insert element
 bool dap_binary_tree_insert(dap_binary_tree_t *tree, void *key, void *value);
 
-// Поиск элемента
+// Find element
 void *dap_binary_tree_find(dap_binary_tree_t *tree, const void *key);
 
-// Удаление элемента
+// Remove element
 bool dap_binary_tree_remove(dap_binary_tree_t *tree, const void *key);
 
-// Освобождение дерева
+// Free tree
 void dap_binary_tree_free(dap_binary_tree_t *tree);
 ```
 
-### 9. Циклические буферы (dap_cbuf.h)
+### 9. Circular buffers (dap_cbuf.h)
 
-**Назначение**: Реализация циклических буферов для эффективной работы с потоками данных.
+**Purpose**: Circular buffer implementation for efficient data streaming.
 
 ```c
-// Структура циклического буфера
+// Circular buffer structure
 typedef struct dap_cbuf {
-    uint8_t *buffer;     // Буфер данных
-    size_t size;         // Размер буфера
-    size_t head;         // Индекс головы
-    size_t tail;         // Индекс хвоста
-    bool full;           // Флаг заполненности
+    uint8_t *buffer;     // Data buffer
+    size_t size;         // Buffer size
+    size_t head;         // Head index
+    size_t tail;         // Tail index
+    bool full;           // Full flag
 } dap_cbuf_t;
 
-// Создание буфера
+// Create buffer
 dap_cbuf_t *dap_cbuf_new(size_t size);
 
-// Запись данных
+// Write data
 size_t dap_cbuf_write(dap_cbuf_t *cbuf, const void *data, size_t len);
 
-// Чтение данных
+// Read data
 size_t dap_cbuf_read(dap_cbuf_t *cbuf, void *data, size_t len);
 
-// Проверка состояния
+// State checks
 bool dap_cbuf_is_empty(dap_cbuf_t *cbuf);
 bool dap_cbuf_is_full(dap_cbuf_t *cbuf);
 size_t dap_cbuf_used_space(dap_cbuf_t *cbuf);
 size_t dap_cbuf_free_space(dap_cbuf_t *cbuf);
 
-// Освобождение буфера
+// Free buffer
 void dap_cbuf_free(dap_cbuf_t *cbuf);
 ```
 
 ## API Reference
 
-### Инициализация и очистка
+### Initialization and cleanup
 
 ```c
-// Инициализация core модуля
+// Initialize core module
 int dap_core_init(void);
 
-// Очистка core модуля
+// Deinitialize core module
 void dap_core_deinit(void);
 
-// Проверка инициализации
+// Check initialization
 bool dap_core_is_initialized(void);
 ```
 
-### Управление памятью
+### Memory management
 
 ```c
-// Выделение памяти
+// Allocation
 void* dap_malloc(size_t size);
 void* dap_calloc(size_t count, size_t size);
 void* dap_realloc(void* ptr, size_t size);
 
-// Освобождение памяти
+// Free
 void dap_free(void* ptr);
 
-// Безопасное освобождение
+// Safe free
 void dap_safe_free(void** ptr);
 ```
 
-### Утилиты
+### Utilities
 
 ```c
-// Сравнение строк
+// String compare
 int dap_strcmp(const char* s1, const char* s2);
 int dap_strncmp(const char* s1, const char* s2, size_t n);
 
-// Копирование строк
+// String copy
 char* dap_strdup(const char* str);
 char* dap_strndup(const char* str, size_t n);
 
-// Форматирование строк
+// String formatting
 int dap_snprintf(char* str, size_t size, const char* format, ...);
 int dap_vsnprintf(char* str, size_t size, const char* format, va_list ap);
 ```
 
-## Примеры использования
+## Usage examples
 
-### Базовое использование
+### Basic usage
 
 ```c
 #include "dap_common.h"
@@ -417,24 +415,24 @@ int dap_vsnprintf(char* str, size_t size, const char* format, va_list ap);
 #include "dap_hash.h"
 
 int main() {
-    // Инициализация
+    // Initialization
     dap_core_init();
     
-    // Создание списка
+    // Create list
     dap_list_t* list = dap_list_new();
     
-    // Добавление элементов
+    // Append elements
     char* item1 = dap_strdup("Hello");
     char* item2 = dap_strdup("World");
     
     list = dap_list_append(list, item1);
     list = dap_list_append(list, item2);
     
-    // Хеширование данных
+    // Hash data
     uint8_t hash[32];
     dap_hash_sha256("Hello World", 11, hash);
     
-    // Очистка
+    // Cleanup
     dap_list_free(list);
     dap_core_deinit();
     
@@ -442,28 +440,28 @@ int main() {
 }
 ```
 
-### Работа с временем
+### Working with time
 
 ```c
 #include "dap_time.h"
 
 void time_example() {
-    // Получение текущего времени
+    // Get current time
     dap_time_t now = dap_time_now();
     
-    // Преобразование в строку
+    // Convert to string
     char* time_str = dap_time_to_string(now);
     printf("Current time: %s\n", time_str);
     
-    // Задержка
-    dap_time_sleep(1000); // 1 секунда
+    // Delay
+    dap_time_sleep(1000); // 1 second
     
-    // Освобождение памяти
+    // Free memory
     dap_free(time_str);
 }
 ```
 
-### Платформо-специфичный код
+### Platform-specific code
 
 ```c
 #include "dap_common.h"
@@ -476,40 +474,40 @@ void time_example() {
 
 void platform_example() {
 #ifdef DAP_PLATFORM_UNIX
-    // Unix-специфичный код
+    // Unix-specific code
     pid_t pid = dap_process_fork();
     if (pid == 0) {
-        // Дочерний процесс
+        // Child process
         printf("Child process\n");
     } else {
-        // Родительский процесс
+        // Parent process
         dap_process_wait(pid);
     }
 #elif defined(DAP_PLATFORM_WINDOWS)
-    // Windows-специфичный код
+    // Windows-specific code
     HANDLE thread = dap_win32_create_thread(thread_func, NULL);
     dap_win32_wait_for_thread(thread);
 #endif
 }
 ```
 
-## Тестирование
+## Testing
 
-### Запуск тестов
+### Running tests
 
 ```bash
-# Сборка с тестами
+# Build with tests
 cmake -DBUILD_DAP_SDK_TESTS=ON ..
 make
 
-# Запуск тестов core модуля
+# Run core module tests
 ./test/core/test_common
 ./test/core/test_list
 ./test/core/test_hash
 ./test/core/test_time
 ```
 
-### Пример теста
+### Test example
 
 ```c
 #include "dap_test.h"
@@ -518,16 +516,16 @@ make
 void test_list_operations() {
     dap_list_t* list = dap_list_new();
     
-    // Тест добавления
+    // Append test
     list = dap_list_append(list, "item1");
     DAP_ASSERT(list != NULL);
     DAP_ASSERT(dap_list_length(list) == 1);
     
-    // Тест поиска
+    // Find test
     dap_list_t* found = dap_list_find(list, "item1");
     DAP_ASSERT(found != NULL);
     
-    // Тест удаления
+    // Remove test
     list = dap_list_remove(list, "item1");
     DAP_ASSERT(dap_list_length(list) == 0);
     
@@ -535,9 +533,9 @@ void test_list_operations() {
 }
 ```
 
-## Производительность
+## Performance
 
-### Бенчмарки
+### Benchmarks
 
 | Операция | Производительность |
 |----------|-------------------|
@@ -546,22 +544,22 @@ void test_list_operations() {
 | dap_hash_sha256 | ~100MB/sec |
 | dap_time_now | ~10M ops/sec |
 
-### Оптимизации
+### Optimizations
 
-- **Inlined функции**: Критические функции встроены в код
-- **Memory pools**: Переиспользование памяти для частых операций
-- **SIMD оптимизации**: Использование векторных инструкций для хеширования
-- **Lock-free структуры**: Безблокировочные алгоритмы для многопоточности
+- **Inlined functions**: Critical functions are inlined
+- **Memory pools**: Reuse memory for frequent operations
+- **SIMD optimizations**: Vector instructions for hashing
+- **Lock-free structures**: Non-blocking algorithms for concurrency
 
-## Отладка
+## Debugging
 
-### Логирование
+### Logging
 
 ```c
 #include "dap_log.h"
 
 void debug_example() {
-    // Различные уровни логирования
+    // Various log levels
     dap_log(L_DEBUG, "Debug message: %d", 42);
     dap_log(L_INFO, "Info message");
     dap_log(L_WARNING, "Warning message");
@@ -569,24 +567,24 @@ void debug_example() {
 }
 ```
 
-### Валидация
+### Validation
 
 ```c
 #include "dap_common.h"
 
 void validation_example() {
-    // Проверка указателей
+    // Pointer checks
     void* ptr = dap_malloc(100);
     DAP_ASSERT(ptr != NULL);
     
-    // Проверка границ
+    // Bounds checks
     DAP_ASSERT(size > 0 && size < MAX_SIZE);
     
-    // Проверка строк
+    // String checks
     DAP_ASSERT(str != NULL && strlen(str) > 0);
 }
 ```
 
-## Заключение
+## Conclusion
 
-Core Module предоставляет надежную основу для всех остальных модулей DAP SDK. Он обеспечивает кроссплатформенность, эффективное управление ресурсами и общие утилиты, необходимые для разработки децентрализованных приложений.
+The Core Module provides a reliable foundation for all other DAP SDK modules. It ensures cross‑platform support, efficient resource management, and common utilities required for developing decentralized applications.

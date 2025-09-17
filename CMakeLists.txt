@@ -6,16 +6,39 @@ include(CheckFunctionExists)
 include(cmake/OS_Detection.cmake)
 
 # Check for secure memory clearing functions
+include(CheckSymbolExists)
+
+# explicit_bzero(): first try in libc, then in libbsd
 check_function_exists(explicit_bzero HAVE_EXPLICIT_BZERO)
+if(NOT HAVE_EXPLICIT_BZERO)
+    set(CMAKE_REQUIRED_LIBRARIES bsd)
+    check_function_exists(explicit_bzero HAVE_EXPLICIT_BZERO_IN_BSD)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(HAVE_EXPLICIT_BZERO_IN_BSD)
+        set(HAVE_EXPLICIT_BZERO TRUE)
+        set(USE_LIBBSD_EXPLICIT_BZERO TRUE)
+    endif()
+endif()
 if(HAVE_EXPLICIT_BZERO)
     add_definitions(-DHAVE_EXPLICIT_BZERO)
+    if(USE_LIBBSD_EXPLICIT_BZERO)
+        add_definitions(-DUSE_LIBBSD_EXPLICIT_BZERO)
+    endif()
 endif()
 
-# Check for C11 memset_s availability
-include(CheckSymbolExists)
+# C11 Annex K memset_s: request declarations and check symbol presence
+set(CMAKE_REQUIRED_DEFINITIONS -D__STDC_WANT_LIB_EXT1__=1)
 check_symbol_exists(memset_s "string.h" HAVE_MEMSET_S)
+unset(CMAKE_REQUIRED_DEFINITIONS)
 if(HAVE_MEMSET_S)
-    add_definitions(-D__STDC_LIB_EXT1__)
+    add_definitions(-DHAVE_MEMSET_S)
+    add_definitions(-D__STDC_WANT_LIB_EXT1__=1)
+endif()
+
+
+# Link libbsd when explicit_bzero is provided by it
+if(USE_LIBBSD_EXPLICIT_BZERO)
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} bsd)
 endif()
 
 if (NOT DEFINED DAP_VERSION)

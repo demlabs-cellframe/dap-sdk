@@ -1,15 +1,15 @@
-# Архитектура DAP SDK
+# DAP SDK Architecture
 
-## Обзор архитектуры
+## Architecture overview
 
-DAP SDK построен на модульной архитектуре, где каждый модуль отвечает за определенную функциональность. Основные принципы:
+DAP SDK is built on a modular architecture where each module encapsulates a specific responsibility. Core principles:
 
-- **Модульность**: Каждый компонент изолирован и может использоваться независимо
-- **Расширяемость**: Легкое добавление новых модулей и алгоритмов
-- **Кроссплатформенность**: Поддержка Linux, macOS, Windows
-- **Квантово-устойчивость**: Встроенная поддержка пост-квантовых алгоритмов
+- **Modularity**: Each component is isolated and reusable
+- **Extensibility**: Easy to add new modules and algorithms
+- **Cross‑platform**: Linux, macOS, Windows support
+- **Quantum resistance**: Built‑in support for post‑quantum algorithms
 
-## Диаграмма архитектуры
+## Architecture diagram
 
 ```mermaid
 graph TB
@@ -87,140 +87,140 @@ graph TB
     CORE --> IO
 ```
 
-## Основные компоненты
+## Main components
 
-### 1. Core Module (Ядро)
+### 1. Core Module
 
-**Назначение**: Базовая функциональность и общие утилиты
+**Purpose**: Base functionality and common utilities
 
-**Ключевые компоненты**:
-- `dap_common.h` - Общие определения и структуры данных
-- `dap_list.h` - Реализация связанных списков
-- `dap_hash.h` - Хеш-функции
-- `dap_time.h` - Работа с временем
-- `dap_module.h` - Система модулей
-- `dap_config.h` - Система конфигурации
-- `dap_binary_tree.h` - Бинарные деревья поиска
-- `dap_file_utils.h` - Утилиты работы с файлами
+**Key components**:
+- `dap_common.h` - Common definitions and data structures
+- `dap_list.h` - Linked lists
+- `dap_hash.h` - Hash functions
+- `dap_time.h` - Time utilities
+- `dap_module.h` - Modules system
+- `dap_config.h` - Configuration system
+- `dap_binary_tree.h` - Binary search trees
+- `dap_file_utils.h` - File utilities
 
-**Подробная документация**: [Core Module](./modules/core.md)
+**Detailed docs**: [Core Module](./modules/core.md)
 
-**Платформо-специфичные реализации**:
-- `core/src/unix/` - Unix/Linux реализация
-- `core/src/darwin/` - macOS реализация
-- `core/src/win32/` - Windows реализация
+**Platform‑specific implementations**:
+- `core/src/unix/` - Unix/Linux
+- `core/src/darwin/` - macOS
+- `core/src/win32/` - Windows
 
-### 1.1. IO Module (Ввод/вывод)
+### 1.1. IO Module
 
-**Назначение**: Система ввода/вывода, событийная обработка и серверная инфраструктура
+**Purpose**: I/O system, event handling, and server infrastructure
 
-**Ключевые компоненты**:
-- `dap_events.h` - Система событий и обработка сигналов
-- `dap_context.h` - Контексты выполнения и управление потоками
-- `dap_server.h` - Серверная инфраструктура и сетевые соединения
-- `dap_timerfd.h` - Таймеры на базе файловых дескрипторов
-- `dap_proc_thread.h` - Управление процессами и потоками
+**Key components**:
+- `dap_events.h` - Events and signal handling
+- `dap_context.h` - Execution contexts and threads
+- `dap_server.h` - Server infra and network connections
+- `dap_timerfd.h` - Timer FDs
+- `dap_proc_thread.h` - Process/thread control
 
-**Функциональность**:
-- Асинхронная обработка событий
-- Управление сетевыми соединениями
-- Таймеры и планировщик задач
-- Многопоточная обработка
-- Платформо-специфичная оптимизация
+**Functionality**:
+- Async event processing
+- Network connection management
+- Timers and scheduling
+- Multithreaded processing
+- Platform‑specific optimizations
 
-### 2. Crypto Module (Криптография)
+### 2. Crypto Module
 
-**Назначение**: Криптографические алгоритмы и операции
+**Purpose**: Cryptographic algorithms and operations
 
-**Поддерживаемые алгоритмы**:
+**Supported algorithms**:
 
-#### Пост-квантовые алгоритмы
-- **Kyber**: Ключевое инкапсулирование (KEM)
+#### Post‑quantum algorithms
+- **Kyber**: Key Encapsulation Mechanism (KEM)
   - Kyber512, Kyber768, Kyber1024
-- **Falcon**: Цифровые подписи на основе решеток
-- **SPHINCS+**: Хеш-базированные подписи
-- **Dilithium**: Цифровые подписи на основе решеток
-- **Bliss**: Бимодальные подписи на основе решеток
+- **Falcon**: Lattice‑based digital signatures
+- **SPHINCS+**: Hash‑based signatures
+- **Dilithium**: Lattice‑based digital signatures
+- **Bliss**: Bimodal lattice‑based signatures
 
-#### Специализированные алгоритмы
-- **Chipmunk**: Мультиподписи на основе решеток
-- **XKCP**: Расширенная коллекция Keccak
+#### Specialized algorithms
+- **Chipmunk**: Lattice‑based multisignatures
+- **XKCP**: Extended Keccak collection
 
-**Подробная документация**: [Crypto Module](./modules/crypto.md)
+**Detailed docs**: [Crypto Module](./modules/crypto.md)
 
-### 3. Net Module (Сеть)
+### 3. Net Module
 
-**Назначение**: Сетевые коммуникации и серверы
+**Purpose**: Network communications and servers
 
-**Серверные компоненты**:
-- **HTTP Server**: Веб-сервер с поддержкой клиентов
-- **JSON-RPC Server**: JSON-RPC API сервер
-- **Encryption Server**: Сервер шифрования
-- **Notification Server**: Сервер уведомлений
-- **App CLI Module**: Интерфейс командной строки
-- **Common HTTP Module**: Общие HTTP функции
+**Server components**:
+- **HTTP Server**: Web server with client support
+- **JSON-RPC Server**: JSON‑RPC API server
+- **Encryption Server**: Encryption server
+- **Notification Server**: Notification server
+- **App CLI Module**: Command‑line interface
+- **Common HTTP Module**: Common HTTP utilities
 
-**Клиентские компоненты**:
-- **HTTP Client**: HTTP клиент
-- **Stream Processing**: Обработка потоков данных
-- **Link Manager**: Управление сетевыми соединениями
+**Client components**:
+- **HTTP Client**: HTTP client
+- **Stream Processing**: Data stream processing
+- **Link Manager**: Network connections management
 
-**Подробная документация**: [Net Module](./modules/net.md)
+**Detailed docs**: [Net Module](./modules/net.md)
 
-### 3.1. AVRE Stream Module (Потоковая обработка)
+### 3.1. AVRE Stream Module (Streaming)
 
-**Назначение**: Специализированная обработка аудио/видео потоков и кластеризация
+**Purpose**: Specialized A/V streaming and clustering
 
-**Ключевые компоненты**:
-- `avrs_cluster.h` - Кластеризация аудио/видео потоков
-- `avrs_ch_session.h` - Управление сессиями каналов
-- `avrs_ch_cluster.h` - Кластеры каналов и маршрутизация
+**Key components**:
+- `avrs_cluster.h` - A/V stream clustering
+- `avrs_ch_session.h` - Channel session management
+- `avrs_ch_cluster.h` - Channel clusters and routing
 
-**Функциональность**:
-- Обработка аудио/видео потоков в реальном времени
-- Кластеризация и балансировка нагрузки
-- Управление сессиями и каналами
-- Маршрутизация потоков
-- Синхронизация и буферизация
+**Functionality**:
+- Real‑time A/V processing
+- Clustering and load balancing
+- Session and channel management
+- Stream routing
+- Synchronization and buffering
 
-### 4. Global DB Module (База данных)
+### 4. Global DB Module (Database)
 
-**Назначение**: Управление данными и персистентность
+**Purpose**: Data management and persistence
 
-**Поддерживаемые драйверы**:
-- **MDBX**: Высокопроизводительная встроенная БД
-- **PostgreSQL**: Реляционная БД
-- **SQLite**: Легковесная встроенная БД
+**Supported drivers**:
+- **MDBX**: High‑performance embedded DB
+- **PostgreSQL**: Relational DB
+- **SQLite**: Lightweight embedded DB
 
-### 5. Plugin System (Система плагинов)
+### 5. Plugin System
 
-**Назначение**: Динамическая загрузка и управление расширениями
+**Purpose**: Dynamic loading and extension management
 
-**Ключевые возможности**:
-- Динамическая загрузка плагинов
-- Управление жизненным циклом плагинов
-- API для взаимодействия с основным приложением
-- Изоляция плагинов
-- Горячая замена без перезапуска
+**Key capabilities**:
+- Dynamic plugin loading
+- Plugin lifecycle management
+- API for integration with the host app
+- Plugin isolation
+- Hot‑swap without restart
 
-### 6. Test Framework (Фреймворк тестирования)
+### 6. Test Framework
 
-**Назначение**: Автоматизированное тестирование компонентов SDK
+**Purpose**: Automated testing of SDK components
 
-**Ключевые компоненты**:
-- `dap_test.h` - Основные функции тестирования
-- `dap_test_generator.h` - Генераторы тестовых данных
+**Key components**:
+- `dap_test.h` - Core testing functions
+- `dap_test_generator.h` - Test data generators
 
-**Возможности**:
-- Unit-тестирование модулей
-- Интеграционное тестирование
-- Генерация тестовых данных
-- Отчеты о покрытии кода
-- Автоматизированное выполнение
+**Features**:
+- Unit testing
+- Integration testing
+- Test data generation
+- Code coverage reports
+- Automated execution
 
-## Потоки данных
+## Data flows
 
-### 1. Инициализация системы
+### 1. System initialization
 
 ```mermaid
 sequenceDiagram
@@ -237,7 +237,7 @@ sequenceDiagram
     Core-->>App: Initialization complete
 ```
 
-### 2. Криптографические операции
+### 2. Cryptographic operations
 
 ```mermaid
 sequenceDiagram
@@ -251,7 +251,7 @@ sequenceDiagram
     Crypto-->>App: key_pair
 ```
 
-### 3. Сетевые операции
+### 3. Network operations
 
 ```mermaid
 sequenceDiagram
@@ -268,109 +268,109 @@ sequenceDiagram
     Net-->>Client: response
 ```
 
-## Конфигурация и сборка
+## Configuration and build
 
-### CMake конфигурация
+### CMake configuration
 
 ```cmake
-# Основные опции
+# Core options
 option(DAP_INT128_SUPPORT "Use 128-bit variables" ON)
 option(BUILD_DAP_SDK_TESTS "Build test suite" OFF)
 
-# Модули
+# Modules
 set(DAPSDK_MODULES "core;crypto;net;global-db")
 
-# Зависимости
+# Dependencies
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 ```
 
-### Модульная сборка
+### Modular build
 
 ```bash
-# Сборка только core модуля
+# Build only the core module
 cmake -DDAPSDK_MODULES="core" ..
 
-# Сборка с тестами
+# Build with tests
 cmake -DBUILD_DAP_SDK_TESTS=ON ..
 
-# Сборка с отключенным INT128
+# Build with INT128 disabled
 cmake -DDAP_INT128_SUPPORT=OFF ..
 ```
 
-## Безопасность
+## Security
 
-### Принципы безопасности
+### Security principles
 
-1. **Fail Fast**: Быстрое обнаружение и обработка ошибок
-2. **Zero Trust**: Проверка всех входных данных
-3. **Defense in Depth**: Многоуровневая защита
-4. **Secure by Default**: Безопасные настройки по умолчанию
+1. **Fail Fast**: Rapid error detection and handling
+2. **Zero Trust**: Validate all inputs
+3. **Defense in Depth**: Multi‑layered protection
+4. **Secure by Default**: Secure defaults
 
-### Криптографические гарантии
+### Cryptographic guarantees
 
-- **Квантово-устойчивость**: Поддержка NIST-рекомендованных алгоритмов
-- **Perfect Forward Secrecy**: Защита прошлых коммуникаций
-- **Side-channel Resistance**: Защита от атак по побочным каналам
+- **Quantum resistance**: Support for NIST‑recommended algorithms
+- **Perfect Forward Secrecy**: Protects past communications
+- **Side‑channel resistance**: Mitigates side‑channel attacks
 
-## Производительность
+## Performance
 
-### Оптимизации
+### Optimizations
 
-- **SIMD инструкции**: Использование векторных операций
-- **Параллелизм**: Многопоточная обработка
-- **Кэширование**: Эффективное управление памятью
-- **Batch операции**: Группировка операций
+- **SIMD instructions**: Vectorized operations
+- **Parallelism**: Multithreaded processing
+- **Caching**: Efficient memory usage
+- **Batch operations**: Operation batching
 
-### Бенчмарки
+### Benchmarks
 
-| Алгоритм | Операция | Производительность |
-|----------|----------|-------------------|
+| Algorithm | Operation | Performance |
+|-----------|-----------|--------------|
 | Kyber512 | Key Generation | ~1000 ops/sec |
 | Falcon512 | Sign | ~500 ops/sec |
 | SPHINCS+ | Sign | ~50 ops/sec |
 
-## Расширение системы
+## Extensibility
 
-### Добавление нового алгоритма
+### Adding a new algorithm
 
-1. Создать реализацию в `crypto/src/`
-2. Добавить заголовочный файл в `crypto/include/`
-3. Обновить `crypto/CMakeLists.txt`
-4. Добавить тесты в `crypto/test/`
+1. Create implementation in `crypto/src/`
+2. Add header in `crypto/include/`
+3. Update `crypto/CMakeLists.txt`
+4. Add tests in `crypto/test/`
 
-### Добавление нового сервера
+### Adding a new server
 
-1. Создать реализацию в `net/server/`
-2. Добавить в `net/server/CMakeLists.txt`
-3. Реализовать API интерфейс
-4. Добавить документацию
+1. Create implementation under `net/server/`
+2. Add target to `net/server/CMakeLists.txt`
+3. Implement the API interface
+4. Add documentation
 
-## Отладка и мониторинг
+## Debugging and monitoring
 
-### Логирование
+### Logging
 
 ```c
 #include "dap_log.h"
 
-// Различные уровни логирования
+// Various log levels
 dap_log(L_DEBUG, "Debug message");
 dap_log(L_INFO, "Info message");
 dap_log(L_WARNING, "Warning message");
 dap_log(L_ERROR, "Error message");
 ```
 
-### Профилирование
+### Profiling
 
 ```bash
-# Сборка с профилированием
+# Build with profiling
 cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 
-# Запуск с профилированием
+# Run with profiling
 perf record ./your_application
 perf report
 ```
 
-## Заключение
+## Conclusion
 
-DAP SDK предоставляет мощную и гибкую платформу для разработки децентрализованных приложений с акцентом на безопасность и производительность. Модульная архитектура позволяет легко адаптировать систему под конкретные требования проекта.
+DAP SDK provides a powerful and flexible platform for developing decentralized applications with a strong focus on security and performance. Its modular architecture makes it easy to adapt the system to project‑specific requirements.

@@ -1,216 +1,216 @@
 # DAP IO Module (dap_io.h)
 
-## Обзор
+## Overview
 
-Модуль `dap_io.h` является фундаментальным компонентом DAP SDK, предоставляющим высокопроизводительную асинхронную систему ввода-вывода и управления событиями. Этот модуль отвечает за:
+The `dap_io.h` module is a foundational component of DAP SDK, providing a high‑performance asynchronous I/O and event management system. It is responsible for:
 
-- **Многопоточную обработку событий** - эффективное распределение нагрузки между потоками
-- **Кроссплатформенную поддержку** - работа на Windows, Linux, macOS и BSD
-- **Масштабируемую архитектуру** - поддержка тысяч одновременных соединений
-- **Оптимизированные механизмы опроса** - epoll, kqueue, IOCP в зависимости от платформы
+- **Multithreaded event processing** - efficient load distribution across threads
+- **Cross‑platform support** - Windows, Linux, macOS, BSD
+- **Scalable architecture** - thousands of concurrent connections
+- **Optimized pollers** - epoll, kqueue, IOCP per platform
 
-## Архитектура
+## Architecture
 
-### Основные компоненты
+### Core components
 
-#### 1. **dap_events** - Система событий
-Основной интерфейс для инициализации и управления системой событий:
+#### 1. **dap_events** - Event system
+Main interface to initialize and manage the event system:
 
 ```c
-// Инициализация системы событий
+// Initialize event system
 int dap_events_init(uint32_t a_threads_count, size_t a_conn_timeout);
 
-// Запуск обработки событий
+// Start event processing
 int32_t dap_events_start();
 
-// Остановка всех потоков
+// Stop all threads
 void dap_events_stop_all();
 ```
 
-#### 2. **dap_worker** - Рабочий поток
-Представляет собой отдельный поток обработки событий:
+#### 2. **dap_worker** - Worker thread
+Represents a dedicated event processing thread:
 
 ```c
 typedef struct dap_worker {
-    uint32_t id;                           // Уникальный идентификатор
-    dap_proc_thread_t *proc_queue_input;   // Очередь обработки
-    dap_context_t *context;               // Контекст выполнения
-    // ... дополнительные поля для очередей
+    uint32_t id;                           // Unique identifier
+    dap_proc_thread_t *proc_queue_input;   // Processing queue
+    dap_context_t *context;               // Execution context
+    // ... additional queue fields
 } dap_worker_t;
 ```
 
-#### 3. **dap_context** - Контекст выполнения
-Абстракция для управления потоками и их ресурсами:
+#### 3. **dap_context** - Execution context
+Abstraction for managing threads and their resources:
 
 ```c
 typedef struct dap_context {
-    uint32_t id;              // ID контекста
-    pthread_t thread_id;      // ID потока
-    int type;                 // Тип контекста
-    bool is_running;          // Статус выполнения
-    // ... платформенно-зависимые поля
+    uint32_t id;              // Context ID
+    pthread_t thread_id;      // Thread ID
+    int type;                 // Context type
+    bool is_running;          // Running status
+    // ... platform‑dependent fields
 } dap_context_t;
 ```
 
-## Ключевые возможности
+## Key capabilities
 
-### Многопоточность и балансировка нагрузки
+### Multithreading and load balancing
 
 ```c
-// Получение количества доступных CPU
+// Get CPU count
 uint32_t dap_get_cpu_count();
 
-// Привязка потока к конкретному CPU
+// Pin thread to a specific CPU
 void dap_cpu_assign_thread_on(uint32_t a_cpu_id);
 
-// Автоматическое распределение нагрузки
+// Automatic load distribution
 dap_worker_t *dap_events_worker_get_auto();
 ```
 
-### Управление сокетами событий
+### Event socket management
 
 ```c
-// Добавление сокета в рабочий поток
+// Add socket to worker
 void dap_worker_add_events_socket(dap_worker_t *a_worker,
                                   dap_events_socket_t *a_events_socket);
 
-// Автоматическое добавление сокета
+// Auto‑assign socket
 dap_worker_t *dap_worker_add_events_socket_auto(dap_events_socket_t *a_es);
 ```
 
-### Таймеры и обратные вызовы
+### Timers and callbacks
 
 ```c
-// Выполнение callback в рабочем потоке
+// Execute callback on a worker
 void dap_worker_exec_callback_on(dap_worker_t *a_worker,
                                  dap_worker_callback_t a_callback,
                                  void *a_arg);
 ```
 
-## Платформенная поддержка
+## Platform support
 
 ### Linux (epoll)
-- Использует epoll для эффективного опроса событий
-- Поддержка edge-triggered и level-triggered режимов
-- Оптимизирован для большого количества дескрипторов
+- Uses epoll for efficient event polling
+- Supports edge‑triggered and level‑triggered modes
+- Optimized for large descriptor counts
 
 ### macOS/FreeBSD (kqueue)
-- Использует kqueue для управления событиями
-- Поддержка фильтров для различных типов событий
-- Высокая производительность для сетевых приложений
+- Uses kqueue for event management
+- Filters for various event types
+- High performance for network apps
 
 ### Windows (IOCP)
-- Использует I/O Completion Ports
-- Асинхронные операции ввода-вывода
-- Оптимизирован для overlapped операций
+- Uses I/O Completion Ports
+- Asynchronous I/O
+- Optimized for overlapped operations
 
-## Производительность и масштабируемость
+## Performance and scalability
 
-### Оптимизации
-- **Lock-free структуры данных** для очередей
-- **Масштабируемые хэш-таблицы** для поиска сокетов
-- **Платформенно-оптимизированные** механизмы опроса
-- **Автоматическая балансировка** нагрузки между потоками
+### Optimizations
+- **Lock‑free data structures** for queues
+- **Scalable hash tables** for socket lookup
+- **Platform‑optimized** pollers
+- **Automatic load balancing** across threads
 
-### Лимиты и конфигурация
+### Limits and configuration
 ```c
-#define DAP_MAX_EVENTS_COUNT 8192  // Максимальное количество событий
-#define DAP_EVENTS_SOCKET_MAX 1024 // Максимальное количество сокетов на контекст
+#define DAP_MAX_EVENTS_COUNT 8192  // Max number of events
+#define DAP_EVENTS_SOCKET_MAX 1024 // Max sockets per context
 ```
 
-## Использование
+## Usage
 
-### Базовая инициализация
+### Basic initialization
 
 ```c
 #include "dap_events.h"
 #include "dap_worker.h"
 
-// Инициализация системы
-if (dap_events_init(4, 30000) != 0) {  // 4 потока, таймаут 30 сек
+// Initialize system
+if (dap_events_init(4, 30000) != 0) {  // 4 threads, 30s timeout
     fprintf(stderr, "Failed to initialize events system\n");
     return -1;
 }
 
-// Запуск обработки
+// Start processing
 if (dap_events_start() != 0) {
     fprintf(stderr, "Failed to start events processing\n");
     return -1;
 }
 
-// Основной цикл приложения
+// Main application loop
 dap_events_wait();
 
-// Деинициализация
+// Deinitialize
 dap_events_deinit();
 ```
 
-### Работа с рабочими потоками
+### Working with workers
 
 ```c
-// Получение текущего рабочего потока
+// Get current worker
 dap_worker_t *current_worker = dap_worker_get_current();
 
-// Получение автоматического рабочего потока
+// Get auto‑assigned worker
 dap_worker_t *auto_worker = dap_events_worker_get_auto();
 
-// Выполнение задачи в конкретном потоке
+// Execute task on a specific worker
 dap_worker_exec_callback_on(auto_worker, my_callback, my_data);
 ```
 
-## Интеграция с другими модулями
+## Integration with other modules
 
 ### DAP Net
-IO модуль является фундаментом для сетевого модуля DAP, предоставляя:
-- Асинхронную обработку сетевых соединений
-- Балансировку нагрузки между потоками
-- Оптимизированные механизмы опроса
+The IO module underpins the networking module, providing:
+- Async handling of network connections
+- Load balancing across threads
+- Optimized pollers
 
 ### DAP Server
-Взаимодействует с серверным модулем для:
-- Обработки входящих соединений
-- Управления таймаутами соединений
-- Распределения нагрузки
+Works with the server module to:
+- Handle incoming connections
+- Manage connection timeouts
+- Distribute load
 
 ### DAP Client
-Обеспечивает асинхронную работу клиентских соединений:
-- Неблокирующие операции чтения/записи
-- Управление множественными соединениями
-- Обработку таймаутов
+Enables async client connections:
+- Non‑blocking read/write
+- Multiple connection management
+- Timeout handling
 
-## Отладка и мониторинг
+## Debugging and monitoring
 
-### Отладочные возможности
+### Debug features
 ```c
-extern bool g_debug_reactor;  // Включение отладки реактора
+extern bool g_debug_reactor;  // Enable reactor debug
 
-// Вывод информации о всех рабочих потоках
+// Print info about all workers
 void dap_worker_print_all();
 ```
 
-### Статистика и метрики
-- Количество активных соединений
-- Загрузка рабочих потоков
-- Статистика очередей обработки
-- Время отклика на события
+### Stats and metrics
+- Active connections count
+- Worker load
+- Queue statistics
+- Event response time
 
-## Лучшие практики
+## Best practices
 
-### 1. Конфигурация потоков
-- Устанавливайте количество потоков равным количеству CPU ядер
-- Для I/O-bound приложений используйте 1.5-2x количества ядер
-- Мониторьте загрузку потоков для оптимизации
+### 1. Thread configuration
+- Set thread count equal to CPU cores
+- For I/O‑bound apps use 1.5–2x cores
+- Monitor worker load for tuning
 
-### 2. Управление ресурсами
-- Всегда вызывайте `dap_events_deinit()` при завершении
-- Используйте автоматическое распределение для новых сокетов
-- Мониторьте использование памяти очередей
+### 2. Resource management
+- Always call `dap_events_deinit()` on shutdown
+- Use automatic assignment for new sockets
+- Monitor queue memory usage
 
-### 3. Обработка ошибок
-- Проверяйте коды возврата всех функций
-- Обрабатывайте таймауты соединений
-- Логируйте критические ошибки системы событий
+### 3. Error handling
+- Check return codes of all functions
+- Handle connection timeouts
+- Log critical event‑system errors
 
-## Заключение
+## Conclusion
 
-IO модуль DAP SDK предоставляет высокопроизводительную, кроссплатформенную систему асинхронного ввода-вывода, которая является фундаментом для всех сетевых операций в экосистеме DAP. Его архитектура обеспечивает масштабируемость и эффективность, необходимые для высоконагруженных приложений.
+The DAP SDK IO module provides a high‑performance, cross‑platform async I/O system that underpins all networking operations in the DAP ecosystem. Its architecture ensures the scalability and efficiency required for high‑load applications.

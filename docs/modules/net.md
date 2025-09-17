@@ -1,118 +1,118 @@
-# DAP SDK Net Module - Сетевой модуль
+# DAP SDK Net Module - Networking
 
-## Обзор
+## Overview
 
-Модуль `dap-sdk/net` предоставляет полную инфраструктуру для сетевых коммуникаций в DAP SDK. Он включает серверные и клиентские компоненты, поддержку различных протоколов и высокопроизводительную потоковую обработку данных.
+The `dap-sdk/net` module provides a complete networking infrastructure for DAP SDK. It includes server and client components, multiple protocols, and high‑performance stream processing.
 
-## Основные возможности
+## Key capabilities
 
-### 🌐 **Сетевые протоколы и серверы**
-- **HTTP/HTTPS серверы** с поддержкой REST API
-- **JSON-RPC серверы** для удаленного вызова процедур
-- **WebSocket серверы** для реального времени коммуникаций
-- **CLI серверы** для удаленного управления
-- **Encryption серверы** для защищенных соединений
+### 🌐 **Protocols and servers**
+- **HTTP/HTTPS servers** with REST API
+- **JSON‑RPC servers** for RPC
+- **WebSocket servers** for real‑time comms
+- **CLI servers** for remote control
+- **Encryption servers** for secure connections
 
-### 📡 **Клиентские компоненты**
-- **HTTP клиенты** с поддержкой прокси и SSL
-- **Link Manager** для управления сетевыми соединениями
-- **Connection pooling** для оптимизации ресурсов
+### 📡 **Client components**
+- **HTTP clients** with proxy and SSL support
+- **Link Manager** for connection management
+- **Connection pooling** for resource efficiency
 
-### ⚡ **Потоковая обработка**
-- **Stream processing** для высокопроизводительной обработки данных
-- **Session management** для управления соединениями
-- **Channel processing** для многоканальной коммуникации
-- **Cluster support** для масштабируемости
+### ⚡ **Stream processing**
+- **Stream processing** for high‑performance data handling
+- **Session management** for connections
+- **Channel processing** for multi‑channel comms
+- **Cluster support** for scalability
 
-## Структура модуля
+## Module structure
 
 ```
 dap-sdk/net/
-├── server/                    # Серверные компоненты
-│   ├── http_server/         # HTTP сервер
-│   ├── json_rpc/            # JSON-RPC сервер
-│   ├── cli_server/         # CLI сервер
-│   ├── enc_server/         # Шифрованный сервер
-│   ├── notify_server/      # Сервер уведомлений
-│   └── test/                # Тесты серверов
-├── client/                   # Клиентские компоненты
-│   ├── http/               # HTTP клиент
-│   └── link_manager/       # Управление соединениями
-├── stream/                   # Потоковая обработка
-│   ├── stream/             # Основная потоковая логика
-│   ├── session/            # Управление сессиями
-│   ├── ch/                 # Канальная обработка
-│   └── test/               # Тесты потоков
-├── common/                   # Общие компоненты
-│   └── http/               # HTTP утилиты
-└── app-cli/                 # CLI приложения
+├── server/                    # Server components
+│   ├── http_server/         # HTTP server
+│   ├── json_rpc/            # JSON‑RPC server
+│   ├── cli_server/          # CLI server
+│   ├── enc_server/          # Encrypted server
+│   ├── notify_server/       # Notification server
+│   └── test/                # Server tests
+├── client/                   # Client components
+│   ├── http/               # HTTP client
+│   └── link_manager/       # Connection management
+├── stream/                   # Stream processing
+│   ├── stream/             # Core stream logic
+│   ├── session/            # Session management
+│   ├── ch/                 # Channel processing
+│   └── test/               # Stream tests
+├── common/                   # Common components
+│   └── http/               # HTTP utilities
+└── app-cli/                 # CLI apps
 ```
 
-## Основные компоненты
+## Main components
 
 ### 1. **HTTP Server (http_server/)**
 
-#### Архитектура
+#### Architecture
 ```c
 typedef struct dap_http_server {
-    dap_server_t *server;           // Базовый сервер
-    dap_http_cache_t *cache;         // Кэш HTTP
-    dap_config_t *config;            // Конфигурация
-    uint16_t port;                   // Порт сервера
-    bool use_ssl;                    // SSL поддержка
-    // ... дополнительные поля
+    dap_server_t *server;           // Base server
+    dap_http_cache_t *cache;         // HTTP cache
+    dap_config_t *config;            // Configuration
+    uint16_t port;                   // Server port
+    bool use_ssl;                    // SSL support
+    // ... additional fields
 } dap_http_server_t;
 ```
 
-#### Основные функции
+#### Core functions
 
 ```c
-// Создание HTTP сервера
+// Create HTTP server
 dap_http_server_t* dap_http_server_create(const char* addr, uint16_t port);
 
-// Добавление обработчика URL
+// Add URL handler
 int dap_http_server_add_proc(dap_http_server_t* server,
                              const char* url_path,
                              http_proc_func_t proc_func,
                              void* arg);
 
-// Запуск сервера
+// Start server
 int dap_http_server_start(dap_http_server_t* server);
 
-// Остановка сервера
+// Stop server
 void dap_http_server_stop(dap_http_server_t* server);
 ```
 
 ### 2. **JSON-RPC Server (json_rpc/)**
 
-#### Структура запроса/ответа
+#### Request/response structure
 ```c
 typedef struct dap_json_rpc_request {
-    int64_t id;                    // ID запроса
-    char* method;                  // Имя метода
-    json_object* params;           // Параметры
-    char* jsonrpc;                 // Версия протокола ("2.0")
+    int64_t id;                    // Request ID
+    char* method;                  // Method name
+    json_object* params;           // Parameters
+    char* jsonrpc;                 // Protocol version ("2.0")
 } dap_json_rpc_request_t;
 
 typedef struct dap_json_rpc_response {
-    int64_t id;                    // ID ответа
-    json_object* result;           // Результат выполнения
-    json_object* error;            // Ошибка (если есть)
-    char* jsonrpc;                 // Версия протокола
+    int64_t id;                    // Response ID
+    json_object* result;           // Result
+    json_object* error;            // Error (if any)
+    char* jsonrpc;                 // Protocol version
 } dap_json_rpc_response_t;
 ```
 
-#### API методы
+#### API methods
 ```c
-// Регистрация RPC метода
+// Register RPC method
 int dap_json_rpc_register_method(const char* method_name,
                                 json_rpc_handler_func_t handler,
                                 void* arg);
 
-// Обработка входящего запроса
+// Process incoming request
 char* dap_json_rpc_process_request(const char* request_json);
 
-// Создание ответа
+// Create response
 char* dap_json_rpc_create_response(int64_t id,
                                   json_object* result,
                                   json_object* error);
@@ -120,121 +120,121 @@ char* dap_json_rpc_create_response(int64_t id,
 
 ### 3. **Stream Processing (stream/)**
 
-#### Архитектура потоков
+#### Stream architecture
 ```c
 typedef struct dap_stream {
-    dap_stream_session_t* session;    // Сессия потока
-    dap_stream_worker_t* worker;      // Рабочий поток
-    dap_stream_cluster_t* cluster;    // Кластер
-    uint32_t id;                      // ID потока
-    void* internal;                   // Внутренние данные
+    dap_stream_session_t* session;    // Stream session
+    dap_stream_worker_t* worker;      // Worker thread
+    dap_stream_cluster_t* cluster;    // Cluster
+    uint32_t id;                      // Stream ID
+    void* internal;                   // Internal data
 } dap_stream_t;
 
 typedef struct dap_stream_session {
-    uint64_t id;                      // ID сессии
-    time_t created;                   // Время создания
-    time_t last_active;               // Последняя активность
-    dap_stream_t* stream;             // Связанный поток
+    uint64_t id;                      // Session ID
+    time_t created;                   // Creation time
+    time_t last_active;               // Last activity
+    dap_stream_t* stream;             // Related stream
 } dap_stream_session_t;
 ```
 
-#### Обработка пакетов
+#### Packet processing
 ```c
-// Создание потока
+// Create stream
 dap_stream_t* dap_stream_create(uint32_t id);
 
-// Обработка входящего пакета
+// Handle incoming packet
 int dap_stream_packet_in(dap_stream_t* stream,
                         dap_stream_pkt_t* packet);
 
-// Отправка пакета
+// Send packet
 int dap_stream_packet_out(dap_stream_t* stream,
                          dap_stream_pkt_t* packet);
 ```
 
 ## API Reference
 
-### Серверные функции
+### Server functions
 
 #### dap_server_create()
 ```c
 dap_server_t* dap_server_create(const char* addr, uint16_t port);
 ```
-**Описание**: Создает новый сетевой сервер.
+**Description**: Creates a new network server.
 
-**Параметры**:
-- `addr` - адрес для привязки (NULL для всех интерфейсов)
-- `port` - порт сервера
+**Parameters**:
+- `addr` - bind address (NULL for all interfaces)
+- `port` - server port
 
-**Возвращает**: Указатель на созданный сервер или NULL при ошибке
+**Returns**: Pointer to created server or NULL on error
 
 #### dap_server_start()
 ```c
 int dap_server_start(dap_server_t* server);
 ```
-**Описание**: Запускает сервер и начинает прием соединений.
+**Description**: Starts the server and begins accepting connections.
 
-**Возвращает**:
-- `0` - успех
-- `-1` - ошибка запуска
+**Returns**:
+- `0` - success
+- `-1` - start error
 
-### Клиентские функции
+### Client functions
 
 #### dap_client_connect()
 ```c
 dap_client_t* dap_client_connect(const char* addr, uint16_t port);
 ```
-**Описание**: Устанавливает соединение с сервером.
+**Description**: Connects to a server.
 
-**Параметры**:
-- `addr` - адрес сервера
-- `port` - порт сервера
+**Parameters**:
+- `addr` - server address
+- `port` - server port
 
-**Возвращает**: Указатель на клиентское соединение
+**Returns**: Pointer to client connection
 
 #### dap_client_send()
 ```c
 int dap_client_send(dap_client_t* client, const void* data, size_t size);
 ```
-**Описание**: Отправляет данные на сервер.
+**Description**: Sends data to the server.
 
-**Параметры**:
-- `client` - клиентское соединение
-- `data` - данные для отправки
-- `size` - размер данных
+**Parameters**:
+- `client` - client connection
+- `data` - data to send
+- `size` - data size
 
-**Возвращает**: Количество отправленных байт или -1 при ошибке
+**Returns**: Number of bytes sent or -1 on error
 
-## Примеры использования
+## Usage examples
 
-### Пример 1: Простой HTTP сервер
+### Example 1: Simple HTTP server
 
 ```c
 #include "dap_http_server.h"
 #include "dap_http_simple.h"
 
 int main() {
-    // Инициализация
+    // Initialization
     if (dap_enc_init() != 0) return -1;
     if (dap_http_init() != 0) return -1;
 
-    // Создание HTTP сервера
+    // Create HTTP server
     dap_http_server_t* server = dap_http_server_create("0.0.0.0", 8080);
     if (!server) {
         printf("Failed to create HTTP server\n");
         return -1;
     }
 
-    // Добавление простого обработчика
+    // Add simple handler
     dap_http_simple_proc_add(server, "/hello", hello_handler, NULL);
 
-    // Запуск сервера
+    // Start server
     if (dap_http_server_start(server) != 0) {
         printf("Failed to start HTTP server\n");
         return -1;
     }
 
-    // Основной цикл
+    // Main loop
     while (1) {
         sleep(1);
     }
@@ -251,34 +251,34 @@ static void hello_handler(dap_http_simple_request_t* request,
 }
 ```
 
-### Пример 2: JSON-RPC клиент
+### Example 2: JSON-RPC client
 
 ```c
 #include "dap_json_rpc.h"
 #include "dap_client.h"
 
 int json_rpc_example() {
-    // Подключение к серверу
+    // Connect to server
     dap_client_t* client = dap_client_connect("127.0.0.1", 8080);
     if (!client) {
         printf("Failed to connect to server\n");
         return -1;
     }
 
-    // Создание RPC запроса
+    // Create RPC request
     json_object* params = json_object_new_object();
     json_object_object_add(params, "name", json_object_new_string("world"));
 
     dap_json_rpc_request_t* request = dap_json_rpc_request_create(
-        1,                          // ID запроса
-        "hello",                    // Имя метода
-        params                      // Параметры
+        1,                          // Request ID
+        "hello",                    // Method name
+        params                      // Parameters
     );
 
-    // Сериализация в JSON
+    // Serialize to JSON
     char* request_json = dap_json_rpc_request_serialize(request);
 
-    // Отправка запроса
+    // Send request
     if (dap_client_send(client, request_json, strlen(request_json)) < 0) {
         printf("Failed to send request\n");
         free(request_json);
@@ -289,28 +289,28 @@ int json_rpc_example() {
     free(request_json);
     dap_json_rpc_request_free(request);
 
-    // Ожидание ответа...
-    // (здесь должна быть логика чтения ответа)
+    // Wait for response...
+    // (response reading logic goes here)
 
     return 0;
 }
 ```
 
-### Пример 3: Потоковая обработка
+### Example 3: Stream processing
 
 ```c
 #include "dap_stream.h"
 #include "dap_stream_session.h"
 
 int stream_example() {
-    // Создание сессии
+    // Create session
     dap_stream_session_t* session = dap_stream_session_create();
     if (!session) {
         printf("Failed to create session\n");
         return -1;
     }
 
-    // Создание потока
+    // Create stream
     dap_stream_t* stream = dap_stream_create(session, 1);
     if (!stream) {
         printf("Failed to create stream\n");
@@ -318,11 +318,11 @@ int stream_example() {
         return -1;
     }
 
-    // Настройка обработчиков
+    // Set handlers
     stream->packet_in_callback = my_packet_handler;
     stream->error_callback = my_error_handler;
 
-    // Запуск обработки
+    // Start processing
     if (dap_stream_start(stream) != 0) {
         printf("Failed to start stream\n");
         dap_stream_delete(stream);
@@ -330,16 +330,16 @@ int stream_example() {
         return -1;
     }
 
-    // Основной цикл обработки
+    // Main processing loop
     while (running) {
-        // Обработка входящих пакетов
+        // Process incoming packets
         dap_stream_process_packets(stream);
 
-        // Небольшая задержка
+        // Small delay
         usleep(1000);
     }
 
-    // Очистка
+    // Cleanup
     dap_stream_delete(stream);
     dap_stream_session_delete(session);
 
@@ -347,52 +347,52 @@ int stream_example() {
 }
 ```
 
-## Производительность
+## Performance
 
-### Бенчмарки сетевых операций
+### Networking benchmarks
 
-| Компонент | Операция | Производительность | Примечание |
-|-----------|----------|-------------------|------------|
-| **HTTP Server** | Запросы/сек | ~10,000 | Intel Core i7 |
-| **JSON-RPC** | Вызовы/сек | ~5,000 | Сложные запросы |
-| **Stream Processing** | Пакетов/сек | ~100,000 | Маленькие пакеты |
-| **TCP Connections** | Установление | ~1,000/сек | Без SSL |
-| **SSL Handshake** | Полный | ~500/сек | AES-256 |
+| Component | Operation | Performance | Notes |
+|-----------|----------|-------------|-------|
+| **HTTP Server** | Requests/sec | ~10,000 | Intel Core i7 |
+| **JSON-RPC** | Calls/sec | ~5,000 | Complex requests |
+| **Stream Processing** | Packets/sec | ~100,000 | Small packets |
+| **TCP Connections** | Establishment | ~1,000/sec | No SSL |
+| **SSL Handshake** | Full | ~500/sec | AES‑256 |
 
-### Оптимизации
+### Optimizations
 
 #### Connection Pooling
 ```c
-// Создание пула соединений
+// Create connection pool
 dap_client_pool_t* pool = dap_client_pool_create("example.com", 443, 10);
 
-// Получение соединения из пула
+// Get connection from pool
 dap_client_t* client = dap_client_pool_get(pool);
 
-// Использование соединения
+// Use connection
 dap_client_send(client, data, size);
 
-// Возврат соединения в пул
+// Return connection to pool
 dap_client_pool_put(pool, client);
 ```
 
-#### Zero-copy операции
+#### Zero-copy operations
 ```c
-// Использование zero-copy буферов
+// Use zero-copy buffers
 dap_buffer_t* buffer = dap_buffer_create_zero_copy(data, size);
 
-// Передача буфера без копирования
+// Send buffer without copying
 dap_stream_send_buffer(stream, buffer);
 
-// Освобождение буфера (данные не копируются)
+// Free buffer (data not copied)
 dap_buffer_free(buffer);
 ```
 
-## Безопасность
+## Security
 
-### Шифрованные соединения
+### Encrypted connections
 ```c
-// Включение SSL/TLS
+// Enable SSL/TLS
 dap_server_config_t config = {
     .use_ssl = true,
     .cert_file = "/path/to/cert.pem",
@@ -403,24 +403,24 @@ dap_server_config_t config = {
 dap_server_t* server = dap_server_create_ssl(&config);
 ```
 
-### Аутентификация
+### Authentication
 ```c
-// Настройка аутентификации
+// Configure authentication
 dap_auth_config_t auth = {
     .type = DAP_AUTH_TYPE_TOKEN,
     .token_secret = "your-secret-key",
-    .token_expiry = 3600  // 1 час
+    .token_expiry = 3600  // 1 hour
 };
 
 dap_server_set_auth(server, &auth);
 ```
 
-## Конфигурация
+## Configuration
 
-### Основные параметры
+### Core parameters
 ```ini
 [net]
-# HTTP сервер
+# HTTP server
 http_port = 8080
 http_max_connections = 1000
 http_timeout = 30
@@ -435,21 +435,21 @@ stream_max_sessions = 10000
 stream_timeout = 300
 ```
 
-## Отладка и мониторинг
+## Debugging and monitoring
 
-### Логирование
+### Logging
 ```c
 #include "dap_log.h"
 
-// Логирование сетевых событий
+// Log networking events
 dap_log(L_INFO, "Server started on port %d", port);
 dap_log(L_DEBUG, "New connection from %s:%d", addr, port);
 dap_log(L_ERROR, "Connection failed: %s", strerror(errno));
 ```
 
-### Метрики производительности
+### Performance metrics
 ```c
-// Получение статистики сервера
+// Get server statistics
 dap_server_stats_t stats;
 dap_server_get_stats(server, &stats);
 
@@ -458,26 +458,26 @@ printf("Total requests: %lld\n", stats.total_requests);
 printf("Average response time: %.2f ms\n", stats.avg_response_time);
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap-sdk/net` предоставляет мощную и гибкую сетевую инфраструктуру:
+The `dap-sdk/net` module provides a powerful and flexible networking stack:
 
-### Ключевые преимущества:
-- **Высокая производительность**: Оптимизированные реализации протоколов
-- **Масштабируемость**: Поддержка тысяч одновременных соединений
-- **Безопасность**: Встроенная поддержка SSL/TLS и аутентификации
-- **Гибкость**: Поддержка различных протоколов и форматов
+### Key benefits:
+- **High performance**: optimized protocol implementations
+- **Scalability**: thousands of concurrent connections
+- **Security**: built‑in SSL/TLS and authentication
+- **Flexibility**: various protocols and formats
 
-### Рекомендации по использованию:
-1. **Для REST API**: Используйте HTTP Server с JSON-RPC
-2. **Для реального времени**: Используйте WebSocket или Stream processing
-3. **Для микросервисов**: Используйте JSON-RPC для межсервисного общения
-4. **Для высокопроизводительных систем**: Используйте Stream processing с zero-copy
+### Usage recommendations:
+1. **REST APIs**: use HTTP Server with JSON‑RPC
+2. **Real‑time**: use WebSocket or Stream processing
+3. **Microservices**: use JSON‑RPC for inter‑service comms
+4. **High‑perf systems**: use Stream processing with zero‑copy
 
-Для получения дополнительной информации смотрите:
-- `dap_http_server.h` - HTTP сервер API
-- `dap_json_rpc.h` - JSON-RPC API
+For more details see:
+- `dap_http_server.h` - HTTP server API
+- `dap_json_rpc.h` - JSON‑RPC API
 - `dap_stream.h` - Stream processing API
 - `dap_client.h` - Client API
-- Примеры в директории `examples/net/`
-- Тесты в директории `test/net/`
+- Examples under `examples/net/`
+- Tests under `test/net/`

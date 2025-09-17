@@ -306,34 +306,35 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         log_it(L_ERROR, "Empty config name!");
         return NULL;
     }
+    log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     
-    // Security check: prevent path traversal attacks
-    if (strstr(a_file_path, "..") || strstr(a_file_path, "/") || strstr(a_file_path, "\\")) {
-        log_it(L_ERROR, "Invalid config path contains path traversal characters: %s", a_file_path);
+    bool l_is_abs = dap_path_is_absolute(a_file_path);
+    const char *l_check = l_is_abs ? dap_path_skip_root(a_file_path) : a_file_path;
+    if (!l_check || !*l_check) {
+        log_it(L_ERROR, "Invalid config path: %s", a_file_path);
         return NULL;
     }
-    
-    // Additional validation: allow only alphanumeric, underscore, hyphen
-    for (const char *p = a_file_path; *p; p++) {
-        if (!isalnum(*p) && *p != '_' && *p != '-') {
-            log_it(L_ERROR, "Invalid character in config name: %c", *p);
+    while (*l_check) {
+        char c = *l_check++;
+        if (c == '/' || c == '\\' || c == '.' || c == '_' || c == '-') continue;
+        if (!dap_ascii_isalnum(c)) {
+            log_it(L_ERROR, "Invalid character in config path: %c", c);
             return NULL;
         }
     }
-    
-    log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH + 1] = "";
-    int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
-            ? snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
-            : snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
+    size_t l_in_len = strlen(a_file_path);
+    const char *l_suffix = l_in_len >= 4 && strcmp(a_file_path + l_in_len - 4, ".cfg") == 0 ? "" : ".cfg";
+    int l_pos = l_is_abs || (strncmp(a_file_path, s_configs_path, strlen(s_configs_path)) == 0)
+            ? snprintf(l_path, MAX_PATH, "%s%s", a_file_path, l_suffix)
+            : snprintf(l_path, MAX_PATH, "%s/%s%s", s_configs_path, a_file_path, l_suffix);
 
     if (l_pos >= MAX_PATH) {
         log_it(L_ERROR, "Too long config name!");
         return NULL;
     }
-
-    int l_basic_len = strlen(l_path) - 4;
-    char *l_basic_name = dap_strdup_printf("%.*s", l_basic_len, l_path);
+ 
+    char *l_basic_name = dap_strdup_printf("%.*s", l_pos - 4, l_path);
 #if 0
     dap_config_t *l_conf = NULL;
     HASH_FIND_STR(g_configs_table, l_basic_name, l_conf);

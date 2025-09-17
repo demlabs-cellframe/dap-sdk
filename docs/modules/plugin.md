@@ -1,18 +1,18 @@
 # DAP Plugin Module (dap_plugin.h)
 
-## Обзор
+## Overview
 
-Модуль `dap_plugin` предоставляет расширяемую систему плагинов для DAP SDK. Он позволяет динамически загружать и выгружать функциональные модули во время выполнения, обеспечивая:
+The `dap_plugin` module provides an extensible plugin system for DAP SDK. It allows dynamically loading and unloading functional modules at runtime, enabling:
 
-- **Динамическую загрузку** - плагины загружаются без перезапуска приложения
-- **Зависимости между плагинами** - автоматическое разрешение зависимостей
-- **Типизация плагинов** - поддержка разных типов плагинов
-- **Горячая замена** - обновление плагинов без остановки системы
-- **Изоляция** - каждый плагин работает в своем контексте
+- **Dynamic loading** - plugins load without restarting the application
+- **Plugin dependencies** - automatic dependency resolution
+- **Typed plugins** - support for various plugin types
+- **Hot swap** - update plugins without stopping the system
+- **Isolation** - each plugin runs in its own context
 
-## Архитектурная роль
+## Architectural role
 
-Система плагинов является ключевым элементом расширяемости DAP:
+The plugin system is a key element of DAP extensibility:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐
@@ -20,99 +20,99 @@
 └─────────────────┘    └─────────────────┘
          │                       │
     ┌────▼────┐             ┌────▼────┐
-    │Базовые   │             │Динамич. │
-    │модули    │             │плагины  │
+    │Base      │             │Dynamic  │
+    │modules   │             │plugins  │
     └─────────┘             └─────────┘
          │                       │
     ┌────▼────┐             ┌────▼────┐
-    │Статич.   │◄────────────►│Runtime  │
-    │сборка    │             │загрузка │
+    │Static    │◄────────────►│Runtime  │
+    │build     │             │loading  │
     └─────────┘             └─────────┘
 ```
 
-## Основные компоненты
+## Key components
 
-### 1. Манифест плагина
+### 1. Plugin manifest
 ```c
 typedef struct dap_plugin_manifest {
-    char name[64];                 // Имя плагина
-    char *version;                 // Версия
-    char *author;                  // Автор
-    char *description;             // Описание
+    char name[64];                 // Plugin name
+    char *version;                 // Version
+    char *author;                  // Author
+    char *description;             // Description
 
-    char *type;                    // Тип плагина
-    const char *path;              // Путь к директории
-    dap_config_t *config;          // Конфигурация
+    char *type;                    // Plugin type
+    const char *path;              // Directory path
+    dap_config_t *config;          // Configuration
 
-    // Зависимости
+    // Dependencies
     struct dap_plugin_manifest_dependence *dependencies;
     char **dependencies_names;
     size_t dependencies_count;
 
-    // Параметры
+    // Parameters
     size_t params_count;
     char **params;
 
-    // Настройки
-    bool is_builtin;               // Встроенный плагин
+    // Settings
+    bool is_builtin;               // Built-in plugin
 
-    UT_hash_handle hh;             // Для хэш-таблицы
+    UT_hash_handle hh;             // Hash table handle
 } dap_plugin_manifest_t;
 ```
 
-### 2. Зависимости плагинов
+### 2. Plugin dependencies
 ```c
 typedef struct dap_plugin_manifest_dependence {
-    char name[64];                 // Имя зависимости
-    dap_plugin_manifest_t *manifest; // Ссылка на манифест
-    UT_hash_handle hh;             // Для хэш-таблицы
+    char name[64];                 // Dependency name
+    dap_plugin_manifest_t *manifest; // Manifest reference
+    UT_hash_handle hh;             // Hash table handle
 } dap_plugin_manifest_dependence_t;
 ```
 
-### 3. Типы плагинов
+### 3. Plugin types
 ```c
 typedef struct dap_plugin_type_callbacks {
-    dap_plugin_type_callback_load_t load;     // Callback загрузки
-    dap_plugin_type_callback_unload_t unload; // Callback выгрузки
+    dap_plugin_type_callback_load_t load;     // Load callback
+    dap_plugin_type_callback_unload_t unload; // Unload callback
 } dap_plugin_type_callbacks_t;
 ```
 
-## Статусы плагинов
+## Plugin statuses
 
 ```c
 typedef enum dap_plugin_status {
-    STATUS_RUNNING,  // Плагин запущен
-    STATUS_STOPPED,  // Плагин остановлен
-    STATUS_NONE      // Плагин не найден
+    STATUS_RUNNING,  // Plugin is running
+    STATUS_STOPPED,  // Plugin is stopped
+    STATUS_NONE      // Plugin not found
 } dap_plugin_status_t;
 ```
 
-## Основные функции
+## Core functions
 
-### Инициализация и управление
+### Initialization and management
 
 #### `dap_plugin_init()`
 ```c
 int dap_plugin_init(const char *a_root_path);
 ```
 
-Инициализирует систему плагинов.
+Initializes the plugin system.
 
-**Параметры:**
-- `a_root_path` - корневой путь для поиска плагинов
+**Parameters:**
+- `a_root_path` - root path for plugin discovery
 
-**Возвращаемые значения:**
-- `0` - успешная инициализация
-- `-1` - ошибка инициализации
+**Return values:**
+- `0` - initialized successfully
+- `-1` - initialization error
 
 #### `dap_plugin_deinit()`
 ```c
 void dap_plugin_deinit();
 ```
 
-Деинициализирует систему плагинов.
+Deinitializes the plugin system.
 
-### Управление типами плагинов
+### Plugin type management
 
 #### `dap_plugin_type_create()`
 ```c
@@ -120,13 +120,13 @@ int dap_plugin_type_create(const char *a_name,
                           dap_plugin_type_callbacks_t *a_callbacks);
 ```
 
-Создает новый тип плагина с callback функциями.
+Creates a new plugin type with callbacks.
 
-**Параметры:**
-- `a_name` - имя типа плагина
-- `a_callbacks` - структура с callback функциями
+**Parameters:**
+- `a_name` - plugin type name
+- `a_callbacks` - callbacks structure
 
-**Типы callback функций:**
+**Callback types:**
 ```c
 typedef int (*dap_plugin_type_callback_load_t)(
     dap_plugin_manifest_t *a_manifest,
@@ -139,112 +139,112 @@ typedef int (*dap_plugin_type_callback_unload_t)(
     char **a_error_str);
 ```
 
-### Управление жизненным циклом плагинов
+### Plugin lifecycle management
 
 #### `dap_plugin_start_all()`
 ```c
 void dap_plugin_start_all();
 ```
 
-Запускает все загруженные плагины.
+Starts all loaded plugins.
 
 #### `dap_plugin_stop_all()`
 ```c
 void dap_plugin_stop_all();
 ```
 
-Останавливает все запущенные плагины.
+Stops all running plugins.
 
 #### `dap_plugin_start()`
 ```c
 int dap_plugin_start(const char *a_name);
 ```
 
-Запускает конкретный плагин по имени.
+Starts a specific plugin by name.
 
-**Возвращаемые значения:**
-- `0` - успешный запуск
-- `-1` - ошибка запуска
+**Return values:**
+- `0` - started successfully
+- `-1` - start failed
 
 #### `dap_plugin_stop()`
 ```c
 int dap_plugin_stop(const char *a_name);
 ```
 
-Останавливает конкретный плагин по имени.
+Stops a specific plugin by name.
 
-**Возвращаемые значения:**
-- `0` - успешная остановка
-- `-1` - ошибка остановки
+**Return values:**
+- `0` - stopped successfully
+- `-1` - stop failed
 
-### Получение статуса
+### Getting status
 
 #### `dap_plugin_status()`
 ```c
 dap_plugin_status_t dap_plugin_status(const char *a_name);
 ```
 
-Получает статус плагина по имени.
+Gets plugin status by name.
 
-**Возвращаемые значения:**
-- `STATUS_RUNNING` - плагин запущен
-- `STATUS_STOPPED` - плагин остановлен
-- `STATUS_NONE` - плагин не найден
+**Return values:**
+- `STATUS_RUNNING` - plugin is running
+- `STATUS_STOPPED` - plugin is stopped
+- `STATUS_NONE` - plugin not found
 
-## Работа с манифестами
+## Working with manifests
 
-### Инициализация манифестов
+### Manifest initialization
 
 #### `dap_plugin_manifest_init()`
 ```c
 int dap_plugin_manifest_init();
 ```
 
-Инициализирует систему манифестов плагинов.
+Initializes the plugin manifest subsystem.
 
 #### `dap_plugin_manifest_deinit()`
 ```c
 void dap_plugin_manifest_deinit();
 ```
 
-Деинициализирует систему манифестов.
+Deinitializes the manifest subsystem.
 
-### Управление манифестами
+### Manifest management
 
 #### `dap_plugin_manifest_all()`
 ```c
 dap_plugin_manifest_t *dap_plugin_manifest_all(void);
 ```
 
-Возвращает список всех загруженных манифестов.
+Returns the list of all loaded manifests.
 
-**Возвращаемое значение:**
-- Указатель на первый манифест в списке (используется uthash)
+**Return value:**
+- Pointer to the first manifest in the list (uthash)
 
 #### `dap_plugin_manifest_find()`
 ```c
 dap_plugin_manifest_t *dap_plugin_manifest_find(const char *a_name);
 ```
 
-Ищет манифест плагина по имени.
+Finds a plugin manifest by name.
 
-**Возвращаемое значение:**
-- Указатель на найденный манифест или NULL
+**Return value:**
+- Pointer to the found manifest or NULL
 
-### Добавление плагинов
+### Adding plugins
 
 #### `dap_plugin_manifest_add_from_file()`
 ```c
 dap_plugin_manifest_t *dap_plugin_manifest_add_from_file(const char *a_file_path);
 ```
 
-Добавляет плагин из файла манифеста.
+Adds a plugin from a manifest file.
 
-**Параметры:**
-- `a_file_path` - путь к файлу манифеста
+**Parameters:**
+- `a_file_path` - path to the manifest file
 
-**Возвращаемое значение:**
-- Указатель на созданный манифест или NULL при ошибке
+**Return value:**
+- Pointer to the created manifest or NULL on error
 
 #### `dap_plugin_manifest_add_builtin()`
 ```c
@@ -256,38 +256,38 @@ dap_plugin_manifest_t *dap_plugin_manifest_add_builtin(
     size_t a_params_count);
 ```
 
-Добавляет встроенный плагин программно.
+Adds a built‑in plugin programmatically.
 
-**Возвращаемое значение:**
-- Указатель на созданный манифест или NULL при ошибке
+**Return value:**
+- Pointer to the created manifest or NULL on error
 
-### Удаление плагинов
+### Removing plugins
 
 #### `dap_plugins_manifest_remove()`
 ```c
 bool dap_plugins_manifest_remove(const char *a_name);
 ```
 
-Удаляет плагин по имени.
+Removes a plugin by name.
 
-**Возвращаемое значение:**
-- `true` - успешное удаление
-- `false` - ошибка удаления
+**Return value:**
+- `true` - removed successfully
+- `false` - removal failed
 
-## Структура файлов плагина
+## Plugin file structure
 
-### Директория плагина
+### Plugin directory
 ```
 plugin_name/
-├── manifest.json     # Манифест плагина
-├── libplugin.so      # Бинарная библиотека
-├── config/           # Конфигурационные файлы
+├── manifest.json     # Plugin manifest
+├── libplugin.so      # Binary library
+├── config/           # Configuration files
 │   └── plugin.cfg
-└── data/             # Данные плагина
+└── data/             # Plugin data
     └── ...
 ```
 
-### Формат манифеста (JSON)
+### Manifest format (JSON)
 ```json
 {
   "name": "example_plugin",
@@ -301,26 +301,26 @@ plugin_name/
 }
 ```
 
-## Типы плагинов
+## Plugin types
 
-### 1. Модульные плагины
-- Расширяют функциональность базовых модулей
-- Могут добавлять новые алгоритмы, протоколы
-- Пример: криптографические модули, сетевые протоколы
+### 1. Module plugins
+- Extend base module functionality
+- May add new algorithms, protocols
+- Example: crypto modules, network protocols
 
-### 2. Сервисные плагины
-- Предоставляют сервисы приложениям
-- Реализуют бизнес-логику
-- Пример: обработка платежей, аутентификация
+### 2. Service plugins
+- Provide services to applications
+- Implement business logic
+- Example: payment processing, authentication
 
-### 3. Драйверные плагины
-- Интерфейсы к внешним системам
-- Абстракция оборудования и сервисов
-- Пример: драйверы баз данных, облачные сервисы
+### 3. Driver plugins
+- Interfaces to external systems
+- Hardware/service abstraction
+- Example: database drivers, cloud services
 
-## Система зависимостей
+## Dependency system
 
-### Разрешение зависимостей
+### Dependency resolution
 ```
 Plugin A ──┐
            ├──► Dependency Resolution ──► Plugin C
@@ -329,65 +329,65 @@ Plugin B ──┘                              │
                                     Plugin D
 ```
 
-### Проверка зависимостей
+### Checking dependencies
 ```c
-// Получение списка зависимостей
+// Get dependency list
 char *deps = dap_plugin_manifests_get_list_dependencies(manifest);
 printf("Dependencies: %s\n", deps);
 free(deps);
 ```
 
-## Жизненный цикл плагина
+## Plugin lifecycle
 
-### 1. Загрузка
+### 1. Load
 ```
-Поиск манифеста → Проверка зависимостей → Загрузка библиотеки
+Find manifest → Check dependencies → Load library
     ↓
-Инициализация → Регистрация callback'ов → Запуск
+Initialization → Register callbacks → Start
 ```
 
-### 2. Выполнение
+### 2. Execution
 ```
-Обработка событий → Вызов функций плагина
+Event processing → Plugin function calls
     ↓
-Взаимодействие с другими плагинами
+Interaction with other plugins
     ↓
-Предоставление сервисов
+Service provisioning
 ```
 
-### 3. Выгрузка
+### 3. Unload
 ```
-Остановка сервисов → Вызов cleanup → Выгрузка библиотеки
+Stop services → Cleanup → Unload library
     ↓
-Освобождение ресурсов → Удаление из реестра
+Free resources → Remove from registry
 ```
 
-## Безопасность и изоляция
+## Security and isolation
 
-### Изоляция плагинов
-- Каждый плагин работает в своем адресном пространстве
-- Ограничение доступа к системным ресурсам
-- Песочница для исполнения кода
+### Plugin isolation
+- Each plugin operates in its own address space
+- Restricted access to system resources
+- Execution sandboxing
 
-### Валидация
-- Проверка целостности бинарных файлов
-- Верификация манифестов
-- Контроль зависимостей
+### Validation
+- Verify binary integrity
+- Manifest verification
+- Dependency control
 
-## Использование
+## Usage
 
-### Базовая инициализация
+### Basic initialization
 
 ```c
 #include "dap_plugin.h"
 
-// Инициализация системы плагинов
+// Initialize plugin system
 if (dap_plugin_init("./plugins") != 0) {
     fprintf(stderr, "Failed to initialize plugin system\n");
     return -1;
 }
 
-// Регистрация типа плагина
+// Register plugin type
 dap_plugin_type_callbacks_t callbacks = {
     .load = my_plugin_load_callback,
     .unload = my_plugin_unload_callback
@@ -395,62 +395,62 @@ dap_plugin_type_callbacks_t callbacks = {
 
 dap_plugin_type_create("my_type", &callbacks);
 
-// Запуск всех плагинов
+// Start all plugins
 dap_plugin_start_all();
 
-// Основная работа приложения
+// Main application logic
 // ...
 
-// Остановка и деинициализация
+// Stop and deinitialize
 dap_plugin_stop_all();
 dap_plugin_deinit();
 ```
 
-### Создание типа плагина
+### Creating a plugin type
 
 ```c
 int my_plugin_load_callback(dap_plugin_manifest_t *manifest,
                            void **pvt_data, char **error_str) {
-    // Инициализация плагина
+    // Plugin initialization
     *pvt_data = malloc(sizeof(my_plugin_data_t));
 
-    // Загрузка конфигурации
+    // Load configuration
     if (manifest->config) {
-        // Обработка конфигурации
+        // Process configuration
     }
 
-    return 0; // Успех
+    return 0; // Success
 }
 
 int my_plugin_unload_callback(dap_plugin_manifest_t *manifest,
                              void *pvt_data, char **error_str) {
-    // Очистка ресурсов
+    // Cleanup resources
     free(pvt_data);
-    return 0; // Успех
+    return 0; // Success
 }
 ```
 
-### Работа с манифестами
+### Working with manifests
 
 ```c
-// Поиск плагина
+// Find plugin
 dap_plugin_manifest_t *plugin = dap_plugin_manifest_find("my_plugin");
 if (plugin) {
     printf("Plugin version: %s\n", plugin->version);
     printf("Plugin type: %s\n", plugin->type);
 }
 
-// Получение всех плагинов
+// Iterate all plugins
 dap_plugin_manifest_t *current, *tmp;
 HASH_ITER(hh, dap_plugin_manifest_all(), current, tmp) {
     printf("Plugin: %s (%s)\n", current->name, current->version);
 }
 ```
 
-### Управление жизненным циклом
+### Lifecycle management
 
 ```c
-// Проверка статуса
+// Check status
 dap_plugin_status_t status = dap_plugin_status("my_plugin");
 switch (status) {
     case STATUS_RUNNING:
@@ -464,38 +464,38 @@ switch (status) {
         break;
 }
 
-// Управление плагином
+// Manage plugin
 if (dap_plugin_start("my_plugin") == 0) {
     printf("Plugin started successfully\n");
 }
 
-// Остановка через некоторое время
+// Stop after some time
 sleep(10);
 dap_plugin_stop("my_plugin");
 ```
 
-## Интеграция с другими модулями
+## Integration with other modules
 
 ### DAP Config
-- Загрузка конфигурации плагинов
-- Управление параметрами
-- Валидация настроек
+- Load plugin configuration
+- Manage parameters
+- Validate settings
 
 ### DAP Common
-- Общие структуры данных
-- Утилиты для работы с памятью
-- Логирование и отладка
+- Common data structures
+- Memory utilities
+- Logging and debugging
 
 ### DAP Time
-- Управление временем жизни плагинов
-- Таймеры и планировщики
-- Синхронизация операций
+- Plugin lifetime management
+- Timers and schedulers
+- Operation synchronization
 
-## Лучшие практики
+## Best practices
 
-### 1. Проектирование плагинов
+### 1. Plugin design
 ```c
-// Четкое определение интерфейса
+// Clearly define the interface
 typedef struct my_plugin_interface {
     int (*init)(void *config);
     void (*cleanup)(void);
@@ -503,40 +503,40 @@ typedef struct my_plugin_interface {
 } my_plugin_interface_t;
 ```
 
-### 2. Управление зависимостями
+### 2. Dependency management
 ```c
-// Явное объявление зависимостей
+// Explicitly declare dependencies
 const char *dependencies[] = {
     "core",
     "net",
     "crypto"
 };
 
-// Проверка доступности зависимостей
+// Check dependency availability
 for (size_t i = 0; i < ARRAY_SIZE(dependencies); i++) {
     if (!dap_plugin_manifest_find(dependencies[i])) {
-        return -1; // Зависимость не найдена
+        return -1; // Dependency not found
     }
 }
 ```
 
-### 3. Обработка ошибок
+### 3. Error handling
 ```c
-// Безопасная загрузка плагина
+// Safe plugin loading
 int load_result = dap_plugin_start(plugin_name);
 if (load_result != 0) {
     log_error("Failed to load plugin %s: %s", plugin_name, strerror(errno));
 
-    // Попытка отката
+    // Attempt rollback
     if (fallback_plugin) {
         dap_plugin_start(fallback_plugin);
     }
 }
 ```
 
-### 4. Ресурсное управление
+### 4. Resource management
 ```c
-// RAII паттерн для плагинов
+// RAII pattern for plugins
 typedef struct plugin_guard {
     char *name;
     bool loaded;
@@ -550,22 +550,22 @@ void plugin_guard_cleanup(plugin_guard_t *guard) {
 }
 ```
 
-## Отладка и мониторинг
+## Debugging and monitoring
 
-### Логирование
+### Logging
 ```c
-// Включение отладочного вывода
+// Enable debug output
 #define DAP_PLUGIN_DEBUG 1
 
-// Логирование операций плагина
+// Log plugin operations
 log_info("Plugin %s loaded successfully", manifest->name);
 log_debug("Plugin %s config: %s", manifest->name,
           dap_config_to_string(manifest->config));
 ```
 
-### Мониторинг состояния
+### State monitoring
 ```c
-// Периодическая проверка состояния плагинов
+// Periodic plugin status check
 void check_plugins_status() {
     dap_plugin_manifest_t *current, *tmp;
     HASH_ITER(hh, dap_plugin_manifest_all(), current, tmp) {
@@ -578,27 +578,27 @@ void check_plugins_status() {
 }
 ```
 
-## Типичные проблемы
+## Common issues
 
-### 1. Конфликты зависимостей
+### 1. Dependency conflicts
 ```
-Симптом: Плагин не загружается из-за циклических зависимостей
-Решение: Перепроектировать архитектуру зависимостей
+Symptom: Plugin fails to load due to cyclic dependencies
+Solution: Redesign dependency architecture
 ```
 
-### 2. Утечки памяти
+### 2. Memory leaks
 ```
-Симптом: Рост потребления памяти при загрузке/выгрузке плагинов
-Решение: Правильная реализация cleanup callback'ов
+Symptom: Memory usage grows during plugin load/unload
+Solution: Proper implementation of cleanup callbacks
 ```
 
 ### 3. Thread safety
 ```
-Симптом: Race conditions при одновременном доступе к плагинам
-Решение: Использовать mutex'ы и атомарные операции
+Symptom: Race conditions on concurrent plugin access
+Solution: Use mutexes and atomic operations
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap_plugin` предоставляет мощную и гибкую систему для расширения функциональности DAP SDK. Его архитектура обеспечивает безопасную загрузку, управление зависимостями и горячую замену компонентов без перезапуска приложения.
+The `dap_plugin` module provides a powerful and flexible system for extending DAP SDK functionality. Its architecture ensures safe loading, dependency management, and hot swapping of components without application restarts.
 

@@ -1,58 +1,58 @@
-# dap_hash.h - Хэш-функции и криптографические хэши
+# dap_hash.h - Hash functions and cryptographic hashes
 
-## Обзор
+## Overview
 
-Модуль `dap_hash` предоставляет высокопроизводительные криптографические хэш-функции для DAP SDK. Основан на стандарте SHA-3 (Keccak), обеспечивает высокую безопасность и производительность для всех задач хэширования в распределенных системах.
+The `dap_hash` module provides high‑performance cryptographic hash functions for the DAP SDK. Based on the SHA‑3 (Keccak) standard, it ensures strong security and performance for hashing tasks in distributed systems.
 
-## Основные возможности
+## Key features
 
-- **SHA-3/Keccak**: Стандартная реализация SHA-3-256
-- **Высокая производительность**: Оптимизированные алгоритмы
-- **Кроссплатформенность**: Работа на всех поддерживаемых платформах
-- **Простой API**: Легко использовать в коде
-- **Безопасность**: Криптографически стойкие хэши
+- **SHA‑3/Keccak**: Standard SHA‑3‑256 implementation
+- **High performance**: Optimized algorithms
+- **Cross‑platform**: Works on all supported platforms
+- **Simple API**: Easy to use in code
+- **Security**: Cryptographically strong hashes
 
-## Архитектура
+## Architecture
 
-### Основные структуры данных
+### Core data structures
 
 ```c
-// Основной тип хэша (32 байта)
+// Main hash type (32 bytes)
 typedef union dap_chain_hash_fast {
-    uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE]; // 32 байта
+    uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE]; // 32 bytes
 } DAP_ALIGN_PACKED dap_chain_hash_fast_t;
 
 typedef dap_chain_hash_fast_t dap_hash_fast_t;
 typedef dap_hash_fast_t dap_hash_t;
 
-// Строковое представление хэша
+// String representation of hash
 typedef struct dap_hash_str {
-    char s[DAP_HASH_FAST_STR_SIZE]; // "0x" + 64 символа + '\0'
+    char s[DAP_HASH_FAST_STR_SIZE]; // "0x" + 64 chars + '\0'
 } dap_hash_str_t;
 ```
 
-### Типы хэш-функций
+### Hash function types
 
 ```c
 typedef enum dap_hash_type {
-    DAP_HASH_TYPE_KECCAK = 0,    // SHA-3/Keccak (основной)
-    DAP_HASH_TYPE_SLOW_0 = 1     // Резерв для медленных алгоритмов
+    DAP_HASH_TYPE_KECCAK = 0,    // SHA‑3/Keccak (primary)
+    DAP_HASH_TYPE_SLOW_0 = 1     // Reserved for slow algorithms
 } dap_hash_type_t;
 ```
 
-## Константы
+## Constants
 
 ```c
-#define DAP_HASH_FAST_SIZE          32     // Размер хэша в байтах
-#define DAP_CHAIN_HASH_FAST_SIZE    32     // Синоним
-#define DAP_CHAIN_HASH_FAST_STR_LEN 66     // "0x" + 64 hex символа
-#define DAP_CHAIN_HASH_FAST_STR_SIZE 67    // С завершающим нулем
-#define DAP_HASH_FAST_STR_SIZE      67     // Синоним
+#define DAP_HASH_FAST_SIZE          32     // Hash size in bytes
+#define DAP_CHAIN_HASH_FAST_SIZE    32     // Alias
+#define DAP_CHAIN_HASH_FAST_STR_LEN 66     // "0x" + 64 hex chars
+#define DAP_CHAIN_HASH_FAST_STR_SIZE 67    // With terminating null
+#define DAP_HASH_FAST_STR_SIZE      67     // Alias
 ```
 
 ## API Reference
 
-### Основные функции хэширования
+### Core hashing functions
 
 #### dap_hash_fast()
 
@@ -62,18 +62,18 @@ DAP_STATIC_INLINE bool dap_hash_fast(const void *a_data_in,
                                    dap_hash_fast_t *a_hash_out);
 ```
 
-**Описание**: Вычисляет SHA-3-256 хэш для входных данных.
+**Description**: Computes SHA‑3‑256 hash for input data.
 
-**Параметры**:
-- `a_data_in` - указатель на входные данные
-- `a_data_in_size` - размер входных данных в байтах
-- `a_hash_out` - указатель на структуру для сохранения результата
+**Parameters**:
+- `a_data_in` - pointer to input data
+- `a_data_in_size` - input data size in bytes
+- `a_hash_out` - pointer to output structure
 
-**Возвращает**:
-- `true` - хэш успешно вычислен
-- `false` - ошибка (NULL параметры или нулевой размер)
+**Returns**:
+- `true` - hash computed successfully
+- `false` - error (NULL params or zero size)
 
-**Пример**:
+**Example**:
 ```c
 #include "dap_hash.h"
 
@@ -83,13 +83,13 @@ size_t data_len = strlen(data);
 dap_hash_fast_t hash;
 if (dap_hash_fast(data, data_len, &hash)) {
     printf("Hash computed successfully\n");
-    // hash.raw содержит 32 байта хэша
+    // hash.raw contains 32 bytes of hash
 } else {
     printf("Hash computation failed\n");
 }
 ```
 
-### Сравнение хэшей
+### Hash comparison
 
 #### dap_hash_fast_compare()
 
@@ -98,25 +98,25 @@ DAP_STATIC_INLINE bool dap_hash_fast_compare(const dap_hash_fast_t *a_hash1,
                                            const dap_hash_fast_t *a_hash2);
 ```
 
-**Описание**: Сравнивает два хэша на равенство.
+**Description**: Compares two hashes for equality.
 
-**Параметры**:
-- `a_hash1` - первый хэш для сравнения
-- `a_hash2` - второй хэш для сравнения
+**Parameters**:
+- `a_hash1` - first hash
+- `a_hash2` - second hash
 
-**Возвращает**:
-- `true` - хэши равны
-- `false` - хэши различны или параметры NULL
+**Returns**:
+- `true` - hashes are equal
+- `false` - hashes differ or params are NULL
 
-**Пример**:
+**Example**:
 ```c
 dap_hash_fast_t hash1, hash2;
 
-// Вычисление хэшей
+// Compute hashes
 dap_hash_fast("data1", 5, &hash1);
 dap_hash_fast("data2", 5, &hash2);
 
-// Сравнение
+// Compare
 if (dap_hash_fast_compare(&hash1, &hash2)) {
     printf("Hashes are identical\n");
 } else {
@@ -130,18 +130,18 @@ if (dap_hash_fast_compare(&hash1, &hash2)) {
 DAP_STATIC_INLINE bool dap_hash_fast_is_blank(const dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Проверяет, является ли хэш пустым (нулевым).
+**Description**: Checks whether a hash is blank (all zeros).
 
-**Параметры**:
-- `a_hash` - хэш для проверки
+**Parameters**:
+- `a_hash` - hash to check
 
-**Возвращает**:
-- `true` - хэш пустой (все байты равны 0)
-- `false` - хэш не пустой или параметр NULL
+**Returns**:
+- `true` - hash is blank (all bytes are 0)
+- `false` - hash is not blank or param is NULL
 
-**Пример**:
+**Example**:
 ```c
-dap_hash_fast_t hash = {0}; // Инициализация нулевым хэшем
+dap_hash_fast_t hash = {0}; // Initialize with zero hash
 
 if (dap_hash_fast_is_blank(&hash)) {
     printf("Hash is blank (all zeros)\n");
@@ -150,7 +150,7 @@ if (dap_hash_fast_is_blank(&hash)) {
 }
 ```
 
-### Конвертация в строки
+### Conversion to strings
 
 #### dap_chain_hash_fast_to_str()
 
@@ -160,20 +160,20 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash,
                                                size_t a_str_max);
 ```
 
-**Описание**: Конвертирует хэш в шестнадцатеричную строку с префиксом "0x".
+**Description**: Converts a hash to a hexadecimal string with "0x" prefix.
 
-**Параметры**:
-- `a_hash` - хэш для конвертации
-- `a_str` - буфер для строки (должен быть размером минимум `DAP_CHAIN_HASH_FAST_STR_SIZE`)
-- `a_str_max` - максимальный размер буфера
+**Parameters**:
+- `a_hash` - hash to convert
+- `a_str` - string buffer (must be at least `DAP_CHAIN_HASH_FAST_STR_SIZE`)
+- `a_str_max` - max buffer size
 
-**Возвращает**:
-- `DAP_CHAIN_HASH_FAST_STR_SIZE` - успех
-- `-1` - параметр `a_hash` равен NULL
-- `-2` - параметр `a_str` равен NULL
-- `-3` - буфер слишком мал
+**Returns**:
+- `DAP_CHAIN_HASH_FAST_STR_SIZE` - success
+- `-1` - `a_hash` is NULL
+- `-2` - `a_str` is NULL
+- `-3` - buffer too small
 
-**Пример**:
+**Example**:
 ```c
 dap_hash_fast_t hash;
 dap_hash_fast("test data", 9, &hash);
@@ -181,7 +181,7 @@ dap_hash_fast("test data", 9, &hash);
 char hash_str[DAP_CHAIN_HASH_FAST_STR_SIZE];
 if (dap_chain_hash_fast_to_str(&hash, hash_str, sizeof(hash_str)) > 0) {
     printf("Hash: %s\n", hash_str);
-    // Вывод: 0xa8c5d6e7f8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9eaf0
+    // Example output: 0xa8c5... (64 hex chars)
 }
 ```
 
@@ -191,14 +191,14 @@ if (dap_chain_hash_fast_to_str(&hash, hash_str, sizeof(hash_str)) > 0) {
 DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Создает новую строку с представлением хэша (требует освобождения памяти).
+**Description**: Creates a new string with the hash representation (must be freed).
 
-**Параметры**:
-- `a_hash` - хэш для конвертации
+**Parameters**:
+- `a_hash` - hash to convert
 
-**Возвращает**: Указатель на строку или `NULL` при ошибке (нужно освобождать с помощью `free()`)
+**Returns**: Pointer to string or `NULL` on error (must be freed with `free()`)
 
-**Пример**:
+**Example**:
 ```c
 dap_hash_fast_t hash;
 dap_hash_fast("example", 7, &hash);
@@ -206,7 +206,7 @@ dap_hash_fast("example", 7, &hash);
 char *hash_str = dap_chain_hash_fast_to_str_new(&hash);
 if (hash_str) {
     printf("Hash string: %s\n", hash_str);
-    free(hash_str); // Важно освободить память
+    free(hash_str); // Important: free memory
 }
 ```
 
@@ -216,9 +216,9 @@ if (hash_str) {
 DAP_STATIC_INLINE dap_hash_str_t dap_chain_hash_fast_to_hash_str(const dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Конвертирует хэш в структуру строки.
+**Description**: Converts a hash to a string structure.
 
-**Пример**:
+**Example**:
 ```c
 dap_hash_fast_t hash;
 dap_hash_fast("data", 4, &hash);
@@ -227,7 +227,7 @@ dap_hash_str_t hash_struct = dap_chain_hash_fast_to_hash_str(&hash);
 printf("Hash: %s\n", hash_struct.s);
 ```
 
-### Конвертация из строк
+### Conversion from strings
 
 #### dap_chain_hash_fast_from_str()
 
@@ -235,17 +235,17 @@ printf("Hash: %s\n", hash_struct.s);
 int dap_chain_hash_fast_from_str(const char *a_hash_str, dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Парсит хэш из строки (поддерживает различные форматы).
+**Description**: Parses a hash from a string (supports various formats).
 
-**Параметры**:
-- `a_hash_str` - строка с хэшем
-- `a_hash` - указатель для сохранения результата
+**Parameters**:
+- `a_hash_str` - string with hash
+- `a_hash` - output pointer
 
-**Возвращает**:
-- `0` - успех
-- `-1` - ошибка парсинга
+**Returns**:
+- `0` - success
+- `-1` - parse error
 
-**Пример**:
+**Example**:
 ```c
 const char *hash_str = "0xa8c5d6e7f8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9eaf0";
 dap_hash_fast_t hash;
@@ -261,9 +261,9 @@ if (dap_chain_hash_fast_from_str(hash_str, &hash) == 0) {
 int dap_chain_hash_fast_from_hex_str(const char *a_hex_str, dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Парсит хэш из шестнадцатеричной строки.
+**Description**: Parses a hash from a hexadecimal string.
 
-**Пример**:
+**Example**:
 ```c
 const char *hex_str = "a8c5d6e7f8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9eaf0";
 dap_hash_fast_t hash;
@@ -279,9 +279,9 @@ if (dap_chain_hash_fast_from_hex_str(hex_str, &hash) == 0) {
 int dap_chain_hash_fast_from_base58_str(const char *a_base58_str, dap_hash_fast_t *a_hash);
 ```
 
-**Описание**: Парсит хэш из Base58 строки.
+**Description**: Parses a hash from a Base58 string.
 
-**Пример**:
+**Example**:
 ```c
 const char *b58_str = "QmSomeBase58EncodedHash";
 dap_hash_fast_t hash;
@@ -291,7 +291,7 @@ if (dap_chain_hash_fast_from_base58_str(b58_str, &hash) == 0) {
 }
 ```
 
-### Удобные функции
+### Convenience functions
 
 #### dap_hash_fast_str_new()
 
@@ -299,9 +299,9 @@ if (dap_chain_hash_fast_from_base58_str(b58_str, &hash) == 0) {
 DAP_STATIC_INLINE char *dap_hash_fast_str_new(const void *a_data, size_t a_data_size);
 ```
 
-**Описание**: Вычисляет хэш и возвращает его строковое представление.
+**Description**: Computes a hash and returns its string representation.
 
-**Пример**:
+**Example**:
 ```c
 const char *data = "Quick hash computation";
 char *hash_str = dap_hash_fast_str_new(data, strlen(data));
@@ -318,17 +318,17 @@ if (hash_str) {
 DAP_STATIC_INLINE dap_hash_str_t dap_get_data_hash_str(const void *a_data, size_t a_data_size);
 ```
 
-**Описание**: Вычисляет хэш и возвращает структуру со строковым представлением.
+**Description**: Computes a hash and returns a structure with a string representation.
 
-**Пример**:
+**Example**:
 ```c
 dap_hash_str_t hash_result = dap_get_data_hash_str("test", 4);
 printf("Hash result: %s\n", hash_result.s);
 ```
 
-## Примеры использования
+## Usage examples
 
-### Пример 1: Базовое хэширование
+### Example 1: Basic hashing
 
 ```c
 #include "dap_hash.h"
@@ -336,18 +336,18 @@ printf("Hash result: %s\n", hash_result.s);
 #include <string.h>
 
 int basic_hash_example() {
-    // Данные для хэширования
+    // Data to hash
     const char *message = "Hello, DAP SDK!";
     size_t message_len = strlen(message);
 
-    // Вычисление хэша
+    // Compute hash
     dap_hash_fast_t hash;
     if (!dap_hash_fast(message, message_len, &hash)) {
         fprintf(stderr, "Failed to compute hash\n");
         return -1;
     }
 
-    // Конвертация в строку для отображения
+    // Convert to string for display
     char hash_str[DAP_CHAIN_HASH_FAST_STR_SIZE];
     if (dap_chain_hash_fast_to_str(&hash, hash_str, sizeof(hash_str)) > 0) {
         printf("Message: %s\n", message);
@@ -358,30 +358,30 @@ int basic_hash_example() {
 }
 ```
 
-### Пример 2: Сравнение файлов по хэшу
+### Example 2: Comparing files by hash
 
 ```c
 #include "dap_hash.h"
 #include <stdio.h>
 
 int compare_files_by_hash(const char *file1, const char *file2) {
-    // В реальном коде здесь было бы чтение файлов
-    // Для демонстрации используем тестовые данные
+    // In real code we would read files here
+    // For demo, use test data
     const char *data1 = "File content 1";
     const char *data2 = "File content 2";
 
-    // Вычисление хэшей
+    // Compute hashes
     dap_hash_fast_t hash1, hash2;
     dap_hash_fast(data1, strlen(data1), &hash1);
     dap_hash_fast(data2, strlen(data2), &hash2);
 
-    // Сравнение
+    // Compare
     if (dap_hash_fast_compare(&hash1, &hash2)) {
         printf("Files are identical (same hash)\n");
-        return 1; // Файлы одинаковые
+        return 1; // Files are identical
     } else {
         printf("Files are different\n");
-        return 0; // Файлы различны
+        return 0; // Files differ
     }
 }
 
@@ -390,7 +390,7 @@ int file_hash_comparison_example() {
 }
 ```
 
-### Пример 3: Цепочка хэшей (Merkle tree)
+### Example 3: Hash chaining (Merkle tree)
 
 ```c
 #include "dap_hash.h"
@@ -398,7 +398,7 @@ int file_hash_comparison_example() {
 #include <string.h>
 
 int merkle_tree_example() {
-    // Листовые узлы
+    // Leaf nodes
     const char *leaves[] = {
         "Transaction 1",
         "Transaction 2",
@@ -407,28 +407,28 @@ int merkle_tree_example() {
     };
     const int num_leaves = 4;
 
-    // Вычисление хэшей листьев
+    // Compute leaf hashes
     dap_hash_fast_t leaf_hashes[4];
     for (int i = 0; i < num_leaves; i++) {
         dap_hash_fast(leaves[i], strlen(leaves[i]), &leaf_hashes[i]);
     }
 
-    // Вычисление хэшей промежуточных узлов
+    // Compute intermediate hashes
     dap_hash_fast_t intermediate1, intermediate2;
 
-    // Комбинируем leaf_hashes[0] + leaf_hashes[1]
+    // Combine leaf_hashes[0] + leaf_hashes[1]
     uint8_t combined1[DAP_HASH_FAST_SIZE * 2];
     memcpy(combined1, leaf_hashes[0].raw, DAP_HASH_FAST_SIZE);
     memcpy(combined1 + DAP_HASH_FAST_SIZE, leaf_hashes[1].raw, DAP_HASH_FAST_SIZE);
     dap_hash_fast(combined1, sizeof(combined1), &intermediate1);
 
-    // Комбинируем leaf_hashes[2] + leaf_hashes[3]
+    // Combine leaf_hashes[2] + leaf_hashes[3]
     uint8_t combined2[DAP_HASH_FAST_SIZE * 2];
     memcpy(combined2, leaf_hashes[2].raw, DAP_HASH_FAST_SIZE);
     memcpy(combined2 + DAP_HASH_FAST_SIZE, leaf_hashes[3].raw, DAP_HASH_FAST_SIZE);
     dap_hash_fast(combined2, sizeof(combined2), &intermediate2);
 
-    // Корневой хэш
+    // Root hash
     uint8_t root_data[DAP_HASH_FAST_SIZE * 2];
     memcpy(root_data, intermediate1.raw, DAP_HASH_FAST_SIZE);
     memcpy(root_data + DAP_HASH_FAST_SIZE, intermediate2.raw, DAP_HASH_FAST_SIZE);
@@ -436,7 +436,7 @@ int merkle_tree_example() {
     dap_hash_fast_t root_hash;
     dap_hash_fast(root_data, sizeof(root_data), &root_hash);
 
-    // Отображение результата
+    // Display result
     char root_str[DAP_CHAIN_HASH_FAST_STR_SIZE];
     dap_chain_hash_fast_to_str(&root_hash, root_str, sizeof(root_str));
 
@@ -447,7 +447,7 @@ int merkle_tree_example() {
 }
 ```
 
-### Пример 4: Проверка целостности данных
+### Example 4: Data integrity check
 
 ```c
 #include "dap_hash.h"
@@ -462,43 +462,43 @@ typedef struct {
 
 int verify_data_integrity(data_integrity_check_t *check) {
     if (!check || !check->data || check->size == 0) {
-        return -1; // Неверные параметры
+        return -1; // Invalid parameters
     }
 
-    // Вычисление актуального хэша
+    // Compute actual hash
     dap_hash_fast_t actual_hash;
     if (!dap_hash_fast(check->data, check->size, &actual_hash)) {
-        return -2; // Ошибка вычисления хэша
+        return -2; // Hash computation error
     }
 
-    // Сравнение с ожидаемым хэшем
+    // Compare with expected hash
     if (dap_hash_fast_compare(&actual_hash, &check->expected_hash)) {
-        return 0; // Данные целые
+        return 0; // Data intact
     } else {
-        return 1; // Данные повреждены
+        return 1; // Data corrupted
     }
 }
 
 int data_integrity_example() {
-    // Пример данных с известным хэшем
+    // Example data with known hash
     const char *test_data = "This is test data for integrity check";
     const char *expected_hash_str = "0x5a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9eaf0";
 
-    // Парсинг ожидаемого хэша
+    // Parse expected hash
     dap_hash_fast_t expected_hash;
     if (dap_chain_hash_fast_from_str(expected_hash_str, &expected_hash) != 0) {
         fprintf(stderr, "Failed to parse expected hash\n");
         return -1;
     }
 
-    // Создание структуры для проверки
+    // Create structure for verification
     data_integrity_check_t check = {
         .data = (char *)test_data,
         .size = strlen(test_data),
         .expected_hash = expected_hash
     };
 
-    // Проверка целостности
+    // Verify integrity
     int result = verify_data_integrity(&check);
 
     switch (result) {
@@ -517,7 +517,7 @@ int data_integrity_example() {
 }
 ```
 
-### Пример 5: Генерация уникальных идентификаторов
+### Example 5: Generating unique identifiers
 
 ```c
 #include "dap_hash.h"
@@ -525,20 +525,20 @@ int data_integrity_example() {
 #include <string.h>
 #include <time.h>
 
-// Генерация UUID на основе хэша
+// Generate a UUID based on hash
 int generate_uuid_from_data(const char *seed_data, size_t seed_size, char *uuid_out, size_t uuid_max) {
     if (!seed_data || seed_size == 0 || !uuid_out || uuid_max < 37) {
         return -1;
     }
 
-    // Вычисление хэша от seed данных
+    // Compute hash from seed data
     dap_hash_fast_t hash;
     if (!dap_hash_fast(seed_data, seed_size, &hash)) {
         return -2;
     }
 
-    // Форматирование как UUID (8-4-4-4-12)
-    // Используем первые 16 байт хэша
+    // Format as UUID (8-4-4-4-12)
+    // Use the first 16 bytes of the hash
     snprintf(uuid_out, uuid_max,
              "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
              hash.raw[0], hash.raw[1], hash.raw[2], hash.raw[3],
@@ -551,15 +551,15 @@ int generate_uuid_from_data(const char *seed_data, size_t seed_size, char *uuid_
 }
 
 int uuid_generation_example() {
-    // Генерация UUID на основе различных данных
+    // Generate UUIDs from different data
     char uuid1[37], uuid2[37], uuid3[37];
 
-    // UUID на основе имени
+    // UUID based on name
     if (generate_uuid_from_data("user@example.com", 15, uuid1, sizeof(uuid1)) == 0) {
         printf("User UUID: %s\n", uuid1);
     }
 
-    // UUID на основе временной метки
+    // UUID based on timestamp
     time_t now = time(NULL);
     char time_str[32];
     snprintf(time_str, sizeof(time_str), "%ld", now);
@@ -568,13 +568,13 @@ int uuid_generation_example() {
         printf("Time-based UUID: %s\n", uuid2);
     }
 
-    // UUID на основе комбинации данных
+    // UUID based on combined data
     const char *combined_data = "session:12345:user@example.com";
     if (generate_uuid_from_data(combined_data, strlen(combined_data), uuid3, sizeof(uuid3)) == 0) {
         printf("Session UUID: %s\n", uuid3);
     }
 
-    // Проверка уникальности
+    // Uniqueness check
     if (strcmp(uuid1, uuid2) != 0 && strcmp(uuid2, uuid3) != 0 && strcmp(uuid1, uuid3) != 0) {
         printf("✅ All UUIDs are unique\n");
     } else {
@@ -585,81 +585,81 @@ int uuid_generation_example() {
 }
 ```
 
-## Производительность
+## Performance
 
-### Бенчмарки хэширования
+### Hashing benchmarks
 
-| Операция | Производительность | Примечание |
-|----------|-------------------|------------|
-| **SHA-3-256** | ~150-200 MB/s | Intel Core i7-8700K |
-| **Сравнение хэшей** | ~10-20 GB/s | Простое memcmp |
-| **Конвертация в hex** | ~500-800 MB/s | dap_htoa64 |
-| **Парсинг hex** | ~200-300 MB/s | atoh функции |
+| Operation | Throughput | Note |
+|-----------|-----------|------|
+| **SHA‑3‑256** | ~150-200 MB/s | Intel Core i7-8700K |
+| **Hash comparison** | ~10-20 GB/s | Simple memcmp |
+| **Hex conversion** | ~500-800 MB/s | dap_htoa64 |
+| **Hex parsing** | ~200-300 MB/s | atoh functions |
 
-### Оптимизации
+### Optimizations
 
-1. **SIMD инструкции**: SHA-3 использует оптимизированные Keccak реализации
-2. **Inline функции**: Большинство функций объявлены как `static inline`
-3. **Минимальные копирования**: Прямое использование буферов
-4. **Предварительные вычисления**: Константы вычисляются на этапе компиляции
+1. **SIMD instructions**: Optimized Keccak implementations
+2. **Inline functions**: Most functions are `static inline`
+3. **Minimal copying**: Direct buffer usage
+4. **Precomputations**: Constants computed at compile time
 
-### Факторы влияния производительности
+### Performance factors
 
-- **Размер данных**: Хэширование больших объемов данных эффективнее
-- **Выравнивание памяти**: Выровненные буферы работают быстрее
-- **Кэш CPU**: Данные в кэше обрабатываются быстрее
-- **Память**: DDR4 vs DDR5 может влиять на производительность
+- **Data size**: Larger blocks hash more efficiently
+- **Memory alignment**: Aligned buffers are faster
+- **CPU cache**: Cached data is processed faster
+- **Memory**: DDR4 vs DDR5 can affect performance
 
-## Безопасность
+## Security
 
-### Криптографическая стойкость
+### Cryptographic strength
 
-SHA-3-256 обеспечивает:
-- **128-bit безопасность** против коллизий
-- **256-bit безопасность** против preimage атак
-- **256-bit безопасность** против second preimage атак
+SHA‑3‑256 provides:
+- **128‑bit security** against collisions
+- **256‑bit security** against preimage attacks
+- **256‑bit security** against second preimage attacks
 
-### Рекомендации по использованию
+### Usage recommendations
 
-1. **Для цифровых подписей**: Используйте полные 32 байта
-2. **Для хэш-таблиц**: Можно использовать первые 8-16 байт
-3. **Для checksum**: Достаточно 4-8 байт
-4. **Для уникальных ID**: Используйте первые 16 байт
+1. **Digital signatures**: Use full 32 bytes
+2. **Hash tables**: First 8–16 bytes may suffice
+3. **Checksums**: 4–8 bytes may be enough
+4. **Unique IDs**: Use the first 16 bytes
 
-### Предупреждения
+### Warnings
 
-- **Не используйте устаревшие хэши**: MD5, SHA-1 уязвимы
-- **Длина вывода**: Всегда проверяйте размер выходного буфера
-- **NULL проверки**: Всегда проверяйте входные параметры
-- **Постоянное время**: SHA-3 имеет постоянное время выполнения
+- **Do not use legacy hashes**: MD5, SHA‑1 are vulnerable
+- **Output length**: Always validate output buffer size
+- **NULL checks**: Always validate inputs
+- **Constant time**: SHA‑3 has constant‑time behavior
 
-## Лучшие практики
+## Best practices
 
-### 1. Обработка ошибок
+### 1. Error handling
 
 ```c
-// Правильная обработка ошибок при хэшировании
+// Proper error handling during hashing
 int safe_hash_computation(const void *data, size_t size, dap_hash_fast_t *hash) {
     if (!data || size == 0 || !hash) {
-        return -1; // Неверные параметры
+        return -1; // Invalid parameters
     }
 
     if (!dap_hash_fast(data, size, hash)) {
-        return -2; // Ошибка вычисления
+        return -2; // Computation error
     }
 
     if (dap_hash_fast_is_blank(hash)) {
-        return -3; // Получен пустой хэш (неожиданно)
+        return -3; // Blank hash (unexpected)
     }
 
-    return 0; // Успех
+    return 0; // Success
 }
 ```
 
-### 2. Работа со строками
+### 2. Working with strings
 
 ```c
-// Безопасная работа со строковыми представлениями
+// Safe handling of string representations
 char *safe_hash_to_string(const dap_hash_fast_t *hash) {
     if (!hash) {
         return NULL;
@@ -670,7 +670,7 @@ char *safe_hash_to_string(const dap_hash_fast_t *hash) {
         return NULL;
     }
 
-    // Проверка корректности строки
+    // Validate string correctness
     if (strlen(str) != (DAP_CHAIN_HASH_FAST_STR_SIZE - 1)) {
         free(str);
         return NULL;
@@ -680,24 +680,24 @@ char *safe_hash_to_string(const dap_hash_fast_t *hash) {
 }
 ```
 
-### 3. Сравнение хэшей
+### 3. Hash comparison
 
 ```c
-// Безопасное сравнение хэшей
+// Secure hash comparison
 bool secure_hash_compare(const dap_hash_fast_t *hash1, const dap_hash_fast_t *hash2) {
     if (!hash1 || !hash2) {
-        return false; // NULL параметры считаем неравными
+        return false; // Treat NULL params as unequal
     }
 
-    // Используем постоянное время сравнения
+    // Use constant‑time comparison
     return dap_hash_fast_compare(hash1, hash2);
 }
 ```
 
-### 4. Работа с большими данными
+### 4. Working with large data
 
 ```c
-// Эффективное хэширование больших файлов
+// Efficient hashing of large files
 int hash_large_file(const char *filename, dap_hash_fast_t *result) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
@@ -712,11 +712,11 @@ int hash_large_file(const char *filename, dap_hash_fast_t *result) {
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
         if (first_block) {
-            // Первый блок
+            // First block
             dap_hash_fast(buffer, bytes_read, &running_hash);
             first_block = false;
         } else {
-            // Последующие блоки: хэшируем running_hash + buffer
+            // Subsequent blocks: hash running_hash + buffer
             uint8_t combined[DAP_HASH_FAST_SIZE + BUFFER_SIZE];
             memcpy(combined, running_hash.raw, DAP_HASH_FAST_SIZE);
             memcpy(combined + DAP_HASH_FAST_SIZE, buffer, bytes_read);
@@ -730,37 +730,37 @@ int hash_large_file(const char *filename, dap_hash_fast_t *result) {
 }
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap_hash` предоставляет эффективную и безопасную реализацию криптографического хэширования:
+The `dap_hash` module provides an efficient and secure cryptographic hashing implementation:
 
-### Ключевые преимущества:
-- **Стандарт SHA-3**: Современный криптографический стандарт
-- **Высокая производительность**: Оптимизированные алгоритмы
-- **Простота использования**: Четкий и понятный API
-- **Надежность**: Обширное тестирование и проверка
+### Key advantages:
+- **SHA‑3 standard**: Modern cryptographic standard
+- **High performance**: Optimized algorithms
+- **Ease of use**: Clear and straightforward API
+- **Reliability**: Extensive testing and validation
 
-### Основные возможности:
-- Вычисление SHA-3-256 хэшей
-- Конвертация между бинарным и строковым форматами
-- Сравнение хэшей
-- Поддержка различных форматов строк (hex, base58)
+### Core capabilities:
+- Compute SHA‑3‑256 hashes
+- Convert between binary and string formats
+- Compare hashes
+- Support multiple string formats (hex, base58)
 
-### Рекомендации по использованию:
-1. **Всегда проверяйте возвращаемые значения** функций
-2. **Используйте достаточный размер буферов** для строковых представлений
-3. **Освобождайте память** для строк, созданных функциями `*new()`
-4. **Проверяйте параметры** на NULL перед использованием
+### Recommendations:
+1. **Always check return values** of functions
+2. **Use sufficient buffer sizes** for string representations
+3. **Free memory** for strings created by `*new()` functions
+4. **Validate parameters** for NULL before use
 
-### Следующие шаги:
-1. Изучите другие модули DAP SDK
-2. Ознакомьтесь с примерами использования
-3. Интегрируйте хэширование в свои приложения
-4. Следите за обновлениями криптографических стандартов
+### Next steps
+1. Explore other DAP SDK modules
+2. Review usage examples
+3. Integrate hashing into your applications
+4. Track updates to cryptographic standards
 
-Для получения дополнительной информации смотрите:
-- `dap_hash.h` - полный API хэширования
-- `KeccakHash.h` - реализация SHA-3
-- Примеры в директории `examples/crypto/`
-- Тесты в директории `test/crypto/`
+For more information, see:
+- `dap_hash.h` - full hashing API
+- `KeccakHash.h` - SHA‑3 implementation
+- Examples in `examples/crypto/`
+- Tests in `test/crypto/`
 

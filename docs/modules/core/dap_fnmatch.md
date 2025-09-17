@@ -1,139 +1,139 @@
-# DAP Filename Matching (Сопоставление имен файлов)
+# DAP Filename Matching
 
-## Обзор
+## Overview
 
-Модуль `dap_fnmatch` предоставляет функции для сопоставления строк с шаблонами (pattern matching), аналогично команде `fnmatch` из POSIX. Используется для работы с шаблонами имен файлов, конфигурационными масками и фильтрами в DAP SDK.
+The `dap_fnmatch` module provides functions for pattern matching similar to POSIX `fnmatch`. It is used for filename patterns, configuration masks, and filters in the DAP SDK.
 
-## Назначение
+## Purpose
 
-Шаблонное сопоставление критически важно для:
-- **Работы с файловыми системами**: Поиск файлов по маске
-- **Конфигурационных фильтров**: Применение правил к группам элементов
-- **Валидации ввода**: Проверка соответствия форматам
-- **Маршрутизации**: Фильтрация сетевых запросов
-- **Обработки логов**: Фильтрация сообщений по шаблонам
+Pattern matching is critical for:
+- **File systems**: Mask‑based file search
+- **Configuration filters**: Applying rules to groups
+- **Input validation**: Format checks
+- **Routing**: Filtering network requests
+- **Log processing**: Pattern‑based filtering
 
-## Основные возможности
+## Features
 
-### 🔍 **Шаблонное сопоставление**
-- Поддержка стандартных шаблонов (`*`, `?`, `[...]`)
-- Расширенные возможности GNU (опционально)
-- Регистронезависимое сравнение
+### 🔍 **Pattern matching**
+- Standard patterns (`*`, `?`, `[...]`)
+- GNU extensions (optional)
+- Case‑insensitive comparison
 
-### ⚙️ **Конфигурируемые флаги**
-- Управление поведением сопоставления
-- Специальная обработка путей
-- Экранирование специальных символов
+### ⚙️ **Configurable flags**
+- Control matching behavior
+- Path‑aware handling
+- Escaping of special characters
 
-### 🚀 **Высокая производительность**
-- Оптимизированные алгоритмы
-- Минимальные накладные расходы
-- Кроссплатформенная поддержка
+### 🚀 **High performance**
+- Optimized algorithms
+- Minimal overhead
+- Cross‑platform support
 
-## Флаги управления сопоставлением
+## Matching control flags
 
-### Основные флаги
+### Core flags
 
 ```c
 #define FNM_PATHNAME    (1 << 0) /* No wildcard can ever match `/'.  */
-/* Символы подстановки не могут соответствовать '/' */
+/* Wildcards never match '/' */
 
 #define FNM_NOESCAPE    (1 << 1) /* Backslashes don't quote special chars.  */
-/* Обратные слеши не экранируют специальные символы */
+/* Backslashes do not escape special characters */
 
 #define FNM_PERIOD      (1 << 2) /* Leading `.' is matched only explicitly.  */
-/* Ведущая '.' соответствует только явному указанию */
+/* Leading '.' must be matched explicitly */
 ```
 
-### Расширенные флаги (GNU)
+### Extended flags (GNU)
 
 ```c
 #define FNM_FILE_NAME   FNM_PATHNAME   /* Preferred GNU name.  */
-/* Предпочитаемое GNU имя для FNM_PATHNAME */
+/* Preferred GNU name for FNM_PATHNAME */
 
 #define FNM_LEADING_DIR (1 << 3)   /* Ignore `/...' after a match.  */
-/* Игнорировать '/...' после совпадения */
+/* Ignore '/...' after a match */
 
 #define FNM_CASEFOLD    (1 << 4)   /* Compare without regard to case.  */
-/* Сравнение без учета регистра */
+/* Case‑insensitive compare */
 
 #define FNM_EXTMATCH    (1 << 5)   /* Use ksh-like extended matching. */
-/* Использовать расширенное сопоставление в стиле ksh */
+/* Use ksh‑style extended matching */
 ```
 
-## API Функции
+## API functions
 
-### Основная функция сопоставления
+### Main matching function
 
 ```c
-// Сопоставление строки с шаблоном
+// Match a string against a pattern
 extern int dap_fnmatch(const char *pattern, const char *string, int flags);
 ```
 
-**Параметры:**
-- `pattern` - Шаблон для сопоставления
-- `string` - Строка для проверки
-- `flags` - Флаги управления поведением
+**Parameters:**
+- `pattern` - pattern to match
+- `string` - string to test
+- `flags` - control flags
 
-**Возвращаемые значения:**
-- `0` - Совпадение найдено
-- `FNM_NOMATCH` - Совпадение не найдено
+**Returns:**
+- `0` - matched
+- `FNM_NOMATCH` - no match
 
-## Синтаксис шаблонов
+## Pattern syntax
 
-### Основные символы подстановки
+### Basic wildcards
 
-| Символ | Описание | Пример | Совпадения |
-|--------|----------|--------|------------|
-| `*` | Любая последовательность символов | `*.txt` | `file.txt`, `data.txt` |
-| `?` | Один любой символ | `file?.txt` | `file1.txt`, `fileA.txt` |
-| `[abc]` | Один символ из множества | `file[123].txt` | `file1.txt`, `file2.txt`, `file3.txt` |
-| `[a-z]` | Диапазон символов | `file[a-z].txt` | `filea.txt`, `fileb.txt`, ... |
-| `[!abc]` | Любой символ кроме указанных | `file[!0-9].txt` | `filea.txt`, `fileB.txt` |
+| Symbol | Description | Example | Matches |
+|--------|-------------|---------|---------|
+| `*` | Any sequence of characters | `*.txt` | `file.txt`, `data.txt` |
+| `?` | Any single character | `file?.txt` | `file1.txt`, `fileA.txt` |
+| `[abc]` | One char from a set | `file[123].txt` | `file1.txt`, `file2.txt`, `file3.txt` |
+| `[a-z]` | Character range | `file[a-z].txt` | `filea.txt`, `fileb.txt`, ... |
+| `[!abc]` | Any char except set | `file[!0-9].txt` | `filea.txt`, `fileB.txt` |
 
-### Расширенные возможности (FNM_EXTMATCH)
+### Extended features (FNM_EXTMATCH)
 
-| Конструкция | Описание | Пример | Совпадения |
-|-------------|----------|--------|------------|
-| `?(pattern)` | Ноль или одно вхождение | `file?(1).txt` | `file.txt`, `file1.txt` |
-| `*(pattern)` | Ноль или более вхождений | `*(file).txt` | `file.txt`, `filefile.txt` |
-| `+(pattern)` | Одно или более вхождений | `+(file).txt` | `file.txt`, `filefile.txt` |
-| `@(pattern)` | Ровно одно вхождение | `@(file).txt` | `file.txt` |
-| `!(pattern)` | Любое кроме указанного | `!(file).txt` | `data.txt`, `info.txt` |
+| Construct | Description | Example | Matches |
+|-----------|-------------|---------|---------|
+| `?(pattern)` | Zero or one occurrence | `file?(1).txt` | `file.txt`, `file1.txt` |
+| `*(pattern)` | Zero or more occurrences | `*(file).txt` | `file.txt`, `filefile.txt` |
+| `+(pattern)` | One or more occurrences | `+(file).txt` | `file.txt`, `filefile.txt` |
+| `@(pattern)` | Exactly one occurrence | `@(file).txt` | `file.txt` |
+| `!(pattern)` | Anything except pattern | `!(file).txt` | `data.txt`, `info.txt` |
 
-## Использование
+## Usage
 
-### Базовое сопоставление файлов
+### Basic filename matching
 
 ```c
 #include "dap_fnmatch.h"
 
-// Проверка расширения файла
+// Check file extension
 int check_file_extension(const char *filename) {
     if (dap_fnmatch("*.txt", filename, 0) == 0) {
-        printf("Это текстовый файл: %s\n", filename);
+        printf("Text file: %s\n", filename);
         return 1;
     }
     return 0;
 }
 
-// Проверка с учетом пути
+// Check with path awareness
 int check_path_pattern(const char *filepath) {
-    // '*' не соответствует '/' с флагом FNM_PATHNAME
+    // '*' does not match '/' with FNM_PATHNAME
     if (dap_fnmatch("src/*.c", filepath, FNM_PATHNAME) == 0) {
-        printf("C файл в директории src: %s\n", filepath);
+        printf("C file in src: %s\n", filepath);
         return 1;
     }
     return 0;
 }
 ```
 
-### Работа с конфигурационными шаблонами
+### Working with configuration patterns
 
 ```c
-// Валидация имен конфигурационных файлов
+// Validate configuration filenames
 bool is_valid_config_file(const char *filename) {
-    // Допустимые шаблоны: config*.json, settings*.yaml
+    // Allowed patterns: config*.json, settings*.yaml
     const char *patterns[] = {
         "config*.json",
         "settings*.yaml",
@@ -148,7 +148,7 @@ bool is_valid_config_file(const char *filename) {
     return false;
 }
 
-// Применение шаблона к списку файлов
+// Apply pattern to a list of files
 void process_files_by_pattern(char **filenames, const char *pattern) {
     for (int i = 0; filenames[i]; i++) {
         if (dap_fnmatch(pattern, filenames[i], 0) == 0) {
@@ -158,20 +158,20 @@ void process_files_by_pattern(char **filenames, const char *pattern) {
 }
 ```
 
-### Расширенное сопоставление
+### Advanced matching
 
 ```c
-// Использование расширенных шаблонов (если поддерживается)
+// Using extended patterns (if supported)
 int advanced_pattern_matching(const char *filename) {
-    // Совпадет с: test.c, test.h, test.cpp, test.hpp
+    // Matches: test.c, test.h, test.cpp, test.hpp
     if (dap_fnmatch("test.@(c|cpp|h|hpp)", filename, FNM_EXTMATCH) == 0) {
-        printf("Совпадение с расширенным шаблоном: %s\n", filename);
+        printf("Extended pattern match: %s\n", filename);
         return 1;
     }
 
-    // Совпадет с: file.txt, file1.txt, file2.txt, но НЕ с file.txt.bak
+    // Matches: file.txt, file1.txt, file2.txt, but NOT file.txt.bak
     if (dap_fnmatch("file+([0-9]).txt", filename, FNM_EXTMATCH) == 0) {
-        printf("Совпадение с цифровым шаблоном: %s\n", filename);
+        printf("Digit pattern match: %s\n", filename);
         return 1;
     }
 
@@ -179,17 +179,17 @@ int advanced_pattern_matching(const char *filename) {
 }
 ```
 
-### Работа с путями
+### Working with paths
 
 ```c
-// Фильтрация путей
+// Filter paths
 bool should_process_path(const char *path) {
-    // Обработка всех .c файлов в src/, но не в поддиректориях
+    // Process all .c files in src/ but not in subdirectories
     if (dap_fnmatch("src/*.c", path, FNM_PATHNAME) == 0) {
         return true;
     }
 
-    // Обработка всех .h файлов в любом месте
+    // Process all .h files anywhere
     if (dap_fnmatch("*.h", path, 0) == 0) {
         return true;
     }
@@ -197,9 +197,9 @@ bool should_process_path(const char *path) {
     return false;
 }
 
-// Игнорирование скрытых файлов
+// Ignore hidden files
 bool is_hidden_file(const char *filename) {
-    // Ведущая '.' должна указываться явно
+    // Leading '.' must be explicit
     if (dap_fnmatch(".*", filename, FNM_PERIOD) == 0) {
         return true;
     }
@@ -207,62 +207,62 @@ bool is_hidden_file(const char *filename) {
 }
 ```
 
-### Регистронезависимое сравнение
+### Case‑insensitive matching
 
 ```c
-// Поиск без учета регистра
+// Case‑insensitive search
 bool case_insensitive_match(const char *pattern, const char *string) {
     return dap_fnmatch(pattern, string, FNM_CASEFOLD) == 0;
 }
 
-// Пример использования
+// Example
 void find_log_files(char **files) {
     for (int i = 0; files[i]; i++) {
-        // Найти все файлы логов независимо от регистра
+        // Find all log files regardless of case
         if (case_insensitive_match("*log*", files[i])) {
-            printf("Найден файл логов: %s\n", files[i]);
+            printf("Found log file: %s\n", files[i]);
         }
     }
 }
 ```
 
-## Особенности реализации
+## Implementation details
 
-### Алгоритм сопоставления
+### Matching algorithm
 
-Модуль использует оптимизированный алгоритм сопоставления, который:
-- **Линеен по сложности** для большинства шаблонов
-- **Использует конечные автоматы** для сложных шаблонов
-- **Поддерживает backtracking** для выражений с квантификаторами
+This module uses an optimized matching algorithm that:
+- Is **linear in complexity** for most patterns
+- **Uses finite automata** for complex patterns
+- Supports **backtracking** for quantified expressions
 
-### Производительность
+### Performance
 
-| Тип шаблона | Сложность | Примеры |
-|-------------|-----------|---------|
-| Простые | O(n) | `*.txt`, `file?` |
-| Диапазоны | O(n) | `[a-z]*`, `[0-9]+` |
-| Комплексные | O(n²) | Вложенные квантификаторы |
-| Расширенные | O(n²) | `*(a*b*c)` |
+| Pattern type | Complexity | Examples |
+|--------------|-----------|----------|
+| Simple | O(n) | `*.txt`, `file?` |
+| Ranges | O(n) | `[a-z]*`, `[0-9]+` |
+| Complex | O(n²) | Nested quantifiers |
+| Extended | O(n²) | `*(a*b*c)` |
 
-### Оптимизации
+### Optimizations
 
-1. **Раннее завершение**: Выход при первом несовпадении
-2. **Кэширование**: Повторное использование скомпилированных шаблонов
-3. **SIMD инструкции**: Векторизация для простых сравнений
+1. **Early termination**: Exit on first mismatch
+2. **Caching**: Reuse compiled patterns
+3. **SIMD instructions**: Vectorization for simple comparisons
 
-## Использование в DAP SDK
+## Usage in DAP SDK
 
-### Фильтрация файлов конфигурации
+### Configuration file filtering
 
 ```c
-// Загрузка конфигурационных файлов по шаблону
+// Load configuration files by pattern
 void load_config_files(const char *config_dir) {
     DIR *dir = opendir(config_dir);
     if (!dir) return;
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Загружать только .json файлы конфигурации
+        // Load only .json configuration files
         if (dap_fnmatch("*.json", entry->d_name, 0) == 0) {
             char filepath[PATH_MAX];
             snprintf(filepath, sizeof(filepath), "%s/%s",
@@ -274,12 +274,12 @@ void load_config_files(const char *config_dir) {
 }
 ```
 
-### Валидация сетевых запросов
+### Network request validation
 
 ```c
-// Фильтрация API эндпоинтов
+// Filter API endpoints
 bool is_valid_api_endpoint(const char *endpoint) {
-    // Допустимые эндпоинты: /api/v1/*, /api/v2/*
+    // Allowed endpoints: /api/v1/*, /api/v2/*
     const char *valid_patterns[] = {
         "/api/v1/*",
         "/api/v2/*",
@@ -295,10 +295,10 @@ bool is_valid_api_endpoint(const char *endpoint) {
 }
 ```
 
-### Обработка логов
+### Log processing
 
 ```c
-// Фильтрация сообщений логов
+// Filter log messages
 typedef enum {
     LOG_LEVEL_DEBUG,
     LOG_LEVEL_INFO,
@@ -320,11 +320,11 @@ log_level_t parse_log_level(const char *log_line) {
         return LOG_LEVEL_ERROR;
     }
 
-    return LOG_LEVEL_INFO; // По умолчанию
+    return LOG_LEVEL_INFO; // Default
 }
 ```
 
-### Работа с базами данных
+### Working with databases
 
 ```c
 // Фильтрация записей базы данных
@@ -333,9 +333,9 @@ bool matches_record_pattern(const char *record_key, const char *pattern) {
     return dap_fnmatch(pattern, record_key, 0) == 0;
 }
 
-// Пример использования
+// Example usage
 void query_database(const char *pattern) {
-    // Найти все записи с ключами вида "user_*_profile"
+    // Find all records with keys like "user_*_profile"
     database_foreach_record(record) {
         if (matches_record_pattern(record->key, pattern)) {
             process_record(record);
@@ -344,24 +344,24 @@ void query_database(const char *pattern) {
 }
 ```
 
-## Связанные модули
+## Related modules
 
-- `dap_strfuncs.h` - Работа со строками
-- `dap_common.h` - Общие определения
-- `dap_fnmatch_loop.h` - Итеративные функции сопоставления
+- `dap_strfuncs.h` - String utilities
+- `dap_common.h` - Common definitions
+- `dap_fnmatch_loop.h` - Iterative matching
 
-## Замечания по безопасности
+## Security notes
 
-### Валидация входных данных
+### Input validation
 
 ```c
-// Всегда проверяйте входные параметры
+// Always validate input parameters
 bool safe_pattern_match(const char *pattern, const char *string, int flags) {
     if (!pattern || !string) {
         return false;
     }
 
-    // Ограничение длины шаблона для предотвращения DoS
+    // Limit pattern length to prevent DoS
     if (strlen(pattern) > MAX_PATTERN_LENGTH) {
         log_it(L_WARNING, "Pattern too long: %zu", strlen(pattern));
         return false;
@@ -371,14 +371,14 @@ bool safe_pattern_match(const char *pattern, const char *string, int flags) {
 }
 ```
 
-### Защита от ReDoS атак
+### Protection against ReDoS attacks
 
 ```c
-// Избегайте опасных шаблонов
+// Avoid dangerous patterns
 const char *dangerous_patterns[] = {
-    "(a+)+b",    // Катострофическое backtracking
-    "(a*)*",     // Экспоненциальная сложность
-    "(a|a)*",    // Неэффективные альтернативы
+    "(a+)+b",    // Catastrophic backtracking
+    "(a*)*",     // Exponential complexity
+    "(a|a)*",    // Inefficient alternations
     NULL
 };
 
@@ -392,22 +392,22 @@ bool is_safe_pattern(const char *pattern) {
 }
 ```
 
-### Обработка специальных символов
+### Special character handling
 
 ```c
-// Экранирование пользовательского ввода
+// Escape user input
 char *escape_pattern(const char *user_input) {
-    // Замена специальных символов на экранированные
+    // Replace special characters with escaped
     return dap_str_replace_char(user_input, '*', '\\*');
 }
 ```
 
-## Отладка
+## Debugging
 
-### Диагностика сопоставления
+### Matching diagnostics
 
 ```c
-// Функция для отладки сопоставления
+// Function for matching diagnostics
 void debug_pattern_match(const char *pattern, const char *string, int flags) {
     int result = dap_fnmatch(pattern, string, flags);
     printf("Pattern matching debug:\n");
@@ -417,7 +417,7 @@ void debug_pattern_match(const char *pattern, const char *string, int flags) {
     printf("  Result:  %s (%d)\n",
            result == 0 ? "MATCH" : "NO MATCH", result);
 
-    // Показать активные флаги
+    // Show active flags
     if (flags & FNM_PATHNAME) printf("  - FNM_PATHNAME\n");
     if (flags & FNM_NOESCAPE) printf("  - FNM_NOESCAPE\n");
     if (flags & FNM_PERIOD) printf("  - FNM_PERIOD\n");
@@ -426,10 +426,10 @@ void debug_pattern_match(const char *pattern, const char *string, int flags) {
 }
 ```
 
-### Тестирование шаблонов
+### Pattern testing
 
 ```c
-// Комплексное тестирование
+// Comprehensive testing
 void test_fnmatch_patterns() {
     struct {
         const char *pattern;
@@ -468,10 +468,10 @@ void test_fnmatch_patterns() {
 }
 ```
 
-### Профилирование производительности
+### Performance profiling
 
 ```c
-// Измерение производительности сопоставления
+// Measure matching performance
 void benchmark_fnmatch(const char *pattern, char **test_strings, int num_strings) {
     clock_t start = clock();
 
@@ -490,5 +490,5 @@ void benchmark_fnmatch(const char *pattern, char **test_strings, int num_strings
 }
 ```
 
-Этот модуль предоставляет мощные и эффективные возможности для работы с шаблонами в DAP SDK, обеспечивая гибкость и производительность при работе с файловыми системами, конфигурациями и фильтрацией данных.
+This module provides powerful and efficient pattern‑matching capabilities in the DAP SDK, enabling flexible and high‑performance work with file systems, configurations, and data filtering.
 

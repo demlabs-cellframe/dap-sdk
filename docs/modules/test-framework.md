@@ -1,39 +1,39 @@
 # DAP Test Framework Module (dap_test.h)
 
-## Обзор
+## Overview
 
-Модуль `dap_test_framework` предоставляет унифицированную систему тестирования для DAP SDK. Он включает в себя:
+The `dap_test_framework` module provides a unified testing system for the DAP SDK. It includes:
 
-- **Макросы для unit-тестов** - удобные assertion функции
-- **Бенчмарки производительности** - измерение времени выполнения
-- **Генераторы тестовых данных** - создание случайных данных для тестирования
-- **Цветной вывод результатов** - визуальная индикация статуса тестов
-- **Автоматизированное тестирование** - интеграция с CI/CD системами
+- **Unit-test macros** - convenient assertion helpers
+- **Performance benchmarks** - execution time measurement
+- **Test data generators** - random data creation for tests
+- **Colored output** - visual indication of test status
+- **Automation** - CI/CD integration
 
-## Архитектурная роль
+## Architectural role
 
-Test Framework является неотъемлемой частью QA-процесса DAP SDK:
+The Test Framework is an integral part of the DAP SDK QA process:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐
 │   DAP SDK       │───▶│ Test Framework  │
-│   Модули        │    └─────────────────┘
+│   Modules       │    └─────────────────┘
 └─────────────────┘             │
          │                     │
     ┌────▼────┐           ┌────▼────┐
     │Unit     │           │Benchmarks│
-    │тесты    │           │& Perf.   │
+    │tests    │           │& Perf.   │
     └─────────┘           └─────────┘
          │                     │
     ┌────▼────┐           ┌────▼────┐
-    │CI/CD     │◄──────────►│Отчеты    │
-    │интеграция│           │результатов│
+    │CI/CD     │◄──────────►│Reports   │
+    │integration│          │results   │
     └─────────┘           └─────────┘
 ```
 
-## Основные компоненты
+## Main components
 
-### 1. Основные макросы тестирования
+### 1. Core testing macros
 
 #### `dap_assert(expr, testname)`
 ```c
@@ -47,11 +47,11 @@ Test Framework является неотъемлемой частью QA-про�
         abort(); } }
 ```
 
-**Параметры:**
-- `expr` - логическое выражение для проверки
-- `testname` - имя теста для вывода
+**Parameters:**
+- `expr` - boolean expression to verify
+- `testname` - test name for output
 
-**Пример:**
+**Example:**
 ```c
 dap_assert(result == expected, "Basic arithmetic test");
 ```
@@ -66,11 +66,11 @@ dap_assert(result == expected, "Basic arithmetic test");
     abort(); } }
 ```
 
-**Особенности:**
-- PIF = "Print If Failed" - вывод только при ошибке
-- Подходит для проверок в циклах
+**Notes:**
+- PIF = "Print If Failed" — prints only on failure
+- Suitable for checks in loops
 
-**Пример:**
+**Example:**
 ```c
 for (int i = 0; i < 1000; i++) {
     int result = complex_calculation(i);
@@ -78,7 +78,7 @@ for (int i = 0; i < 1000; i++) {
 }
 ```
 
-### 2. Вспомогательные макросы
+### 2. Helper macros
 
 #### `dap_test_msg(...)`
 ```c
@@ -89,11 +89,11 @@ for (int i = 0; i < 1000; i++) {
     fflush(stdout); }
 ```
 
-**Назначение:**
-- Вывод отладочной информации во время тестирования
-- Не влияет на результат теста
+**Purpose:**
+- Output debug info during testing
+- Does not affect the test result
 
-**Пример:**
+**Example:**
 ```c
 dap_test_msg("Processing item %d of %d", current, total);
 ```
@@ -105,9 +105,9 @@ dap_test_msg("Processing item %d of %d", current, total);
     fflush(stdout); }
 ```
 
-**Назначение:**
-- Ручная отметка успешного прохождения теста
-- Для случаев, когда автоматическая проверка невозможна
+**Purpose:**
+- Manually mark a test as passed
+- Useful when automatic verification is not possible
 
 #### `dap_fail(msg)`
 ```c
@@ -117,11 +117,11 @@ dap_test_msg("Processing item %d of %d", current, total);
     abort();}
 ```
 
-**Назначение:**
-- Немедленное завершение теста с ошибкой
-- Для критических сбоев, требующих остановки
+**Purpose:**
+- Immediately terminate the test with an error
+- For critical failures that require stopping
 
-### 3. Макросы для модулей
+### 3. Module macros
 
 #### `dap_print_module_name(module_name)`
 ```c
@@ -130,18 +130,18 @@ dap_test_msg("Processing item %d of %d", current, total);
     fflush(stdout); }
 ```
 
-**Назначение:**
-- Вывод заголовка для группы тестов модуля
-- Визуальное разделение тестов по модулям
+**Purpose:**
+- Print a header for a module test group
+- Visual separation of tests by module
 
-**Пример:**
+**Example:**
 ```c
 dap_print_module_name("Crypto Module Tests");
 dap_assert(test_sha3(), "SHA3 hash function");
 dap_assert(test_aes_encrypt(), "AES encryption");
 ```
 
-### 4. Утилиты для строк
+### 4. String utilities
 
 #### `dap_str_equals(str1, str2)`
 ```c
@@ -153,32 +153,32 @@ dap_assert(test_aes_encrypt(), "AES encryption");
 #define dap_strn_equals(str1, str2, count) strncmp(str1, str2, count) == 0
 ```
 
-**Назначение:**
-- Удобные функции сравнения строк
-- Интеграция с макросами тестирования
+**Purpose:**
+- Convenient string comparison helpers
+- Integration with testing macros
 
-**Пример:**
+**Example:**
 ```c
 dap_assert(dap_str_equals(result, "expected"), "String comparison");
 ```
 
-## Система бенчмаркинга
+## Benchmarking system
 
-### Функции измерения времени
+### Time measurement functions
 
 #### `benchmark_test_time()`
 ```c
 int benchmark_test_time(void (*func_name)(void), int repeat);
 ```
 
-**Параметры:**
-- `func_name` - функция для тестирования
-- `repeat` - количество повторений
+**Parameters:**
+- `func_name` - function to test
+- `repeat` - number of repetitions
 
-**Возвращаемое значение:**
-- Время выполнения в миллисекундах
+**Returns:**
+- Execution time in milliseconds
 
-**Пример:**
+**Example:**
 ```c
 int time_ms = benchmark_test_time(my_function, 1000);
 benchmark_mgs_time("My function performance", time_ms);
@@ -189,27 +189,27 @@ benchmark_mgs_time("My function performance", time_ms);
 float benchmark_test_rate(void (*func_name)(void), float sec);
 ```
 
-**Параметры:**
-- `func_name` - функция для тестирования
-- `sec` - минимальное время выполнения в секундах
+**Parameters:**
+- `func_name` - function to test
+- `sec` - minimum execution time in seconds
 
-**Возвращаемое значение:**
-- Количество вызовов в секунду (rate)
+**Returns:**
+- Calls per second (rate)
 
-**Пример:**
+**Example:**
 ```c
 float rate = benchmark_test_rate(my_function, 2.0);
 benchmark_mgs_rate("My function throughput", rate);
 ```
 
-### Функции вывода результатов
+### Result output functions
 
 #### `benchmark_mgs_time()`
 ```c
 void benchmark_mgs_time(const char *text, int dt);
 ```
 
-**Вывод:**
+**Output:**
 - "Operation completed in 150 msec."
 - "Operation completed in 2.45 sec."
 
@@ -218,97 +218,97 @@ void benchmark_mgs_time(const char *text, int dt);
 void benchmark_mgs_rate(const char *test_name, float rate);
 ```
 
-**Вывод:**
+**Output:**
 - "My function throughput: 1500 times/sec."
 - "Data processing: 45.67 times/sec."
 
-## Генератор тестовых данных
+## Test data generator
 
 ### `generate_random_byte_array()`
 ```c
 void generate_random_byte_array(uint8_t* array, const size_t size);
 ```
 
-**Параметры:**
-- `array` - указатель на массив для заполнения
-- `size` - размер массива в байтах
+**Parameters:**
+- `array` - pointer to array to fill
+- `size` - array size in bytes
 
-**Назначение:**
-- Генерация случайных данных для тестирования
-- Инициализация массивов случайными значениями
+**Purpose:**
+- Generate random data for testing
+- Initialize arrays with random values
 
-**Пример:**
+**Example:**
 ```c
 #define TEST_DATA_SIZE 1024
 uint8_t test_data[TEST_DATA_SIZE];
 generate_random_byte_array(test_data, TEST_DATA_SIZE);
 ```
 
-## Цветовая схема вывода
+## Color scheme
 
 ```c
-#define TEXT_COLOR_RED   "\x1B[31m"  // Красный - ошибки, провалы
-#define TEXT_COLOR_GRN   "\x1B[32m"  // Зеленый - успехи
-#define TEXT_COLOR_YEL   "\x1B[33m"  // Желтый - предупреждения
-#define TEXT_COLOR_BLU   "\x1B[34m"  // Синий - информация
-#define TEXT_COLOR_MAG   "\x1B[35m"  // Магента - заголовки
-#define TEXT_COLOR_CYN   "\x1B[36m"  // Циан - модули
-#define TEXT_COLOR_WHT   "\x1B[37m"  // Белый - отладка
-#define TEXT_COLOR_RESET "\x1B[0m"   // Сброс цвета
+#define TEXT_COLOR_RED   "\x1B[31m"  // Red - errors/failures
+#define TEXT_COLOR_GRN   "\x1B[32m"  // Green - success
+#define TEXT_COLOR_YEL   "\x1B[33m"  // Yellow - warnings
+#define TEXT_COLOR_BLU   "\x1B[34m"  // Blue - info
+#define TEXT_COLOR_MAG   "\x1B[35m"  // Magenta - headers
+#define TEXT_COLOR_CYN   "\x1B[36m"  // Cyan - modules
+#define TEXT_COLOR_WHT   "\x1B[37m"  // White - debug
+#define TEXT_COLOR_RESET "\x1B[0m"   // Reset
 ```
 
-## Функции времени
+## Time functions
 
 ### `get_cur_time_msec()`
 ```c
 int get_cur_time_msec(void);
 ```
 
-**Возвращаемое значение:**
-- Текущее время в миллисекундах
+**Returns:**
+- Current time in milliseconds
 
 ### `get_cur_time_nsec()`
 ```c
 uint64_t get_cur_time_nsec(void);
 ```
 
-**Возвращаемое значение:**
-- Текущее время в наносекундах
+**Returns:**
+- Current time in nanoseconds
 
-**Назначение:**
-- Точное измерение времени выполнения
-- Синхронизация тестов
-- Создание уникальных идентификаторов
+**Purpose:**
+- Accurate execution time measurement
+- Test synchronization
+- Unique identifiers
 
-## Структура тестовой функции
+## Test function structure
 
-### Базовый шаблон теста
+### Basic test template
 
 ```c
 void test_my_function() {
-    // Подготовка данных
+    // Prepare data
     int input = 42;
     int expected = 84;
 
-    // Выполнение тестируемой функции
+    // Execute function under test
     int result = my_function(input);
 
-    // Проверка результата
+    // Verify result
     dap_assert(result == expected, "My function basic test");
 }
 
 void test_my_function_edge_cases() {
-    // Тестирование граничных случаев
+    // Testing edge cases
     dap_assert(my_function(0) == 0, "Zero input");
     dap_assert(my_function(INT_MAX) == INT_MAX * 2, "Max int overflow");
     dap_assert(my_function(INT_MIN) == INT_MIN * 2, "Min int overflow");
 }
 
 void test_my_function_performance() {
-    // Бенчмаркинг производительности
+    // Performance benchmarking
     int time_ms = benchmark_test_time([]() {
         volatile int result = my_function(1000);
-        (void)result; // Подавление предупреждения
+        (void)result; // Suppress warning
     }, 1000);
 
     benchmark_mgs_time("My function performance", time_ms);
@@ -316,7 +316,7 @@ void test_my_function_performance() {
 }
 ```
 
-### Тест модуля
+### Module test
 
 ```c
 void run_my_module_tests() {
@@ -326,23 +326,23 @@ void run_my_module_tests() {
     test_my_function_edge_cases();
     test_my_function_performance();
 
-    // Дополнительные тесты
+    // Additional tests
     test_my_function_memory_leaks();
     test_my_function_concurrency();
 }
 ```
 
-## Интеграция с CI/CD
+## CI/CD integration
 
-### Автоматический запуск тестов
+### Automated test run
 
 ```bash
-# В Makefile или CMakeLists.txt
+# In Makefile or CMakeLists.txt
 test:
     ./run_tests
     @echo "Tests completed with code: $$?"
 
-# В CI скрипте
+# In CI script
 run_tests:
     @echo "Running DAP SDK tests..."
     @make test
@@ -352,7 +352,7 @@ run_tests:
     fi
 ```
 
-### Парсинг результатов
+### Parsing results
 
 ```python
 # parse_test_results.py
@@ -370,7 +370,7 @@ def parse_test_output(output):
             results['passed'] += 1
         elif 'FAILED!' in line:
             results['failed'] += 1
-        elif line.startswith('\x1B[36m'):  # Циан - модуль
+        elif line.startswith('\x1B[36m'):  # Cyan - module
             module = re.search(r'\x1B\[36m(.+?)\x1B\[0m', line)
             if module:
                 results['modules'].append(module.group(1))
@@ -378,36 +378,36 @@ def parse_test_output(output):
     return results
 ```
 
-## Лучшие практики тестирования
+## Testing best practices
 
-### 1. Структура тестов
+### 1. Test structure
 
 ```c
 // test_my_module.c
 #include "dap_test.h"
 #include "my_module.h"
 
-// Тесты основных функций
+// Main function tests
 void test_basic_functionality() {
-    // Тестирование основного функционала
+    // Test main functionality
 }
 
-// Тесты граничных случаев
+// Edge case tests
 void test_edge_cases() {
-    // Тестирование крайних значений
+    // Test extreme values
 }
 
-// Тесты производительности
+// Performance tests
 void test_performance() {
-    // Измерение производительности
+    // Measure performance
 }
 
-// Тесты памяти
+// Memory tests
 void test_memory_usage() {
-    // Проверка утечек памяти
+    // Check for memory leaks
 }
 
-// Основная функция запуска тестов
+// Main test entry
 int main() {
     dap_print_module_name("My Module");
 
@@ -420,17 +420,17 @@ int main() {
 }
 ```
 
-### 2. Использование генераторов данных
+### 2. Using data generators
 
 ```c
 void test_with_random_data() {
     const size_t TEST_SIZE = 1000;
     uint8_t test_data[TEST_SIZE];
 
-    // Генерация случайных данных
+    // Generate random data
     generate_random_byte_array(test_data, TEST_SIZE);
 
-    // Тестирование с различными входными данными
+    // Test with various input data
     for (size_t i = 0; i < 100; i++) {
         size_t offset = rand() % (TEST_SIZE - 10);
         process_data(&test_data[offset], 10);
@@ -439,61 +439,61 @@ void test_with_random_data() {
 }
 ```
 
-### 3. Бенчмаркинг
+### 3. Benchmarking
 
 ```c
 void comprehensive_benchmark() {
     printf("Running comprehensive benchmark...\n");
 
-    // Тест на время
+    // Time test
     int time_ms = benchmark_test_time(test_function, 10000);
     benchmark_mgs_time("10k iterations", time_ms);
 
-    // Тест на пропускную способность
+    // Throughput test
     float rate = benchmark_test_rate(test_function, 5.0);
     benchmark_mgs_rate("Throughput test", rate);
 
-    // Сравнение с эталоном
+    // Compare with baseline
     dap_assert(time_ms < BASELINE_TIME, "Performance regression check");
 }
 ```
 
-### 4. Обработка ошибок
+### 4. Error handling
 
 ```c
 void test_error_conditions() {
-    // Тестирование корректной обработки ошибок
+    // Test correct error handling
     dap_assert(my_function(NULL) == ERROR_INVALID_PARAM,
                "NULL parameter handling");
 
     dap_assert(my_function("") == ERROR_EMPTY_STRING,
                "Empty string handling");
 
-    // Тестирование восстановления после ошибок
+    // Test recovery after errors
     int result = my_function("valid_input");
     dap_assert(result == SUCCESS, "Recovery after error");
 }
 ```
 
-## Отладка и диагностика
+## Debugging and diagnostics
 
-### Включение детального вывода
+### Enabling verbose output
 
 ```c
-// В начале теста
+// At the start of the test
 dap_test_msg("Starting test with parameters: input=%d, expected=%d",
              input, expected);
 
-// Во время выполнения
+// During execution
 for (int i = 0; i < iterations; i++) {
     if (i % 100 == 0) {
         dap_test_msg("Progress: %d/%d iterations", i, iterations);
     }
-    // ... тестовая логика
+    // ... test logic
 }
 ```
 
-### Создание отчетов
+### Generating reports
 
 ```c
 void generate_test_report() {
@@ -513,77 +513,77 @@ void generate_test_report() {
 }
 ```
 
-## Интеграция с другими модулями
+## Integration with other modules
 
 ### DAP Common
-- Использование общих структур данных
-- Работа с памятью и строками
-- Логирование результатов
+- Use common data structures
+- Work with memory and strings
+- Logging results
 
 ### DAP Config
-- Загрузка конфигурации тестов
-- Параметризация тестовых сценариев
-- Настройка условий тестирования
+- Load test configurations
+- Parameterize test scenarios
+- Configure test conditions
 
 ### DAP Time
-- Синхронизация тестов
-- Измерение интервалов времени
-- Создание таймаутов
+- Test synchronization
+- Measure time intervals
+- Create timeouts
 
-## Типичные проблемы
+## Common issues
 
-### 1. Нестабильные тесты
+### 1. Flaky tests
 
 ```c
-// Проблема: тест зависит от внешних факторов
+// Problem: test depends on external factors
 void unstable_test() {
-    int result = network_call(); // Может зависеть от сети
-    dap_assert(result == SUCCESS, "Network test"); // Нестабильный
+    int result = network_call(); // May depend on network
+    dap_assert(result == SUCCESS, "Network test"); // Flaky
 }
 
-// Решение: изоляция тестов
+// Solution: test isolation
 void stable_test() {
-    // Mock или stub для network_call
+    // Mock or stub for network_call
     mock_network_response(SUCCESS);
     int result = network_call();
     dap_assert(result == SUCCESS, "Network test");
 }
 ```
 
-### 2. Утечки памяти
+### 2. Memory leaks
 
 ```c
-// Проблема: не освобождается память
+// Problem: memory is not freed
 void memory_leak_test() {
     for (int i = 0; i < 1000; i++) {
         char *data = malloc(1024);
         process_data(data);
-        // Забыли free(data)!
+        // Forgot free(data)!
     }
 }
 
-// Решение: правильное управление памятью
+// Solution: proper memory management
 void fixed_memory_test() {
     for (int i = 0; i < 1000; i++) {
         char *data = malloc(1024);
         process_data(data);
-        free(data); // Освобождаем память
+        free(data); // Free memory
     }
 }
 ```
 
-### 3. Гонка данных
+### 3. Data races
 
 ```c
-// Проблема: одновременный доступ к shared ресурсам
+// Problem: concurrent access to shared resources
 static int shared_counter = 0;
 
 void concurrent_test() {
     shared_counter++;
-    dap_assert(shared_counter == 1, "Counter test"); // Гонка!
+    dap_assert(shared_counter == 1, "Counter test"); // Race!
 }
 
-// Решение: синхронизация
+// Solution: synchronization
 #include <pthread.h>
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -595,6 +595,6 @@ void safe_concurrent_test() {
 }
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap_test_framework` предоставляет полный набор инструментов для тестирования DAP SDK. Его простота использования в сочетании с мощными возможностями бенчмаркинга и генерации тестовых данных делает его идеальным инструментом для обеспечения качества и производительности распределенных приложений.
+The `dap_test_framework` module provides a complete toolkit for testing the DAP SDK. Its simplicity combined with powerful benchmarking and data‑generation capabilities makes it ideal for ensuring the quality and performance of distributed applications.

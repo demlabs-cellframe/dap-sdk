@@ -9,7 +9,7 @@
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
-#if defined(_WIN32)
+#ifdef DAP_OS_WINDOWS
     #include <windows.h>
 #else
     #include <unistd.h>
@@ -23,18 +23,16 @@
         s_urandom_fd = open("/dev/urandom", O_RDONLY);
     }
     
-    // Security fix: add cleanup function for file descriptor
-    static void cleanup_urandom_fd(void) {
+    static void deinit_urandom_fd(void) {
         if (s_urandom_fd != -1) {
             close(s_urandom_fd);
             s_urandom_fd = -1;
         }
     }
-    
-    // Register cleanup function to be called at exit
+
     __attribute__((constructor))
     static void register_cleanup(void) {
-        atexit(cleanup_urandom_fd);
+        atexit(deinit_urandom_fd);
     }
 #endif
 
@@ -168,14 +166,4 @@ uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result)
     SUM_256_256(a_rand_max, uint256_1, &l_rand_ceil);
     divmod_impl_256(l_out_raw, l_rand_ceil, &l_tmp, &l_ret);
     return l_ret;
-}
-
-// Cleanup function for proper resource management
-void dap_rand_cleanup(void) {
-#if !defined(_WIN32)
-    if (s_urandom_fd != -1) {
-        close(s_urandom_fd);
-        s_urandom_fd = -1;
-    }
-#endif
 }

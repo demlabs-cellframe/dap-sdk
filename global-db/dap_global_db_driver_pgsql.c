@@ -228,24 +228,20 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
  */
 static bool s_validate_table_name(const char *a_table_name)
 {
-    if (!a_table_name) {
-        return false;
-    }
-    // Security fix: use single strlen call to avoid race conditions
-    size_t table_name_len = strlen(a_table_name);
-    if (table_name_len == 0 || table_name_len > 64) {
+    int l_group_len = dap_strlen(a_table_name);
+    if (l_group_len == 0 || l_group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
         return false;
     }
     
     // Allow only alphanumeric characters, underscore, and hyphen
     for (const char *p = a_table_name; *p; p++) {
-        if (!isalnum(*p) && *p != '_' && *p != '-') {
+        if (!dap_is_alpha_and_(*p) && *p != '-') {
             return false;
         }
     }
     
     // Prevent SQL keywords
-    const char *forbidden_names[] = {"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", NULL};
+    static const char *forbidden_names[] = {"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", NULL};
     for (int i = 0; forbidden_names[i]; i++) {
         if (strcasecmp(a_table_name, forbidden_names[i]) == 0) {
             return false;

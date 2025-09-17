@@ -1,19 +1,19 @@
 # DAP Fnmatch Loop Module (dap_fnmatch_loop.h)
 
-## Обзор
+## Overview
 
-Модуль `dap_fnmatch_loop.h` предоставляет внутренние структуры и макросы для реализации алгоритма сопоставления шаблонов (pattern matching) с использованием циклических конструкций. Этот модуль является частью реализации функции `fnmatch` в DAP SDK и обеспечивает эффективную обработку сложных шаблонов с повторяющимися элементами.
+The `dap_fnmatch_loop.h` module provides internal structures and macros for implementing pattern matching with loop‑based constructs. It is part of the `fnmatch` implementation in the DAP SDK and enables efficient handling of complex patterns with repetitions.
 
-## Назначение
+## Purpose
 
-Модуль fnmatch_loop служит для:
+The fnmatch_loop module is used for:
 
-- **Реализации циклических конструкций** в шаблонах fnmatch
-- **Обработки повторяющихся элементов** в pattern matching
-- **Оптимизации сложных шаблонов** с квантификаторами
-- **Поддержки расширенных регулярных выражений** в файловых масках
+- **Implementing loop constructs** in fnmatch patterns
+- **Processing repeating elements** in pattern matching
+- **Optimizing complex patterns** with quantifiers
+- **Supporting extended regex‑like masks** in file patterns
 
-## Архитектура
+## Architecture
 
 ```mermaid
 graph TB
@@ -31,149 +31,149 @@ graph TB
     end
 ```
 
-## Основные возможности
+## Features
 
-### 🔄 **Циклические конструкции**
-- Поддержка повторяющихся элементов в шаблонах
-- Обработка квантификаторов (*, +, {n,m})
-- Оптимизация для часто повторяющихся паттернов
-- Эффективное управление памятью при циклах
+### 🔄 **Loop constructs**
+- Support for repeating elements in patterns
+- Handling of quantifiers (*, +, {n,m})
+- Optimization for frequently repeating patterns
+- Memory‑efficient loop handling
 
-### ⚡ **Оптимизации производительности**
-- Loop unrolling для простых повторений
-- State caching для повторяющихся проверок
-- Early termination при несовпадении
-- Memory-efficient backtracking
+### ⚡ **Performance optimizations**
+- Loop unrolling for simple repetitions
+- State caching for repeated checks
+- Early termination on mismatch
+- Memory‑efficient backtracking
 
-### 🏗️ **Структуры данных**
-- Специализированные структуры для loop processing
-- Оптимизированные state machines
-- Эффективное управление стеком вызовов
-- Минимальное использование памяти
+### 🏗️ **Data structures**
+- Specialized structures for loop processing
+- Optimized state machines
+- Efficient call‑stack management
+- Minimal memory usage
 
-## Внутренняя структура
+## Internal structure
 
-### Основная структура цикла
+### Core loop structure
 
 ```c
-// Структура для обработки циклических конструкций
+// Structure for processing loop constructs
 struct STRUCT {
-    const char *pattern;           // Текущий паттерн
-    const char *string;            // Обрабатываемая строка
-    int no_leading_period;         // Флаг обработки точек
+    const char *pattern;           // Current pattern
+    const char *string;            // String being processed
+    int no_leading_period;         // Leading period handling flag
 };
 
-// Макросы для работы с циклами
-#define L_func(CS)  CS             // Функциональный макрос
-#define L(str)      L_func(str)    // Упрощенный вызов
+// Macros for loop handling
+#define L_func(CS)  CS             // Functional macro
+#define L(str)      L_func(str)    // Simplified invocation
 ```
 
-### Состояния цикла
+### Loop states
 
 ```c
-// Перечисление состояний обработки цикла
+// Enumeration of loop processing states
 typedef enum {
-    LOOP_STATE_INIT,           // Инициализация
-    LOOP_STATE_PROCESSING,     // Обработка
-    LOOP_STATE_BACKTRACK,      // Откат
-    LOOP_STATE_COMPLETE,       // Завершение
-    LOOP_STATE_ERROR          // Ошибка
+    LOOP_STATE_INIT,           // Initialization
+    LOOP_STATE_PROCESSING,     // Processing
+    LOOP_STATE_BACKTRACK,      // Backtracking
+    LOOP_STATE_COMPLETE,       // Completion
+    LOOP_STATE_ERROR           // Error
 } loop_state_t;
 ```
 
-## Механизм работы
+## How it works
 
-### 🔄 **Алгоритм обработки циклов**
+### 🔄 **Loop processing algorithm**
 
-1. **Парсинг паттерна**: Выделение циклических конструкций
-2. **Инициализация состояния**: Подготовка структур данных
-3. **Итеративная обработка**: Пошаговое сопоставление
-4. **Backtracking**: Откат при несовпадении
-5. **Оптимизация**: Применение эвристик для ускорения
+1. **Pattern parsing**: Identify loop constructs
+2. **State initialization**: Prepare data structures
+3. **Iterative processing**: Step‑by‑step matching
+4. **Backtracking**: Rewind on mismatch
+5. **Optimization**: Apply heuristics for speedup
 
-### 📊 **Примеры циклических паттернов**
+### 📊 **Examples of loop patterns**
 
 ```c
-// Простые повторы
-"*.txt"         // Любое количество символов + .txt
-"test_[0-9]*"   // test_ + цифры + что угодно
+// Simple repeats
+"*.txt"         // Any chars + .txt
+"test_[0-9]*"   // test_ + digits + anything
 
-// Сложные циклы
-"(ab)*c"        // Повтор "ab" ноль или более раз + c
-"file_[0-9]{3}" // file_ + ровно 3 цифры
+// Complex loops
+"(ab)*c"        // Repeat "ab" zero or more times + c
+"file_[0-9]{3}" // file_ + exactly 3 digits
 
-// Вложенные циклы
-"dir_*/file_*.txt"  // Каталог + файл с любыми именами
+// Nested loops
+"dir_*/file_*.txt"  // Directory + arbitrary filenames
 ```
 
 ## API Reference
 
-### Внутренние функции
+### Internal functions
 
 ```c
-// Инициализация циклической обработки
+// Initialize loop processing
 int fnmatch_loop_init(const char *pattern, const char *string);
 
-// Обработка одного шага цикла
+// Process a single loop step
 int fnmatch_loop_step(struct STRUCT *loop_ctx);
 
-// Финализация циклической обработки
+// Finalize loop processing
 void fnmatch_loop_fini(struct STRUCT *loop_ctx);
 
-// Проверка состояния цикла
+// Get current loop state
 loop_state_t fnmatch_loop_state(struct STRUCT *loop_ctx);
 ```
 
-### Макросы оптимизации
+### Optimization macros
 
 ```c
-// Оптимизация для простых повторов
+// Optimization for simple repeats
 #define LOOP_OPT_SIMPLE_REPEAT(count) \
     for(int i = 0; i < (count); i++) { \
         if (!match_single_char()) return FNM_NOMATCH; \
     }
 
-// Оптимизация для звездочки
+// Optimization for star expansion
 #define LOOP_OPT_STAR_EXPANSION() \
     while (*string && match_current_pattern()) { \
         string++; \
     }
 ```
 
-## Примеры использования
+## Usage examples
 
-### Базовая обработка циклических паттернов
+### Basic processing of loop patterns
 
 ```c
 #include "dap_fnmatch_loop.h"
 
-// Пример обработки паттерна с повторами
+// Example of processing a pattern with repetitions
 const char *pattern = "file_[0-9]*.txt";
 const char *test_string = "file_123_backup.txt";
 
-// Инициализация контекста цикла
+// Initialize loop context
 struct STRUCT loop_ctx;
 loop_ctx.pattern = pattern;
 loop_ctx.string = test_string;
 loop_ctx.no_leading_period = 0;
 
-// Обработка цикла
+// Loop processing
 int result = FNM_NOMATCH;
 while (fnmatch_loop_step(&loop_ctx) == LOOP_STATE_PROCESSING) {
     if (match_complete(&loop_ctx)) {
-        result = 0; // Совпадение найдено
+        result = 0; // Match found
         break;
     }
 }
 
-// Финализация
+// Finalization
 fnmatch_loop_fini(&loop_ctx);
 ```
 
-### Оптимизация для частых паттернов
+### Optimization for frequent patterns
 
 ```c
-// Пример оптимизации для паттерна типа "*.txt"
+// Optimization example for pattern "*.txt"
 #define OPTIMIZED_TXT_MATCH(str) \
     ({ \
         const char *s = (str); \
@@ -181,38 +181,38 @@ fnmatch_loop_fini(&loop_ctx);
         dot && strcmp(dot, ".txt") == 0; \
     })
 
-// Использование оптимизированной версии
+// Using the optimized version
 if (OPTIMIZED_TXT_MATCH(filename)) {
-    // Быстрая обработка без полного цикла
+    // Fast path without full loop
     process_txt_file(filename);
 }
 ```
 
-### Обработка сложных регулярных выражений
+### Handling complex regex‑like patterns
 
 ```c
-// Пример обработки паттерна с квантификаторами
+// Example with quantifiers
 const char *complex_pattern = "log_[0-9]{4}-[0-9]{2}-[0-9]{2}.gz";
 const char *log_filename = "log_2023-12-25.gz";
 
-// Использование циклической обработки для дат
+// Use loop processing for dates
 struct STRUCT date_loop;
 date_loop.pattern = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
 date_loop.string = "2023-12-25";
 
-// Проверка формата даты
+// Validate date format
 if (fnmatch_loop_process(&date_loop) == 0) {
     process_log_file(log_filename);
 }
 ```
 
-## Производительность
+## Performance
 
-### 📈 **Оптимизации**
+### 📈 **Optimizations**
 
 #### Loop Unrolling
 ```c
-// Разворачивание цикла для повторяющихся символов
+// Unroll loop for repeated characters
 #define UNROLL_LOOP_4(iterations) \
     switch((iterations) % 4) { \
         case 3: if (!match_char()) return FNM_NOMATCH; \
@@ -228,9 +228,9 @@ if (fnmatch_loop_process(&date_loop) == 0) {
     }
 ```
 
-#### State Caching
+#### State caching
 ```c
-// Кеширование состояний для повторяющихся проверок
+// Cache states for repeated checks
 typedef struct {
     const char *pattern_pos;
     const char *string_pos;
@@ -243,124 +243,124 @@ typedef struct {
     (cache)->match_state = (state);
 ```
 
-### 📊 **Производительность по типам паттернов**
+### 📊 **Performance by pattern types**
 
-| Тип паттерна | Производительность | Оптимизации |
-|--------------|-------------------|-------------|
-| Простые звездочки | ~500 MB/s | Loop unrolling |
-| Квантификаторы | ~200 MB/s | State caching |
-| Сложные регулярные выражения | ~50 MB/s | Backtracking |
-| Unicode паттерны | ~100 MB/s | Специфичные оптимизации |
+| Pattern type | Throughput | Optimizations |
+|--------------|------------|---------------|
+| Simple stars | ~500 MB/s  | Loop unrolling |
+| Quantifiers  | ~200 MB/s  | State caching |
+| Complex regex‑like | ~50 MB/s | Backtracking |
+| Unicode patterns | ~100 MB/s | Specific optimizations |
 
-## Безопасность
+## Security
 
-### 🔒 **Защита от атак**
-- **Ограничение глубины рекурсии**: Предотвращение stack overflow
-- **Ограничение размера паттерна**: Защита от malformed паттернов
-- **Timeout механизмы**: Предотвращение DoS атак через сложные паттерны
-- **Валидация входных данных**: Проверка корректности паттернов
+### 🔒 **Attack prevention**
+- **Recursion depth limits**: Prevent stack overflows
+- **Pattern length limits**: Guard against malformed patterns
+- **Timeout mechanisms**: Prevent DoS via complex patterns
+- **Input validation**: Verify pattern correctness
 
-### ⚠️ **Предупреждения**
-- Избегайте паттернов с экспоненциальной сложностью
-- Валидируйте входные паттерны перед обработкой
-- Используйте таймауты для сложных операций
-- Мониторьте использование памяти при циклах
+### ⚠️ **Warnings**
+- Avoid patterns with exponential complexity
+- Validate input patterns before processing
+- Use timeouts for complex operations
+- Monitor memory usage during loops
 
-## Интеграция с другими модулями
+## Integration with other modules
 
-### 🔗 **Зависимости**
-- **dap_fnmatch.h**: Основной интерфейс fnmatch
-- **dap_common.h**: Базовые типы и утилиты
-- **dap_string.h**: Работа со строками
+### 🔗 **Dependencies**
+- **dap_fnmatch.h**: Primary fnmatch interface
+- **dap_common.h**: Base types and utilities
+- **dap_string.h**: String utilities
 
-### 🔄 **Взаимодействие**
-- **dap_file_utils.h**: Поиск файлов по паттернам
-- **dap_config.h**: Обработка конфигурационных паттернов
-- **dap_module.h**: Загрузка модулей по паттернам
+### 🔄 **Interaction**
+- **dap_file_utils.h**: File search by patterns
+- **dap_config.h**: Configuration pattern handling
+- **dap_module.h**: Module loading by pattern
 
-## Тестирование
+## Testing
 
-### 🧪 **Набор тестов**
+### 🧪 **Test suite**
 ```bash
-# Тестирование циклических конструкций
+# Test loop constructs
 make test_fnmatch_loop
 
-# Тестирование оптимизаций
+# Test optimizations
 make test_fnmatch_loop_optimization
 
-# Тестирование сложных паттернов
+# Test complex patterns
 make test_fnmatch_loop_complex
 
-# Производительность
+# Performance
 make benchmark_fnmatch_loop
 ```
 
-### ✅ **Критерии качества**
-- Корректность обработки циклических паттернов
-- Эффективность оптимизаций
-- Отсутствие memory leaks
-- Защита от malformed паттернов
-- Производительность операций
+### ✅ **Quality criteria**
+- Correct handling of loop patterns
+- Optimization effectiveness
+- No memory leaks
+- Protection against malformed patterns
+- Sufficient performance
 
-## Отладка и мониторинг
+## Debugging and monitoring
 
-### 🔍 **Отладочные функции**
+### 🔍 **Debug helpers**
 ```c
-// Логирование состояния цикла
+// Log loop state
 DAP_LOG_DEBUG("Loop state: pattern='%s', string='%s', state=%d",
               loop_ctx->pattern, loop_ctx->string, loop_state);
 
-// Мониторинг производительности
+// Performance monitoring
 DAP_LOG_DEBUG("Loop processing time: %llu microseconds for %zu iterations",
               elapsed_time, iterations_count);
 ```
 
-### 📊 **Метрики**
-- Количество обработанных циклов
-- Среднее время обработки одного цикла
-- Процент использования оптимизаций
-- Количество backtracking операций
+### 📊 **Metrics**
+- Number of processed loops
+- Average time per loop
+- Optimization usage ratio
+- Number of backtracking operations
 
-## Применение в DAP SDK
+## Use in DAP SDK
 
-### 🔗 **Использование в компонентах**
+### 🔗 **Usage in components**
 
 #### File Utils
 ```c
-// Поиск файлов с циклическими паттернами
+// Search files with loop patterns
 const char *backup_pattern = "backup_*.tar.gz";
 dap_file_find_with_pattern(directory, backup_pattern);
 ```
 
 #### Configuration
 ```c
-// Обработка конфигурационных паттернов
+// Process configuration patterns
 const char *config_pattern = "config_[a-zA-Z0-9_]*.json";
 dap_config_load_with_pattern(config_pattern);
 ```
 
 #### Module Loading
 ```c
-// Загрузка модулей по паттернам
+// Load modules by pattern
 const char *module_pattern = "dap_*_module.so";
 dap_module_load_with_pattern(module_pattern);
 ```
 
-## Будущие улучшения
+## Future improvements
 
-### 🚀 **Планы развития**
-- **Расширенные квантификаторы**: Поддержка {n,m} синтаксиса
-- **Unicode поддержка**: Обработка многобайтных символов
-- **JIT компиляция**: Компиляция паттернов в машинный код
-- **SIMD оптимизации**: Векторная обработка паттернов
+### 🚀 **Roadmap**
+- **Extended quantifiers**: {n,m} syntax support
+- **Unicode support**: Multibyte character handling
+- **JIT compilation**: Compile patterns to machine code
+- **SIMD optimizations**: Vectorized pattern processing
 
-### 🔮 **Исследуемые технологии**
-- **Regular expression engines**: Интеграция с RE2, PCRE
-- **Pattern compilation**: Предварительная компиляция паттернов
-- **GPU acceleration**: Обработка паттернов на GPU
-- **Machine learning**: Адаптивная оптимизация паттернов
+### 🔮 **Research**
+- **Regular expression engines**: Integration with RE2, PCRE
+- **Pattern compilation**: Pre‑compilation of patterns
+- **GPU acceleration**: Pattern processing on GPU
+- **Machine learning**: Adaptive pattern optimization
 
 ---
 
-*Этот документ является частью технической документации DAP SDK. Для получения дополнительной информации обратитесь к документации модуля dap_fnmatch или к команде разработчиков.*
+*This document is part of the DAP SDK technical documentation. For more information, refer to the `dap_fnmatch` module docs or contact the maintainers.*
 

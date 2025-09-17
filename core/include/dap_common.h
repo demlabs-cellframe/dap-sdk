@@ -421,29 +421,29 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #define DAP_CLIENT_PROTOCOL_VERSION   26
 
 /* Cross-platform secure memory clearing */
-#ifdef HAVE_EXPLICIT_BZERO
-#include <strings.h>  // For explicit_bzero on systems that have it
+#if defined(HAVE_EXPLICIT_BZERO)
+#if defined(USE_LIBBSD_EXPLICIT_BZERO)
+#include <bsd/string.h>
 #else
-// Create our own secure memory clearing function to avoid conflicts
-DAP_STATIC_INLINE void dap_secure_bzero(void *s, size_t n) {
-#ifdef __STDC_LIB_EXT1__
-    // Use C11 memset_s if available - guaranteed not to be optimized away
-    if (memset_s(s, n, 0, n) != 0) {
-        // Fallback if memset_s fails
-        volatile unsigned char *p = (volatile unsigned char *)s;
-        while (n--) *p++ = 0;
-    }
-#else
-    // Fallback implementation with memory barrier
-    memset(s, 0, n);
-#if defined(_MSC_VER)
-    __asm;
-#else
-    __asm__ __volatile__("" : : "r"(s) : "memory");
+#include <strings.h>
 #endif
+#endif
+
+DAP_STATIC_INLINE void dap_secure_bzero(void *s, size_t n) {
+    if (!s || !n) return;
+#if defined(HAVE_EXPLICIT_BZERO)
+    explicit_bzero(s, n);
+#elif defined(DAP_OS_WINDOWS)
+    SecureZeroMemory(s, n);
+#elif defined(HAVE_MEMSET_S)
+    (void)memset_s(s, n, 0, n);
+#else
+    volatile unsigned char *p = (volatile unsigned char *)s;
+    while (n--) *p++ = 0;
 #endif
 }
-// Define explicit_bzero as alias to our secure function
+
+#ifndef HAVE_EXPLICIT_BZERO
 #define explicit_bzero dap_secure_bzero
 #endif
 

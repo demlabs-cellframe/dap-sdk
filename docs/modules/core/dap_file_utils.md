@@ -1,22 +1,22 @@
-# dap_file_utils.h - Утилиты работы с файлами и директориями
+# dap_file_utils.h - File and Directory Utilities
 
-## Обзор
+## Overview
 
-Модуль `dap_file_utils` предоставляет мощный и кроссплатформенный набор функций для работы с файлами, директориями и путями в DAP SDK. Поддерживает Windows, Linux и macOS с единым API.
+The `dap_file_utils` module provides a powerful cross‑platform set of functions for working with files, directories, and paths in the DAP SDK. It supports Windows, Linux, and macOS with a unified API.
 
-## Основные возможности
+## Key features
 
-- **Кроссплатформенность**: Единый API для Windows, Linux, macOS
-- **Работа с путями**: Разбор, сборка, канонизация путей
-- **Операции с файлами**: Чтение, проверка существования, перемещение
-- **Операции с директориями**: Создание, обход, удаление
-- **Архивирование**: Поддержка ZIP и TAR форматов
-- **Безопасность**: Проверка ASCII символов, валидация путей
-- **Управление памятью**: Автоматическое управление ресурсами
+- **Cross‑platform**: Unified API for Windows, Linux, macOS
+- **Path handling**: Parse, build, canonicalize
+- **File operations**: Read, existence checks, move/rename
+- **Directory operations**: Create, traverse, remove
+- **Archiving**: ZIP and TAR support
+- **Security**: ASCII checks, path validation
+- **Memory management**: Automatic resource handling
 
-## Кроссплатформенные константы
+## Cross‑platform constants
 
-### Разделители путей
+### Path separators
 
 ```c
 // Windows
@@ -26,7 +26,7 @@
 #define DAP_SEARCHPATH_SEPARATOR ';'
 #define DAP_SEARCHPATH_SEPARATOR_S ";"
 
-// Unix-like системы (Linux, macOS)
+// Unix-like systems (Linux, macOS)
 #define DAP_DIR_SEPARATOR '/'
 #define DAP_DIR_SEPARATOR_S "/"
 #define DAP_IS_DIR_SEPARATOR(c) ((c) == DAP_DIR_SEPARATOR)
@@ -34,34 +34,34 @@
 #define DAP_SEARCHPATH_SEPARATOR_S ":"
 ```
 
-**Использование:**
+**Usage:**
 ```c
-// Кроссплатформенный код
+// Cross‑platform code
 char path[MAX_PATH];
 snprintf(path, sizeof(path), "data%cfile.txt", DAP_DIR_SEPARATOR);
 
-// Проверка разделителя
+// Separator check
 if (DAP_IS_DIR_SEPARATOR(path[i])) {
-    // Обработка разделителя
+    // Handle separator
 }
 ```
 
-## Структуры данных
+## Data structures
 
 ### dap_list_name_directories_t
 
-Структура для хранения списка имен директорий:
+Structure for storing a list of directory names:
 
 ```c
 typedef struct dap_list_name_directories {
-    char *name_directory;                        // Имя директории
-    struct dap_list_name_directories *next;      // Следующий элемент
+    char *name_directory;                        // Directory name
+    struct dap_list_name_directories *next;      // Next element
 } dap_list_name_directories_t;
 ```
 
 ## API Reference
 
-### Проверка существования и типов
+### Existence and type checks
 
 #### dap_valid_ascii_symbols()
 
@@ -69,21 +69,21 @@ typedef struct dap_list_name_directories {
 bool dap_valid_ascii_symbols(const char *a_dir_path);
 ```
 
-**Описание**: Проверяет, содержит ли путь к директории только ASCII символы.
+**Description**: Checks whether the directory path contains ASCII‑only characters.
 
-**Параметры:**
-- `a_dir_path` - путь к директории для проверки
+**Parameters:**
+- `a_dir_path` - directory path to check
 
-**Возвращает:**
-- `true` - путь содержит только ASCII символы
-- `false` - путь содержит не-ASCII символы
+**Returns:**
+- `true` - path contains ASCII‑only characters
+- `false` - path contains non‑ASCII characters
 
-**Пример:**
+**Example:**
 ```c
 #include "dap_file_utils.h"
 
 const char *path = "C:\\Program Files\\MyApp";
-// В Windows это вернет false из-за пробелов и не-ASCII символов
+// On Windows this returns false due to spaces and non‑ASCII characters
 if (!dap_valid_ascii_symbols(path)) {
     fprintf(stderr, "Path contains unsupported symbols\n");
 }
@@ -95,14 +95,14 @@ if (!dap_valid_ascii_symbols(path)) {
 bool dap_file_simple_test(const char *a_file_path);
 ```
 
-**Описание**: Проверяет существование файла без дополнительных атрибутов файловой системы.
+**Description**: Checks file existence without extra filesystem attributes.
 
-**Параметры:**
-- `a_file_path` - путь к файлу
+**Parameters:**
+- `a_file_path` - file path
 
-**Возвращает:**
-- `true` - файл существует
-- `false` - файл не существует
+**Returns:**
+- `true` - file exists
+- `false` - file does not exist
 
 #### dap_file_test()
 
@@ -110,14 +110,14 @@ bool dap_file_simple_test(const char *a_file_path);
 bool dap_file_test(const char *a_file_path);
 ```
 
-**Описание**: Проверяет существование файла с полной проверкой атрибутов.
+**Description**: Checks file existence with attribute inspection.
 
-**Параметры:**
-- `a_file_path` - путь к файлу
+**Parameters:**
+- `a_file_path` - file path
 
-**Возвращает:**
-- `true` - файл существует
-- `false` - файл не существует
+**Returns:**
+- `true` - file exists
+- `false` - file does not exist
 
 #### dap_dir_test()
 
@@ -125,18 +125,18 @@ bool dap_file_test(const char *a_file_path);
 bool dap_dir_test(const char *a_dir_path);
 ```
 
-**Описание**: Проверяет существование директории.
+**Description**: Checks directory existence.
 
-**Параметры:**
-- `a_dir_path` - путь к директории
+**Parameters:**
+- `a_dir_path` - directory path
 
-**Возвращает:**
-- `true` - директория существует
-- `false` - директория не существует
+**Returns:**
+- `true` - directory exists
+- `false` - directory does not exist
 
-**Пример:**
+**Example:**
 ```c
-// Проверка перед использованием
+// Pre‑use check
 if (!dap_file_test("config.ini")) {
     fprintf(stderr, "Configuration file not found\n");
     return 1;
@@ -148,7 +148,7 @@ if (!dap_dir_test("data/")) {
 }
 ```
 
-### Операции с файлами
+### File operations
 
 #### dap_file_mv()
 
@@ -156,32 +156,32 @@ if (!dap_dir_test("data/")) {
 int dap_file_mv(const char *a_path_old, const char *a_path_new);
 ```
 
-**Описание**: Перемещает или переименовывает файл.
+**Description**: Moves or renames a file.
 
-**Параметры:**
-- `a_path_old` - текущий путь к файлу
-- `a_path_new` - новый путь к файлу
+**Parameters:**
+- `a_path_old` - current file path
+- `a_path_new` - new file path
 
-**Возвращает:**
-- `0` - успех
-- `-1` - ошибка
+**Returns:**
+- `0` - success
+- `-1` - error
 
-**Пример:**
+**Example:**
 ```c
-// Переименование файла
+// Rename file
 if (dap_file_mv("temp.txt", "data.txt") == 0) {
     printf("File renamed successfully\n");
 } else {
     perror("Failed to rename file");
 }
 
-// Перемещение файла
+// Move file
 if (dap_file_mv("file.txt", "backup/file.txt") == 0) {
     printf("File moved successfully\n");
 }
 ```
 
-### Работа с директориями
+### Working with directories
 
 #### dap_mkdir_with_parents()
 
@@ -189,18 +189,18 @@ if (dap_file_mv("file.txt", "backup/file.txt") == 0) {
 int dap_mkdir_with_parents(const char *a_dir_path);
 ```
 
-**Описание**: Создает директорию со всеми промежуточными поддиректориями.
+**Description**: Creates a directory with all intermediate subdirectories.
 
-**Параметры:**
-- `a_dir_path` - путь к создаваемой директории
+**Parameters:**
+- `a_dir_path` - path of the directory to create
 
-**Возвращает:**
-- `0` - директория создана или уже существует
-- `-1` - ошибка создания
+**Returns:**
+- `0` - directory created or already exists
+- `-1` - creation error
 
-**Пример:**
+**Example:**
 ```c
-// Создание вложенной структуры директорий
+// Create nested directory structure
 const char *path = "data/logs/2024/01/15";
 if (dap_mkdir_with_parents(path) == 0) {
     printf("Directory structure created\n");
@@ -209,7 +209,7 @@ if (dap_mkdir_with_parents(path) == 0) {
 }
 ```
 
-### Работа с путями
+### Working with paths
 
 #### dap_path_get_basename()
 
@@ -217,20 +217,20 @@ if (dap_mkdir_with_parents(path) == 0) {
 char *dap_path_get_basename(const char *a_file_name);
 ```
 
-**Описание**: Извлекает имя файла из полного пути.
+**Description**: Extracts a filename from a full path.
 
-**Параметры:**
-- `a_file_name` - полный путь к файлу
+**Parameters:**
+- `a_file_name` - full file path
 
-**Возвращает:** Имя файла (нужно освобождать с помощью `free()`)
+**Returns:** Filename (must be freed with `free()`)
 
-**Пример:**
+**Example:**
 ```c
 const char *full_path = "/home/user/documents/file.txt";
 char *filename = dap_path_get_basename(full_path);
 
 if (filename) {
-    printf("Filename: %s\n", filename); // Вывод: file.txt
+    printf("Filename: %s\n", filename); // Output: file.txt
     free(filename);
 }
 ```
@@ -241,20 +241,20 @@ if (filename) {
 char *dap_path_get_dirname(const char *a_file_name);
 ```
 
-**Описание**: Извлекает директорию из полного пути к файлу.
+**Description**: Extracts directory from a full file path.
 
-**Параметры:**
-- `a_file_name` - полный путь к файлу
+**Parameters:**
+- `a_file_name` - full file path
 
-**Возвращает:** Путь к директории (нужно освобождать с помощью `free()`)
+**Returns:** Directory path (must be freed with `free()`)
 
-**Пример:**
+**Example:**
 ```c
 const char *full_path = "/home/user/documents/file.txt";
 char *dirname = dap_path_get_dirname(full_path);
 
 if (dirname) {
-    printf("Directory: %s\n", dirname); // Вывод: /home/user/documents
+    printf("Directory: %s\n", dirname); // Output: /home/user/documents
     free(dirname);
 }
 ```
@@ -265,16 +265,16 @@ if (dirname) {
 bool dap_path_is_absolute(const char *a_file_name);
 ```
 
-**Описание**: Проверяет, является ли путь абсолютным.
+**Description**: Checks whether a path is absolute.
 
-**Параметры:**
-- `a_file_name` - путь для проверки
+**Parameters:**
+- `a_file_name` - path to check
 
-**Возвращает:**
-- `true` - путь абсолютный
-- `false` - путь относительный
+**Returns:**
+- `true` - path is absolute
+- `false` - path is relative
 
-**Пример:**
+**Example:**
 ```c
 const char *path1 = "/home/user/file.txt";
 const char *path2 = "relative/path/file.txt";
@@ -289,24 +289,24 @@ printf("Path2 is absolute: %s\n", dap_path_is_absolute(path2) ? "yes" : "no");
 const char *dap_path_get_ext(const char *a_filename);
 ```
 
-**Описание**: Извлекает расширение файла.
+**Description**: Extracts a file extension.
 
-**Параметры:**
-- `a_filename` - имя файла
+**Parameters:**
+- `a_filename` - filename
 
-**Возвращает:** Указатель на расширение или `NULL`
+**Returns:** Pointer to the extension or `NULL`
 
-**Пример:**
+**Example:**
 ```c
 const char *filename = "document.pdf";
 const char *ext = dap_path_get_ext(filename);
 
 if (ext) {
-    printf("Extension: %s\n", ext); // Вывод: .pdf
+    printf("Extension: %s\n", ext); // Output: .pdf
 }
 ```
 
-### Обход директорий
+### Directory traversal
 
 #### dap_get_subs()
 
@@ -314,14 +314,14 @@ if (ext) {
 dap_list_name_directories_t *dap_get_subs(const char *a_path_name);
 ```
 
-**Описание**: Получает список поддиректорий в указанной директории.
+**Description**: Retrieves a list of subdirectories in the given directory.
 
-**Параметры:**
-- `a_path_name` - путь к директории
+**Parameters:**
+- `a_path_name` - directory path
 
-**Возвращает:** Список поддиректорий или `NULL` при ошибке
+**Returns:** List of subdirectories or `NULL` on error
 
-**Пример:**
+**Example:**
 ```c
 const char *dir_path = "/home/user/projects";
 dap_list_name_directories_t *subs = dap_get_subs(dir_path);
@@ -343,12 +343,12 @@ if (subs) {
 void dap_subs_free(dap_list_name_directories_t *subs_list);
 ```
 
-**Описание**: Освобождает память, занятую списком поддиректорий.
+**Description**: Frees memory occupied by the subdirectories list.
 
-**Параметры:**
-- `subs_list` - список для освобождения
+**Parameters:**
+- `subs_list` - list to free
 
-### Чтение файлов
+### Reading files
 
 #### dap_file_get_contents2()
 
@@ -356,15 +356,15 @@ void dap_subs_free(dap_list_name_directories_t *subs_list);
 char *dap_file_get_contents2(const char *filename, size_t *length);
 ```
 
-**Описание**: Читает содержимое файла в память.
+**Description**: Reads file contents into memory.
 
-**Параметры:**
-- `filename` - путь к файлу
-- `length` - указатель для сохранения размера файла
+**Parameters:**
+- `filename` - file path
+- `length` - pointer to store file size
 
-**Возвращает:** Содержимое файла или `NULL` при ошибке (нужно освобождать)
+**Returns:** File contents or `NULL` on error (must be freed)
 
-**Пример:**
+**Example:**
 ```c
 const char *filename = "config.txt";
 size_t file_size;
@@ -379,7 +379,7 @@ if (content) {
 }
 ```
 
-### Построение путей
+### Building paths
 
 #### dap_build_path()
 
@@ -387,28 +387,28 @@ if (content) {
 char *dap_build_path(const char *separator, const char *first_element, ...);
 ```
 
-**Описание**: Создает путь из нескольких элементов с указанным разделителем.
+**Description**: Builds a path from multiple elements with a custom separator.
 
-**Параметры:**
-- `separator` - разделитель элементов пути
-- `first_element` - первый элемент пути
-- `...` - остальные элементы (завершаются `NULL`)
+**Parameters:**
+- `separator` - path separator
+- `first_element` - first path element
+- `...` - remaining elements (terminated by `NULL`)
 
-**Возвращает:** Полный путь (нужно освобождать с помощью `free()`)
+**Returns:** Full path (must be freed with `free()`)
 
-**Пример:**
+**Example:**
 ```c
-// Создание пути с кастомным разделителем
+// Create a path with a custom separator
 char *path1 = dap_build_path("/", "home", "user", "docs", "file.txt", NULL);
 if (path1) {
-    printf("Path: %s\n", path1); // Вывод: home/user/docs/file.txt
+    printf("Path: %s\n", path1); // Output: home/user/docs/file.txt
     free(path1);
 }
 
-// Создание пути для Windows
+// Create a Windows path
 char *path2 = dap_build_path("\\", "C:", "Program Files", "MyApp", NULL);
 if (path2) {
-    printf("Windows path: %s\n", path2); // Вывод: C:\Program Files\MyApp
+    printf("Windows path: %s\n", path2); // Output: C:\\Program Files\\MyApp
     free(path2);
 }
 ```
@@ -419,27 +419,27 @@ if (path2) {
 char *dap_build_filename(const char *first_element, ...);
 ```
 
-**Описание**: Создает путь к файлу с использованием системного разделителя.
+**Description**: Builds a path using the system separator.
 
-**Параметры:**
-- `first_element` - первый элемент пути
-- `...` - остальные элементы (завершаются `NULL`)
+**Parameters:**
+- `first_element` - first path element
+- `...` - remaining elements (terminated by `NULL`)
 
-**Возвращает:** Полный путь (нужно освобождать с помощью `free()`)
+**Returns:** Full path (must be freed with `free()`)
 
-**Пример:**
+**Example:**
 ```c
-// Кроссплатформенное построение пути
+// Cross‑platform path building
 char *filepath = dap_build_filename("data", "users", "123", "profile.json", NULL);
 if (filepath) {
     printf("File path: %s\n", filepath);
-    // В Unix: data/users/123/profile.json
-    // В Windows: data\users\123\profile.json
+    // On Unix: data/users/123/profile.json
+    // On Windows: data\\users\\123\\profile.json
     free(filepath);
 }
 ```
 
-### Канонизация путей
+### Path canonicalization
 
 #### dap_canonicalize_filename()
 
@@ -447,24 +447,24 @@ if (filepath) {
 char *dap_canonicalize_filename(const char *filename, const char *relative_to);
 ```
 
-**Описание**: Получает каноническое имя файла, разрешая все `.` и `..`.
+**Description**: Returns a canonical filename resolving `.` and `..`.
 
-**Параметры:**
-- `filename` - имя файла для канонизации
-- `relative_to` - базовый путь или `NULL` для текущей директории
+**Parameters:**
+- `filename` - filename to canonicalize
+- `relative_to` - base path or `NULL` for the current directory
 
-**Возвращает:** Канонизированный путь (нужно освобождать)
+**Returns:** Canonicalized path (must be freed)
 
-**Пример:**
+**Example:**
 ```c
-// Канонизация с базовым путем
+// Canonicalization with base path
 char *canonical1 = dap_canonicalize_filename("../data/file.txt", "/home/user");
 if (canonical1) {
     printf("Canonical path: %s\n", canonical1); // /home/data/file.txt
     free(canonical1);
 }
 
-// Канонизация относительно текущей директории
+// Canonicalization relative to current directory
 char *canonical2 = dap_canonicalize_filename("./config/../data/file.txt", NULL);
 if (canonical2) {
     printf("Canonical path: %s\n", canonical2); // data/file.txt
@@ -478,9 +478,9 @@ if (canonical2) {
 char *dap_canonicalize_path(const char *a_filename, const char *a_path);
 ```
 
-**Описание**: Альтернативная функция канонизации пути.
+**Description**: Alternative path canonicalization function.
 
-### Работа с текущей директорией
+### Working with current directory
 
 #### dap_get_current_dir()
 
@@ -488,11 +488,11 @@ char *dap_canonicalize_path(const char *a_filename, const char *a_path);
 char *dap_get_current_dir(void);
 ```
 
-**Описание**: Получает текущую рабочую директорию.
+**Description**: Returns the current working directory.
 
-**Возвращает:** Текущая директория (нужно освобождать)
+**Returns:** Current directory (must be freed)
 
-**Пример:**
+**Example:**
 ```c
 char *cwd = dap_get_current_dir();
 if (cwd) {
@@ -501,7 +501,7 @@ if (cwd) {
 }
 ```
 
-### Удаление файлов и директорий
+### Removing files and directories
 
 #### dap_rm_rf()
 
@@ -509,40 +509,40 @@ if (cwd) {
 void dap_rm_rf(const char *path);
 ```
 
-**Описание**: Рекурсивно удаляет файлы и директории (аналог `rm -rf`).
+**Description**: Recursively removes files and directories (like `rm -rf`).
 
-**Параметры:**
-- `path` - путь к файлу или директории для удаления
+**Parameters:**
+- `path` - file or directory path to remove
 
-**Примечание:** Использовать с осторожностью!
+**Note:** Use with care!
 
-**Пример:**
+**Example:**
 ```c
-// Удаление временной директории
+// Remove temporary directory
 const char *temp_dir = "/tmp/myapp_temp";
 dap_rm_rf(temp_dir);
 printf("Temporary directory removed\n");
 ```
 
-### Архивирование
+### Archiving
 
-#### dap_zip_directory() (если включена поддержка ZIP)
+#### dap_zip_directory() (if ZIP support is enabled)
 
 ```c
 bool dap_zip_directory(const char *a_inputdir, const char *a_output_filename);
 ```
 
-**Описание**: Создает ZIP архив из директории.
+**Description**: Creates a ZIP archive from a directory.
 
-**Параметры:**
-- `a_inputdir` - входная директория
-- `a_output_filename` - путь к выходному ZIP файлу
+**Parameters:**
+- `a_inputdir` - input directory
+- `a_output_filename` - output ZIP filename
 
-**Возвращает:**
-- `true` - успех
-- `false` - ошибка
+**Returns:**
+- `true` - success
+- `false` - failure
 
-**Требования:** Компиляция с `DAP_BUILD_WITH_ZIP`
+**Requirements:** Build with `DAP_BUILD_WITH_ZIP`
 
 #### dap_tar_directory()
 
@@ -550,19 +550,19 @@ bool dap_zip_directory(const char *a_inputdir, const char *a_output_filename);
 bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename);
 ```
 
-**Описание**: Создает TAR архив из директории.
+**Description**: Creates a TAR archive from a directory.
 
-**Параметры:**
-- `a_inputdir` - входная директория
-- `a_output_tar_filename` - путь к выходному TAR файлу
+**Parameters:**
+- `a_inputdir` - input directory
+- `a_output_tar_filename` - output TAR filename
 
-**Возвращает:**
-- `true` - успех
-- `false` - ошибка
+**Returns:**
+- `true` - success
+- `false` - failure
 
-**Пример:**
+**Example:**
 ```c
-// Создание резервной копии
+// Create a backup
 const char *source_dir = "/home/user/data";
 const char *backup_file = "/home/user/backup/data.tar";
 
@@ -573,9 +573,9 @@ if (dap_tar_directory(source_dir, backup_file)) {
 }
 ```
 
-## Примеры использования
+## Usage examples
 
-### Пример 1: Работа с конфигурационными файлами
+### Example 1: Working with configuration files
 
 ```c
 #include "dap_file_utils.h"
@@ -585,19 +585,19 @@ if (dap_tar_directory(source_dir, backup_file)) {
 #define CONFIG_FILE "app.conf"
 
 int load_config_file(char **content, size_t *size) {
-    // Создание пути к конфигурационному файлу
+    // Build path to the configuration file
     char *config_path = dap_build_filename(CONFIG_DIR, CONFIG_FILE, NULL);
     if (!config_path) {
         return -1;
     }
 
-    // Проверка существования файла
+    // Check file existence
     if (!dap_file_test(config_path)) {
         free(config_path);
         return -2;
     }
 
-    // Чтение файла
+    // Read file
     *content = dap_file_get_contents2(config_path, size);
     free(config_path);
 
@@ -609,18 +609,18 @@ int load_config_file(char **content, size_t *size) {
 }
 
 int save_config_file(const char *content, size_t size) {
-    // Создание директории для конфигурации
+    // Create configuration directory
     if (dap_mkdir_with_parents(CONFIG_DIR) != 0) {
         return -1;
     }
 
-    // Создание пути к файлу
+    // Build path to file
     char *config_path = dap_build_filename(CONFIG_DIR, CONFIG_FILE, NULL);
     if (!config_path) {
         return -2;
     }
 
-    // Запись файла
+    // Write file
     FILE *file = fopen(config_path, "wb");
     free(config_path);
 
@@ -635,7 +635,7 @@ int save_config_file(const char *content, size_t size) {
 }
 ```
 
-### Пример 2: Обход директорий и обработка файлов
+### Example 2: Directory traversal and file processing
 
 ```c
 #include "dap_file_utils.h"
@@ -649,11 +649,11 @@ typedef struct file_info {
 } file_info_t;
 
 void process_directory(const char *base_path, int depth) {
-    if (depth > 10) { // Предотвращение бесконечной рекурсии
+    if (depth > 10) { // Prevent infinite recursion
         return;
     }
 
-    // Получение списка поддиректорий
+    // Get the list of subdirectories
     dap_list_name_directories_t *subs = dap_get_subs(base_path);
     if (!subs) {
         return;
@@ -661,7 +661,7 @@ void process_directory(const char *base_path, int depth) {
 
     dap_list_name_directories_t *current = subs;
     while (current) {
-        // Построение полного пути
+        // Build full path
         char *full_path = dap_build_filename(base_path, current->name_directory, NULL);
         if (!full_path) {
             continue;
@@ -669,7 +669,7 @@ void process_directory(const char *base_path, int depth) {
 
         printf("%*s%s\n", depth * 2, "", current->name_directory);
 
-        // Рекурсивная обработка поддиректорий
+        // Recursive processing of subdirectories
         if (dap_dir_test(full_path)) {
             process_directory(full_path, depth + 1);
         }
@@ -687,7 +687,7 @@ void scan_project_files(const char *project_root) {
 }
 ```
 
-### Пример 3: Управление временными файлами
+### Example 3: Temporary files management
 
 ```c
 #include "dap_file_utils.h"
@@ -703,25 +703,25 @@ typedef struct temp_file {
 temp_file_t *temp_files = NULL;
 
 char *create_temp_file(const char *prefix, const char *extension) {
-    // Создание временной директории
+    // Create temporary directory
     const char *temp_dir = "temp";
     if (dap_mkdir_with_parents(temp_dir) != 0) {
         return NULL;
     }
 
-    // Генерация уникального имени файла
+    // Generate unique filename
     time_t now = time(NULL);
     char filename[256];
     snprintf(filename, sizeof(filename), "%s_%ld.%s",
              prefix, now, extension);
 
-    // Создание полного пути
+    // Build full path
     char *filepath = dap_build_filename(temp_dir, filename, NULL);
     if (!filepath) {
         return NULL;
     }
 
-    // Регистрация временного файла
+    // Register temporary file
     temp_file_t *temp = malloc(sizeof(temp_file_t));
     if (temp) {
         temp->path = strdup(filepath);
@@ -734,7 +734,7 @@ char *create_temp_file(const char *prefix, const char *extension) {
 }
 
 void cleanup_temp_files(void) {
-    // Удаление всех временных файлов
+    // Remove all temporary files
     temp_file_t *current = temp_files;
     while (current) {
         if (dap_file_test(current->path)) {
@@ -751,19 +751,19 @@ void cleanup_temp_files(void) {
 
     temp_files = NULL;
 
-    // Удаление временной директории
+    // Remove temporary directory
     dap_rm_rf("temp");
 }
 ```
 
-### Пример 4: Работа с путями в кроссплатформенном коде
+### Example 4: Working with paths in cross‑platform code
 
 ```c
 #include "dap_file_utils.h"
 #include <stdio.h>
 
 char *get_data_file_path(const char *filename) {
-    // Определение базовой директории данных
+    // Determine base data directory
     char *data_dir;
 
 #ifdef _WIN32
@@ -775,7 +775,7 @@ char *get_data_file_path(const char *filename) {
         data_dir = dap_build_filename("C:", "ProgramData", "MyApp", NULL);
     }
 #else
-    // Unix-like: ~/.myapp
+    // Unix‑like: ~/.myapp
     const char *home = getenv("HOME");
     if (home) {
         data_dir = dap_build_filename(home, ".myapp", NULL);
@@ -788,13 +788,13 @@ char *get_data_file_path(const char *filename) {
         return NULL;
     }
 
-    // Создание директории данных
+    // Create data directory
     if (dap_mkdir_with_parents(data_dir) != 0) {
         free(data_dir);
         return NULL;
     }
 
-    // Построение пути к файлу
+    // Build file path
     char *file_path = dap_build_filename(data_dir, filename, NULL);
     free(data_dir);
 
@@ -802,7 +802,7 @@ char *get_data_file_path(const char *filename) {
 }
 
 char *get_config_file_path(const char *config_name) {
-    // Определение директории конфигурации
+    // Determine configuration directory
     char *config_dir;
 
 #ifdef _WIN32
@@ -814,7 +814,7 @@ char *get_config_file_path(const char *config_name) {
         config_dir = dap_build_filename("C:", "ProgramData", "MyApp", "Config", NULL);
     }
 #else
-    // Unix-like: /etc/myapp
+    // Unix‑like: /etc/myapp
     config_dir = strdup("/etc/myapp");
 #endif
 
@@ -822,13 +822,13 @@ char *get_config_file_path(const char *config_name) {
         return NULL;
     }
 
-    // Создание директории конфигурации
+    // Create configuration directory
     if (dap_mkdir_with_parents(config_dir) != 0) {
         free(config_dir);
         return NULL;
     }
 
-    // Построение пути к файлу конфигурации
+    // Build configuration file path
     char *config_path = dap_build_filename(config_dir, config_name, NULL);
     free(config_dir);
 
@@ -836,57 +836,57 @@ char *get_config_file_path(const char *config_name) {
 }
 ```
 
-## Производительность
+## Performance
 
-### Бенчмарки производительности
+### Performance benchmarks
 
-| Операция | Производительность | Примечание |
-|----------|-------------------|------------|
-| `dap_file_test()` | ~1-5 μs | Проверка существования файла |
-| `dap_dir_test()` | ~1-5 μs | Проверка существования директории |
-| `dap_path_get_basename()` | ~0.1-1 μs | Извлечение имени файла |
-| `dap_build_filename()` | ~1-10 μs | Построение пути |
-| `dap_canonicalize_filename()` | ~5-20 μs | Канонизация пути |
-| `dap_file_get_contents2()` | Зависит от размера | Чтение файла в память |
+| Operation | Throughput | Note |
+|-----------|-----------|------|
+| `dap_file_test()` | ~1-5 μs | File existence check |
+| `dap_dir_test()` | ~1-5 μs | Directory existence check |
+| `dap_path_get_basename()` | ~0.1-1 μs | Extract filename |
+| `dap_build_filename()` | ~1-10 μs | Build path |
+| `dap_canonicalize_filename()` | ~5-20 μs | Canonicalize path |
+| `dap_file_get_contents2()` | Depends on size | Read file into memory |
 
-### Оптимизации
+### Optimizations
 
-1. **Кэширование результатов**: Повторные проверки существования файлов
-2. **Пул строк**: Переиспользование строковых объектов
-3. **Ленивая загрузка**: Отложенное чтение больших файлов
-4. **Буферный ввод/вывод**: Эффективная работа с файлами
+1. **Result caching**: Avoid repeated filesystem checks
+2. **String pool**: Reuse string objects
+3. **Lazy loading**: Defer reading large files
+4. **Buffered I/O**: Efficient file operations
 
-### Факторы влияния
+### Impact factors
 
-- **Длина путей**: Длинные пути обрабатываются медленнее
-- **Количество файлов**: Большое количество файлов в директории
-- **Файловая система**: Различная производительность на разных ФС
-- **Кэширование ОС**: Влияние кэша файловой системы
+- **Path length**: Long paths process slower
+- **Number of files**: Many entries in a directory
+- **Filesystem**: Performance differs across FS types
+- **OS caching**: Filesystem cache impact
 
-## Безопасность
+## Security
 
-### Рекомендации по безопасному использованию
+### Secure usage recommendations
 
 ```c
-// ✅ Правильная обработка путей
+// ✅ Correct path handling
 char *safe_build_path(const char *base_dir, const char *filename) {
-    // Проверка на NULL
+    // NULL checks
     if (!base_dir || !filename) {
         return NULL;
     }
 
-    // Проверка на ASCII символы (для Windows)
+    // ASCII‑only check (for Windows)
     if (!dap_valid_ascii_symbols(filename)) {
         return NULL;
     }
 
-    // Канонизация пути для предотвращения directory traversal
+    // Canonicalize path to prevent directory traversal
     char *canonical = dap_canonicalize_filename(filename, base_dir);
     if (!canonical) {
         return NULL;
     }
 
-    // Проверка, что путь находится в разрешенной директории
+    // Ensure the path stays within the allowed base directory
     if (strncmp(canonical, base_dir, strlen(base_dir)) != 0) {
         free(canonical);
         return NULL;
@@ -895,47 +895,47 @@ char *safe_build_path(const char *base_dir, const char *filename) {
     return canonical;
 }
 
-// ❌ Уязвимый код
+// ❌ Vulnerable code
 void unsafe_file_access(const char *user_input) {
-    // Directory traversal уязвимость
+    // Directory traversal vulnerability
     char *path = dap_build_filename("/var/data", user_input, NULL);
-    // Пользователь может передать "../../../etc/passwd"
+    // A user may pass "../../../etc/passwd"
     FILE *file = fopen(path, "r");
     free(path);
 }
 ```
 
-### Защита от типичных атак
+### Protection against common attacks
 
-1. **Directory Traversal**: Всегда канонизируйте пути
-2. **Path Injection**: Валидируйте входные данные
-3. **Symbolic Links**: Проверяйте целевые файлы
-4. **Permissions**: Проверяйте права доступа
+1. **Directory Traversal**: Always canonicalize paths
+2. **Path Injection**: Validate input
+3. **Symbolic Links**: Verify target files
+4. **Permissions**: Check access rights
 
-### Работа с чувствительными файлами
+### Working with sensitive files
 
 ```c
-// Безопасное чтение конфиденциальных файлов
+// Secure reading of confidential files
 char *read_secure_config(const char *config_path) {
-    // Проверка пути
+    // Validate path
     if (!dap_path_is_absolute(config_path)) {
         return NULL;
     }
 
-    // Проверка существования
+    // Existence check
     if (!dap_file_test(config_path)) {
         return NULL;
     }
 
-    // Проверка прав доступа (опционально)
+    // Access rights check (optional)
     // check_file_permissions(config_path);
 
-    // Чтение файла
+    // Read file
     size_t size;
     char *content = dap_file_get_contents2(config_path, &size);
 
     if (content) {
-        // Очистка памяти после использования
+        // Memory cleanup after use (example)
         // memset(content, 0, size);
         // free(content);
     }
@@ -944,24 +944,24 @@ char *read_secure_config(const char *config_path) {
 }
 ```
 
-## Лучшие практики
+## Best practices
 
-### 1. Обработка ошибок
+### 1. Error handling
 
 ```c
-// Всегда проверяйте результат операций
+// Always check operation results
 int safe_file_operations(const char *filename) {
-    // Проверка существования файла
+    // Check file existence
     if (!dap_file_test(filename)) {
         fprintf(stderr, "File does not exist: %s\n", filename);
         return -1;
     }
 
-    // Проверка директории для записи
+    // Check directory for writing
     char *dirname = dap_path_get_dirname(filename);
     if (dirname) {
         if (!dap_dir_test(dirname)) {
-            // Создание директории
+            // Create directory
             if (dap_mkdir_with_parents(dirname) != 0) {
                 fprintf(stderr, "Cannot create directory: %s\n", dirname);
                 free(dirname);
@@ -975,10 +975,10 @@ int safe_file_operations(const char *filename) {
 }
 ```
 
-### 2. Управление ресурсами
+### 2. Resource management
 
 ```c
-// Правильное управление памятью
+// Proper memory management
 void process_files(const char *dir_path) {
     dap_list_name_directories_t *subs = dap_get_subs(dir_path);
     if (!subs) {
@@ -987,10 +987,10 @@ void process_files(const char *dir_path) {
 
     dap_list_name_directories_t *current = subs;
     while (current) {
-        // Создание пути к файлу
+        // Create file path
         char *file_path = dap_build_filename(dir_path, current->name_directory, NULL);
         if (file_path) {
-            // Обработка файла
+            // Process file
             process_single_file(file_path);
             free(file_path);
         }
@@ -998,25 +998,25 @@ void process_files(const char *dir_path) {
         current = current->next;
     }
 
-    // Освобождение списка
+    // Free list
     dap_subs_free(subs);
 }
 ```
 
-### 3. Кроссплатформенная разработка
+### 3. Cross‑platform development
 
 ```c
-// Использование системных разделителей
+// Use system separators
 void create_log_path(char *buffer, size_t size) {
     const char *log_dir = "logs";
     const char *log_file = "app.log";
 
-    // Создание директории
+    // Create directory
     if (dap_mkdir_with_parents(log_dir) != 0) {
         return;
     }
 
-    // Построение пути
+    // Build path
     char *full_path = dap_build_filename(log_dir, log_file, NULL);
     if (full_path) {
         strncpy(buffer, full_path, size - 1);
@@ -1025,28 +1025,28 @@ void create_log_path(char *buffer, size_t size) {
     }
 }
 
-// Использование констант
+// Use constants
 bool is_path_separator(char c) {
     return DAP_IS_DIR_SEPARATOR(c);
 }
 ```
 
-### 4. Работа с большими файлами
+### 4. Working with large files
 
 ```c
-// Потоковое чтение больших файлов
+// Stream processing of large files
 int process_large_file(const char *filename) {
-    // Проверка размера файла
+    // Check file size
     struct stat st;
     if (stat(filename, &st) != 0) {
         return -1;
     }
 
-    // Для больших файлов используем потоковое чтение
+    // Use streaming for large files
     if (st.st_size > MAX_MEMORY_FILE_SIZE) {
         return process_file_streaming(filename);
     } else {
-        // Для маленьких файлов - чтение в память
+        // For small files - read into memory
         size_t size;
         char *content = dap_file_get_contents2(filename, &size);
         if (content) {
@@ -1059,34 +1059,34 @@ int process_large_file(const char *filename) {
 }
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap_file_utils` предоставляет всестороннюю поддержку для работы с файлами и директориями в DAP SDK:
+The `dap_file_utils` module provides comprehensive support for working with files and directories in the DAP SDK:
 
-- **Кроссплатформенность**: Единый API для всех поддерживаемых платформ
-- **Безопасность**: Защита от типичных атак и ошибок
-- **Производительность**: Оптимизированные алгоритмы и кэширование
-- **Удобство**: Простой и интуитивный интерфейс
-- **Надежность**: Обработка ошибок и управление ресурсами
+- **Cross‑platform**: Unified API for all supported platforms
+- **Security**: Protection against common attacks and mistakes
+- **Performance**: Optimized algorithms and caching
+- **Convenience**: Simple and intuitive interface
+- **Reliability**: Error handling and resource management
 
-### Ключевые преимущества:
+### Key advantages:
 
-- Полная поддержка Windows, Linux и macOS
-- Автоматическое управление памятью
-- Встроенная защита от уязвимостей
-- Высокая производительность операций
-- Широкий набор функций для различных задач
+- Full support for Windows, Linux, and macOS
+- Automatic memory management
+- Built‑in vulnerability mitigations
+- High operation performance
+- Broad set of utilities for various tasks
 
-### Рекомендации по использованию:
+### Recommendations:
 
-1. **Всегда проверяйте результат операций** с файлами
-2. **Используйте `dap_canonicalize_filename()`** для предотвращения directory traversal
-3. **Освобождайте память** для строк, возвращаемых функциями
-4. **Проверяйте существование** файлов и директорий перед использованием
-5. **Используйте кроссплатформенные константы** для разделителей
+1. **Always check operation results** for file APIs
+2. **Use `dap_canonicalize_filename()`** to prevent directory traversal
+3. **Free memory** for strings returned by functions
+4. **Check existence** of files and directories before use
+5. **Use cross‑platform constants** for separators
 
-Для получения дополнительной информации смотрите:
-- `dap_file_utils.h` - полный API модуля
-- Примеры в директории `examples/file_utils/`
-- Документацию по кроссплатформенной разработке
+For more information, see:
+- `dap_file_utils.h` - full module API
+- Examples in `examples/file_utils/`
+- Cross‑platform development documentation
 

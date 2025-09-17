@@ -23,16 +23,14 @@
  */
 bool dap_isstralnum(const char *c)
 {
-    // Security fix: add NULL check before strlen call
-    if (!c) {
+    if (!c)
         return false;
-    }
     
     size_t str_len = strlen(c);
 
     for (size_t i = 0; i < str_len; i++)
     {
-        if (!isalnum(c[i]) && c[i] != '_' && c[i] != '-')
+        if (!dap_ascii_isalnum(c[i]) && c[i] != '_' && c[i] != '-')
             return false;
     }
 
@@ -46,26 +44,20 @@ bool dap_isstralnum(const char *c)
  * @param s2 char string
  * @return char* 
  */
-char* dap_strcat2(const char* s1, const char* s2)
+char* dap_strcat2(char* s1, const char* s2)
 {
     size_t size1 = s1 ? strlen(s1) : 0, size2 = s2 ? strlen(s2) : 0;
     char *l_ret = (char*)s1;
     if (size2) {
-        // Security fix: check for integer overflow before size calculation
         if (size1 > SIZE_MAX - size2 - 1) {
             log_it(L_ERROR, "Integer overflow in string concatenation size calculation");
             return (char*)s1; // Return original pointer unchanged on overflow
         }
         
         size_t l_new_size = size1 + size2 + 1;
-        // Security fix: properly handle realloc failure to prevent use after free
-        char *l_new_ptr = DAP_REALLOC((char*)s1, l_new_size);
-        if (!l_new_ptr) {
-            log_it(L_CRITICAL, "Memory reallocation failed in dap_strcat2");
-            return (char*)s1; // Return original pointer unchanged on failure
-        }
+        char *l_new_ptr = DAP_REALLOC_RET_VAL_IF_FAIL(s1, l_new_size, NULL);
         l_ret = l_new_ptr;
-        char *l_pos = (char*)dap_mempcpy(l_ret + size1, s2, size2);
+        char *l_pos = dap_mempcpy(l_ret + size1, s2, size2);
         *l_pos = '\0';
     }
     return l_ret;

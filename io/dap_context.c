@@ -929,7 +929,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 case DESCRIPTOR_TYPE_SOCKET_LISTENING:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                    // Security fix: check getsockopt result
                     if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size) != 0) {
                         l_sock_err = errno; // Use errno if getsockopt fails
                     }
@@ -952,16 +951,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             if (l_flag_read && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
 
                 //log_it(L_DEBUG, "Comes connection with type %d", l_cur->type);
-                // Security fix: improve buffer overflow protection
                 if(l_cur->buf_in_size_max && l_cur->buf_in_size >= l_cur->buf_in_size_max ) {
                     log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped! esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
                     l_cur->buf_in_size = 0;
-                }
-                
-                // Additional security check: ensure we have valid buffer space
-                if (!l_cur->buf_in || !l_cur->buf_in_size_max || l_cur->buf_in_size > l_cur->buf_in_size_max) {
-                    log_it(L_ERROR, "Invalid buffer state for reading");
-                    continue;
                 }
 
                 bool l_must_read_smth = false;

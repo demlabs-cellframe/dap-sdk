@@ -1,65 +1,65 @@
-# dap_config.h/c - Система конфигурации DAP SDK
+# dap_config.h/c - DAP SDK Configuration System
 
-## Обзор
+## Overview
 
-Модуль `dap_config` предоставляет мощную и гибкую систему для работы с конфигурационными файлами в DAP SDK. Поддерживает различные типы данных, секции конфигурации, массивы и обеспечивает безопасную работу с настройками приложений.
+The `dap_config` module provides a powerful and flexible system for working with configuration files in the DAP SDK. It supports various data types, configuration sections, arrays, and ensures safe handling of application settings.
 
-## Основные возможности
+## Key features
 
-- **Многоуровневая структура**: Поддержка секций и параметров
-- **Различные типы данных**: boolean, integer, string, arrays, double
-- **Глобальная и локальная конфигурация**: Поддержка нескольких конфигурационных файлов
-- **Безопасность типов**: Строгая типизация с проверками
-- **Расширяемость**: Легкое добавление новых типов данных
-- **Кроссплатформенность**: Работа на Windows, Linux, macOS
-- **Пути к файлам**: Автоматическое разрешение относительных путей
+- **Multi‑level structure**: Sections and parameters
+- **Data types**: boolean, integer, string, arrays, double
+- **Global and local configs**: Multiple configuration files
+- **Type safety**: Strict typing with checks
+- **Extensibility**: Easy to add new data types
+- **Cross‑platform**: Windows, Linux, macOS
+- **File paths**: Automatic resolution of relative paths
 
-## Структура данных
+## Data structures
 
-### Типы конфигурационных элементов
+### Configuration item types
 
 ```c
 typedef enum {
-    DAP_CONFIG_ITEM_UNKNOWN = '\0',  // Неизвестный тип
-    DAP_CONFIG_ITEM_ARRAY   = 'a',   // Массив строк
-    DAP_CONFIG_ITEM_BOOL    = 'b',   // Логическое значение
-    DAP_CONFIG_ITEM_DECIMAL = 'd',   // Целое число или дробное
-    DAP_CONFIG_ITEM_STRING  = 's'    // Строка
+    DAP_CONFIG_ITEM_UNKNOWN = '\0',  // Unknown type
+    DAP_CONFIG_ITEM_ARRAY   = 'a',    // String array
+    DAP_CONFIG_ITEM_BOOL    = 'b',    // Boolean value
+    DAP_CONFIG_ITEM_DECIMAL = 'd',    // Integer or floating‑point
+    DAP_CONFIG_ITEM_STRING  = 's'     // String
 } dap_config_item_type_t;
 ```
 
-### Структура конфигурации
+### Configuration structure
 
 ```c
 typedef struct dap_config_item {
-    char type;              // Тип элемента ('a', 'b', 'd', 's')
-    char *name;             // Имя параметра
+    char type;              // Item type ('a', 'b', 'd', 's')
+    char *name;             // Parameter name
     union {
-        bool val_bool;      // Логическое значение
-        char *val_str;      // Строковое значение
-        char **val_arr;     // Массив строк
-        int64_t val_int;    // Целое значение
+        bool val_bool;      // Boolean value
+        char *val_str;      // String value
+        char **val_arr;     // Array of strings
+        int64_t val_int;    // Integer value
     } val;
-    UT_hash_handle hh;      // Хеш-таблица для быстрого поиска
+    UT_hash_handle hh;      // Hash handle for quick lookup
 } dap_config_item_t;
 
 typedef struct dap_conf {
-    char *path;                    // Путь к конфигурационному файлу
-    dap_config_item_t *items;      // Хеш-таблица элементов
-    UT_hash_handle hh;             // Для глобальной таблицы конфигураций
+    char *path;                    // Path to configuration file
+    dap_config_item_t *items;      // Hash table of items
+    UT_hash_handle hh;             // For global configuration table
 } dap_config_t;
 ```
 
-## Глобальные переменные
+## Global variables
 
-### Основная конфигурация
+### Main configuration
 ```c
-extern dap_config_t *g_config;  // Глобальная конфигурация приложения
+extern dap_config_t *g_config;  // Global application configuration
 ```
 
 ## API Reference
 
-### Инициализация и деинициализация
+### Initialization and deinitialization
 
 #### dap_config_init()
 
@@ -67,28 +67,28 @@ extern dap_config_t *g_config;  // Глобальная конфигурация
 int dap_config_init(const char *a_configs_path);
 ```
 
-**Описание**: Инициализирует систему конфигурации с указанным путем к директории конфигурационных файлов.
+**Description**: Initializes the configuration system with the given configuration directory path.
 
-**Параметры:**
-- `a_configs_path` - путь к директории с конфигурационными файлами
+**Parameters:**
+- `a_configs_path` - path to the configuration files directory
 
-**Возвращает:**
-- `0` - успешная инициализация
-- `-1` - пустой путь
-- `-2` - недопустимый путь
+**Returns:**
+- `0` - initialized successfully
+- `-1` - empty path
+- `-2` - invalid path
 
-**Пример:**
+**Example:**
 ```c
 #include "dap_config.h"
 
 int main(int argc, char *argv[]) {
-    // Инициализация с путем к конфигурациям
+    // Initialize with configuration path
     if (dap_config_init("./configs") != 0) {
         fprintf(stderr, "Failed to initialize config system\n");
         return 1;
     }
 
-    // Работа с конфигурацией...
+    // Work with configuration...
     // ...
 
     return 0;
@@ -101,15 +101,15 @@ int main(int argc, char *argv[]) {
 void dap_config_deinit(void);
 ```
 
-**Описание**: Деинициализирует систему конфигурации, освобождая все ресурсы.
+**Description**: Deinitializes the configuration system and frees all resources.
 
-**Пример:**
+**Example:**
 ```c
-// Корректное завершение работы
+// Proper shutdown
 dap_config_deinit();
 ```
 
-### Работа с конфигурационными файлами
+### Working with configuration files
 
 #### dap_config_open()
 
@@ -117,25 +117,25 @@ dap_config_deinit();
 dap_config_t *dap_config_open(const char *a_config_filename);
 ```
 
-**Описание**: Открывает и загружает конфигурационный файл.
+**Description**: Opens and loads a configuration file.
 
-**Параметры:**
-- `a_config_filename` - имя конфигурационного файла (относительно configs_path)
+**Parameters:**
+- `a_config_filename` - configuration filename (relative to configs_path)
 
-**Возвращает:** Указатель на структуру конфигурации или NULL при ошибке.
+**Returns:** Pointer to configuration structure or NULL on error.
 
-**Пример:**
+**Example:**
 ```c
-// Открываем конфигурационный файл
+// Open configuration file
 dap_config_t *config = dap_config_open("application.conf");
 if (!config) {
     fprintf(stderr, "Failed to open config file\n");
     return 1;
 }
 
-// Работа с конфигурацией...
+// Work with configuration...
 
-// Закрываем конфигурацию
+// Close configuration
 dap_config_close(config);
 ```
 
@@ -145,18 +145,18 @@ dap_config_close(config);
 void dap_config_close(dap_config_t *a_config);
 ```
 
-**Описание**: Закрывает конфигурацию и освобождает ресурсы.
+**Description**: Closes a configuration and frees resources.
 
-**Параметры:**
-- `a_config` - указатель на конфигурацию
+**Parameters:**
+- `a_config` - configuration pointer
 
-**Пример:**
+**Example:**
 ```c
 dap_config_close(config);
 config = NULL;
 ```
 
-### Получение пути к конфигурациям
+### Getting the configs path
 
 #### dap_config_path()
 
@@ -164,11 +164,11 @@ config = NULL;
 const char *dap_config_path(void);
 ```
 
-**Описание**: Возвращает текущий путь к директории конфигурационных файлов.
+**Description**: Returns the current path to the configuration directory.
 
-**Возвращает:** Строка с путем или NULL.
+**Returns:** Path string or NULL.
 
-**Пример:**
+**Example:**
 ```c
 const char *config_path = dap_config_path();
 if (config_path) {
@@ -176,7 +176,7 @@ if (config_path) {
 }
 ```
 
-### Получение типа параметра
+### Getting an item's type
 
 #### dap_config_get_item_type()
 
@@ -188,16 +188,16 @@ dap_config_item_type_t dap_config_get_item_type(
 );
 ```
 
-**Описание**: Возвращает тип указанного параметра конфигурации.
+**Description**: Returns the type of the specified configuration item.
 
-**Параметры:**
-- `a_config` - конфигурация
-- `a_section` - секция конфигурации
-- `a_item_name` - имя параметра
+**Parameters:**
+- `a_config` - configuration
+- `a_section` - configuration section
+- `a_item_name` - item name
 
-**Возвращает:** Тип параметра или `DAP_CONFIG_ITEM_UNKNOWN`.
+**Returns:** Item type or `DAP_CONFIG_ITEM_UNKNOWN`.
 
-**Пример:**
+**Example:**
 ```c
 dap_config_item_type_t type = dap_config_get_item_type(config, "database", "port");
 switch (type) {
@@ -212,9 +212,9 @@ switch (type) {
 }
 ```
 
-## Получение значений параметров
+## Getting item values
 
-### Логические значения
+### Booleans
 
 #### dap_config_get_item_bool_default()
 
@@ -227,17 +227,17 @@ bool dap_config_get_item_bool_default(
 );
 ```
 
-**Описание**: Получает логическое значение параметра с значением по умолчанию.
+**Description**: Gets a boolean configuration value with a default.
 
-**Параметры:**
-- `a_config` - конфигурация
-- `a_section` - секция
-- `a_item_name` - имя параметра
-- `a_default` - значение по умолчанию
+**Parameters:**
+- `a_config` - configuration
+- `a_section` - section
+- `a_item_name` - item name
+- `a_default` - default value
 
-**Возвращает:** Значение параметра или значение по умолчанию.
+**Returns:** Item value or default value.
 
-**Пример:**
+**Example:**
 ```c
 bool debug_mode = dap_config_get_item_bool_default(
     config, "application", "debug", false
@@ -248,40 +248,40 @@ if (debug_mode) {
 }
 ```
 
-#### Упрощенная версия
+#### Short form
 
 ```c
 #define dap_config_get_item_bool(a_conf, a_path, a_item) \
     dap_config_get_item_bool_default(a_conf, a_path, a_item, false)
 ```
 
-### Целые числа
+### Integers
 
-#### Для различных размеров
+#### Various sizes
 
 ```c
-// 16-битные числа
+// 16-bit numbers
 #define dap_config_get_item_uint16(a_conf, a_path, a_item) \
     (uint16_t)_dap_config_get_item_uint(a_conf, a_path, a_item, 0)
 
 #define dap_config_get_item_uint16_default(a_conf, a_path, a_item, a_default) \
     (uint16_t)_dap_config_get_item_uint(a_conf, a_path, a_item, a_default)
 
-// 32-битные числа
+// 32-bit numbers
 #define dap_config_get_item_uint32(a_conf, a_path, a_item) \
     (uint32_t)_dap_config_get_item_uint(a_conf, a_path, a_item, 0)
 
 #define dap_config_get_item_uint32_default(a_conf, a_path, a_item, a_default) \
     (uint32_t)_dap_config_get_item_uint(a_conf, a_path, a_item, a_default)
 
-// 64-битные числа
+// 64-bit numbers
 #define dap_config_get_item_uint64(a_conf, a_path, a_item) \
     (uint64_t)_dap_config_get_item_uint(a_conf, a_path, a_item, 0)
 
 #define dap_config_get_item_uint64_default(a_conf, a_path, a_item, a_default) \
     (uint64_t)_dap_config_get_item_uint(a_conf, a_path, a_item, a_default)
 
-// Знаковые числа
+// Signed numbers
 #define dap_config_get_item_int16(a_conf, a_path, a_item) \
     (int16_t)_dap_config_get_item_int(a_conf, a_path, a_item, 0)
 
@@ -292,25 +292,25 @@ if (debug_mode) {
     (int64_t)_dap_config_get_item_int(a_conf, a_path, a_item, 0)
 ```
 
-**Пример использования:**
+**Example:**
 ```c
-// Получение номера порта
+// Get port number
 uint16_t port = dap_config_get_item_uint16_default(
     config, "server", "port", 8080
 );
 
-// Получение максимального размера
+// Get max size
 uint64_t max_size = dap_config_get_item_uint64_default(
     config, "limits", "max_file_size", 1048576  // 1MB default
 );
 
-// Получение timeout с отрицательным значением по умолчанию
+// Get timeout with negative default
 int32_t timeout = dap_config_get_item_int32_default(
     config, "network", "timeout", -1
 );
 ```
 
-### Строки
+### Strings
 
 #### dap_config_get_item_str_default()
 
@@ -323,17 +323,17 @@ const char *dap_config_get_item_str_default(
 );
 ```
 
-**Описание**: Получает строковое значение параметра.
+**Description**: Gets a string configuration value.
 
-**Параметры:**
-- `a_config` - конфигурация
-- `a_section` - секция
-- `a_item_name` - имя параметра
-- `a_default` - значение по умолчанию
+**Parameters:**
+- `a_config` - configuration
+- `a_section` - section
+- `a_item_name` - item name
+- `a_default` - default value
 
-**Возвращает:** Указатель на строку или значение по умолчанию.
+**Returns:** Pointer to string or default value.
 
-**Пример:**
+**Example:**
 ```c
 const char *db_host = dap_config_get_item_str_default(
     config, "database", "host", "localhost"
@@ -344,14 +344,14 @@ const char *log_level = dap_config_get_item_str_default(
 );
 ```
 
-#### Упрощенная версия
+#### Short form
 
 ```c
 #define dap_config_get_item_str(a_conf, a_path, a_item) \
     dap_config_get_item_str_default(a_conf, a_path, a_item, NULL)
 ```
 
-### Пути к файлам
+### File paths
 
 #### dap_config_get_item_str_path_default()
 
@@ -364,11 +364,11 @@ char *dap_config_get_item_str_path_default(
 );
 ```
 
-**Описание**: Получает путь к файлу, автоматически разрешая относительные пути относительно директории конфигураций.
+**Description**: Gets a file path, automatically resolving relative paths against the configuration directory.
 
-**Возвращает:** Полный путь к файлу (нужно освобождать с помощью `free()`).
+**Returns:** Full file path (must be freed with `free()`).
 
-**Пример:**
+**Example:**
 ```c
 char *log_file = dap_config_get_item_str_path_default(
     config, "logging", "file", "logs/app.log"
@@ -376,12 +376,12 @@ char *log_file = dap_config_get_item_str_path_default(
 
 if (log_file) {
     printf("Log file path: %s\n", log_file);
-    // Используем путь...
+    // Use the path...
     free(log_file);
 }
 ```
 
-#### Упрощенные версии
+#### Short forms
 
 ```c
 #define dap_config_get_item_path(a_conf, a_path, a_item) \
@@ -391,7 +391,7 @@ if (log_file) {
     dap_config_get_item_str_path_default(a_conf, a_path, a_item, a_default)
 ```
 
-### Дробные числа
+### Doubles
 
 #### dap_config_get_item_double_default()
 
@@ -404,23 +404,23 @@ double dap_config_get_item_double_default(
 );
 ```
 
-**Описание**: Получает дробное значение параметра.
+**Description**: Gets a floating‑point configuration value.
 
-**Пример:**
+**Example:**
 ```c
 double threshold = dap_config_get_item_double_default(
     config, "processing", "threshold", 0.75
 );
 ```
 
-#### Упрощенная версия
+#### Short form
 
 ```c
 #define dap_config_get_item_double(a_conf, a_path, a_item) \
     dap_config_get_item_double_default(a_conf, a_path, a_item, 0)
 ```
 
-### Массивы строк
+### String arrays
 
 #### dap_config_get_array_str()
 
@@ -433,17 +433,17 @@ const char** dap_config_get_array_str(
 );
 ```
 
-**Описание**: Получает массив строк из конфигурации.
+**Description**: Gets an array of strings from configuration.
 
-**Параметры:**
-- `a_config` - конфигурация
-- `a_section` - секция
-- `a_item_name` - имя параметра
-- `a_array_length` - указатель для сохранения длины массива
+**Parameters:**
+- `a_config` - configuration
+- `a_section` - section
+- `a_item_name` - item name
+- `a_array_length` - pointer to store array length
 
-**Возвращает:** Указатель на массив строк (NULL-завершенный).
+**Returns:** Pointer to NULL‑terminated array of strings.
 
-**Пример:**
+**Example:**
 ```c
 uint16_t array_length;
 const char **servers = dap_config_get_array_str(
@@ -455,7 +455,7 @@ if (servers) {
     for (uint16_t i = 0; i < array_length; i++) {
         printf("  %s\n", servers[i]);
     }
-    // Массив servers автоматически освобождается системой
+    // The 'servers' array is automatically freed by the system
 }
 ```
 
@@ -470,11 +470,11 @@ char **dap_config_get_item_str_path_array(
 );
 ```
 
-**Описание**: Получает массив путей к файлам.
+**Description**: Gets an array of file paths.
 
-**Возвращает:** Массив полных путей (нужно освобождать с помощью `dap_config_get_item_str_path_array_free()`).
+**Returns:** Array of full paths (must be freed with `dap_config_get_item_str_path_array_free()`).
 
-**Пример:**
+**Example:**
 ```c
 uint16_t paths_count;
 char **config_files = dap_config_get_item_str_path_array(
@@ -486,12 +486,12 @@ if (config_files) {
         printf("Config file: %s\n", config_files[i]);
     }
 
-    // Освобождаем массив
+    // Free the array
     dap_config_get_item_str_path_array_free(config_files, paths_count);
 }
 ```
 
-#### Освобождение массива путей
+#### Freeing the paths array
 
 ```c
 void dap_config_get_item_str_path_array_free(
@@ -500,29 +500,29 @@ void dap_config_get_item_str_path_array_free(
 );
 ```
 
-## Примеры использования
+## Usage examples
 
-### Пример 1: Базовая работа с конфигурацией
+### Example 1: Basic configuration usage
 
 ```c
 #include "dap_config.h"
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
-    // Инициализация системы конфигурации
+// Initialize the configuration system
     if (dap_config_init("./configs") != 0) {
         fprintf(stderr, "Failed to initialize config system\n");
         return 1;
     }
 
-    // Открываем основную конфигурацию
+// Open main configuration
     dap_config_t *config = dap_config_open("application.conf");
     if (!config) {
         fprintf(stderr, "Failed to open config file\n");
         return 1;
     }
 
-    // Получаем базовые параметры
+// Get base parameters
     const char *app_name = dap_config_get_item_str_default(
         config, "application", "name", "MyApp"
     );
@@ -539,7 +539,7 @@ int main(int argc, char *argv[]) {
     printf("Port: %d\n", port);
     printf("Debug mode: %s\n", debug ? "enabled" : "disabled");
 
-    // Работа с путями
+// Work with paths
     char *log_file = dap_config_get_item_path_default(
         config, "logging", "file", "logs/app.log"
     );
@@ -549,17 +549,17 @@ int main(int argc, char *argv[]) {
         free(log_file);
     }
 
-    // Закрываем конфигурацию
+// Close configuration
     dap_config_close(config);
 
-    // Деинициализация
+// Deinitialize
     dap_config_deinit();
 
     return 0;
 }
 ```
 
-### Пример 2: Работа с массивами
+### Example 2: Working with arrays
 
 ```c
 #include "dap_config.h"
@@ -575,7 +575,7 @@ void process_server_list(dap_config_t *config) {
 
         for (uint16_t i = 0; i < server_count; i++) {
             printf("  Server %d: %s\n", i + 1, servers[i]);
-            // Подключаемся к серверу...
+            // Connect to the server...
         }
     } else {
         printf("No servers configured, using default\n");
@@ -593,16 +593,16 @@ void load_config_files(dap_config_t *config) {
 
         for (uint16_t i = 0; i < file_count; i++) {
             printf("  Loading: %s\n", config_files[i]);
-            // Загружаем дополнительную конфигурацию...
+            // Load additional configuration...
         }
 
-        // Освобождаем ресурсы
+        // Free resources
         dap_config_get_item_str_path_array_free(config_files, file_count);
     }
 }
 ```
 
-### Пример 3: Комплексная конфигурация сервера
+### Example 3: Complex server configuration
 
 ```c
 #include "dap_config.h"
@@ -624,7 +624,7 @@ db_config_t *load_database_config(dap_config_t *config) {
 
     if (!db_config) return NULL;
 
-    // Загружаем параметры базы данных
+    // Load database parameters
     db_config->host = dap_config_get_item_str_default(
         config, "database", "host", "localhost"
     );
@@ -693,9 +693,9 @@ int main() {
 }
 ```
 
-## Формат конфигурационных файлов
+## Configuration file format
 
-### Структура INI-файла
+### INI structure
 
 ```ini
 [application]
@@ -729,45 +729,45 @@ servers = server1.example.com, server2.example.com, server3.example.com
 files = common.conf, development.conf
 ```
 
-### Поддерживаемые типы значений
+### Supported value types
 
-1. **Строки**: Любые символы в кавычках или без
-2. **Числа**: Целые и дробные числа
-3. **Логические**: `true`, `false`, `1`, `0`, `yes`, `no`
-4. **Массивы**: Значения через запятую
-5. **Пути**: Относительные пути разрешаются автоматически
+1. **Strings**: Any characters, quoted or not
+2. **Numbers**: Integers and floating‑point
+3. **Booleans**: `true`, `false`, `1`, `0`, `yes`, `no`
+4. **Arrays**: Comma‑separated values
+5. **Paths**: Relative paths resolved automatically
 
-## Производительность
+## Performance
 
-### Оптимизации
+### Optimizations
 
-1. **Хеш-таблицы**: Быстрый поиск параметров O(1)
-2. **Ленивая загрузка**: Параметры загружаются по требованию
-3. **Кэширование**: Разобранные значения кэшируются
-4. **Минимальные аллокации**: Переиспользование структур
+1. **Hash tables**: Fast O(1) lookups
+2. **Lazy loading**: Load parameters on demand
+3. **Caching**: Parsed values are cached
+4. **Minimal allocations**: Structure reuse
 
-### Бенчмарки производительности
+### Performance benchmarks
 
-| Операция | Производительность | Примечание |
-|----------|-------------------|------------|
-| `dap_config_open()` | ~5-10 ms | Загрузка типичного файла |
-| `dap_config_get_item_str()` | ~1-2 μs | Получение строкового параметра |
-| `dap_config_get_item_uint32()` | ~1-2 μs | Получение числового параметра |
-| Поиск в массиве | ~5-10 μs | Линейный поиск |
+| Operation | Throughput | Note |
+|-----------|-----------|------|
+| `dap_config_open()` | ~5-10 ms | Load a typical file |
+| `dap_config_get_item_str()` | ~1-2 μs | Get string parameter |
+| `dap_config_get_item_uint32()` | ~1-2 μs | Get numeric parameter |
+| Array search | ~5-10 μs | Linear search |
 
-### Факторы влияния
+### Factors
 
-- **Размер файла**: Большие файлы загружаются медленнее
-- **Количество параметров**: Влияет на использование памяти
-- **Частота обращений**: Кэшированные значения работают быстрее
-- **Тип данных**: Числовые значения обрабатываются быстрее строк
+- **File size**: Larger files load slower
+- **Number of items**: Impacts memory usage
+- **Access frequency**: Cached values are faster
+- **Data types**: Numeric values are faster than strings
 
-## Безопасность
+## Security
 
-### Защита от типичных проблем
+### Protection against common issues
 
 ```c
-// ✅ Правильная обработка ошибок
+// ✅ Correct error handling
 const char *get_config_string_safe(dap_config_t *config,
                                    const char *section,
                                    const char *key,
@@ -780,52 +780,52 @@ const char *get_config_string_safe(dap_config_t *config,
         config, section, key, default_val
     );
 
-    // Проверка на NULL для строковых значений
+    // NULL check for string values
     return value ? value : default_val;
 }
 
-// ❌ Уязвимый код
+// ❌ Vulnerable code
 const char *get_config_string_unsafe(dap_config_t *config,
                                      const char *section,
                                      const char *key) {
-    // Не проверяем входные параметры
-    // Не обрабатываем NULL значения
+    // Missing input validation
+    // Does not handle NULL values
     return dap_config_get_item_str(config, section, key);
 }
 ```
 
-### Рекомендации по безопасности
+### Security recommendations
 
-1. **Валидация входных данных**: Всегда проверяйте параметры перед использованием
-2. **Обработка ошибок**: Проверяйте возвращаемые значения всех функций
-3. **Освобождение памяти**: Освобождайте память для путей и массивов
-4. **Ограничения значений**: Проверяйте диапазоны числовых значений
-5. **Санитизация путей**: Избегайте опасных символов в путях к файлам
+1. **Input validation**: Always validate parameters
+2. **Error handling**: Check return values of all functions
+3. **Memory management**: Free memory for paths and arrays
+4. **Value limits**: Validate numeric ranges
+5. **Path sanitization**: Avoid dangerous characters in file paths
 
-### Работа с чувствительными данными
+### Handling sensitive data
 
 ```c
-// Для паролей и секретных данных используйте переменные окружения
+// For passwords and secrets, prefer environment variables
 const char *get_password_secure(dap_config_t *config) {
-    // Сначала проверяем переменную окружения
+    // Check environment variable first
     const char *env_password = getenv("APP_PASSWORD");
     if (env_password && *env_password) {
         return env_password;
     }
 
-    // Fallback к конфигурационному файлу
+    // Fallback to configuration file
     return dap_config_get_item_str_default(
         config, "security", "password", ""
     );
 }
 ```
 
-## Лучшие практики
+## Best practices
 
-### 1. Организация конфигурационных файлов
+### 1. Organizing configuration files
 
 ```ini
-# Разделяйте конфигурацию по логическим секциям
+# Split configuration into logical sections
 [application]
 name = MyApp
 version = 1.0.0
@@ -843,10 +843,10 @@ ssl_enabled = true
 cert_file = certs/server.crt
 ```
 
-### 2. Использование значений по умолчанию
+### 2. Using default values
 
 ```c
-// Всегда предоставляйте разумные значения по умолчанию
+// Always provide reasonable default values
 uint16_t port = dap_config_get_item_uint16_default(
     config, "server", "port", 8080
 );
@@ -860,10 +860,10 @@ bool debug = dap_config_get_item_bool_default(
 );
 ```
 
-### 3. Работа с путями
+### 3. Working with paths
 
 ```c
-// Используйте автоматическое разрешение путей
+// Use automatic path resolution
 char *config_file = dap_config_get_item_path(
     config, "includes", "main_config"
 );
@@ -883,10 +883,10 @@ if (log_dir) {
 }
 ```
 
-### 4. Обработка массивов
+### 4. Handling arrays
 
 ```c
-// Корректная работа с массивами
+// Correct handling of arrays
 uint16_t server_count;
 const char **servers = dap_config_get_array_str(
     config, "network", "servers", &server_count
@@ -896,25 +896,25 @@ if (servers && server_count > 0) {
     for (uint16_t i = 0; i < server_count; i++) {
         printf("Server %d: %s\n", i + 1, servers[i]);
     }
-    // Массив servers освобождается автоматически
+    // The 'servers' array is freed automatically
 }
 
-// Для массивов путей
+// For arrays of paths
 uint16_t file_count;
 char **files = dap_config_get_item_str_path_array(
     config, "includes", "files", &file_count
 );
 
 if (files) {
-    // Работа с файлами...
+    // Work with files...
     dap_config_get_item_str_path_array_free(files, file_count);
 }
 ```
 
-### 5. Структурирование кода
+### 5. Structuring code
 
 ```c
-// Создавайте отдельные функции для загрузки конфигурации
+// Create dedicated functions for loading configuration
 typedef struct {
     uint16_t port;
     const char *host;
@@ -946,47 +946,47 @@ server_config_t *load_server_config(dap_config_t *config) {
 }
 ```
 
-## Расширение системы
+## Extending the system
 
-### Добавление новых типов данных
+### Adding new data types
 
 ```c
-// Пример добавления поддержки для пользовательских типов
+// Example of adding support for custom types
 typedef enum {
     CONFIG_TYPE_CUSTOM = 'c'
 } custom_config_types_t;
 
-// Функция парсинга пользовательского типа
+// Custom type parser
 bool parse_custom_type(const char *str, custom_type_t *result) {
-    // Логика парсинга...
+    // Parsing logic...
     return true;
 }
 
-// Использование в коде
+// Usage in code
 custom_type_t custom_value;
 const char *str_value = dap_config_get_item_str(
     config, "custom", "value"
 );
 
 if (str_value && parse_custom_type(str_value, &custom_value)) {
-    // Используем custom_value
+    // Use custom_value
 }
 ```
 
-## Заключение
+## Conclusion
 
-Модуль `dap_config` предоставляет мощную и гибкую систему конфигурации для DAP SDK:
+The `dap_config` module provides a powerful and flexible configuration system for the DAP SDK:
 
-- **Широкая поддержка типов данных**: boolean, integer, string, arrays, paths
-- **Многоуровневая структура**: Секции и параметры для организации настроек
-- **Безопасность и надежность**: Строгая типизация и проверки ошибок
-- **Производительность**: Оптимизированные структуры данных и кэширование
-- **Кроссплатформенность**: Работа на всех поддерживаемых платформах
-- **Расширяемость**: Легкое добавление новых типов и функций
+- **Wide data type support**: boolean, integer, string, arrays, paths
+- **Multi‑level structure**: Sections and parameters for organization
+- **Safety and reliability**: Strict typing and error checks
+- **Performance**: Optimized data structures and caching
+- **Cross‑platform**: All supported platforms
+- **Extensibility**: Easy to add new types and functions
 
-Система конфигурации DAP SDK является фундаментальным компонентом, обеспечивающим гибкую и надежную работу приложений с настройками.
+The DAP SDK configuration system is a foundational component that ensures flexible and reliable management of application settings.
 
-Для получения дополнительной информации смотрите:
-- `dap_config.h` - полный API конфигурационной системы
-- Примеры в директории `examples/config/`
-- Документацию по формату конфигурационных файлов
+For more information see:
+- `dap_config.h` - full configuration system API
+- Examples in `examples/config/`
+- Configuration file format docs

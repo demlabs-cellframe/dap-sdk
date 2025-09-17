@@ -1,51 +1,51 @@
 # DAP Context Module (context/)
 
-## Обзор
+## Overview
 
-Модуль `context` DAP SDK предоставляет централизованную систему управления контекстом проекта, включая метаданные, стандарты разработки, шаблоны кода и навигационные помощники. Этот модуль не содержит исполняемого кода, а служит информационным хабом для разработчиков и инструментов.
+The `context` module provides a centralized system for managing project context, including metadata, development standards, code templates, and navigation helpers. This module contains no executable code and acts as an information hub for developers and tools.
 
-## 🎯 Назначение
+## 🎯 Purpose
 
-Context модуль решает следующие задачи:
+The context module solves the following tasks:
 
-- ✅ **Централизованное хранение метаданных** проекта
-- ✅ **Стандартизация подходов разработки**
-- ✅ **Предоставление шаблонов кода**
-- ✅ **Навигационные помощники** для инструментов
-- ✅ **Документация стандартов качества**
+- ✅ **Centralized storage of project metadata**
+- ✅ **Standardization of development practices**
+- ✅ **Provision of code templates**
+- ✅ **Navigation helpers** for tools
+- ✅ **Quality standards documentation**
 
-## 📁 Структура модуля
+## 📁 Module structure
 
 ```
 context/
-├── context.json              # Основной контекст проекта
-├── project_standards.json    # Стандарты проекта
-├── coding_guidelines.json    # Правила кодирования
-├── code_templates.json       # Шаблоны кода
-├── structure.json            # Структура проекта
-├── index.json               # Индекс модулей
-├── modules/                 # Конфигурация модулей
+├── context.json              # Main project context
+├── project_standards.json    # Project standards
+├── coding_guidelines.json    # Coding guidelines
+├── code_templates.json       # Code templates
+├── structure.json            # Project structure
+├── index.json               # Module index
+├── modules/                 # Module configurations
 │   ├── core.json
 │   ├── crypto.json
 │   ├── net.json
 │   └── other.json
-├── scripts/                 # Вспомогательные скрипты
+├── scripts/                 # Helper scripts
 │   ├── load_full_context.sh
 │   ├── load_module.sh
 │   └── validate_context.sh
-├── human_docs/              # Документация для разработчиков
+├── human_docs/              # Developer documentation
 │   ├── architecture_guide.md
 │   ├── coding_standards.md
 │   ├── testing_guide.md
 │   ├── security_practices.md
 │   └── deployment_guide.md
-└── tests/                   # Тесты контекста
+└── tests/                   # Context tests
     └── validate_context.sh
 ```
 
-## 📋 Основные файлы
+## 📋 Key files
 
-### `context.json` - Основной контекст проекта
+### `context.json` - Main project context
 
 ```json
 {
@@ -61,26 +61,26 @@ context/
 }
 ```
 
-**Назначение:**
-- Определение основных метаданных проекта
-- Ссылки на связанные файлы контекста
-- Информация о техническом стеке
-- Навигационные помощники
+**Purpose:**
+- Define core project metadata
+- Links to related context files
+- Information about the tech stack
+- Navigation helpers
 
-### `project_standards.json` - Стандарты проекта
+### `project_standards.json` - Project standards
 
 ```json
 {
   "documentation": {
-    "language": "Russian for documentation, English for code",
+    "language": "English for documentation and code",
     "structure": [
       "Title",
-      "Description (## Описание)",
-      "Module Structure (## Структура модуля)",
+      "Description (## Description)",
+      "Module Structure (## Module structure)",
       "Main Components",
-      "Usage Examples (## Примеры использования)",
-      "Implementation Notes (## Особенности реализации)",
-      "See Also (## См. также)"
+      "Usage Examples (## Usage examples)",
+      "Implementation Notes (## Implementation notes)",
+      "See Also (## See also)"
     ]
   },
   "quality_requirements": {
@@ -94,13 +94,13 @@ context/
 }
 ```
 
-**Назначение:**
-- Определение стандартов документации
-- Требования к качеству кода
-- Правила локализации
-- Критерии приемки
+**Purpose:**
+- Define documentation standards
+- Code quality requirements
+- Localization rules
+- Acceptance criteria
 
-### `coding_guidelines.json` - Правила кодирования
+### `coding_guidelines.json` - Coding guidelines
 
 ```json
 {
@@ -128,31 +128,31 @@ context/
 }
 ```
 
-**Назначение:**
-- Стандартизация стиля кода
-- Правила именования
-- Безопасное управление памятью
-- Стандарты логирования
+**Purpose:**
+- Coding style standardization
+- Naming rules
+- Safe memory management
+- Logging standards
 
-## 🔧 Использование
+## 🔧 Usage
 
-### Автоматическая загрузка контекста
+### Automatic context loading
 
 ```bash
-# Загрузка полного контекста проекта
+# Load full project context
 ./context/scripts/load_full_context.sh
 
-# Загрузка контекста конкретного модуля
+# Load a specific module context
 ./context/scripts/load_module.sh crypto
 
-# Валидация контекста
+# Validate context
 ./context/scripts/validate_context.sh
 ```
 
-### Интеграция с IDE
+### IDE integration
 
 ```json
-// Настройки для VS Code
+// VS Code settings
 {
   "dap.context.autoLoad": true,
   "dap.context.files": [
@@ -164,7 +164,7 @@ context/
 }
 ```
 
-### Работа с шаблонами кода
+### Working with code templates
 
 ```json
 // code_templates.json
@@ -185,90 +185,90 @@ context/
 }
 ```
 
-## 📚 Документация для разработчиков
+## 📚 Developer documentation
 
 ### `human_docs/architecture_guide.md`
-Руководство по архитектуре DAP SDK:
-- Общий обзор системы
-- Взаимодействие компонентов
-- Принципы проектирования
-- Масштабируемость
+Architecture guide for DAP SDK:
+- System overview
+- Component interaction
+- Design principles
+- Scalability
 
 ### `human_docs/coding_standards.md`
-Подробные стандарты кодирования:
-- Стиль и форматирование
-- Документирование кода
-- Тестирование
+Detailed coding standards:
+- Style and formatting
+- Code documentation
+- Testing
 - Code review
 
 ### `human_docs/testing_guide.md`
-Руководство по тестированию:
-- Модульное тестирование
-- Интеграционное тестирование
-- Профилирование производительности
-- Автоматизация тестирования
+Testing guide:
+- Unit testing
+- Integration testing
+- Performance profiling
+- Test automation
 
 ### `human_docs/security_practices.md`
-Практики безопасности:
-- Безопасное кодирование
-- Аудит безопасности
-- Защита от уязвимостей
-- Криптографические практики
+Security practices:
+- Secure coding
+- Security audit
+- Vulnerability protection
+- Cryptographic practices
 
 ### `human_docs/deployment_guide.md`
-Руководство по развертыванию:
-- Сборка и установка
-- Конфигурация
-- Мониторинг
-- Обновление
+Deployment guide:
+- Build and install
+- Configuration
+- Monitoring
+- Updates
 
-## 🧪 Валидация контекста
+## 🧪 Context validation
 
-### Автоматическая валидация
+### Automatic validation
 
 ```bash
-# Полная валидация контекста
+# Full context validation
 ./context/tests/validate_context.sh
 
-# Валидация отдельных компонентов
+# Validate specific components
 ./context/tests/validate_structure.sh
 ./context/tests/validate_standards.sh
 ./context/tests/validate_guidelines.sh
 ```
 
-### Ручная проверка
+### Manual checks
 
 ```bash
-# Проверка структуры JSON файлов
+# Validate JSON structure
 python3 -m json.tool context/context.json
 
-# Валидация ссылок
+# Validate links
 ./scripts/validate_links.py context/
 
-# Проверка соответствия стандартам
+# Check compliance with standards
 ./scripts/check_standards.py src/ context/coding_guidelines.json
 ```
 
-## 🔄 Интеграция с инструментами
+## 🔄 Tooling integration
 
-### Интеграция с Git
+### Git integration
 
 ```bash
-# Pre-commit хуки для проверки стандартов
+# Pre-commit hooks for standards checks
 #!/bin/bash
 # .git/hooks/pre-commit
 
-# Проверка соответствия coding guidelines
+# Check coding guidelines compliance
 ./context/scripts/check_coding_standards.py
 
-# Валидация структуры проекта
+# Validate project structure
 ./context/scripts/validate_project_structure.py
 
-# Проверка документации
+# Validate documentation
 ./context/scripts/validate_documentation.py
 ```
 
-### Интеграция с CI/CD
+### CI/CD integration
 
 ```yaml
 # .github/workflows/context-validation.yml
@@ -304,25 +304,25 @@ jobs:
 }
 ```
 
-## 📊 Мониторинг и статистика
+## 📊 Monitoring and statistics
 
-### Сбор метрик
+### Metrics collection
 
 ```bash
-# Статистика проекта
+# Project statistics
 ./context/scripts/project_stats.sh
 
-# Анализ соответствия стандартам
+# Standards compliance analysis
 ./context/scripts/standards_compliance.py
 
-# Метрики качества кода
+# Code quality metrics
 ./context/scripts/code_quality_metrics.py
 ```
 
-### Отчеты
+### Reports
 
 ```json
-// Пример отчета о соответствии стандартам
+// Example standards compliance report
 {
   "timestamp": "2025-01-06T10:00:00Z",
   "project": "DAP SDK",
@@ -349,60 +349,60 @@ jobs:
 }
 ```
 
-## 🔧 Управление контекстом
+## 🔧 Context management
 
-### Обновление контекста
+### Update context
 
 ```bash
-# Обновление версий
+# Update versions
 ./context/scripts/update_versions.sh
 
-# Синхронизация с репозиторием
+# Sync with repository
 ./context/scripts/sync_context.sh
 
-# Архивация старых версий
+# Archive old versions
 ./context/scripts/archive_context.sh
 ```
 
-### Создание нового модуля
+### Create a new module
 
 ```bash
-# Создание конфигурации нового модуля
+# Create new module configuration
 ./context/scripts/create_module.sh my_module
 
-# Добавление в индекс
+# Add to index
 ./context/scripts/update_index.sh
 
-# Валидация
+# Validate
 ./context/tests/validate_context.sh
 ```
 
-## 🎯 Лучшие практики
+## 🎯 Best practices
 
-### Организация контекста
+### Organizing context
 
-1. **Централизация** - весь контекст в одном месте
-2. **Версионирование** - отслеживание изменений
-3. **Валидация** - автоматическая проверка корректности
-4. **Документация** - подробное описание всех компонентов
+1. **Centralization** - keep context in one place
+2. **Versioning** - track changes
+3. **Validation** - automated correctness checks
+4. **Documentation** - detailed descriptions
 
-### Работа с командами
+### Working with teams
 
 ```bash
-# Обучение новых разработчиков
+# Onboard new developers
 ./context/scripts/onboard_developer.sh new_dev@example.com
 
-# Проверка соответствия стандартам
+# Standards audit
 ./context/scripts/audit_standards.sh --team=all
 
-# Генерация отчетов о качестве
+# Generate quality reports
 ./context/scripts/generate_quality_report.sh --period=monthly
 ```
 
-### Непрерывное улучшение
+### Continuous improvement
 
 ```json
-// План улучшения качества
+// Quality improvement plan
 {
   "continuous_improvement": {
     "code_quality": {
@@ -427,65 +427,65 @@ jobs:
 }
 ```
 
-## 📈 Метрики и KPI
+## 📈 Metrics and KPIs
 
-### Метрики качества
+### Quality metrics
 
-- **Соответствие стандартам кодирования:** >95%
-- **Покрытие документацией:** >90%
-- **Процент успешных сборок:** >98%
-- **Среднее время code review:** <2 часов
+- **Coding standards compliance:** >95%
+- **Documentation coverage:** >90%
+- **Successful builds rate:** >98%
+- **Average code review time:** <2 hours
 
-### Метрики производительности
+### Performance metrics
 
-- **Время загрузки контекста:** <1 секунды
-- **Время валидации:** <30 секунд
-- **Размер контекста:** <10 MB
-- **Количество модулей:** Автоматическое обнаружение
+- **Context load time:** <1 second
+- **Validation time:** <30 seconds
+- **Context size:** <10 MB
+- **Module count:** Auto-detected
 
 ## 🚨 Troubleshooting
 
-### Распространенные проблемы
+### Common issues
 
-#### Проблема: Контекст не загружается
+#### Issue: Context does not load
 
 ```bash
-# Проверка структуры файлов
+# Check file structure
 ls -la context/
 
-# Валидация JSON файлов
+# Validate JSON files
 python3 -c "import json; json.load(open('context/context.json'))"
 
-# Проверка прав доступа
+# Check permissions
 chmod +x context/scripts/*.sh
 ```
 
-#### Проблема: Нарушение стандартов кодирования
+#### Issue: Coding standards violations
 
 ```bash
-# Автоматическое исправление
+# Auto-fix
 ./context/scripts/auto_fix_standards.sh
 
-# Ручная проверка
+# Manual check
 ./context/scripts/check_standards.py --fix src/module.c
 ```
 
-#### Проблема: Устаревший контекст
+#### Issue: Outdated context
 
 ```bash
-# Обновление до последней версии
+# Update to latest version
 ./context/scripts/update_context.sh
 
-# Синхронизация с репозиторием
+# Sync with repository
 ./context/scripts/sync_from_repo.sh
 ```
 
-## 🔗 Интеграция с внешними инструментами
+## 🔗 Integration with external tools
 
-### Интеграция с Jira/Confluence
+### Jira/Confluence integration
 
 ```json
-// Конфигурация интеграции
+// Integration configuration
 {
   "jira_integration": {
     "endpoint": "https://company.atlassian.net",
@@ -497,7 +497,7 @@ chmod +x context/scripts/*.sh
 }
 ```
 
-### Интеграция с SonarQube
+### SonarQube integration
 
 ```xml
 <!-- sonar-project.properties -->
@@ -511,7 +511,7 @@ sonar.coverage.exclusions=**/test/**,**/examples/**
 sonar.cpd.exclusions=**/generated/**
 ```
 
-### Интеграция с GitLab CI
+### GitLab CI integration
 
 ```yaml
 # .gitlab-ci.yml
@@ -535,37 +535,37 @@ build:
     - make -j$(nproc)
 ```
 
-## 📚 Дополнительные ресурсы
+## 📚 Additional resources
 
-### Документация
-- [Руководство по архитектуре](human_docs/architecture_guide.md)
-- [Стандарты кодирования](human_docs/coding_standards.md)
-- [Руководство по тестированию](human_docs/testing_guide.md)
-- [Практики безопасности](human_docs/security_practices.md)
+### Documentation
+- [Architecture guide](human_docs/architecture_guide.md)
+- [Coding standards](human_docs/coding_standards.md)
+- [Testing guide](human_docs/testing_guide.md)
+- [Security practices](human_docs/security_practices.md)
 
-### Инструменты
-- [Скрипты управления контекстом](scripts/)
-- [Шаблоны кода](code_templates.json)
-- [Примеры конфигураций](examples/)
+### Tools
+- [Context management scripts](scripts/)
+- [Code templates](code_templates.json)
+- [Configuration examples](examples/)
 
-### Сообщество
-- [Форум разработчиков](https://forum.cellframe.net)
-- [Чат в Telegram](https://t.me/cellframe_dev)
+### Community
+- [Developers forum](https://forum.cellframe.net)
+- [Telegram chat](https://t.me/cellframe_dev)
 - [GitHub Issues](https://github.com/cellframe/libdap/issues)
 
 ---
 
-## 🎯 Заключение
+## 🎯 Conclusion
 
-Модуль `context` является центральным компонентом экосистемы разработки DAP SDK. Он обеспечивает:
+The `context` module is a central component of the DAP SDK development ecosystem. It ensures:
 
-- ✅ **Стандартизацию** процессов разработки
-- ✅ **Централизованное управление** метаданными
-- ✅ **Автоматизацию** проверки качества
-- ✅ **Интеграцию** с инструментами разработки
-- ✅ **Непрерывное улучшение** качества кода
+- ✅ **Standardization** of development processes
+- ✅ **Centralized** metadata management
+- ✅ **Automation** of quality checks
+- ✅ **Integration** with development tools
+- ✅ **Continuous improvement** of code quality
 
-**🚀 Правильная настройка и использование context модуля гарантирует высокое качество и一致ность разработки проекта DAP SDK!**
+**🚀 Proper setup and use of the context module ensures high quality and consistency of DAP SDK development!**
 
 
 

@@ -963,7 +963,6 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
         debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
                      atomic_load(&l_thd_count), (uint64_t)l_thread, a_es, a_arg);
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
-        // Security fix: check for integer overflow before size addition
         if (a_es->buf_out_size_max > SIZE_MAX - l_basic_buf_size) {
             log_it(L_ERROR, "Integer overflow in buffer size calculation (queue)");
             pthread_rwlock_unlock(&a_es->buf_out_lock);
@@ -1877,7 +1876,6 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    // Security fix: use safe vsprintf with size limit
     l_data_size = vsnprintf(l_msg->data, l_msg->data_size, a_format, ap_copy);
     va_end(ap_copy);
 
@@ -2018,13 +2016,10 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
     byte_t *l_buf_out;
     
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
-        // Security fix: check for integer overflow before size calculation
-        size_t l_increase = dap_max(l_basic_buf_size, a_required_size);
-        if (a_es->buf_out_size_max > SIZE_MAX - l_increase) {
+        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &a_es->buf_out_size_max)) {
             log_it(L_ERROR, "Integer overflow in buffer size calculation");
             return NULL;
         }
-        a_es->buf_out_size_max += l_increase;
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;
