@@ -229,7 +229,7 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
 static bool s_validate_table_name(const char *a_table_name)
 {
     int l_group_len = dap_strlen(a_table_name);
-    if (l_group_len == 0 || l_group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
+    if (l_group_len == 0 || l_group_len > (int)DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
         return false;
     }
     
@@ -389,27 +389,21 @@ static dap_store_obj_t* s_db_pgsql_read_last_store_obj(const char *a_group, bool
                                         " ORDER BY driver_key DESC LIMIT 1;",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
-    if (!l_query_str) {
-        log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
-    DAP_DELETE(l_query_str);
     
-// memory alloc
-    uint64_t l_count = PQntuples(l_query_res);
-    if (!l_count) {
-        s_request_err_msg(__FUNCTION__);
-        goto clean_and_ret;
-    }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-// data forming
-    s_db_pgsql_fill_one_item(a_group, l_ret, l_query_res, 0);
-clean_and_ret:
-    PQclear(l_query_res);
+    if ( l_query_str ) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        uint64_t l_count = PQntuples(l_query_res);
+        if ( l_count ) {
+            if ( ( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+                s_db_pgsql_fill_one_item(a_group, l_ret, l_query_res, 0);
+            } else
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        } else
+            s_request_err_msg(__FUNCTION__);
+        PQclear(l_query_res);
+    } else
+        log_it(L_ERROR, "Error in PGSQL request forming");
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -454,6 +448,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
                                         " WHERE driver_key IN (%s) ORDER BY driver_key;",
                                         a_group, l_blob_str->str);
     dap_string_free(l_blob_str, true);
+    PGresult *l_query_res = NULL;
     if (!l_query_size_str || !l_query_str) {
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
@@ -461,14 +456,12 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
 
 // memory alloc
     // size count
-    PGresult
-        *l_query_res = NULL, 
-        *l_query_size_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_size_str, a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, "get_by_hash_size_count");
+    PGresult *l_query_size_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_size_str,
+            a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, "get_by_hash_size_count");
     if ( !l_query_size_res ) {
         goto clean_and_ret;
     }
-    int64_t *l_size_p = (int64_t *)PQgetvalue(l_query_size_res, 0, 0);
-    int64_t l_size = l_size_p ? be64toh(*l_size_p) : 0;
+    int64_t *l_size_p = (int64_t *)PQgetvalue(l_query_size_res, 0, 0), l_size = l_size_p ? be64toh(*l_size_p) : 0;
     PQclear(l_query_size_res);
 
     // get data
@@ -591,42 +584,32 @@ static dap_global_db_hash_pkt_t *s_db_pgsql_read_hashes(const char *a_group, dap
                                         " WHERE driver_key > $1"
                                         " ORDER BY driver_key LIMIT '%d';",
                                         a_group, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
-    if (!l_query_str) {
+    if (l_query_str) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        uint64_t l_count = PQntuples(l_query_res);
+        if (l_count) {
+            size_t l_group_name_len = strlen(a_group) + 1;
+            l_ret = DAP_NEW_Z_SIZE(dap_global_db_hash_pkt_t,
+                sizeof(dap_global_db_hash_pkt_t) + (l_count + 1) * sizeof(dap_global_db_driver_hash_t) + l_group_name_len);
+            if (l_ret) {
+                l_ret->group_name_len = l_group_name_len;
+                byte_t *l_curr_point = l_ret->group_n_hashses + l_ret->group_name_len;
+                memcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
+                int l_col_num = PQfnumber(l_query_res, "driver_key");
+                for(size_t i = 0; i < l_count; ++i) {
+                    dap_global_db_driver_hash_t *l_current_hash = (dap_global_db_driver_hash_t *)PQgetvalue(l_query_res, i, l_col_num);;
+                    memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
+                    l_curr_point += sizeof(dap_global_db_driver_hash_t);
+                }
+                l_ret->hashes_count = l_count + 1;
+            } else
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        } else
+            s_request_err_msg(__FUNCTION__);
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
-    DAP_DELETE(l_query_str);
-    
-// memory alloc
-    uint64_t l_count = PQntuples(l_query_res);
-    if (!l_count) {
-        s_request_err_msg(__FUNCTION__);
-        goto clean_and_ret;
-    }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-    size_t l_group_name_len = strlen(a_group) + 1;
-    l_ret = DAP_NEW_Z_SIZE(dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + (l_count + 1) * sizeof(dap_global_db_driver_hash_t) + l_group_name_len);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-// data forming 
-    l_ret->group_name_len = l_group_name_len;
-    byte_t *l_curr_point = l_ret->group_n_hashses + l_ret->group_name_len;
-    memcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
-    int l_col_num = PQfnumber(l_query_res, "driver_key");
-    for(size_t i = 0; i < l_count; ++i) {
-        dap_global_db_driver_hash_t *l_current_hash = (dap_global_db_driver_hash_t *)PQgetvalue(l_query_res, i, l_col_num);;
-        memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
-        l_curr_point += sizeof(dap_global_db_driver_hash_t);
-    }
-    l_ret->hashes_count = l_count + 1;
-clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -653,32 +636,26 @@ static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_
                                     a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                     a_with_holes ? ">=" : "=",
                                     a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
-    if (!l_query_str) {
+    if (l_query_str) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        uint64_t l_count = PQntuples(l_query_res);
+        if (l_count) {
+            if (a_count_out && *a_count_out && *a_count_out < l_count)
+                l_count = *a_count_out;
+            if (( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
+                size_t l_count_out = 0;
+                for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out );
+                if (a_count_out)
+                    *a_count_out = l_count_out;
+            } else
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        } else
+            s_request_err_msg(__FUNCTION__);
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
-    DAP_DELETE(l_query_str);
     
-// memory alloc
-    uint64_t l_count = PQntuples(l_query_res);
-    l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
-    if (!l_count) {
-        s_request_err_msg(__FUNCTION__);
-        goto clean_and_ret;
-    }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-    
-// data forming
-    size_t l_count_out = 0;
-    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
-    if (a_count_out)
-        *a_count_out = l_count_out;
-clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -693,32 +670,27 @@ static dap_store_obj_t *s_db_pgsql_read_store_obj_below_timestamp(const char *a_
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
                                     " WHERE driver_key < $1"
                                     " ORDER BY driver_key;", a_group);
-    if (!l_query_str) {
+    if (l_query_str) {
+        dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &l_hash_from, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        uint64_t l_count = PQntuples(l_query_res);
+        if (l_count) {
+            if (a_count_out && *a_count_out && *a_count_out < l_count)
+                l_count = *a_count_out;
+            if (( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
+                size_t l_count_out = 0;
+                for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out );
+                if (a_count_out)
+                    *a_count_out = l_count_out;
+            } else
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        } else
+            s_request_err_msg(__FUNCTION__);
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &l_hash_from, __FUNCTION__);
-    DAP_DELETE(l_query_str);
     
-// memory alloc
-    uint64_t l_count = PQntuples(l_query_res);
-    if (!l_count) {
-        s_request_err_msg(__FUNCTION__);
-        goto clean_and_ret;
-    }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-    
-// data forming
-    size_t l_count_out = 0;
-    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
-    if (a_count_out)
-        *a_count_out = l_count_out;
-clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }    
@@ -753,32 +725,26 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     }
-    if (!l_query_str) {
+    if (l_query_str) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        uint64_t l_count = PQntuples(l_query_res);
+        if (l_count) {
+            if (a_count_out && *a_count_out && *a_count_out < l_count)
+                l_count = *a_count_out;
+            if (( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+                size_t l_count_out = 0;
+                for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out );
+                if (a_count_out)
+                    *a_count_out = l_count_out;
+            } else
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        } else
+            s_request_err_msg(__FUNCTION__);
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
-    DAP_DELETE(l_query_str);
     
-// memory alloc
-    uint64_t l_count = PQntuples(l_query_res);
-    l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
-    if (!l_count) {
-        s_request_err_msg(__FUNCTION__);
-        goto clean_and_ret;
-    }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        goto clean_and_ret;
-    }
-    
-// data forming
-    size_t l_count_out = 0;
-    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
-    if (a_count_out)
-        *a_count_out = l_count_out;
-clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -828,17 +794,17 @@ static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_dri
                                         " WHERE driver_key > $1 AND (flags & '%d' %s 0);",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
-    if (!l_query_count_str) {
+    size_t l_ret = 0;
+    if (l_query_count_str) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, __FUNCTION__);
+        DAP_DELETE(l_query_count_str);
+        uint64_t *l_res = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
+        l_ret = l_res ? be64toh(*l_res) : 0;
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, __FUNCTION__);
-    DAP_DELETE(l_query_count_str);
-    uint64_t *l_ret = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
-clean_and_ret:
     s_db_pgsql_free_connection(l_conn, false);
-    PQclear(l_query_res);
-    return l_ret ? be64toh(*l_ret) : 0;
+    return l_ret;
 }
 
 /**
@@ -853,18 +819,18 @@ static bool s_db_pgsql_is_hash(const char *a_group, dap_global_db_driver_hash_t 
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
 // preparing
+    bool l_ret = false;
     char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE driver_key=$1);", a_group);
-    if (!l_query_str) {
+    if (l_query_str) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        char *l_res = PQgetvalue(l_query_res, 0, 0);
+        l_ret = l_res ? *l_res : false;
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, __FUNCTION__);
-    DAP_DELETE(l_query_str);
-    char *l_ret = PQgetvalue(l_query_res, 0, 0);
-clean_and_ret:
     s_db_pgsql_free_connection(l_conn, false);
-    PQclear(l_query_res);
-    return l_ret ? *l_ret : false;
+    return l_ret;
 }
 
 /**
@@ -880,17 +846,17 @@ static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
     dap_return_val_if_pass(!a_group || !a_key || !(l_conn = s_db_pgsql_get_connection(false)), 0);
 // preparing
     char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE key='%s');", a_group, a_key);
-    if (!l_query_str) {
+    bool l_ret = false;
+    if ( l_query_str ) {
+        PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
+        DAP_DELETE(l_query_str);
+        char *l_res = PQgetvalue(l_query_res, 0, 0);
+        l_ret = l_res ? *l_res : false;
+        PQclear(l_query_res);
+    } else
         log_it(L_ERROR, "Error in PGSQL request forming");
-        goto clean_and_ret;
-    }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
-    DAP_DELETE(l_query_str);
-    char *l_ret = PQgetvalue(l_query_res, 0, 0);
-clean_and_ret:
     s_db_pgsql_free_connection(l_conn, false);
-    PQclear(l_query_res);
-    return l_ret ? *l_ret : false;
+    return l_ret;
 }
 
 /**
