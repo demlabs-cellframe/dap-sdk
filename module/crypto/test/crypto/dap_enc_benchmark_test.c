@@ -4,7 +4,7 @@
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
 typedef struct pkey_hash_table {

@@ -24,7 +24,7 @@
 #pragma once
 
 #include "dap_json_rpc_request.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 
 #ifdef __cplusplus
 extern "C"{

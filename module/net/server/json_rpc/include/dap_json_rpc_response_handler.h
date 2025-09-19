@@ -26,7 +26,7 @@
 
 #include "dap_json_rpc_response.h"
 #include "http_status_code.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 
 #ifdef __cplusplus
 extern "C"{
