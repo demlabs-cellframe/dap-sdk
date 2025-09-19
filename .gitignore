@@ -4,8 +4,6 @@ debug/*
 crypto/XKCP/Makefile
 .devcontainer/*
 cmake-build-*/
-__pycache__
-docs/mcp_server/*.log
 build_stretch/*
 test/build
 *.txt.user

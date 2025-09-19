@@ -1,24 +1,7 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-
-// Правильные пути к заголовочным файлам
-#include "../core/include/dap_common.h"
-#include "../core/include/dap_math_ops.h"
-#include "../../cellframe-sdk/modules/common/include/dap_chain_common.h"
-
-// Для работы с uint256_t
-typedef union uint256_t {
-    uint8_t raw[32];
-} uint256_t;
-
-// Заглушки для функций, которые должны быть определены в соответствующих модулях
-extern void randombytes(void *buf, size_t len);
-extern void dap_pseudo_random_seed(uint256_t seed);
-extern uint256_t dap_pseudo_random_get(uint256_t max, void *context);
-
-// Максимальное значение uint256
-extern uint256_t uint256_max;
+#include "../crypto/src/rand/dap_rand.h"
+#include "dap_math_ops.h"
+#include "dap_chain_common.h"
 
 #define NUMBER_OF_BITSTREAMS 100
 #define NUMBER_OF_ELEMENTS 1024 * 4
