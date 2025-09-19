@@ -29,7 +29,7 @@
 
 #include <pthread.h>
 
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include "dap_common.h"
 
 #include "../http_server/http_client/include/dap_http_client.h"

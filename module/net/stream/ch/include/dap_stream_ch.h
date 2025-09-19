@@ -23,7 +23,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <stdint.h>
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "uthash.h"
 #include "dap_math_ops.h"
 #include "dap_stream.h"
 #include "dap_stream_ch_pkt.h"
