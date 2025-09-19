@@ -128,7 +128,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK);
 #ifdef DAP_OS_UNIX
             a_es->addr_storage.ss_family == AF_UNIX ||
 #endif
