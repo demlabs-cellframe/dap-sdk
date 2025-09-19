@@ -222,7 +222,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
  * @param a_sign_type
  * @return bool
  */
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
     if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
         return true;
     return false;
