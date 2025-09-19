@@ -202,7 +202,6 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 
 #ifndef _WIN32
 
-  // Security fix: use fstat after fopen to prevent TOCTOU attack
   FILE *l_temp_file = fopen(cl_ht_file->local_path, "rb");
   if (!l_temp_file)
     goto err;

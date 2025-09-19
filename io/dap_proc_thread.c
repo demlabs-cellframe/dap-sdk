@@ -116,7 +116,6 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
-    // Security fix: use cryptographically secure random instead of weak rand()
     uint32_t l_random_val;
     randombytes(&l_random_val, sizeof(l_random_val));
     uint32_t l_id_start = l_random_val % s_threads_count,

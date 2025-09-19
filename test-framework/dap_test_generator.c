@@ -11,7 +11,6 @@
  * The function fills an array with random integer non-negative values
 */
 void generate_random_byte_array(uint8_t* array, const size_t size) {
-    // Security fix: use cryptographically secure random instead of weak rand()
     randombytes(array, size);
 
     // Last byte not should be 0
