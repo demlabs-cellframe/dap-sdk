@@ -151,7 +151,6 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 #ifdef DAP_OS_WINDOWS
     int l_off = 0;
     if ( !s_win_local_tm_and_offset(a_time, &l_tm, &l_off) )
-        return log_it(L_ERROR, "Can't convert UNIX timestamp %"DAP_UINT64_FORMAT_U, a_time), -2;
 #else
     if ( !localtime_r(&(const time_t){ a_time }, &l_tm) )
 #endif
@@ -188,6 +187,10 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
     char *ret = strptime(a_time_str, "%d %b %Y %T", &l_tm);
     if ( !ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
+    int y = l_tm.tm_year + 1900;
+    if ( y < 100 )
+        // 2 digit year to 4 digit year with respect to strptime implementation
+        l_tm.tm_year = (y <= 68 ? y + 2000 : y + 1900) - 1900;
     time_t l_off = 0, l_ret;
     char l_sign;
     int l_hour, l_min;
