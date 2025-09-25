@@ -1,4 +1,5 @@
 #include "dap_json_rpc_response.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_response"
 #define INDENTATION_LEVEL "    "
@@ -179,10 +180,9 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
-            "tx_history",
             "file"
     };
-    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[i]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
             return i+1;
         }
@@ -315,7 +315,7 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     }
 }
 
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
     if (!response) {
         printf("Empty response");
         return -1;
@@ -344,10 +344,13 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             }
             if (response->version == 1) {
                 switch(json_print_commands(cmd_name)) {
-                    case 1: json_print_for_tx_history(response); break;
-                    case 2: json_print_for_file_cmd(response); break;
+                    case 1: json_print_for_file_cmd(response); break;
                     default: {
-                            dap_json_print_object(response->result_json_object, stdout, 0);
+                            dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
+                            if (!l_cmd || l_cmd->func_rpc(response, cmd_params, cmd_cnt)){
+                                dap_json_print_object(response->result_json_object, stdout, 0);
+                            }
+
                         }
                         break;
                 }

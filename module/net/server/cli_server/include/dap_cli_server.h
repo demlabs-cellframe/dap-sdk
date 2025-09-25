@@ -30,7 +30,9 @@
 #include "dap_config.h"
 #include "uthash.h"
 #include "dap_json.h"
+#include "dap_json_rpc_response.h"
 
+typedef int (*dap_cli_server_cmd_callback_ex_func_json_t)(dap_json_rpc_response_t* response, char ** cmd_param, int cmd_cnt);
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply, int a_version);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply, int a_version);
 typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_call_time);  // use to statistic collect
@@ -58,6 +60,8 @@ typedef struct dap_cli_cmd{
         dap_cli_server_cmd_callback_t func; /* Function to call to do the job. */
         dap_cli_server_cmd_callback_ex_t func_ex; /* Function with additional arg to call to do the job. */
     };
+    dap_cli_server_cmd_callback_ex_func_json_t func_rpc;
+    void *arg_func_rpc;
     void *arg_func; /* additional argument of function*/
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
@@ -77,7 +81,7 @@ typedef struct dap_cli_cmd_aliases{
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section);
 void dap_cli_server_deinit();
 
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char *a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, int16_t a_id, const char *a_doc_ex);
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char *a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_ex_func_json_t a_func_rpc, const char *a_doc, int16_t a_id, const char *a_doc_ex);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
