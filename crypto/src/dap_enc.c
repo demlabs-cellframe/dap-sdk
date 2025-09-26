@@ -48,7 +48,6 @@ static bool s_debug_more = false;
 
 int dap_enc_init()
 {
-    srand(time(NULL));
     dap_enc_key_init();
     dap_cert_init();
     dap_crc64_init();

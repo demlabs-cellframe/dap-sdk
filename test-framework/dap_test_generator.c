@@ -1,4 +1,5 @@
 #include "dap_test_generator.h"
+#include "dap_rand.h"
 
 #define BYTE_SIZE 255
 
@@ -10,10 +11,7 @@
  * The function fills an array with random integer non-negative values
 */
 void generate_random_byte_array(uint8_t* array, const size_t size) {
-    srand((uint32_t)time(NULL));
-    for(size_t i = 0; i < size; i++) {
-        array[i] = (uint8_t)rand() % BYTE_SIZE;
-    }
+    randombytes(array, size);
 
     // Last byte not should be 0
     if (array[size - 1] == 0)
