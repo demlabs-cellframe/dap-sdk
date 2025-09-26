@@ -257,7 +257,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
         dap_http_out_header_add(cl_ht, i->name, i->value);
         log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
     }
-    
+
     return !l_hs->generate_default_header;
 }
 
@@ -403,11 +403,12 @@ static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
 static void s_http_client_headers_read( dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg )
 {
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
-//    Made a temporary solution to handle simple CORS requests.
-//    This is necessary in order to be able to request information using JavaScript obtained from another source.
+/*    Made a temporary solution to handle simple CORS requests.
+    This is necessary in order to be able to request information using JavaScript obtained from another source.
     if ( dap_http_header_find(a_http_client->in_headers, "Origin") ){
         dap_http_out_header_add(a_http_client, "Access-Control-Allow-Origin", "*");
     }
+*/
 
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){
