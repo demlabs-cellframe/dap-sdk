@@ -1,11 +1,15 @@
 #include "dap_rand.h"
 #include "dap_enc_base64.h"
+#include "dap_common.h"
 
 #include <stdlib.h>
+#include <string.h>
+
+#define LOG_TAG "dap_rand"
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
-#if defined(_WIN32)
+#ifdef DAP_OS_WINDOWS
     #include <windows.h>
 #else
     #include <unistd.h>
@@ -17,6 +21,18 @@
     
     static void init_urandom_fd(void) {
         s_urandom_fd = open("/dev/urandom", O_RDONLY);
+    }
+    
+    static void deinit_urandom_fd(void) {
+        if (s_urandom_fd != -1) {
+            close(s_urandom_fd);
+            s_urandom_fd = -1;
+        }
+    }
+
+    __attribute__((constructor))
+    static void register_cleanup(void) {
+        atexit(deinit_urandom_fd);
     }
 #endif
 
@@ -50,11 +66,18 @@ int randombytes(void* random_array, unsigned int nbytes)
     while (bytes_read < (int)nbytes) {
         int r = read(s_urandom_fd, (char*)random_array + bytes_read, 
                     nbytes - bytes_read);
-        if (r > 0)
+        if (r > 0) {
             bytes_read += r;
-        else if (!r || errno != EINTR)
+        } else if (r == 0) {
+            // EOF on /dev/urandom should never happen, this is a critical error
+            log_it(L_CRITICAL, "Unexpected EOF on /dev/urandom");
             return failed;
-        continue;
+        } else if (errno != EINTR) {
+            // Any error other than EINTR is critical for crypto security
+            log_it(L_CRITICAL, "Critical error reading from /dev/urandom: %s", strerror(errno));
+            return failed;
+        }
+        // Only EINTR continues the loop
     }
 #endif
     return passed;
@@ -143,14 +166,4 @@ uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result)
     SUM_256_256(a_rand_max, uint256_1, &l_rand_ceil);
     divmod_impl_256(l_out_raw, l_rand_ceil, &l_tmp, &l_ret);
     return l_ret;
-}
-
-// Cleanup function for proper resource management
-void dap_rand_cleanup(void) {
-#if !defined(_WIN32)
-    if (s_urandom_fd != -1) {
-        close(s_urandom_fd);
-        s_urandom_fd = -1;
-    }
-#endif
 }

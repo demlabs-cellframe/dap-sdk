@@ -963,6 +963,11 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
         debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
                      atomic_load(&l_thd_count), (uint64_t)l_thread, a_es, a_arg);
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
+        if (a_es->buf_out_size_max > SIZE_MAX - l_basic_buf_size) {
+            log_it(L_ERROR, "Integer overflow in buffer size calculation (queue)");
+            pthread_rwlock_unlock(&a_es->buf_out_lock);
+            return;
+        }
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
         debug_if(g_debug_reactor, L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",
@@ -1871,7 +1876,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
+    l_data_size = vsnprintf(l_msg->data, l_msg->data_size, a_format, ap_copy);
     va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send_to_input(a_es_input, l_msg );
@@ -2011,7 +2016,10 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
     byte_t *l_buf_out;
     
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_required_size) {
-        a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_required_size);
+        if (__builtin_add_overflow(a_es->buf_out_size_max, dap_max(l_basic_buf_size, a_required_size), &a_es->buf_out_size_max)) {
+            log_it(L_ERROR, "Integer overflow in buffer size calculation");
+            return NULL;
+        }
         if (!(l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max))) {
             log_it(L_ERROR, "Can't increase capacity: OOM!");
             return NULL;
