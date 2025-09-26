@@ -3,6 +3,7 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_json_rpc.h"
+//#include "dap_security_monitor.h"
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
@@ -54,7 +55,21 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         return NULL;
     }
 
+    // Add maximum size validation to prevent memory exhaustion attacks
+    #define MAX_REQUEST_DATA_SIZE (1024 * 1024*10)  // 10MB limit
+    if (l_http_request->header.data_size > MAX_REQUEST_DATA_SIZE) {
+        log_it(L_ERROR, "Request data size %u exceeds maximum allowed %d", 
+               l_http_request->header.data_size, MAX_REQUEST_DATA_SIZE);
+        dap_json_rpc_http_request_free(l_http_request);
+        return NULL;
+    }
+    
     char * l_data_str = DAP_NEW_Z_COUNT(char, l_http_request->header.data_size);
+    if (!l_data_str) {
+        log_it(L_ERROR, "Failed to allocate memory for request data");
+        dap_json_rpc_http_request_free(l_http_request);
+        return NULL;
+    }
     dap_mempcpy(l_data_str, l_http_request->request_n_signs, l_http_request->header.data_size);
 
     dap_hash_fast_t l_sign_pkey_hash;

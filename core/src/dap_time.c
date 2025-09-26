@@ -7,7 +7,6 @@
 #include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
-#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_common"
 
@@ -44,6 +43,56 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
     return 0;
 }
 #endif
+#endif
+
+#ifdef DAP_OS_WINDOWS
+// Constants for Windows FILETIME (100-ns ticks since 1601-01-01) conversions
+#define WINDOWS_TICKS_PER_SEC                  10000000ULL
+#define EPOCH_DIFF_WINDOWS_TO_UNIX_SECS        11644473600ULL   // seconds between 1601-01-01 and 1970-01-01
+#define EPOCH_DIFF_WINDOWS_TO_UNIX_TICKS       (EPOCH_DIFF_WINDOWS_TO_UNIX_SECS * WINDOWS_TICKS_PER_SEC)
+#define WINDOWS_TICKS_PER_MIN                  (60ULL * WINDOWS_TICKS_PER_SEC)
+// Build local calendar time for a given epoch using Windows TZ rules without localtime(),
+// and compute RFC offset in minutes (east of UTC).
+static bool s_win_local_tm_and_offset(time_t a_time, struct tm *a_out_tm, int *a_out_offset_min)
+{
+    if ( !a_out_tm && !a_out_offset_min ) return false;
+
+    ULARGE_INTEGER l_ui_utc = { .QuadPart = (ULONGLONG)a_time * WINDOWS_TICKS_PER_SEC + EPOCH_DIFF_WINDOWS_TO_UNIX_TICKS };
+    SYSTEMTIME l_st_utc = { };
+    if (!FileTimeToSystemTime(&(FILETIME){ l_ui_utc.LowPart, l_ui_utc.HighPart }, &l_st_utc))
+        return false;
+
+    SYSTEMTIME l_st_local = { };
+#if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0602
+    DYNAMIC_TIME_ZONE_INFORMATION l_dtzi = { };
+    DWORD l_tzid = GetDynamicTimeZoneInformation(&l_dtzi);
+    if ( l_tzid == TIME_ZONE_ID_INVALID || !SystemTimeToTzSpecificLocalTimeEx(&l_dtzi, &l_st_utc, &l_st_local) )
+        return false;
+#else
+    DYNAMIC_TIME_ZONE_INFORMATION l_dtzi = { };
+    DWORD l_tzid = GetDynamicTimeZoneInformation(&l_dtzi);
+    TIME_ZONE_INFORMATION l_tzi = { };
+    if ( l_tzid == TIME_ZONE_ID_INVALID
+        || !GetTimeZoneInformationForYear(l_st_utc.wYear, &l_dtzi, &l_tzi)
+        || !SystemTimeToTzSpecificLocalTime(&l_tzi, &l_st_utc, &l_st_local) )
+        return false;
+#endif
+    if ( a_out_tm ) {
+        *a_out_tm = (struct tm) { l_st_local.wSecond, l_st_local.wMinute, l_st_local.wHour, l_st_local.wDay,
+            (l_st_local.wMonth ? (l_st_local.wMonth - 1) : 0), (l_st_local.wYear ? (l_st_local.wYear - 1900) : 0),
+            l_st_local.wDayOfWeek,
+            .tm_isdst = l_tzid == TIME_ZONE_ID_DAYLIGHT ? 1 : l_tzid == TIME_ZONE_ID_STANDARD ? 0 : -1
+        };
+    }
+    if ( a_out_offset_min ) {
+        FILETIME l_ft_local = { };
+        if (!SystemTimeToFileTime(&l_st_local, &l_ft_local) )
+            return false; // treats local as UTC → intentional
+        ULARGE_INTEGER l_ui_local = { .LowPart = l_ft_local.dwLowDateTime, .HighPart = l_ft_local.dwHighDateTime };
+        *a_out_offset_min = (int)( (l_ui_local.QuadPart - l_ui_utc.QuadPart) / WINDOWS_TICKS_PER_MIN );
+    }
+    return true;
+}
 #endif
 
 /**
@@ -100,15 +149,10 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 {
     struct tm l_tm = { };
 #ifdef DAP_OS_WINDOWS
-    // %z is unsupported on Windows platform
-    TIME_ZONE_INFORMATION l_tz_info;
-    GetTimeZoneInformation(&l_tz_info);
-    char l_tz_str[8];
-    snprintf(l_tz_str, sizeof(l_tz_str), l_tz_info.Bias <= 0 ? " +%02d%02d" : " %03d%02d", -l_tz_info.Bias / 60, l_tz_info.Bias % 60);
-    a_time -= l_tz_info.Bias * 60;
-    if ( gmtime_s(&l_tm, &a_time) )
+    int l_off = 0;
+    if ( !s_win_local_tm_and_offset(a_time, &l_tm, &l_off) )
 #else
-    if ( !localtime_r(&a_time, &l_tm) )
+    if ( !localtime_r(&(const time_t){ a_time }, &l_tm) )
 #endif
         return log_it(L_ERROR, "Can't convert UNIX timestamp %"DAP_UINT64_FORMAT_U, a_time), -2;
     int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
@@ -116,15 +160,17 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
                                                 " %z"
                      #endif
                          , &l_tm);
-    if (!l_ret) {
-        log_it(L_ERROR, "Can't print formatted time in string");
-        return -1;
-    }
+    if (!l_ret)
+        return log_it(L_ERROR, "Can't print formatted time in string"), -1;
+    
+    
 #ifdef DAP_OS_WINDOWS
-    if (l_ret < a_out_size_max)
-        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, "%s", l_tz_str);
+    if ((size_t)l_ret < a_out_size_max) {
+        int l_off_abs = l_off < 0 ? -l_off : l_off;
+        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret,
+                          " %c%02d%02d", l_off >= 0 ? '+' : '-', l_off_abs / 60, l_off_abs % 60);
+    }
 #endif
-    a_out[l_ret] = '\0';
     return l_ret;
 }
 
@@ -138,33 +184,36 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
     struct tm l_tm = { };
-    char *ret = strptime(a_time_str, "%d %b %Y %T"
-        #ifndef DAP_OS_WINDOWS
-                                    " %z"
-        #endif
-                        , &l_tm);
+    char *ret = strptime(a_time_str, "%d %b %Y %T", &l_tm);
     if ( !ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    time_t l_off = 0;
-#ifdef DAP_OS_WINDOWS
-    char sign, hr, min;
-    if ( sscanf(ret, " %c%2d%2d", &sign, &hr, &min) == 3 && ( ( sign == '+' && hr <= 14 ) || ( sign == '-' && hr <= 11 ) ) && ( !min || min == 30 ) )
-        l_off = hr * 3600 + min * 60;
+    int y = l_tm.tm_year + 1900;
+    if ( y < 100 )
+        // 2 digit year to 4 digit year with respect to strptime implementation
+        l_tm.tm_year = (y <= 68 ? y + 2000 : y + 1900) - 1900;
+    time_t l_off = 0, l_ret;
+    char l_sign;
+    int l_hour, l_min;
+    if ( sscanf(ret, " %c%2d%2d", &l_sign, &l_hour, &l_min) == 3
+        && l_hour >= 0 && ( ( l_sign == '+' && l_hour <= 14 ) || ( l_sign == '-' && l_hour <= 12 ) )
+        && l_min >= 0 && l_min <= 59 )
+        l_off = l_hour * 3600 + l_min * 60;
     else
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    if (sign == '-')
+    if (l_sign == '-')
         l_off = -l_off;
-    time_t tmp = _mkgmtime(&l_tm);
+#ifdef DAP_OS_WINDOWS
+    l_ret = _mkgmtime(&l_tm);
+    return l_ret > 0 ? l_ret - l_off : ( log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0 );
 #else
-    if ( *ret )
+    // Interpret tm as local time, then adjust by (local_offset_at_date - parsed_offset)
+    l_ret = mktime(&l_tm);
+    if ( l_ret <= 0 )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    time_t l_now = time(NULL);
-    struct tm l_tm_now = { };
-    localtime_r(&l_now, &l_tm_now);
-    l_off = -l_tm_now.tm_gmtoff;
-    time_t tmp = mktime(&l_tm);
+    struct tm l_tm_local = { };
+    localtime_r(&l_ret, &l_tm_local);
+    return l_ret + l_tm_local.tm_gmtoff - l_off;
 #endif
-    return tmp ? tmp - l_off : 0;
 }
 
 /**

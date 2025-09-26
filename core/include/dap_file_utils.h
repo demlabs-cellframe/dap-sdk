@@ -114,6 +114,7 @@ int dap_mkdir_with_parents(const char *a_dir_path);
 
 char* dap_path_get_basename(const char *a_file_name);
 bool  dap_path_is_absolute(const char *a_file_name);
+const char *dap_path_skip_root (const char *file_name);
 char* dap_path_get_dirname(const char *a_file_name);
 const char* dap_path_get_ext(const char *a_filename);
 
