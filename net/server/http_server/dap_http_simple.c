@@ -284,8 +284,10 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
     l_http_simple->reply_sent += bytes_written;
 
     if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
-        log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
-        l_http_simple->close_after_write = true;
+        if (!l_http_simple->close_after_write) {
+          log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
+          l_http_simple->close_after_write = true;
+        }
         return false;
     }
     return true;
