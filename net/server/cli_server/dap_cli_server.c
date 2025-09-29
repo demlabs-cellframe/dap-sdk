@@ -60,7 +60,7 @@ static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
 static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
-                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+                                            void *a_arg_func, bool a_uses_json_response, const char *a_doc, const char *a_doc_ex);
 
 static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted);
 typedef struct cli_cmd_arg {
@@ -198,19 +198,38 @@ void dap_cli_server_deinit()
 dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
                                                                                                             const char *a_doc, const char *a_doc_ex)
 {
-    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, a_doc, a_doc_ex);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, false, a_doc, a_doc_ex);
+}
+
+/**
+ * @brief dap_cli_server_cmd_add_ex
+ * Add CLI command with JSON response flag
+ * @param a_name Command name
+ * @param a_func Command callback function
+ * @param a_func_rpc RPC callback function
+ * @param a_uses_json_response Flag indicating if command uses JSON response
+ * @param a_doc Documentation string
+ * @param a_doc_ex Extended documentation string
+ * @return Pointer to created command or NULL on error
+ */
+dap_cli_cmd_t *dap_cli_server_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                          bool a_uses_json_response, const char *a_doc, const char *a_doc_ex)
+{
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, a_uses_json_response, a_doc, a_doc_ex);
 }
 
 /**
  * @brief s_cmd_add_ex
- * @param a_name
- * @param a_func
- * @param a_arg_func
- * @param a_doc
- * @param a_doc_ex
+ * @param a_name Command name
+ * @param a_func Command callback function
+ * @param a_func_rpc RPC callback function  
+ * @param a_arg_func Additional argument for function
+ * @param a_uses_json_response Flag indicating if command uses JSON response
+ * @param a_doc Documentation string
+ * @param a_doc_ex Extended documentation string
  */
 static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc, 
-                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+                                            void *a_arg_func, bool a_uses_json_response, const char *a_doc, const char *a_doc_ex)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
@@ -220,6 +239,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
     l_cmd_item->doc = a_doc ? strdup( a_doc) : NULL;
     l_cmd_item->doc_ex = a_doc_ex ? strdup( a_doc_ex) : NULL;
+    l_cmd_item->uses_json_response = a_uses_json_response;
     if (a_arg_func) {
         l_cmd_item->func_ex = a_func;
         l_cmd_item->arg_func = a_arg_func;
@@ -228,58 +248,41 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     }
     l_cmd_item->func_rpc = a_func_rpc;
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
-    log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
+    log_it(L_DEBUG,"Added command %s with %s response", l_cmd_item->name, 
+           a_uses_json_response ? "JSON" : "string");
     return l_cmd_item;
 }
 
-int json_commands(const char * a_name) {
-    static const char* long_cmd[] = {
-            "tx_history",
-            "wallet",
-            "mempool",
-            "ledger",
-            "tx_create",
-            "tx_create_json",
-            "mempool_add",
-            "tx_verify",
-            "tx_cond_create",
-            "tx_cond_remove",
-            "tx_cond_unspent_find",
-            "chain_ca_copy",
-            "dag",
-            "block",
-            "dag",
-            "token",
-            "esbocs",
-            "global_db",
-            "net_srv",
-            "net",
-            "srv_stake",
-            "poll",
-            "srv_xchange",
-            "emit_delegate",
-            "token_decl",
-            "token_update",
-            "token_update_sign",
-            "token_decl_sign",
-            "chain_ca_pub",
-            "token_emit",
-            "find",
-            "version",
-            "remove",
-            "gdb_import",
-            "stats",
-            "print_log",
-            "stake_lock",
-            "exec_cmd",
-            "policy"
-    };
-    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
-        if (!strcmp(a_name, long_cmd[i])) {
-            return 1;
-        }
+/**
+ * @brief dap_cli_server_cmd_set_json_response
+ * Set JSON response flag for existing command
+ * @param a_name Command name
+ * @param a_uses_json_response Flag indicating if command should use JSON response
+ */
+void dap_cli_server_cmd_set_json_response(const char *a_name, bool a_uses_json_response)
+{
+    dap_return_if_fail(a_name);
+    dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(a_name);
+    if (l_cmd) {
+        l_cmd->uses_json_response = a_uses_json_response;
+        log_it(L_DEBUG, "Set JSON response flag for command '%s' to %s", 
+               a_name, a_uses_json_response ? "true" : "false");
+    } else {
+        log_it(L_WARNING, "Command '%s' not found when setting JSON response flag", a_name);
     }
-    return 0;
+}
+
+/**
+ * @brief dap_cli_server_cmd_uses_json_response  
+ * Check if command uses JSON response format
+ * @param a_name Command name to check
+ * @return true if command uses JSON response, false otherwise
+ */
+bool dap_cli_server_cmd_uses_json_response(const char *a_name)
+{
+    dap_return_val_if_fail(a_name, false);
+    dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(a_name);
+    return l_cmd ? l_cmd->uses_json_response : false;
 }
 
 /**
@@ -529,7 +532,7 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
         }
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
-            if (json_commands(cmd_name)) {
+            if (l_cmd->uses_json_response) {
                 res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
@@ -581,3 +584,20 @@ DAP_INLINE int dap_cli_server_get_version()
 {
     return s_cli_version;
 }
+
+/* 
+ * MIGRATION EXAMPLES:
+ * 
+ * Old way (hardcoded json_commands function):
+ * dap_cli_server_cmd_add("wallet", cmd_wallet, NULL, "Wallet operations", "Extended wallet help");
+ * 
+ * New way (explicit JSON flag):
+ * dap_cli_server_cmd_add_ex("wallet", cmd_wallet, NULL, true, "Wallet operations", "Extended wallet help");
+ * 
+ * Or set JSON flag later:
+ * dap_cli_server_cmd_add("wallet", cmd_wallet, NULL, "Wallet operations", "Extended wallet help");
+ * dap_cli_server_cmd_set_json_response("wallet", true);
+ * 
+ * Check if command uses JSON:
+ * bool uses_json = dap_cli_server_cmd_uses_json_response("wallet");
+ */

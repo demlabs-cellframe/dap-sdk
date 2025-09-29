@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_config.h"
@@ -54,6 +55,7 @@ typedef struct dap_cli_cmd{
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
+    bool uses_json_response; /* Flag indicating if command returns JSON response */
     UT_hash_handle hh;
 } dap_cli_cmd_t;
 
@@ -70,6 +72,8 @@ void dap_cli_server_deinit();
 
 dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
                                                                                                             const char *a_doc, const char *a_doc_ex);
+dap_cli_cmd_t *dap_cli_server_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                          bool a_uses_json_response, const char *a_doc, const char *a_doc_ex);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
@@ -81,7 +85,8 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
 
-//for json
-int json_commands(const char * a_name);
+void dap_cli_server_cmd_set_json_response(const char *a_name, bool a_uses_json_response);
+bool dap_cli_server_cmd_uses_json_response(const char *a_name);
+
 char *dap_cli_cmd_exec(char *a_req_str);
 int dap_cli_server_get_version();

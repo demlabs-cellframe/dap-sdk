@@ -23,6 +23,7 @@
 #include <string.h>
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_sys_paths.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
@@ -181,7 +182,7 @@ int dap_global_db_init()
         }
 
         char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
-        s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
+        s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_sys_path_get(DAP_SYS_PATH_GLOBAL_DB);
         const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
         s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "mdbx");
         
