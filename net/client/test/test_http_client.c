@@ -1240,8 +1240,6 @@ void test_http_client()
     g_test_state.start_time = time(NULL);
     
     // Initialize DAP subsystems
-    dap_common_init(NULL, "http_test.log");
-    dap_log_level_set(L_INFO);
     dap_events_init(1, 0);
     dap_events_start();
     dap_client_http_init();
@@ -1270,6 +1268,8 @@ void test_http_client()
 
 int main()
 {
+    dap_log_level_set(L_DEBUG);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     test_http_client();
     return 0;
 } 

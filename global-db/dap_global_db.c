@@ -1722,7 +1722,7 @@ static void s_clean_old_obj_gdb_callback() {
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         size_t l_ret_count = 0;
         dap_store_obj_t *l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
-        log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
+        log_it(L_DEBUG, "Start clear gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
         while (l_ret_count > 0 && l_ret && l_ret->group) {
             for(size_t i = 0; i < l_ret_count; i++) {
                 if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
@@ -2148,20 +2148,20 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
 }
 
 /**
- * @brief dap_global_db_group_clear
+ * @brief dap_global_db_clear_table
  * @details Erase all records in the group with flag DAP_GLOBAL_DB_RECORD_DEL
  * @param a_group group name
  * @param a_pinned clean pinned records
  * @return count of deleted records
  */
-size_t dap_global_db_group_clear(const char *a_group, bool a_pinned)
+size_t dap_global_db_clear_table(const char *a_group, bool a_pinned)
 {
     dap_return_val_if_fail(a_group, 0);
     size_t
         l_obj_count = 0,
         l_ret = 0;
     dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(a_group, &l_obj_count);
-    log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", a_group, l_obj_count);
+    log_it(L_DEBUG, "Start clear gdb group %s, %zu records will check", a_group, l_obj_count);
     for(size_t i = 0; i < l_obj_count; ++i) {
         if (l_objs[i].flags & DAP_GLOBAL_DB_RECORD_DEL && (a_pinned || !(l_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED))) {       
             debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_objs[i].group, l_objs[i].key);
