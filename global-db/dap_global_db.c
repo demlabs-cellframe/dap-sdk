@@ -105,7 +105,6 @@ static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
 static dap_nanotime_t s_minimal_ttl = 3600000000000;  //def half an hour
 static size_t s_gdb_auto_clean_period = 3600 / 2;  // def half an hour
-static size_t s_gdb_auto_clean_period = 3600 / 2;  // def half an hour
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
