@@ -316,7 +316,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     }
     while (*l_check) {
         char c = *l_check++;
-        if (c == '/' || c == '\\' || c == '.' || c == '_' || c == '-') continue;
+        if (c == '/' || c == '\\' || c == '.' || c == '_' || c == '-' || c == ' ') continue;
         if (!dap_ascii_isalnum(c)) {
             log_it(L_ERROR, "Invalid character in config path: %c", c);
             return NULL;
