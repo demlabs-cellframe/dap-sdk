@@ -298,14 +298,16 @@ void dap_cert_delete_by_name(const char * a_cert_name)
 
 /**
  * @brief
- * find certificate by name in path, which is configured ca_folders parameter in chain config
- * @param a_cert_name const char *
- * @return
+ * find certificate by name with unified search approach
+ * @param a_cert_name const char * Certificate name or path
+ * @return Certificate object or NULL if not found
+ * @details Unified approach that eliminates CLI/SDK inconsistencies
  */
 dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
 {
     if (!a_cert_name)
         return NULL;
+    
     dap_cert_item_t *l_cert_item = NULL;
     dap_cert_t *l_ret = NULL;
 
@@ -316,8 +318,9 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
             l_cert_name[i]='/';
     }
 
+    // Check if it's a path (contains '/')
     if(strstr(l_cert_name, "/")){
-        // find external certificate
+        // Handle as external certificate path
         char *l_cert_path = NULL;
         if (!strstr(l_cert_name, ".dcert"))
             l_cert_path = dap_strjoin("", l_cert_name, ".dcert", (char *)NULL);
@@ -326,23 +329,30 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         l_ret = dap_cert_file_load(l_cert_path);
         DAP_DELETE(l_cert_path);
     } else {
+        // First check memory cache
         HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
-        if (l_cert_item ) {
-            l_ret = l_cert_item->cert ;
+        if (l_cert_item) {
+            l_ret = l_cert_item->cert;
         } else {
+            // Search in ALL configured ca_folders (unified behavior)
             uint16_t l_ca_folders_size = 0;
             char *l_cert_path = NULL;
             char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
+            
+            // Enhanced search: try all paths consistently
             for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
                 l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
                 l_ret = dap_cert_file_load(l_cert_path);
                 DAP_DELETE(l_cert_path);
-                if (l_ret)
+                if (l_ret) {
+                    log_it(L_DEBUG, "Certificate '%s' found in %s", a_cert_name, l_ca_folders[i]);
                     break;
+                }
             }
             dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_size);
         }
     }
+    
     if (!l_ret)
         log_it(L_DEBUG, "Can't load cert '%s'", a_cert_name);
     return l_ret;
