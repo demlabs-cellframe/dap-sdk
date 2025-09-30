@@ -32,7 +32,7 @@ static int s_cli_stream_test(int argc, char **argv, char **a_str_reply, int a_ve
 
 void dap_stream_test_init(void)
 {
-    dap_cli_server_cmd_add("stream_test", s_cli_stream_test, "Stream testing command",
+    dap_cli_server_cmd_add("stream_test", s_cli_stream_test, NULL, "Stream testing command",
         "stream_test -addr <IP> - port <port> -size <packet_size> -count <packet_count>"
             "\tSet up stream connection with channel 'N' to host with specified IP and port"
             " and sends '-count' packets with size '-size'. Data hash of each packet is logged");
