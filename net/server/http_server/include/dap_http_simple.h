@@ -67,6 +67,7 @@ typedef struct dap_http_simple {
 
     dap_http_header_t *ext_headers;
     bool generate_default_header;
+    bool close_after_write;
 
    // dap_http_simple_callback_t reply_proc_post_callback;
 } dap_http_simple_t;
