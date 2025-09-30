@@ -314,7 +314,7 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_val_if_pass(!s_link_manager, 0);
+    dap_return_val_if_pass(!l_net, 0);
 // func work
     if (!l_net) {
         log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
