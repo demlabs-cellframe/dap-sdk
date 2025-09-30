@@ -105,6 +105,7 @@ static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
 static dap_nanotime_t s_minimal_ttl = 3600000000000;  //def half an hour
 static size_t s_gdb_auto_clean_period = 3600 / 2;  // def half an hour
+static size_t s_gdb_auto_clean_period = 3600 / 2;  // def half an hour
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -2147,3 +2148,28 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
     return ret;
 }
 
+/**
+ * @brief dap_global_db_clear_table
+ * @details Erase all records in the group with flag DAP_GLOBAL_DB_RECORD_DEL
+ * @param a_group group name
+ * @param a_pinned clean pinned records
+ * @return count of deleted records
+ */
+size_t dap_global_db_clear_table(const char *a_group, bool a_pinned)
+{
+    dap_return_val_if_fail(a_group, 0);
+    size_t
+        l_obj_count = 0,
+        l_ret = 0;
+    dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(a_group, &l_obj_count);
+    log_it(L_DEBUG, "Start clear gdb group %s, %zu records will check", a_group, l_obj_count);
+    for(size_t i = 0; i < l_obj_count; ++i) {
+        if (l_objs[i].flags & DAP_GLOBAL_DB_RECORD_DEL && (a_pinned || !(l_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED))) {       
+            debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_objs[i].group, l_objs[i].key);
+            dap_global_db_driver_delete(l_objs + i, 1);
+            l_ret++;
+        }
+    }
+    dap_store_obj_free(l_objs, l_obj_count);
+    return l_ret;
+}

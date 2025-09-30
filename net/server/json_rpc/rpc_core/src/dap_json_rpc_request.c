@@ -41,7 +41,8 @@ static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_cli
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);    
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);
+    pthread_condattr_destroy(&attr);
 #endif
 #endif
     return l_exec_cmd_request;
