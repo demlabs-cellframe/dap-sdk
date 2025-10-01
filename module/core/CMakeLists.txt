@@ -34,10 +34,19 @@ dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
     ${CMAKE_CURRENT_BINARY_DIR}/json-c)
+
+# Platform-specific include directories
+if(UNIX)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/unix)
+endif()
+if(WIN32)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/win32)
+endif()
 if (DAP_USE_RPMALLOC)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/rpmalloc/rpmalloc/)
     target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)

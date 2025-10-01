@@ -23,10 +23,8 @@ include_directories(${PROJECT_NAME} include http_client/include)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${HTTP_SERVER_SRCS} HEADERS ${HTTP_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
-target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../io/include)
+target_include_directories(${PROJECT_NAME} PUBLIC include http_client/include)
+# All other includes come from linked libraries (dap_core, dap_io)
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
