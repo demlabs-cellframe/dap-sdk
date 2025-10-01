@@ -29,6 +29,7 @@
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "dap_proc_thread"
 
@@ -115,7 +116,9 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
-    uint32_t l_id_start = rand() % s_threads_count,
+    uint32_t l_random_val;
+    randombytes(&l_random_val, sizeof(l_random_val));
+    uint32_t l_id_start = l_random_val % s_threads_count,
              l_id_min = l_id_start,
              l_size_min = UINT32_MAX;
     for (uint32_t i = l_id_start; i < s_threads_count + l_id_start; i++) {

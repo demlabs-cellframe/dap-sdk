@@ -1,7 +1,14 @@
 #include <stdio.h>
-#include "../crypto/src/rand/dap_rand.h"
-#include "dap_math_ops.h"
-#include "dap_chain_common.h"
+#include <stdlib.h>
+#include <stdint.h>
+
+#include "../core/include/dap_common.h"
+#include "../core/include/dap_math_ops.h"
+
+
+extern void randombytes(void *buf, size_t len);
+extern void dap_pseudo_random_seed(uint256_t seed);
+extern uint256_t dap_pseudo_random_get(uint256_t max, void *context);
 
 #define NUMBER_OF_BITSTREAMS 100
 #define NUMBER_OF_ELEMENTS 1024 * 4

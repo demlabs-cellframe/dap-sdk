@@ -89,6 +89,10 @@ size_t dap_enc_iaes256_cbc_decrypt(struct dap_enc_key * a_key, const void * a_in
     }
 
     *a_out = (uint8_t *) malloc(a_in_size);
+    if (!*a_out) {
+        log_it(L_ERROR, "Memory allocation failed for decryption output");
+        return 0;
+    }
 
     return dap_enc_iaes256_cbc_decrypt_fast(a_key, a_in, a_in_size, *a_out, a_in_size);
 }

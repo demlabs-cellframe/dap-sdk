@@ -929,7 +929,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 case DESCRIPTOR_TYPE_SOCKET_LISTENING:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                    getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
+                    if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size) != 0) {
+                        l_sock_err = errno; // Use errno if getsockopt fails
+                    }
 #ifdef DAP_OS_WINDOWS
                     log_it(L_ERROR, "Winsock error: %d", l_sock_err);
 #else
@@ -1844,7 +1846,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 {
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
     if(!l_es){
-        log_it(L_CRITICAL,"Memory allocation error");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
