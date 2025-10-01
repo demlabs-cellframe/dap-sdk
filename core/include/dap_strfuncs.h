@@ -26,7 +26,7 @@ char *strptime(const char *buff, const char *fmt, struct tm *tm);
 
 bool dap_isstralnum(const char *c);
 size_t dap_strlen(const char *a_str);
-char* dap_strcat2(const char* s1, const char* s2);
+char* dap_strcat2(char* s1, const char* s2);
 char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2, bool a_str_dup);
 // compare a_str1 and a_str2
 int dap_strcmp(const char *a_str1, const char *a_str2);

@@ -22,12 +22,15 @@
  * @return
  */
 bool dap_isstralnum(const char *c)
-{ 
+{
+    if (!c)
+        return false;
+    
     size_t str_len = strlen(c);
 
     for (size_t i = 0; i < str_len; i++)
     {
-        if (!isalnum(c[i]) && c[i] != '_' && c[i] != '-')
+        if (!dap_ascii_isalnum(c[i]) && c[i] != '_' && c[i] != '-')
             return false;
     }
 
@@ -41,13 +44,20 @@ bool dap_isstralnum(const char *c)
  * @param s2 char string
  * @return char* 
  */
-char* dap_strcat2(const char* s1, const char* s2)
+char* dap_strcat2(char* s1, const char* s2)
 {
     size_t size1 = s1 ? strlen(s1) : 0, size2 = s2 ? strlen(s2) : 0;
     char *l_ret = (char*)s1;
     if (size2) {
-        l_ret = DAP_REALLOC_RET_VAL_IF_FAIL((char*)s1, size1 + size2 + 1, (char*)s1);
-        char *l_pos = (char*)dap_mempcpy(l_ret + size1, s2, size2);
+        if (size1 > SIZE_MAX - size2 - 1) {
+            log_it(L_ERROR, "Integer overflow in string concatenation size calculation");
+            return (char*)s1; // Return original pointer unchanged on overflow
+        }
+        
+        size_t l_new_size = size1 + size2 + 1;
+        char *l_new_ptr = DAP_REALLOC_RET_VAL_IF_FAIL(s1, l_new_size, NULL);
+        l_ret = l_new_ptr;
+        char *l_pos = dap_mempcpy(l_ret + size1, s2, size2);
         *l_pos = '\0';
     }
     return l_ret;
