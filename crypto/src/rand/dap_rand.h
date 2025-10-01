@@ -70,7 +70,8 @@ static inline uint16_t dap_random_uint16(void) {
 void dap_pseudo_random_seed(uint256_t a_seed);
 uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result);
 
-// Cleanup function for proper resource management
+#ifndef DAP_OS_WINDOWS
 void dap_rand_cleanup(void);
+#endif
 
 #endif

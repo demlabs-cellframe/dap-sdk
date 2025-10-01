@@ -223,8 +223,9 @@ uint8_t *dap_cert_serialize_meta(dap_cert_t *a_cert, size_t *a_buflen_out)
                 return DAP_DELETE(l_buf), dap_list_free(l_meta_list), log_it(L_CRITICAL, "%s", "Insufficient memory"), NULL;
             l_buf = l_new_buf;
         }
-        strcpy((char *)&l_buf[l_mem_shift], l_meta_item->key);
-        l_mem_shift += strlen(l_meta_item->key) + 1;
+        char *l_dest = (char*)l_buf + l_mem_shift;
+        l_mem_shift += (size_t)(dap_stpcpy(l_dest, l_meta_item->key) - l_dest) + 1;
+        
         *(uint32_t *)&l_buf[l_mem_shift] = htole32(l_meta_item->length);
         l_mem_shift += sizeof(uint32_t);
         l_buf[l_mem_shift++] = l_meta_item->type;
