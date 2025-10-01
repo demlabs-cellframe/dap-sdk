@@ -91,8 +91,8 @@ static bool s_test_sha3_256_empty(void) {
     
     dap_hash_fast_t l_hash = {0};
     
-    // Test with empty string
-    bool l_ret = dap_hash_fast("", 0, &l_hash);
+    // Test with empty string (NULL pointer with size 0)
+    bool l_ret = dap_hash_fast(NULL, 0, &l_hash);
     DAP_TEST_ASSERT(l_ret == true, "Hash of empty string should succeed");
     
     log_it(L_DEBUG, "SHA3-256 empty input test passed");
