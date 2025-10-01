@@ -58,24 +58,51 @@ macro(dap_create_final_library)
         add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
         
         # Link external static libraries into final library
+        # Note: Crypto sub-libraries (kyber512, XKCP) are linked through dap_crypto itself
         target_link_libraries(dap_sdk PRIVATE
             dap_json-c
-            dap_crypto_kyber512
-            dap_crypto_XKCP
-            dap_crypto
-            dap_io
-            dap_client
-            dap_link_manager
-            dap_cli_server
-            dap_dns_server
-            dap_enc_server
-            dap_http_server
-            dap_json_rpc
-            dap_notify_srv
-            dap_stream
-            dap_stream_ch
-            dap_session
         )
+        
+        # Link optional module libraries if they exist
+        if(TARGET dap_crypto)
+            target_link_libraries(dap_sdk PRIVATE dap_crypto)
+        endif()
+        if(TARGET dap_io)
+            target_link_libraries(dap_sdk PRIVATE dap_io)
+        endif()
+        if(TARGET dap_client)
+            target_link_libraries(dap_sdk PRIVATE dap_client)
+        endif()
+        if(TARGET dap_link_manager)
+            target_link_libraries(dap_sdk PRIVATE dap_link_manager)
+        endif()
+        if(TARGET dap_cli_server)
+            target_link_libraries(dap_sdk PRIVATE dap_cli_server)
+        endif()
+        if(TARGET dap_dns_server)
+            target_link_libraries(dap_sdk PRIVATE dap_dns_server)
+        endif()
+        if(TARGET dap_enc_server)
+            target_link_libraries(dap_sdk PRIVATE dap_enc_server)
+        endif()
+        if(TARGET dap_http_server)
+            target_link_libraries(dap_sdk PRIVATE dap_http_server)
+        endif()
+        if(TARGET dap_json_rpc)
+            target_link_libraries(dap_sdk PRIVATE dap_json_rpc)
+        endif()
+        if(TARGET dap_notify_srv)
+            target_link_libraries(dap_sdk PRIVATE dap_notify_srv)
+        endif()
+        if(TARGET dap_stream)
+            target_link_libraries(dap_sdk PRIVATE dap_stream)
+        endif()
+        if(TARGET dap_stream_ch)
+            target_link_libraries(dap_sdk PRIVATE dap_stream_ch)
+        endif()
+        if(TARGET dap_session)
+            target_link_libraries(dap_sdk PRIVATE dap_session)
+        endif()
         
         # Link MDBX only if enabled
         if(BUILD_WITH_GDB_DRIVER_MDBX)
@@ -88,7 +115,14 @@ macro(dap_create_final_library)
             message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
         endif()
         
+        # Export only DAP SDK root header directory
+        # All module-specific includes are exported by modules themselves
+        target_include_directories(dap_sdk INTERFACE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        
         message("[+] Final DAP SDK Library: dap_sdk created from real object files")
+        message("[+] DAP SDK: All include directories exported via INTERFACE")
     else()
         message("[!] No DAP internal modules found!")
     endif()
