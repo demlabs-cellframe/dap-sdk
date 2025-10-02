@@ -47,6 +47,8 @@ void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
 bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey);
 bool dap_json_rpc_exec_cmd_inited();
 dap_client_http_callback_error_t * dap_json_rpc_error_callback();
+bool dap_json_rpc_get_int64_uint64(struct json_object *a_json, const char *a_key, void *a_out, bool a_is_uint64);
+const char* dap_json_rpc_get_text(struct json_object *a_json, const char *a_key);
 
 #ifdef __cplusplus
 }

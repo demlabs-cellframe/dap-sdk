@@ -160,3 +160,31 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         *return_code = Http_Status_BadRequest;
     }
 }
+
+bool dap_json_rpc_get_int64_uint64(struct json_object *a_json, const char *a_key, void *a_out, bool a_is_uint64)
+{
+    if(!a_json || !a_key || !a_out)
+        return false;
+    struct json_object *l_json = json_object_object_get(a_json, a_key);
+    if(l_json) {
+        if(a_is_uint64) {
+            *(uint64_t*)a_out = json_object_get_uint64(l_json);
+        } else {
+            *(int64_t*)a_out = json_object_get_int64(l_json);
+        }
+        return true;
+    }
+    return false;
+}
+
+const char* dap_json_rpc_get_text(struct json_object *a_json, const char *a_key)
+{
+    if(!a_json || !a_key)
+        return NULL;
+    struct json_object *l_json = json_object_object_get(a_json, a_key);
+    if(l_json && json_object_is_type(l_json, json_type_string)) {
+        // Read text
+        return json_object_get_string(l_json);
+    }
+    return NULL;
+}
