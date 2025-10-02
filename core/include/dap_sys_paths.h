@@ -26,6 +26,7 @@
 #pragma once
 
 #include "dap_common.h"
+#include "dap_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,10 +85,11 @@ char* dap_sys_path_get_service_config(void);
 
 /**
  * @brief Initialize system paths module
+ * @param a_config[in] Configuration object for path resolution (can be NULL for defaults)
  * @return 0 on success, negative error code on failure
  * @details Must be called after g_sys_dir_path is set
  */
-int dap_sys_paths_init(void);
+int dap_sys_paths_init(dap_config_t *a_config);
 
 /**
  * @brief Cleanup system paths module

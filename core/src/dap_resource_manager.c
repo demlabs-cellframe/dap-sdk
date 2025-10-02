@@ -29,12 +29,13 @@ typedef struct {
 
 /**
  * @brief Resource configuration table
+ * @details All default paths are now configurable through external configuration
  */
 static const dap_resource_config_map_t s_resource_configs[] = {
-    { DAP_RESOURCE_TYPE_CERTIFICATE, "resources", "ca_folders",    ".dcert",   "share/ca" },
-    { DAP_RESOURCE_TYPE_WALLET,      "resources", "wallets_path",  ".dwallet", "var/lib/wallets" },
-    { DAP_RESOURCE_TYPE_CONFIG,      NULL,        NULL,            ".cfg",     "etc" },
-    { DAP_RESOURCE_TYPE_KEY,         "resources", "keys_path",     ".dkey",    "var/lib/keys" }
+    { DAP_RESOURCE_TYPE_CERTIFICATE, "resources", "ca_folders",    ".dcert",   NULL },
+    { DAP_RESOURCE_TYPE_WALLET,      "resources", "wallets_path",  ".dwallet", NULL },
+    { DAP_RESOURCE_TYPE_CONFIG,      "paths",     "config_dir",    ".cfg",     NULL },
+    { DAP_RESOURCE_TYPE_KEY,         "resources", "keys_path",     ".dkey",    NULL }
 };
 
 static const size_t s_resource_configs_count = sizeof(s_resource_configs) / sizeof(s_resource_configs[0]);
@@ -88,8 +89,11 @@ int dap_resource_manager_init(dap_config_t *a_config)
     }
     dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_count);
 
-    // Cache wallet path
-    s_wallet_path = dap_config_get_item_str_path_default(s_config, "resources", "wallets_path", "var/lib/wallets");
+    // Cache wallet path - get from configuration without hardcoded default
+    s_wallet_path = dap_config_get_item_str_path_default(s_config, "resources", "wallets_path", NULL);
+    if (!s_wallet_path) {
+        log_it(L_WARNING, "Wallet path not configured in 'resources.wallets_path'");
+    }
 
     log_it(L_NOTICE, "Resource manager initialized");
     log_it(L_DEBUG, "Primary cert path: %s", s_primary_cert_path ? s_primary_cert_path : "NULL");
@@ -140,13 +144,15 @@ char** dap_resource_get_search_paths(dap_resource_type_t a_type, uint16_t *a_pat
         
         case DAP_RESOURCE_TYPE_WALLET:
         case DAP_RESOURCE_TYPE_KEY: {
-            char *l_path = dap_config_get_item_str_path_default(s_config, l_config->config_section,
-                                                               l_config->config_param, l_config->default_path);
+            char *l_path = dap_config_get_item_str_path_default(s_config, l_config->config_section, l_config->config_param, NULL);
             if (l_path) {
                 char **l_paths = DAP_NEW_Z_SIZE(char*, sizeof(char*));
                 l_paths[0] = dap_strdup(l_path);
                 *a_paths_count = 1;
                 return l_paths;
+            } else {
+                log_it(L_WARNING, "Path not configured for resource type %d in section '%s', param '%s'", 
+                       a_type, l_config->config_section, l_config->config_param);
             }
             break;
         }
