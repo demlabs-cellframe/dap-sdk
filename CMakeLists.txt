@@ -206,6 +206,10 @@ if (DAPSDK_MODULES MATCHES "network-server")
     message("[+] Module 'server'")
 endif()
 
+# App CLI module
+add_subdirectory(module/net/app-cli)
+message("[+] Module 'app-cli'")
+
 if (DAPSDK_MODULES MATCHES "global-db")
     # Check if at least one Global DB driver is enabled
     if(NOT BUILD_WITH_GDB_DRIVER_MDBX AND NOT BUILD_WITH_GDB_DRIVER_SQLITE AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)

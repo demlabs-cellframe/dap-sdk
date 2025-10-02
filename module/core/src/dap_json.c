@@ -115,6 +115,24 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
 }
 
+int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
+{
+    if (!a_array) {
+        log_it(L_ERROR, "Array is NULL");
+        return -1;
+    }
+    
+    json_object *l_arr = _dap_json_to_json_c(a_array);
+    if (!l_arr) return -1;
+    
+    // Delete elements one by one
+    for (size_t i = 0; i < a_count; i++) {
+        json_object_array_del_idx(l_arr, a_idx, 1);
+    }
+    
+    return 0;
+}
+
 size_t dap_json_array_length(dap_json_t* a_array)
 {
     if (!a_array) {
@@ -253,6 +271,28 @@ int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value
     }
     
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_bool);
+}
+
+int dap_json_object_add_nanotime(dap_json_t* a_json, const char* a_key, dap_nanotime_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    // Store as int64 for compatibility
+    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
+}
+
+int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    // Store as int64 for compatibility
+    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
 }
 
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
@@ -768,6 +808,16 @@ dap_json_t* dap_json_object_new_string(const char* a_value)
     return _json_c_to_dap_json(json_object_new_string(a_value));
 }
 
+dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
+{
+    if (!a_value) {
+        log_it(L_ERROR, "String value is NULL");
+        return NULL;
+    }
+    
+    return _json_c_to_dap_json(json_object_new_string_len(a_value, a_len));
+}
+
 dap_json_t* dap_json_object_new_double(double a_value)
 {
     return _json_c_to_dap_json(json_object_new_double(a_value));
@@ -922,6 +972,56 @@ const char* dap_json_get_string(dap_json_t* a_json) {
     if (!l_obj) return NULL;
     
     return json_object_get_string(l_obj);
+}
+
+int64_t dap_json_get_int64(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_get_int64(l_obj);
+}
+
+uint64_t dap_json_get_uint64(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_get_uint64(l_obj);
+}
+
+dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    int64_t l_temp = json_object_get_int64(l_obj);
+    // Handle both nanosecond timestamps and legacy second timestamps
+    return l_temp >> 32 ? (dap_nanotime_t)l_temp : dap_nanotime_from_sec(l_temp);
+}
+
+size_t dap_json_object_length(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_object_length(l_obj);
+}
+
+int dap_json_to_file(const char* a_file_path, dap_json_t* a_json) {
+    if (!a_file_path || !a_json) {
+        log_it(L_ERROR, "File path or JSON is NULL");
+        return -1;
+    }
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return -1;
+    
+    return json_object_to_file(a_file_path, l_obj);
 }
 
 

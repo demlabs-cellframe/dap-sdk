@@ -27,6 +27,7 @@
 #include "dap_common.h"
 #include "dap_math_ops.h"
 #include "dap_math_convert.h"
+#include "dap_time.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -47,6 +48,7 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json);
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value);
 dap_json_t* dap_json_object_new_string(const char* a_value);
+dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len);
 dap_json_t* dap_json_object_new_double(double a_value);
 dap_json_t* dap_json_object_new_bool(bool a_value);
 
@@ -54,6 +56,7 @@ dap_json_t* dap_json_object_new_bool(bool a_value);
 dap_json_t* dap_json_array_new(void);
 void dap_json_array_free(dap_json_t* a_array);
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
+int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count);
 size_t dap_json_array_length(dap_json_t* a_array);
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
 
@@ -65,6 +68,8 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value);
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value);
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value);
+int dap_json_object_add_nanotime(dap_json_t* a_json, const char* a_key, dap_nanotime_t a_value);
+int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a_value);
 int dap_json_object_add_null(dap_json_t* a_json, const char* a_key);
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value);
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array);
@@ -86,6 +91,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json);
 
 // Advanced object manipulation
 dap_json_t* dap_json_from_file(const char* a_file_path);
+int dap_json_to_file(const char* a_file_path, dap_json_t* a_json);
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value);
 int dap_json_object_del(dap_json_t* a_json, const char* a_key);
 
@@ -159,6 +165,10 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
 
 // Extended value access API
 const char* dap_json_get_string(dap_json_t* a_json);
+int64_t dap_json_get_int64(dap_json_t* a_json);
+uint64_t dap_json_get_uint64(dap_json_t* a_json);
+dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json);
+size_t dap_json_object_length(dap_json_t* a_json);
 
 #ifdef __cplusplus
 }
