@@ -69,17 +69,16 @@ if(UNIX)
         if (${_CMAKE_OSX_SYSROOT_PATH} MATCHES "MacOS")
             set(MACOS ON)
 	    # on macOS "uname -m" returns the architecture (x86_64 or arm64)
-	    if (NOT DEFINED MACOS_ARCH)
-        
-            execute_process(
-            COMMAND uname -m
-            RESULT_VARIABLE result
-            OUTPUT_VARIABLE MACOS_ARCH
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-        endif()
+            if (NOT DEFINED MACOS_ARCH)
+                execute_process(
+                COMMAND uname -m
+                RESULT_VARIABLE result
+                OUTPUT_VARIABLE MACOS_ARCH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                )
+            endif()
             add_definitions("-DDAP_OS_MAC -DDAP_OS_MAC_ARCH=${MACOS_ARCH}")
-        elseif (${_CMAKE_OSX_SYSROOT_PATH} MATCHES "iOS")
+        elseif (IOS OR CMAKE_OSX_SYSROOT MATCHES "iPhoneOS|iPhoneSimulator")
             set(IOS ON)
             add_definitions("-DDAP_OS_IOS")
         else()
@@ -151,6 +150,8 @@ if(UNIX)
                 set(_CCOPT "${_CCOPT} -O3")
                 if(NOT DAP_DBG_INFO)
                     set(_CCOPT "${_CCOPT} -Wl,--strip-all")
+                else()
+                    set(_CCOPT "${_CCOPT} -fno-omit-frame-pointer")
                 endif()
             endif()
         endif()
@@ -207,7 +208,7 @@ if(WIN32)
     add_definitions("-DHAVE_MMAP")
     add_definitions("-DHAVE_STRNDUP")
     add_definitions("-DNGHTTP2_STATICLIB")
-    add_compile_definitions(WINVER=0x0600 _WIN32_WINNT=0x0600)
+    add_compile_definitions(WINVER=0x0601 _WIN32_WINNT=0x0601)
     add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
 
     set(CCOPT_SYSTEM "")
@@ -257,28 +258,3 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
-FIND_PROGRAM(CPPCHECK "cppcheck")
-IF(CPPCHECK)
-    # Set export commands on
-    message("[!] CPPCHECK FOUND, ADDED TARGET CPPCHECK")
-
-    SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-    ADD_CUSTOM_TARGET(
-        cppcheck
-        COMMAND
-            ${CPPCHECK} --enable=all --project=${CMAKE_BINARY_DIR}/compile_commands.json --std=c++11 --verbose --quiet
-            --xml-version=2 --language=c++ --suppress=missingIncludeSystem
-            --output-file=${CMAKE_BINARY_DIR}/cppcheck_results.xml ${CHECK_CXX_SOURCE_FILES}
-        COMMENT "Generate cppcheck report for the project")
-
-    FIND_PROGRAM(CPPCHECK_HTML "cppcheck-htmlreport")
-    IF(CPPCHECK_HTML)
-        ADD_CUSTOM_TARGET(
-            cppcheck-html
-            COMMAND ${CPPCHECK_HTML} --title=${CMAKE_PROJECT_NAME} --file=${CMAKE_BINARY_DIR}/cppcheck_results.xml
-                    --report-dir=${CMAKE_BINARY_DIR}/cppcheck_results --source-dir=${CMAKE_SOURCE_DIR}
-            COMMENT "Convert cppcheck report to HTML output")
-        ADD_DEPENDENCIES(cppcheck-html cppcheck)
-    ENDIF()
-ENDIF()

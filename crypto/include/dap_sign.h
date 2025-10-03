@@ -55,6 +55,13 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_NONE      0x00
 #define DAP_SIGN_HASH_TYPE_SHA3      0x01
 #define DAP_SIGN_HASH_TYPE_STREEBOG  0x02
+#define DAP_SIGN_HASH_TYPE_SIGN      0x0e
+#define DAP_SIGN_HASH_TYPE_DEFAULT   0x0f  // not transferred in network, first try use sign hash, if false, use s_sign_hash_type_default
+
+#define DAP_SIGN_PKEY_HASHING_FLAG BIT(7)
+#define DAP_SIGN_ADD_PKEY_HASHING_FLAG(a) ((a) | DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a) ((a) & ~DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_GET_PKEY_HASHING_FLAG(a) ((a) & DAP_SIGN_PKEY_HASHING_FLAG)
 
 typedef union dap_sign_type {
     dap_sign_type_enum_t type;
@@ -78,7 +85,8 @@ typedef struct dap_sign
     dap_sign_hdr_t header; /// Only header's hash is used for verification
     uint8_t pkey_n_sign[]; /// @param sig @brief raw signature data
 } DAP_ALIGN_PACKED dap_sign_t;
-
+typedef struct dap_pkey dap_pkey_t;
+typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,19 +96,23 @@ extern "C" {
 int dap_sign_init(uint8_t a_sign_hash_type_default);
 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign);
-
-int dap_sign_verify (dap_sign_t * a_chain_sign, const void * a_data, const size_t a_data_size);
-bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size);
+int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size, dap_pkey_t *a_pkey);
+DAP_STATIC_INLINE int dap_sign_verify (dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size)
+{
+    return dap_sign_verify_by_pkey(a_chain_sign, a_data, a_data_size, NULL);
+}
 
 /**
- * @brief dap_sign_verify_data
- * @param a_chain_sign
- * @param a_data
- * @param a_data_size
- * @return
+ * @brief verify, if a_sign->header.sign_pkey_size and a_sign->header.sign_size bigger, then a_max_key_size
+ * @param a_sign signed data object 
+ * @param a_max_sign_size max size of signature
+ * @return 0 if pass, otjer if not 
  */
-static inline bool dap_sign_verify_data (dap_sign_t * a_chain_sign, const void * a_data, const size_t a_data_size){
-    return !dap_sign_verify(a_chain_sign, a_data, a_data_size);
+DAP_STATIC_INLINE int dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size)
+{
+    return !(a_sign && (a_max_sign_size > sizeof(dap_sign_t)) && (a_sign->header.sign_size) &&
+           (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL) &&
+           ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(dap_sign_t) <= (uint64_t)a_max_sign_size));
 }
 
 /**
@@ -111,26 +123,24 @@ static inline bool dap_sign_verify_data (dap_sign_t * a_chain_sign, const void *
  * @param a_data_size
  * @return
  */
-static inline int dap_sign_verify_all(dap_sign_t * a_sign, const size_t a_sign_size_max, const void * a_data, const size_t a_data_size)
+DAP_STATIC_INLINE int dap_sign_verify_all(dap_sign_t *a_sign, const size_t a_sign_size_max, const void * a_data, const size_t a_data_size)
 {
-    if( a_sign_size_max < sizeof(dap_sign_t)){
-        return -3;
-    }else if ( ! dap_sign_verify_size(a_sign,a_sign_size_max) ){
-        return -2;
-    }else if (! dap_sign_verify_data(a_sign,a_data, a_data_size) ){
-        return -1;
-    }
-    return 0;
+    return dap_sign_verify_size(a_sign,a_sign_size_max) ? -2 : dap_sign_verify(a_sign,a_data, a_data_size) ? -1 : 0;
 }
 
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
-dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, size_t a_output_wish_size );
+dap_sign_t * dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, uint32_t a_hash_type);
+
+DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *a_data, const size_t a_data_size)
+{
+    return dap_sign_create_with_hash_type(a_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
+}
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 
-size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key,size_t a_output_wish_size );
+size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t *a_key);
 //int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size
 //                                 , void * a_output, size_t a_output_size );
 
@@ -142,14 +152,33 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out);
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash);
 bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2);
 
-dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign);
+dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey);
+DAP_STATIC_INLINE dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
+{  
+    return dap_sign_to_enc_key_by_pkey(a_chain_sign, NULL);
+}
+
+
+
 const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type);
 dap_sign_type_t dap_sign_type_from_str(const char * a_type_str);
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type);
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type);
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count);
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
-void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
+void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type, int a_version);
+
+int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback);
+
+/**
+ * @brief get SHA3 hash of buffer (a_sign), storing in output buffer a_sign_hash
+ * @param a_sign to check
+ * @return true or false
+ */
+DAP_STATIC_INLINE bool dap_sign_is_use_pkey_hash(dap_sign_t *a_sign)
+{
+    return  a_sign && DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
+}
 
 #ifdef __cplusplus
 }

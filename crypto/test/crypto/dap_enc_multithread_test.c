@@ -6,6 +6,8 @@
 #include "dap_enc_sphincsplus.h"
 
 #define LOG_TAG "dap_crypto_multithread_tests"
+void dap_enc_sig_sphincsplus_set_default_config(sphincsplus_config_t  a_new_config);
+int dap_enc_sig_sphincsplus_get_configs_count();
 
 static dap_enc_key_t *s_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf, size_t a_kex_size, const void *a_seed, size_t a_seed_size, size_t a_key_size) {
     switch (a_key_type)
@@ -37,11 +39,11 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
-            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
+            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i]);
         else {
             dap_chain_hash_fast_t l_hash;
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash), 0);
+            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash));
         }
         
         dap_assert_PIF(l_signs[i], "Signing message and serialize");

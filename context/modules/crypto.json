@@ -1,0 +1,73 @@
+{
+  "module": "crypto",
+  "description": "Cryptographic components and algorithms",
+  "path": "crypto/",
+  "status": "active_development",
+  "components": {
+    "chipmunk": {
+      "path": "crypto/src/chipmunk/",
+      "description": "Lattice-based multi-signature scheme",
+      "status": "in_progress",
+      "current_task": "chipmunk_multisig",
+      "key_files": [
+        "chipmunk.h",
+        "chipmunk.c", 
+        "chipmunk_hots.h",
+        "chipmunk_hots.c",
+        "chipmunk_poly.h",
+        "chipmunk_poly.c",
+        "chipmunk_ntt.h",
+        "chipmunk_ntt.c",
+        "chipmunk_hash.h", 
+        "chipmunk_hash.c"
+      ],
+      "dependencies": ["XKCP", "hash algorithms"],
+      "tests": "crypto/test/crypto/chipmunk_hots_test.c"
+    },
+    "hash": {
+      "path": "crypto/src/hash/",
+      "description": "Hash function implementations",
+      "components": ["sha2-256", "sha3", "XKCP"],
+      "status": "stable"
+    },
+    "kyber": {
+      "path": "crypto/src/Kyber/",
+      "description": "Post-quantum key encapsulation",
+      "variants": ["kyber512", "kyber768", "kyber1024"],
+      "status": "implemented"
+    },
+    "falcon": {
+      "path": "crypto/src/falcon/",
+      "description": "Lattice-based digital signatures",
+      "status": "implemented"
+    },
+    "sphincsplus": {
+      "path": "crypto/src/sphincsplus/",
+      "description": "Hash-based signatures",
+      "status": "implemented"
+    },
+    "bliss": {
+      "path": "crypto/src/sig_bliss/",
+      "description": "Bimodal Lattice Signature Scheme",
+      "status": "implemented"
+    },
+    "dilithium": {
+      "path": "crypto/src/sig_dilithium/",
+      "description": "Lattice-based digital signatures",
+      "status": "implemented"
+    }
+  },
+  "integration": {
+    "dap_framework": "crypto/include/dap_enc_*.h",
+    "key_types": [
+      "DAP_ENC_KEY_TYPE_SIG_CHIPMUNK",
+      "DAP_ENC_KEY_TYPE_KYBER512",
+      "DAP_ENC_KEY_TYPE_FALCON"
+    ]
+  },
+  "build_system": {
+    "cmake": "crypto/CMakeLists.txt",
+    "tests": "crypto/test/",
+    "dependencies": ["3rdparty/XKCP", "3rdparty/json-c"]
+  }
+} 

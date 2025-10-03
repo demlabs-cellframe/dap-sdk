@@ -321,53 +321,32 @@ const char *dap_path_skip_root (const char *file_name)
 {
     dap_return_val_if_fail(file_name != NULL, NULL);
 
-    // Skip \\server\share or //server/share
-    if(DAP_IS_DIR_SEPARATOR (file_name[0]) &&
-            DAP_IS_DIR_SEPARATOR(file_name[1]) &&
-            file_name[2] &&
-            !DAP_IS_DIR_SEPARATOR(file_name[2]))
-    {
-        char *p;
-        p = strchr(file_name + 2, DAP_DIR_SEPARATOR);
-
+    /* UNC path: \\server\share or //server/share */
+    if (DAP_IS_DIR_SEPARATOR(file_name[0]) && DAP_IS_DIR_SEPARATOR(file_name[1]) && file_name[2] && !DAP_IS_DIR_SEPARATOR(file_name[2])) {
+        const char *l_after_server = file_name + 2, *l_sep = strchr(l_after_server, DAP_DIR_SEPARATOR);
 #ifdef DAP_OS_WINDOWS
-      {
-        char *q;
-        q = strchr (file_name + 2, '/');
-        if (p == NULL || (q != NULL && q < p))
-        p = q;
-      }
+        const char *l_alt_sep = strchr(l_after_server, '/');
+        if (!l_sep || (l_alt_sep && l_alt_sep < l_sep)) l_sep = l_alt_sep;
 #endif
-
-        if(p && p > file_name + 2 && p[1])
-                {
-            file_name = p + 1;
-
-            while(file_name[0] && !DAP_IS_DIR_SEPARATOR(file_name[0]))
-                file_name++;
-
-            // Possibly skip a backslash after the share name
-            if(DAP_IS_DIR_SEPARATOR(file_name[0]))
-                file_name++;
-
-            return (char*) file_name;
+        if (l_sep && l_sep > l_after_server && l_sep[1]) {
+            const char *l_pos = l_sep + 1;
+            while (*l_pos && !DAP_IS_DIR_SEPARATOR(*l_pos)) l_pos++;
+            if (DAP_IS_DIR_SEPARATOR(*l_pos)) l_pos++;
+            return l_pos;
         }
     }
 
-    // Skip initial slashes
-    if(DAP_IS_DIR_SEPARATOR(file_name[0]))
-            {
-        while(DAP_IS_DIR_SEPARATOR(file_name[0]))
-            file_name++;
-        return (char*) file_name;
+    /* POSIX root: one or more leading separators */
+    if (DAP_IS_DIR_SEPARATOR(*file_name)) {
+        const char *l_pos = file_name;
+        while (DAP_IS_DIR_SEPARATOR(*l_pos)) l_pos++;
+        return l_pos;
     }
 
 #ifdef DAP_OS_WINDOWS
-  /* Skip X:\ */
-  if (dap_ascii_isalpha (file_name[0]) &&
-      file_name[1] == ':' &&
-      DAP_IS_DIR_SEPARATOR (file_name[2]))
-    return (char *)file_name + 3;
+    /* Drive root: X:\ */
+    if (dap_ascii_isalpha(file_name[0]) && file_name[1] == ':' && DAP_IS_DIR_SEPARATOR(file_name[2]))
+        return file_name + 3;
 #endif
 
     return NULL;
@@ -775,12 +754,12 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
 #endif
         return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", a_filename, l_err, dap_strerror(l_err)), NULL;
     }
-    off_t l_size = fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
+    off_t l_size = !fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
     char *l_buffer = NULL;
     if (l_size <= 0) {
         log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
         l_err = -3;
-    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size)) ) {
+    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size + 1)) ) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         l_err = -4;
     } else {

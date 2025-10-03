@@ -61,10 +61,11 @@
 #ifndef __cplusplus
 # include <stdatomic.h>
 #else
-# include <atomic>
-# define _Atomic(X) std::atomic< X >
+#include <atomic>
+#define _Atomic(X) std::atomic< X >
 #define atomic_bool _Atomic(bool)
 #define atomic_uint _Atomic(uint)
+#define atomic_int _Atomic(int)
 #endif
 
 #ifdef __MACH__
@@ -229,7 +230,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
 #define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; _p ? DAP_CAST(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
-#define DAP_DUP(p)            ({ __typeof__(p) _p = (uintptr_t)(p) ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
+#define DAP_DUP(p)            ({ __typeof__(p) _p = p; _p = (uintptr_t)_p ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
 
 #endif
 
@@ -419,16 +420,45 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 
 #define DAP_CLIENT_PROTOCOL_VERSION   26
 
+/* Cross-platform secure memory clearing */
+#if defined(HAVE_EXPLICIT_BZERO)
+#if defined(USE_LIBBSD_EXPLICIT_BZERO)
+#include <bsd/string.h>
+#else
+#include <strings.h>
+#endif
+#endif
+
+DAP_STATIC_INLINE void dap_secure_bzero(void *s, size_t n) {
+    if (!s || !n) return;
+#if defined(HAVE_EXPLICIT_BZERO)
+    explicit_bzero(s, n);
+#elif defined(DAP_OS_WINDOWS)
+    SecureZeroMemory(s, n);
+#elif defined(HAVE_MEMSET_S)
+    (void)memset_s(s, n, 0, n);
+#else
+    volatile unsigned char *p = (volatile unsigned char *)s;
+    while (n--) *p++ = 0;
+#endif
+}
+
+#ifndef HAVE_EXPLICIT_BZERO
+#define explicit_bzero dap_secure_bzero
+#endif
+
 /* Crossplatform print formats for integers and others */
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)
 #define DAP_UINT64_FORMAT_X  "llX"
 #define DAP_UINT64_FORMAT_x  "llx"
 #define DAP_UINT64_FORMAT_U  "llu"
+#define DAP_INT64_FORMAT     "lld"
 #elif (__SIZEOF_LONG__ == 8)
 #define DAP_UINT64_FORMAT_X  "lX"
 #define DAP_UINT64_FORMAT_x  "lx"
 #define DAP_UINT64_FORMAT_U  "lu"
+#define DAP_INT64_FORMAT     "ld"
 #else
 #error "DAP_UINT64_FORMAT_* are undefined for your platform"
 #endif
@@ -858,6 +888,10 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isprint(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_PRINT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
+#define DAP_FLAG_ADD(a, flag) ((a) | (flag))
+#define DAP_FLAG_REMOVE(a, flag) ((a) & ~(flag))
+#define DAP_FLAG_CHECK(a, flag) ((a) & (flag))
+
 static void * ( *const volatile memset_safe ) (void*, int, size_t) = memset;
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
@@ -1050,7 +1084,9 @@ typedef union dap_maxint_str {
     const char s[INT_DIGITS + 2];
 } dap_maxint_str_t;
 dap_maxint_str_t dap_itoa_(long long i);
+dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
+#define dap_utoa(i) (char*)dap_utoa_(i).s
 
 unsigned dap_gettid();
 
@@ -1147,6 +1183,22 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
     return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
         || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
         ? 0 : -1;
+}
+
+static inline void *dap_memmem_n(const void *hay, size_t haylen,
+                                 const void *needle, size_t needlelen)
+{
+    if (!hay || !needle || needlelen == 0 || haylen < needlelen)
+        return NULL;
+
+    const uint8_t *h = (const uint8_t *)hay;
+    const uint8_t *n = (const uint8_t *)needle;
+
+    for (size_t i = 0; i <= haylen - needlelen; ++i) {
+        if (h[i] == n[0] && memcmp(h + i, n, needlelen) == 0)
+            return (void *)(h + i);
+    }
+    return NULL;
 }
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }

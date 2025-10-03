@@ -12,7 +12,7 @@
 
 static bool s_l_restart_plugins = false;
 
-static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply);
+static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int a_version);
 
 
 /**
@@ -21,7 +21,7 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply);
 void dap_plugin_command_init(void)
 {
     if (!s_l_restart_plugins){
-        dap_cli_server_cmd_add("plugin", s_command_handler,
+        dap_cli_server_cmd_add("plugin", s_command_handler, NULL,
                                            "Commands for working with plugins:\n",
                                            "plugin list\n"
                                            "\tShow plugins list\n"
@@ -50,7 +50,7 @@ void dap_plugin_command_deinit(void)
  * @param a_str_reply
  * @return
  */
-static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply)
+static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int a_version)
 {
     enum {
         CMD_NONE, CMD_LIST, CMD_SHOW_NAME, CMD_RESTART, CMD_RELOAD_NAME

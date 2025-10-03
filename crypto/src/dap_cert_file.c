@@ -223,8 +223,9 @@ uint8_t *dap_cert_serialize_meta(dap_cert_t *a_cert, size_t *a_buflen_out)
                 return DAP_DELETE(l_buf), dap_list_free(l_meta_list), log_it(L_CRITICAL, "%s", "Insufficient memory"), NULL;
             l_buf = l_new_buf;
         }
-        strcpy((char *)&l_buf[l_mem_shift], l_meta_item->key);
-        l_mem_shift += strlen(l_meta_item->key) + 1;
+        char *l_dest = (char*)l_buf + l_mem_shift;
+        l_mem_shift += (size_t)(dap_stpcpy(l_dest, l_meta_item->key) - l_dest) + 1;
+        
         *(uint32_t *)&l_buf[l_mem_shift] = htole32(l_meta_item->length);
         l_mem_shift += sizeof(uint32_t);
         l_buf[l_mem_shift++] = l_meta_item->type;
@@ -325,7 +326,7 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
     byte_t *l_data = DAP_NEW_Z_SIZE(byte_t, l_file_size);
     if ( fread(l_data, 1, l_file_size, l_file) != l_file_size ) {
         l_err = -1;
-        log_it(L_ERROR, "Can't read %"DAP_UINT64_FORMAT_U" bytes from the disk!", l_file_size);
+        log_it(L_ERROR, "Can't read %zu bytes from the disk!", l_file_size);
     } else if (!( l_ret = dap_cert_mem_load(l_data, l_file_size) )) {
         log_it(L_ERROR, "Can't load cert from file");
         l_err = -2;

@@ -135,10 +135,7 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     if ( a_context->epoll_fd == -1 ) {
         int l_errno = errno;
 #endif
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        og_it(L_CRITICAL, "Error create epoll fd: %s (%d)", l_errbuf, l_errno);
-        return -1;
+        return log_it(L_CRITICAL, "Error creating epoll fd: %s (%d)", dap_strerror(l_errno), l_errno), -1;
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
@@ -187,6 +184,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
         switch (a_esocket->type) {
+        case DESCRIPTOR_TYPE_SOCKET_RAW:
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
@@ -353,7 +351,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
 void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_ol->Pointer;
     if (!l_es->worker)
-        return log_it(L_ERROR, "Es %p error: worker unset");
+        return log_it(L_ERROR, "Es %p error: worker unset", l_es);
     dap_events_socket_t *l_sought_es = dap_context_find(a_c, l_es->uuid);
     if ( l_sought_es ) {
         if ( l_sought_es == l_es )
@@ -404,40 +402,49 @@ static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void
  * @brief s_socket_all_check_activity
  * @param a_arg
  */
-static bool s_socket_all_check_activity( void * a_arg)
+static bool s_socket_all_check_activity(void * a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    time_t l_curtime = time(NULL); // + 1000;
-    //dap_ctime_r(&l_curtime, l_curtimebuf);
-    //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
-    bool l_removed;
-    do {
-        l_removed = false;
-        size_t l_esockets_counter = 0;
-        dap_events_socket_t *l_es, *l_tmp;
-        HASH_ITER(hh, l_worker->context->esockets, l_es, l_tmp) {
-            u_int l_esockets_count = HASH_CNT(hh, l_worker->context->esockets);
-            if (l_esockets_counter >= l_worker->context->event_sockets_count || l_esockets_counter++ >= l_esockets_count){
-                log_it(L_ERROR, "Something wrong with context's esocket table: %u esockets in context, %u in table but we're on %zu iteration",
-                       l_worker->context->event_sockets_count, l_esockets_count, l_esockets_counter);
-                    break;
-            }
-            if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
-                    !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
-                     l_curtime >= l_es->last_time_active + s_connection_timeout &&
-                    !l_es->no_close) {
-                log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                                l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
-                if (l_es->callbacks.error_callback) {
-                    l_es->callbacks.error_callback(l_es, ETIMEDOUT);
-                }
-                dap_events_socket_remove_and_delete_unsafe(l_es, false);
-                l_removed = true;
-                break;  // Start new cycle from beginning (cause next socket might been removed too)
-            }
+    time_t l_curtime = time(NULL);
+    
+    // Get socket counts once before the loop
+    u_int l_esockets_count = HASH_CNT(hh, l_worker->context->esockets);
+    
+    // Check for mismatch between socket counts
+    if (l_esockets_count != l_worker->context->event_sockets_count) {
+        log_it(L_WARNING, "Mismatch between socket counts: %u in hash table, %u tracked in context",
+               l_esockets_count, l_worker->context->event_sockets_count);
+    }
+    
+    size_t l_esockets_counter = 0;
+    dap_events_socket_t *l_es, *l_tmp;
+    
+    HASH_ITER(hh, l_worker->context->esockets, l_es, l_tmp) {
+        // Safety check to prevent infinite loops
+        if (++l_esockets_counter > l_esockets_count) {
+            log_it(L_ERROR, "Iteration count (%zu) exceeds expected socket count (%u), possible hash table corruption",
+                   l_esockets_counter, l_esockets_count);
+            break;
         }
-    } while (l_removed);
+        
+        // Check socket timeout condition
+        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
+                !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
+                 l_curtime >= l_es->last_time_active + s_connection_timeout &&
+                !l_es->no_close) {
+            
+                log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
+                        l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
+            
+            // Call error callback if set
+            if (l_es->callbacks.error_callback) {
+                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+            }
+            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        }
+    }
+    
     return true;
 }
 

@@ -336,7 +336,7 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
             return -4;
         }
         int l_num = l_sign->key_seq[i];
-        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t), 0);
+        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t));
         if (!l_dap_sign_step) {
             log_it (L_ERROR, "Can't create multi-signature step signature");
             DAP_DEL_MULTY(l_sign->key_hashes, l_sign->key_seq, l_sign->meta, l_sign->sign_data);
@@ -415,8 +415,9 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
  * @param a_sign Pointer to multi-signature structure to destroy
  * @return None
  */
-void dap_multi_sign_delete(dap_multi_sign_t *a_sign)
+void dap_multi_sign_delete(void *a_sign)
 {
     dap_return_if_pass(!a_sign);
-    DAP_DEL_MULTY(a_sign->sign_data, a_sign->key_hashes, a_sign->meta, a_sign->key_seq, a_sign);
+    dap_multi_sign_t *l_sign = (dap_multi_sign_t*)a_sign;
+    DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq);
 }

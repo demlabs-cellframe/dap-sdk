@@ -61,7 +61,16 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
     size_t l_sign_len = a_store_obj->sign ? dap_sign_get_size(a_store_obj->sign) : 0;
-    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
+    
+    size_t l_data_size_out = 0;
+    if (__builtin_add_overflow(l_group_len, l_key_len, &l_data_size_out) ||
+        __builtin_add_overflow(l_data_size_out, a_store_obj->value_len, &l_data_size_out) ||
+        __builtin_add_overflow(l_data_size_out, l_sign_len, &l_data_size_out) ||
+        l_data_size_out > SIZE_MAX - sizeof(dap_global_db_pkt_t))
+    {
+        log_it(L_ERROR, "Integer overflow in packet size calculation");
+        return NULL;
+    }
     dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t), NULL);
 
     /* Fill packet header */
@@ -98,7 +107,7 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
     if (a_key) {
         // Exclude CRC field from sign
         l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
-                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), 0);
+                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
         if (!l_sign) {
             log_it(L_ERROR, "Can't sign serialized global DB object");
             DAP_DELETE(l_pkt);
@@ -148,10 +157,16 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
 static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t *a_obj, size_t a_bound_size, dap_stream_node_addr_t *a_addr)
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
-            dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len < a_pkt->value_len ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
+            dap_global_db_pkt_get_size(a_pkt) > a_bound_size) {
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
+        return NULL;
+    }
+    
+    size_t total_size = 0;
+    if (__builtin_add_overflow(a_pkt->group_len, a_pkt->key_len, &total_size) ||
+        __builtin_add_overflow(total_size, a_pkt->value_len, &total_size) ||
+        total_size > a_pkt->data_len) {
+        log_it(L_ERROR, "Broken GDB element: integer overflow or size mismatch");
         return NULL;
     }
     if (!a_pkt->group_len || a_pkt->group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {

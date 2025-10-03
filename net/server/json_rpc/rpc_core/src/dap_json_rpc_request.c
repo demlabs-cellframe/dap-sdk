@@ -41,7 +41,8 @@ static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_cli
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);    
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);
+    pthread_condattr_destroy(&attr);
 #endif
 #endif
     return l_exec_cmd_request;
@@ -208,12 +209,13 @@ char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_re
 }
 
 
-dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
+dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id, int a_version)
 {
     dap_json_rpc_request_t *request = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_request_t, NULL);
-    *request = (dap_json_rpc_request_t) {
-        dap_strdup(a_method), a_params, a_id
-    };
+    request->method = dap_strdup(a_method);
+    request->params = a_params;
+    request->id = a_id;
+    request->version = a_version;
     return request;
 }
 
@@ -227,7 +229,7 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
     DAP_DELETE(request);
 }
 
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default)
 {
     if (!a_data)
         return NULL;
@@ -235,8 +237,11 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     enum json_tokener_error jterr;
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
                 *jobj_id = NULL,
+                *jobj_version = NULL,
                 *jobj_method = NULL,
-                *jobj_params = NULL;
+                *jobj_params = NULL,
+                *jobj_subcmd = NULL,
+                *l_arguments_obj = NULL;
     if (jterr == json_tokener_success)
         do {
             if (json_object_object_get_ex(jobj, "id", &jobj_id))
@@ -244,6 +249,12 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
             else {
                 log_it(L_ERROR, "Error parse JSON string, can't find request id");
                 break;
+            }
+            if (json_object_object_get_ex(jobj, "version", &jobj_version))
+                request->version = json_object_get_int64(jobj_version);
+            else {
+                log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+                request->version = a_version_default;
             }
 
             if (json_object_object_get_ex(jobj, "method", &jobj_method))
@@ -253,13 +264,20 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
                 break;
             }
 
-            if (json_object_object_get_ex(jobj, "params", &jobj_params))
+            json_object_object_get_ex(jobj, "params", &jobj_params);
+            json_object_object_get_ex(jobj, "subcommand", &jobj_subcmd);
+            json_object_object_get_ex(jobj, "arguments", &l_arguments_obj);
+
+            if (jobj_params)
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else {
-                log_it(L_ERROR, "Error parse JSON string, Can't find array params for request with id: %" DAP_UINT64_FORMAT_U, request->id);
-                break;
-            }
+            else 
+                request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
+
             json_object_put(jobj);
+            if (!request->params){
+                DAP_DEL_MULTY(request->method, request);
+                return NULL;
+            }
             return request;
         } while (0);
     else
@@ -277,8 +295,8 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
         return log_it(L_ERROR, "Failed to generate JSON for params"), NULL;
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\" }",
-        a_request->method, params_json, a_request->id);
+        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\", \"version\":\"%d\" }",
+        a_request->method, params_json, a_request->id, a_request->version);
     DAP_DELETE(params_json);
     return l_str;
 }
@@ -321,7 +339,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     if (!l_str)
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
     int l_len = strlen(l_str);
-    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, 0);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len);
     if (!l_sign)
         return log_it(L_ERROR, "JSON request signing failed"), NULL;
     size_t l_sign_size = dap_sign_get_size(l_sign);
@@ -337,9 +355,14 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     return DAP_DELETE(l_sign), l_ret;
 }
 
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size, const char *a_cert_path){
     a_request->id = 0;
-    dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
+    dap_cert_t *l_cert = NULL;
+    if (!a_cert_path) {
+        l_cert = dap_cert_find_by_name("node-addr");
+    } else {
+        l_cert = dap_cert_find_by_name(a_cert_path);
+    }
     if (!l_cert)
         return log_it(L_ERROR, "Can't load cert"), NULL;
 
@@ -349,11 +372,11 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response) {
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path) {
     size_t l_request_data_size, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
-    char* l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size);
+    char* l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size, a_cert_path);
     if (!l_request_data_str)
         return -1;
 

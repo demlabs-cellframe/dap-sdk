@@ -245,7 +245,7 @@ int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_
 {
     dap_worker_t *l_worker = NULL;
     dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(a_addr, &l_worker);
-    return l_worker
+    return l_es_uuid && l_worker
         ? dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, a_ch_id, a_type, a_data, a_data_size)
         : -1;
 }
@@ -354,7 +354,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     // Statistics without header sizes
     a_ch->stat.bytes_write += a_data_size;
     DAP_DELETE(l_buf);
-    for (dap_list_t *it = a_ch->packet_out_notifiers; it; it = it->next) {
+    for (dap_list_t *it = a_ch->packet_out_notifiers; !a_ch->closing && it; it = it->next) {
         dap_stream_ch_notifier_t *l_notifier = it->data;
         assert(l_notifier);
         l_notifier->callback(a_ch, a_type, a_data, a_data_size, l_notifier->arg);

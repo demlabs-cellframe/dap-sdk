@@ -47,6 +47,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
 #include "dap_http_server.h"
+#include "dap_http_header_server.h"
 #include "dap_http_client.h"
 #include "dap_http_simple.h"
 #include "dap_http_user_agent.h"
@@ -212,6 +213,15 @@ void dap_http_simple_set_pass_unknown_user_agents(int pass)
     is_unknown_user_agents_pass = pass;
 }
 
+static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
+{
+    dap_http_simple_t *l_http_simple = (dap_http_simple_t *)a_arg;
+    if (l_http_simple && l_http_simple->close_after_write) {
+        log_it(L_INFO, "All HTTP data transmitted, closing connection");
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    }
+}
+
 static void s_esocket_worker_write_callback(void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t*)a_arg;
@@ -256,7 +266,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
         dap_http_out_header_add(cl_ht, i->name, i->value);
         log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
     }
-    
+
     return !l_hs->generate_default_header;
 }
 
@@ -267,12 +277,17 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
     assert(l_http_simple == a_arg);
     if (!a_arg)
         return false;
-    l_http_simple->reply_sent += dap_events_socket_write_unsafe(l_http_simple->esocket,
+    size_t bytes_to_write = a_http_client->out_content_length - l_http_simple->reply_sent;
+    size_t bytes_written = dap_events_socket_write_unsafe(l_http_simple->esocket,
                                               l_http_simple->reply_byte + l_http_simple->reply_sent,
-                                              l_http_simple->http_client->out_content_length - l_http_simple->reply_sent);
+                                              bytes_to_write);
+    l_http_simple->reply_sent += bytes_written;
+
     if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
-        log_it(L_INFO, "All the reply (%zu) is sent out", a_http_client->out_content_length);
-        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        if (!l_http_simple->close_after_write) {
+          log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
+          l_http_simple->close_after_write = true;
+        }
         return false;
     }
     return true;
@@ -379,10 +394,12 @@ static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void 
         .esocket_uuid   = a_http_client->esocket->uuid,
         .reply_byte     = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max),
         .reply_size_max = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max,
-        .generate_default_header = true
+        .generate_default_header = true,
+        .close_after_write = false
     };
     dap_strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
     a_http_client->esocket->callbacks.arg = l_http_simple;
+    a_http_client->esocket->callbacks.write_finished_callback = s_http_client_write_finished;
 }
 
 static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
@@ -402,11 +419,12 @@ static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
 static void s_http_client_headers_read( dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg )
 {
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
-//    Made a temporary solution to handle simple CORS requests.
-//    This is necessary in order to be able to request information using JavaScript obtained from another source.
+/*    Made a temporary solution to handle simple CORS requests.
+    This is necessary in order to be able to request information using JavaScript obtained from another source.
     if ( dap_http_header_find(a_http_client->in_headers, "Origin") ){
         dap_http_out_header_add(a_http_client, "Access-Control-Allow-Origin", "*");
     }
+*/
 
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){

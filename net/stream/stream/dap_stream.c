@@ -47,6 +47,7 @@
 #include "dap_events_socket.h"
 
 #include "dap_http_server.h"
+#include "dap_http_header_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
 #include "http_status_code.h"
@@ -411,7 +412,8 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
-
+    s_stream_delete_from_list(a_stream);
+    a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
@@ -419,15 +421,18 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id); // TODO make stream close after timeout, not momentaly
 
     if (a_stream->esocket) {
-        a_stream->esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
-        dap_events_socket_remove_and_delete_unsafe(a_stream->esocket, true);
+        dap_events_socket_t *l_esocket = a_stream->esocket;
+        a_stream->esocket = NULL;  // Prevent recursive calls
+        
+        l_esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
+        l_esocket->_inheritor = NULL;
+        dap_events_socket_remove_and_delete_unsafe(l_esocket, false);  // Immediate deletion for both platforms
     }
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-    s_stream_delete_from_list(a_stream);
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
@@ -444,10 +449,9 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     assert (a_esocket);
 
     dap_stream_t *l_stm = DAP_STREAM(a_esocket);
-    a_esocket->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_esocket->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -661,10 +665,9 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     dap_stream_t *l_stm = DAP_STREAM(a_http_client);
     if (!l_stm)
         return;
-    a_http_client->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_http_client->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -796,11 +799,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
-                    for (dap_list_t *it = l_ch->packet_in_notifiers; it && l_security_check_passed; it = it->next) {
+                    for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; it = it->next) {
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
                     }
+                    if (l_ch->closing)
+                        break;
                 }
             } else{
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );

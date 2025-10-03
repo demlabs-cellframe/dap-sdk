@@ -55,3 +55,5 @@ char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *cmd);
 int dap_app_cli_post_command(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *cmd);
 
 int dap_app_cli_disconnect(dap_app_cli_connect_param_t socket);
+
+int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *l_cmd, int a_status);

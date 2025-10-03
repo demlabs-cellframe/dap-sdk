@@ -111,6 +111,8 @@ extern int g_dap_global_db_debug_more;
 
 int dap_global_db_init();
 void dap_global_db_deinit();
+int dap_global_db_clean_init();
+int dap_global_db_clean_deinit();
 
 void dap_global_db_instance_deinit();
 dap_global_db_instance_t *dap_global_db_instance_get_default();
@@ -140,6 +142,8 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
+int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
+                                                              dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
@@ -162,6 +166,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
 int dap_global_db_pin_sync(const char *a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync(const char *a_group, const char *a_key);
+int dap_global_db_del_sync_ex(const char *a_group, const char *a_key, const char * a_value, size_t a_value_size);
 int dap_global_db_flush_sync();
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);
@@ -169,3 +174,4 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);
 
 int dap_global_db_erase_table_sync(const char *a_group);
 int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg);
+size_t dap_global_db_clear_table(const char *a_group, bool a_pinned);

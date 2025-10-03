@@ -22,12 +22,15 @@
  * @return
  */
 bool dap_isstralnum(const char *c)
-{ 
+{
+    if (!c)
+        return false;
+    
     size_t str_len = strlen(c);
 
     for (size_t i = 0; i < str_len; i++)
     {
-        if (!isalnum(c[i]) && c[i] != '_' && c[i] != '-')
+        if (!dap_ascii_isalnum(c[i]) && c[i] != '_' && c[i] != '-')
             return false;
     }
 
@@ -41,13 +44,20 @@ bool dap_isstralnum(const char *c)
  * @param s2 char string
  * @return char* 
  */
-char* dap_strcat2(const char* s1, const char* s2)
+char* dap_strcat2(char* s1, const char* s2)
 {
     size_t size1 = s1 ? strlen(s1) : 0, size2 = s2 ? strlen(s2) : 0;
     char *l_ret = (char*)s1;
     if (size2) {
-        l_ret = DAP_REALLOC_RET_VAL_IF_FAIL((char*)s1, size1 + size2 + 1, (char*)s1);
-        char *l_pos = (char*)dap_mempcpy(l_ret + size1, s2, size2);
+        if (size1 > SIZE_MAX - size2 - 1) {
+            log_it(L_ERROR, "Integer overflow in string concatenation size calculation");
+            return (char*)s1; // Return original pointer unchanged on overflow
+        }
+        
+        size_t l_new_size = size1 + size2 + 1;
+        char *l_new_ptr = DAP_REALLOC_RET_VAL_IF_FAIL(s1, l_new_size, NULL);
+        l_ret = l_new_ptr;
+        char *l_pos = dap_mempcpy(l_ret + size1, s2, size2);
         *l_pos = '\0';
     }
     return l_ret;
@@ -521,6 +531,16 @@ char* dap_strjoinv(const char *a_separator, char **a_str_array)
         l_string = dap_strdup("");
 
     return l_string;
+}
+
+const char* dap_str_find(const char **a_str_array, const char *a_str) {
+    if (!a_str_array || !a_str)
+        return NULL;
+    for (size_t i = 0; !!a_str_array[i]; ++i) {
+        if ( !dap_strcmp(a_str, a_str_array[i]) )
+            return (const char*)a_str_array[i];
+    }
+    return NULL;
 }
 
 /**
@@ -1194,12 +1214,14 @@ char* dap_utf16_to_utf8(const unichar2 *str, long len, long *items_read, long *i
  * @param a_ch1 - char to replace
  * @return Returns a string with the replaced character
  */
-char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
+char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2, bool a_str_dup)
 {
 // sanity check
     dap_return_val_if_pass(!a_src, NULL);
 // func work
-    char *l_dst = dap_strdup(a_src), *l_str;
+    char 
+        *l_dst = a_str_dup ? dap_strdup(a_src) : (char *)a_src, 
+        *l_str;
     for ( l_str = l_dst; (l_str = strchr(l_str, a_ch1)); l_str++)
         *l_str = a_ch2;
     return l_dst;

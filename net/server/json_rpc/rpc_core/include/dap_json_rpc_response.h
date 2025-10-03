@@ -60,7 +60,8 @@ typedef struct dap_json_rpc_response
         json_object *result_json_object;
     };
     uint64_t id;
-}dap_json_rpc_response_t;
+    int version;
+} dap_json_rpc_response_t;
 
 /**
  * Create a new JSON-RPC response structure.
@@ -77,7 +78,7 @@ typedef struct dap_json_rpc_response
  *         Return NULL in case of memory allocation failure, an unsupported response type,
  *         or if `TYPE_RESPONSE_NULL` is specified as the response type.
  */
-dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id);
+dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id, int a_version);
 
 /**
  * Free the dap_json_rpc_response_t structure.
@@ -117,7 +118,7 @@ void json_print_value(struct json_object *obj, const char *key, int indent_level
  *         -2 if the JSON object is NULL,
  *         and -3 if the JSON object length is 0.
  */
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name);
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt);
 
 #ifdef __cplusplus
 }
