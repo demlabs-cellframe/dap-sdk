@@ -1940,9 +1940,12 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
     int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
-    return l_ret
-        ? log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
-        : a_data_size;
+    if ( l_ret ) {
+        log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret);
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+        return 0;
+    }
+    return a_data_size;
 #endif
 }
 

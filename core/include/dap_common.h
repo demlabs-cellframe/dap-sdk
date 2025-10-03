@@ -136,8 +136,52 @@
 #endif // unlikely
  */
 
+ #ifdef __has_builtin
+ #if __has_builtin(__builtin_popcountll) && __has_builtin(__builtin_ctzll)
+     #define DAP_HAVE_BUILTIN_POPCOUNT 1
+ #else
+     #define DAP_HAVE_BUILTIN_POPCOUNT 0
+ #endif
+#elif defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+ #define DAP_HAVE_BUILTIN_POPCOUNT 1
+#elif defined(__clang__)
+ #define DAP_HAVE_BUILTIN_POPCOUNT 1
+#else
+ #define DAP_HAVE_BUILTIN_POPCOUNT 0
+#endif
+
+// Type-safe bit manipulation macros with hardware/software fallback
+// DAP_POPCOUNT(x) - Count set bits in unsigned integer
+// DAP_CTZ(x)      - Count trailing zeros in unsigned integer
+// Returns 0 for signed types (compile-time type safety)
+
+// Type checker macro - ensures only unsigned types are processed
+#define DAP_IS_UNSIGNED_TYPE(x) _Generic((x), \
+    unsigned char: 1, unsigned short: 1, unsigned int: 1, unsigned long: 1, unsigned long long: 1, \
+    default: 0)
+
+#if DAP_HAVE_BUILTIN_POPCOUNT
+    #define DAP_POPCOUNT(x) (DAP_IS_UNSIGNED_TYPE(x) ? __builtin_popcountll((unsigned long long)(x)) : 0)
+    #define DAP_CTZ(x)  ( DAP_IS_UNSIGNED_TYPE(x) && (x) ? __builtin_ctzll((unsigned long long)(x)) : -1)
+#else
+// Software fallback implementations
+    static inline int dap_popcount_sw(unsigned long long a_x) {
+        a_x = a_x - ((a_x >> 1) & 0x5555555555555555ULL);
+        a_x = (a_x & 0x3333333333333333ULL) + ((a_x >> 2) & 0x3333333333333333ULL);
+        a_x = (a_x + (a_x >> 4)) & 0x0f0f0f0f0f0f0f0fULL;
+        return (int)((a_x * 0x0101010101010101ULL) >> 56);
+    }
+    
+    static inline int dap_ctz_sw(unsigned long long a_x) {
+        return dap_popcount_sw((a_x & -a_x) - 1ULL);
+    }
+    
+    #define DAP_POPCOUNT(x) (DAP_IS_UNSIGNED_TYPE(x) ? dap_popcount_sw((unsigned long long)(x)) : 0)
+    #define DAP_CTZ(x)  ( DAP_IS_UNSIGNED_TYPE(x) && (x) ? dap_ctz_sw((unsigned long long)(x)) : -1)
+#endif
+ 
 #ifndef ROUNDUP
-  #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
+    #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
 #endif
 
 #ifdef __cplusplus
@@ -153,7 +197,6 @@
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
-void dap_delete_multy(size_t, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 
@@ -236,8 +279,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 
 #define DOOF_PTR (void*)&doof
-#define DAP_NARGS_PTRS(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
-#define DAP_DEL_MULTY(...) dap_delete_multy(DAP_NARGS_PTRS(__VA_ARGS__), ##__VA_ARGS__)
+
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
@@ -280,6 +322,33 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
+
+#define DAP_DEL_MULTY(...) \
+    for (void *__ptrs[] = { NULL, __VA_ARGS__ }, **__p = __ptrs; __p < __ptrs + sizeof(__ptrs) / sizeof(void*) - 1; DAP_DELETE(*++__p));
+
+#define dap_do_if_any(__action, ...) \
+    do { \
+        bool __cond_results[] = { __VA_ARGS__ }; \
+        for (size_t __i = 0; __i < sizeof(__cond_results) / sizeof(bool); ++__i) { \
+            if (__cond_results[__i]) { \
+                const char *__pos = #__VA_ARGS__; \
+                int __len = 0; \
+                for (size_t __j = __i; __pos && __j > 0; __pos = strchr(++__pos, ','), --__j); \
+                if (__pos) { \
+                    __pos += strspn(__pos, " \t"); \
+                    __len = strcspn(__pos, ","); \
+                } \
+                _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, \
+                    __len ? "Assertion #%zu triggered: \"%.*s\"" : "Assertion #%zu triggered", __i + 1, __len, __pos); \
+                do { \
+                    __action; \
+                } while (0); \
+            } \
+        } \
+    } while (0)
+
+#define dap_ret_val_if_any(__ret_val, ...) dap_do_if_any(return __ret_val, __VA_ARGS__)
+#define dap_ret_if_any(...) dap_ret_val_if_any(, __VA_ARGS__)
 
 /**
   * @struct Node address

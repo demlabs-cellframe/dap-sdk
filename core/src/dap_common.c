@@ -288,21 +288,6 @@ void dap_set_log_tag_width(size_t a_width) {
     snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
 }
 
-
-/**
- * @brief dap_del_z_all
- * DAP_FREE n args
- * @param int a_count - count deleted args
- * @param void* a_to_delete
- */
-void dap_delete_multy(size_t a_count, ...)
-{
-    va_list l_args_list;
-    va_start(l_args_list, a_count);
-    for ( void *l_cur; a_count-- && (( l_cur = va_arg(l_args_list, void*) ), 1); DAP_DELETE(l_cur) );
-    va_end(l_args_list);
-}
-
 /**
  * @brief dap_serialize_multy - serialize args to one uint8_t *l_ret. Args count should be even.
  * @param a_data - pointer to write data, if NULL - allocate needed memory
