@@ -289,7 +289,7 @@ endif()
 
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
-target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
+target_include_directories(dap_crypto INTERFACE src/ src/sha3 src/rand include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 

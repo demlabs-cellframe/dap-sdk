@@ -151,6 +151,15 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
 }
 
+void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
+{
+    if (!a_array || !a_sort_fn) {
+        return;
+    }
+    
+    json_object_array_sort(_dap_json_to_json_c(a_array), a_sort_fn);
+}
+
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value)
 {
