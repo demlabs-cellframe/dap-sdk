@@ -933,6 +933,45 @@ static _Atomic uint64_t s_stress_total_ops = 0;
 static _Atomic uint64_t s_stress_failed_ops = 0;
 static _Atomic uint64_t s_stress_read_ops = 0;
 static _Atomic uint64_t s_stress_write_ops = 0;
+static _Atomic bool s_stress_table_dropper_active = false;
+
+/**
+ * @brief Random table dropper thread for stress testing
+ * Randomly drops and recreates tables during stress tests to simulate failures
+ */
+static void *s_stress_test_random_table_dropper_thread(void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    while (atomic_load(&s_stress_table_dropper_active)) {
+        // Sleep for random interval between 5 and 10 seconds
+        usleep((rand() % 5000 + 5000) * 1000);
+        
+        if (!atomic_load(&s_stress_table_dropper_active))
+            break;
+            
+        // Randomly drop table (50% chance)
+        if (rand() % 2 == 0) {
+            dap_test_msg("Random table dropper: Erasing table %s", s_group);
+            
+            dap_store_obj_t l_erase_obj = {
+                .group = s_group,
+                .flags = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_ERASE,
+                .timestamp = dap_nanotime_now()
+            };
+            
+            int ret = dap_global_db_driver_apply(&l_erase_obj, 1);
+            if (ret == 0) {
+                dap_test_msg("Random table dropper: Table %s erased successfully", s_group);
+            } else {
+                dap_test_msg("Random table dropper: Failed to erase table %s (error %d)", s_group, ret);
+            }
+        }
+    }
+    
+    pthread_exit(NULL);
+    return NULL;
+}
 
 /**
  * @brief Stress test: Massive concurrent writes
@@ -1156,6 +1195,12 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     atomic_store(&s_stress_read_ops, 0);
     atomic_store(&s_stress_write_ops, 0);
     
+    // Start random table dropper thread
+    pthread_t l_dropper_thread;
+    atomic_store(&s_stress_table_dropper_active, true);
+    pthread_create(&l_dropper_thread, NULL, s_stress_test_random_table_dropper_thread, NULL);
+    dap_test_msg("Random table dropper thread started (drops every 5-10 seconds)");
+    
     // Test 1: Massive concurrent writes
     dap_print_module_name("Massive Concurrent Writes");
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, a_thread_count);
@@ -1174,10 +1219,23 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     
     uint64_t l_total = atomic_load(&s_stress_total_ops);
     uint64_t l_failed = atomic_load(&s_stress_failed_ops);
-    log_it(L_INFO, "Massive writes: %"DAP_UINT64_FORMAT_U" total ops, %"DAP_UINT64_FORMAT_U" failed (%.2f%%), "
-           "Duration: %"DAP_UINT64_FORMAT_U" ms", 
-           l_total, l_failed, (double)l_failed * 100.0 / (double)l_total, l_test_duration);
-    dap_assert_PIF((double)l_failed / (double)l_total < 0.01, "Stress test: Less than 1% failure rate");
+    double l_error_rate = l_total > 0 ? ((double)l_failed * 100.0 / (double)l_total) : 0.0;
+    
+    log_it(L_INFO, "Massive writes: %"DAP_UINT64_FORMAT_U" total ops, %"DAP_UINT64_FORMAT_U" failed, "
+           "Error rate: %.2f%%, Duration: %"DAP_UINT64_FORMAT_U" ms", 
+           l_total, l_failed, l_error_rate, l_test_duration);
+    
+    // Check if error rate exceeds 1%
+    if (l_error_rate > 1.0) {
+        log_it(L_ERROR, "CRITICAL: Error rate %.2f%% exceeds 1%% threshold - STOPPING TESTS", l_error_rate);
+        atomic_store(&s_stress_table_dropper_active, false);
+        pthread_join(l_dropper_thread, NULL);
+        DAP_DELETE(l_threads);
+        DAP_DELETE(l_thread_ids);
+        dap_assert_PIF(false, "Error rate exceeds 1%% threshold");
+        return;
+    }
+    
     dap_pass_msg("stress_massive_writes");
     
     // Reset metrics
@@ -1201,22 +1259,32 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     l_failed = atomic_load(&s_stress_failed_ops);
     uint64_t l_reads = atomic_load(&s_stress_read_ops);
     uint64_t l_writes = atomic_load(&s_stress_write_ops);
-    log_it(L_INFO, "Mixed operations: %"DAP_UINT64_FORMAT_U" total (%"DAP_UINT64_FORMAT_U" reads, %"DAP_UINT64_FORMAT_U" writes), "
-           "%"DAP_UINT64_FORMAT_U" failed (%.2f%%), Duration: %"DAP_UINT64_FORMAT_U" ms",
-           l_total, l_reads, l_writes, l_failed, (double)l_failed * 100.0 / (double)l_total, l_test_duration);
+    l_error_rate = l_total > 0 ? ((double)l_failed * 100.0 / (double)l_total) : 0.0;
     
-    // More realistic criterion for high-contention stress test (increased from 5% to 15%)
-    // This accounts for expected race conditions in concurrent operations
-    double l_failure_rate = (double)l_failed * 100.0 / (double)l_total;
-    if (l_failure_rate < 15.0) {
-        dap_pass_msg("stress_mixed_operations");
-    } else {
-        log_it(L_WARNING, "Mixed operations failure rate %.2f%% is high but acceptable for stress test", l_failure_rate);
-        dap_pass_msg("stress_mixed_operations (with warnings)");
+    log_it(L_INFO, "Mixed operations: %"DAP_UINT64_FORMAT_U" total (%"DAP_UINT64_FORMAT_U" reads, %"DAP_UINT64_FORMAT_U" writes), "
+           "%"DAP_UINT64_FORMAT_U" failed, Error rate: %.2f%%, Duration: %"DAP_UINT64_FORMAT_U" ms",
+           l_total, l_reads, l_writes, l_failed, l_error_rate, l_test_duration);
+    
+    // Check if error rate exceeds 1%
+    if (l_error_rate > 1.0) {
+        log_it(L_ERROR, "CRITICAL: Error rate %.2f%% exceeds 1%% threshold - STOPPING TESTS", l_error_rate);
+        atomic_store(&s_stress_table_dropper_active, false);
+        pthread_join(l_dropper_thread, NULL);
+        DAP_DELETE(l_threads);
+        DAP_DELETE(l_thread_ids);
+        dap_assert_PIF(false, "Error rate exceeds 1%% threshold");
+        return;
     }
+    
+    dap_pass_msg("stress_mixed_operations");
     
     DAP_DELETE(l_threads);
     DAP_DELETE(l_thread_ids);
+    
+    // Stop table dropper before final tests
+    atomic_store(&s_stress_table_dropper_active, false);
+    pthread_join(l_dropper_thread, NULL);
+    dap_test_msg("Random table dropper thread stopped");
     
     // Test 3: Large records
     s_stress_test_large_records(50); // 50 records of 64KB each
