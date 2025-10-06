@@ -61,6 +61,7 @@ macro(dap_create_final_library)
         # Note: Crypto sub-libraries (kyber512, XKCP) are linked through dap_crypto itself
         target_link_libraries(dap_sdk PRIVATE
             dap_json-c
+            ${CMAKE_DL_LIBS}  # libdl for dlopen/dlsym/dlclose (plugin system)
         )
         
         # Link optional module libraries if they exist
