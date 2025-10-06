@@ -299,6 +299,52 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
     return 0;
 }
 
+/**
+ * @brief dap_config_create_empty - create empty config in memory (for tests)
+ * @return dap_config_t*
+ */
+dap_config_t *dap_config_create_empty(void)
+{
+    dap_config_t *l_conf = DAP_NEW_Z(dap_config_t);
+    l_conf->path = dap_strdup("<memory>");
+    return l_conf;
+}
+
+/**
+ * @brief dap_config_set_item_str - set string item in config (for tests)
+ * @param a_config config object
+ * @param a_section section name
+ * @param a_item_name item name
+ * @param a_value string value
+ */
+void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_value)
+{
+    if (!a_config || !a_section || !a_item_name || !a_value)
+        return;
+    
+    // Use same format as dap_config_get_item: "section:item_name"
+    char *l_name = dap_strdup_printf("%s:%s", a_section, a_item_name);
+    // Replace dashes with underscores (same as dap_config_get_item)
+    for (char *c = l_name; *c; ++c) {
+        if (*c == '-')
+            *c = '_';
+    }
+    
+    dap_config_item_t *l_item = NULL;
+    HASH_FIND_STR(a_config->items, l_name, l_item);
+    
+    if (l_item) {
+        dap_config_item_del(l_item, false);
+    } else {
+        l_item = DAP_NEW_Z(dap_config_item_t);
+        l_item->name = l_name;
+        HASH_ADD_KEYPTR(hh, a_config->items, l_item->name, strlen(l_item->name), l_item);
+    }
+    
+    l_item->type = DAP_CONFIG_ITEM_STRING;
+    l_item->val.val_str = dap_strdup(a_value);
+}
+
 dap_config_t *dap_config_open(const char* a_file_path) {
     if (!a_file_path || !a_file_path[0]) {
         log_it(L_ERROR, "Empty config name!");
