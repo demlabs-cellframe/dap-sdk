@@ -1490,3 +1490,40 @@ int dap_sign_benchmark_batch_verification(
     return 0;
 }
 
+/**
+ * @brief dap_sign_get_information_json - Get signature information as JSON
+ * @param a_sign Signature to extract information from
+ * @param a_json_out JSON object to add information to
+ * @param a_hash_out_type Hash output format ("hex" or "base58")
+ * @param a_version JSON format version (1 or 2)
+ * @return 0 on success, negative error code otherwise
+ */
+int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version)
+{
+    if (!a_sign || !a_json_out)
+        return -1;
+    
+    // Get signature type string
+    const char *l_sign_type_str = dap_sign_type_to_str(a_sign->header.type);
+    if (a_version == 1) {
+        dap_json_object_add_object(a_json_out, "sig_type", dap_json_object_new_string(l_sign_type_str));
+        dap_json_object_add_object(a_json_out, "sig_size", dap_json_object_new_uint64(a_sign->header.sign_size));
+    } else {
+        dap_json_object_add_object(a_json_out, "type", dap_json_object_new_string(l_sign_type_str));
+        dap_json_object_add_object(a_json_out, "size", dap_json_object_new_uint64(a_sign->header.sign_size));
+    }
+    
+    // Get public key hash
+    dap_hash_fast_t l_pkey_hash = {0};
+    if (dap_sign_get_pkey_hash(a_sign, &l_pkey_hash)) {
+        char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+                               ? dap_enc_base58_encode_hash_to_str(&l_pkey_hash)
+                               : dap_hash_fast_to_str_new(&l_pkey_hash);
+        dap_json_object_add_object(a_json_out, a_version == 1 ? "pkey_hash" : "sig_pkey_hash", 
+                                   dap_json_object_new_string(l_hash_str));
+        DAP_DELETE(l_hash_str);
+    }
+    
+    return 0;
+}
+
