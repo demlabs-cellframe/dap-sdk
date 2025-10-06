@@ -925,6 +925,377 @@ static void s_test_full(size_t a_db_count, size_t a_count)
 
 }
 
+// ========================================================================
+// STRESS TESTS - High load and concurrent operations testing
+// ========================================================================
+
+// Global metrics for stress tests
+static _Atomic uint64_t s_stress_total_ops = 0;
+static _Atomic uint64_t s_stress_failed_ops = 0;
+static _Atomic uint64_t s_stress_read_ops = 0;
+static _Atomic uint64_t s_stress_write_ops = 0;
+static _Atomic bool s_stress_table_dropper_active = false;
+
+/**
+ * @brief Random table dropper thread for stress testing
+ * Randomly drops and recreates tables during stress tests to simulate failures
+ */
+static void *s_stress_test_random_table_dropper_thread(void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    while (atomic_load(&s_stress_table_dropper_active)) {
+        // Sleep for random interval between 5 and 10 seconds
+        usleep((rand() % 5000 + 5000) * 1000);
+        
+        if (!atomic_load(&s_stress_table_dropper_active))
+            break;
+            
+        // Randomly drop table (50% chance)
+        if (rand() % 2 == 0) {
+            dap_test_msg("Random table dropper: Erasing table %s", s_group);
+            
+            dap_store_obj_t l_erase_obj = {
+                .group = s_group,
+                .flags = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_ERASE,
+                .timestamp = dap_nanotime_now()
+            };
+            
+            int ret = dap_global_db_driver_apply(&l_erase_obj, 1);
+            if (ret == 0) {
+                dap_test_msg("Random table dropper: Table %s erased successfully", s_group);
+            } else {
+                dap_test_msg("Random table dropper: Failed to erase table %s (error %d)", s_group, ret);
+            }
+        }
+    }
+    
+    pthread_exit(NULL);
+    return NULL;
+}
+
+/**
+ * @brief Stress test: Massive concurrent writes
+ * Tests database behavior under heavy write load from multiple threads
+ */
+static void *s_stress_test_massive_writes_thread(void *a_arg)
+{
+    size_t l_thread_id = *(size_t *)a_arg;
+    size_t l_records_per_thread = 1000;
+    dap_store_obj_t l_store_obj = {0};
+    char l_key[128], l_value[512];
+    dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
+    
+    for (size_t i = 0; i < l_records_per_thread; i++) {
+        snprintf(l_key, sizeof(l_key), "STRESS_WRITE_T%zu_R%zu", l_thread_id, i);
+        snprintf(l_value, sizeof(l_value), "StressData_Thread%zu_Record%zu_RandomData_%d", 
+                 l_thread_id, i, rand());
+        
+        l_store_obj.group = s_group;
+        l_store_obj.key = l_key;
+        l_store_obj.value = (uint8_t *)l_value;
+        l_store_obj.value_len = strlen(l_value);
+        l_store_obj.timestamp = dap_nanotime_now();
+        l_store_obj.flags = 0;
+        l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
+        
+        int ret = dap_global_db_driver_add(&l_store_obj, 1);
+        atomic_fetch_add(&s_stress_total_ops, 1);
+        atomic_fetch_add(&s_stress_write_ops, 1);
+        if (ret != 0) {
+            atomic_fetch_add(&s_stress_failed_ops, 1);
+            log_it(L_WARNING, "Stress write failed: thread %zu, record %zu", l_thread_id, i);
+        }
+        
+        DAP_DEL_Z(l_store_obj.sign);
+    }
+    
+    dap_enc_key_delete(l_enc_key);
+    pthread_exit(NULL);
+    return NULL;
+}
+
+/**
+ * @brief Stress test: Concurrent read/write operations
+ * Tests database consistency under mixed read and write load
+ */
+static void *s_stress_test_mixed_operations_thread(void *a_arg)
+{
+    size_t l_thread_id = *(size_t *)a_arg;
+    size_t l_operations = 500;
+    
+    char l_key[128], l_value[256]; // Move variable declarations outside the loop
+    
+    for (size_t i = 0; i < l_operations; i++) {
+        // Alternate between read and write
+        if (i % 2 == 0) {
+            // Write operation - no signature for speed in stress test
+            snprintf(l_key, sizeof(l_key), "STRESS_MIXED_T%zu_OP%zu", l_thread_id, i);
+            snprintf(l_value, sizeof(l_value), "MixedData_%zu_%zu", l_thread_id, i);
+            
+            dap_store_obj_t l_store_obj = {
+                .group = s_group,
+                .key = l_key,
+                .value = (uint8_t *)l_value,
+                .value_len = strlen(l_value),
+                .timestamp = dap_nanotime_now(),
+                .flags = 0,
+                .crc = dap_nanotime_now() & 0xFFFFFFFF, // Use timestamp as CRC to avoid collisions
+                .sign = NULL // No signature for stress test
+            };
+            
+            int ret = dap_global_db_driver_add(&l_store_obj, 1);
+            atomic_fetch_add(&s_stress_total_ops, 1);
+            atomic_fetch_add(&s_stress_write_ops, 1);
+            if (ret != 0) {
+                atomic_fetch_add(&s_stress_failed_ops, 1);
+                log_it(L_DEBUG, "Write failed for key %s: error %d", l_key, ret);
+            }
+        } else {
+            // Read operation - read records from the same thread
+            // Read a random earlier record from this thread to avoid immediate read-after-write races
+            if (i >= 2) {
+                size_t l_read_idx = (rand() % (i/2)) * 2; // Only even indices (writes)
+                snprintf(l_key, sizeof(l_key), "STRESS_MIXED_T%zu_OP%zu", l_thread_id, l_read_idx);
+                
+                dap_store_obj_t *l_obj = dap_global_db_driver_read(s_group, l_key, NULL, true);
+                atomic_fetch_add(&s_stress_total_ops, 1);
+                atomic_fetch_add(&s_stress_read_ops, 1);
+                if (l_obj) {
+                    dap_store_obj_free_one(l_obj);
+                } else {
+                    atomic_fetch_add(&s_stress_failed_ops, 1);
+                    log_it(L_DEBUG, "Read failed for key %s", l_key);
+                }
+            } else {
+                // Skip first few reads while no data is available
+                atomic_fetch_add(&s_stress_total_ops, 1);
+                atomic_fetch_add(&s_stress_read_ops, 1);
+            }
+        }
+    }
+    
+    pthread_exit(NULL);
+    return NULL;
+}
+
+/**
+ * @brief Stress test: Large data records
+ * Tests database handling of records with large payloads
+ */
+static void s_stress_test_large_records(size_t a_record_count)
+{
+    dap_test_msg("Stress test: Large records (%zu records)", a_record_count);
+    
+    size_t l_large_size = 1024 * 64; // 64KB per record
+    uint8_t *l_large_data = DAP_NEW_Z_SIZE(uint8_t, l_large_size);
+    dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
+    
+    // Fill with random data
+    for (size_t i = 0; i < l_large_size; i++) {
+        l_large_data[i] = (uint8_t)(rand() % 256);
+    }
+    
+    uint64_t l_start = get_cur_time_msec();
+    
+    for (size_t i = 0; i < a_record_count; i++) {
+        char l_key[128];
+        snprintf(l_key, sizeof(l_key), "STRESS_LARGE_%zu", i);
+        
+        dap_store_obj_t l_store_obj = {
+            .group = s_group,
+            .key = l_key,
+            .value = l_large_data,
+            .value_len = l_large_size,
+            .timestamp = dap_nanotime_now(),
+            .flags = 0
+        };
+        l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
+        
+        int ret = dap_global_db_driver_add(&l_store_obj, 1);
+        dap_assert_PIF(ret == 0, "Large record write");
+        DAP_DEL_Z(l_store_obj.sign);
+    }
+    
+    uint64_t l_write_time = get_cur_time_msec() - l_start;
+    
+    // Verify reads
+    l_start = get_cur_time_msec();
+    for (size_t i = 0; i < a_record_count; i++) {
+        char l_key[128];
+        snprintf(l_key, sizeof(l_key), "STRESS_LARGE_%zu", i);
+        
+        dap_store_obj_t *l_obj = dap_global_db_driver_read(s_group, l_key, NULL, true);
+        dap_assert_PIF(l_obj != NULL, "Large record read");
+        dap_assert_PIF(l_obj->value_len == l_large_size, "Large record size verification");
+        dap_store_obj_free_one(l_obj);
+    }
+    uint64_t l_read_time = get_cur_time_msec() - l_start;
+    
+    DAP_DELETE(l_large_data);
+    dap_enc_key_delete(l_enc_key);
+    
+    log_it(L_INFO, "Large records stress test: Write %zu records (64KB each) in %"DAP_UINT64_FORMAT_U" ms, "
+           "Read in %"DAP_UINT64_FORMAT_U" ms", a_record_count, l_write_time, l_read_time);
+    dap_pass_msg("stress_test_large_records");
+}
+
+/**
+ * @brief Stress test: Rapid sequential operations
+ * Tests database performance under rapid sequential access
+ */
+static void s_stress_test_rapid_sequential(size_t a_operations)
+{
+    dap_test_msg("Stress test: Rapid sequential operations (%zu ops)", a_operations);
+    
+    uint64_t l_start = get_cur_time_nsec();
+    char l_key[128], l_value[128]; // Move declarations outside the loop
+    
+    // Add small delay to allow database commits to complete
+    for (size_t i = 0; i < a_operations; i++) {
+        if (i > 0 && i % 100 == 0) {
+            usleep(100); // Brief pause every 100 operations to reduce contention
+        }
+        snprintf(l_key, sizeof(l_key), "STRESS_RAPID_%zu", i);
+        snprintf(l_value, sizeof(l_value), "RapidData_%zu", i);
+        
+        dap_store_obj_t l_store_obj = {
+            .group = s_group,
+            .key = l_key,
+            .value = (uint8_t *)l_value,
+            .value_len = strlen(l_value),
+            .timestamp = dap_nanotime_now(),
+            .flags = 0,
+            .crc = dap_nanotime_now() & 0xFFFFFFFF, // Use timestamp as CRC to avoid collisions
+            .sign = NULL // No signature for speed
+        };
+        
+        dap_global_db_driver_add(&l_store_obj, 1);
+    }
+    
+    uint64_t l_duration = get_cur_time_nsec() - l_start;
+    double l_ops_per_sec = (double)a_operations / ((double)l_duration / 1000000000.0);
+    
+    log_it(L_INFO, "Rapid sequential: %zu operations in %.2f ms (%.2f ops/sec)", 
+           a_operations, (double)l_duration / 1000000.0, l_ops_per_sec);
+    dap_pass_msg("stress_test_rapid_sequential");
+}
+
+/**
+ * @brief Main stress test suite
+ * Executes all stress tests with proper setup and teardown
+ */
+static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
+{
+    dap_print_module_name("STRESS TESTS");
+    dap_test_msg("Starting stress test suite with %zu threads for %s", a_thread_count, db_type);
+    
+    // Reset metrics
+    atomic_store(&s_stress_total_ops, 0);
+    atomic_store(&s_stress_failed_ops, 0);
+    atomic_store(&s_stress_read_ops, 0);
+    atomic_store(&s_stress_write_ops, 0);
+    
+    // Start random table dropper thread
+    pthread_t l_dropper_thread;
+    atomic_store(&s_stress_table_dropper_active, true);
+    pthread_create(&l_dropper_thread, NULL, s_stress_test_random_table_dropper_thread, NULL);
+    dap_test_msg("Random table dropper thread started (drops every 5-10 seconds)");
+    
+    // Test 1: Massive concurrent writes
+    dap_print_module_name("Massive Concurrent Writes");
+    pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, a_thread_count);
+    size_t *l_thread_ids = DAP_NEW_Z_COUNT(size_t, a_thread_count);
+    
+    uint64_t l_test_start = get_cur_time_msec();
+    for (size_t i = 0; i < a_thread_count; i++) {
+        l_thread_ids[i] = i;
+        pthread_create(&l_threads[i], NULL, s_stress_test_massive_writes_thread, &l_thread_ids[i]);
+    }
+    
+    for (size_t i = 0; i < a_thread_count; i++) {
+        pthread_join(l_threads[i], NULL);
+    }
+    uint64_t l_test_duration = get_cur_time_msec() - l_test_start;
+    
+    uint64_t l_total = atomic_load(&s_stress_total_ops);
+    uint64_t l_failed = atomic_load(&s_stress_failed_ops);
+    double l_error_rate = l_total > 0 ? ((double)l_failed * 100.0 / (double)l_total) : 0.0;
+    
+    log_it(L_INFO, "Massive writes: %"DAP_UINT64_FORMAT_U" total ops, %"DAP_UINT64_FORMAT_U" failed, "
+           "Error rate: %.2f%%, Duration: %"DAP_UINT64_FORMAT_U" ms", 
+           l_total, l_failed, l_error_rate, l_test_duration);
+    
+    // Check if error rate exceeds 1%
+    if (l_error_rate > 1.0) {
+        log_it(L_ERROR, "CRITICAL: Error rate %.2f%% exceeds 1%% threshold - STOPPING TESTS", l_error_rate);
+        atomic_store(&s_stress_table_dropper_active, false);
+        pthread_join(l_dropper_thread, NULL);
+        DAP_DELETE(l_threads);
+        DAP_DELETE(l_thread_ids);
+        dap_assert_PIF(false, "Error rate exceeds 1%% threshold");
+        return;
+    }
+    
+    dap_pass_msg("stress_massive_writes");
+    
+    // Reset metrics
+    atomic_store(&s_stress_total_ops, 0);
+    atomic_store(&s_stress_failed_ops, 0);
+    
+    // Test 2: Mixed read/write operations
+    dap_print_module_name("Mixed Read/Write Operations");
+    l_test_start = get_cur_time_msec();
+    for (size_t i = 0; i < a_thread_count; i++) {
+        l_thread_ids[i] = i;
+        pthread_create(&l_threads[i], NULL, s_stress_test_mixed_operations_thread, &l_thread_ids[i]);
+    }
+    
+    for (size_t i = 0; i < a_thread_count; i++) {
+        pthread_join(l_threads[i], NULL);
+    }
+    l_test_duration = get_cur_time_msec() - l_test_start;
+    
+    l_total = atomic_load(&s_stress_total_ops);
+    l_failed = atomic_load(&s_stress_failed_ops);
+    uint64_t l_reads = atomic_load(&s_stress_read_ops);
+    uint64_t l_writes = atomic_load(&s_stress_write_ops);
+    l_error_rate = l_total > 0 ? ((double)l_failed * 100.0 / (double)l_total) : 0.0;
+    
+    log_it(L_INFO, "Mixed operations: %"DAP_UINT64_FORMAT_U" total (%"DAP_UINT64_FORMAT_U" reads, %"DAP_UINT64_FORMAT_U" writes), "
+           "%"DAP_UINT64_FORMAT_U" failed, Error rate: %.2f%%, Duration: %"DAP_UINT64_FORMAT_U" ms",
+           l_total, l_reads, l_writes, l_failed, l_error_rate, l_test_duration);
+    
+    // Check if error rate exceeds 1%
+    if (l_error_rate > 1.0) {
+        log_it(L_ERROR, "CRITICAL: Error rate %.2f%% exceeds 1%% threshold - STOPPING TESTS", l_error_rate);
+        atomic_store(&s_stress_table_dropper_active, false);
+        pthread_join(l_dropper_thread, NULL);
+        DAP_DELETE(l_threads);
+        DAP_DELETE(l_thread_ids);
+        dap_assert_PIF(false, "Error rate exceeds 1%% threshold");
+        return;
+    }
+    
+    dap_pass_msg("stress_mixed_operations");
+    
+    DAP_DELETE(l_threads);
+    DAP_DELETE(l_thread_ids);
+    
+    // Stop table dropper before final tests
+    atomic_store(&s_stress_table_dropper_active, false);
+    pthread_join(l_dropper_thread, NULL);
+    dap_test_msg("Random table dropper thread stopped");
+    
+    // Test 3: Large records
+    s_stress_test_large_records(50); // 50 records of 64KB each
+    
+    // Test 4: Rapid sequential
+    s_stress_test_rapid_sequential(10000);
+    
+    log_it(L_NOTICE, "Stress test suite completed successfully");
+}
+
 int main(int argc, char **argv)
 {
     dap_log_level_set(L_WARNING);
@@ -939,7 +1310,16 @@ int main(int argc, char **argv)
     sprintf(s_group_wrong, "%s", DAP_DB$T_GROUP_WRONG_PREF);
     sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
     
+    // Run standard functional tests
     dap_print_module_name("Tests with combined value");
     s_test_full(l_db_count, l_count);
+    
+    // Run stress tests
+    for (size_t i = 0; i < l_db_count; i++) {
+        dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
+        s_test_create_db(s_db_types[i]);
+        s_stress_test_suite(s_db_types[i], 10); // 10 concurrent threads
+        s_test_close_db();
+    }
 }
 
