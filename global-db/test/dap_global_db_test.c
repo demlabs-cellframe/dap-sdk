@@ -934,6 +934,7 @@ static _Atomic uint64_t s_stress_failed_ops = 0;
 static _Atomic uint64_t s_stress_read_ops = 0;
 static _Atomic uint64_t s_stress_write_ops = 0;
 static _Atomic bool s_stress_table_dropper_active = false;
+static _Atomic bool s_stress_table_dropper_paused = false;
 
 /**
  * @brief Random table dropper thread for stress testing
@@ -949,6 +950,11 @@ static void *s_stress_test_random_table_dropper_thread(void *a_arg)
         
         if (!atomic_load(&s_stress_table_dropper_active))
             break;
+        
+        // Skip dropping if paused (during write/read stress tests)
+        if (atomic_load(&s_stress_table_dropper_paused)) {
+            continue;
+        }
             
         // Randomly drop table (50% chance)
         if (rand() % 2 == 0) {
@@ -1198,11 +1204,15 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     // Start random table dropper thread
     pthread_t l_dropper_thread;
     atomic_store(&s_stress_table_dropper_active, true);
+    atomic_store(&s_stress_table_dropper_paused, false);
     pthread_create(&l_dropper_thread, NULL, s_stress_test_random_table_dropper_thread, NULL);
     dap_test_msg("Random table dropper thread started (drops every 5-10 seconds)");
     
     // Test 1: Massive concurrent writes
     dap_print_module_name("Massive Concurrent Writes");
+    dap_test_msg("Pausing table dropper during write stress test");
+    atomic_store(&s_stress_table_dropper_paused, true);
+    
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, a_thread_count);
     size_t *l_thread_ids = DAP_NEW_Z_COUNT(size_t, a_thread_count);
     
@@ -1237,6 +1247,8 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     }
     
     dap_pass_msg("stress_massive_writes");
+    dap_test_msg("Resuming table dropper after write stress test");
+    atomic_store(&s_stress_table_dropper_paused, false);
     
     // Reset metrics
     atomic_store(&s_stress_total_ops, 0);
@@ -1244,6 +1256,9 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     
     // Test 2: Mixed read/write operations
     dap_print_module_name("Mixed Read/Write Operations");
+    dap_test_msg("Pausing table dropper during mixed read/write stress test");
+    atomic_store(&s_stress_table_dropper_paused, true);
+    
     l_test_start = get_cur_time_msec();
     for (size_t i = 0; i < a_thread_count; i++) {
         l_thread_ids[i] = i;
@@ -1277,11 +1292,14 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     }
     
     dap_pass_msg("stress_mixed_operations");
+    dap_test_msg("Resuming table dropper after mixed read/write stress test");
+    atomic_store(&s_stress_table_dropper_paused, false);
     
     DAP_DELETE(l_threads);
     DAP_DELETE(l_thread_ids);
     
     // Stop table dropper before final tests
+    dap_test_msg("Stopping table dropper before final tests");
     atomic_store(&s_stress_table_dropper_active, false);
     pthread_join(l_dropper_thread, NULL);
     dap_test_msg("Random table dropper thread stopped");
