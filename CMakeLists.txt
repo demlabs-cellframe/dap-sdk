@@ -13,6 +13,7 @@ endif()
 
 # Common includes and definitions
 include(cmake/OS_Detection.cmake)
+include(cmake/PackageDetection.cmake)
 
 
 # =========================================  
@@ -113,9 +114,6 @@ else()
     set(DAP_FINAL_LIB_TYPE STATIC)
 endif()
 
-# Define DAP_SDK_ONLY to distinguish from full Cellframe builds
-add_definitions(-DDAP_SDK_ONLY)
-
 # Set default modules if none are specified
 if (NOT DEFINED DAPSDK_MODULES OR DAPSDK_MODULES STREQUAL "")
     set(DAPSDK_MODULES "crypto plugin io network-core network-server network-client network-link_manager global-db")
@@ -151,6 +149,14 @@ if (DAPSDK_MODULES MATCHES "io")
     add_subdirectory(module/io)
     message("[+] Module 'io'")
 endif()
+
+# Network common types and functions
+add_subdirectory(module/net/common)
+message("[+] Module 'net/common' (base types,callbacks and functions)")
+
+# HTTP client for outgoing connections (independent of dap_client)
+add_subdirectory(module/net/client_http)
+message("[+] Module 'client_http' (standalone HTTP client)")
 
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(module/net/stream)
@@ -197,12 +203,6 @@ endif()
 
 
 
-# Examples - UPDATED PATH - DISABLED
-# if(BUILD_EXAMPLES)
-#     # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
-#     # message("[+] Module 'examples'")
-# endif()
-
 # Test framework - UPDATED PATH
 if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
     enable_testing()
@@ -222,3 +222,40 @@ dap_create_final_library()
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")
 message("[+] =========================================")
+
+# =========================================
+# CPACK CONFIGURATION
+# =========================================
+set(CPACK_PACKAGE_NAME "dap-sdk${DAP_DEBUG_SUFFIX}")
+set(CPACK_PACKAGE_VERSION "${DAP_SDK_NATIVE_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DAP SDK - Distributed Application Platform Software Development Kit")
+set(CPACK_PACKAGE_VENDOR "Demlabs")
+set(CPACK_PACKAGE_CONTACT "support@demlabs.net")
+
+# Package file name: dap-sdk[-dbg]_debian13.1_x86_64.deb
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${DAP_PACKAGE_OS_SUFFIX}")
+
+# Debian package specific
+set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.17)")
+
+# RPM package specific (for Fedora, CentOS, RHEL)
+set(CPACK_RPM_PACKAGE_GROUP "Development/Libraries")
+set(CPACK_RPM_PACKAGE_LICENSE "Custom")
+
+# CPack generators based on detected OS
+if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
+    set(CPACK_GENERATOR "DEB;TGZ")
+elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
+    set(CPACK_GENERATOR "RPM;TGZ")
+elseif(DAP_OS_NAME MATCHES "arch|gentoo")
+    set(CPACK_GENERATOR "TGZ")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+message(STATUS "CPack package name: ${CPACK_PACKAGE_FILE_NAME}")
+message(STATUS "CPack generators: ${CPACK_GENERATOR}")
+
+include(CPack)
