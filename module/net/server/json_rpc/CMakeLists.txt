@@ -6,10 +6,8 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB JSON_RPC_HEADERS include/*.h)
 file(GLOB JSON_RPC_SRCS src/*.c)
 
-
-
-
-add_library(${PROJECT_NAME} STATIC ${JSON_RPC_HEADERS} ${JSON_RPC_SRCS})
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${JSON_RPC_SRCS} HEADERS ${JSON_RPC_HEADERS})
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 # Platform-specific include paths

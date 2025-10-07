@@ -64,46 +64,11 @@ macro(dap_create_final_library)
             ${CMAKE_DL_LIBS}  # libdl for dlopen/dlsym/dlclose (plugin system)
         )
         
-        # Link optional module libraries if they exist
-        if(TARGET dap_crypto)
-            target_link_libraries(dap_sdk PRIVATE dap_crypto)
-        endif()
-        if(TARGET dap_io)
-            target_link_libraries(dap_sdk PRIVATE dap_io)
-        endif()
-        if(TARGET dap_client)
-            target_link_libraries(dap_sdk PRIVATE dap_client)
-        endif()
-        if(TARGET dap_link_manager)
-            target_link_libraries(dap_sdk PRIVATE dap_link_manager)
-        endif()
-        if(TARGET dap_cli_server)
-            target_link_libraries(dap_sdk PRIVATE dap_cli_server)
-        endif()
-        if(TARGET dap_dns_server)
-            target_link_libraries(dap_sdk PRIVATE dap_dns_server)
-        endif()
-        if(TARGET dap_enc_server)
-            target_link_libraries(dap_sdk PRIVATE dap_enc_server)
-        endif()
-        if(TARGET dap_http_server)
-            target_link_libraries(dap_sdk PRIVATE dap_http_server)
-        endif()
-        if(TARGET dap_json_rpc)
-            target_link_libraries(dap_sdk PRIVATE dap_json_rpc)
-        endif()
-        if(TARGET dap_notify_srv)
-            target_link_libraries(dap_sdk PRIVATE dap_notify_srv)
-        endif()
-        if(TARGET dap_stream)
-            target_link_libraries(dap_sdk PRIVATE dap_stream)
-        endif()
-        if(TARGET dap_stream_ch)
-            target_link_libraries(dap_sdk PRIVATE dap_stream_ch)
-        endif()
-        if(TARGET dap_session)
-            target_link_libraries(dap_sdk PRIVATE dap_session)
-        endif()
+        # Link all internal modules with PUBLIC visibility
+        # This automatically propagates their include directories via INTERFACE
+        foreach(MODULE ${DAP_INTERNAL_MODULES})
+            target_link_libraries(dap_sdk PUBLIC ${MODULE})
+        endforeach()
         
         # Link MDBX only if enabled
         if(BUILD_WITH_GDB_DRIVER_MDBX)
@@ -116,8 +81,8 @@ macro(dap_create_final_library)
             message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
         endif()
         
-        # Export only DAP SDK root header directory
-        # All module-specific includes are exported by modules themselves
+        # Export all DAP SDK include directories via INTERFACE
+        # This allows consumers to simply link with dap_sdk and get all necessary includes
         target_include_directories(dap_sdk INTERFACE
             ${CMAKE_CURRENT_SOURCE_DIR}
         )
