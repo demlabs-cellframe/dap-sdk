@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: DAP SDK
+Description: Distributed Applications Platform SDK
+Version: @DAP_SDK_NATIVE_VERSION@
+Libs: -L${libdir} -ldap_sdk
+Cflags: -I${includedir}/dap-sdk
