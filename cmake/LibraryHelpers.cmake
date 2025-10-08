@@ -139,8 +139,12 @@ function(create_final_shared_library)
     # Link system libraries
     target_link_libraries(${TARGET_NAME} PUBLIC ${CMAKE_DL_LIBS})
     
-    if(UNIX AND NOT APPLE)
+    if(UNIX AND NOT APPLE AND NOT ANDROID)
+        # Linux: link pthread, math, and realtime libraries
         target_link_libraries(${TARGET_NAME} PUBLIC pthread m rt)
+    elseif(ANDROID)
+        # Android: link pthread and math, but not rt (not available in NDK)
+        target_link_libraries(${TARGET_NAME} PUBLIC pthread m log)
     elseif(APPLE)
         target_link_libraries(${TARGET_NAME} PUBLIC pthread)
     elseif(WIN32)
@@ -148,10 +152,15 @@ function(create_final_shared_library)
     endif()
     
     # Export all symbols (needed for plugin system)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR (CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE))
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR (CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE AND NOT ANDROID))
+        # Linux with GNU or Clang
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
     elseif(APPLE)
+        # macOS with Apple ld
         target_link_options(${TARGET_NAME} PRIVATE -Wl,-export_dynamic)
+    elseif(ANDROID)
+        # Android NDK - export-dynamic is supported but may need different flags
+        target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
     endif()
     
     # Set include directories for consumers
