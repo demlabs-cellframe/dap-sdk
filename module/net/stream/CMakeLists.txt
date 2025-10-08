@@ -10,5 +10,6 @@ if (DAP_STREAM_TEST)
 endif()
 
 add_subdirectory(session)
+add_subdirectory(event)
 add_subdirectory(stream)
 add_subdirectory(ch)
