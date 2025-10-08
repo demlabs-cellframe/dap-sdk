@@ -57,7 +57,8 @@
 #include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
-#include "dap_link_manager.h"
+// Removed dap_link_manager.h - using callbacks from dap_net_common instead
+#include "dap_net_common.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -953,7 +954,8 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     a_stream->primary = true;
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
     dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
-    dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
+    // Notify via callback instead of direct call (breaks stream → link_manager dependency)
+    dap_stream_event_notify_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
 }
 
@@ -979,10 +981,12 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
                 break;
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
-            dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
+            // Notify via callback instead of direct call
+            dap_stream_event_notify_replace(&a_stream->node, l_stream->is_client_to_uplink);
         } else {
             dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
-            dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
+            // Notify via callback instead of direct call
+            dap_stream_event_notify_delete(&a_stream->node);
         }
     }
     pthread_rwlock_unlock(&s_streams_lock);

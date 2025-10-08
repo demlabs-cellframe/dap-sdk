@@ -7,7 +7,8 @@ file(GLOB STREAM_HDRS include/*.h)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${STREAM_SRCS} HEADERS ${STREAM_HDRS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_http_server dap_enc_server dap_session dap_link_manager)
+# Removed dap_link_manager - using callbacks from dap_net_common instead (breaks cycle)
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_http_server dap_enc_server dap_session dap_net_common dap_json_rpc)
 
 if(DAP_STREAM_TEST)
     target_link_libraries(${PROJECT_NAME} dap_stream_test)
@@ -18,6 +19,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ../ch/include)
 # Need client private headers for dap_client_pvt.h (circular dependency workaround)
 target_include_directories(${PROJECT_NAME} PRIVATE ../../client/include)
+# json_rpc include paths auto-propagated via dap_json_rpc linkage above
+
 # All other includes come from linked libraries (dap_core, dap_io, dap_crypto, etc.)
 
 if(INSTALL_DAP_SDK)
