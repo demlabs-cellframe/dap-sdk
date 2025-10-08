@@ -14,6 +14,7 @@ endif()
 # Common includes and definitions
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
+include(cmake/PackageComponents.cmake)
 
 
 # =========================================  
@@ -224,6 +225,46 @@ message("[+] DAP SDK with module/ structure configured")
 message("[+] =========================================")
 
 # =========================================
+# PACKAGE COMPONENTS SETUP
+# =========================================
+# Setup component-based packaging (runtime/dev/doc split)
+setup_package_components(
+    PACKAGE_BASE_NAME "dap-sdk"
+    VERSION "${DAP_SDK_NATIVE_VERSION}"
+    DESCRIPTION "DAP SDK - Distributed Application Platform Software Development Kit"
+    VENDOR "Demlabs"
+    CONTACT "support@demlabs.net"
+    DEBUG_SUFFIX "${DAP_DEBUG_SUFFIX}"
+    OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
+)
+
+# Register 3rd party headers required by public API
+register_3rdparty_headers(
+    DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
+    DESTINATION "uthash"
+)
+
+register_3rdparty_headers(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
+)
+
+# Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
+
+# Finalize and install all components
+finalize_package_components(
+    LIBRARY_TARGET "dap_sdk"
+    INCLUDE_PREFIX "dap-sdk"
+    PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
+    README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
+)
+
+message(STATUS "[Install] Component-based installation configured")
+message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
+message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
+message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
+
+# =========================================
 # CPACK CONFIGURATION
 # =========================================
 set(CPACK_PACKAGE_NAME "dap-sdk${DAP_DEBUG_SUFFIX}")
@@ -231,18 +272,6 @@ set(CPACK_PACKAGE_VERSION "${DAP_SDK_NATIVE_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DAP SDK - Distributed Application Platform Software Development Kit")
 set(CPACK_PACKAGE_VENDOR "Demlabs")
 set(CPACK_PACKAGE_CONTACT "support@demlabs.net")
-
-# Package file name: dap-sdk[-dbg]_debian13.1_x86_64.deb
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${DAP_PACKAGE_OS_SUFFIX}")
-
-# Debian package specific
-set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
-set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.17)")
-
-# RPM package specific (for Fedora, CentOS, RHEL)
-set(CPACK_RPM_PACKAGE_GROUP "Development/Libraries")
-set(CPACK_RPM_PACKAGE_LICENSE "Custom")
 
 # CPack generators based on detected OS
 if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
@@ -255,7 +284,9 @@ else()
     set(CPACK_GENERATOR "TGZ")
 endif()
 
-message(STATUS "CPack package name: ${CPACK_PACKAGE_FILE_NAME}")
-message(STATUS "CPack generators: ${CPACK_GENERATOR}")
+# Include component-based packaging configuration
+include(cmake/PackageComponents.cmake)
+
+message(STATUS "[CPack] Package generation configured")
 
 include(CPack)

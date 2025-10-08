@@ -1,0 +1,20 @@
+# CMake generated Testfile for 
+# Source directory: /home/naeper/work/python-dap/dap-sdk
+# Build directory: /home/naeper/work/python-dap/dap-sdk/build_my
+# 
+# This file includes the relevant testing commands required for 
+# testing this directory and lists subdirectories to be tested as well.
+subdirs("module/core")
+subdirs("module/crypto")
+subdirs("module/plugin")
+subdirs("module/io")
+subdirs("module/net/common")
+subdirs("module/net/client_http")
+subdirs("module/net/stream")
+subdirs("module/net/link_manager")
+subdirs("module/net/client")
+subdirs("module/net/server")
+subdirs("module/net/app-cli")
+subdirs("module/global-db")
+subdirs("module/test")
+subdirs("tests")

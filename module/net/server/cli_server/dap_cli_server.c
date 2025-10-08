@@ -48,15 +48,18 @@
 #include "../json_rpc/include/dap_json_rpc_request.h"
 #include "../json_rpc/include/dap_json_rpc_response.h"
 
+
+
+#define LOG_TAG "dap_cli_server"
+
 // Cellframe RPC function - weak symbol for compatibility
-// When building with Cellframe SDK, this will be overridden by actual implementation
-// For standalone DAP SDK builds, stub returns 0 (no JSON commands)
-__attribute__((weak)) int dap_chain_rpc_is_json_command(const char *a_cmd_name) { 
+// Forward declaration
+int dap_chain_rpc_is_json_command(const char *a_cmd_name) __attribute__((weak));
+// Default implementation for standalone DAP SDK
+int dap_chain_rpc_is_json_command(const char *a_cmd_name) { 
     (void)a_cmd_name; 
     return 0; 
 }
-
-#define LOG_TAG "dap_cli_server"
 
 #define MAX_CONSOLE_CLIENTS 16
 

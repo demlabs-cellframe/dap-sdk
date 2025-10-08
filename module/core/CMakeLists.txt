@@ -31,6 +31,9 @@ endif()
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
 
+# Register headers for component-based installation
+register_module_headers(DIRECTORIES include)
+
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include

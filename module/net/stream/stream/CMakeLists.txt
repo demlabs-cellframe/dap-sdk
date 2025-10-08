@@ -7,8 +7,8 @@ file(GLOB STREAM_HDRS include/*.h)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${STREAM_SRCS} HEADERS ${STREAM_HDRS})
 
-# Removed dap_link_manager - using callbacks from dap_net_common instead (breaks cycle)
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_http_server dap_enc_server dap_session dap_net_common dap_json_rpc)
+# Removed dap_link_manager - using callbacks from stream_event instead (breaks cycle)
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_http_server dap_enc_server dap_session dap_net_common dap_stream_event dap_json_rpc)
 
 if(DAP_STREAM_TEST)
     target_link_libraries(${PROJECT_NAME} dap_stream_test)

@@ -57,8 +57,8 @@
 #include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
-// Removed dap_link_manager.h - using callbacks from dap_net_common instead
-#include "dap_net_common.h"
+// Removed dap_link_manager.h - using callbacks from stream_event module instead
+#include "dap_stream_event.h"
 
 #define LOG_TAG "dap_stream"
 
