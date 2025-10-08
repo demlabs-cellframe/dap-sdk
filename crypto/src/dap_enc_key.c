@@ -1034,7 +1034,7 @@ size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
     // Check if key type is within valid range to prevent array out-of-bounds access
-    if (a_key->type < 0 || a_key->type > DAP_ENC_KEY_TYPE_LAST) {
+    if (a_key->type < 0 || a_key->type >= DAP_ENC_KEY_TYPE_LAST) {
         log_it(L_ERROR, "Invalid key type %d, out of range [0..%d]", a_key->type, DAP_ENC_KEY_TYPE_LAST);
         return 0;
     }
@@ -1056,7 +1056,7 @@ size_t dap_enc_ser_pub_key_size(dap_enc_key_t *a_key)
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
     // Check if key type is within valid range to prevent array out-of-bounds access
-    if (a_key->type < 0 || a_key->type > DAP_ENC_KEY_TYPE_LAST) {
+    if (a_key->type < 0 || a_key->type >= DAP_ENC_KEY_TYPE_LAST) {
         log_it(L_ERROR, "Invalid key type %d, out of range [0..%d]", a_key->type, DAP_ENC_KEY_TYPE_LAST);
         return 0;
     }
