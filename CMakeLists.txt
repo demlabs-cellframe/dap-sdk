@@ -270,6 +270,12 @@ message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
 # All CPack configuration is now handled by the universal packaging system
 # in cmake/PackageComponents.cmake which was included earlier
 
+# Set final package name explicitly before CPack generation
+set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
+set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
+set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
+
+message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
 message(STATUS "[CPack] Package generation configured")
 
 include(CPack)

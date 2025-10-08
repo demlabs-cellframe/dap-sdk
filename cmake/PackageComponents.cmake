@@ -56,8 +56,10 @@ function(setup_package_components)
     # Set CPack generators based on detected OS
     if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
         set(CPACK_GENERATOR "DEB;TGZ" PARENT_SCOPE)
+        set(CPACK_BINARY_DEB "ON" PARENT_SCOPE)
     elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
         set(CPACK_GENERATOR "RPM;TGZ" PARENT_SCOPE)
+        set(CPACK_BINARY_RPM "ON" PARENT_SCOPE)
     elseif(DAP_OS_NAME MATCHES "arch|gentoo")
         set(CPACK_GENERATOR "TGZ" PARENT_SCOPE)
     else()
@@ -195,6 +197,14 @@ function(configure_archive_packages)
     set(CPACK_ARCHIVE_RUNTIME_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
     set(CPACK_ARCHIVE_DEVELOPMENT_FILE_NAME "${PKG_NAME}-dev_${OS_SUFFIX}" PARENT_SCOPE)
     set(CPACK_ARCHIVE_DOCUMENTATION_FILE_NAME "${PKG_NAME}-doc_${OS_SUFFIX}" PARENT_SCOPE)
+    
+    # Set DEB package file names
+    set(CPACK_DEB_RUNTIME_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DEVELOPMENT_FILE_NAME "${PKG_NAME}-dev_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DOCUMENTATION_FILE_NAME "${PKG_NAME}-doc_${OS_SUFFIX}" PARENT_SCOPE)
+    
+    # Set main package file name
+    set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
     
     message(STATUS "[CPack Archive] ${PKG_NAME}_${OS_SUFFIX}.tar.gz")
     message(STATUS "[CPack Archive] ${PKG_NAME}-dev_${OS_SUFFIX}.tar.gz")
