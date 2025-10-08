@@ -143,8 +143,8 @@ function(create_final_shared_library)
         # Linux: link pthread, math, and realtime libraries
         target_link_libraries(${TARGET_NAME} PUBLIC pthread m rt)
     elseif(ANDROID)
-        # Android: link pthread and math, but not rt (not available in NDK)
-        target_link_libraries(${TARGET_NAME} PUBLIC pthread m log)
+        # Android: pthread is built into libc, only link math and log
+        target_link_libraries(${TARGET_NAME} PUBLIC m log)
     elseif(APPLE)
         target_link_libraries(${TARGET_NAME} PUBLIC pthread)
     elseif(WIN32)
