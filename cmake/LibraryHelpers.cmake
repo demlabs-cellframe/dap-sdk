@@ -146,7 +146,13 @@ function(create_final_shared_library)
         # Android: pthread is built into libc, only link math and log
         target_link_libraries(${TARGET_NAME} PUBLIC m log)
     elseif(APPLE)
+        # macOS: link pthread and required frameworks
         target_link_libraries(${TARGET_NAME} PUBLIC pthread)
+        # Link macOS system frameworks (required for network monitoring and system APIs)
+        target_link_libraries(${TARGET_NAME} PUBLIC 
+            "-framework CoreFoundation"
+            "-framework SystemConfiguration"
+        )
     elseif(WIN32)
         target_link_libraries(${TARGET_NAME} PUBLIC ws2_32 mswsock)
     endif()
