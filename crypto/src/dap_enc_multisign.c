@@ -34,14 +34,6 @@
 
 #define LOG_TAG "dap_enc_multi_sign"
 
-// Safe pointer access macro - check validity before dereferencing
-#define SAFE_CHECK_PTR(ptr, msg) do { \
-    if (!(ptr) || (uintptr_t)(ptr) < 0x1000) { \
-        log_it(L_ERROR, "Invalid pointer in %s: %s (addr: %p)", __FUNCTION__, msg, (void*)(ptr)); \
-        return -1; \
-    } \
-} while(0)
-
 
 void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
 {
@@ -55,18 +47,11 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 {
 // sanity check
     dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED || !a_kex_size);
-    
-    log_it(L_INFO, "Generating multisign key with %zu sub-keys", a_kex_size);
-    
 // memory alloc - use heap instead of VLA stack array
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
     
     // Allocate array on heap, not stack (safer than VLA)
-    dap_enc_key_t **l_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, a_kex_size);
-    if (!l_keys) {
-        log_it(L_CRITICAL, "Failed to allocate memory for %zu keys array", a_kex_size);
-        return;
-    }
+    dap_enc_key_t **l_keys = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_enc_key_t*, a_kex_size, NULL);
     
     // Generate keys and validate each one
     for (size_t i = 0; i < a_kex_size; i++) {
@@ -77,7 +62,6 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         // Critical: check if key generation succeeded
         if (!l_keys[i]) {
             log_it(L_ERROR, "Failed to generate key %zu of type %d for multisign", i, l_key_types[i]);
-            
             // Cleanup already generated keys
             for (size_t j = 0; j < i; j++) {
                 if (l_keys[j]) {
@@ -87,26 +71,12 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
             DAP_DELETE(l_keys);
             return;
         }
-        
-        // Additional validation: check key has data
-        if (!l_keys[i]->priv_key_data && !l_keys[i]->pub_key_data) {
-            log_it(L_ERROR, "Generated key %zu has no data (type %d)", i, l_key_types[i]);
-            
-            // Cleanup all keys including current
-            for (size_t j = 0; j <= i; j++) {
-                if (l_keys[j]) {
-                    dap_enc_key_delete(l_keys[j]);
-                }
-            }
-            DAP_DELETE(l_keys);
-            return;
-        }
-        
+      
         log_it(L_DEBUG, "Key %zu generated successfully (priv_size: %zu, pub_size: %zu)", 
                i, l_keys[i]->priv_key_data_size, l_keys[i]->pub_key_data_size);
     }
     
-    log_it(L_INFO, "All %zu keys generated, creating params", a_kex_size);
+    log_it(L_DEBUG, "All %zu keys generated, creating params", a_kex_size);
     
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
     if (!l_params) {
@@ -125,17 +95,16 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
     // But we still need to free our pointer array
     DAP_DELETE(l_keys);
     
-    log_it(L_INFO, "Forming multisign keys structure");
+    log_it(L_DEBUG, "Forming multisign keys structure");
     
     int l_result = dap_enc_sig_multisign_forming_keys(a_key, l_params);
-    if (l_result != 0) {
+    if (l_result) {
         log_it(L_ERROR, "Failed to form multisign keys, error code: %d", l_result);
         dap_multi_sign_params_delete(l_params);
         return;
     }
-    
     a_key->_pvt = l_params;
-    log_it(L_INFO, "Multisign key generation completed successfully");
+    log_it(L_DEBUG, "Multisign key generation completed successfully");
 }
 
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
@@ -179,99 +148,23 @@ static uint64_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint64_t 
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
 {
 // sanity check
-    log_it(L_DEBUG, "forming_keys called: a_key=%p, a_params=%p", (void*)a_key, (void*)a_params);
-    
     dap_return_val_if_pass(!a_key || !a_params, -2);
-    
-    // Extra safety: check if pointers look valid (not NULL and not in low memory)
-    if ((uintptr_t)a_key < 0x1000 || (uintptr_t)a_params < 0x1000) {
-        log_it(L_ERROR, "Invalid pointer detected: a_key=%p, a_params=%p", (void*)a_key, (void*)a_params);
-        return -2;
-    }
     
     log_it(L_DEBUG, "a_params->keys=%p, key_count=%u", (void*)a_params->keys, a_params->key_count);
     
     dap_return_val_if_pass(!a_params->keys || a_params->key_count == 0, -3);
     
-    // Check if keys array pointer looks valid
-    if ((uintptr_t)a_params->keys < 0x1000) {
-        log_it(L_ERROR, "Invalid keys array pointer: %p", (void*)a_params->keys);
-        return -3;
-    }
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
     dap_multisign_public_key_t *l_pkey = NULL;
     uint64_t l_skey_len = sizeof(uint64_t);
     uint64_t l_pkey_len = sizeof(uint64_t);
     
-    // First pass: validate all keys before processing
-    for(size_t i = 0; i < a_params->key_count; ++i) {
-        log_it(L_DEBUG, "Validating key %zu/%u", i, a_params->key_count);
-        
-        // Get key pointer and log it
-        dap_enc_key_t *l_key = a_params->keys[i];
-        log_it(L_DEBUG, "Key %zu pointer: %p", i, (void*)l_key);
-        
-        // Check for NULL pointer
-        if (!l_key) {
-            log_it(L_ERROR, "Key %zu in multisign params is NULL", i);
-            return -4;
-        }
-        
-        // Critical safety check: verify pointer is in valid address space
-        // Pointers below 0x1000 are typically invalid (NULL page protection)
-        if ((uintptr_t)l_key < 0x1000) {
-            log_it(L_ERROR, "Key %zu has invalid pointer address: %p (too low)", i, (void*)l_key);
-            return -8;
-        }
-        
-        // Try to safely access the structure by checking alignment
-        if (((uintptr_t)l_key % 8) != 0) {
-            log_it(L_WARNING, "Key %zu pointer is not 8-byte aligned: %p", i, (void*)l_key);
-        }
-        
-        // Use __builtin_trap() or signal handler to catch bad memory access
-        // But for now, just log before accessing
-        log_it(L_DEBUG, "Attempting to access key %zu fields...", i);
-        
-        // Try to access with careful error handling
-        // Check if we can safely read the structure
-        volatile dap_enc_key_t *l_key_volatile = l_key;
-        
-        // Try to read type first (it's at fixed offset)
-        int l_type = l_key_volatile->type;
-        log_it(L_DEBUG, "Key %zu type: %d", i, l_type);
-        
-        // Check type validity
-        if (l_type < 0 || l_type > DAP_ENC_KEY_TYPE_LAST) {
-            log_it(L_ERROR, "Key %zu has invalid type %d (must be in range 0..%d)", 
-                   i, l_type, DAP_ENC_KEY_TYPE_LAST);
-            return -5;
-        }
-        
-        // Now check key data pointers
-        void *l_priv_data = l_key_volatile->priv_key_data;
-        void *l_pub_data = l_key_volatile->pub_key_data;
-        
-        log_it(L_DEBUG, "Key %zu: priv_data=%p, pub_data=%p", i, l_priv_data, l_pub_data);
-        
-        // Check if key has valid basic structure
-        if (!l_priv_data && !l_pub_data) {
-            log_it(L_ERROR, "Key %zu has no key data (both priv and pub are NULL)", i);
-            return -7;
-        }
-    }
     
     // Second pass: calculate sizes (now safe after validation)
     for(size_t i = 0; i < a_params->key_count; ++i) {
-        uint64_t l_priv_size = dap_enc_ser_priv_key_size(a_params->keys[i]);
-        uint64_t l_pub_size = dap_enc_ser_pub_key_size(a_params->keys[i]);
-        if (l_priv_size == 0 || l_pub_size == 0) {
-            log_it(L_ERROR, "Key %zu has zero size (priv: %zu, pub: %zu)", i, l_priv_size, l_pub_size);
-            return -6;
-        }
-        l_skey_len += l_priv_size;
-        l_pkey_len += l_pub_size;
+        l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
+        l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
     }
     l_skey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_multisign_private_key_t, l_skey_len, -1);
     l_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_multisign_public_key_t, l_pkey_len, -1, l_skey);
