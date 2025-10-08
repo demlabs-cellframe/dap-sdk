@@ -1706,36 +1706,7 @@ void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
     dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address)
-{
-    dap_node_addr_str_t l_ret = { };
-    snprintf((char*)&l_ret, sizeof(l_ret), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
-    return l_ret;
-}
-
-int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
-{
-    if (!a_addr || !a_addr_str)
-        return -2;
-    bool l_res = true;
-    size_t l_len = 0;
-    for (; l_res && *(a_addr_str + l_len) && l_len < 23; l_len++) {
-        l_res &= *(a_addr_str + l_len) == ':' || isxdigit(*(a_addr_str + l_len));
-    }
-    l_res &= l_len == 18 || l_len == 22;
-    return l_res ? (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
-        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
-        ? 0 : -1) : -4;
-}
-
-#ifdef __cplusplus
-}
-#endif
+// Node address functions moved to module/net/common/dap_net_common.c
 
 #ifdef  DAP_SYS_DEBUG
 dap_memstat_rec_t    *g_memstat [MEMSTAT$K_MAXNR];                      /* Array to keep pointers to module/facility specific memstat vecros */

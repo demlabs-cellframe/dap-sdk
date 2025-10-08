@@ -4,11 +4,10 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-# Dependencies (note: may have cycles, managed by CMake)
+# Dependencies - removed link_manager (breaks cycle)
 # - Link to dap_stream for stream cluster functionality
-# - Link to dap_link_manager for link management integration
-# - Link to dap_net_common for common types and callback definitions
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json-c dap_net_common dap_enc_server dap_json_rpc dap_stream dap_link_manager)
+# - Link to dap_net_common for common types and callback registry
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json-c dap_net_common dap_enc_server dap_json_rpc dap_stream)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})

@@ -23,12 +23,13 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 #pragma once
 #include <dap_common.h>
+#include "dap_net_common.h"
 #include <stdint.h>
 #include <pthread.h>
 #include "uthash.h"
 #include "dap_list.h"
 #include "dap_guuid.h"
-#include "../../server/json_rpc/include/dap_json_rpc_errors.h"
+#include <dap_json_rpc_errors.h>
 #include "dap_json.h"
 
 #define DAP_STREAM_CLUSTER_GLOBAL   "global"    // This mnemonim is for globally broadcasting grops
@@ -46,21 +47,6 @@ typedef struct dap_cluster_member {
 } dap_cluster_member_t;
 
 typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
-
-// Role in cluster
-typedef enum dap_cluster_type {
-    DAP_CLUSTER_TYPE_INVALID = 0,
-    DAP_CLUSTER_TYPE_EMBEDDED,      // Type network link managment with balancer intregration
-    DAP_CLUSTER_TYPE_AUTONOMIC,     // Type of static link management, passive by default, switching to active one for absent links
-    DAP_CLUSTER_TYPE_ISOLATED,      // Type of active internal independent link managment
-    DAP_CLUSTER_TYPE_SYSTEM,        // Especial link management for local and global clusters
-    DAP_CLUSTER_TYPE_VIRTUAL        // No links managment for this type of clusters
-} dap_cluster_type_t;
-
-typedef enum dap_cluster_status {
-    DAP_CLUSTER_STATUS_DISABLED = 0,
-    DAP_CLUSTER_STATUS_ENABLED
-} dap_cluster_status_t;
 
 typedef struct dap_cluster {
     char *mnemonim;                 // Field for alternative cluster finding, unique

@@ -115,16 +115,17 @@ void dap_stream_event_callbacks_unregister(void);
 void dap_stream_event_notify_add(dap_stream_node_addr_t *a_addr, bool a_is_uplink);
 void dap_stream_event_notify_replace(dap_stream_node_addr_t *a_addr, bool a_is_uplink);
 void dap_stream_event_notify_delete(dap_stream_node_addr_t *a_addr);
+
+// ============================================================================
+// Cluster Management Types (must be before callbacks that use them)
+// ============================================================================
+
 // Cluster mnemonics for broadcasting
 #define DAP_STREAM_CLUSTER_GLOBAL   "global"    // Globally broadcasting groups
 #define DAP_STREAM_CLUSTER_LOCAL    "local"     // Non-broadcasting groups
 
 typedef struct dap_link_manager dap_link_manager_t;
 typedef struct dap_link dap_link_t;
-
-// ============================================================================
-// Cluster Management Types
-// ============================================================================
 
 typedef enum dap_cluster_type {
     DAP_CLUSTER_TYPE_INVALID = 0,
@@ -141,59 +142,28 @@ typedef enum dap_cluster_status {
 } dap_cluster_status_t;
 
 // ============================================================================
-// Link Manager Callback Types (for inversion of control)
+// Cluster Event Callbacks (to break global_db → link_manager dependency)
 // ============================================================================
 
-// Forward declaration for link manager
-typedef struct dap_link dap_link_t;
+// Callback for cluster member add (called when member added to cluster)
+typedef void (*dap_cluster_member_add_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
+// Callback for cluster member delete (called when member removed from cluster)
+typedef void (*dap_cluster_member_delete_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
 
-/**
- * @brief Callback when link is connected
- * @param a_link Connected link
- * @param a_net_id Network ID
- */
-typedef void (*dap_link_manager_callback_connected_t)(dap_link_t *a_link, uint64_t a_net_id);
+// Cluster callbacks registry (for specific cluster types)
+typedef struct dap_cluster_callbacks {
+    dap_cluster_member_add_callback_t add_callback;
+    dap_cluster_member_delete_callback_t delete_callback;
+    void *arg;
+} dap_cluster_callbacks_t;
 
-/**
- * @brief Callback when link is disconnected
- * @param a_link Disconnected link
- * @param a_net_id Network ID
- */
-typedef void (*dap_link_manager_callback_disconnected_t)(dap_link_t *a_link, uint64_t a_net_id);
-
-/**
- * @brief Callback for link error
- * @param a_link Link with error
- * @param a_error_code Error code
- */
-typedef void (*dap_link_manager_callback_error_t)(dap_link_t *a_link, int a_error_code);
-
-/**
- * @brief Callback to fill network info
- */
-typedef void (*dap_link_manager_callback_fill_net_info_t)(void);
-
-/**
- * @brief Callback for link request
- */
-typedef void (*dap_link_manager_callback_link_request_t)(void);
-
-/**
- * @brief Callback when link count changes
- */
-typedef void (*dap_link_manager_callback_link_count_changed_t)(void);
-
-/**
- * @brief Link manager callbacks structure
- */
-typedef struct dap_link_manager_callbacks {
-    dap_link_manager_callback_connected_t connected;
-    dap_link_manager_callback_disconnected_t disconnected;
-    dap_link_manager_callback_error_t error;
-    dap_link_manager_callback_fill_net_info_t fill_net_info;
-    dap_link_manager_callback_link_request_t link_request;
-    dap_link_manager_callback_link_count_changed_t link_count_changed;
-} dap_link_manager_callbacks_t;
+// Register cluster callbacks for specific cluster type
+int dap_cluster_callbacks_register(dap_cluster_type_t a_cluster_type, 
+                                    dap_cluster_member_add_callback_t a_add_cb,
+                                    dap_cluster_member_delete_callback_t a_del_cb,
+                                    void *a_arg);
+// Get registered callbacks for cluster type
+dap_cluster_callbacks_t* dap_cluster_callbacks_get(dap_cluster_type_t a_cluster_type);
 
 #ifdef __cplusplus
 }

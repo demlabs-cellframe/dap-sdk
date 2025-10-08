@@ -27,6 +27,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <stdio.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <errno.h>
 #include "dap_common.h"
 #include "dap_config.h"
 
@@ -241,6 +242,67 @@ void dap_stream_event_notify_delete(dap_stream_node_addr_t *a_addr)
         s_stream_delete_callback(a_addr, s_stream_callbacks_user_data);
     }
     pthread_rwlock_unlock(&s_stream_callbacks_lock);
+}
+
+// ============================================================================
+// Cluster Callbacks Registry (Inversion of Control for global_db → link_manager)
+// ============================================================================
+
+static dap_cluster_callbacks_t s_cluster_callbacks[10] = {0};  // Registry for different cluster types
+static pthread_rwlock_t s_cluster_callbacks_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+/**
+ * @brief Register cluster callbacks for specific cluster type
+ * @param a_cluster_type Cluster type to register callbacks for
+ * @param a_add_cb Callback for member add event
+ * @param a_del_cb Callback for member delete event
+ * @param a_arg User data passed to callbacks
+ * @return 0 on success, negative on error
+ */
+int dap_cluster_callbacks_register(dap_cluster_type_t a_cluster_type, 
+                                    dap_cluster_member_add_callback_t a_add_cb,
+                                    dap_cluster_member_delete_callback_t a_del_cb,
+                                    void *a_arg)
+{
+    if (a_cluster_type >= sizeof(s_cluster_callbacks) / sizeof(s_cluster_callbacks[0])) {
+        log_it(L_ERROR, "Invalid cluster type: %d", a_cluster_type);
+        return -EINVAL;
+    }
+    
+    pthread_rwlock_wrlock(&s_cluster_callbacks_lock);
+    
+    if (s_cluster_callbacks[a_cluster_type].add_callback) {
+        log_it(L_WARNING, "Cluster callbacks for type %d already registered, replacing", a_cluster_type);
+    }
+    
+    s_cluster_callbacks[a_cluster_type].add_callback = a_add_cb;
+    s_cluster_callbacks[a_cluster_type].delete_callback = a_del_cb;
+    s_cluster_callbacks[a_cluster_type].arg = a_arg;
+    
+    pthread_rwlock_unlock(&s_cluster_callbacks_lock);
+    
+    log_it(L_INFO, "Cluster callbacks registered for type %d", a_cluster_type);
+    return 0;
+}
+
+/**
+ * @brief Get registered callbacks for cluster type
+ * @param a_cluster_type Cluster type
+ * @return Pointer to callbacks structure (internal, do not free) or NULL
+ */
+dap_cluster_callbacks_t* dap_cluster_callbacks_get(dap_cluster_type_t a_cluster_type)
+{
+    if (a_cluster_type >= sizeof(s_cluster_callbacks) / sizeof(s_cluster_callbacks[0])) {
+        return NULL;
+    }
+    
+    pthread_rwlock_rdlock(&s_cluster_callbacks_lock);
+    dap_cluster_callbacks_t *result = s_cluster_callbacks[a_cluster_type].add_callback 
+                                        ? &s_cluster_callbacks[a_cluster_type]
+                                        : NULL;
+    pthread_rwlock_unlock(&s_cluster_callbacks_lock);
+    
+    return result;
 }
 
 #ifdef __cplusplus

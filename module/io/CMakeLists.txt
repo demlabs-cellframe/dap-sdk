@@ -21,7 +21,7 @@ endif()
 # Use universal DAP library macro  
 dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
+target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_net_common)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
