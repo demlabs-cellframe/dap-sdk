@@ -148,8 +148,10 @@ function(create_final_shared_library)
     endif()
     
     # Export all symbols (needed for plugin system)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR (CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE))
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
+    elseif(APPLE)
+        target_link_options(${TARGET_NAME} PRIVATE -Wl,-export_dynamic)
     endif()
     
     # Set include directories for consumers
