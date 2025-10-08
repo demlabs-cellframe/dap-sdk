@@ -54,15 +54,20 @@ function(setup_package_components)
     set(CPACK_PACKAGE_CONTACT "${PKG_CONTACT}" PARENT_SCOPE)
     
     # Set CPack generators based on detected OS
+    message(STATUS "[PackageComponents] DAP_OS_NAME: '${DAP_OS_NAME}'")
     if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
+        message(STATUS "[PackageComponents] Setting DEB generator for ${DAP_OS_NAME}")
         set(CPACK_GENERATOR "DEB;TGZ" PARENT_SCOPE)
         set(CPACK_BINARY_DEB "ON" PARENT_SCOPE)
     elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
+        message(STATUS "[PackageComponents] Setting RPM generator for ${DAP_OS_NAME}")
         set(CPACK_GENERATOR "RPM;TGZ" PARENT_SCOPE)
         set(CPACK_BINARY_RPM "ON" PARENT_SCOPE)
     elseif(DAP_OS_NAME MATCHES "arch|gentoo")
+        message(STATUS "[PackageComponents] Setting TGZ generator for ${DAP_OS_NAME}")
         set(CPACK_GENERATOR "TGZ" PARENT_SCOPE)
     else()
+        message(STATUS "[PackageComponents] Setting default TGZ generator for ${DAP_OS_NAME}")
         set(CPACK_GENERATOR "TGZ" PARENT_SCOPE)
     endif()
     
@@ -100,6 +105,25 @@ function(setup_package_components)
     set(SDK_REGISTERED_HEADER_DIRS "" CACHE INTERNAL "List of header directories to install")
     set(SDK_REGISTERED_3RDPARTY_HEADERS "" CACHE INTERNAL "List of 3rd party headers to install")
     
+    # Enable component-based packaging
+    set(CPACK_DEB_COMPONENT_INSTALL ON PARENT_SCOPE)
+    set(CPACK_DEBIAN_ENABLE_COMPONENT_DEPENDS ON PARENT_SCOPE)
+    set(CPACK_RPM_COMPONENT_INSTALL ON PARENT_SCOPE)
+    set(CPACK_ARCHIVE_COMPONENT_INSTALL ON PARENT_SCOPE)
+    
+    # Set DEB package file names
+    # Format: dap-sdk[-dev|-doc]_OS_SUFFIX[-dbg]
+    # Note: Must include .deb extension to override automatic component suffix
+    # Note: Component names must be in UPPER CASE for CPack
+    set(CPACK_DEBIAN_RUNTIME_FILE_NAME "dap-sdk_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}.deb" PARENT_SCOPE)
+    set(CPACK_DEBIAN_DEVELOPMENT_FILE_NAME "dap-sdk-dev_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}.deb" PARENT_SCOPE)
+    set(CPACK_DEBIAN_DOCUMENTATION_FILE_NAME "dap-sdk-doc_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}.deb" PARENT_SCOPE)
+    
+    # Set Archive package file names
+    set(CPACK_ARCHIVE_RUNTIME_FILE_NAME "dap-sdk_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_ARCHIVE_DEVELOPMENT_FILE_NAME "dap-sdk-dev_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_ARCHIVE_DOCUMENTATION_FILE_NAME "dap-sdk-doc_${PKG_OS_SUFFIX}${PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
+    
     message(STATUS "[PackageComponents] Setup: ${PKG_PACKAGE_BASE_NAME} v${PKG_VERSION}")
 endfunction()
 
@@ -115,32 +139,36 @@ function(configure_debian_packages)
     set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
     
     # Runtime package (library only) - follow Debian naming: libfoo
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "lib${PKG_NAME}" PARENT_SCOPE)
-    set(CPACK_DEBIAN_RUNTIME_FILE_NAME "lib${PKG_NAME}_${OS_SUFFIX}.deb" PARENT_SCOPE)
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_SECTION "libs" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_DEPENDS "libc6 (>= 2.17)" PARENT_SCOPE)
     
     # Development package - follow Debian naming: libfoo-dev
-    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "lib${PKG_NAME}-dev" PARENT_SCOPE)
-    set(CPACK_DEBIAN_DEVELOPMENT_FILE_NAME "lib${PKG_NAME}-dev_${OS_SUFFIX}.deb" PARENT_SCOPE)
+    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_SECTION "libdevel" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS 
-        "lib${PKG_NAME} (= \${binary:Version})" PARENT_SCOPE)
+        "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX} (= \${binary:Version})" PARENT_SCOPE)
     
     # Documentation package - follow Debian naming: libfoo-doc
-    set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_NAME "lib${PKG_NAME}-doc" PARENT_SCOPE)
-    set(CPACK_DEBIAN_DOCUMENTATION_FILE_NAME "lib${PKG_NAME}-doc_${OS_SUFFIX}.deb" PARENT_SCOPE)
+    set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_SECTION "doc" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_ARCHITECTURE "all" PARENT_SCOPE)
     
+    # Enable component-based packaging for DEB
     set(CPACK_DEB_COMPONENT_INSTALL ON PARENT_SCOPE)
+    set(CPACK_DEBIAN_ENABLE_COMPONENT_DEPENDS ON PARENT_SCOPE)
     
-    message(STATUS "[CPack DEB] lib${PKG_NAME}_${OS_SUFFIX}.deb")
-    message(STATUS "[CPack DEB] lib${PKG_NAME}-dev_${OS_SUFFIX}.deb")
-    message(STATUS "[CPack DEB] lib${PKG_NAME}-doc_${OS_SUFFIX}.deb")
+    # Set DEB package file names
+    set(CPACK_DEB_RUNTIME_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DEVELOPMENT_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DOCUMENTATION_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}" PARENT_SCOPE)
+    
+    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}.deb")
+    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}.deb")
+    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}.deb")
 endfunction()
 
 # =========================================
@@ -194,21 +222,17 @@ function(configure_archive_packages)
     set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
     
     set(CPACK_ARCHIVE_COMPONENT_INSTALL ON PARENT_SCOPE)
-    set(CPACK_ARCHIVE_RUNTIME_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_ARCHIVE_DEVELOPMENT_FILE_NAME "${PKG_NAME}-dev_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_ARCHIVE_DOCUMENTATION_FILE_NAME "${PKG_NAME}-doc_${OS_SUFFIX}" PARENT_SCOPE)
-    
-    # Set DEB package file names
-    set(CPACK_DEB_RUNTIME_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_DEB_DEVELOPMENT_FILE_NAME "${PKG_NAME}-dev_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_DEB_DOCUMENTATION_FILE_NAME "${PKG_NAME}-doc_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_ARCHIVE_RUNTIME_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_ARCHIVE_DEVELOPMENT_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_ARCHIVE_DOCUMENTATION_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}" PARENT_SCOPE)
     
     # Set main package file name
-    set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}" PARENT_SCOPE)
+    message(STATUS "[PackageComponents] Setting CPACK_PACKAGE_FILE_NAME to: dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}")
+    set(CPACK_PACKAGE_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}" PARENT_SCOPE)
     
-    message(STATUS "[CPack Archive] ${PKG_NAME}_${OS_SUFFIX}.tar.gz")
-    message(STATUS "[CPack Archive] ${PKG_NAME}-dev_${OS_SUFFIX}.tar.gz")
-    message(STATUS "[CPack Archive] ${PKG_NAME}-doc_${OS_SUFFIX}.tar.gz")
+    message(STATUS "[CPack Archive] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}.tar.gz")
+    message(STATUS "[CPack Archive] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}.tar.gz")
+    message(STATUS "[CPack Archive] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}.tar.gz")
 endfunction()
 
 # =========================================
@@ -333,7 +357,9 @@ function(finalize_package_components)
     
     # Install library (runtime component)
     # Note: Don't use EXPORT here if library links to OBJECT libraries
-    install(TARGETS ${FIN_LIBRARY_TARGET}
+    # CMake doesn't allow hyphens in target names, so convert to underscores
+    string(REPLACE "-" "_" FIN_TARGET_NAME "${FIN_LIBRARY_TARGET}")
+    install(TARGETS ${FIN_TARGET_NAME}
         COMPONENT runtime
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
@@ -437,11 +463,6 @@ message(STATUS \"Found ${FIN_LIBRARY_TARGET}: \${${FIN_LIBRARY_TARGET}_LIBRARIES
             DESTINATION share/doc/${FIN_LIBRARY_TARGET}
         )
     endif()
-    
-    # Configure platform-specific packages
-    configure_debian_packages()
-    configure_rpm_packages()
-    configure_archive_packages()
     
     message(STATUS "[PackageComponents] Finalized: ${FIN_LIBRARY_TARGET}")
 endfunction()

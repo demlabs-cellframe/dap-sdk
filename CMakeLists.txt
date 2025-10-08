@@ -39,62 +39,9 @@ macro(dap_add_library TARGET_NAME)
 endmacro()
 
 # =========================================
-# FINAL LIBRARY CREATION
-# =========================================  
-# Creates final combined DAP SDK library from OBJECT modules
-macro(dap_create_final_library)
-    if(DEFINED DAP_INTERNAL_MODULES)
-        message("[+] Creating final DAP SDK library: dap_sdk")
-        message("[+] Internal OBJECT modules to combine: ${DAP_INTERNAL_MODULES}")
-        
-        # Create object file lists for each module
-        set(DAP_ALL_OBJECTS "")
-        foreach(MODULE ${DAP_INTERNAL_MODULES})
-            list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
-        endforeach()
-        
-        # Add DAP SDK unified interface
-        list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:dap_sdk_interface>)
-        
-        # Create final library
-        add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
-        
-        # Link external static libraries into final library
-        # Note: Crypto sub-libraries (kyber512, XKCP) are linked through dap_crypto itself
-        target_link_libraries(dap_sdk PRIVATE
-            dap_json-c
-            ${CMAKE_DL_LIBS}  # libdl for dlopen/dlsym/dlclose (plugin system)
-        )
-        
-        # Link all internal modules with PUBLIC visibility
-        # This automatically propagates their include directories via INTERFACE
-        foreach(MODULE ${DAP_INTERNAL_MODULES})
-            target_link_libraries(dap_sdk PUBLIC ${MODULE})
-        endforeach()
-        
-        # Link MDBX only if enabled
-        if(BUILD_WITH_GDB_DRIVER_MDBX)
-            target_link_libraries(dap_sdk PRIVATE mdbx-static)
-        endif()
-        
-        # Link macOS frameworks for network monitoring
-        if(MACOS)
-            target_link_libraries(dap_sdk PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
-            message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
-        endif()
-        
-        # Export all DAP SDK include directories via INTERFACE
-        # This allows consumers to simply link with dap_sdk and get all necessary includes
-        target_include_directories(dap_sdk INTERFACE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        
-        message("[+] Final DAP SDK Library: dap_sdk created from real object files")
-        message("[+] DAP SDK: All include directories exported via INTERFACE")
-    else()
-        message("[!] No DAP internal modules found!")
-    endif()
-endmacro()
+# INCLUDE DAP LIBRARY HELPERS
+# =========================================
+include(cmake/DapLibrary.cmake)
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
@@ -252,7 +199,7 @@ register_3rdparty_headers(
 
 # Finalize and install all components
 finalize_package_components(
-    LIBRARY_TARGET "dap_sdk"
+    LIBRARY_TARGET "dap-sdk"
     INCLUDE_PREFIX "dap-sdk"
     PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
     README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
@@ -275,7 +222,11 @@ set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
 set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
 set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
 
+# Enable component-based packaging
+set(CPACK_COMPONENT_INSTALL ON)
+
 message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
+message(STATUS "[CPack] Component-based packaging enabled")
 message(STATUS "[CPack] Package generation configured")
 
 include(CPack)

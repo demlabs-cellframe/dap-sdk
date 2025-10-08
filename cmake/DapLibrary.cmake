@@ -46,6 +46,21 @@ macro(dap_create_final_library)
     if(TARGET dap_json-c)
         list(APPEND DAP_LINK_LIBS dap_json-c)
     endif()
+    if(TARGET mdbx-static)
+        list(APPEND DAP_LINK_LIBS mdbx-static)
+    endif()
+    if(TARGET dap_crypto_XKCP)
+        list(APPEND DAP_LINK_LIBS dap_crypto_XKCP)
+    endif()
+    if(TARGET dap_crypto_kyber512)
+        list(APPEND DAP_LINK_LIBS dap_crypto_kyber512)
+    endif()
+    if(TARGET secp256k1)
+        list(APPEND DAP_LINK_LIBS secp256k1)
+    endif()
+    
+    # Add dap_sdk.c as additional source (contains init/deinit functions)
+    set(DAP_SDK_EXTRA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/dap_sdk.c")
     
     create_final_shared_library(
         LIBRARY_NAME "dap-sdk"
@@ -53,5 +68,6 @@ macro(dap_create_final_library)
         VERSION ${DAP_SDK_VERSION}
         VERSION_MAJOR ${DAP_SDK_VERSION_MAJOR}
         LINK_LIBRARIES ${DAP_LINK_LIBS}
+        ADDITIONAL_SOURCES ${DAP_SDK_EXTRA_SOURCES}
     )
 endmacro()

@@ -68,7 +68,7 @@ function(create_final_shared_library)
         FINAL_LIB
         ""
         "LIBRARY_NAME;MODULE_LIST_VAR;VERSION;VERSION_MAJOR"
-        "LINK_LIBRARIES"
+        "LINK_LIBRARIES;ADDITIONAL_SOURCES"
         ${ARGN}
     )
     
@@ -82,6 +82,9 @@ function(create_final_shared_library)
     message(STATUS "========================================")
     message(STATUS "[SDK] Creating final shared library: ${FINAL_LIB_LIBRARY_NAME}")
     message(STATUS "[SDK] OBJECT modules: ${${FINAL_LIB_MODULE_LIST_VAR}}")
+    if(FINAL_LIB_ADDITIONAL_SOURCES)
+        message(STATUS "[SDK] Additional sources: ${FINAL_LIB_ADDITIONAL_SOURCES}")
+    endif()
     message(STATUS "========================================")
     
     # Collect all object files
@@ -95,40 +98,62 @@ function(create_final_shared_library)
     endforeach()
     
     # Create final shared library
-    add_library(${FINAL_LIB_LIBRARY_NAME} SHARED ${ALL_OBJECTS})
+    # CMake doesn't allow hyphens in target names, so use underscores for target
+    # but set OUTPUT_NAME to the desired name with hyphens
+    string(REPLACE "-" "_" TARGET_NAME "${FINAL_LIB_LIBRARY_NAME}")
+    message(STATUS "[LibraryHelpers] Creating target: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
+    add_library(${TARGET_NAME} SHARED ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
     
-    # Set versioning
+    # If we have additional sources, inherit include directories from all modules
+    if(FINAL_LIB_ADDITIONAL_SOURCES)
+        foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+            if(TARGET ${MODULE})
+                # Get INTERFACE_INCLUDE_DIRECTORIES from OBJECT library
+                get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+                if(MODULE_INCLUDES)
+                    target_include_directories(${TARGET_NAME} PRIVATE ${MODULE_INCLUDES})
+                endif()
+            endif()
+        endforeach()
+    endif()
+    
+    # Set versioning and output name
+    # OUTPUT_NAME should be without 'lib' prefix and without extension
+    # CMake will automatically add 'lib' prefix for SHARED libraries on Unix
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        OUTPUT_NAME "${FINAL_LIB_LIBRARY_NAME}"
+    )
+    
     if(DEFINED FINAL_LIB_VERSION)
-        set_target_properties(${FINAL_LIB_LIBRARY_NAME} PROPERTIES
+        set_target_properties(${TARGET_NAME} PROPERTIES
             VERSION ${FINAL_LIB_VERSION}
             SOVERSION ${FINAL_LIB_VERSION_MAJOR}
-            OUTPUT_NAME ${FINAL_LIB_LIBRARY_NAME}
         )
     endif()
     
     # Link dependencies
     if(DEFINED FINAL_LIB_LINK_LIBRARIES)
-        target_link_libraries(${FINAL_LIB_LIBRARY_NAME} PRIVATE ${FINAL_LIB_LINK_LIBRARIES})
+        target_link_libraries(${TARGET_NAME} PRIVATE ${FINAL_LIB_LINK_LIBRARIES})
     endif()
     
     # Link system libraries
-    target_link_libraries(${FINAL_LIB_LIBRARY_NAME} PUBLIC ${CMAKE_DL_LIBS})
+    target_link_libraries(${TARGET_NAME} PUBLIC ${CMAKE_DL_LIBS})
     
     if(UNIX AND NOT APPLE)
-        target_link_libraries(${FINAL_LIB_LIBRARY_NAME} PUBLIC pthread m rt)
+        target_link_libraries(${TARGET_NAME} PUBLIC pthread m rt)
     elseif(APPLE)
-        target_link_libraries(${FINAL_LIB_LIBRARY_NAME} PUBLIC pthread)
+        target_link_libraries(${TARGET_NAME} PUBLIC pthread)
     elseif(WIN32)
-        target_link_libraries(${FINAL_LIB_LIBRARY_NAME} PUBLIC ws2_32 mswsock)
+        target_link_libraries(${TARGET_NAME} PUBLIC ws2_32 mswsock)
     endif()
     
     # Export all symbols (needed for plugin system)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-        target_link_options(${FINAL_LIB_LIBRARY_NAME} PRIVATE -Wl,--export-dynamic)
+        target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
     endif()
     
     # Set include directories for consumers
-    target_include_directories(${FINAL_LIB_LIBRARY_NAME} INTERFACE
+    target_include_directories(${TARGET_NAME} INTERFACE
         $<INSTALL_INTERFACE:include/${FINAL_LIB_LIBRARY_NAME}>
     )
     
