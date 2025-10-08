@@ -62,11 +62,8 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         // Critical: check if key generation succeeded
         if (!l_keys[i]) {
             log_it(L_ERROR, "Failed to generate key %zu of type %d for multisign", i, l_key_types[i]);
-            // Cleanup already generated keys
             for (size_t j = 0; j < i; j++) {
-                if (l_keys[j]) {
-                    dap_enc_key_delete(l_keys[j]);
-                }
+                dap_enc_key_delete(l_keys[j]);
             }
             DAP_DELETE(l_keys);
             return;
@@ -83,14 +80,11 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         log_it(L_ERROR, "Failed to create multisign params");
         // Cleanup all generated keys
         for (size_t i = 0; i < a_kex_size; i++) {
-            if (l_keys[i]) {
-                dap_enc_key_delete(l_keys[i]);
-            }
+            dap_enc_key_delete(l_keys[i]);
         }
         DAP_DELETE(l_keys);
         return;
     }
-    
     // l_keys array is now owned by l_params, will be freed by dap_multi_sign_params_delete
     // But we still need to free our pointer array
     DAP_DELETE(l_keys);
@@ -148,11 +142,10 @@ static uint64_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint64_t 
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key || !a_params, -2);
+    dap_return_val_if_pass(!a_key || !a_params || !a_params->keys || !a_params->key_count, -2);
     
     log_it(L_DEBUG, "a_params->keys=%p, key_count=%u", (void*)a_params->keys, a_params->key_count);
-    
-    dap_return_val_if_pass(!a_params->keys || a_params->key_count == 0, -3);
+
     
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
@@ -160,8 +153,7 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
     uint64_t l_skey_len = sizeof(uint64_t);
     uint64_t l_pkey_len = sizeof(uint64_t);
     
-    
-    // Second pass: calculate sizes (now safe after validation)
+
     for(size_t i = 0; i < a_params->key_count; ++i) {
         l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
         l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
@@ -308,8 +300,7 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
  */
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
 {
-    if (!a_params)
-        return;
+    dap_return_if_pass(!a_params);
     for (size_t i = 0; i < a_params->key_count; ++i) {
         dap_enc_key_delete(a_params->keys[i]);
     }
