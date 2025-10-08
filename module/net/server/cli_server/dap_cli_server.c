@@ -229,6 +229,8 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
         l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
     }
     l_cmd_item->id = a_id;
+    // Initialize flags with default values
+    memset(&l_cmd_item->flags, 0, sizeof(l_cmd_item->flags));
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
     return l_cmd_item;
@@ -244,6 +246,36 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
 dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, int16_t a_id, const char *a_doc_ex)
 {
     return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex, a_id);
+}
+
+/**
+ * @brief dap_cli_server_cmd_add_ext
+ * Extended command addition with flags and parameters
+ * @param a_params Extended command parameters structure
+ * @return Pointer to created command or NULL on error
+ */
+dap_cli_cmd_t *dap_cli_server_cmd_add_ext(const dap_cli_server_cmd_params_t *a_params)
+{
+    if (!a_params || !a_params->name || !a_params->func) {
+        log_it(L_ERROR, "Invalid parameters for dap_cli_server_cmd_add_ext");
+        return NULL;
+    }
+
+    dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cli_cmd_t, NULL);
+
+    snprintf(l_cmd_item->name, sizeof(l_cmd_item->name), "%s", a_params->name);
+    l_cmd_item->doc = strdup(a_params->doc ? a_params->doc : "");
+    l_cmd_item->doc_ex = strdup(a_params->doc_ex ? a_params->doc_ex : "");
+    l_cmd_item->func = a_params->func;
+    l_cmd_item->id = a_params->id;
+    l_cmd_item->overrides = a_params->overrides;
+    l_cmd_item->flags = a_params->flags;
+
+    HASH_ADD_STR(cli_commands, name, l_cmd_item);
+    log_it(L_DEBUG, "Added extended command %s (JSON-RPC: %s)", 
+           l_cmd_item->name, l_cmd_item->flags.is_json_rpc ? "yes" : "no");
+    
+    return l_cmd_item;
 }
 
 
@@ -493,7 +525,10 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             if (s_stat_callback) {
                 l_call_time = dap_nanotime_now();
             }
-            if (l_cmd->arg_func) {
+            // Check if this is JSON-RPC command based on flags
+            if (l_cmd->flags.is_json_rpc) {
+                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
+            } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
             } else {
                 res = l_cmd->func(l_argc, l_argv, (void *)&str_reply, request->version);
