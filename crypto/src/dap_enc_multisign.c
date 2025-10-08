@@ -55,8 +55,6 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
     
     // Generate keys and validate each one
     for (size_t i = 0; i < a_kex_size; i++) {
-        log_it(L_DEBUG, "Generating key %zu of type %d", i, l_key_types[i]);
-        
         l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
         
         // Critical: check if key generation succeeded
@@ -68,9 +66,6 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
             DAP_DELETE(l_keys);
             return;
         }
-      
-        log_it(L_DEBUG, "Key %zu generated successfully (priv_size: %zu, pub_size: %zu)", 
-               i, l_keys[i]->priv_key_data_size, l_keys[i]->pub_key_data_size);
     }
     
     log_it(L_DEBUG, "All %zu keys generated, creating params", a_kex_size);
@@ -143,10 +138,7 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
 {
 // sanity check
     dap_return_val_if_pass(!a_key || !a_params || !a_params->keys || !a_params->key_count, -2);
-    
-    log_it(L_DEBUG, "a_params->keys=%p, key_count=%u", (void*)a_params->keys, a_params->key_count);
 
-    
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
     dap_multisign_public_key_t *l_pkey = NULL;
