@@ -53,6 +53,17 @@ function(setup_package_components)
     set(CPACK_PACKAGE_VENDOR "${PKG_VENDOR}" PARENT_SCOPE)
     set(CPACK_PACKAGE_CONTACT "${PKG_CONTACT}" PARENT_SCOPE)
     
+    # Set CPack generators based on detected OS
+    if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
+        set(CPACK_GENERATOR "DEB;TGZ" PARENT_SCOPE)
+    elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
+        set(CPACK_GENERATOR "RPM;TGZ" PARENT_SCOPE)
+    elseif(DAP_OS_NAME MATCHES "arch|gentoo")
+        set(CPACK_GENERATOR "TGZ" PARENT_SCOPE)
+    else()
+        set(CPACK_GENERATOR "TGZ" PARENT_SCOPE)
+    endif()
+    
     # Define components
     set(CPACK_COMPONENTS_ALL runtime development documentation PARENT_SCOPE)
     
@@ -71,6 +82,17 @@ function(setup_package_components)
     # Dependencies
     set(CPACK_COMPONENT_DEVELOPMENT_DEPENDS runtime PARENT_SCOPE)
     set(CPACK_COMPONENT_DOCUMENTATION_DEPENDS runtime PARENT_SCOPE)
+    
+    # Platform-specific dependencies
+    if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, libssl3" PARENT_SCOPE)
+        set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS "libc6-dev, libssl-dev" PARENT_SCOPE)
+        set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_DEPENDS "libc6" PARENT_SCOPE)
+    elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
+        set(CPACK_RPM_PACKAGE_REQUIRES "glibc, openssl-libs" PARENT_SCOPE)
+        set(CPACK_RPM_DEVELOPMENT_PACKAGE_REQUIRES "glibc-devel, openssl-devel" PARENT_SCOPE)
+        set(CPACK_RPM_DOCUMENTATION_PACKAGE_REQUIRES "glibc" PARENT_SCOPE)
+    endif()
     
     # Initialize header directories list
     set(SDK_REGISTERED_HEADER_DIRS "" CACHE INTERNAL "List of header directories to install")

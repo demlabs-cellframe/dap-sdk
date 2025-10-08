@@ -265,27 +265,10 @@ message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
 message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
 
 # =========================================
-# CPACK CONFIGURATION
+# CPACK CONFIGURATION (handled by PackageComponents.cmake)
 # =========================================
-set(CPACK_PACKAGE_NAME "dap-sdk${DAP_DEBUG_SUFFIX}")
-set(CPACK_PACKAGE_VERSION "${DAP_SDK_NATIVE_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "DAP SDK - Distributed Application Platform Software Development Kit")
-set(CPACK_PACKAGE_VENDOR "Demlabs")
-set(CPACK_PACKAGE_CONTACT "support@demlabs.net")
-
-# CPack generators based on detected OS
-if(DAP_OS_NAME MATCHES "debian|ubuntu|mint")
-    set(CPACK_GENERATOR "DEB;TGZ")
-elseif(DAP_OS_NAME MATCHES "fedora|centos|rhel")
-    set(CPACK_GENERATOR "RPM;TGZ")
-elseif(DAP_OS_NAME MATCHES "arch|gentoo")
-    set(CPACK_GENERATOR "TGZ")
-else()
-    set(CPACK_GENERATOR "TGZ")
-endif()
-
-# Include component-based packaging configuration
-include(cmake/PackageComponents.cmake)
+# All CPack configuration is now handled by the universal packaging system
+# in cmake/PackageComponents.cmake which was included earlier
 
 message(STATUS "[CPack] Package generation configured")
 

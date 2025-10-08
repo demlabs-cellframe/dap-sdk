@@ -52,15 +52,6 @@
 
 #define LOG_TAG "dap_cli_server"
 
-// Cellframe RPC function - weak symbol for compatibility
-// Forward declaration
-int dap_chain_rpc_is_json_command(const char *a_cmd_name) __attribute__((weak));
-// Default implementation for standalone DAP SDK
-int dap_chain_rpc_is_json_command(const char *a_cmd_name) { 
-    (void)a_cmd_name; 
-    return 0; 
-}
-
 #define MAX_CONSOLE_CLIENTS 16
 
 static dap_server_t *s_cli_server = NULL;
@@ -502,10 +493,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             if (s_stat_callback) {
                 l_call_time = dap_nanotime_now();
             }
-            // Check if this is JSON-RPC command (Cellframe-specific feature)
-            if (dap_chain_rpc_is_json_command(cmd_name)) {
-                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
-            } else if (l_cmd->arg_func) {
+            if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
             } else {
                 res = l_cmd->func(l_argc, l_argv, (void *)&str_reply, request->version);
