@@ -48,14 +48,13 @@
 #include "../json_rpc/include/dap_json_rpc_request.h"
 #include "../json_rpc/include/dap_json_rpc_response.h"
 
-// Cellframe RPC functions are only available when building with Cellframe SDK
-#ifndef DAP_SDK_ONLY
-// Forward declaration for Cellframe RPC function
-extern int dap_chain_rpc_is_json_command(const char *a_cmd_name);
-#else
-// Stub for DAP SDK only builds
-static inline int dap_chain_rpc_is_json_command(const char *a_cmd_name) { (void)a_cmd_name; return 0; }
-#endif
+// Cellframe RPC function - weak symbol for compatibility
+// When building with Cellframe SDK, this will be overridden by actual implementation
+// For standalone DAP SDK builds, stub returns 0 (no JSON commands)
+__attribute__((weak)) int dap_chain_rpc_is_json_command(const char *a_cmd_name) { 
+    (void)a_cmd_name; 
+    return 0; 
+}
 
 #define LOG_TAG "dap_cli_server"
 
@@ -500,11 +499,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             if (s_stat_callback) {
                 l_call_time = dap_nanotime_now();
             }
-#ifndef DAP_SDK_ONLY
+            // Check if this is JSON-RPC command (Cellframe-specific feature)
             if (dap_chain_rpc_is_json_command(cmd_name)) {
-#else
-            if (0) { // DAP SDK doesn't have Cellframe commands
-#endif
                 res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
