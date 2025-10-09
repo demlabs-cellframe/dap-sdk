@@ -161,7 +161,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
     }
 }
 
-bool dap_json_rpc_get_int64(struct json_object *a_json, const char *a_key, int64_t *a_out)
+DAP_INLINE bool dap_json_rpc_get_int64(struct json_object *a_json, const char *a_key, int64_t *a_out)
 {
     struct json_object *l_json = NULL;
     dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
@@ -169,7 +169,7 @@ bool dap_json_rpc_get_int64(struct json_object *a_json, const char *a_key, int64
     return true;
 }
 
-bool dap_json_rpc_get_uint64(struct json_object *a_json, const char *a_key, uint64_t *a_out)
+DAP_INLINE bool dap_json_rpc_get_uint64(struct json_object *a_json, const char *a_key, uint64_t *a_out)
 {
     struct json_object *l_json = NULL;
     dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
