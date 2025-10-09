@@ -161,20 +161,20 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
     }
 }
 
-bool dap_json_rpc_get_int64_uint64(struct json_object *a_json, const char *a_key, void *a_out, bool a_is_uint64)
+bool dap_json_rpc_get_int64(struct json_object *a_json, const char *a_key, int64_t *a_out)
 {
-    if(!a_json || !a_key || !a_out)
-        return false;
-    struct json_object *l_json = json_object_object_get(a_json, a_key);
-    if(l_json) {
-        if(a_is_uint64) {
-            *(uint64_t*)a_out = json_object_get_uint64(l_json);
-        } else {
-            *(int64_t*)a_out = json_object_get_int64(l_json);
-        }
-        return true;
-    }
-    return false;
+    struct json_object *l_json = NULL;
+    dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
+    *a_out = json_object_get_int64(l_json);
+    return true;
+}
+
+bool dap_json_rpc_get_uint64(struct json_object *a_json, const char *a_key, uint64_t *a_out)
+{
+    struct json_object *l_json = NULL;
+    dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
+    *a_out = json_object_get_uint64(l_json);
+    return true;
 }
 
 const char* dap_json_rpc_get_text(struct json_object *a_json, const char *a_key)
