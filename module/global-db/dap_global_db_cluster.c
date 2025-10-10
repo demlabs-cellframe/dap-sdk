@@ -121,11 +121,16 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
+    // Get registered callbacks for this cluster type from registry (breaks direct dependency)
     if (l_cluster->links_cluster &&
             (l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC ||
             l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED)) {
-        l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
-        l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
+        dap_cluster_callbacks_t *l_callbacks = dap_cluster_callbacks_get(l_cluster->links_cluster->type);
+        if (l_callbacks) {
+            l_cluster->links_cluster->members_add_callback = l_callbacks->add_callback;
+            l_cluster->links_cluster->members_delete_callback = l_callbacks->delete_callback;
+            l_cluster->links_cluster->callbacks_arg = l_callbacks->arg;
+        }
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
@@ -139,7 +144,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
-    l_cluster->link_manager = dap_link_manager_get_default();
+    // link_manager reference removed - using callbacks instead (breaks direct dependency)
+    l_cluster->link_manager = NULL;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
@@ -155,11 +161,15 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
         log_it(L_ERROR, "Invalid argument with cluster member adding");
         return NULL;
     }
+    // Get registered callbacks for static role cluster (breaks direct dependency)
     if (a_node_addr->uint64 == g_node_addr.uint64) {
         if (a_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC) {
-            a_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
-            a_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
-            a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
+            dap_cluster_callbacks_t *l_callbacks = dap_cluster_callbacks_get(DAP_CLUSTER_TYPE_AUTONOMIC);
+            if (l_callbacks) {
+                a_cluster->role_cluster->members_add_callback = l_callbacks->add_callback;
+                a_cluster->role_cluster->members_delete_callback = l_callbacks->delete_callback;
+                a_cluster->role_cluster->callbacks_arg = l_callbacks->arg;
+            }
         }
         dap_cluster_members_register(a_cluster->role_cluster);
     }

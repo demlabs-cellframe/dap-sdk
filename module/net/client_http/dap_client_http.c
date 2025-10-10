@@ -30,11 +30,9 @@
 #include "dap_string.h"
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
-#include "dap_stream_ch_proc.h"
 #include "dap_context.h"
 #include "dap_server.h"
-#include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_config.h"
 #include "dap_client_http.h"
 #include "dap_enc_base64.h"
 

@@ -13,6 +13,8 @@ endif()
 
 # Common includes and definitions
 include(cmake/OS_Detection.cmake)
+include(cmake/PackageDetection.cmake)
+include(cmake/PackageComponents.cmake)
 
 
 # =========================================  
@@ -37,62 +39,9 @@ macro(dap_add_library TARGET_NAME)
 endmacro()
 
 # =========================================
-# FINAL LIBRARY CREATION
-# =========================================  
-# Creates final combined DAP SDK library from OBJECT modules
-macro(dap_create_final_library)
-    if(DEFINED DAP_INTERNAL_MODULES)
-        message("[+] Creating final DAP SDK library: dap_sdk")
-        message("[+] Internal OBJECT modules to combine: ${DAP_INTERNAL_MODULES}")
-        
-        # Create object file lists for each module
-        set(DAP_ALL_OBJECTS "")
-        foreach(MODULE ${DAP_INTERNAL_MODULES})
-            list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
-        endforeach()
-        
-        # Add DAP SDK unified interface
-        list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:dap_sdk_interface>)
-        
-        # Create final library
-        add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
-        
-        # Link external static libraries into final library
-        # Note: Crypto sub-libraries (kyber512, XKCP) are linked through dap_crypto itself
-        target_link_libraries(dap_sdk PRIVATE
-            dap_json-c
-            ${CMAKE_DL_LIBS}  # libdl for dlopen/dlsym/dlclose (plugin system)
-        )
-        
-        # Link all internal modules with PUBLIC visibility
-        # This automatically propagates their include directories via INTERFACE
-        foreach(MODULE ${DAP_INTERNAL_MODULES})
-            target_link_libraries(dap_sdk PUBLIC ${MODULE})
-        endforeach()
-        
-        # Link MDBX only if enabled
-        if(BUILD_WITH_GDB_DRIVER_MDBX)
-            target_link_libraries(dap_sdk PRIVATE mdbx-static)
-        endif()
-        
-        # Link macOS frameworks for network monitoring
-        if(MACOS)
-            target_link_libraries(dap_sdk PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
-            message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
-        endif()
-        
-        # Export all DAP SDK include directories via INTERFACE
-        # This allows consumers to simply link with dap_sdk and get all necessary includes
-        target_include_directories(dap_sdk INTERFACE
-            ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        
-        message("[+] Final DAP SDK Library: dap_sdk created from real object files")
-        message("[+] DAP SDK: All include directories exported via INTERFACE")
-    else()
-        message("[!] No DAP internal modules found!")
-    endif()
-endmacro()
+# INCLUDE DAP LIBRARY HELPERS
+# =========================================
+include(cmake/DapLibrary.cmake)
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
@@ -112,9 +61,6 @@ else()
     message("[+] DAP SDK: Building final library as STATIC (modules: static internally)")
     set(DAP_FINAL_LIB_TYPE STATIC)
 endif()
-
-# Define DAP_SDK_ONLY to distinguish from full Cellframe builds
-add_definitions(-DDAP_SDK_ONLY)
 
 # Set default modules if none are specified
 if (NOT DEFINED DAPSDK_MODULES OR DAPSDK_MODULES STREQUAL "")
@@ -151,6 +97,14 @@ if (DAPSDK_MODULES MATCHES "io")
     add_subdirectory(module/io)
     message("[+] Module 'io'")
 endif()
+
+# Network common types and functions
+add_subdirectory(module/net/common)
+message("[+] Module 'net/common' (base types,callbacks and functions)")
+
+# HTTP client for outgoing connections (independent of dap_client)
+add_subdirectory(module/net/client_http)
+message("[+] Module 'client_http' (standalone HTTP client)")
 
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(module/net/stream)
@@ -197,12 +151,6 @@ endif()
 
 
 
-# Examples - UPDATED PATH - DISABLED
-# if(BUILD_EXAMPLES)
-#     # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
-#     # message("[+] Module 'examples'")
-# endif()
-
 # Test framework - UPDATED PATH
 if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
     enable_testing()
@@ -222,3 +170,63 @@ dap_create_final_library()
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")
 message("[+] =========================================")
+
+# =========================================
+# PACKAGE COMPONENTS SETUP
+# =========================================
+# Setup component-based packaging (runtime/dev/doc split)
+setup_package_components(
+    PACKAGE_BASE_NAME "dap-sdk"
+    VERSION "${DAP_SDK_NATIVE_VERSION}"
+    DESCRIPTION "DAP SDK - Distributed Application Platform Software Development Kit"
+    VENDOR "Demlabs"
+    CONTACT "support@demlabs.net"
+    DEBUG_SUFFIX "${DAP_DEBUG_SUFFIX}"
+    OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
+)
+
+# Register 3rd party headers required by public API
+register_3rdparty_headers(
+    DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
+    DESTINATION "uthash"
+)
+
+register_3rdparty_headers(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
+)
+
+# Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
+
+# Finalize and install all components
+finalize_package_components(
+    LIBRARY_TARGET "dap-sdk"
+    INCLUDE_PREFIX "dap-sdk"
+    PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
+    README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
+)
+
+message(STATUS "[Install] Component-based installation configured")
+message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
+message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
+message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
+
+# =========================================
+# CPACK CONFIGURATION (handled by PackageComponents.cmake)
+# =========================================
+# All CPack configuration is now handled by the universal packaging system
+# in cmake/PackageComponents.cmake which was included earlier
+
+# Set final package name explicitly before CPack generation
+set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
+set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
+set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
+
+# Enable component-based packaging
+set(CPACK_COMPONENT_INSTALL ON)
+
+message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
+message(STATUS "[CPack] Component-based packaging enabled")
+message(STATUS "[CPack] Package generation configured")
+
+include(CPack)
