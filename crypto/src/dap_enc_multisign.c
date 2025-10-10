@@ -147,11 +147,6 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
     
 
     for(size_t i = 0; i < a_params->key_count; ++i) {
-        // Validate each key before using it
-        if (!a_params->keys[i]) {
-            log_it(L_ERROR, "Invalid key at index %zu: NULL pointer", i);
-            return -3;
-        }
         l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
         l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
     }
