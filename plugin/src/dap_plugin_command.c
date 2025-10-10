@@ -77,10 +77,13 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
 
             }
             dap_cli_server_cmd_set_reply_text(a_str_reply, "%s", l_str);
+            if(l_str)
+                DAP_DELETE(l_str);
         }break;
         case CMD_SHOW_NAME:
             if(!l_cmd_arg){
                 dap_cli_server_cmd_set_reply_text(a_str_reply, "Need argument for this command");
+                break;
             }
             HASH_FIND_STR(dap_plugin_manifest_all(), l_cmd_arg, l_manifest);
             if(l_manifest){
@@ -103,6 +106,10 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
             dap_cli_server_cmd_set_reply_text(a_str_reply, "Restart completed");
             break;
         case CMD_RELOAD_NAME:{
+            if (!l_cmd_arg) {
+                dap_cli_server_cmd_set_reply_text(a_str_reply, "Need argument for this command");
+                break;
+            }
             int l_result;
             l_result = dap_plugin_stop(l_cmd_arg);
             switch (l_result) {
