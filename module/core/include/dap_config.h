@@ -5,7 +5,47 @@
 #include "uthash.h"
 #include "dap_common.h"
 
+// Forward declarations
 typedef struct dap_config_item dap_config_item_t;
+typedef struct dap_conf dap_config_t;
+
+// ============================================================================
+// Custom Parser System - Dependency Inversion Layer
+// ============================================================================
+
+/**
+ * @brief Custom parser callback type
+ * @param a_cfg Config object
+ * @param a_config Config name
+ * @param a_section Section name
+ * @param a_out_data Output pointer (caller allocates based on parser needs)
+ * @param a_out_count Output count of parsed items
+ * @return 0 on success, negative on error
+ */
+typedef int (*dap_config_custom_parser_t)(struct dap_conf *a_cfg, const char *a_config, 
+                                           const char *a_section, void **a_out_data, 
+                                           uint16_t *a_out_count);
+
+/**
+ * @brief Register custom parser for specific data type
+ * @param a_parser_name Unique parser name (e.g., "stream_addrs")
+ * @param a_parser Parser callback function
+ * @return 0 on success, negative on error
+ */
+int dap_config_register_parser(const char *a_parser_name, dap_config_custom_parser_t a_parser);
+
+/**
+ * @brief Call registered custom parser
+ * @param a_parser_name Parser name
+ * @param a_cfg Config object
+ * @param a_config Config name
+ * @param a_section Section name
+ * @param a_out_data Output pointer
+ * @param a_out_count Output count
+ * @return 0 on success, negative on error
+ */
+int dap_config_call_parser(const char *a_parser_name, struct dap_conf *a_cfg, const char *a_config,
+                           const char *a_section, void **a_out_data, uint16_t *a_out_count);
 
 typedef enum {
     DAP_CONFIG_ITEM_UNKNOWN = '\0',
@@ -50,7 +90,8 @@ const char** dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length);
 void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t array_length);
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default);
-int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, const char *a_section, dap_stream_node_addr_t **a_addrs, uint16_t *a_addrs_count);
+
+// dap_config_stream_addrs_parse moved to dap_net_common.h (network-specific function)
 
 #define dap_config_get_item_bool(a_conf, a_path, a_item) dap_config_get_item_bool_default(a_conf, a_path, a_item, false)
 
