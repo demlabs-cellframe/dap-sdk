@@ -18,8 +18,8 @@ if(UNIX)
         file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/linux/*.c)
     endif()
 elseif(WIN32)
-    file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c ../3rdparty/strptime.c)
-    set_source_files_properties(../3rdparty/strptime PROPERTIES COMPILE_FLAGS -Wno-deprecated-declarations)
+    file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c)
+    # NOTE: strptime.c is now included in dap_core_win32 library to ensure proper symbol export
 endif()
 
 if (DAP_USE_RPMALLOC)

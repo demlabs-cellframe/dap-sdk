@@ -58,6 +58,10 @@ macro(dap_create_final_library)
     if(TARGET secp256k1)
         list(APPEND DAP_LINK_LIBS secp256k1)
     endif()
+    # Add platform-specific core dependencies (includes dap_core_win32 on Windows with strptime)
+    if(DEFINED DAP_CORE_DEPS)
+        list(APPEND DAP_LINK_LIBS ${DAP_CORE_DEPS})
+    endif()
     
     # NOTE: dap_sdk.c is already included via dap_sdk_interface OBJECT library
     # No need to add it as ADDITIONAL_SOURCES (would cause duplicate symbols)
