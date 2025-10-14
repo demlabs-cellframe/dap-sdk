@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-
+#include <stdio.h>
 #include "dap_net.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"

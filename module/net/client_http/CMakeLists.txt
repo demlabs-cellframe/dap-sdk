@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(dap_client_http C)
+add_definitions ("-D_GNU_SOURCE")
 
 set(CMAKE_C_STANDARD 11)
 
