@@ -255,8 +255,12 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
         HASH_DELETE(hh, a_manifest->dependencies, l_dep);
         DAP_DELETE(l_dep);
     }
+    if (a_manifest->params) {
+        for(size_t i = 0; i < a_manifest->params_count; ++i)
+            DAP_DELETE(a_manifest->params[i]);
+        DAP_DELETE(a_manifest->params);
+    }
     DAP_DELETE(a_manifest);
-
 }
 
 /**
