@@ -169,7 +169,41 @@ function(create_final_shared_library)
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
     endif()
     
+    # =========================================
+    # COLLECT INCLUDE DIRECTORIES FROM MODULES
+    # =========================================
+    # Automatically collect all PUBLIC/INTERFACE include directories from OBJECT modules
+    # This allows consumers (like cellframe-node) to see all headers without manual enumeration
+    set(ALL_INCLUDE_DIRS "")
+    foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+        if(TARGET ${MODULE})
+            # Get INTERFACE_INCLUDE_DIRECTORIES from OBJECT library
+            get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+            if(MODULE_INCLUDES)
+                list(APPEND ALL_INCLUDE_DIRS ${MODULE_INCLUDES})
+            endif()
+        endif()
+    endforeach()
+    
+    # Remove duplicates
+    if(ALL_INCLUDE_DIRS)
+        list(REMOVE_DUPLICATES ALL_INCLUDE_DIRS)
+        list(LENGTH ALL_INCLUDE_DIRS INCLUDE_COUNT)
+        message(STATUS "[SDK] Collected ${INCLUDE_COUNT} unique include directories from modules")
+    endif()
+    
     # Set include directories for consumers
+    # Include directories from modules are already absolute paths (CMAKE_CURRENT_SOURCE_DIR)
+    # so we can add them directly for BUILD interface
+    if(ALL_INCLUDE_DIRS)
+        # Add collected include directories directly (they are absolute paths)
+        target_include_directories(${TARGET_NAME} INTERFACE ${ALL_INCLUDE_DIRS})
+        message(STATUS "[SDK] Exported ${INCLUDE_COUNT} include directories for consumers")
+    else()
+        message(WARNING "[SDK] No include directories collected from modules")
+    endif()
+    
+    # Add install interface
     target_include_directories(${TARGET_NAME} INTERFACE
         $<INSTALL_INTERFACE:include/${FINAL_LIB_LIBRARY_NAME}>
     )

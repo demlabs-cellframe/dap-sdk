@@ -59,8 +59,8 @@ macro(dap_create_final_library)
         list(APPEND DAP_LINK_LIBS secp256k1)
     endif()
     
-    # Add dap_sdk.c as additional source (contains init/deinit functions)
-    set(DAP_SDK_EXTRA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/dap_sdk.c")
+    # NOTE: dap_sdk.c is already included via dap_sdk_interface OBJECT library
+    # No need to add it as ADDITIONAL_SOURCES (would cause duplicate symbols)
     
     create_final_shared_library(
         LIBRARY_NAME "dap-sdk"
@@ -68,6 +68,5 @@ macro(dap_create_final_library)
         VERSION ${DAP_SDK_VERSION}
         VERSION_MAJOR ${DAP_SDK_VERSION_MAJOR}
         LINK_LIBRARIES ${DAP_LINK_LIBS}
-        ADDITIONAL_SOURCES ${DAP_SDK_EXTRA_SOURCES}
     )
 endmacro()

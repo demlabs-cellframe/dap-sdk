@@ -71,8 +71,9 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
-# Add DAP SDK unified interface
-add_library(dap_sdk_interface OBJECT dap_sdk.c)
+# Add DAP SDK unified interface using dap_add_library
+# This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
+dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
