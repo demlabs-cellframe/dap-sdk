@@ -301,11 +301,7 @@ void dap_events_deinit( )
     dap_events_socket_deinit();
     dap_worker_deinit();
 
-    dap_events_wait();
-
-    if ( s_workers )
-        DAP_DELETE( s_workers );
-
+    DAP_DEL_Z( s_workers );
     s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
@@ -446,12 +442,17 @@ pthread_t       l_tid;
 
 #endif
 
-
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        void *ret;
-        pthread_t l_thread_id = s_workers[i]->context->thread_id;
-        pthread_join(l_thread_id , &ret );
+    pthread_t *l_thread_id = NULL;
+    if (s_threads_count) {
+        l_thread_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     }
+    for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        l_thread_id[i] = s_workers[i]->context->thread_id;
+    }
+    for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        pthread_join(l_thread_id[i] , NULL );
+    }
+    DAP_DELETE(l_thread_id);
     return 0;
 }
 
