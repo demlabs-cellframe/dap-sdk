@@ -59,9 +59,11 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count);
 size_t dap_json_array_length(dap_json_t* a_array);
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
+void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *));
 
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
+int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len);
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value);
 int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value);
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value);

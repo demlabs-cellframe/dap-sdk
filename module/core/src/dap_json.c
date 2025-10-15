@@ -151,6 +151,15 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
 }
 
+void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
+{
+    if (!a_array || !a_sort_fn) {
+        return;
+    }
+    
+    json_object_array_sort(_dap_json_to_json_c(a_array), a_sort_fn);
+}
+
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value)
 {
@@ -160,6 +169,22 @@ int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char
     }
     
     struct json_object *l_string = json_object_new_string(a_value);
+    if (!l_string) {
+        log_it(L_ERROR, "Failed to create JSON string object");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+}
+
+int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len)
+{
+    if (!a_json || !a_key || !a_value) {
+        log_it(L_ERROR, "JSON object, key or value is NULL");
+        return -1;
+    }
+    
+    struct json_object *l_string = json_object_new_string_len(a_value, a_len);
     if (!l_string) {
         log_it(L_ERROR, "Failed to create JSON string object");
         return -1;

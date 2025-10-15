@@ -6,38 +6,14 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB JSON_RPC_HEADERS include/*.h)
 file(GLOB JSON_RPC_SRCS src/*.c)
 
+# Use universal DAP library macro
+dap_add_library(${PROJECT_NAME} ${JSON_RPC_SRCS} HEADERS ${JSON_RPC_HEADERS})
 
+# Link with required modules - no dap_client/dap_stream dependencies to break circular dependency
+target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_net_common dap_http_server dap_enc_server dap_client_http)
 
-
-add_library(${PROJECT_NAME} STATIC ${JSON_RPC_HEADERS} ${JSON_RPC_SRCS})
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-# Platform-specific include paths
-if(WIN32)
-    set(PLATFORM_SPECIFIC_INCLUDES ../../../core/src/win32/)
-else()
-    set(PLATFORM_SPECIFIC_INCLUDES ../../../core/src/unix/)
-endif()
-
-target_include_directories(${PROJECT_NAME} PUBLIC
-    ../../../core/include/
-    ${PLATFORM_SPECIFIC_INCLUDES}
-    ../../../crypto/include/
-    ../../../io/include/
-    ../http_server/include/
-    ../http_server/http_client/include/
-    ../enc_server/include/
-    ../cli_server/include/
-    ../../include/
-    ../../client/include/
-    ../../stream/stream/include/
-    ../../stream/session/include/
-    ../../stream/ch/include/
-    ../../../../3rdparty/uthash/src/
-    ../../../../3rdparty/
-)
-
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${JSON_RPC_HEADERS}")

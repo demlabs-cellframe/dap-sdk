@@ -33,7 +33,7 @@
 #include "dap_list.h"
 #include "dap_sign.h"
 #include "dap_guuid.h"
-#include "dap_stream_cluster.h"
+#include "dap_net_common.h"  // For dap_stream_node_addr
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */

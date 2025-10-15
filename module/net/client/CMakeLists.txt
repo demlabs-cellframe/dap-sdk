@@ -8,7 +8,7 @@ file(GLOB DAP_CLIENT_HEADERS FILES include/*.h)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${DAP_CLIENT_SOURCES} HEADERS ${DAP_CLIENT_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_enc_server dap_stream dap_session dap_json-c)
+target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_enc_server dap_stream dap_session dap_json-c dap_net_common dap_client_http)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 if(UNIX AND NOT ANDROID AND NOT DARWIN)
