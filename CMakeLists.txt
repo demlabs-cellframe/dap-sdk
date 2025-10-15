@@ -47,6 +47,7 @@ include(cmake/DapLibrary.cmake)
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
+option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
 
 # Global DB drivers - MDBX is default for all platforms
 option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
@@ -175,59 +176,67 @@ message("[+] =========================================")
 # =========================================
 # PACKAGE COMPONENTS SETUP
 # =========================================
-# Setup component-based packaging (runtime/dev/doc split)
-setup_package_components(
-    PACKAGE_BASE_NAME "dap-sdk"
-    VERSION "${DAP_SDK_NATIVE_VERSION}"
-    DESCRIPTION "DAP SDK - Distributed Application Platform Software Development Kit"
-    VENDOR "Demlabs"
-    CONTACT "support@demlabs.net"
-    DEBUG_SUFFIX "${DAP_DEBUG_SUFFIX}"
-    OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
-)
+# Only setup installation when INSTALL_DAP_SDK is enabled
+# Can be disabled by parent project (e.g., cellframe-node) by setting INSTALL_DAP_SDK to OFF
+if(INSTALL_DAP_SDK)
+    message(STATUS "[DAP-SDK] Installation enabled")
+    
+    # Setup component-based packaging (runtime/dev/doc split)
+    setup_package_components(
+        PACKAGE_BASE_NAME "dap-sdk"
+        VERSION "${DAP_SDK_NATIVE_VERSION}"
+        DESCRIPTION "DAP SDK - Distributed Application Platform Software Development Kit"
+        VENDOR "Demlabs"
+        CONTACT "support@demlabs.net"
+        DEBUG_SUFFIX "${DAP_DEBUG_SUFFIX}"
+        OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
+    )
 
-# Register 3rd party headers required by public API
-register_3rdparty_headers(
-    DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
-    DESTINATION "uthash"
-)
+    # Register 3rd party headers required by public API
+    register_3rdparty_headers(
+        DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
+        DESTINATION "uthash"
+    )
 
-register_3rdparty_headers(
-    FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
-)
+    register_3rdparty_headers(
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
+    )
 
-# Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
+    # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
 
-# Finalize and install all components
-finalize_package_components(
-    LIBRARY_TARGET "dap-sdk"
-    INCLUDE_PREFIX "dap-sdk"
-    PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
-    README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-    EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
-)
+    # Finalize and install all components
+    finalize_package_components(
+        LIBRARY_TARGET "dap-sdk"
+        INCLUDE_PREFIX "dap-sdk"
+        PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
+        README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+        EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
+    )
 
-message(STATUS "[Install] Component-based installation configured")
-message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
-message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
-message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
+    message(STATUS "[Install] Component-based installation configured")
+    message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
+    message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
+    message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
 
-# =========================================
-# CPACK CONFIGURATION (handled by PackageComponents.cmake)
-# =========================================
-# All CPack configuration is now handled by the universal packaging system
-# in cmake/PackageComponents.cmake which was included earlier
+    # =========================================
+    # CPACK CONFIGURATION (handled by PackageComponents.cmake)
+    # =========================================
+    # All CPack configuration is now handled by the universal packaging system
+    # in cmake/PackageComponents.cmake which was included earlier
 
-# Set final package name explicitly before CPack generation
-set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
-set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
-set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
+    # Set final package name explicitly before CPack generation
+    set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
+    set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
+    set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
 
-# Enable component-based packaging
-set(CPACK_COMPONENT_INSTALL ON)
+    # Enable component-based packaging
+    set(CPACK_COMPONENT_INSTALL ON)
 
-message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
-message(STATUS "[CPack] Component-based packaging enabled")
-message(STATUS "[CPack] Package generation configured")
+    message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
+    message(STATUS "[CPack] Component-based packaging enabled")
+    message(STATUS "[CPack] Package generation configured")
 
-include(CPack)
+    include(CPack)
+else()
+    message(STATUS "[DAP-SDK] Installation disabled (build-time dependency only)")
+endif()
