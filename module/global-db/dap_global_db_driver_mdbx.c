@@ -644,8 +644,6 @@ ret:
         mdbx_cursor_close(l_cursor);
     if (!s_txn)
         mdbx_txn_commit(l_txn);
-
-    pthread_rwlock_unlock(&s_db_ctxs_rwlock);
     return l_obj;
 }
 
@@ -816,7 +814,6 @@ cleanup:
     DAP_DELETE(l_db_ctx);
     if (!s_txn)
         mdbx_txn_commit(l_txn);
-    pthread_rwlock_unlock(&s_db_ctxs_rwlock);
     return l_ret;
 }
 
@@ -928,7 +925,6 @@ safe_ret:
         *a_count_out = l_count_current;
     if (a_keys_only_read && l_obj_arr)
         ((dap_global_db_hash_pkt_t *)l_obj_arr)->hashes_count = l_count_current;
-    pthread_rwlock_unlock(&s_db_ctxs_rwlock);
     return l_obj_arr;
 }
 
@@ -946,7 +942,6 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     MDBX_txn *l_txn = s_txn;
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
         log_it(L_ERROR, "mdbx_txn: (%d) %s", rc, mdbx_strerror(rc));
         return 0;
     }
@@ -970,7 +965,6 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
         if (!s_txn)
             mdbx_txn_commit(l_txn);
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
         return 0;
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
@@ -979,7 +973,6 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
         mdbx_cursor_close(l_cursor);
         if (!s_txn)
             mdbx_txn_commit(l_txn);
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
         return 0;
@@ -1107,7 +1100,6 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
                 DAP_DELETE(l_record);
                 DAP_DELETE(l_db_ctx);
                 log_it(L_ERROR, "Global DB store object sign corrupted");
-                pthread_rwlock_unlock(&s_db_ctxs_rwlock);
                 return MDBX_EINVAL;
             }
             memcpy(l_record->key_n_value_n_sign + l_key_len + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
@@ -1125,7 +1117,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             l_key.iov_base = &l_driver_key;
             l_key.iov_len = sizeof(l_driver_key);
             rc = MDBX_SUCCESS;
-        } else
+        } else if (a_store_obj->key)
             rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
         else {
             if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, false)))
@@ -1150,18 +1142,15 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
         if (s_txn) {
             log_it(L_ERROR, "Can't drop tables with static MDBX transaction, table %s will be unchanged", a_store_obj->group);
             return DAP_GLOBAL_DB_RC_ERROR;
-        }
-        pthread_rwlock_wrlock(&s_db_ctxs_rwlock);
-        dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group);
-        if (!l_db_ctx) {
-            pthread_rwlock_unlock(&s_db_ctxs_rwlock);
-            return MDBX_SUCCESS;
-        }
+        }   
         MDBX_txn *l_txn;
         int rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn);
         if (rc != MDBX_SUCCESS) {
-            pthread_rwlock_unlock(&s_db_ctxs_rwlock);
             return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;
+        }
+        dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, l_txn);
+        if (!l_db_ctx) {
+            return MDBX_SUCCESS;
         }
         rc = mdbx_drop(l_txn, l_db_ctx->dbi, false);
         if (rc != MDBX_SUCCESS) {
@@ -1169,7 +1158,6 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
             rc = mdbx_txn_abort(l_txn);
             if (rc != MDBX_SUCCESS)
                 log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
-            pthread_rwlock_unlock(&s_db_ctxs_rwlock);
             return DAP_GLOBAL_DB_RC_ERROR;
         }
         struct iovec l_data_iov, l_key_iov;
@@ -1181,18 +1169,14 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
             rc = mdbx_txn_abort(l_txn);
             if (rc != MDBX_SUCCESS)
                 log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
-            pthread_rwlock_unlock(&s_db_ctxs_rwlock);
             return DAP_GLOBAL_DB_RC_ERROR;
         }
         rc = mdbx_txn_commit(l_txn);
         if (rc != MDBX_SUCCESS) {
             log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
-            pthread_rwlock_unlock(&s_db_ctxs_rwlock);
             return DAP_GLOBAL_DB_RC_ERROR;
         }
-        HASH_DEL(s_db_ctxs, l_db_ctx);
         DAP_DELETE(l_db_ctx);
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
         return DAP_GLOBAL_DB_RC_SUCCESS;
     }
 
@@ -1338,7 +1322,6 @@ safe_ret:
         mdbx_txn_commit(l_txn);
     if (a_count_out)
         *a_count_out = l_count_current;
-    pthread_rwlock_unlock(&s_db_ctxs_rwlock);
     return l_obj_arr;
 }
 
