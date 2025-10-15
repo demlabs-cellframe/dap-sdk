@@ -267,43 +267,35 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
 {
     json_object *l_jobj_ret = json_object_new_object();
+    if (!l_jobj_ret) return dap_json_rpc_allocation_put(l_jobj_ret);
     json_object *l_jobj_downlinks = json_object_new_array();
+    if (!l_jobj_downlinks) return dap_json_rpc_allocation_put(l_jobj_ret);
+    json_object_object_add(l_jobj_ret, "downlinks", l_jobj_downlinks);
     json_object *l_jobj_uplinks = json_object_new_array();
-    if (!l_jobj_ret || !l_jobj_downlinks || !l_jobj_uplinks){
-        json_object_put(l_jobj_ret);
-        json_object_put(l_jobj_uplinks);
-        json_object_put(l_jobj_downlinks);
-        return NULL;
-    }
+    if (!l_jobj_uplinks) return dap_json_rpc_allocation_put(l_jobj_ret);
+    json_object_object_add(l_jobj_ret, "uplinks", l_jobj_uplinks);
     size_t l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
             json_object *l_jobj_info = json_object_new_object();
-            json_object *l_jobj_node_addr = json_object_new_string( dap_stream_node_addr_to_str_static(l_link_info->node_addr) );
-            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
-            json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
-            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
-            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
-            if (!l_jobj_info || !l_jobj_node_addr || !l_jobj_ip || !l_jobj_port || !l_jobj_channel || !l_jobj_total_packets_sent) {
-                json_object_put(l_jobj_info);
-                json_object_put(l_jobj_node_addr);
-                json_object_put(l_jobj_ip);
-                json_object_put(l_jobj_port);
-                json_object_put(l_jobj_channel);
-                json_object_put(l_jobj_total_packets_sent);
-                json_object_put(l_jobj_ret);
-                json_object_put(l_jobj_downlinks);
-                json_object_put(l_jobj_uplinks);
-                return NULL;
-            }
-            json_object_object_add(l_jobj_info, "addr", l_jobj_node_addr);
-            json_object_object_add(l_jobj_info, "ip", l_jobj_ip);
-            json_object_object_add(l_jobj_info, "port", l_jobj_port);
-            json_object_object_add(l_jobj_info, "channel", l_jobj_channel);
-            json_object_object_add(l_jobj_info, "total_packets_sent", l_jobj_total_packets_sent);
             json_object_array_add( l_link_info->is_uplink ? l_jobj_uplinks : l_jobj_downlinks, l_jobj_info );
+            json_object *l_jobj_node_addr = json_object_new_string( dap_stream_node_addr_to_str_static(l_link_info->node_addr) );
+            if (!l_jobj_node_addr) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "addr", l_jobj_node_addr);
+            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
+            if (!l_jobj_ip) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "ip", l_jobj_ip);
+            json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
+            if (!l_jobj_port) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "port", l_jobj_port);
+            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
+            if (!l_jobj_channel) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "channel", l_jobj_channel);
+            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
+            if (!l_jobj_total_packets_sent) return dap_json_rpc_allocation_put(l_jobj_ret);            
+            json_object_object_add(l_jobj_info, "total_packets_sent", l_jobj_total_packets_sent);
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
