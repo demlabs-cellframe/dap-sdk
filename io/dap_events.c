@@ -108,6 +108,7 @@ pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 bool g_debug_reactor = false;
 static int s_workers_init = 0;
 static uint32_t s_threads_count = 1;
+static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
 
 /**
@@ -320,7 +321,11 @@ int dap_events_start()
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         goto lb_err;
     }
-
+    if (s_threads_id) {
+        log_it(L_ERROR, "Threads id already initialized");
+        goto lb_err;
+    }
+    s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     for( uint32_t i = 0; i < s_threads_count; i++) {
         dap_worker_t * l_worker = DAP_NEW_Z(dap_worker_t);
         if (!l_worker) {
@@ -338,6 +343,7 @@ int dap_events_start()
         l_ret = dap_context_run(l_worker->context, i, DAP_CONTEXT_POLICY_FIFO, DAP_CONTEXT_PRIORITY_HIGH,
                                 DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
                                 dap_worker_context_callback_stopped, l_worker);
+        s_threads_id[i] = l_worker->context->thread_id;
         if(l_ret != 0){
             log_it(L_CRITICAL, "Can't run worker #%u",i);
             goto lb_err;
@@ -396,6 +402,7 @@ int dap_events_start()
     return 0;
 lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
+    DAP_DEL_Z(s_threads_id);
     for( uint32_t j = 0; j < s_threads_count; j++) {
         if (s_workers[j]) {
 #ifndef DAP_EVENTS_CAPS_IOCP
@@ -441,18 +448,10 @@ pthread_t       l_tid;
     pthread_create(&l_tid, &l_tattr, s_th_memstat_show, NULL);
 
 #endif
-
-    pthread_t *l_thread_id = NULL;
-    if (s_threads_count) {
-        l_thread_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
-    }
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        l_thread_id[i] = s_workers[i]->context->thread_id;
+        pthread_join(s_threads_id[i] , NULL );
     }
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        pthread_join(l_thread_id[i] , NULL );
-    }
-    DAP_DELETE(l_thread_id);
+    DAP_DEL_Z(s_threads_id);
     return 0;
 }
 
