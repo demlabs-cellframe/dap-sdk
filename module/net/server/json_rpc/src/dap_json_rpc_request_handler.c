@@ -1,5 +1,4 @@
 #include "dap_json_rpc_request_handler.h"
-#include "dap_cli_server.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_json_rpc.h"
@@ -63,7 +62,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         DAP_DEL_MULTY(l_sign);
         return l_no_rights_res_str;
     }
-    char* l_response = dap_cli_cmd_exec(l_data_str);
+    char* l_response = dap_json_rpc_process_request(l_data_str, "/exec_cmd");
     dap_json_rpc_http_request_free(l_http_request);
     DAP_DEL_MULTY(l_data_str, l_sign);
     return l_response;

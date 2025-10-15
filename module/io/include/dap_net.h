@@ -42,6 +42,7 @@
 #endif
 
 #include "dap_events_socket.h"
+#include "dap_net_common.h"
 
 #define DAP_CFG_PARAM_LISTEN_ADDRS      "listen-address"
 #define DAP_CFG_PARAM_SOCK_PATH         "listen-path"

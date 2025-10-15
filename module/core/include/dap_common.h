@@ -287,31 +287,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
 
-/**
-  * @struct Node address
-  */
-typedef union dap_stream_node_addr {
-    uint64_t uint64;
-    uint16_t words[sizeof(uint64_t)/2];
-    uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
-} DAP_ALIGN_PACKED dap_stream_node_addr_t;
 
 #define DAP_STRINGIFY_1(s) #s
 #define DAP_STRINGIFY(s) DAP_STRINGIFY_1(s)
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
-#define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
-#define NODE_ADDR_FPS_ARGS(a)  &a->words[2],&a->words[3],&a->words[0],&a->words[1]
-#define NODE_ADDR_FP_ARGS_S(a)  a.words[2],a.words[3],a.words[0],a.words[1]
-#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[2],&a.words[3],&a.words[0],&a.words[1]
-#else
-#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
-#define NODE_ADDR_FP_ARGS(a)  (a)->words[3],(a)->words[2],(a)->words[1],(a)->words[0]
-#define NODE_ADDR_FPS_ARGS(a)  &(a)->words[3],&(a)->words[2],&(a)->words[1],&(a)->words[0]
-#define NODE_ADDR_FP_ARGS_S(a)  (a).words[3],(a).words[2],(a).words[1],(a).words[0]
-#define NODE_ADDR_FPS_ARGS_S(a)  &(a).words[3],&(a).words[2],&(a).words[1],&(a).words[0]
-#endif
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
@@ -1155,17 +1133,8 @@ int exec_silent(const char *a_cmd);
 }
 #endif
 
-int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str);
-
-
-DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
-
-#define DAP_NODE_ADDR_LEN 23
-typedef union dap_node_addr_str {
-    const char s[DAP_NODE_ADDR_LEN];
-} dap_node_addr_str_t;
-dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address);
-#define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
+// Node address types and functions moved to module/net/common/include/dap_net_common.h
+// Use #include "dap_net_common.h" if you need dap_stream_node_addr_t and related functions
 
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
 

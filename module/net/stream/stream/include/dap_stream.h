@@ -36,6 +36,7 @@
 #include "dap_pkey.h"
 #include "dap_strfuncs.h"
 #include "dap_enc_ks.h"
+#include "dap_net_common.h"
 
 #define STREAM_KEEPALIVE_HEARTBEAT  3   // How often send keeplive messages (seconds)
 #define STREAM_KEEPALIVE_DELAY      10  // Minimum seconds to wait before send 1st keepalive message (maximum is 2*DELAY) after stream reading last activity

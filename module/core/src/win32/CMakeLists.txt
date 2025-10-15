@@ -5,6 +5,10 @@ project (dap_core_win32 C)
 file(GLOB CORE_SRCS *.c)
 file(GLOB CORE_HEADERS *.h)
 
+# Add strptime implementation for Windows (POSIX function not available in MinGW)
+# This ensures the symbol is always available when linking with dap-sdk on Windows
+list(APPEND CORE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/strptime.c")
+
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)

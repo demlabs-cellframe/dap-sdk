@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include "uthash.h"
 #include "dap_common.h"
+#include "dap_net_common.h"
 #include "dap_enc_key.h"
 #include "stdbool.h"
 

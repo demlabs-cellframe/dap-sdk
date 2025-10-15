@@ -28,7 +28,6 @@
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_string.h"
-#include "dap_client.h"
 
 #define LOG_TAG "dap_chain_node_dns_server"
 #define BUF_SIZE 1024

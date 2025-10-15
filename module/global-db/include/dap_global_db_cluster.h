@@ -28,7 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream.h"
 #include "dap_stream_cluster.h"
 #include "dap_global_db.h"
-#include "dap_link_manager.h"
+#include "dap_net_common.h"  // Contains forward declaration for dap_link_manager_t
 
 #define DAP_GLOBAL_DB_CLUSTER_GLOBAL    DAP_STREAM_CLUSTER_GLOBAL ".*"      // This groups mask is for globally broadcasting grops
 #define DAP_GLOBAL_DB_CLUSTER_LOCAL     DAP_STREAM_CLUSTER_LOCAL  ".*"      // This groups mask is for not broadcasting groups

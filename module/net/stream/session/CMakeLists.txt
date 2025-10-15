@@ -7,7 +7,7 @@ file(GLOB SESSION_HDRS include/*.h)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${SESSION_SRCS} HEADERS ${SESSION_HDRS})
 
-target_link_libraries(dap_session dap_core dap_crypto)
+target_link_libraries(dap_session dap_core dap_crypto dap_net_common)
 
 include_directories(include/)
 target_include_directories(dap_session INTERFACE . include/)

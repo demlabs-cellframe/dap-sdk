@@ -25,8 +25,10 @@
 #pragma once
 #include "dap_json_rpc_response_handler.h"
 #include "dap_json_rpc_params.h"
-#include "dap_client_http.h"
-#include "dap_client_pvt.h"
+
+// Forward declarations to break circular dependencies
+typedef struct dap_client_http dap_client_http_t;
+typedef struct dap_client_pvt dap_client_pvt_t;
 
 #ifdef __cplusplus
 extern "C"{
@@ -84,10 +86,16 @@ char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_reques
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
 char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size, const char *a_cert_path);
 
-char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
-                                char ** a_path, size_t * a_enc_request_size, char ** a_custom_header);
+// Encryption functions - use enc_server key storage
+char * dap_json_rpc_enc_request(const char *a_key_id, char *a_request_data_str, size_t a_request_data_size,
+                                const char *a_channels, char **a_path, size_t *a_enc_request_size, 
+                                char **a_custom_header);
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, dap_json_t** a_response, const char *a_cert_path);
+// Send JSON-RPC request with optional encryption (worker selected automatically)
+int dap_json_rpc_request_send(const char *a_uplink_addr, uint16_t a_uplink_port,
+                              const char *a_key_id, const char *a_channels,
+                              dap_json_rpc_request_t *a_request, dap_json_t **a_response, 
+                              const char *a_cert_path);
 
 #ifdef __cplusplus
 }

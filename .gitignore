@@ -1,5 +1,5 @@
 # Prerequisites
-build/*
+build*/*
 debug/*
 crypto/XKCP/Makefile
 .devcontainer/*
