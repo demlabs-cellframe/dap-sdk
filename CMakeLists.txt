@@ -6,6 +6,10 @@ add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
 
+# Define SDK root directory for use in submodules
+# Works both when dap-sdk is standalone and when it's a submodule
+set(DAP_SDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Root directory of DAP SDK")
+
 # Build type detection
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
