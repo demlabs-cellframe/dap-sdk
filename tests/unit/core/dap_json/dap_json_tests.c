@@ -500,6 +500,199 @@ static bool s_test_error_conditions(void) {
 }
 
 /**
+ * @brief Test complex nested structures (Phase 3.5)
+ */
+static bool s_test_nested_structures(void) {
+    log_it(L_DEBUG, "Testing nested structures");
+    
+    // Create complex nested structure
+    dap_json_t *l_root = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_root, "Root object creation");
+    
+    // Add nested object
+    dap_json_t *l_user = dap_json_object_new();
+    dap_json_object_add_string(l_user, "name", "Alice");
+    dap_json_object_add_int(l_user, "age", 30);
+    
+    // Add nested array
+    dap_json_t *l_tags = dap_json_array_new();
+    dap_json_t *l_tag1 = dap_json_object_new_string("developer");
+    dap_json_t *l_tag2 = dap_json_object_new_string("blockchain");
+    dap_json_array_add(l_tags, l_tag1);
+    dap_json_array_add(l_tags, l_tag2);
+    
+    // Add to user object
+    dap_json_object_add_array(l_user, "tags", l_tags);
+    
+    // Add user to root
+    dap_json_object_add_object(l_root, "user", l_user);
+    
+    // Verify structure by retrieving
+    dap_json_t *l_retrieved_user = dap_json_object_get_object(l_root, "user");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved_user, "Retrieved nested object");
+    
+    const char *l_name = dap_json_object_get_string(l_retrieved_user, "name");
+    DAP_TEST_ASSERT_STRING_EQUAL("Alice", l_name, "Nested string value");
+    
+    dap_json_t *l_retrieved_tags = dap_json_object_get_array(l_retrieved_user, "tags");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved_tags, "Retrieved nested array");
+    
+    size_t l_tags_len = dap_json_array_length(l_retrieved_tags);
+    DAP_TEST_ASSERT_EQUAL(2, l_tags_len, "Nested array length");
+    
+    // Cleanup
+    dap_json_object_free(l_retrieved_tags);
+    dap_json_object_free(l_retrieved_user);
+    dap_json_object_free(l_root);
+    
+    log_it(L_DEBUG, "Nested structures test passed");
+    return true;
+}
+
+/**
+ * @brief Test JSON parsing edge cases (Phase 3.5)
+ */
+static bool s_test_parsing_edge_cases(void) {
+    log_it(L_DEBUG, "Testing parsing edge cases");
+    
+    // Test empty object parsing
+    dap_json_t *l_empty = dap_json_parse_string("{}");
+    DAP_TEST_ASSERT_NOT_NULL(l_empty, "Parse empty object");
+    DAP_TEST_ASSERT(dap_json_is_object(l_empty), "Empty object is object");
+    dap_json_object_free(l_empty);
+    
+    // Test empty array parsing
+    dap_json_t *l_empty_arr = dap_json_parse_string("[]");
+    DAP_TEST_ASSERT_NOT_NULL(l_empty_arr, "Parse empty array");
+    DAP_TEST_ASSERT(dap_json_is_array(l_empty_arr), "Empty array is array");
+    dap_json_object_free(l_empty_arr);
+    
+    // Test array with various types
+    const char *l_complex_json = "[1, \"test\", true, 3.14, null]";
+    dap_json_t *l_complex_arr = dap_json_parse_string(l_complex_json);
+    DAP_TEST_ASSERT_NOT_NULL(l_complex_arr, "Parse complex array");
+    
+    size_t l_len = dap_json_array_length(l_complex_arr);
+    DAP_TEST_ASSERT_EQUAL(5, l_len, "Complex array length");
+    
+    dap_json_object_free(l_complex_arr);
+    
+    // Test invalid JSON
+    dap_json_t *l_invalid = dap_json_parse_string("{invalid}");
+    DAP_TEST_ASSERT(l_invalid == NULL, "Invalid JSON returns NULL");
+    
+    // Test NULL string
+    dap_json_t *l_null_str = dap_json_parse_string(NULL);
+    DAP_TEST_ASSERT(l_null_str == NULL, "NULL string returns NULL");
+    
+    log_it(L_DEBUG, "Parsing edge cases test passed");
+    return true;
+}
+
+/**
+ * @brief Test serialization edge cases (Phase 3.5)
+ */
+static bool s_test_serialization_edge_cases(void) {
+    log_it(L_DEBUG, "Testing serialization edge cases");
+    
+    // Test empty object serialization
+    dap_json_t *l_empty = dap_json_object_new();
+    char *l_json_str = dap_json_to_string(l_empty);
+    DAP_TEST_ASSERT_NOT_NULL(l_json_str, "Empty object serialization");
+    // Note: JSON-C may format empty object as "{}" or "{ }", both are valid
+    DAP_TEST_ASSERT(strlen(l_json_str) >= 2, "Empty object JSON has content");
+    DAP_DELETE(l_json_str);
+    dap_json_object_free(l_empty);
+    
+    // Test object with special characters
+    dap_json_t *l_special = dap_json_object_new();
+    dap_json_object_add_string(l_special, "text", "Hello\nWorld\t!");
+    char *l_special_json = dap_json_to_string(l_special);
+    DAP_TEST_ASSERT_NOT_NULL(l_special_json, "Special chars serialization");
+    DAP_DELETE(l_special_json);
+    dap_json_object_free(l_special);
+    
+    // Test NULL serialization
+    char *l_null_json = dap_json_to_string(NULL);
+    DAP_TEST_ASSERT(l_null_json == NULL, "NULL object serialization");
+    
+    log_it(L_DEBUG, "Serialization edge cases test passed");
+    return true;
+}
+
+/**
+ * @brief Test with large data volumes (Phase 3.5)
+ */
+static bool s_test_large_data(void) {
+    log_it(L_DEBUG, "Testing large data volumes");
+    
+    // Create array with many elements
+    dap_json_t *l_large_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_large_array, "Large array creation");
+    
+    const size_t ITEM_COUNT = 1000;
+    for (size_t i = 0; i < ITEM_COUNT; i++) {
+        dap_json_t *l_item = dap_json_object_new_int((int)i);
+        dap_json_array_add(l_large_array, l_item);
+    }
+    
+    size_t l_len = dap_json_array_length(l_large_array);
+    DAP_TEST_ASSERT_EQUAL(ITEM_COUNT, l_len, "Large array length");
+    
+    // Retrieve and verify some items
+    dap_json_t *l_first = dap_json_array_get_idx(l_large_array, 0);
+    DAP_TEST_ASSERT_NOT_NULL(l_first, "First item");
+    dap_json_object_free(l_first);
+    
+    dap_json_t *l_last = dap_json_array_get_idx(l_large_array, ITEM_COUNT - 1);
+    DAP_TEST_ASSERT_NOT_NULL(l_last, "Last item");
+    dap_json_object_free(l_last);
+    
+    dap_json_object_free(l_large_array);
+    
+    log_it(L_DEBUG, "Large data volumes test passed");
+    return true;
+}
+
+/**
+ * @brief Test deeply nested structures (Phase 3.5)
+ */
+static bool s_test_deep_nesting(void) {
+    log_it(L_DEBUG, "Testing deeply nested structures");
+    
+    // Create deeply nested structure
+    dap_json_t *l_root = dap_json_object_new();
+    dap_json_t *l_level1 = dap_json_object_new();
+    dap_json_t *l_level2 = dap_json_object_new();
+    dap_json_t *l_level3 = dap_json_object_new();
+    
+    // Add innermost value
+    dap_json_object_add_string(l_level3, "deep_value", "found!");
+    
+    // Nest the objects
+    dap_json_object_add_object(l_level2, "level3", l_level3);
+    dap_json_object_add_object(l_level1, "level2", l_level2);
+    dap_json_object_add_object(l_root, "level1", l_level1);
+    
+    // Serialize and verify
+    char *l_json_str = dap_json_to_string(l_root);
+    DAP_TEST_ASSERT_NOT_NULL(l_json_str, "Deep nesting serialization");
+    DAP_DELETE(l_json_str);
+    
+    // Parse back and verify
+    l_json_str = dap_json_to_string(l_root);
+    dap_json_t *l_parsed = dap_json_parse_string(l_json_str);
+    DAP_TEST_ASSERT_NOT_NULL(l_parsed, "Deep nesting parse back");
+    
+    DAP_DELETE(l_json_str);
+    dap_json_object_free(l_parsed);
+    dap_json_object_free(l_root);
+    
+    log_it(L_DEBUG, "Deeply nested structures test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(void) {
@@ -534,6 +727,14 @@ int main(void) {
     l_all_passed &= s_test_type_checking();
     l_all_passed &= s_test_object_key_operations();
     l_all_passed &= s_test_error_conditions();
+    
+    // Phase 3.5 advanced tests: complex structures and edge cases
+    log_it(L_INFO, "Running Phase 3.5 advanced tests...");
+    l_all_passed &= s_test_nested_structures();
+    l_all_passed &= s_test_parsing_edge_cases();
+    l_all_passed &= s_test_serialization_edge_cases();
+    l_all_passed &= s_test_large_data();
+    l_all_passed &= s_test_deep_nesting();
     
     dap_test_sdk_cleanup();
     
