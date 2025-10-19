@@ -170,7 +170,25 @@ function(create_final_shared_library)
     endif()
     
     # Set include directories for consumers
+    # For BUILD: collect all module include directories
+    # For INSTALL: use installed include directory
+    set(ALL_BUILD_INCLUDES "")
+    foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+        if(TARGET ${MODULE})
+            get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+            if(MODULE_INCLUDES)
+                list(APPEND ALL_BUILD_INCLUDES ${MODULE_INCLUDES})
+            endif()
+        endif()
+    endforeach()
+    
+    # Remove duplicates
+    if(ALL_BUILD_INCLUDES)
+        list(REMOVE_DUPLICATES ALL_BUILD_INCLUDES)
+    endif()
+    
     target_include_directories(${TARGET_NAME} INTERFACE
+        $<BUILD_INTERFACE:${ALL_BUILD_INCLUDES}>
         $<INSTALL_INTERFACE:include/${FINAL_LIB_LIBRARY_NAME}>
     )
     
