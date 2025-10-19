@@ -46,6 +46,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg);
 void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
 bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey);
 bool dap_json_rpc_exec_cmd_inited();
+
 dap_http_client_callback_error_t * dap_json_rpc_error_callback();
 
 // Method handler callback type - handles specific RPC method
@@ -68,6 +69,9 @@ void dap_json_rpc_unregister_url_handler(const char *a_url);
 
 // JSON-RPC request processing (called internally by HTTP handlers)
 char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url);
+
+bool dap_json_rpc_get_int64_uint64(dap_json_t *a_json, const char *a_key, void *a_out, bool a_is_uint64);
+const char* dap_json_rpc_get_text(dap_json_t *a_json, const char *a_key);
 
 #ifdef __cplusplus
 }

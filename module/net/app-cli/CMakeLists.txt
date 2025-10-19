@@ -7,8 +7,12 @@ file(GLOB DAP_APP_CLI_HEADERS include/*.h)
 
 add_library(${PROJECT_NAME} STATIC ${DAP_APP_CLI_SRCS} ${DAP_APP_CLI_HEADERS} )
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_cli_server dap_json_rpc m)
-target_include_directories(${PROJECT_NAME} PUBLIC include/ )
+# Link dependencies
+# Note: dap_json_rpc depends on dap_enc_server and dap_client_http
+# dap_enc_server depends on dap_http_server
+# For STATIC builds these must be explicitly listed here
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_cli_server dap_json_rpc dap_enc_server dap_client_http dap_http_server m)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_APP_CLI_HEADERS}")

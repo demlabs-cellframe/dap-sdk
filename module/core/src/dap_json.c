@@ -209,6 +209,22 @@ int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
 }
 
+int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len)
+{
+    if (!a_json || !a_key || !a_value) {
+        log_it(L_ERROR, "JSON object, key or value is NULL");
+        return -1;
+    }
+    
+    struct json_object *l_string = json_object_new_string_len(a_value, a_len);
+    if (!l_string) {
+        log_it(L_ERROR, "Failed to create JSON string object");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+}
+
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
 {
     if (!a_json || !a_key) {

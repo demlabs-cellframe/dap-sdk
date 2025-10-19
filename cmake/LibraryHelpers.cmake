@@ -80,7 +80,11 @@ function(create_final_shared_library)
     get_library_filename(LIB_FILENAME ${FINAL_LIB_LIBRARY_NAME})
     
     message(STATUS "========================================")
-    message(STATUS "[SDK] Creating final shared library: ${FINAL_LIB_LIBRARY_NAME}")
+    if(BUILD_SHARED)
+        message(STATUS "[SDK] Creating final SHARED library: ${FINAL_LIB_LIBRARY_NAME}")
+    else()
+        message(STATUS "[SDK] Creating final STATIC library: ${FINAL_LIB_LIBRARY_NAME}")
+    endif()
     message(STATUS "[SDK] OBJECT modules: ${${FINAL_LIB_MODULE_LIST_VAR}}")
     if(FINAL_LIB_ADDITIONAL_SOURCES)
         message(STATUS "[SDK] Additional sources: ${FINAL_LIB_ADDITIONAL_SOURCES}")
@@ -97,12 +101,22 @@ function(create_final_shared_library)
         endif()
     endforeach()
     
-    # Create final shared library
+    # Create final library (SHARED or STATIC based on BUILD_SHARED option)
     # CMake doesn't allow hyphens in target names, so use underscores for target
     # but set OUTPUT_NAME to the desired name with hyphens
     string(REPLACE "-" "_" TARGET_NAME "${FINAL_LIB_LIBRARY_NAME}")
-    message(STATUS "[LibraryHelpers] Creating target: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
-    add_library(${TARGET_NAME} SHARED ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
+    
+    # Determine library type
+    if(BUILD_SHARED)
+        set(LIB_TYPE "SHARED")
+        message(STATUS "[LibraryHelpers] Creating SHARED library target: ${TARGET_NAME}")
+    else()
+        set(LIB_TYPE "STATIC")
+        message(STATUS "[LibraryHelpers] Creating STATIC library target: ${TARGET_NAME}")
+    endif()
+    
+    message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
+    add_library(${TARGET_NAME} ${LIB_TYPE} ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
     
     # If we have additional sources, inherit include directories from all modules
     if(FINAL_LIB_ADDITIONAL_SOURCES)
@@ -119,12 +133,13 @@ function(create_final_shared_library)
     
     # Set versioning and output name
     # OUTPUT_NAME should be without 'lib' prefix and without extension
-    # CMake will automatically add 'lib' prefix for SHARED libraries on Unix
+    # CMake will automatically add 'lib' prefix for libraries on Unix
     set_target_properties(${TARGET_NAME} PROPERTIES
         OUTPUT_NAME "${FINAL_LIB_LIBRARY_NAME}"
     )
     
-    if(DEFINED FINAL_LIB_VERSION)
+    # VERSION and SOVERSION only for SHARED libraries
+    if(BUILD_SHARED AND DEFINED FINAL_LIB_VERSION)
         set_target_properties(${TARGET_NAME} PROPERTIES
             VERSION ${FINAL_LIB_VERSION}
             SOVERSION ${FINAL_LIB_VERSION_MAJOR}
@@ -169,26 +184,42 @@ function(create_final_shared_library)
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
     endif()
     
-    # Set include directories for consumers
-    # For BUILD: collect all module include directories
-    # For INSTALL: use installed include directory
-    set(ALL_BUILD_INCLUDES "")
+    # =========================================
+    # COLLECT INCLUDE DIRECTORIES FROM MODULES
+    # =========================================
+    # Automatically collect all PUBLIC/INTERFACE include directories from OBJECT modules
+    # This allows consumers (like cellframe-node) to see all headers without manual enumeration
+    set(ALL_INCLUDE_DIRS "")
     foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
         if(TARGET ${MODULE})
+            # Get INTERFACE_INCLUDE_DIRECTORIES from OBJECT library
             get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
             if(MODULE_INCLUDES)
-                list(APPEND ALL_BUILD_INCLUDES ${MODULE_INCLUDES})
+                list(APPEND ALL_INCLUDE_DIRS ${MODULE_INCLUDES})
             endif()
         endif()
     endforeach()
     
     # Remove duplicates
-    if(ALL_BUILD_INCLUDES)
-        list(REMOVE_DUPLICATES ALL_BUILD_INCLUDES)
+    if(ALL_INCLUDE_DIRS)
+        list(REMOVE_DUPLICATES ALL_INCLUDE_DIRS)
+        list(LENGTH ALL_INCLUDE_DIRS INCLUDE_COUNT)
+        message(STATUS "[SDK] Collected ${INCLUDE_COUNT} unique include directories from modules")
     endif()
     
+    # Set include directories for consumers
+    # Include directories from modules are already absolute paths (CMAKE_CURRENT_SOURCE_DIR)
+    # so we can add them directly for BUILD interface
+    if(ALL_INCLUDE_DIRS)
+        # Add collected include directories directly (they are absolute paths)
+        target_include_directories(${TARGET_NAME} INTERFACE ${ALL_INCLUDE_DIRS})
+        message(STATUS "[SDK] Exported ${INCLUDE_COUNT} include directories for consumers")
+    else()
+        message(WARNING "[SDK] No include directories collected from modules")
+    endif()
+    
+    # Add install interface
     target_include_directories(${TARGET_NAME} INTERFACE
-        $<BUILD_INTERFACE:${ALL_BUILD_INCLUDES}>
         $<INSTALL_INTERFACE:include/${FINAL_LIB_LIBRARY_NAME}>
     )
     
