@@ -327,6 +327,179 @@ static bool s_test_refcount_array_get_idx(void) {
 }
 
 /**
+ * @brief Test numeric types operations (Phase 3.4)
+ */
+static bool s_test_numeric_types(void) {
+    log_it(L_DEBUG, "Testing numeric types");
+    
+    dap_json_t *l_obj = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_obj, "Object creation");
+    
+    // Test int operations
+    dap_json_object_add_int(l_obj, "int_val", 42);
+    int l_int = dap_json_object_get_int(l_obj, "int_val");
+    DAP_TEST_ASSERT_EQUAL(42, l_int, "Int value");
+    
+    // Test int64 operations
+    dap_json_object_add_int64(l_obj, "int64_val", 9223372036854775807LL);
+    int64_t l_int64 = dap_json_object_get_int64(l_obj, "int64_val");
+    DAP_TEST_ASSERT_EQUAL(9223372036854775807LL, l_int64, "Int64 value");
+    
+    // Test double operations
+    dap_json_object_add_double(l_obj, "double_val", 3.14159);
+    double l_double = dap_json_object_get_double(l_obj, "double_val");
+    DAP_TEST_ASSERT(l_double > 3.14 && l_double < 3.15, "Double value");
+    
+    // Test bool operations
+    dap_json_object_add_bool(l_obj, "bool_true", true);
+    dap_json_object_add_bool(l_obj, "bool_false", false);
+    bool l_bool_t = dap_json_object_get_bool(l_obj, "bool_true");
+    bool l_bool_f = dap_json_object_get_bool(l_obj, "bool_false");
+    DAP_TEST_ASSERT(l_bool_t == true, "Bool true value");
+    DAP_TEST_ASSERT(l_bool_f == false, "Bool false value");
+    
+    dap_json_object_free(l_obj);
+    log_it(L_DEBUG, "Numeric types test passed");
+    return true;
+}
+
+/**
+ * @brief Test array operations (Phase 3.4)
+ */
+static bool s_test_array_operations(void) {
+    log_it(L_DEBUG, "Testing array operations");
+    
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_array, "Array creation");
+    
+    // Test array length with empty array
+    size_t l_len = dap_json_array_length(l_array);
+    DAP_TEST_ASSERT_EQUAL(0, l_len, "Empty array length");
+    
+    // Add multiple items
+    dap_json_t *l_item1 = dap_json_object_new_int(10);
+    dap_json_t *l_item2 = dap_json_object_new_int(20);
+    dap_json_t *l_item3 = dap_json_object_new_int(30);
+    
+    dap_json_array_add(l_array, l_item1);
+    dap_json_array_add(l_array, l_item2);
+    dap_json_array_add(l_array, l_item3);
+    
+    // Check length
+    l_len = dap_json_array_length(l_array);
+    DAP_TEST_ASSERT_EQUAL(3, l_len, "Array length after adds");
+    
+    // Get and verify items
+    dap_json_t *l_retrieved = dap_json_array_get_idx(l_array, 1);
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved, "Get array item");
+    DAP_TEST_ASSERT(dap_json_is_int(l_retrieved), "Item is int");
+    dap_json_object_free(l_retrieved);
+    
+    dap_json_object_free(l_array);
+    log_it(L_DEBUG, "Array operations test passed");
+    return true;
+}
+
+/**
+ * @brief Test type checking functions (Phase 3.4)
+ */
+static bool s_test_type_checking(void) {
+    log_it(L_DEBUG, "Testing type checking");
+    
+    // Test is_object
+    dap_json_t *l_obj = dap_json_object_new();
+    DAP_TEST_ASSERT(dap_json_is_object(l_obj), "is_object check");
+    dap_json_object_free(l_obj);
+    
+    // Test is_array
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT(dap_json_is_array(l_array), "is_array check");
+    dap_json_object_free(l_array);
+    
+    // Test is_string
+    dap_json_t *l_str = dap_json_object_new_string("test");
+    DAP_TEST_ASSERT(dap_json_is_string(l_str), "is_string check");
+    dap_json_object_free(l_str);
+    
+    // Test is_int
+    dap_json_t *l_int = dap_json_object_new_int(42);
+    DAP_TEST_ASSERT(dap_json_is_int(l_int), "is_int check");
+    dap_json_object_free(l_int);
+    
+    // Test is_bool
+    dap_json_t *l_bool = dap_json_object_new_bool(true);
+    DAP_TEST_ASSERT(dap_json_is_bool(l_bool), "is_bool check");
+    dap_json_object_free(l_bool);
+    
+    // Test is_double
+    dap_json_t *l_double = dap_json_object_new_double(3.14);
+    DAP_TEST_ASSERT(dap_json_is_double(l_double), "is_double check");
+    dap_json_object_free(l_double);
+    
+    log_it(L_DEBUG, "Type checking test passed");
+    return true;
+}
+
+/**
+ * @brief Test object key operations (Phase 3.4)
+ */
+static bool s_test_object_key_operations(void) {
+    log_it(L_DEBUG, "Testing object key operations");
+    
+    dap_json_t *l_obj = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_obj, "Object creation");
+    
+    // Add some keys
+    dap_json_object_add_string(l_obj, "key1", "value1");
+    dap_json_object_add_int(l_obj, "key2", 42);
+    
+    // Test has_key (Phase 3.3 convenience function)
+    DAP_TEST_ASSERT(dap_json_object_has_key(l_obj, "key1"), "has_key existing");
+    DAP_TEST_ASSERT(dap_json_object_has_key(l_obj, "key2"), "has_key existing 2");
+    DAP_TEST_ASSERT(!dap_json_object_has_key(l_obj, "nonexistent"), "has_key nonexistent");
+    
+    // Test delete key
+    int ret = dap_json_object_del(l_obj, "key1");
+    DAP_TEST_ASSERT_EQUAL(0, ret, "Delete key");
+    DAP_TEST_ASSERT(!dap_json_object_has_key(l_obj, "key1"), "Key deleted");
+    
+    dap_json_object_free(l_obj);
+    log_it(L_DEBUG, "Object key operations test passed");
+    return true;
+}
+
+/**
+ * @brief Test error conditions and NULL handling (Phase 3.4)
+ */
+static bool s_test_error_conditions(void) {
+    log_it(L_DEBUG, "Testing error conditions");
+    
+    // Test NULL object operations
+    const char *l_str = dap_json_object_get_string(NULL, "key");
+    DAP_TEST_ASSERT(l_str == NULL, "Get from NULL object");
+    
+    // Test NULL key operations
+    dap_json_t *l_obj = dap_json_object_new();
+    int ret = dap_json_object_add_string(l_obj, NULL, "value");
+    DAP_TEST_ASSERT_EQUAL(-1, ret, "Add with NULL key");
+    
+    // Test has_key with NULL
+    bool has = dap_json_object_has_key(NULL, "key");
+    DAP_TEST_ASSERT(!has, "has_key on NULL object");
+    
+    has = dap_json_object_has_key(l_obj, NULL);
+    DAP_TEST_ASSERT(!has, "has_key with NULL key");
+    
+    dap_json_object_free(l_obj);
+    
+    // Test free on NULL (should not crash)
+    dap_json_object_free(NULL);
+    
+    log_it(L_DEBUG, "Error conditions test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(void) {
@@ -353,6 +526,14 @@ int main(void) {
     l_all_passed &= s_test_wrapper_invalidation_array_add();
     l_all_passed &= s_test_refcount_get_object();
     l_all_passed &= s_test_refcount_array_get_idx();
+    
+    // Phase 3.4 comprehensive tests: core functionality
+    log_it(L_INFO, "Running Phase 3.4 comprehensive tests...");
+    l_all_passed &= s_test_numeric_types();
+    l_all_passed &= s_test_array_operations();
+    l_all_passed &= s_test_type_checking();
+    l_all_passed &= s_test_object_key_operations();
+    l_all_passed &= s_test_error_conditions();
     
     dap_test_sdk_cleanup();
     
