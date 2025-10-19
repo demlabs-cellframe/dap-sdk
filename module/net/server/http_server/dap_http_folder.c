@@ -43,7 +43,7 @@
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_folder.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 
 typedef struct dap_http_url_proc_folder {
     char local_path[4096];
@@ -248,7 +248,7 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
     strncpy( cl_ht->reply_reason_phrase, "Not Found", sizeof(cl_ht->reply_reason_phrase)-1 );
   }
   else {
-    cl_ht->reply_status_code = Http_Status_OK;
+    cl_ht->reply_status_code = DAP_HTTP_STATUS_OK;
     strncpy( cl_ht->reply_reason_phrase,"OK",sizeof(cl_ht->reply_reason_phrase)-1 );
 
     const char *mime_type = "application/octet-stream";/* magic_file( up_folder->mime_detector, cl_ht_file->local_path );

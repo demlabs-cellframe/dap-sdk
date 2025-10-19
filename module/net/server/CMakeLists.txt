@@ -16,9 +16,3 @@ endif()
 
 
 
-if(INSTALL_DAP_SDK)
-
-# Use DAP_SDK_ROOT_DIR which works both for standalone and submodule builds
-INSTALL(FILES ${DAP_SDK_ROOT_DIR}/3rdparty/http_status_code.h DESTINATION include/dap/net/)
-
-endif()

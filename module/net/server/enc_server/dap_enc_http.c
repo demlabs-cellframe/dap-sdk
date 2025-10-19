@@ -46,7 +46,7 @@
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "dap_json.h"
 #include "dap_http_ban_list_client.h"
@@ -252,7 +252,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         dap_enc_key_delete(l_pkey_exchange_key);
         DAP_DEL_Z(l_node_sign_msg);
 
-        *return_code = Http_Status_OK;
+        *return_code = DAP_HTTP_STATUS_OK;
 
     } else{
         log_it(L_ERROR,"Wrong path '%s' in the request to enc_http module",cl_st->http_client->url_path);

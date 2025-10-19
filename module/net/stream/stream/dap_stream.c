@@ -49,7 +49,7 @@
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
@@ -493,7 +493,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                         //l_stream->channel[i]->ready_to_write = true;
                     }
 
-                    a_http_client->reply_status_code = Http_Status_OK;
+                    a_http_client->reply_status_code = DAP_HTTP_STATUS_OK;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     s_stream_states_update(l_stream);
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
@@ -524,7 +524,7 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
 {
     (void) a_arg;
     //log_it(L_DEBUG,"s_http_client_headers_write()");
-    if(a_http_client->reply_status_code == Http_Status_OK){
+    if(a_http_client->reply_status_code == DAP_HTTP_STATUS_OK){
         dap_stream_t *l_stream=DAP_STREAM(a_http_client);
 
         dap_http_out_header_add(a_http_client,"Content-Type","application/octet-stream");
@@ -547,7 +547,7 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
  */
 static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
-    if (a_http_client->reply_status_code == Http_Status_OK)
+    if (a_http_client->reply_status_code == DAP_HTTP_STATUS_OK)
         return s_esocket_write(a_http_client->esocket, a_arg);
 
     log_it(L_WARNING, "Wrong request, reply status code is %u", a_http_client->reply_status_code);

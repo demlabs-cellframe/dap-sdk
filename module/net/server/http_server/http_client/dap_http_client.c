@@ -41,7 +41,7 @@
 
 #include "dap_time.h"
 #include "dap_http_server.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 
 #include "dap_http_header.h"
 #include "dap_http_client.h"
@@ -542,7 +542,7 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
             if (l_generate_default_headers)
                 dap_http_client_out_header_generate( a_http_client );
         } else {
-            a_http_client->reply_status_code = Http_Status_OK; // Cached data are always OK... for now.
+            a_http_client->reply_status_code = DAP_HTTP_STATUS_OK; // Cached data are always OK... for now.
             //TODO: make cached reply status code
         }
     }
@@ -616,7 +616,7 @@ void dap_http_client_out_header_generate(dap_http_client_t *a_http_client)
 {
     char buf[1024];
 
-    if ( a_http_client->reply_status_code == Http_Status_OK ) {
+    if ( a_http_client->reply_status_code == DAP_HTTP_STATUS_OK ) {
         if (s_debug_http)
             log_it(L_DEBUG, "Out headers generate for sock %"DAP_FORMAT_SOCKET, a_http_client->socket_num);
         if ( a_http_client->out_last_modified ) {

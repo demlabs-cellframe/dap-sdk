@@ -51,7 +51,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_simple.h"
 #include "dap_http_user_agent.h"
 #include "dap_context.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 
 #define LOG_TAG "dap_http_simple"
 
@@ -505,7 +505,7 @@ dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_h
 {
     // Because we call it from callback, we have no headers ready for output
     s_copy_reply_and_mime_to_response(a_http_simple);
-    a_http_simple->http_client->reply_status_code = Http_Status_OK;
+    a_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_OK;
     dap_http_client_out_header_generate(a_http_simple->http_client);
     return dap_http_cache_update(a_http_simple->http_client->proc,
                                  a_http_simple->reply_byte,

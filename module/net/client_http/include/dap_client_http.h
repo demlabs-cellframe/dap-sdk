@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "dap_worker.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -49,7 +49,7 @@
 
 #include "dap_stream_session.h"
 #include "dap_stream_ctl.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_enc_ks.h"
 
 #define LOG_TAG "dap_stream_ctl"
@@ -193,7 +193,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             else
                 enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
                                        DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = Http_Status_OK;
+            *return_code = DAP_HTTP_STATUS_OK;
 
             log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 

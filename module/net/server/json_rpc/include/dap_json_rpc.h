@@ -25,7 +25,7 @@
 
 #pragma once
 #include "dap_http_simple.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_strfuncs.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_request_handler.h"

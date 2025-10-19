@@ -202,10 +202,6 @@ if(INSTALL_DAP_SDK)
         DESTINATION "uthash"
     )
 
-    register_3rdparty_headers(
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
-    )
-
     # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
 
     # Finalize and install all components

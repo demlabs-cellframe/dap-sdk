@@ -79,7 +79,7 @@ static void s_stream_ctl_error(dap_client_t *a_client, void *a_arg, int a_error)
 static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg);
 
 // STREAM stage callbacks
-static void s_request_response(void *a_response, size_t a_response_size, void * a_obj, http_status_code_t http_status);
+static void s_request_response(void *a_response, size_t a_response_size, void * a_obj, dap_http_status_code_t http_status);
 static void s_request_error(int a_error_code, void *a_obj);
 
 // stream callbacks
@@ -879,7 +879,7 @@ static void s_request_error(int a_err_code, void * a_obj)
  * @param a_response_size
  * @param a_obj
  */
-static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG dap_http_status_code_t a_http_code)
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);

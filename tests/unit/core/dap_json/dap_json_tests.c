@@ -130,7 +130,7 @@ static bool s_test_json_serialization(void) {
 }
 
 /**
- * @brief Test wrapper invalidation after add_object (Phase 3.1 verification)
+ * @brief Test wrapper invalidation after add_object 
  * This test verifies that after adding a child object to parent, the child wrapper
  * is invalidated (pvt = NULL) to prevent double-free
  */
@@ -172,7 +172,7 @@ static bool s_test_wrapper_invalidation_add_object(void) {
 }
 
 /**
- * @brief Test wrapper invalidation after add_array (Phase 3.1 verification)
+ * @brief Test wrapper invalidation after add_array 
  */
 static bool s_test_wrapper_invalidation_add_array(void) {
     log_it(L_DEBUG, "Testing wrapper invalidation after add_array");
@@ -214,7 +214,7 @@ static bool s_test_wrapper_invalidation_add_array(void) {
 }
 
 /**
- * @brief Test wrapper invalidation after array_add (Phase 3.1 verification)
+ * @brief Test wrapper invalidation after array_add 
  */
 static bool s_test_wrapper_invalidation_array_add(void) {
     log_it(L_DEBUG, "Testing wrapper invalidation after array_add");
@@ -246,7 +246,7 @@ static bool s_test_wrapper_invalidation_array_add(void) {
 }
 
 /**
- * @brief Test reference counting for get_object (Phase 3.1 verification)
+ * @brief Test reference counting for get_object 
  * After get_object, user MUST call dap_json_object_free on returned wrapper
  */
 static bool s_test_refcount_get_object(void) {
@@ -288,7 +288,7 @@ static bool s_test_refcount_get_object(void) {
 }
 
 /**
- * @brief Test reference counting for array_get_idx (Phase 3.1 verification)
+ * @brief Test reference counting for array_get_idx 
  */
 static bool s_test_refcount_array_get_idx(void) {
     log_it(L_DEBUG, "Testing reference counting for array_get_idx");
@@ -327,7 +327,7 @@ static bool s_test_refcount_array_get_idx(void) {
 }
 
 /**
- * @brief Test numeric types operations (Phase 3.4)
+ * @brief Test numeric types operations 
  */
 static bool s_test_numeric_types(void) {
     log_it(L_DEBUG, "Testing numeric types");
@@ -364,7 +364,7 @@ static bool s_test_numeric_types(void) {
 }
 
 /**
- * @brief Test array operations (Phase 3.4)
+ * @brief Test array operations
  */
 static bool s_test_array_operations(void) {
     log_it(L_DEBUG, "Testing array operations");
@@ -401,7 +401,7 @@ static bool s_test_array_operations(void) {
 }
 
 /**
- * @brief Test type checking functions (Phase 3.4)
+ * @brief Test type checking functions 
  */
 static bool s_test_type_checking(void) {
     log_it(L_DEBUG, "Testing type checking");
