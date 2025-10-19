@@ -79,9 +79,10 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
 void dap_json_object_free(dap_json_t* a_json)
 {
     if (a_json) {
-        struct json_object* l_json_obj = _dap_json_to_json_c(a_json);
-        if (l_json_obj) {
-            json_object_put(l_json_obj);
+        // Check if wrapper is not invalidated (pvt != NULL)
+        // After ownership transfer (add_object/add_array), pvt is set to NULL
+        if (a_json->pvt != NULL) {
+            json_object_put(a_json->pvt);
         }
         DAP_DELETE(a_json);
     }
@@ -112,7 +113,16 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
         return -1;
     }
     
-    return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
+    struct json_object* l_arr = _dap_json_to_json_c(a_array);
+    struct json_object* l_item = _dap_json_to_json_c(a_item);
+    int ret = json_object_array_add(l_arr, l_item);
+    
+    // Invalidate wrapper after ownership transfer to array
+    if (ret == 0) {
+        a_item->pvt = NULL;
+    }
+    
+    return ret;
 }
 
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
@@ -148,7 +158,14 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
+    struct json_object* l_item = json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx);
+    if (l_item) {
+        // Take ownership by incrementing refcount
+        // User MUST call dap_json_object_free() on returned wrapper
+        json_object_get(l_item);
+        return _json_c_to_dap_json(l_item);
+    }
+    return NULL;
 }
 
 void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
@@ -311,10 +328,18 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
         return -1;
     }
     
-    // Increase reference count since json-c will manage the object
-    json_object_get(_dap_json_to_json_c(a_value));
+    // Ownership transfers to parent - json_object_object_add() takes ownership
+    // NO refcount increment needed
+    struct json_object* l_parent = _dap_json_to_json_c(a_json);
+    struct json_object* l_value = _dap_json_to_json_c(a_value);
+    int ret = json_object_object_add(l_parent, a_key, l_value);
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
+    // Invalidate wrapper after ownership transfer
+    if (ret == 0) {
+        a_value->pvt = NULL;
+    }
+    
+    return ret;
 }
 
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array)
@@ -324,10 +349,18 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
         return -1;
     }
     
-    // Increase reference count since json-c will manage the array
-    json_object_get(_dap_json_to_json_c(a_array));
+    // Ownership transfers to parent - json_object_object_add() takes ownership
+    // NO refcount increment needed
+    struct json_object* l_parent = _dap_json_to_json_c(a_json);
+    struct json_object* l_array = _dap_json_to_json_c(a_array);
+    int ret = json_object_object_add(l_parent, a_key, l_array);
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
+    // Invalidate wrapper after ownership transfer
+    if (ret == 0) {
+        a_array->pvt = NULL;
+    }
+    
+    return ret;
 }
 
 // Object field access
@@ -445,6 +478,9 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
+    // Take ownership by incrementing refcount
+    // User MUST call dap_json_object_free() on returned wrapper
+    json_object_get(l_obj);
     return _json_c_to_dap_json(l_obj);
 }
 
@@ -459,6 +495,9 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
+    // Take ownership by incrementing refcount
+    // User MUST call dap_json_object_free() on returned wrapper
+    json_object_get(l_obj);
     return _json_c_to_dap_json(l_obj);
 }
 
