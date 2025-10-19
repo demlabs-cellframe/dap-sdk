@@ -130,6 +130,203 @@ static bool s_test_json_serialization(void) {
 }
 
 /**
+ * @brief Test wrapper invalidation after add_object (Phase 3.1 verification)
+ * This test verifies that after adding a child object to parent, the child wrapper
+ * is invalidated (pvt = NULL) to prevent double-free
+ */
+static bool s_test_wrapper_invalidation_add_object(void) {
+    log_it(L_DEBUG, "Testing wrapper invalidation after add_object");
+    
+    dap_json_t *l_parent = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_parent, "Parent object creation");
+    
+    dap_json_t *l_child = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_child, "Child object creation");
+    
+    // Add some data to child
+    dap_json_object_add_string(l_child, "name", "child");
+    
+    // Add child to parent - this should invalidate l_child wrapper
+    int ret = dap_json_object_add_object(l_parent, "child_key", l_child);
+    DAP_TEST_ASSERT_EQUAL(0, ret, "Adding child to parent");
+    
+    // After add, l_child wrapper should be invalidated (pvt = NULL)
+    // Calling dap_json_object_free on invalidated wrapper should be safe
+    dap_json_object_free(l_child);  // Should only free wrapper, not underlying object
+    
+    // Parent should still contain valid child data via nested get
+    dap_json_t *l_retrieved_child = dap_json_object_get_object(l_parent, "child_key");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved_child, "Child accessible via parent");
+    
+    const char *l_child_name = dap_json_object_get_string(l_retrieved_child, "name");
+    DAP_TEST_ASSERT_STRING_EQUAL("child", l_child_name, "Child data correct");
+    
+    // Free retrieved child wrapper (decrements refcount)
+    dap_json_object_free(l_retrieved_child);
+    
+    // Free parent (which frees the underlying child object)
+    dap_json_object_free(l_parent);
+    
+    log_it(L_DEBUG, "Wrapper invalidation after add_object test passed");
+    return true;
+}
+
+/**
+ * @brief Test wrapper invalidation after add_array (Phase 3.1 verification)
+ */
+static bool s_test_wrapper_invalidation_add_array(void) {
+    log_it(L_DEBUG, "Testing wrapper invalidation after add_array");
+    
+    dap_json_t *l_parent = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_parent, "Parent object creation");
+    
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_array, "Array creation");
+    
+    // Add some strings to array via string objects
+    dap_json_t *l_item1 = dap_json_object_new_string("item1");
+    dap_json_t *l_item2 = dap_json_object_new_string("item2");
+    dap_json_array_add(l_array, l_item1);
+    dap_json_array_add(l_array, l_item2);
+    
+    // Add array to parent - this should invalidate l_array wrapper
+    int ret = dap_json_object_add_array(l_parent, "array_key", l_array);
+    DAP_TEST_ASSERT_EQUAL(0, ret, "Adding array to parent");
+    
+    // After add, l_array wrapper should be invalidated
+    dap_json_object_free(l_array);  // Should only free wrapper
+    
+    // Parent should still contain valid array data
+    dap_json_t *l_retrieved_array = dap_json_object_get_array(l_parent, "array_key");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved_array, "Array accessible via parent");
+    
+    size_t array_len = dap_json_array_length(l_retrieved_array);
+    DAP_TEST_ASSERT_EQUAL(2, array_len, "Array length correct");
+    
+    // Free retrieved array wrapper
+    dap_json_object_free(l_retrieved_array);
+    
+    // Free parent
+    dap_json_object_free(l_parent);
+    
+    log_it(L_DEBUG, "Wrapper invalidation after add_array test passed");
+    return true;
+}
+
+/**
+ * @brief Test wrapper invalidation after array_add (Phase 3.1 verification)
+ */
+static bool s_test_wrapper_invalidation_array_add(void) {
+    log_it(L_DEBUG, "Testing wrapper invalidation after array_add");
+    
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_array, "Array creation");
+    
+    dap_json_t *l_item = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_item, "Item object creation");
+    
+    dap_json_object_add_string(l_item, "name", "item");
+    
+    // Add item to array - this should invalidate l_item wrapper
+    int ret = dap_json_array_add(l_array, l_item);
+    DAP_TEST_ASSERT_EQUAL(0, ret, "Adding item to array");
+    
+    // After add, l_item wrapper should be invalidated
+    dap_json_object_free(l_item);  // Should only free wrapper
+    
+    // Array should still contain valid item
+    size_t array_len = dap_json_array_length(l_array);
+    DAP_TEST_ASSERT_EQUAL(1, array_len, "Array contains item");
+    
+    // Free array
+    dap_json_object_free(l_array);
+    
+    log_it(L_DEBUG, "Wrapper invalidation after array_add test passed");
+    return true;
+}
+
+/**
+ * @brief Test reference counting for get_object (Phase 3.1 verification)
+ * After get_object, user MUST call dap_json_object_free on returned wrapper
+ */
+static bool s_test_refcount_get_object(void) {
+    log_it(L_DEBUG, "Testing reference counting for get_object");
+    
+    dap_json_t *l_parent = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_parent, "Parent object creation");
+    
+    // Create child object with data
+    dap_json_t *l_child_obj = dap_json_object_new();
+    dap_json_object_add_string(l_child_obj, "name", "test_child");
+    
+    // Add child to parent
+    dap_json_object_add_object(l_parent, "child", l_child_obj);
+    
+    // Get child object - this increments refcount, user must free
+    dap_json_t *l_retrieved = dap_json_object_get_object(l_parent, "child");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved, "Retrieved child object");
+    
+    // Verify child data
+    const char *l_name = dap_json_object_get_string(l_retrieved, "name");
+    DAP_TEST_ASSERT_STRING_EQUAL("test_child", l_name, "Child data correct");
+    
+    // Must free retrieved wrapper (decrements refcount)
+    dap_json_object_free(l_retrieved);
+    
+    // Parent should still be valid, verify via another get
+    dap_json_t *l_retrieved2 = dap_json_object_get_object(l_parent, "child");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved2, "Parent still valid");
+    const char *l_name2 = dap_json_object_get_string(l_retrieved2, "name");
+    DAP_TEST_ASSERT_STRING_EQUAL("test_child", l_name2, "Child data still correct");
+    dap_json_object_free(l_retrieved2);
+    
+    // Free parent
+    dap_json_object_free(l_parent);
+    
+    log_it(L_DEBUG, "Reference counting for get_object test passed");
+    return true;
+}
+
+/**
+ * @brief Test reference counting for array_get_idx (Phase 3.1 verification)
+ */
+static bool s_test_refcount_array_get_idx(void) {
+    log_it(L_DEBUG, "Testing reference counting for array_get_idx");
+    
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_array, "Array creation");
+    
+    // Add string items via objects
+    dap_json_t *l_s1 = dap_json_object_new_string("item1");
+    dap_json_t *l_s2 = dap_json_object_new_string("item2");
+    dap_json_t *l_s3 = dap_json_object_new_string("item3");
+    dap_json_array_add(l_array, l_s1);
+    dap_json_array_add(l_array, l_s2);
+    dap_json_array_add(l_array, l_s3);
+    
+    // Get array length
+    size_t len = dap_json_array_length(l_array);
+    DAP_TEST_ASSERT_EQUAL(3, len, "Array length");
+    
+    // Get items - each get increments refcount, must free
+    dap_json_t *l_item1 = dap_json_array_get_idx(l_array, 0);
+    DAP_TEST_ASSERT_NOT_NULL(l_item1, "First item retrieved");
+    DAP_TEST_ASSERT(dap_json_is_string(l_item1), "First item is string");
+    dap_json_object_free(l_item1);  // Must free wrapper
+    
+    dap_json_t *l_item2 = dap_json_array_get_idx(l_array, 1);
+    DAP_TEST_ASSERT_NOT_NULL(l_item2, "Second item retrieved");
+    DAP_TEST_ASSERT(dap_json_is_string(l_item2), "Second item is string");
+    dap_json_object_free(l_item2);  // Must free wrapper
+    
+    // Free array (which frees all items)
+    dap_json_object_free(l_array);
+    
+    log_it(L_DEBUG, "Reference counting for array_get_idx test passed");
+    return true;
+}
+
+/**
  * @brief Main test function
  */
 int main(void) {
@@ -142,11 +339,20 @@ int main(void) {
     
     bool l_all_passed = true;
     
+    // Basic functionality tests
     l_all_passed &= s_test_json_object_creation();
     l_all_passed &= s_test_json_array_creation();
     l_all_passed &= s_test_json_string_operations();
     l_all_passed &= s_test_json_parsing();
     l_all_passed &= s_test_json_serialization();
+    
+    // wrapper invalidation & reference counting
+    log_it(L_INFO, "Running wrapper invalidation & reference counting tests...");
+    l_all_passed &= s_test_wrapper_invalidation_add_object();
+    l_all_passed &= s_test_wrapper_invalidation_add_array();
+    l_all_passed &= s_test_wrapper_invalidation_array_add();
+    l_all_passed &= s_test_refcount_get_object();
+    l_all_passed &= s_test_refcount_array_get_idx();
     
     dap_test_sdk_cleanup();
     
