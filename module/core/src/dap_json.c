@@ -44,10 +44,16 @@ static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
 
 static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
     if (!a_json_obj) return NULL;
+    
     dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
-    if (l_dap_json) {
-        l_dap_json->pvt = a_json_obj;
+    if (!l_dap_json) {
+        // OOM: Failed to allocate wrapper, must release JSON-C object
+        log_it(L_CRITICAL, "Out of memory: failed to allocate dap_json_t wrapper");
+        json_object_put(a_json_obj);  // Release JSON-C object to avoid leak
+        return NULL;
     }
+    
+    l_dap_json->pvt = a_json_obj;
     return l_dap_json;
 }
 
@@ -55,6 +61,10 @@ static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
 dap_json_t* dap_json_object_new(void)
 {
     struct json_object* l_json_obj = json_object_new_object();
+    if (!l_json_obj) {
+        log_it(L_CRITICAL, "Out of memory: failed to create JSON-C object");
+        return NULL;
+    }
     return _json_c_to_dap_json(l_json_obj);
 }
 
@@ -92,15 +102,20 @@ void dap_json_object_free(dap_json_t* a_json)
 dap_json_t* dap_json_array_new(void)
 {
     struct json_object* l_json_array = json_object_new_array();
+    if (!l_json_array) {
+        log_it(L_CRITICAL, "Out of memory: failed to create JSON-C array");
+        return NULL;
+    }
     return _json_c_to_dap_json(l_json_array);
 }
 
 void dap_json_array_free(dap_json_t* a_array)
 {
     if (a_array) {
-        struct json_object* l_json_obj = _dap_json_to_json_c(a_array);
-        if (l_json_obj) {
-            json_object_put(l_json_obj);
+        // Check if wrapper is not invalidated (pvt != NULL)
+        // After ownership transfer (add_object/add_array), pvt is set to NULL
+        if (a_array->pvt != NULL) {
+            json_object_put(a_array->pvt);
         }
         DAP_DELETE(a_array);
     }
@@ -842,6 +857,11 @@ dap_json_t* dap_json_object_new_uint256(uint256_t a_value)
     
     struct json_object *l_string = json_object_new_string(l_str);
     DAP_DELETE(l_str);
+    
+    if (!l_string) {
+        log_it(L_CRITICAL, "Out of memory: failed to create JSON-C string for uint256");
+        return NULL;
+    }
     
     return _json_c_to_dap_json(l_string);
 }
