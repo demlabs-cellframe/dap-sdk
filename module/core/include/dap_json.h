@@ -94,6 +94,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json);
 dap_json_t* dap_json_from_file(const char* a_file_path);
 int dap_json_to_file(const char* a_file_path, dap_json_t* a_json);
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value);
+bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key);  // Convenience: check if key exists
 int dap_json_object_del(dap_json_t* a_json, const char* a_key);
 
 // Extended value getters with default

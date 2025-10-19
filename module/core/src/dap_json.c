@@ -336,6 +336,26 @@ int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a
     return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
 }
 
+/**
+ * @brief Add a nested JSON object to parent with key
+ * @param a_json Parent JSON object
+ * @param a_key Key name for the nested object
+ * @param a_value Nested JSON object to add
+ * @return 0 on success, -1 on error
+ * 
+ * IMPORTANT: Ownership transfer semantics
+ * - After successful add, ownership of a_value transfers to parent
+ * - The a_value wrapper is INVALIDATED (pvt set to NULL)
+ * - Calling dap_json_object_free(a_value) after add is safe (frees only wrapper)
+ * - Do NOT use a_value after calling this function (it's invalidated)
+ * 
+ * Example:
+ *   dap_json_t *child = dap_json_object_new();
+ *   dap_json_object_add_string(child, "name", "test");
+ *   dap_json_object_add_object(parent, "child_key", child);
+ *   dap_json_object_free(child);  // Safe: only frees wrapper (pvt is NULL)
+ *   // Do NOT use child after this point!
+ */
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
 {
     if (!a_json || !a_key || !a_value) {
@@ -482,6 +502,22 @@ bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
     return json_object_get_boolean(l_obj);
 }
 
+/**
+ * @brief Get a nested JSON object by key
+ * @param a_json Parent JSON object
+ * @param a_key Key name
+ * @return New wrapper for the nested object, or NULL if not found
+ * 
+ * IMPORTANT: This function increments the refcount of the underlying JSON-C object.
+ * The caller MUST call dap_json_object_free() on the returned wrapper to avoid memory leaks.
+ * 
+ * Example:
+ *   dap_json_t *child = dap_json_object_get_object(parent, "child_key");
+ *   if (child) {
+ *       // Use child...
+ *       dap_json_object_free(child);  // MUST free the wrapper
+ *   }
+ */
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
@@ -628,6 +664,25 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     }
     
     return l_result;
+}
+
+/**
+ * @brief Convenience function to check if a key exists in JSON object
+ * @param a_json JSON object to check
+ * @param a_key Key name to check for
+ * @return true if key exists, false otherwise
+ * 
+ * This is a lightweight alternative to dap_json_object_get_ex() when you only
+ * need to check key existence without retrieving the value.
+ */
+bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return false;
+    }
+    
+    struct json_object* l_temp_obj = NULL;
+    return json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
 }
 
 int dap_json_object_del(dap_json_t* a_json, const char* a_key)
