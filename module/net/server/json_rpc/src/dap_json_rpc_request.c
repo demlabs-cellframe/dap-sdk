@@ -64,7 +64,7 @@ static void s_exec_cmd_request_free(struct exec_cmd_request* a_exec_cmd_request)
     DAP_DEL_MULTY(a_exec_cmd_request->response, a_exec_cmd_request);
 }
 
-static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg, http_status_code_t a_http_status) {
+static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg, dap_http_status_code_t a_http_status) {
     (void)a_http_status;
     struct exec_cmd_request *l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
 #ifdef DAP_OS_WINDOWS

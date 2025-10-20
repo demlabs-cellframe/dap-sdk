@@ -125,7 +125,7 @@ void dap_enc_http_set_acl_callback(dap_enc_acl_callback_t a_callback)
 void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 {
     log_it(L_DEBUG,"Proc enc http request");
-    http_status_code_t * return_code = (http_status_code_t*)arg;
+    dap_http_status_code_t * return_code = (dap_http_status_code_t*)arg;
 
     if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
         dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
@@ -150,7 +150,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             } else if (l_decode_len != l_pkey_exchange_size) {
                 /* No sign inside */
                 log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
-                *return_code = Http_Status_BadRequest;
+                *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
                 return;
             }
         }
@@ -164,7 +164,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             int l_verify_ret = dap_sign_verify_all(l_sign, l_decode_len - l_bias, alice_msg, l_pkey_exchange_size);
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
-                *return_code = Http_Status_Unauthorized;
+                *return_code = DAP_HTTP_STATUS_UNAUTHORIZED;
                 return;
             }
             l_bias += dap_sign_get_size(l_sign);
@@ -172,20 +172,20 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             const char *l_client_node_addr_str = dap_stream_node_addr_to_str_static(l_client_pkey_node_addr);
             if (dap_http_ban_list_client_check(l_client_node_addr_str, NULL, NULL)) {
                 log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str);
-                *return_code = Http_Status_Forbidden;
+                *return_code = DAP_HTTP_STATUS_FORBIDDEN;
                 return;
             }
         }
         if (l_sign_validated_count != l_sign_count) {
             log_it(L_ERROR, "Can't authorize all %zu signs", l_sign_count);
-            *return_code = Http_Status_Unauthorized;
+            *return_code = DAP_HTTP_STATUS_UNAUTHORIZED;
             return;
         }
 
         dap_enc_key_t* l_pkey_exchange_key = dap_enc_key_new(l_pkey_exchange_type);
         if(! l_pkey_exchange_key){
             log_it(L_WARNING, "Wrong http_enc request. Can't init PKey exchange with type %s", dap_enc_get_type_name(l_pkey_exchange_type) );
-            *return_code = Http_Status_BadRequest;
+            *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
             return;
         }
         if (l_pkey_exchange_key->gen_bob_shared_key) {
@@ -228,7 +228,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
                 DAP_DELETE(encrypt_msg);
-                *return_code = Http_Status_InternalServerError;
+                *return_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
                 return;
             }
             size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
@@ -238,7 +238,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             if (!l_node_sign_msg) {
                 log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 dap_enc_key_delete(l_pkey_exchange_key);
-                *return_code = Http_Status_InternalServerError;
+                *return_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
                 DAP_DELETE(encrypt_msg);
                 DAP_DELETE(l_node_sign);
                 return;
@@ -256,7 +256,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
     } else{
         log_it(L_ERROR,"Wrong path '%s' in the request to enc_http module",cl_st->http_client->url_path);
-        *return_code = Http_Status_NotFound;
+        *return_code = DAP_HTTP_STATUS_NOT_FOUND;
         return;
     }
 }

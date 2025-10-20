@@ -344,7 +344,7 @@ char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url)
 void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 {
     log_it(L_DEBUG,"Proc enc http exec_cmd request");
-    http_status_code_t *return_code = (http_status_code_t *)a_arg;
+    dap_http_status_code_t *return_code = (dap_http_status_code_t *)a_arg;
 
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
 
@@ -387,7 +387,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
             if (!l_ks_key) {
                 log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-                *return_code = Http_Status_BadRequest;
+                *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
                 return;
             }
         }
@@ -404,14 +404,14 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             enc_http_reply(l_dg, (char*)l_json_str_res, l_strlen);
             dap_json_object_free(l_json_obj_res);
             log_it(L_ERROR, "Wrong request");
-            *return_code = Http_Status_BadRequest;
+            *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
         }
         *return_code = DAP_HTTP_STATUS_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);
     } else {
         log_it(L_ERROR,"Wrong request");
-        *return_code = Http_Status_BadRequest;
+        *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
     }
 }
 

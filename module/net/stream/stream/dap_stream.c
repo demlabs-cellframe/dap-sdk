@@ -471,7 +471,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
             dap_stream_session_t *l_ss = dap_stream_session_by_id(l_id);
             if(!l_ss) {
                 log_it(L_ERROR,"No session id %u was found", l_id);
-                a_http_client->reply_status_code = Http_Status_NotFound;
+                a_http_client->reply_status_code = DAP_HTTP_STATUS_NOT_FOUND;
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
@@ -479,7 +479,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_stream_t *l_stream = s_stream_new(a_http_client, &l_ss->node);
                     if (!l_stream) {
                         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                        a_http_client->reply_status_code = Http_Status_NotFound;
+                        a_http_client->reply_status_code = DAP_HTTP_STATUS_NOT_FOUND;
                         return;
                     }
                     l_stream->session = l_ss;
@@ -505,7 +505,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
 #endif
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
-                    a_http_client->reply_status_code = Http_Status_NotFound;
+                    a_http_client->reply_status_code = DAP_HTTP_STATUS_NOT_FOUND;
                     strcpy(a_http_client->reply_reason_phrase,"Not found");
                 }
             }

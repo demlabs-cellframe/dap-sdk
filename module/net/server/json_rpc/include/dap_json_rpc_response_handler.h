@@ -49,7 +49,7 @@ void dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response);
 
 uint64_t dap_json_rpc_response_get_new_id(void);
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_code);
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, dap_http_status_code_t http_code);
 
 #ifdef __cplusplus
 }

@@ -303,7 +303,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
     dap_json_object_add_string(jobj, "error", error_msg);
 
     log_it(L_DEBUG, "error message %s", dap_json_to_string(jobj));
-    a_http_simple->http_client->reply_status_code = Http_Status_BadRequest;
+    a_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_BAD_REQUEST;
 
     const char* json_str = dap_json_to_string(jobj);
     dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str));
@@ -331,7 +331,7 @@ static bool s_proc_queue_callback(void *a_arg)
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
         return false;
     }
-    http_status_code_t return_code = (http_status_code_t)0;
+    dap_http_status_code_t return_code = (dap_http_status_code_t)0;
 
     user_agents_item_t *l_tmp;
     int l_cnt = 0;
@@ -362,7 +362,7 @@ static bool s_proc_queue_callback(void *a_arg)
         s_copy_reply_and_mime_to_response(l_http_simple);
     } else {
         log_it(L_ERROR, "Request was processed with ERROR");
-        l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
+        l_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
     }
     s_write_data_to_socket(l_http_simple);
     return false;
