@@ -51,6 +51,8 @@ include(cmake/DapLibrary.cmake)
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
+
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
 
 # Global DB drivers - MDBX is default for all platforms
@@ -155,6 +157,9 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
+if (BUILD_DAP_SDK_TESTS)
+    set(BUILD_TESTS ON)
+endif()
 
 
 # Test framework - UPDATED PATH
