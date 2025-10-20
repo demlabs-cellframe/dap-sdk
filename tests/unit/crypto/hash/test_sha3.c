@@ -26,6 +26,7 @@
 #include "dap_hash.h"
 #include "../../../fixtures/utilities/test_helpers.h"
 #include "../../../fixtures/json_samples.h"
+#include <inttypes.h>
 
 #define LOG_TAG "test_sha3"
 
@@ -121,7 +122,7 @@ static bool s_test_sha3_256_performance(void) {
     uint64_t l_elapsed = dap_test_timer_stop(&l_timer);
     double l_hashes_per_sec = (double)l_iterations / (l_elapsed / 1000000.0);
     
-    log_it(L_INFO, "SHA3-256 performance: %.2f hashes/sec (%lu iterations in %lu us)", 
+    log_it(L_INFO, "SHA3-256 performance: %.2f hashes/sec (%zu iterations in %" PRIu64 " us)", 
            l_hashes_per_sec, l_iterations, l_elapsed);
     
     // Basic performance threshold (should be able to do at least 100 hashes/sec)
