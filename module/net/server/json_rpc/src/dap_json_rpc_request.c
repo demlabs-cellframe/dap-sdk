@@ -309,8 +309,10 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
                 if (jobj_subcmd && l_arguments_obj) {
                     request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
                 }
+                // jobj_subcmd and l_arguments_obj are borrowed - no free needed
             } else {
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
+                // jobj_params is borrowed - no free needed
             }
 
             dap_json_object_free(jobj);

@@ -29,13 +29,28 @@
 
 #define LOG_TAG "dap_json"
 
+// No thread pool needed - we'll use a simpler approach
+
 /**
  * @brief Internal DAP JSON structure - opaque to users
  * Can represent both JSON objects and arrays internally
+ * 
+ * Reference semantics:
+ * - is_owned: true if we own the reference and should decrement on free
+ * - is_owned: false if this is a borrowed reference (from get functions)
+ * - borrowed_children: list of borrowed wrappers created from this object
+ *   (freed automatically when parent is freed)
  */
 struct dap_json {
-    void *pvt;  // Internal json-c object pointer (struct json_object*)
+    void *pvt;      // Internal json-c object pointer (struct json_object*)
+    bool is_owned;  // true = owned reference (need json_object_put), false = borrowed
+    struct {
+        dap_json_t **items;
+        size_t count;
+        size_t capacity;
+    } borrowed_children;  // Track borrowed wrappers for automatic cleanup
 };
+
 
 // Helper functions for internal type conversion
 static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
@@ -54,6 +69,49 @@ static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
     }
     
     l_dap_json->pvt = a_json_obj;
+    l_dap_json->is_owned = true;  // Default to owned reference
+    return l_dap_json;
+}
+
+// Helper to add borrowed child to parent's tracking list
+static void _register_borrowed_child(dap_json_t* parent, dap_json_t* child) {
+    if (!parent || !child) return;
+    
+    // Grow array if needed
+    if (parent->borrowed_children.count >= parent->borrowed_children.capacity) {
+        size_t new_capacity = parent->borrowed_children.capacity ? 
+                              parent->borrowed_children.capacity * 2 : 8;
+        dap_json_t** new_items = DAP_REALLOC(parent->borrowed_children.items, 
+                                              new_capacity * sizeof(dap_json_t*));
+        if (!new_items) {
+            log_it(L_WARNING, "Failed to grow borrowed children array");
+            return;
+        }
+        parent->borrowed_children.items = new_items;
+        parent->borrowed_children.capacity = new_capacity;
+    }
+    
+    parent->borrowed_children.items[parent->borrowed_children.count++] = child;
+}
+
+// Helper to create borrowed wrapper (for get functions)
+static inline dap_json_t* _json_c_to_dap_json_borrowed(struct json_object* a_json_obj, dap_json_t* parent) {
+    if (!a_json_obj) return NULL;
+    
+    dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
+    if (!l_dap_json) {
+        log_it(L_CRITICAL, "Out of memory: failed to allocate dap_json_t wrapper");
+        return NULL;
+    }
+    
+    l_dap_json->pvt = a_json_obj;
+    l_dap_json->is_owned = false;  // Mark as borrowed reference
+    
+    // Register with parent for automatic cleanup
+    if (parent) {
+        _register_borrowed_child(parent, l_dap_json);
+    }
+    
     return l_dap_json;
 }
 
@@ -86,14 +144,49 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
     return _json_c_to_dap_json(l_json);
 }
 
+/**
+ * @brief Free a JSON object wrapper (works for both owned and borrowed)
+ * @param a_json JSON object to free
+ * 
+ * This function automatically handles both owned and borrowed references:
+ * - For owned references: decrements refcount and frees wrapper
+ * - For borrowed references: only frees the wrapper
+ * - Automatically frees all borrowed children to prevent leaks
+ * 
+ * This matches JSON-C semantics perfectly - borrowed refs are cleaned up
+ * automatically when parent is freed, preventing wrapper leaks.
+ */
 void dap_json_object_free(dap_json_t* a_json)
 {
     if (a_json) {
-        // Check if wrapper is not invalidated (pvt != NULL)
-        // After ownership transfer (add_object/add_array), pvt is set to NULL
-        if (a_json->pvt != NULL) {
-            json_object_put(a_json->pvt);
+        // Prevent double-free by clearing pvt first for borrowed refs
+        void* saved_pvt = a_json->pvt;
+        bool saved_is_owned = a_json->is_owned;
+        
+        // Mark as freed to prevent cycles
+        a_json->pvt = NULL;
+        
+        // Free all borrowed children first (recursively)
+        // IMPORTANT: Don't free children that became owned via ref()
+        for (size_t i = 0; i < a_json->borrowed_children.count; i++) {
+            dap_json_t* child = a_json->borrowed_children.items[i];
+            if (child && child->pvt != NULL) {  // Skip if already freed
+                if (child->is_owned) {
+                    // Child was converted to owned via ref() - don't free it
+                    // User is now responsible for freeing it
+                    continue;
+                }
+                // Recursively free borrowed children's children
+                dap_json_object_free(child);
+            }
         }
+        DAP_DELETE(a_json->borrowed_children.items);
+        
+        // Only decrement refcount if this was an owned reference
+        if (saved_pvt != NULL && saved_is_owned) {
+            json_object_put(saved_pvt);
+        }
+        // Always free the wrapper
         DAP_DELETE(a_json);
     }
 }
@@ -109,17 +202,8 @@ dap_json_t* dap_json_array_new(void)
     return _json_c_to_dap_json(l_json_array);
 }
 
-void dap_json_array_free(dap_json_t* a_array)
-{
-    if (a_array) {
-        // Check if wrapper is not invalidated (pvt != NULL)
-        // After ownership transfer (add_object/add_array), pvt is set to NULL
-        if (a_array->pvt != NULL) {
-            json_object_put(a_array->pvt);
-        }
-        DAP_DELETE(a_array);
-    }
-}
+// Note: dap_json_array_free is not needed - use dap_json_object_free for all types
+// Arrays and objects are both json_object* in JSON-C
 
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 {
@@ -133,8 +217,10 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     int ret = json_object_array_add(l_arr, l_item);
     
     // Invalidate wrapper after ownership transfer to array
+    // Also mark as not owned to prevent double-free if user calls free anyway
     if (ret == 0) {
         a_item->pvt = NULL;
+        a_item->is_owned = false;
     }
     
     return ret;
@@ -167,6 +253,16 @@ size_t dap_json_array_length(dap_json_t* a_array)
     return json_object_array_length(_dap_json_to_json_c(a_array));
 }
 
+/**
+ * @brief Get array element by index (borrowed reference)
+ * @param a_array JSON array
+ * @param a_idx Index
+ * @return Borrowed wrapper for the element, or NULL if not found
+ * 
+ * IMPORTANT: This function returns a BORROWED REFERENCE (like JSON-C).
+ * Do NOT call dap_json_object_free() on the returned wrapper unless you call
+ * dap_json_object_ref() first to take ownership.
+ */
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
 {
     if (!a_array) {
@@ -175,10 +271,9 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     
     struct json_object* l_item = json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx);
     if (l_item) {
-        // Take ownership by incrementing refcount
-        // User MUST call dap_json_object_free() on returned wrapper
-        json_object_get(l_item);
-        return _json_c_to_dap_json(l_item);
+        // Return borrowed reference - do NOT increment refcount
+        // This matches JSON-C semantics
+        return _json_c_to_dap_json_borrowed(l_item, a_array);
     }
     return NULL;
 }
@@ -386,8 +481,10 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     int ret = json_object_object_add(l_parent, a_key, l_value);
     
     // Invalidate wrapper after ownership transfer
+    // Also mark as not owned to prevent issues if user calls free anyway
     if (ret == 0) {
         a_value->pvt = NULL;
+        a_value->is_owned = false;
     }
     
     return ret;
@@ -407,8 +504,10 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
     int ret = json_object_object_add(l_parent, a_key, l_array);
     
     // Invalidate wrapper after ownership transfer
+    // Also mark as not owned to prevent issues if user calls free anyway
     if (ret == 0) {
         a_array->pvt = NULL;
+        a_array->is_owned = false;
     }
     
     return ret;
@@ -519,19 +618,21 @@ bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
 }
 
 /**
- * @brief Get a nested JSON object by key
+ * @brief Get a nested JSON object by key (borrowed reference)
  * @param a_json Parent JSON object
  * @param a_key Key name
- * @return New wrapper for the nested object, or NULL if not found
+ * @return Borrowed wrapper for the nested object, or NULL if not found
  * 
- * IMPORTANT: This function increments the refcount of the underlying JSON-C object.
- * The caller MUST call dap_json_object_free() on the returned wrapper to avoid memory leaks.
+ * IMPORTANT: This function returns a BORROWED REFERENCE (like JSON-C).
+ * The returned wrapper shares ownership with the parent object.
+ * Do NOT call dap_json_object_free() on the returned wrapper unless you call
+ * dap_json_object_ref() first to take ownership.
  * 
  * Example:
  *   dap_json_t *child = dap_json_object_get_object(parent, "child_key");
  *   if (child) {
- *       // Use child...
- *       dap_json_object_free(child);  // MUST free the wrapper
+ *       // Use child... (valid while parent is alive)
+ *       // Do NOT free child (it's borrowed)
  *   }
  */
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
@@ -545,12 +646,22 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    // Take ownership by incrementing refcount
-    // User MUST call dap_json_object_free() on returned wrapper
-    json_object_get(l_obj);
-    return _json_c_to_dap_json(l_obj);
+    // Return borrowed reference - do NOT increment refcount
+    // This matches JSON-C semantics
+    // Wrapper is only valid while parent is alive
+    return _json_c_to_dap_json_borrowed(l_obj, a_json);
 }
 
+/**
+ * @brief Get a nested JSON array by key (borrowed reference)
+ * @param a_json Parent JSON object
+ * @param a_key Key name
+ * @return Borrowed wrapper for the nested array, or NULL if not found
+ * 
+ * IMPORTANT: This function returns a BORROWED REFERENCE (like JSON-C).
+ * Do NOT call dap_json_object_free() on the returned wrapper unless you call
+ * dap_json_object_ref() first to take ownership.
+ */
 dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
@@ -562,10 +673,9 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    // Take ownership by incrementing refcount
-    // User MUST call dap_json_object_free() on returned wrapper
-    json_object_get(l_obj);
-    return _json_c_to_dap_json(l_obj);
+    // Return borrowed reference - do NOT increment refcount
+    // This matches JSON-C semantics
+    return _json_c_to_dap_json_borrowed(l_obj, a_json);
 }
 
 // String conversion
@@ -664,6 +774,17 @@ dap_json_t* dap_json_from_file(const char* a_file_path)
     return _json_c_to_dap_json(json_object_from_file(a_file_path));
 }
 
+/**
+ * @brief Get a nested JSON object by key with existence check (borrowed reference)
+ * @param a_json Parent JSON object
+ * @param a_key Key name
+ * @param a_value Output parameter for the found value
+ * @return true if key exists, false otherwise
+ * 
+ * IMPORTANT: This function returns a BORROWED REFERENCE (like JSON-C).
+ * Do NOT call dap_json_object_free() on the returned wrapper unless you call
+ * dap_json_object_ref() first to take ownership.
+ */
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
 {
     if (!a_json || !a_key || !a_value) {
@@ -674,10 +795,12 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     bool l_result = json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
     
     if (l_result && l_temp_obj) {
-        // Take ownership by incrementing refcount
-        // json_object_object_get_ex returns borrowed reference, we need our own
-        json_object_get(l_temp_obj);
-        *a_value = _json_c_to_dap_json(l_temp_obj);
+        // Return borrowed reference - do NOT increment refcount
+        // This matches JSON-C semantics
+        *a_value = _json_c_to_dap_json_borrowed(l_temp_obj, a_json);
+        if (!*a_value) {
+            return false;  // OOM
+        }
     } else {
         *a_value = NULL;
     }
@@ -1084,6 +1207,16 @@ int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
     return result;
 }
 
+/**
+ * @brief Increment reference count and convert borrowed to owned
+ * @param a_json JSON object to reference
+ * @return The same wrapper with incremented refcount (like JSON-C)
+ * 
+ * This function matches JSON-C semantics:
+ * - Increments the refcount of the underlying JSON-C object
+ * - Returns the SAME wrapper (not a new one)
+ * - Converts borrowed reference to owned
+ */
 dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     dap_return_val_if_fail(a_json, NULL);
     
@@ -1091,7 +1224,8 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     if (!l_obj) return NULL;
     
     json_object_get(l_obj); // Increase reference count
-    return _json_c_to_dap_json(l_obj);  // Create NEW wrapper - each wrapper is independent
+    a_json->is_owned = true;  // Convert to owned reference
+    return a_json;  // Return SAME wrapper (matches JSON-C behavior)
 }
 
 // Object iteration implementation
@@ -1105,7 +1239,11 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
         // Use stack-allocated wrapper for borrowed reference
         // IMPORTANT: Callback MUST NOT save this pointer - it's only valid during callback execution
         // Do NOT call dap_json_object_free() on this wrapper
-        dap_json_t wrapper = { .pvt = val };
+        dap_json_t wrapper = { 
+            .pvt = val,
+            .is_owned = false,  // This is a borrowed reference
+            .borrowed_children = {0}  // No children tracking for stack wrapper
+        };
         callback(key, &wrapper, user_data);
     }
 }
