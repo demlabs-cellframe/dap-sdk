@@ -283,11 +283,8 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
             dap_stream_info_t *l_link_info = l_links_info + i;
             dap_json_t *l_jobj_info = dap_json_object_new();
             if (!l_jobj_info) { dap_json_object_free(l_jobj_ret); return NULL; }
-            if (l_link_info->is_uplink) {
-                dap_json_array_add(l_jobj_uplinks, l_jobj_info);
-            } else {
-                dap_json_array_add(l_jobj_downlinks, l_jobj_info);
-            }
+            
+            // Add all fields BEFORE adding to array (ownership transfer invalidates wrapper)
             char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link_info->node_addr));
             dap_json_object_add_string(l_jobj_info, "addr", l_addr);
             DAP_DELETE(l_addr);
@@ -295,6 +292,13 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
             dap_json_object_add_int(l_jobj_info, "port", l_link_info->remote_port);
             dap_json_object_add_string(l_jobj_info, "channel", l_link_info->channels);
             dap_json_object_add_uint64(l_jobj_info, "total_packets_sent", l_link_info->total_packets_sent);
+            
+            // Add to appropriate array (transfers ownership, invalidates wrapper)
+            if (l_link_info->is_uplink) {
+                dap_json_array_add(l_jobj_uplinks, l_jobj_info);
+            } else {
+                dap_json_array_add(l_jobj_downlinks, l_jobj_info);
+            }
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
