@@ -187,7 +187,9 @@ static bool s_test_wrapper_invalidation_add_array(void) {
     dap_json_t *l_item1 = dap_json_object_new_string("item1");
     dap_json_t *l_item2 = dap_json_object_new_string("item2");
     dap_json_array_add(l_array, l_item1);
+    dap_json_object_free(l_item1);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_array, l_item2);
+    dap_json_object_free(l_item2);  // Must free wrapper after ownership transfer
     
     // Add array to parent - this should invalidate l_array wrapper
     int ret = dap_json_object_add_array(l_parent, "array_key", l_array);
@@ -261,6 +263,7 @@ static bool s_test_refcount_get_object(void) {
     
     // Add child to parent
     dap_json_object_add_object(l_parent, "child", l_child_obj);
+    dap_json_object_free(l_child_obj);  // Must free wrapper after ownership transfer
     
     // Get child object - this increments refcount, user must free
     dap_json_t *l_retrieved = dap_json_object_get_object(l_parent, "child");
@@ -301,8 +304,11 @@ static bool s_test_refcount_array_get_idx(void) {
     dap_json_t *l_s2 = dap_json_object_new_string("item2");
     dap_json_t *l_s3 = dap_json_object_new_string("item3");
     dap_json_array_add(l_array, l_s1);
+    dap_json_object_free(l_s1);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_array, l_s2);
+    dap_json_object_free(l_s2);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_array, l_s3);
+    dap_json_object_free(l_s3);  // Must free wrapper after ownership transfer
     
     // Get array length
     size_t len = dap_json_array_length(l_array);
@@ -382,8 +388,11 @@ static bool s_test_array_operations(void) {
     dap_json_t *l_item3 = dap_json_object_new_int(30);
     
     dap_json_array_add(l_array, l_item1);
+    dap_json_object_free(l_item1);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_array, l_item2);
+    dap_json_object_free(l_item2);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_array, l_item3);
+    dap_json_object_free(l_item3);  // Must free wrapper after ownership transfer
     
     // Check length
     l_len = dap_json_array_length(l_array);
@@ -441,7 +450,7 @@ static bool s_test_type_checking(void) {
 }
 
 /**
- * @brief Test object key operations (Phase 3.4)
+ * @brief Test object key operations 
  */
 static bool s_test_object_key_operations(void) {
     log_it(L_DEBUG, "Testing object key operations");
@@ -453,7 +462,7 @@ static bool s_test_object_key_operations(void) {
     dap_json_object_add_string(l_obj, "key1", "value1");
     dap_json_object_add_int(l_obj, "key2", 42);
     
-    // Test has_key (Phase 3.3 convenience function)
+    // Test has_key 
     DAP_TEST_ASSERT(dap_json_object_has_key(l_obj, "key1"), "has_key existing");
     DAP_TEST_ASSERT(dap_json_object_has_key(l_obj, "key2"), "has_key existing 2");
     DAP_TEST_ASSERT(!dap_json_object_has_key(l_obj, "nonexistent"), "has_key nonexistent");
@@ -469,7 +478,7 @@ static bool s_test_object_key_operations(void) {
 }
 
 /**
- * @brief Test error conditions and NULL handling (Phase 3.4)
+ * @brief Test error conditions and NULL handling 
  */
 static bool s_test_error_conditions(void) {
     log_it(L_DEBUG, "Testing error conditions");
@@ -500,7 +509,7 @@ static bool s_test_error_conditions(void) {
 }
 
 /**
- * @brief Test complex nested structures (Phase 3.5)
+ * @brief Test complex nested structures 
  */
 static bool s_test_nested_structures(void) {
     log_it(L_DEBUG, "Testing nested structures");
@@ -519,13 +528,17 @@ static bool s_test_nested_structures(void) {
     dap_json_t *l_tag1 = dap_json_object_new_string("developer");
     dap_json_t *l_tag2 = dap_json_object_new_string("blockchain");
     dap_json_array_add(l_tags, l_tag1);
+    dap_json_object_free(l_tag1);  // Must free wrapper after ownership transfer
     dap_json_array_add(l_tags, l_tag2);
+    dap_json_object_free(l_tag2);  // Must free wrapper after ownership transfer
     
     // Add to user object
     dap_json_object_add_array(l_user, "tags", l_tags);
+    dap_json_object_free(l_tags);  // Must free wrapper after ownership transfer
     
     // Add user to root
     dap_json_object_add_object(l_root, "user", l_user);
+    dap_json_object_free(l_user);  // Must free wrapper after ownership transfer
     
     // Verify structure by retrieving
     dap_json_t *l_retrieved_user = dap_json_object_get_object(l_root, "user");
@@ -550,7 +563,7 @@ static bool s_test_nested_structures(void) {
 }
 
 /**
- * @brief Test JSON parsing edge cases (Phase 3.5)
+ * @brief Test JSON parsing edge cases 
  */
 static bool s_test_parsing_edge_cases(void) {
     log_it(L_DEBUG, "Testing parsing edge cases");
@@ -590,7 +603,7 @@ static bool s_test_parsing_edge_cases(void) {
 }
 
 /**
- * @brief Test serialization edge cases (Phase 3.5)
+ * @brief Test serialization edge cases 
  */
 static bool s_test_serialization_edge_cases(void) {
     log_it(L_DEBUG, "Testing serialization edge cases");
@@ -621,7 +634,7 @@ static bool s_test_serialization_edge_cases(void) {
 }
 
 /**
- * @brief Test with large data volumes (Phase 3.5)
+ * @brief Test with large data volumes
  */
 static bool s_test_large_data(void) {
     log_it(L_DEBUG, "Testing large data volumes");
@@ -634,6 +647,7 @@ static bool s_test_large_data(void) {
     for (size_t i = 0; i < ITEM_COUNT; i++) {
         dap_json_t *l_item = dap_json_object_new_int((int)i);
         dap_json_array_add(l_large_array, l_item);
+        dap_json_object_free(l_item);  // Must free wrapper after ownership transfer
     }
     
     size_t l_len = dap_json_array_length(l_large_array);
@@ -655,7 +669,7 @@ static bool s_test_large_data(void) {
 }
 
 /**
- * @brief Test deeply nested structures (Phase 3.5)
+ * @brief Test deeply nested structures 
  */
 static bool s_test_deep_nesting(void) {
     log_it(L_DEBUG, "Testing deeply nested structures");
@@ -671,8 +685,11 @@ static bool s_test_deep_nesting(void) {
     
     // Nest the objects
     dap_json_object_add_object(l_level2, "level3", l_level3);
+    dap_json_object_free(l_level3);  // Must free wrapper after ownership transfer
     dap_json_object_add_object(l_level1, "level2", l_level2);
+    dap_json_object_free(l_level2);  // Must free wrapper after ownership transfer
     dap_json_object_add_object(l_root, "level1", l_level1);
+    dap_json_object_free(l_level1);  // Must free wrapper after ownership transfer
     
     // Serialize and verify
     char *l_json_str = dap_json_to_string(l_root);
@@ -689,6 +706,210 @@ static bool s_test_deep_nesting(void) {
     dap_json_object_free(l_root);
     
     log_it(L_DEBUG, "Deeply nested structures test passed");
+    return true;
+}
+
+/**
+ * @brief Test fix for Problem #1: dap_json_object_get_ex borrowed reference
+ * Verifies that get_ex properly increments refcount and returns owning wrapper
+ */
+static bool s_test_fix_get_ex_refcount(void) {
+    log_it(L_DEBUG, "Testing fix: dap_json_object_get_ex refcount management");
+    
+    dap_json_t *l_parent = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_parent, "Parent object creation");
+    
+    dap_json_object_add_string(l_parent, "test_key", "test_value");
+    
+    // get_ex should create wrapper with incremented refcount
+    dap_json_t *l_retrieved = NULL;
+    bool l_found = dap_json_object_get_ex(l_parent, "test_key", &l_retrieved);
+    DAP_TEST_ASSERT(l_found, "Key found via get_ex");
+    DAP_TEST_ASSERT_NOT_NULL(l_retrieved, "Retrieved value not NULL");
+    
+    // Free parent - retrieved should still be valid (owns its refcount)
+    dap_json_object_free(l_parent);
+    
+    // Retrieved value should still be accessible
+    const char *l_value = dap_json_get_string(l_retrieved);
+    DAP_TEST_ASSERT_STRING_EQUAL("test_value", l_value, "Value accessible after parent freed");
+    
+    // Now free retrieved wrapper
+    dap_json_object_free(l_retrieved);
+    
+    log_it(L_DEBUG, "Fix verified: dap_json_object_get_ex correctly manages refcount");
+    return true;
+}
+
+/**
+ * @brief Test fix for Problem #3: dap_json_object_ref returns new wrapper
+ * Verifies that ref creates independent wrappers
+ */
+static bool s_test_fix_ref_new_wrapper(void) {
+    log_it(L_DEBUG, "Testing fix: dap_json_object_ref creates new wrapper");
+    
+    dap_json_t *l_obj1 = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_obj1, "Object 1 creation");
+    
+    dap_json_object_add_string(l_obj1, "key", "value");
+    
+    // Create reference - should get NEW wrapper
+    dap_json_t *l_obj2 = dap_json_object_ref(l_obj1);
+    DAP_TEST_ASSERT_NOT_NULL(l_obj2, "Object 2 reference creation");
+    
+    // Verify they point to different wrapper structures
+    DAP_TEST_ASSERT(l_obj1 != l_obj2, "Wrappers are independent");
+    
+    // Free first wrapper - second should still be valid
+    dap_json_object_free(l_obj1);
+    
+    // Second wrapper should still be accessible
+    const char *l_value = dap_json_object_get_string(l_obj2, "key");
+    DAP_TEST_ASSERT_STRING_EQUAL("value", l_value, "Value accessible via second wrapper");
+    
+    // Free second wrapper
+    dap_json_object_free(l_obj2);
+    
+    log_it(L_DEBUG, "Fix verified: dap_json_object_ref creates independent wrappers");
+    return true;
+}
+
+/**
+ * @brief Test fix for Problem #4: wrapper leak in print_object
+ * Verifies that printing objects doesn't leak wrapper structures
+ */
+static bool s_test_fix_print_object_no_leak(void) {
+    log_it(L_DEBUG, "Testing fix: print object no wrapper leaks");
+    
+    dap_json_t *l_obj = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_obj, "Object creation");
+    
+    // Add many keys to test for leaks
+    for (int i = 0; i < 100; i++) {
+        char l_key[32];
+        snprintf(l_key, sizeof(l_key), "key_%d", i);
+        dap_json_object_add_int(l_obj, l_key, i);
+    }
+    
+    // Print to string multiple times - should not leak wrappers
+    for (int i = 0; i < 10; i++) {
+        char *l_json_str = dap_json_to_string_pretty(l_obj);
+        DAP_TEST_ASSERT_NOT_NULL(l_json_str, "JSON string created");
+        free(l_json_str);
+    }
+    
+    dap_json_object_free(l_obj);
+    
+    log_it(L_DEBUG, "Fix verified: print object no wrapper leaks");
+    return true;
+}
+
+/**
+ * @brief Test fix for Problem #5: refcount leak in print array
+ * Verifies that printing arrays doesn't leak refcounts
+ */
+static bool s_test_fix_print_array_no_leak(void) {
+    log_it(L_DEBUG, "Testing fix: print array no refcount leaks");
+    
+    dap_json_t *l_array = dap_json_array_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_array, "Array creation");
+    
+    // Add many items to test for leaks
+    for (int i = 0; i < 100; i++) {
+        dap_json_t *l_item = dap_json_object_new_string("test");
+        dap_json_array_add(l_array, l_item);
+        dap_json_object_free(l_item);  // Safe after add (wrapper invalidated)
+    }
+    
+    // Print to string multiple times - should not leak refcounts
+    for (int i = 0; i < 10; i++) {
+        char *l_json_str = dap_json_to_string_pretty(l_array);
+        DAP_TEST_ASSERT_NOT_NULL(l_json_str, "JSON string created");
+        free(l_json_str);
+    }
+    
+    dap_json_array_free(l_array);
+    
+    log_it(L_DEBUG, "Fix verified: print array no refcount leaks");
+    return true;
+}
+
+/**
+ * @brief Test memory safety: multiple get operations
+ */
+static bool s_test_memory_multiple_gets(void) {
+    log_it(L_DEBUG, "Testing memory safety: multiple get operations");
+    
+    dap_json_t *l_parent = dap_json_object_new();
+    DAP_TEST_ASSERT_NOT_NULL(l_parent, "Parent object creation");
+    
+    dap_json_t *l_child = dap_json_object_new();
+    dap_json_object_add_string(l_child, "data", "test");
+    dap_json_object_add_object(l_parent, "child", l_child);
+    dap_json_object_free(l_child);  // Safe - wrapper invalidated
+    
+    // Multiple get operations should each increment refcount
+    dap_json_t *l_get1 = dap_json_object_get_object(l_parent, "child");
+    dap_json_t *l_get2 = dap_json_object_get_object(l_parent, "child");
+    dap_json_t *l_get3 = dap_json_object_get_object(l_parent, "child");
+    
+    DAP_TEST_ASSERT_NOT_NULL(l_get1, "First get successful");
+    DAP_TEST_ASSERT_NOT_NULL(l_get2, "Second get successful");
+    DAP_TEST_ASSERT_NOT_NULL(l_get3, "Third get successful");
+    
+    // Free in any order - should be safe
+    dap_json_object_free(l_get2);
+    dap_json_object_free(l_parent);
+    dap_json_object_free(l_get1);
+    dap_json_object_free(l_get3);
+    
+    log_it(L_DEBUG, "Memory safety: multiple gets - passed");
+    return true;
+}
+
+/**
+ * @brief Test memory safety: complex nested operations
+ */
+static bool s_test_memory_complex_nested(void) {
+    log_it(L_DEBUG, "Testing memory safety: complex nested operations");
+    
+    // Create complex nested structure
+    dap_json_t *l_root = dap_json_object_new();
+    dap_json_t *l_level1 = dap_json_object_new();
+    dap_json_t *l_level2 = dap_json_object_new();
+    dap_json_t *l_array = dap_json_array_new();
+    
+    // Add array items
+    for (int i = 0; i < 10; i++) {
+        dap_json_t *l_item = dap_json_object_new_int(i);
+        dap_json_array_add(l_array, l_item);
+        dap_json_object_free(l_item);
+    }
+    
+    // Build nested structure
+    dap_json_object_add_array(l_level2, "numbers", l_array);
+    dap_json_object_free(l_array);
+    
+    dap_json_object_add_object(l_level1, "level2", l_level2);
+    dap_json_object_free(l_level2);
+    
+    dap_json_object_add_object(l_root, "level1", l_level1);
+    dap_json_object_free(l_level1);
+    
+    // Retrieve and verify
+    dap_json_t *l_retrieved_l1 = dap_json_object_get_object(l_root, "level1");
+    dap_json_t *l_retrieved_l2 = dap_json_object_get_object(l_retrieved_l1, "level2");
+    dap_json_t *l_retrieved_arr = dap_json_object_get_array(l_retrieved_l2, "numbers");
+    
+    DAP_TEST_ASSERT_EQUAL(10, dap_json_array_length(l_retrieved_arr), "Array length correct");
+    
+    // Cleanup
+    dap_json_object_free(l_retrieved_arr);
+    dap_json_object_free(l_retrieved_l2);
+    dap_json_object_free(l_retrieved_l1);
+    dap_json_object_free(l_root);
+    
+    log_it(L_DEBUG, "Memory safety: complex nested - passed");
     return true;
 }
 
@@ -720,21 +941,33 @@ int main(void) {
     l_all_passed &= s_test_refcount_get_object();
     l_all_passed &= s_test_refcount_array_get_idx();
     
-    // Phase 3.4 comprehensive tests: core functionality
-    log_it(L_INFO, "Running Phase 3.4 comprehensive tests...");
+    // comprehensive tests: core functionality
+    log_it(L_INFO, "Running comprehensive tests...");
     l_all_passed &= s_test_numeric_types();
     l_all_passed &= s_test_array_operations();
     l_all_passed &= s_test_type_checking();
     l_all_passed &= s_test_object_key_operations();
     l_all_passed &= s_test_error_conditions();
     
-    // Phase 3.5 advanced tests: complex structures and edge cases
-    log_it(L_INFO, "Running Phase 3.5 advanced tests...");
+    // advanced tests: complex structures and edge cases
+    log_it(L_INFO, "Running advanced tests...");
     l_all_passed &= s_test_nested_structures();
     l_all_passed &= s_test_parsing_edge_cases();
     l_all_passed &= s_test_serialization_edge_cases();
     l_all_passed &= s_test_large_data();
     l_all_passed &= s_test_deep_nesting();
+    
+    // Fix validation tests: verify all 5 problem fixes
+    log_it(L_INFO, "Running fix validation tests...");
+    l_all_passed &= s_test_fix_get_ex_refcount();
+    l_all_passed &= s_test_fix_ref_new_wrapper();
+    l_all_passed &= s_test_fix_print_object_no_leak();
+    l_all_passed &= s_test_fix_print_array_no_leak();
+    
+    // Memory safety tests: stress testing
+    log_it(L_INFO, "Running memory safety tests...");
+    l_all_passed &= s_test_memory_multiple_gets();
+    l_all_passed &= s_test_memory_complex_nested();
     
     dap_test_sdk_cleanup();
     

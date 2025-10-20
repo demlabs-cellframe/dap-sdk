@@ -674,6 +674,9 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     bool l_result = json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
     
     if (l_result && l_temp_obj) {
+        // Take ownership by incrementing refcount
+        // json_object_object_get_ex returns borrowed reference, we need our own
+        json_object_get(l_temp_obj);
         *a_value = _json_c_to_dap_json(l_temp_obj);
     } else {
         *a_value = NULL;
@@ -992,9 +995,10 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
                 fprintf(a_stream, INDENTATION_LEVEL);
             }
             
-            dap_json_t *dap_val = _json_c_to_dap_json(val);
+            // Use stack wrapper to avoid memory leak
+            dap_json_t wrapper = { .pvt = val };
             fprintf(a_stream, "\"%s\": ", key);
-            dap_json_print_value(dap_val, key, a_stream, a_indent_level + 1, false);
+            dap_json_print_value(&wrapper, key, a_stream, a_indent_level + 1, false);
         }
         
         fprintf(a_stream, "\n");
@@ -1019,6 +1023,8 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
             
             dap_json_t *item = dap_json_array_get_idx(a_json, i);
             dap_json_print_value(item, NULL, a_stream, a_indent_level + 1, false);
+            dap_json_object_free(item);  // MUST free wrapper to avoid memory leak
+            
             if (i < length - 1) {
                 fprintf(a_stream, ",");
             }
@@ -1085,7 +1091,7 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     if (!l_obj) return NULL;
     
     json_object_get(l_obj); // Increase reference count
-    return a_json;
+    return _json_c_to_dap_json(l_obj);  // Create NEW wrapper - each wrapper is independent
 }
 
 // Object iteration implementation
@@ -1096,10 +1102,11 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
     if (!l_obj) return;
     
     json_object_object_foreach(l_obj, key, val) {
-        dap_json_t *l_dap_val = _json_c_to_dap_json(val);
-        if (l_dap_val) {
-            callback(key, l_dap_val, user_data);
-        }
+        // Use stack-allocated wrapper for borrowed reference
+        // IMPORTANT: Callback MUST NOT save this pointer - it's only valid during callback execution
+        // Do NOT call dap_json_object_free() on this wrapper
+        dap_json_t wrapper = { .pvt = val };
+        callback(key, &wrapper, user_data);
     }
 }
 

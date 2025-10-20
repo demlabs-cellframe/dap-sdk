@@ -163,7 +163,30 @@ dap_json_t* dap_json_object_new_double(double a_value);
 dap_json_t* dap_json_object_new_bool(bool a_value);
 
 // Object iteration API
+/**
+ * @brief Callback function type for dap_json_object_foreach
+ * @param key The key name (string)
+ * @param value Stack-allocated wrapper for the value (TEMPORARY - see notes below)
+ * @param user_data User-defined data passed to foreach
+ * 
+ * CRITICAL NOTES:
+ * - The 'value' pointer is TEMPORARY and BORROWED
+ * - It is only valid during the callback execution
+ * - DO NOT save this pointer for later use
+ * - DO NOT call dap_json_object_free() on this wrapper
+ * - If you need to keep the value, use dap_json_object_get_object/get_array to get a new wrapper
+ */
 typedef void (*dap_json_object_foreach_callback_t)(const char* key, dap_json_t* value, void* user_data);
+
+/**
+ * @brief Iterate over all key-value pairs in a JSON object
+ * @param a_json JSON object to iterate
+ * @param callback Function to call for each key-value pair
+ * @param user_data User data to pass to callback
+ * 
+ * The callback receives temporary stack-allocated wrappers for values.
+ * See dap_json_object_foreach_callback_t for important usage notes.
+ */
 void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data);
 
 // Extended value access API
