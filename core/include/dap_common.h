@@ -326,9 +326,10 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DEL_MULTY(...) \
     for (void *__ptrs[] = { NULL, __VA_ARGS__ }, **__p = __ptrs; __p < __ptrs + sizeof(__ptrs) / sizeof(void*) - 1; DAP_DELETE(*++__p));
 
+// Evaluates all conditions (NO short-circuit evaluation)
 #define dap_do_if_any(__action, ...) \
     do { \
-        bool __cond_results[] = { __VA_ARGS__ }; \
+        bool __cond_results[] = { __VA_ARGS__ }, __do_action = false; \
         for (size_t __i = 0; __i < sizeof(__cond_results) / sizeof(bool); ++__i) { \
             if (__cond_results[__i]) { \
                 const char *__pos = #__VA_ARGS__; \
@@ -340,11 +341,10 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
                 } \
                 _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, \
                     __len ? "Assertion #%zu triggered: \"%.*s\"" : "Assertion #%zu triggered", __i + 1, __len, __pos); \
-                do { \
-                    __action; \
-                } while (0); \
+                __do_action = true; \
             } \
         } \
+        if (__do_action) { __action; } \
     } while (0)
 
 #define dap_ret_val_if_any(__ret_val, ...) dap_do_if_any(return __ret_val, __VA_ARGS__)
