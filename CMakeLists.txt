@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(DAP_SDK_NATIVE C)
 
 # Отключение SSL по умолчанию - WolfSSL больше не используется
@@ -20,31 +20,13 @@ include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
 include(cmake/PackageComponents.cmake)
 
-
-# =========================================  
-# INTERNAL MODULE CREATION MACRO
-# =========================================
-# Creates internal OBJECT modules (always OBJECT for combining)
-# Usage: dap_add_library(target_name sources... HEADERS headers...)
-macro(dap_add_library TARGET_NAME)
-    cmake_parse_arguments(DAP_LIB "" "" "HEADERS" ${ARGN})
-    
-    # Always create modules as OBJECT for combining into final library
-    add_library(${TARGET_NAME} OBJECT ${DAP_LIB_UNPARSED_ARGUMENTS} ${DAP_LIB_HEADERS})
-    
-    # Track modules for final library creation
-    if(NOT DEFINED DAP_INTERNAL_MODULES)
-        set(DAP_INTERNAL_MODULES "")
-    endif()
-    list(APPEND DAP_INTERNAL_MODULES ${TARGET_NAME})
-    set(DAP_INTERNAL_MODULES ${DAP_INTERNAL_MODULES} CACHE INTERNAL "List of DAP internal modules")
-    
-    message("[+] DAP Internal Module: ${TARGET_NAME} (object)")
-endmacro()
-
 # =========================================
 # INCLUDE DAP LIBRARY HELPERS
 # =========================================
+# Object library helpers - automatic include propagation for OBJECT libraries (CMake 3.12+)
+include(cmake/ObjectLibraryHelpers.cmake)
+
+# DAP SDK library creation macros
 include(cmake/DapLibrary.cmake)
 
 # Options
@@ -106,13 +88,11 @@ if (DAPSDK_MODULES MATCHES "io")
     message("[+] Module 'io'")
 endif()
 
-# Network common types and functions
+# Network common types and functions  
 add_subdirectory(module/net/common)
-message("[+] Module 'net/common' (base types,callbacks and functions)")
 
-# HTTP client for outgoing connections (independent of dap_client)
+# HTTP client
 add_subdirectory(module/net/client_http)
-message("[+] Module 'client_http' (standalone HTTP client)")
 
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(module/net/stream)

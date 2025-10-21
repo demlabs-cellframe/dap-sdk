@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(dap_stream_event C)
 
 file(GLOB STREAM_EVENT_SRCS *.c)
@@ -8,6 +8,7 @@ file(GLOB STREAM_EVENT_HDRS include/*.h)
 dap_add_library(${PROJECT_NAME} ${STREAM_EVENT_SRCS} HEADERS ${STREAM_EVENT_HDRS})
 
 # Minimal dependencies - only net_common for types
+# target_link_libraries automatically propagates includes for OBJECT libraries (see main CMakeLists.txt)
 target_link_libraries(${PROJECT_NAME} dap_core dap_net_common)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
