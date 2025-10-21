@@ -4,12 +4,16 @@
 # Author: QEVM Team
 # Date: 2025-10-07
 
-# Include universal helpers
+# Include required dependencies
+include(${CMAKE_CURRENT_LIST_DIR}/PackageComponents.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/LibraryHelpers.cmake)
 
 # =========================================
 # DAP SDK SPECIFIC WRAPPERS
 # =========================================
+# NOTE: target_link_libraries is overridden in main CMakeLists.txt
+# to automatically propagate INTERFACE_INCLUDE_DIRECTORIES for OBJECT libraries
+
 # Wrapper around universal create_object_library for DAP SDK
 # Automatically registers module headers for installation
 # Usage: dap_add_library(target_name sources... HEADERS headers... [INSTALL_HEADERS include/])
