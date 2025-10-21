@@ -132,6 +132,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     dap_json_t *version_obj = dap_json_object_get_object(jobj, "version");
     if (version_obj) {
         response->version = dap_json_object_get_int64(version_obj, NULL);
+        dap_json_object_free(version_obj);  // Free wrapper
     } else {
         log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
@@ -140,6 +141,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     dap_json_t *type_obj = dap_json_object_get_object(jobj, "type");
     if (type_obj) {
         response->type = (int)dap_json_object_get_int64(type_obj, NULL);
+        // type_obj is borrowed reference - no free needed
 
         dap_json_t *result_obj = dap_json_object_get_object(jobj, "result");
         if (result_obj) {
@@ -165,12 +167,14 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 case TYPE_RESPONSE_NULL:
                     break;
             }
+            // result_obj is borrowed reference - no free needed
         }
     }
     
     dap_json_t *result_id = dap_json_object_get_object(jobj, "id");
     if (result_id) {
         response->id = dap_json_object_get_int64(result_id, NULL);
+        // result_id is borrowed reference - no free needed
     }
 
     dap_json_object_free(jobj);
@@ -235,6 +239,8 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
                 dap_json_print_object(json_obj_result, stdout, 0);
             }
             printf("\n");
+            
+            // All are borrowed references - no free needed
         }
     } else {
         dap_json_print_object(response->result_json_object, stdout, 0);
@@ -271,10 +277,14 @@ void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
                         if (str_val) {
                             printf("%s", str_val);
                         }
+                        dap_json_object_free(json_obj);  // Free wrapper from inner loop
                     }
                 }
+                dap_json_object_free(json_obj_result);  // Free wrapper from outer loop
             }
+            dap_json_object_free(first_element);  // Free first element wrapper
         } else {
+            dap_json_object_free(first_element);  // Free even if not array
             dap_json_print_object(response->result_json_object, stdout, -1);
         }
     } else {
@@ -288,7 +298,12 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     
     dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_response, "net");
     dap_json_t *j_arr_chains = dap_json_object_get_object(json_obj_response, "chains");
-    if (!j_arr_chains) return;
+    if (!j_arr_chains) {
+        // Free allocated wrappers before early return
+        dap_json_object_free(j_obj_net_name);
+        dap_json_object_free(json_obj_response);
+        return;
+    }
     
     size_t result_count = dap_json_array_length(j_arr_chains);
     for (size_t i = 0; i < result_count; i++) {
@@ -312,7 +327,11 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         // TODO total parser
         if (j_arr_total)
             dap_json_print_object(j_arr_total, stdout, 1);
+        
+        // All are borrowed references - no free needed
     }
+    
+    // All are borrowed references - no free needed
 }
 
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {

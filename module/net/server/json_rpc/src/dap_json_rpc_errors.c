@@ -78,9 +78,11 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
             l_json_arr_errors = dap_json_object_get_array(l_json_obj, "errors");
             if (l_json_arr_errors) {
                 l_json_obj_errors = l_json_obj;
-                break;
+                break;  // Keep l_json_obj, l_json_arr_errors is borrowed ref
             }
+            // l_json_obj is borrowed - no free needed
         }
+        // l_json_obj is borrowed - no free needed
     }
 
     if (!l_json_obj_errors) {
@@ -94,6 +96,9 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
     dap_json_object_add_int(l_obj_error, "code", a_code_error);
     dap_json_object_add_string(l_obj_error, "message", l_msg);
     dap_json_array_add(l_json_arr_errors, l_obj_error);
+    // l_obj_error ownership transferred to array - no free needed
+
+    // l_json_obj_errors and l_json_arr_errors are borrowed - no free needed
 
     log_it(L_ERROR, "Registration type error. Code error: %d message: %s", a_code_error, l_msg);
     DAP_DEL_Z(l_msg);

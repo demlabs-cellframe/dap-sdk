@@ -69,9 +69,9 @@ uint64_t dap_json_rpc_response_get_new_id(void)
     return ++s_delta;
 }
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, UNUSED_ARG void *a_obj, http_status_code_t http_status)
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, UNUSED_ARG void *a_obj, dap_http_status_code_t http_status)
 {
-    if (http_status != Http_Status_OK)
+    if (http_status != DAP_HTTP_STATUS_OK)
         return log_it(L_ERROR, "Reponse error %d", (int)http_status);
     log_it(L_NOTICE, "Pre handling response");
     dap_json_rpc_response_t *l_response;

@@ -49,7 +49,7 @@
 
 #include "dap_stream_session.h"
 #include "dap_stream_ctl.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_enc_ks.h"
 
 #define LOG_TAG "dap_stream_ctl"
@@ -107,7 +107,7 @@ void dap_stream_ctl_add_proc(struct dap_http_server* sh, const char * url)
  */
 void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
 {
-    http_status_code_t *return_code = (http_status_code_t *)a_arg;
+    dap_http_status_code_t *return_code = (dap_http_status_code_t *)a_arg;
 
    // unsigned int proto_version;
     dap_stream_session_t *l_stream_session = NULL;
@@ -166,7 +166,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
             if (!l_ks_key) {
                 log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-                *return_code = Http_Status_BadRequest;
+                *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
                 return;
             }
         }
@@ -182,7 +182,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 dap_enc_ks_key_t *l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
                 if (!l_ks_key) {
                     log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-                    *return_code = Http_Status_BadRequest;
+                    *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
                     return;
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
@@ -193,14 +193,14 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             else
                 enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
                                        DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = Http_Status_OK;
+            *return_code = DAP_HTTP_STATUS_OK;
 
             log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 
             DAP_DELETE(l_key_str);
         }else{
             log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
-            *return_code = Http_Status_BadRequest;
+            *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
             return;
         }
 
@@ -209,7 +209,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"No encryption layer was initialized well");
-        *return_code = Http_Status_BadRequest;
+        *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
     }
 }
 

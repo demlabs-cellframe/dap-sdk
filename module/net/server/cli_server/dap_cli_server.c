@@ -100,7 +100,11 @@ static bool s_allowed_cmd_check(const char *a_buf) {
     }
 
     bool l_allowed = !!dap_str_find( s_allowed_cmd_array, l_method );
-    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), dap_json_object_free(jobj), l_allowed;
+    // jobj_method is borrowed - freed automatically with jobj
+    dap_json_object_free(jobj);
+    if (!l_allowed)
+        log_it(L_ERROR, "Command %s is restricted", l_method);
+    return l_allowed;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
