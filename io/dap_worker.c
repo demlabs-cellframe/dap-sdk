@@ -32,6 +32,7 @@
 #include "dap_enc_base64.h"
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_list.h"
 
 #ifndef DAP_NET_CLIENT_NO_SSL
 #include <wolfssl/options.h>
@@ -419,32 +420,27 @@ static bool s_socket_all_check_activity(void * a_arg)
     
     size_t l_esockets_counter = 0;
     dap_events_socket_t *l_es, *l_tmp;
-    
+    dap_list_t *l_del_list = NULL, *l_cur, *l_tmp_list;
     HASH_ITER(hh, l_worker->context->esockets, l_es, l_tmp) {
-        // Safety check to prevent infinite loops
-        if (++l_esockets_counter > l_esockets_count) {
-            log_it(L_ERROR, "Iteration count (%zu) exceeds expected socket count (%u), possible hash table corruption",
-                   l_esockets_counter, l_esockets_count);
-            break;
-        }
-        
         // Check socket timeout condition
-        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
-                !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
-                 l_curtime >= l_es->last_time_active + s_connection_timeout &&
-                !l_es->no_close) {
-            
-                log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
-                        l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
-            
-            // Call error callback if set
-            if (l_es->callbacks.error_callback) {
-                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
-            }
-            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT && !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE)
+            && l_curtime >= l_es->last_time_active + s_connection_timeout && !l_es->no_close)
+        {
+            l_del_list = dap_list_append(l_del_list, l_es);
         }
     }
-    
+    DL_FOREACH_SAFE(l_del_list, l_cur, l_tmp_list) {
+        l_es = (dap_events_socket_t*)l_cur->data;
+        log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
+                    l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
+            
+        // Call error callback if set
+        if (l_es->callbacks.error_callback)
+            l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+        dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        DL_DELETE(l_del_list, l_cur);
+        DAP_DELETE(l_cur);
+    }
     return true;
 }
 
