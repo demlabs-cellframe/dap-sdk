@@ -6,6 +6,10 @@ add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
 
+# Define SDK root directory for use in submodules
+# Works both when dap-sdk is standalone and when it's a submodule
+set(DAP_SDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Root directory of DAP SDK")
+
 # Build type detection
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -47,6 +51,8 @@ include(cmake/DapLibrary.cmake)
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
+
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
 
 # Global DB drivers - MDBX is default for all platforms
@@ -151,6 +157,9 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
+if (BUILD_DAP_SDK_TESTS)
+    set(BUILD_TESTS ON)
+endif()
 
 
 # Test framework - UPDATED PATH
@@ -196,10 +205,6 @@ if(INSTALL_DAP_SDK)
     register_3rdparty_headers(
         DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
         DESTINATION "uthash"
-    )
-
-    register_3rdparty_headers(
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
     )
 
     # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
