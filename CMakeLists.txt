@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(DAP_SDK_NATIVE C)
 
-# Отключение SSL по умолчанию - WolfSSL больше не используется
+# Disable SSL by default - WolfSSL is no longer used
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
@@ -13,6 +13,16 @@ set(DAP_SDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Root directory of D
 # Build type detection
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Installation prefix detection
+# Default: /usr/local (for local builds)
+# For deb packages: override to /usr via cmake -DCMAKE_INSTALL_PREFIX=/usr
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "Installation prefix" FORCE)
+    message(STATUS "[Install] Using default prefix: ${CMAKE_INSTALL_PREFIX}")
+else()
+    message(STATUS "[Install] Using custom prefix: ${CMAKE_INSTALL_PREFIX}")
 endif()
 
 # Common includes and definitions
@@ -199,9 +209,9 @@ if(INSTALL_DAP_SDK)
     )
 
     message(STATUS "[Install] Component-based installation configured")
-    message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
-    message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
-    message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
+    message(STATUS "[Install] - Runtime: libdap-sdk.so → ${CMAKE_INSTALL_PREFIX}/lib")
+    message(STATUS "[Install] - Development: headers → ${CMAKE_INSTALL_PREFIX}/include/dap-sdk")
+    message(STATUS "[Install] - Documentation: examples → ${CMAKE_INSTALL_PREFIX}/share/doc/dap-sdk")
 
     # =========================================
     # CPACK CONFIGURATION (handled by PackageComponents.cmake)
