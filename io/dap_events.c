@@ -106,7 +106,7 @@ pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 #endif
 
 bool g_debug_reactor = false;
-static int s_workers_init = 0;
+static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
 static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
@@ -467,6 +467,7 @@ void dap_events_stop_all( )
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
+    s_workers_init = 0;
 }
 
 
