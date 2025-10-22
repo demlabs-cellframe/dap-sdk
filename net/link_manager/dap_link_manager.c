@@ -244,7 +244,7 @@ void dap_link_manager_deinit()
         s_link_delete(&l_link, true, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     dap_list_t *it = NULL, *tmp;
-    pthread_rwlock_rdlock(&s_link_manager->nets_lock);
+    pthread_rwlock_wrlock(&s_link_manager->nets_lock);
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
     pthread_rwlock_unlock(&s_link_manager->nets_lock);
