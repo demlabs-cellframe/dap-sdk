@@ -1,14 +1,28 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(DAP_SDK_NATIVE C)
 
-# Отключение SSL по умолчанию - WolfSSL больше не используется
+# Disable SSL by default - WolfSSL is no longer used
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
 
+# Define SDK root directory for use in submodules
+# Works both when dap-sdk is standalone and when it's a submodule
+set(DAP_SDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Root directory of DAP SDK")
+
 # Build type detection
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Installation prefix detection
+# Default: /usr/local (for local builds)
+# For deb packages: override to /usr via cmake -DCMAKE_INSTALL_PREFIX=/usr
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "Installation prefix" FORCE)
+    message(STATUS "[Install] Using default prefix: ${CMAKE_INSTALL_PREFIX}")
+else()
+    message(STATUS "[Install] Using custom prefix: ${CMAKE_INSTALL_PREFIX}")
 endif()
 
 # Common includes and definitions
@@ -16,37 +30,21 @@ include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
 include(cmake/PackageComponents.cmake)
 
-
-# =========================================  
-# INTERNAL MODULE CREATION MACRO
-# =========================================
-# Creates internal OBJECT modules (always OBJECT for combining)
-# Usage: dap_add_library(target_name sources... HEADERS headers...)
-macro(dap_add_library TARGET_NAME)
-    cmake_parse_arguments(DAP_LIB "" "" "HEADERS" ${ARGN})
-    
-    # Always create modules as OBJECT for combining into final library
-    add_library(${TARGET_NAME} OBJECT ${DAP_LIB_UNPARSED_ARGUMENTS} ${DAP_LIB_HEADERS})
-    
-    # Track modules for final library creation
-    if(NOT DEFINED DAP_INTERNAL_MODULES)
-        set(DAP_INTERNAL_MODULES "")
-    endif()
-    list(APPEND DAP_INTERNAL_MODULES ${TARGET_NAME})
-    set(DAP_INTERNAL_MODULES ${DAP_INTERNAL_MODULES} CACHE INTERNAL "List of DAP internal modules")
-    
-    message("[+] DAP Internal Module: ${TARGET_NAME} (object)")
-endmacro()
-
 # =========================================
 # INCLUDE DAP LIBRARY HELPERS
 # =========================================
+# Object library helpers - automatic include propagation for OBJECT libraries (CMake 3.12+)
+include(cmake/ObjectLibraryHelpers.cmake)
+
+# DAP SDK library creation macros
 include(cmake/DapLibrary.cmake)
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
+
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
 
 # Global DB drivers - MDBX is default for all platforms
@@ -100,13 +98,11 @@ if (DAPSDK_MODULES MATCHES "io")
     message("[+] Module 'io'")
 endif()
 
-# Network common types and functions
+# Network common types and functions  
 add_subdirectory(module/net/common)
-message("[+] Module 'net/common' (base types,callbacks and functions)")
 
-# HTTP client for outgoing connections (independent of dap_client)
+# HTTP client
 add_subdirectory(module/net/client_http)
-message("[+] Module 'client_http' (standalone HTTP client)")
 
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(module/net/stream)
@@ -151,6 +147,9 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
+if (BUILD_DAP_SDK_TESTS)
+    set(BUILD_TESTS ON)
+endif()
 
 
 # Test framework - UPDATED PATH
@@ -198,10 +197,6 @@ if(INSTALL_DAP_SDK)
         DESTINATION "uthash"
     )
 
-    register_3rdparty_headers(
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/http_status_code.h"
-    )
-
     # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
 
     # Finalize and install all components
@@ -214,9 +209,9 @@ if(INSTALL_DAP_SDK)
     )
 
     message(STATUS "[Install] Component-based installation configured")
-    message(STATUS "[Install] - Runtime: libdap-sdk.so → /usr/lib")
-    message(STATUS "[Install] - Development: headers → /usr/include/dap-sdk")
-    message(STATUS "[Install] - Documentation: examples → /usr/share/doc/dap-sdk")
+    message(STATUS "[Install] - Runtime: libdap-sdk.so → ${CMAKE_INSTALL_PREFIX}/lib")
+    message(STATUS "[Install] - Development: headers → ${CMAKE_INSTALL_PREFIX}/include/dap-sdk")
+    message(STATUS "[Install] - Documentation: examples → ${CMAKE_INSTALL_PREFIX}/share/doc/dap-sdk")
 
     # =========================================
     # CPACK CONFIGURATION (handled by PackageComponents.cmake)

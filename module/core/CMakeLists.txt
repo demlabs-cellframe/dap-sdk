@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project (dap_core)
+
+# Include required CMake modules for register_module_headers function
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 
 add_definitions("-D_GNU_SOURCE") 
 

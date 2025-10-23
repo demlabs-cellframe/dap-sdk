@@ -64,7 +64,7 @@ static void s_exec_cmd_request_free(struct exec_cmd_request* a_exec_cmd_request)
     DAP_DEL_MULTY(a_exec_cmd_request->response, a_exec_cmd_request);
 }
 
-static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg, http_status_code_t a_http_status) {
+static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg, dap_http_status_code_t a_http_status) {
     (void)a_http_status;
     struct exec_cmd_request *l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
 #ifdef DAP_OS_WINDOWS
@@ -309,8 +309,10 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
                 if (jobj_subcmd && l_arguments_obj) {
                     request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
                 }
+                // jobj_subcmd and l_arguments_obj are borrowed - no free needed
             } else {
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
+                // jobj_params is borrowed - no free needed
             }
 
             dap_json_object_free(jobj);

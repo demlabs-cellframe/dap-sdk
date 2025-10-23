@@ -42,6 +42,14 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     # Enable position independent code for shared library
     set_property(TARGET ${TARGET_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
     
+    # Store original target_link_libraries command for later use
+    # We'll override it to auto-propagate include directories
+    if(NOT COMMAND _original_target_link_libraries)
+        macro(_original_target_link_libraries)
+            _target_link_libraries(${ARGN})
+        endmacro()
+    endif()
+    
     # Track module in the provided list variable
     if(NOT DEFINED ${MODULE_LIST_VAR})
         set(${MODULE_LIST_VAR} "" CACHE INTERNAL "List of object modules for ${TARGET_NAME}")
@@ -50,6 +58,25 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     set(${MODULE_LIST_VAR} ${${MODULE_LIST_VAR}} CACHE INTERNAL "List of object modules")
     
     message(STATUS "[SDK] Module: ${TARGET_NAME} (OBJECT)")
+endmacro()
+
+# Helper macro to propagate include directories when linking OBJECT libraries
+# This is automatically used after create_object_library
+macro(propagate_interface_includes TARGET_NAME)
+    get_target_property(TARGET_TYPE ${TARGET_NAME} TYPE)
+    if(TARGET_TYPE STREQUAL "OBJECT_LIBRARY")
+        get_target_property(LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+        if(LINK_LIBS)
+            foreach(LIB ${LINK_LIBS})
+                if(TARGET ${LIB})
+                    get_target_property(LIB_INCLUDES ${LIB} INTERFACE_INCLUDE_DIRECTORIES)
+                    if(LIB_INCLUDES)
+                        target_include_directories(${TARGET_NAME} PRIVATE ${LIB_INCLUDES})
+                    endif()
+                endif()
+            endforeach()
+        endif()
+    endif()
 endmacro()
 
 # =========================================

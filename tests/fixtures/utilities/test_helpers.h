@@ -54,6 +54,32 @@
 #define DAP_TEST_ASSERT_STRING_EQUAL(expected, actual, name) \
     DAP_TEST_ASSERT(strcmp(expected, actual) == 0, name " strings should be equal")
 
+// ============================================================================
+// Cleanup-based test macros (for goto cleanup pattern)
+// ============================================================================
+// These macros are designed for functions using the goto cleanup pattern
+// They log the error and jump to cleanup label instead of returning immediately
+
+#define DAP_TEST_FAIL_IF(condition, message) \
+    do { \
+        if (condition) { \
+            log_it(L_ERROR, "TEST FAILED: %s at %s:%d", message, __FILE__, __LINE__); \
+            goto cleanup; \
+        } \
+    } while(0)
+
+#define DAP_TEST_FAIL_IF_NOT(condition, message) \
+    DAP_TEST_FAIL_IF(!(condition), message)
+
+#define DAP_TEST_FAIL_IF_NULL(ptr, name) \
+    DAP_TEST_FAIL_IF((ptr) == NULL, name " should not be NULL")
+
+#define DAP_TEST_FAIL_IF_NONZERO(ret, message) \
+    DAP_TEST_FAIL_IF((ret) != 0, message)
+
+#define DAP_TEST_FAIL_IF_STRING_NOT_EQUAL(expected, actual, name) \
+    DAP_TEST_FAIL_IF(strcmp(expected, actual) != 0, name " strings should be equal")
+
 // Test timing utilities
 typedef struct {
     uint64_t start_time;

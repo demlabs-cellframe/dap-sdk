@@ -27,6 +27,7 @@
 #include "dap_sign.h"
 #include "dap_enc_key.h"
 #include "../fixtures/utilities/test_helpers.h"
+#include <inttypes.h>
 
 #define LOG_TAG "test_crypto_performance"
 
@@ -62,7 +63,7 @@ static bool s_benchmark_hash_performance(void) {
     
     log_it(L_INFO, "SHA3-256 Performance Results:");
     log_it(L_INFO, "  - Iterations: %d", HASH_ITERATIONS);
-    log_it(L_INFO, "  - Total time: %lu microseconds", l_elapsed);
+    log_it(L_INFO, "  - Total time: %" PRIu64 " microseconds", l_elapsed);
     log_it(L_INFO, "  - Hashes/sec: %.2f", l_hashes_per_sec);
     log_it(L_INFO, "  - Throughput: %.2f MB/s", l_throughput_mbps);
     log_it(L_INFO, "  - Avg time per hash: %.2f microseconds", (double)l_elapsed / HASH_ITERATIONS);
@@ -111,7 +112,7 @@ static bool s_benchmark_dilithium_sign_performance(void) {
     
     log_it(L_INFO, "Dilithium Signature Creation Results:");
     log_it(L_INFO, "  - Iterations: %d", SIGN_ITERATIONS);
-    log_it(L_INFO, "  - Total time: %lu microseconds", l_elapsed);
+    log_it(L_INFO, "  - Total time: %" PRIu64 " microseconds", l_elapsed);
     log_it(L_INFO, "  - Signatures/sec: %.2f", l_signs_per_sec);
     log_it(L_INFO, "  - Avg signature size: %.0f bytes", l_avg_sig_size);
     log_it(L_INFO, "  - Avg time per signature: %.2f milliseconds", (double)l_elapsed / (SIGN_ITERATIONS * 1000));
@@ -159,7 +160,7 @@ static bool s_benchmark_dilithium_verify_performance(void) {
     log_it(L_INFO, "Dilithium Signature Verification Results:");
     log_it(L_INFO, "  - Iterations: %d", VERIFY_ITERATIONS);
     log_it(L_INFO, "  - Successful verifications: %zu", l_successful_verifications);
-    log_it(L_INFO, "  - Total time: %lu microseconds", l_elapsed);
+    log_it(L_INFO, "  - Total time: %" PRIu64 " microseconds", l_elapsed);
     log_it(L_INFO, "  - Verifications/sec: %.2f", l_verifies_per_sec);
     log_it(L_INFO, "  - Avg time per verification: %.2f milliseconds", (double)l_elapsed / (VERIFY_ITERATIONS * 1000));
     

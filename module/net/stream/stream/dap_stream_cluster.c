@@ -299,6 +299,13 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
             dap_json_object_add_int(l_jobj_info, "port", l_link_info->remote_port);
             dap_json_object_add_string(l_jobj_info, "channel", l_link_info->channels);
             dap_json_object_add_uint64(l_jobj_info, "total_packets_sent", l_link_info->total_packets_sent);
+            
+            // Add to appropriate array (transfers ownership, invalidates wrapper)
+            if (l_link_info->is_uplink) {
+                dap_json_array_add(l_jobj_uplinks, l_jobj_info);
+            } else {
+                dap_json_array_add(l_jobj_downlinks, l_jobj_info);
+            }
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }

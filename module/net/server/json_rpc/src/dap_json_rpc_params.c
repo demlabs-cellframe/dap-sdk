@@ -34,11 +34,13 @@ static void s_process_json_param(const char* key, dap_json_t* val, void* user_da
 
             if (jobj_type != DAP_JSON_TYPE_STRING) {
                 log_it(L_ERROR, "Bad subcommand type");
+                // jobj is borrowed reference - no free needed
                 *data->error_occurred = true;
                 return;
             }
             const char *jobj_str = dap_json_get_string(jobj);
             dap_string_append_printf(data->str_tmp, "%s;", jobj_str);
+            // jobj is borrowed reference - no free needed
         }
     } else {
         l_key_str = key;
@@ -172,6 +174,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(dap_json_t *a
         } else {
             dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
         }
+        // jobj is borrowed reference - no free needed
     }
     return params;
 }
@@ -193,12 +196,14 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(dap_json
                 dap_json_t *jobj = dap_json_array_get_idx(a_subcmd, i);
                 if (!dap_json_is_string(jobj)){
                     log_it(L_ERROR, "Bad subcommand type");
+                    // jobj is borrowed - no free needed
                     dap_string_free(l_str_tmp, true);
                     return NULL;
                 }
 
                 const char *str_val = dap_json_get_string(jobj);
                 dap_string_append_printf(l_str_tmp, "%s;", str_val ? str_val : "");
+                // jobj is borrowed reference - no free needed
             }
         } else if (dap_json_is_string(a_subcmd)) { 
             const char *str_val = dap_json_get_string(a_subcmd);

@@ -65,10 +65,10 @@ static uint32_t s_max_attempts = 5;
 static WOLFSSL_CTX *s_ctx;
 #endif
 
-http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
+dap_http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
     char l_ver[16] = { '\0' };
     int l_err = 0, l_ret = sscanf((char*)a_response, "%[^ ] %d", l_ver, &l_err);
-    return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (http_status_code_t)l_err : 0;
+    return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (dap_http_status_code_t)l_err : 0;
 }
 
 /**
@@ -458,7 +458,7 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
                l_response_size);
 
             //l_client_http->error_callback(-10 , l_client_http->callbacks_arg);
-            http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
+            dap_http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
             if(l_client_http->response_callback)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
