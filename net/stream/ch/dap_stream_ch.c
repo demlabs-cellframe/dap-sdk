@@ -323,6 +323,11 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready)
 {
     if( a_ch->ready_to_read != a_is_ready){
+        /* Extra diagnostics: track moments when the channel switches its readable state.
+         * This is critical for debugging silent drops of CHECK_REQUEST packets (channel 'R'). */
+        char l_ch_id = a_ch->proc ? (char)a_ch->proc->id : '?';
+        log_it(L_DEBUG, "dap_stream_ch_set_ready_to_read_unsafe: channel '%c' uuid=0x%08x ready_to_read -> %s", 
+               l_ch_id, a_ch->uuid, a_is_ready ? "true" : "false");
         //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         a_ch->ready_to_read=a_is_ready;
         dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);

@@ -301,6 +301,12 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         return 0;
     }
 
+    // Добавляем логи для отслеживания отправки CHECK_RESPONSE
+    if (a_type == 0x51) { // CHECK_RESPONSE type
+        log_it(L_DEBUG, "dap_stream_ch_pkt_write_unsafe: Sending CHECK_RESPONSE, channel_id='%c', data_size=%zu, stream_ptr=%p", 
+               a_ch->proc->id, a_data_size, (void*)a_ch->stream);
+    }
+
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
     byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_max_size); /* a_ch->buf; */
@@ -322,6 +328,12 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
         l_ret = dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_buf, l_data_size);
+        
+        // Добавляем логи для отслеживания результата отправки
+        if (a_type == 0x51) { // CHECK_RESPONSE type
+            log_it(L_DEBUG, "dap_stream_pkt_write_unsafe returned: %zu for CHECK_RESPONSE, stream_ptr=%p", l_ret, (void*)a_ch->stream);
+        }
+        
 #ifndef DAP_EVENTS_CAPS_IOCP
         dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
 #endif

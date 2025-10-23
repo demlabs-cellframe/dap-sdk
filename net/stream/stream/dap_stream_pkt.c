@@ -66,7 +66,22 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
                                           .timestamp = dap_time_now(), .type = a_type,
                                           .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    return dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
+    
+    // Добавляем логи для отслеживания отправки пакетов
+    if (a_type == STREAM_PKT_TYPE_DATA_PACKET) {
+        log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: Sending DATA_PACKET, size=%zu, esocket_ptr=%p, remote_addr=%s", 
+               l_full_size, (void*)a_stream->esocket, a_stream->esocket->remote_addr_str);
+    }
+    
+    size_t l_write_result = dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
+    
+    // Добавляем логи для отслеживания результата отправки
+    if (a_type == STREAM_PKT_TYPE_DATA_PACKET) {
+        log_it(L_DEBUG, "dap_events_socket_write_unsafe returned: %zu for DATA_PACKET to %s", 
+               l_write_result, a_stream->esocket->remote_addr_str);
+    }
+    
+    return l_write_result;
 }
 
 /**

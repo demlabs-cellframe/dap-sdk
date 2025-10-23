@@ -610,6 +610,13 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 
     debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_read: ready_to_write=%s, client->buf_in_size=%zu",
                (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false", a_esocket->buf_in_size);
+    
+    // Add logs for tracking incoming data
+    if (a_esocket->buf_in_size > 0) {
+        log_it(L_DEBUG, "DEBUG: s_esocket_data_read: buf_in_size=%zu, remote_addr=%s", 
+               a_esocket->buf_in_size, a_esocket->remote_addr_str);
+    }
+    
     *l_ret = dap_stream_data_proc_read(l_stream);
 }
 
@@ -680,6 +687,12 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
     byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
     size_t l_shift = 0, l_processed_size = 0;
+    
+    // Add logs for tracking incoming data
+    if (a_stream->esocket->buf_in_size > 0) {
+        log_it(L_DEBUG, "DEBUG: dap_stream_data_proc_read: buf_in_size=%zu", a_stream->esocket->buf_in_size);
+    }
+    
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
         if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
             break;
@@ -690,6 +703,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
                 debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                log_it(L_DEBUG, "DEBUG: Found complete packet, type=0x%02X, size=%u", l_pkt->hdr.type, l_pkt->hdr.size);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else
                 break;
@@ -784,10 +798,22 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         // If seq_id is less than previous - doomp eet
         if (!s_detect_loose_packet(a_stream)) {
             dap_stream_ch_t * l_ch = NULL;
+            
+            // Add detailed logs for tracking CHECK_REQUEST packets
+            if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                log_it(L_DEBUG, "DEBUG: Processing CHECK_REQUEST packet, channel_id='%c', data_size=%u, seq_id=0x%016"DAP_UINT64_FORMAT_X, 
+                       (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.seq_id);
+                log_it(L_DEBUG, "DEBUG: Stream has %zu channels", a_stream->channel_count);
+            }
+            
             for(size_t i=0;i<a_stream->channel_count;i++){
                 if(a_stream->channel[i]->proc){
                     if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
                         l_ch=a_stream->channel[i];
+                        if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                            log_it(L_DEBUG, "DEBUG: Found channel for CHECK_REQUEST: channel_id='%c', proc_id='%c'", 
+                                   (char)l_ch_pkt->hdr.id, (char)l_ch->proc->id);
+                        }
                         break;
                     }
                 }
@@ -795,7 +821,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(l_ch) {
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
+                    if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                        log_it(L_DEBUG, "DEBUG: Calling packet_in_callback for CHECK_REQUEST, channel_id='%c'", (char)l_ch_pkt->hdr.id);
+                    }
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                        log_it(L_DEBUG, "DEBUG: packet_in_callback returned %s for CHECK_REQUEST", l_security_check_passed ? "true" : "false");
+                    }
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
@@ -804,10 +836,24 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
                     }
-                    if (l_ch->closing)
-                        break;
+                } else {
+                    if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                        log_it(L_ERROR, "DEBUG: No packet_in_callback for CHECK_REQUEST, channel_id='%c', proc=%p", 
+                               (char)l_ch_pkt->hdr.id, (void*)l_ch->proc);
+                    }
                 }
             } else{
+                if (l_ch_pkt->hdr.type == 0x01) { // CHECK_REQUEST
+                    log_it(L_ERROR, "DEBUG: No channel found for CHECK_REQUEST, channel_id='%c'", (char)l_ch_pkt->hdr.id);
+                    log_it(L_DEBUG, "DEBUG: Available channels:");
+                    for(size_t i=0;i<a_stream->channel_count;i++){
+                        if(a_stream->channel[i]->proc){
+                            log_it(L_DEBUG, "DEBUG: Channel[%zu]: proc_id='%c'", i, (char)a_stream->channel[i]->proc->id);
+                        } else {
+                            log_it(L_DEBUG, "DEBUG: Channel[%zu]: proc=NULL", i);
+                        }
+                    }
+                }
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
             }
         }
@@ -830,7 +876,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         dap_stream_pkt_hdr_t l_ret_pkt = {
             .type = STREAM_PKT_TYPE_ALIVE
         };
-        memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
+        memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(l_ret_pkt.sig));
         dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
