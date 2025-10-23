@@ -909,7 +909,7 @@ cleanup:
 
 /**
  * @brief Test fix for Problem #3: dap_json_object_ref increments refcount
- * Verifies that ref increments refcount and returns same wrapper
+ * Verifies that ref increments refcount and returns new wrapper
  */
 static bool s_test_fix_ref_new_wrapper(void) {
     log_it(L_DEBUG, "Testing: dap_json_object_ref increments refcount");
@@ -922,13 +922,12 @@ static bool s_test_fix_ref_new_wrapper(void) {
     
     dap_json_object_add_string(l_obj1, "key", "value");
     
-    // Create reference - should get SAME wrapper (JSON-C semantics)
+    // Create reference - should get NEW wrapper (NOT JSON-C semantics!)
     l_obj2 = dap_json_object_ref(l_obj1);
     DAP_TEST_FAIL_IF_NULL(l_obj2, "Object 2 reference creation");
     
-    // Verify they point to the SAME wrapper structure
-    DAP_TEST_FAIL_IF_NOT(l_obj1 == l_obj2, "Wrapper is the same (JSON-C semantics)");
-    
+    // Verify they point to the NEW wrapper structure
+    DAP_TEST_FAIL_IF_NOT(l_obj1 != l_obj2, "Wrapper is new (NOT JSON-C semantics!)");
     // Verify value is accessible
     const char *l_value = dap_json_object_get_string(l_obj1, "key");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("value", l_value, "Object functional");

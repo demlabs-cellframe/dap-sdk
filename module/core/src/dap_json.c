@@ -117,6 +117,7 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     }
     
     // Transfer ownership - no refcount increment needed
+    a_item->owned = false;
     // After this call, a_item is owned by a_array
     // Caller must NOT free a_item after successful add
     return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
@@ -335,6 +336,7 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     }
     
     // Transfer ownership - no refcount increment needed
+    a_value->owned = false;
     // After this call, a_value is owned by a_json
     // Caller must NOT free a_value after successful add
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
@@ -348,6 +350,7 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
     }
     
     // Transfer ownership - no refcount increment needed
+    a_array->owned = false;
     // After this call, a_array is owned by a_json
     // Caller must NOT free a_array after successful add
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
