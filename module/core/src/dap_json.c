@@ -34,7 +34,8 @@
  * Can represent both JSON objects and arrays internally
  */
 struct dap_json {
-    void *pvt;  // Internal json-c object pointer (struct json_object*)
+    void *pvt;      // Internal json-c object pointer (struct json_object*)
+    bool owned;     // Ownership flag: true=owns reference, false=borrowed
 };
 
 // Helper functions for internal type conversion
@@ -42,11 +43,12 @@ static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
     return a_dap_json ? (struct json_object*)a_dap_json->pvt : NULL;
 }
 
-static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
+static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj, bool a_owned) {
     if (!a_json_obj) return NULL;
     dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
     if (l_dap_json) {
         l_dap_json->pvt = a_json_obj;
+        l_dap_json->owned = a_owned;
     }
     return l_dap_json;
 }
@@ -55,7 +57,7 @@ static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
 dap_json_t* dap_json_object_new(void)
 {
     struct json_object* l_json_obj = json_object_new_object();
-    return _json_c_to_dap_json(l_json_obj);
+    return _json_c_to_dap_json(l_json_obj, true);  // OWNED
 }
 
 dap_json_t* dap_json_parse_string(const char* a_json_string)
@@ -73,16 +75,18 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
         return NULL;
     }
     
-    return _json_c_to_dap_json(l_json);
+    return _json_c_to_dap_json(l_json, true);  // OWNED
 }
 
 void dap_json_object_free(dap_json_t* a_json)
 {
     if (a_json) {
         struct json_object* l_json_obj = _dap_json_to_json_c(a_json);
-        if (l_json_obj) {
+        // Only call json_object_put() if we own the reference
+        if (l_json_obj && a_json->owned) {
             json_object_put(l_json_obj);
         }
+        // Always free the wrapper itself (fixes leak!)
         DAP_DELETE(a_json);
     }
 }
@@ -91,7 +95,7 @@ void dap_json_object_free(dap_json_t* a_json)
 dap_json_t* dap_json_array_new(void)
 {
     struct json_object* l_json_array = json_object_new_array();
-    return _json_c_to_dap_json(l_json_array);
+    return _json_c_to_dap_json(l_json_array, true);  // OWNED
 }
 
 void dap_json_array_free(dap_json_t* a_array)
@@ -112,6 +116,9 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
         return -1;
     }
     
+    // Transfer ownership - no refcount increment needed
+    // After this call, a_item is owned by a_array
+    // Caller must NOT free a_item after successful add
     return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
 }
 
@@ -148,7 +155,7 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
+    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx), false);  // BORROWED
 }
 
 void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
@@ -327,9 +334,9 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
         return -1;
     }
     
-    // Increase reference count since json-c will manage the object
-    json_object_get(_dap_json_to_json_c(a_value));
-    
+    // Transfer ownership - no refcount increment needed
+    // After this call, a_value is owned by a_json
+    // Caller must NOT free a_value after successful add
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
 }
 
@@ -340,9 +347,9 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
         return -1;
     }
     
-    // Increase reference count since json-c will manage the array
-    json_object_get(_dap_json_to_json_c(a_array));
-    
+    // Transfer ownership - no refcount increment needed
+    // After this call, a_array is owned by a_json
+    // Caller must NOT free a_array after successful add
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
 }
 
@@ -461,7 +468,7 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    return _json_c_to_dap_json(l_obj);
+    return _json_c_to_dap_json(l_obj, false);  // BORROWED
 }
 
 dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
@@ -475,7 +482,7 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    return _json_c_to_dap_json(l_obj);
+    return _json_c_to_dap_json(l_obj, false);  // BORROWED
 }
 
 // String conversion
@@ -571,7 +578,7 @@ dap_json_t* dap_json_from_file(const char* a_file_path)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_from_file(a_file_path));
+    return _json_c_to_dap_json(json_object_from_file(a_file_path), true);  // OWNED
 }
 
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
@@ -584,7 +591,7 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     bool l_result = json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
     
     if (l_result && l_temp_obj) {
-        *a_value = _json_c_to_dap_json(l_temp_obj);
+        *a_value = _json_c_to_dap_json(l_temp_obj, false);  // BORROWED
     } else {
         *a_value = NULL;
     }
@@ -727,7 +734,7 @@ dap_json_t* dap_json_tokener_parse_verbose(const char* a_str, dap_json_tokener_e
         }
     }
     
-    return _json_c_to_dap_json(l_json);
+    return _json_c_to_dap_json(l_json, true);  // OWNED
 }
 
 const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_jerr)
@@ -790,23 +797,25 @@ dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_get(_dap_json_to_json_c(a_json)));
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    json_object_get(l_obj);  // Increment refcount
+    return _json_c_to_dap_json(l_obj, true);  // OWNED - new reference
 }
 
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value)
 {
-    return _json_c_to_dap_json(json_object_new_int(a_value));
+    return _json_c_to_dap_json(json_object_new_int(a_value), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_int64(int64_t a_value)
 {
-    return _json_c_to_dap_json(json_object_new_int64(a_value));
+    return _json_c_to_dap_json(json_object_new_int64(a_value), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
 {
-    return _json_c_to_dap_json(json_object_new_uint64(a_value));
+    return _json_c_to_dap_json(json_object_new_uint64(a_value), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_uint256(uint256_t a_value)
@@ -820,7 +829,7 @@ dap_json_t* dap_json_object_new_uint256(uint256_t a_value)
     struct json_object *l_string = json_object_new_string(l_str);
     DAP_DELETE(l_str);
     
-    return _json_c_to_dap_json(l_string);
+    return _json_c_to_dap_json(l_string, true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_string(const char* a_value)
@@ -830,7 +839,7 @@ dap_json_t* dap_json_object_new_string(const char* a_value)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_new_string(a_value));
+    return _json_c_to_dap_json(json_object_new_string(a_value), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
@@ -840,17 +849,17 @@ dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_new_string_len(a_value, a_len));
+    return _json_c_to_dap_json(json_object_new_string_len(a_value, a_len), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_double(double a_value)
 {
-    return _json_c_to_dap_json(json_object_new_double(a_value));
+    return _json_c_to_dap_json(json_object_new_double(a_value), true);  // OWNED
 }
 
 dap_json_t* dap_json_object_new_bool(bool a_value)
 {
-    return _json_c_to_dap_json(json_object_new_boolean(a_value));
+    return _json_c_to_dap_json(json_object_new_boolean(a_value), true);  // OWNED
 }
 
 #define INDENTATION_LEVEL "    "
@@ -878,7 +887,7 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
                 fprintf(a_stream, INDENTATION_LEVEL);
             }
             
-            dap_json_t *dap_val = _json_c_to_dap_json(val);
+            dap_json_t *dap_val = _json_c_to_dap_json(val, false);  // BORROWED
             fprintf(a_stream, "\"%s\": ", key);
             dap_json_print_value(dap_val, key, a_stream, a_indent_level + 1, false);
         }
@@ -928,16 +937,16 @@ void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream,
     }
 
     if (dap_json_is_string(a_json)) {
-        const char *str_val = dap_json_object_get_string(a_json, NULL);
+        const char *str_val = dap_json_get_string(a_json);
         fprintf(a_stream, a_print_separator ? "\"%s\", " : "\"%s\"", str_val ? str_val : "");
     } else if (dap_json_is_int(a_json)) {
-        int64_t int_val = dap_json_object_get_int64(a_json, NULL);
+        int64_t int_val = dap_json_get_int64(a_json);
         fprintf(a_stream, "%"DAP_INT64_FORMAT, int_val);
     } else if (dap_json_is_double(a_json)) {
-        double double_val = dap_json_object_get_double(a_json, NULL);
+        double double_val = dap_json_get_double(a_json);
         fprintf(a_stream, "%lf", double_val);
     } else if (dap_json_is_bool(a_json)) {
-        bool bool_val = dap_json_object_get_bool(a_json, NULL);
+        bool bool_val = dap_json_get_bool(a_json);
         fprintf(a_stream, "%s", bool_val ? "true" : "false");
     } else if (dap_json_is_object(a_json) || dap_json_is_array(a_json)) {
         fprintf(a_stream, "\n");
@@ -971,7 +980,7 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     if (!l_obj) return NULL;
     
     json_object_get(l_obj); // Increase reference count
-    return a_json;
+    return _json_c_to_dap_json(l_obj, true);  // OWNED - new reference
 }
 
 // Object iteration implementation
@@ -982,9 +991,10 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
     if (!l_obj) return;
     
     json_object_object_foreach(l_obj, key, val) {
-        dap_json_t *l_dap_val = _json_c_to_dap_json(val);
+        dap_json_t *l_dap_val = _json_c_to_dap_json(val, false);  // BORROWED
         if (l_dap_val) {
             callback(key, l_dap_val, user_data);
+            // Note: User should free l_dap_val in callback if they want to prevent wrapper leak
         }
     }
 }
@@ -1006,6 +1016,24 @@ int64_t dap_json_get_int64(dap_json_t* a_json) {
     if (!l_obj) return 0;
     
     return json_object_get_int64(l_obj);
+}
+
+double dap_json_get_double(dap_json_t* a_json) {
+    if (!a_json) return 0.0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0.0;
+    
+    return json_object_get_double(l_obj);
+}
+
+bool dap_json_get_bool(dap_json_t* a_json) {
+    if (!a_json) return false;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return false;
+    
+    return json_object_get_boolean(l_obj);
 }
 
 uint64_t dap_json_get_uint64(dap_json_t* a_json) {

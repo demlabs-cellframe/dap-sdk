@@ -168,6 +168,8 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
 // Extended value access API
 const char* dap_json_get_string(dap_json_t* a_json);
 int64_t dap_json_get_int64(dap_json_t* a_json);
+double dap_json_get_double(dap_json_t* a_json);
+bool dap_json_get_bool(dap_json_t* a_json);
 uint64_t dap_json_get_uint64(dap_json_t* a_json);
 dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json);
 size_t dap_json_object_length(dap_json_t* a_json);

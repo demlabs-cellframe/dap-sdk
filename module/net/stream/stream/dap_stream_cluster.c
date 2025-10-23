@@ -269,20 +269,24 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
         dap_json_object_free(l_jobj_ret);
         return NULL;
     }
-    dap_json_object_add_array(l_jobj_ret, "downlinks", l_jobj_downlinks);
     dap_json_t *l_jobj_uplinks = dap_json_array_new();
     if (!l_jobj_uplinks) {
+        dap_json_object_free(l_jobj_downlinks);
         dap_json_object_free(l_jobj_ret);
         return NULL;
-    }
-    dap_json_object_add_array(l_jobj_ret, "uplinks", l_jobj_uplinks);    
+    }    
     size_t l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
             dap_json_t *l_jobj_info = dap_json_object_new();
-            if (!l_jobj_info) { dap_json_object_free(l_jobj_ret); return NULL; }
+            if (!l_jobj_info) {
+                dap_json_object_free(l_jobj_downlinks);
+                dap_json_object_free(l_jobj_uplinks);
+                dap_json_object_free(l_jobj_ret);
+                return NULL;
+            }
             if (l_link_info->is_uplink) {
                 dap_json_array_add(l_jobj_uplinks, l_jobj_info);
             } else {
@@ -298,7 +302,10 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
-    assert(l_total_links_count == dap_json_array_length(l_jobj_uplinks) + dap_json_array_length(l_jobj_downlinks));    
+    assert(l_total_links_count == dap_json_array_length(l_jobj_uplinks) + dap_json_array_length(l_jobj_downlinks));
+    // Add arrays to object AFTER filling them (transfer ownership at the end)
+    dap_json_object_add_array(l_jobj_ret, "downlinks", l_jobj_downlinks);
+    dap_json_object_add_array(l_jobj_ret, "uplinks", l_jobj_uplinks);
     return l_jobj_ret;
 }
 

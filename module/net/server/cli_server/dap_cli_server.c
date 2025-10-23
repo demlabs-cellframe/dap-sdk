@@ -448,14 +448,65 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                          dap_nanotime_now() - l_arg->time_start, 
                                          l_additional_headers,
                                          l_ret);
+    dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     DAP_DELETE(l_additional_headers);
     DAP_DELETE(l_ret);
-    dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination and output optimizations
     DAP_DEL_MULTY(l_arg->buf, l_full_ret, l_arg);
     atomic_fetch_sub(&s_cmd_thread_count, 1);
     return NULL;
 }
+
+int json_commands(const char * a_name) {
+    static const char* long_cmd[] = {
+            "tx_history",
+            "wallet",
+            "mempool",
+            "ledger",
+            "tx_create",
+            "tx_create_json",
+            "mempool_add",
+            "tx_verify",
+            "tx_cond_create",
+            "tx_cond_remove",
+            "tx_cond_unspent_find",
+            "chain_ca_copy",
+            "dag",
+            "block",
+            "dag",
+            "token",
+            "esbocs",
+            "global_db",
+            "net_srv",
+            "net",
+            "srv_stake",
+            "poll",
+            "srv_xchange",
+            "emit_delegate",
+            "token_decl",
+            "token_update",
+            "token_update_sign",
+            "token_decl_sign",
+            "chain_ca_pub",
+            "token_emit",
+            "find",
+            "version",
+            "remove",
+            "gdb_import",
+            "stats",
+            "print_log",
+            "stake_lock",
+            "exec_cmd",
+            "policy"
+    };
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+        if (!strcmp(a_name, long_cmd[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 
 char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str, s_cli_version);
@@ -526,7 +577,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
                 l_call_time = dap_nanotime_now();
             }
             // Check if this is JSON-RPC command based on flags
-            if (l_cmd->flags.is_json_rpc) {
+            if (json_commands(cmd_name)) {
                 res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
