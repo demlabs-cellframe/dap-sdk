@@ -52,7 +52,6 @@ typedef struct dap_stream {
     dap_events_socket_t *esocket; // Connection
     dap_events_socket_uuid_t esocket_uuid;
     dap_stream_worker_t *stream_worker;
-    struct dap_http_client *conn_http; // HTTP-specific
 
     dap_timerfd_t *keepalive_timer;
     bool is_active;
@@ -73,6 +72,20 @@ typedef struct dap_stream {
 
     UT_hash_handle hh;
     struct dap_stream *prev, *next;
+    
+    /**
+     * @brief Transport layer abstraction
+     * 
+     * This field provides access to the pluggable transport layer
+     * interface that supports HTTP, UDP, WebSocket, and other transports.
+     * 
+     * For HTTP transport, use dap_stream_transport_http_get_client()
+     * to get the underlying http_client if needed.
+     * 
+     * @see dap_stream_transport.h
+     * @see dap_stream_transport_http.h
+     */
+    struct dap_stream_transport *stream_transport;
 } dap_stream_t;
 
 typedef struct dap_stream_info {

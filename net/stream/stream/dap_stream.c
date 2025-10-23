@@ -59,6 +59,9 @@
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
+#include "dap_stream_transport.h"
+#include "dap_stream_transport_http.h"
+#include "dap_stream_transport_udp.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -174,6 +177,25 @@ int dap_stream_init(dap_config_t * a_config)
         log_it(L_ERROR, "Can't initiazlize certificate containing secure node address");
         return -3;
     }
+    
+    // Initialize transport layer
+    if (dap_stream_transport_registry_init() != 0) {
+        log_it(L_CRITICAL, "Can't init transport registry");
+        return -4;
+    }
+    
+    // Register HTTP transport adapter (backward compatibility)
+    if (dap_stream_transport_http_register() != 0) {
+        log_it(L_ERROR, "Can't register HTTP transport adapter");
+        // Non-fatal, continue
+    }
+    
+    // Register UDP transport adapter
+    if (dap_stream_transport_udp_register() != 0) {
+        log_it(L_ERROR, "Can't register UDP transport adapter");
+        // Non-fatal, continue
+    }
+    
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
     s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
@@ -189,7 +211,7 @@ int dap_stream_init(dap_config_t * a_config)
 
     s_global_links_cluster = dap_cluster_new(DAP_STREAM_CLUSTER_GLOBAL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_TYPE_SYSTEM);
 
-    log_it(L_NOTICE,"Init streaming module");
+    log_it(L_NOTICE,"Init streaming module with transport layer");
 
     return 0;
 }
@@ -199,6 +221,11 @@ int dap_stream_init(dap_config_t * a_config)
  */
 void dap_stream_deinit()
 {
+    // Deinitialize transport layer
+    dap_stream_transport_udp_unregister();
+    dap_stream_transport_http_unregister();
+    dap_stream_transport_registry_deinit();
+    
     dap_stream_ch_deinit( );
 }
 
@@ -247,8 +274,13 @@ static void s_stream_states_update(dap_stream_t *a_stream)
     for(i=0;i<a_stream->channel_count; i++)
         ready_to_write|=a_stream->channel[i]->ready_to_write;
     dap_events_socket_set_writable_unsafe(a_stream->esocket,ready_to_write);
-    if(a_stream->conn_http)
-        a_stream->conn_http->out_content_ready=true;
+    
+    // Get HTTP client via transport if available
+    if(a_stream->stream_transport && dap_stream_transport_is_http(a_stream)) {
+        dap_http_client_t *l_http_client = dap_stream_transport_http_get_client(a_stream);
+        if(l_http_client)
+            l_http_client->out_content_ready=true;
+    }
 }
 
 
@@ -349,7 +381,23 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
     l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
-    l_ret->conn_http = a_http_client;
+    
+    // Initialize HTTP transport for this stream
+    dap_stream_transport_t *l_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_TYPE_HTTP);
+    if (l_transport) {
+        l_ret->stream_transport = l_transport;
+        // Initialize transport instance
+        if (l_transport->ops && l_transport->ops->init) {
+            l_transport->ops->init(l_transport, a_http_client);
+        }
+        // Store HTTP client in transport private data
+        dap_stream_transport_http_private_t *l_priv = 
+            (dap_stream_transport_http_private_t*)l_transport->internal;
+        if (l_priv) {
+            l_priv->http_client = a_http_client;
+        }
+    }
+    
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
     // Start server keep-alive timer

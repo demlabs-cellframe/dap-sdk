@@ -52,6 +52,8 @@
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_pkt.h"
 #include "dap_net.h"
+#include "dap_stream_transport.h"
+#include "dap_stream_handshake.h"
 
 #define LOG_TAG "dap_client_pvt"
 
@@ -414,26 +416,77 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                                              a_client_pvt->session_key_open->pub_key_data,
                                                              a_client_pvt->session_key_open->pub_key_data_size);
                 
+                    // Check if stream has new transport layer
+                    if (a_client_pvt->stream && a_client_pvt->stream->stream_transport && 
+                        a_client_pvt->stream->stream_transport->ops && 
+                        a_client_pvt->stream->stream_transport->ops->handshake_init) {
+                        
+                        // New transport architecture path
+                        log_it(L_DEBUG, "Using transport layer for handshake init");
+                        
+                        dap_stream_handshake_params_t l_params = {
+                            .enc_type = a_client_pvt->session_key_type,
+                            .pkey_exchange_type = a_client_pvt->session_key_open_type,
+                            .pkey_exchange_size = a_client_pvt->session_key_open->pub_key_data_size,
+                            .block_key_size = a_client_pvt->session_key_block_size,
+                            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
+                            .pkey_data = l_data,
+                            .pkey_data_size = l_data_size
+                        };
+                        
+                        uint8_t *l_handshake_data = NULL;
+                        size_t l_handshake_size = 0;
+                        
+                        int l_res = a_client_pvt->stream->stream_transport->ops->handshake_init(
+                            a_client_pvt->stream->stream_transport,
+                            &l_params,
+                            &l_handshake_data,
+                            &l_handshake_size
+                        );
+                        
+                        if (l_res == 0 && l_handshake_data && l_handshake_size > 0) {
+                            // Transport prepared handshake data, send it via HTTP for now
+                            // (full transport integration will happen in next stages)
+                            char l_enc_init_url[1024] = { '\0' };
+                            snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
+                                         "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
+                                         a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
+                                         a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
+                            
+                            l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
+                                    (const char*)l_handshake_data, l_handshake_size, s_enc_init_response, s_enc_init_error);
+                            
+                            DAP_DELETE(l_handshake_data);
+                            
+                            if (l_res < 0)
+                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        } else {
+                            log_it(L_ERROR, "Transport handshake_init failed: %d", l_res);
+                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        }
+                    } else {
+                        // Legacy HTTP path (backward compatibility)
+                        size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
+                        char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
+                        // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
+                        size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
 
-                    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
-                    char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
-                    // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
-                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
+                        debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
 
-                    debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
-
-                    char l_enc_init_url[1024] = { '\0' };
-                    snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
-                                 a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
-                                 a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
-                    int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
-                            l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
-                    // bad request
-                    if (l_res < 0)
-                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        char l_enc_init_url[1024] = { '\0' };
+                        snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
+                                     "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
+                                     a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
+                                     a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
+                        int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
+                                l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
+                        // bad request
+                        if (l_res < 0)
+                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        DAP_DELETE(l_data_str);
+                    }
+                    
                     DAP_DELETE(l_data);
-                    DAP_DELETE(l_data_str);
                 } break;
 
                 case STAGE_STREAM_CTL: {
