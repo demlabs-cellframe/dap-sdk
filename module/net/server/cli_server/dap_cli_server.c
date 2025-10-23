@@ -452,15 +452,12 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                          dap_nanotime_now() - l_arg->time_start, 
                                          l_additional_headers,
                                          l_ret);
-    DAP_DELETE(l_additional_headers);
-    DAP_DELETE(l_ret);
+    DAP_DEL_MULTY(l_additional_headers, l_ret);
     dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
-    // TODO: pagination and output optimizations
     DAP_DEL_MULTY(l_arg->buf, l_full_ret, l_arg);
     atomic_fetch_sub(&s_cmd_thread_count, 1);
     return NULL;
 }
-
 char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str, s_cli_version);
     if ( !request )
@@ -530,12 +527,10 @@ char *dap_cli_cmd_exec(char *a_req_str) {
                 l_call_time = dap_nanotime_now();
             }
             // Check if this is JSON-RPC command based on flags
-            if (l_cmd->flags.is_json_rpc) {
-                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
-            } else if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply, request->version);
+            if (l_cmd->arg_func) {
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&l_json_arr_reply, request->version);
             } else {
-                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply, request->version);
+                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
             }
             if (s_stat_callback) {
                 s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
