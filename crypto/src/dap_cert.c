@@ -902,9 +902,11 @@ dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count
     size_t l_keys_count = 0;
     dap_enc_key_t *l_keys[a_count];
 // func work
+    // Fill l_keys array starting from index 0, not from a_key_start_index
+    // to avoid uninitialized memory at the beginning of the array
     for(size_t i = a_key_start_index; i < a_count; ++i) {
         if (a_certs[i]) {
-            l_keys[i] = dap_enc_key_dup(a_certs[i]->enc_key);
+            l_keys[l_keys_count] = dap_enc_key_dup(a_certs[i]->enc_key);
             l_keys_count++;
         } else {
             log_it(L_WARNING, "Certs with NULL value");
