@@ -13,6 +13,10 @@
 #include MDBX_CONFIG_H
 #endif
 
+#if defined(__ANDROID__) && defined(DAP_OS_ANDROID)
+#include "android_compat.h"
+#endif
+
 /* Undefine the NDEBUG if debugging is enforced by MDBX_DEBUG */
 #if (defined(MDBX_DEBUG) && MDBX_DEBUG > 0) || (defined(MDBX_FORCE_ASSERTIONS) && MDBX_FORCE_ASSERTIONS)
 #undef NDEBUG
