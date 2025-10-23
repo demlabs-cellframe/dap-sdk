@@ -433,10 +433,3 @@ const char *dap_json_rpc_get_text(dap_json_t *a_json, const char *a_key)
         return NULL;
     return dap_json_is_string(a_json) ? dap_json_object_get_string(a_json, a_key) : NULL;
 }
-
-const char *dap_json_rpc_get_text(dap_json_t *a_json, const char *a_key)
-{
-    if(!a_json || !a_key)
-        return NULL;
-    return dap_json_is_string(a_json) ? dap_json_object_get_string(a_json, a_key) : NULL;
-}
