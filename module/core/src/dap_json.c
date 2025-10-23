@@ -599,6 +599,26 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     return l_result;
 }
 
+/**
+ * @brief Convenience function to check if a key exists in JSON object
+ * @param a_json JSON object to check
+ * @param a_key Key name to check for
+ * @return true if key exists, false otherwise
+ * 
+ * This is a lightweight alternative to dap_json_object_get_ex() when you only
+ * need to check key existence without retrieving the value.
+ */
+bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return false;
+    }
+    
+    struct json_object* l_temp_obj = NULL;
+    return json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
+}
+ 
+
 int dap_json_object_del(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
