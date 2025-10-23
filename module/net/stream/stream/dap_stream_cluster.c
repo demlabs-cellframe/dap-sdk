@@ -276,16 +276,17 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
         dap_json_object_free(l_jobj_ret);
         return NULL;
     }
-    dap_json_object_add_array(l_jobj_ret, "uplinks", l_jobj_uplinks);    
+    dap_json_object_add_array(l_jobj_ret, "uplinks", l_jobj_uplinks);
     size_t l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
             dap_json_t *l_jobj_info = dap_json_object_new();
-            if (!l_jobj_info) { dap_json_object_free(l_jobj_ret); return NULL; }
-            
-            // Add all fields BEFORE adding to array (ownership transfer invalidates wrapper)
+            if (!l_jobj_info) {
+                dap_json_object_free(l_jobj_ret);
+                return NULL;
+            }
             char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link_info->node_addr));
             dap_json_object_add_string(l_jobj_info, "addr", l_addr);
             DAP_DELETE(l_addr);
@@ -303,7 +304,8 @@ dap_json_t *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
-    assert(l_total_links_count == dap_json_array_length(l_jobj_uplinks) + dap_json_array_length(l_jobj_downlinks));    
+    assert(l_total_links_count == dap_json_array_length(l_jobj_uplinks) + dap_json_array_length(l_jobj_downlinks));
+
     return l_jobj_ret;
 }
 

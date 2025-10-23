@@ -93,7 +93,10 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
             break;
         case TYPE_RESPONSE_JSON:
             if (response->result_json_object) {
-                dap_json_object_add_object(jobj, "result", response->result_json_object);
+                // Create owned reference before adding (prevents double-free)
+                // dap_json_object_add_object transfers ownership, so we need a separate reference
+                dap_json_t *owned_copy = dap_json_object_ref(response->result_json_object);
+                dap_json_object_add_object(jobj, "result", owned_copy);
             } else {
                 dap_json_object_add_null(jobj, "result");
             }
@@ -129,53 +132,51 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
         return NULL;
     }
 
-    dap_json_t *version_obj = dap_json_object_get_object(jobj, "version");
-    if (version_obj) {
-        response->version = dap_json_object_get_int64(version_obj, NULL);
-        dap_json_object_free(version_obj);  // Free wrapper
-    } else {
+    // Parse version (direct int64 read)
+    response->version = dap_json_object_get_int64(jobj, "version");
+    if (response->version == 0) {
         log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
     }
 
-    dap_json_t *type_obj = dap_json_object_get_object(jobj, "type");
-    if (type_obj) {
-        response->type = (int)dap_json_object_get_int64(type_obj, NULL);
-        // type_obj is borrowed reference - no free needed
-
-        dap_json_t *result_obj = dap_json_object_get_object(jobj, "result");
-        if (result_obj) {
-            switch (response->type) {
-                case TYPE_RESPONSE_STRING: {
-                    const char *str_val = dap_json_object_get_string(result_obj, NULL);
-                    response->result_string = str_val ? dap_strdup(str_val) : NULL;
-                    break;
-                }
-                case TYPE_RESPONSE_INTEGER:
-                    response->result_int = dap_json_object_get_int64(result_obj, NULL);
-                    break;
-                case TYPE_RESPONSE_DOUBLE:
-                    response->result_double = dap_json_object_get_double(result_obj, NULL);
-                    break;
-                case TYPE_RESPONSE_BOOLEAN:
-                    response->result_boolean = dap_json_object_get_bool(result_obj, NULL);
-                    break;
-                case TYPE_RESPONSE_JSON:
-                    // Create a copy of the JSON object for response
-                    response->result_json_object = dap_json_object_ref(result_obj);
-                    break;
-                case TYPE_RESPONSE_NULL:
-                    break;
+    // Parse type (direct int64 read)
+    response->type = (int)dap_json_object_get_int64(jobj, "type");
+    
+    // Parse result (this is an object/array, so use get_object)
+    dap_json_t *result_obj = dap_json_object_get_object(jobj, "result");
+    if (result_obj) {
+        switch (response->type) {
+            case TYPE_RESPONSE_STRING: {
+                const char *str_val = dap_json_get_string(result_obj);
+                response->result_string = str_val ? dap_strdup(str_val) : NULL;
+                dap_json_object_free(result_obj); // Free borrowed wrapper
+                break;
             }
-            // result_obj is borrowed reference - no free needed
+            case TYPE_RESPONSE_INTEGER:
+                response->result_int = dap_json_get_int64(result_obj);
+                dap_json_object_free(result_obj); // Free borrowed wrapper
+                break;
+            case TYPE_RESPONSE_DOUBLE:
+                response->result_double = dap_json_get_double(result_obj);
+                dap_json_object_free(result_obj); // Free borrowed wrapper
+                break;
+            case TYPE_RESPONSE_BOOLEAN:
+                response->result_boolean = dap_json_get_bool(result_obj);
+                dap_json_object_free(result_obj); // Free borrowed wrapper
+                break;
+            case TYPE_RESPONSE_JSON:
+                // Create a copy of the JSON object for response
+                response->result_json_object = dap_json_object_ref(result_obj);
+                dap_json_object_free(result_obj); // Free borrowed wrapper (after ref increase)
+                break;
+            case TYPE_RESPONSE_NULL:
+                dap_json_object_free(result_obj); // Free borrowed wrapper
+                break;
         }
     }
     
-    dap_json_t *result_id = dap_json_object_get_object(jobj, "id");
-    if (result_id) {
-        response->id = dap_json_object_get_int64(result_id, NULL);
-        // result_id is borrowed reference - no free needed
-    }
+    // Parse id (direct int64 read)
+    response->id = dap_json_object_get_int64(jobj, "id");
 
     dap_json_object_free(jobj);
     return response;
@@ -225,11 +226,11 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
             dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_result, "network");
             
             if (j_obj_sum && j_obj_accepted && j_obj_rejected) {
-                int64_t sum = dap_json_object_get_int64(j_obj_sum, NULL);
-                int64_t accepted = dap_json_object_get_int64(j_obj_accepted, NULL);
-                int64_t rejected = dap_json_object_get_int64(j_obj_rejected, NULL);
-                const char *net_name = j_obj_net_name ? dap_json_object_get_string(j_obj_net_name, NULL) : "unknown";
-                const char *chain_name = j_obj_chain ? dap_json_object_get_string(j_obj_chain, NULL) : "unknown";
+                int64_t sum = dap_json_get_int64(j_obj_sum);
+                int64_t accepted = dap_json_get_int64(j_obj_accepted);
+                int64_t rejected = dap_json_get_int64(j_obj_rejected);
+                const char *net_name = j_obj_net_name ? dap_json_get_string(j_obj_net_name) : "unknown";
+                const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
                 
                 printf("Print %ld transactions in network %s chain %s. \n"
                         "Of which %ld were accepted into the ledger and %ld were rejected.\n",
@@ -273,7 +274,7 @@ void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
                 for (size_t j = 0; j < inner_count; j++) {
                     dap_json_t *json_obj = dap_json_array_get_idx(json_obj_result, j);
                     if (json_obj) {
-                        const char *str_val = dap_json_object_get_string(json_obj, NULL);
+                        const char *str_val = dap_json_get_string(json_obj);
                         if (str_val) {
                             printf("%s", str_val);
                         }
@@ -315,9 +316,9 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         dap_json_t *j_arr_datums = dap_json_object_get_object(json_obj_result, "datums");
         dap_json_t *j_arr_total = dap_json_object_get_object(json_obj_result, "total");
         
-        const char *net_name = j_obj_net_name ? dap_json_object_get_string(j_obj_net_name, NULL) : "unknown";
-        const char *chain_name = j_obj_chain ? dap_json_object_get_string(j_obj_chain, NULL) : "unknown";
-        int64_t removed_count = j_obj_removed ? dap_json_object_get_int64(j_obj_removed, NULL) : 0;
+        const char *net_name = j_obj_net_name ? dap_json_get_string(j_obj_net_name) : "unknown";
+        const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
+        int64_t removed_count = j_obj_removed ? dap_json_get_int64(j_obj_removed) : 0;
         
         printf("Removed %ld records from the %s chain mempool in %s network.\n", 
                 removed_count, chain_name ? chain_name : "unknown", net_name ? net_name : "unknown");
