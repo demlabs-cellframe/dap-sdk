@@ -66,6 +66,7 @@ static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
 static dap_cli_server_cmd_stat_callback_t s_stat_callback = NULL;
 
+static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted);
 // HTTP headers list
 static dap_cli_server_http_header_t *s_http_headers = NULL;
 static pthread_rwlock_t s_http_headers_rwlock = PTHREAD_RWLOCK_INITIALIZER;
@@ -75,8 +76,8 @@ typedef struct cli_cmd_arg {
     dap_events_socket_uuid_t es_uid;
     size_t buf_size;
     char *buf, status;
-
     time_t time_start;
+    bool restricted;
 } cli_cmd_arg_t;
 
 static void* s_cli_cmd_exec(void *a_arg);
@@ -138,17 +139,13 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        if (!(   
+        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK);
 #ifdef DAP_OS_UNIX
             a_es->addr_storage.ss_family == AF_UNIX ||
 #endif
             ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK) && !s_allowed_cmd_control) ||
-            (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr && s_allowed_cmd_control && s_allowed_cmd_check(l_arg->buf)))
-        ) {
-                dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
-                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                return;
-            }
+            (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr && s_allowed_cmd_control && s_allowed_cmd_check(l_arg->buf));
+
 
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
@@ -441,7 +438,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 static void *s_cli_cmd_exec(void *a_arg) {
     atomic_fetch_add(&s_cmd_thread_count, 1);
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
-    char *l_ret = dap_cli_cmd_exec(l_arg->buf);
+    char *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted);
     char *l_additional_headers = s_generate_additional_headers();
     char *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                          "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
@@ -461,7 +458,8 @@ static void *s_cli_cmd_exec(void *a_arg) {
     return NULL;
 }
 
-char *dap_cli_cmd_exec(char *a_req_str) {
+static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
+{
     dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str, s_cli_version);
     if ( !request )
         return NULL;
@@ -483,9 +481,15 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         str_cmd = cmd_name;
     int res = -1;
     char *str_reply = NULL;
-    dap_json_t *l_json_arr_reply = dap_json_array_new();
-    if (l_cmd) {
-        if (l_cmd->overrides.log_cmd_call)
+    dap_json_t* l_json_arr_reply = dap_json_array_new();
+    if (l_cmd && a_restricted) {
+        log_it(L_WARNING,"Command \"%s\" is restricted", l_cmd->name);
+        dap_json_rpc_error_add(l_json_arr_reply, -1, "Command \"%s\" is restricted", l_cmd->name);
+    } else if (!l_cmd) {
+        dap_json_rpc_error_add(l_json_arr_reply, -1, "can't recognize command=%s", str_cmd);
+        log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
+    } else {
+        if(l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);
         else {
             char *l_str_cmd = dap_strdup(str_cmd);
@@ -550,9 +554,6 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         // find '-verbose' command
         l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
         dap_strfreev(l_argv);
-    } else {
-        dap_json_rpc_error_add(l_json_arr_reply, -1, "can't recognize command=%s", str_cmd);
-        log_it(L_ERROR, "Reply string: \"%s\"", str_reply);
     }
     char *reply_body = NULL;
     // -verbose
@@ -604,6 +605,11 @@ DAP_INLINE void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array)
     dap_return_if_pass_err(s_allowed_cmd_array, "Allowed cmd array already exist");
     s_allowed_cmd_array = a_cmd_array;
     s_allowed_cmd_control = true;
+}
+
+DAP_INLINE char *dap_cli_cmd_exec(char *a_req_str)
+{
+    return s_cli_cmd_exec_ex(a_req_str, false);
 }
 
 DAP_INLINE int dap_cli_server_get_version()
