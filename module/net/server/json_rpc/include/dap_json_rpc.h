@@ -25,7 +25,7 @@
 
 #pragma once
 #include "dap_http_simple.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #include "dap_strfuncs.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_request_handler.h"
@@ -46,9 +46,32 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg);
 void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
 bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey);
 bool dap_json_rpc_exec_cmd_inited();
-dap_client_http_callback_error_t * dap_json_rpc_error_callback();
-bool dap_json_rpc_get_int64_uint64(struct json_object *a_json, const char *a_key, void *a_out, bool a_is_uint64);
-const char* dap_json_rpc_get_text(struct json_object *a_json, const char *a_key);
+
+dap_http_client_callback_error_t * dap_json_rpc_error_callback();
+
+// Method handler callback type - handles specific RPC method
+typedef char *(*dap_json_rpc_method_handler_t)(dap_json_rpc_params_t *a_params, int a_protocol_version, void *a_user_data);
+
+// URL handler callback type - handles entire request for specific URL endpoint
+typedef char *(*dap_json_rpc_url_handler_t)(const char *a_request_str, void *a_user_data);
+
+// Register method handler for specific RPC method name (e.g., "get_balance", "send_tx")
+// Multiple methods can be registered to same URL endpoint
+int dap_json_rpc_register_method_handler(const char *a_method_name, dap_json_rpc_method_handler_t a_handler, void *a_user_data);
+
+// Register URL handler for entire endpoint (e.g., "/exec_cmd", "/api/v1")
+// Handler receives full request string and handles all RPC methods for that URL
+int dap_json_rpc_register_url_handler(const char *a_url, dap_json_rpc_url_handler_t a_handler, void *a_user_data);
+
+// Unregister handlers
+void dap_json_rpc_unregister_method_handler(const char *a_method_name);
+void dap_json_rpc_unregister_url_handler(const char *a_url);
+
+// JSON-RPC request processing (called internally by HTTP handlers)
+char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url);
+
+bool dap_json_rpc_get_int64_uint64(dap_json_t *a_json, const char *a_key, void *a_out, bool a_is_uint64);
+const char* dap_json_rpc_get_text(dap_json_t *a_json, const char *a_key);
 
 #ifdef __cplusplus
 }

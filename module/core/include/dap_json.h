@@ -43,7 +43,7 @@ typedef struct dap_json dap_json_t;
 // Object creation and destruction
 dap_json_t* dap_json_object_new(void);
 dap_json_t* dap_json_parse_string(const char* a_json_string);
-void dap_json_object_free(dap_json_t* a_json);
+void dap_json_object_free(dap_json_t* a_json);  // Works for both owned and borrowed
 dap_json_t* dap_json_object_ref(dap_json_t* a_json);
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value);
@@ -54,7 +54,7 @@ dap_json_t* dap_json_object_new_bool(bool a_value);
 
 // Array creation and manipulation
 dap_json_t* dap_json_array_new(void);
-void dap_json_array_free(dap_json_t* a_array);
+// Use dap_json_object_free() for arrays too - it handles both types
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count);
 size_t dap_json_array_length(dap_json_t* a_array);
@@ -63,6 +63,7 @@ void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, con
 
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
+int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len);
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value);
 int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value);
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value);
@@ -94,6 +95,7 @@ char* dap_json_to_string_pretty(dap_json_t* a_json);
 dap_json_t* dap_json_from_file(const char* a_file_path);
 int dap_json_to_file(const char* a_file_path, dap_json_t* a_json);
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value);
+bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key);  // Convenience: check if key exists
 int dap_json_object_del(dap_json_t* a_json, const char* a_key);
 
 // Extended value getters with default
@@ -161,7 +163,30 @@ dap_json_t* dap_json_object_new_double(double a_value);
 dap_json_t* dap_json_object_new_bool(bool a_value);
 
 // Object iteration API
+/**
+ * @brief Callback function type for dap_json_object_foreach
+ * @param key The key name (string)
+ * @param value Stack-allocated wrapper for the value (TEMPORARY - see notes below)
+ * @param user_data User-defined data passed to foreach
+ * 
+ * CRITICAL NOTES:
+ * - The 'value' pointer is TEMPORARY and BORROWED
+ * - It is only valid during the callback execution
+ * - DO NOT save this pointer for later use
+ * - DO NOT call dap_json_object_free() on this wrapper
+ * - If you need to keep the value, use dap_json_object_get_object/get_array to get a new wrapper
+ */
 typedef void (*dap_json_object_foreach_callback_t)(const char* key, dap_json_t* value, void* user_data);
+
+/**
+ * @brief Iterate over all key-value pairs in a JSON object
+ * @param a_json JSON object to iterate
+ * @param callback Function to call for each key-value pair
+ * @param user_data User data to pass to callback
+ * 
+ * The callback receives temporary stack-allocated wrappers for values.
+ * See dap_json_object_foreach_callback_t for important usage notes.
+ */
 void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data);
 
 // Extended value access API

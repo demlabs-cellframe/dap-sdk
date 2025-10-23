@@ -24,14 +24,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "dap_worker.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef void (*dap_client_http_callback_error_t)(int, void *); // Callback for specific http client operations
 typedef void (*dap_client_http_callback_error_ext_t)(int,int , void *,size_t, void *); // Callback with extended error processing
-typedef void (*dap_client_http_callback_data_t)(void *, size_t, void *, http_status_code_t); // Callback for specific http client operations
+typedef void (*dap_client_http_callback_data_t)(void *, size_t, void *, dap_http_status_code_t); // Callback for specific http client operations
 
 typedef struct dap_client_http {
     // TODO move unnessassary fields to dap_client_http_pvt privat structure

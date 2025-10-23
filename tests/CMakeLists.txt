@@ -99,6 +99,12 @@ function(register_dap_test TEST_NAME TEST_CATEGORY)
     set_tests_properties(${TEST_NAME} PROPERTIES
         LABELS "${TEST_CATEGORY}"
         TIMEOUT 300  # 5 minutes timeout
+        
+        # ✅ Fail fast on critical errors in test output
+        FAIL_REGULAR_EXPRESSION "CRITICAL ERROR|FATAL|SEGMENTATION FAULT"
+        
+        # ✅ Explicit working directory
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
     
     # Set environment variables for tests
@@ -106,6 +112,11 @@ function(register_dap_test TEST_NAME TEST_CATEGORY)
     set_tests_properties(${TEST_NAME} PROPERTIES
         ENVIRONMENT "DAP_LOG_LEVEL=DEBUG;LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}"
     )
+    
+    # ✅ Set higher cost for slow tests (runs them first in parallel mode)
+    if(TEST_CATEGORY MATCHES "performance|e2e")
+        set_tests_properties(${TEST_NAME} PROPERTIES COST 100)
+    endif()
 endfunction()
 
 # Build Unit Tests
