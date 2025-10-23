@@ -105,7 +105,8 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
     if (!a_cluster)
         return;
     pthread_rwlock_wrlock(&s_clusters_rwlock);
-    HASH_DEL(s_clusters, a_cluster);
+    if (s_clusters)
+        HASH_DEL(s_clusters, a_cluster);
     if (a_cluster->mnemonim) {
         HASH_DELETE(hh_str, s_cluster_mnemonims, a_cluster);
         DAP_DELETE(a_cluster->mnemonim);

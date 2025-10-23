@@ -106,8 +106,9 @@ pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 #endif
 
 bool g_debug_reactor = false;
-static int s_workers_init = 0;
+static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
+static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
 
 /**
@@ -301,11 +302,7 @@ void dap_events_deinit( )
     dap_events_socket_deinit();
     dap_worker_deinit();
 
-    dap_events_wait();
-
-    if ( s_workers )
-        DAP_DELETE( s_workers );
-
+    DAP_DEL_Z( s_workers );
     s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
@@ -324,7 +321,11 @@ int dap_events_start()
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         goto lb_err;
     }
-
+    if (s_threads_id) {
+        log_it(L_ERROR, "Threads id already initialized");
+        goto lb_err;
+    }
+    s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     for( uint32_t i = 0; i < s_threads_count; i++) {
         dap_worker_t * l_worker = DAP_NEW_Z(dap_worker_t);
         if (!l_worker) {
@@ -342,6 +343,7 @@ int dap_events_start()
         l_ret = dap_context_run(l_worker->context, i, DAP_CONTEXT_POLICY_FIFO, DAP_CONTEXT_PRIORITY_HIGH,
                                 DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
                                 dap_worker_context_callback_stopped, l_worker);
+        s_threads_id[i] = l_worker->context->thread_id;
         if(l_ret != 0){
             log_it(L_CRITICAL, "Can't run worker #%u",i);
             goto lb_err;
@@ -357,8 +359,18 @@ int dap_events_start()
     return 0;
 lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
-    for( uint32_t j = 0; j < s_threads_count; j++)
-        DAP_DEL_Z(s_workers[j]);
+    DAP_DEL_Z(s_threads_id);
+    for( uint32_t j = 0; j < s_threads_count; j++) {
+        if (s_workers[j]) {
+#ifndef DAP_EVENTS_CAPS_IOCP
+            DAP_DEL_Z(s_workers[j]->queue_es_new_input);
+            DAP_DEL_Z(s_workers[j]->queue_es_delete_input);
+            DAP_DEL_Z(s_workers[j]->queue_es_io_input);
+            DAP_DEL_Z(s_workers[j]->queue_es_reassign_input);
+#endif
+            DAP_DEL_Z(s_workers[j]);
+        }
+    }
     return l_ret;
 }
 
@@ -401,16 +413,9 @@ pthread_t       l_tid;
     }
 
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        // Check if worker and context are valid
-        if (!s_workers[i] || !s_workers[i]->context) {
-            log_it(L_WARNING, "dap_events_wait(): Worker %u or context is NULL, skipping", i);
-            continue;
-        }
-        
-        void *ret;
-        pthread_t l_thread_id = s_workers[i]->context->thread_id;
-        pthread_join(l_thread_id , &ret );
+        pthread_join(s_threads_id[i] , NULL );
     }
+    DAP_DEL_Z(s_threads_id);
     return 0;
 }
 
@@ -426,6 +431,7 @@ void dap_events_stop_all( )
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
+    s_workers_init = 0;
 }
 
 
