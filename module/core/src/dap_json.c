@@ -98,17 +98,6 @@ dap_json_t* dap_json_array_new(void)
     return _json_c_to_dap_json(l_json_array, true);  // OWNED
 }
 
-void dap_json_array_free(dap_json_t* a_array)
-{
-    if (a_array) {
-        struct json_object* l_json_obj = _dap_json_to_json_c(a_array);
-        if (l_json_obj) {
-            json_object_put(l_json_obj);
-        }
-        DAP_DELETE(a_array);
-    }
-}
-
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 {
     if (!a_array || !a_item) {

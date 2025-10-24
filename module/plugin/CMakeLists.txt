@@ -40,6 +40,8 @@ else()
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/module/core/json-c)
 endif()
 
+target_link_libraries(${PROJECT_NAME} dap_json_rpc)
+
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")
 INSTALL(TARGETS ${PROJECT_NAME} 

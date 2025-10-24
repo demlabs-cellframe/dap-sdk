@@ -44,6 +44,8 @@ typedef struct dap_json dap_json_t;
 dap_json_t* dap_json_object_new(void);
 dap_json_t* dap_json_parse_string(const char* a_json_string);
 void dap_json_object_free(dap_json_t* a_json);  // Works for both owned and borrowed
+// Use dap_json_object_free() for arrays too - it handles both types
+#define dap_json_array_free(a_array) dap_json_object_free(a_array)
 dap_json_t* dap_json_object_ref(dap_json_t* a_json);
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value);
@@ -54,7 +56,7 @@ dap_json_t* dap_json_object_new_bool(bool a_value);
 
 // Array creation and manipulation
 dap_json_t* dap_json_array_new(void);
-// Use dap_json_object_free() for arrays too - it handles both types
+
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count);
 size_t dap_json_array_length(dap_json_t* a_array);

@@ -7,6 +7,7 @@
 #include "uthash.h"
 #include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_plugin_command.h"
+#include "dap_json_rpc.h"
 
 #define LOG_TAG "dap_plugin_command"
 
