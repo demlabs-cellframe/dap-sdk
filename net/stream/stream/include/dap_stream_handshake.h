@@ -201,7 +201,7 @@ typedef enum dap_stream_handshake_tlv_stream {
  * 
  * All TLV fields start with this header.
  */
-typedef struct dap_stream_handshake_tlv_header {
+typedef struct dap_stream_handshake_tlv_hdr {
     uint16_t type;    ///< TLV type identifier (network byte order)
     uint16_t length;  ///< Value length in bytes, NOT including header (network byte order)
 } __attribute__((packed)) dap_stream_handshake_tlv_hdr_t;

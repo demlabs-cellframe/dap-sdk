@@ -260,7 +260,7 @@ int dap_stream_mimicry_generate_client_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    dap_random_bytes(&l_hello[l_offset], 32);
+    randombytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty for now)
@@ -374,7 +374,7 @@ int dap_stream_mimicry_generate_server_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    dap_random_bytes(&l_hello[l_offset], 32);
+    randombytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty)
@@ -546,7 +546,7 @@ bool dap_stream_mimicry_validate_packet(dap_stream_mimicry_t *a_mimicry,
             }
             
             // Check length
-            if (l_length + 5 > a_data_size) {
+            if ((size_t)(l_length + 5) > a_data_size) {
                 return false;
             }
             
@@ -635,7 +635,7 @@ static int s_unwrap_https(dap_stream_mimicry_t *a_mimicry,
 
     // Extract payload
     const uint8_t *l_payload = (const uint8_t*)a_data + sizeof(dap_stream_tls_record_header_t);
-    *a_out_data = DAP_DUP_SIZE(l_payload, l_payload_length);
+    *a_out_data = DAP_DUP_SIZE((uint8_t*)l_payload, l_payload_length);
     *a_out_size = l_payload_length;
 
     log_it(L_DEBUG, "Unwrapped %u bytes from TLS record", l_payload_length);
@@ -697,7 +697,7 @@ static int s_wrap_websocket(dap_stream_mimicry_t *a_mimicry,
     // Masking key (if masked)
     uint8_t l_masking_key[4] = {0};
     if (l_mask) {
-        dap_random_bytes(l_masking_key, 4);
+        randombytes(l_masking_key, 4);
         memcpy(&l_output[l_offset], l_masking_key, 4);
         l_offset += 4;
     }

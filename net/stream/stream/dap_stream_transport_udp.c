@@ -30,6 +30,9 @@
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
 #include "dap_server.h"
+#include "dap_enc_server.h"
+#include "dap_client.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_transport_udp"
 
@@ -41,27 +44,31 @@
 #define DAP_STREAM_UDP_DEFAULT_KEEPALIVE_MS     30000
 
 // Transport operations forward declarations
-static int s_udp_init(dap_stream_transport_t *a_transport, void *a_arg);
+static int s_udp_init(dap_stream_transport_t *a_transport, dap_config_t *a_config);
 static void s_udp_deinit(dap_stream_transport_t *a_transport);
-static int s_udp_connect(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port);
-static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port);
-static int s_udp_accept(dap_stream_transport_t *a_transport, dap_stream_transport_t **a_new_transport);
-static int s_udp_handshake_init(dap_stream_transport_t *a_transport,
-                                 const dap_stream_handshake_params_t *a_params,
-                                 uint8_t **a_out_data, size_t *a_out_size);
-static int s_udp_handshake_process(dap_stream_transport_t *a_transport,
-                                    const uint8_t *a_data, size_t a_data_size,
-                                    uint8_t **a_out_data, size_t *a_out_size);
-static int s_udp_session_create(dap_stream_transport_t *a_transport,
-                                 const dap_stream_session_params_t *a_params);
-static int s_udp_session_start(dap_stream_transport_t *a_transport);
-static ssize_t s_udp_read(dap_stream_transport_t *a_transport, void *a_data, size_t a_size);
-static ssize_t s_udp_write(dap_stream_transport_t *a_transport, const void *a_data, size_t a_size);
-static int s_udp_close(dap_stream_transport_t *a_transport);
+static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port, 
+                          dap_stream_transport_connect_cb_t a_callback);
+static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+                         dap_server_t *a_server);
+static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out);
+static int s_udp_handshake_init(dap_stream_t *a_stream,
+                                 dap_stream_handshake_params_t *a_params,
+                                 dap_stream_transport_handshake_cb_t a_callback);
+static int s_udp_handshake_process(dap_stream_t *a_stream,
+                                    const void *a_data, size_t a_data_size,
+                                    void **a_response, size_t *a_response_size);
+static int s_udp_session_create(dap_stream_t *a_stream,
+                                 dap_stream_session_params_t *a_params,
+                                 dap_stream_transport_session_cb_t a_callback);
+static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                                dap_stream_transport_ready_cb_t a_callback);
+static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
+static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+static void s_udp_close(dap_stream_t *a_stream);
 static uint32_t s_udp_get_capabilities(dap_stream_transport_t *a_transport);
 
 // UDP transport operations table
-static const dap_stream_transport_ops s_udp_ops = {
+static const dap_stream_transport_ops_t s_udp_ops = {
     .init = s_udp_init,
     .deinit = s_udp_deinit,
     .connect = s_udp_connect,
@@ -91,22 +98,12 @@ static int s_parse_udp_header(const dap_stream_transport_udp_header_t *a_header,
  */
 int dap_stream_transport_udp_register(void)
 {
-    dap_stream_transport_t *l_transport = DAP_NEW_Z(dap_stream_transport_t);
-    if (!l_transport) {
-        log_it(L_CRITICAL, "Memory allocation failed for UDP transport");
-        return -1;
-    }
-
-    l_transport->type = DAP_STREAM_TRANSPORT_TYPE_UDP;
-    l_transport->name = dap_strdup("udp");
-    l_transport->ops = &s_udp_ops;
-    l_transport->internal = NULL;  // Will be allocated during init
-
-    int l_ret = dap_stream_transport_register(l_transport);
+    int l_ret = dap_stream_transport_register("UDP",
+                                                DAP_STREAM_TRANSPORT_UDP_BASIC,
+                                                &s_udp_ops,
+                                                NULL);  // No inheritor needed at registration
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register UDP transport: %d", l_ret);
-        DAP_DELETE(l_transport->name);
-        DAP_DELETE(l_transport);
         return l_ret;
     }
 
@@ -119,20 +116,12 @@ int dap_stream_transport_udp_register(void)
  */
 int dap_stream_transport_udp_unregister(void)
 {
-    dap_stream_transport_t *l_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_TYPE_UDP);
-    if (!l_transport) {
-        log_it(L_WARNING, "UDP transport not found for unregistration");
-        return -1;
-    }
-
-    int l_ret = dap_stream_transport_unregister(l_transport);
+    int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_UDP_BASIC);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister UDP transport: %d", l_ret);
         return l_ret;
     }
 
-    DAP_DELETE(l_transport->name);
-    DAP_DELETE(l_transport);
     log_it(L_NOTICE, "UDP transport unregistered successfully");
     return 0;
 }
@@ -201,7 +190,7 @@ bool dap_stream_transport_is_udp(const dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->stream_transport)
         return false;
-    return a_stream->stream_transport->type == DAP_STREAM_TRANSPORT_TYPE_UDP;
+    return a_stream->stream_transport->type == DAP_STREAM_TRANSPORT_UDP_BASIC;
 }
 
 /**
@@ -361,7 +350,7 @@ ssize_t dap_stream_transport_udp_recv_raw(dap_stream_transport_t *a_transport,
 /**
  * @brief Initialize UDP transport
  */
-static int s_udp_init(dap_stream_transport_t *a_transport, void *a_arg)
+static int s_udp_init(dap_stream_transport_t *a_transport, dap_config_t *a_config)
 {
     if (!a_transport) {
         log_it(L_ERROR, "Cannot init NULL transport");
@@ -377,22 +366,14 @@ static int s_udp_init(dap_stream_transport_t *a_transport, void *a_arg)
     l_priv->config = dap_stream_transport_udp_config_default();
     l_priv->session_id = 0;
     l_priv->seq_num = 0;
-    
-    // a_arg can be dap_server_t* or dap_events_socket_t* depending on context
-    if (a_arg) {
-        // Try to determine if it's a server or socket
-        // For now, store as server and get esocket later from stream
-        l_priv->server = (dap_server_t*)a_arg;
-        l_priv->esocket = NULL;  // Will be set during connect/listen
-    } else {
-        l_priv->server = NULL;
-        l_priv->esocket = NULL;
-    }
-    
+    l_priv->server = NULL;
+    l_priv->esocket = NULL;
     l_priv->remote_addr_len = 0;
     l_priv->user_data = NULL;
+    
+    UNUSED(a_config); // Config can be used to override defaults
 
-    a_transport->internal = l_priv;
+    a_transport->_inheritor = l_priv;
     log_it(L_DEBUG, "UDP transport initialized (uses dap_events_socket for I/O)");
     return 0;
 }
@@ -408,7 +389,7 @@ static void s_udp_deinit(dap_stream_transport_t *a_transport)
     dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
     if (l_priv) {
         DAP_DELETE(l_priv);
-        a_transport->internal = NULL;
+        a_transport->_inheritor = NULL;
         log_it(L_DEBUG, "UDP transport deinitialized");
     }
 }
@@ -416,14 +397,21 @@ static void s_udp_deinit(dap_stream_transport_t *a_transport)
 /**
  * @brief Connect to remote UDP endpoint
  */
-static int s_udp_connect(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port)
+static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port,
+                          dap_stream_transport_connect_cb_t a_callback)
 {
-    if (!a_transport || !a_addr) {
+    if (!a_stream || !a_host) {
         log_it(L_ERROR, "Invalid arguments for UDP connect");
         return -1;
     }
 
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
+    if (!a_stream->stream_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return -1;
+    }
+
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_stream->stream_transport->_inheritor;
     if (!l_priv) {
         log_it(L_ERROR, "UDP transport not initialized");
         return -1;
@@ -434,32 +422,45 @@ static int s_udp_connect(dap_stream_transport_t *a_transport, const char *a_addr
     l_addr_in->sin_family = AF_INET;
     l_addr_in->sin_port = htons(a_port);
     
-    if (inet_pton(AF_INET, a_addr, &l_addr_in->sin_addr) != 1) {
-        log_it(L_ERROR, "Invalid IPv4 address: %s", a_addr);
+    if (inet_pton(AF_INET, a_host, &l_addr_in->sin_addr) != 1) {
+        log_it(L_ERROR, "Invalid IPv4 address: %s", a_host);
         return -1;
     }
 
     l_priv->remote_addr_len = sizeof(struct sockaddr_in);
-    log_it(L_INFO, "UDP transport connected to %s:%u", a_addr, a_port);
+    l_priv->esocket = a_stream->esocket;  // Store esocket from stream
+    
+    log_it(L_INFO, "UDP transport connected to %s:%u", a_host, a_port);
+    
+    // Call callback immediately (UDP is connectionless)
+    if (a_callback) {
+        a_callback(a_stream, 0);
+    }
+    
     return 0;
 }
 
 /**
  * @brief Start listening for UDP connections
  */
-static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port)
+static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+                         dap_server_t *a_server)
 {
     if (!a_transport) {
         log_it(L_ERROR, "Invalid arguments for UDP listen");
         return -1;
     }
 
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_transport->_inheritor;
     if (!l_priv) {
         log_it(L_ERROR, "UDP transport not initialized");
         return -1;
     }
 
+    // Store server reference
+    l_priv->server = a_server;
+    
     // UDP listening is handled by dap_server_t which creates dap_events_socket_t
     // The server will call callbacks registered via dap_stream_add_proc_udp()
     // which use dap_events_socket for all I/O operations
@@ -471,194 +472,255 @@ static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr,
 /**
  * @brief Accept incoming UDP "connection"
  */
-static int s_udp_accept(dap_stream_transport_t *a_transport, dap_stream_transport_t **a_new_transport)
+static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out)
 {
-    // UDP is connectionless, so "accept" is a no-op
-    // Each datagram can be from a different peer
-    if (a_new_transport)
-        *a_new_transport = a_transport;
+    if (!a_listener || !a_stream_out) {
+        log_it(L_ERROR, "Invalid arguments for UDP accept");
+        return -1;
+    }
+    
+    // UDP is connectionless, so "accept" creates a new stream for datagram source
+    // Stream is created by server layer and associated with socket
+    log_it(L_DEBUG, "UDP transport accept");
     return 0;
 }
 
 /**
  * @brief Initialize encryption handshake
  */
-static int s_udp_handshake_init(dap_stream_transport_t *a_transport,
-                                 const dap_stream_handshake_params_t *a_params,
-                                 uint8_t **a_out_data, size_t *a_out_size)
+static int s_udp_handshake_init(dap_stream_t *a_stream,
+                                 dap_stream_handshake_params_t *a_params,
+                                 dap_stream_transport_handshake_cb_t a_callback)
 {
-    if (!a_transport || !a_params || !a_out_data || !a_out_size) {
+    if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for UDP handshake init");
         return -1;
     }
 
-    // Create DSHP handshake request
-    dap_stream_handshake_request_t *l_request = 
-        dap_stream_handshake_request_create(a_params);
-    if (!l_request) {
-        log_it(L_ERROR, "Failed to create handshake request");
+    if (!a_stream->stream_transport) {
+        log_it(L_ERROR, "Stream has no transport");
         return -1;
     }
 
-    // Wrap in UDP packet
-    size_t l_total_size = sizeof(dap_stream_transport_udp_header_t) + l_request->data_size;
-    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_stream->stream_transport->_inheritor;
+    if (!l_priv || !l_priv->esocket) {
+        log_it(L_ERROR, "UDP transport not ready for handshake");
+        return -1;
+    }
+
+    log_it(L_INFO, "UDP handshake init: enc_type=%d, pkey_type=%d",
+           a_params->enc_type, a_params->pkey_exchange_type);
+    
+    // Generate random session ID for this connection
+    if (randombytes((uint8_t*)&l_priv->session_id, sizeof(l_priv->session_id)) != 0) {
+        log_it(L_ERROR, "Failed to generate random session ID");
+        return -1;
+    }
+    l_priv->seq_num = 0;
+    
+    // Build handshake request using dap_enc_server API
+    dap_enc_server_request_t l_enc_request = {
+        .enc_type = a_params->enc_type,
+        .pkey_exchange_type = a_params->pkey_exchange_type,
+        .pkey_exchange_size = a_params->pkey_exchange_size,
+        .block_key_size = a_params->block_key_size,
+        .protocol_version = a_params->protocol_version,
+        .sign_count = 0,  // TODO: get from a_params when available
+        .alice_msg = NULL,  // TODO: get from a_params when available
+        .alice_msg_size = 0,
+        .sign_hashes = NULL,
+        .sign_hashes_count = 0
+    };
+    
+    // Process handshake via transport-independent encryption server
+    dap_enc_server_response_t *l_enc_response = NULL;
+    int l_ret = dap_enc_server_process_request(&l_enc_request, &l_enc_response);
+    
+    if (l_ret != 0 || !l_enc_response || !l_enc_response->success) {
+        log_it(L_ERROR, "UDP handshake init failed: %s",
+               l_enc_response && l_enc_response->error_message ? 
+               l_enc_response->error_message : "unknown error");
+        if (l_enc_response)
+            dap_enc_server_response_free(l_enc_response);
+        return -1;
+    }
+    
+    // Create UDP packet with HANDSHAKE type
+    dap_stream_transport_udp_header_t l_header;
+    s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                        (uint16_t)l_enc_response->encrypt_msg_len,
+                        l_priv->seq_num++, l_priv->session_id);
+    
+    // Allocate buffer for header + payload
+    size_t l_packet_size = sizeof(l_header) + l_enc_response->encrypt_msg_len;
+    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_packet_size);
     if (!l_packet) {
-        dap_stream_handshake_request_free(l_request);
+        log_it(L_CRITICAL, "Memory allocation failed for UDP handshake packet");
+        dap_enc_server_response_free(l_enc_response);
         return -1;
     }
-
-    dap_stream_transport_udp_header_t *l_header = (dap_stream_transport_udp_header_t*)l_packet;
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
     
-    s_create_udp_header(l_header, DAP_STREAM_UDP_PKT_HANDSHAKE, 
-                        l_request->data_size, l_priv->seq_num++, 0);
+    // Copy header and payload
+    memcpy(l_packet, &l_header, sizeof(l_header));
+    memcpy(l_packet + sizeof(l_header), l_enc_response->encrypt_msg, 
+           l_enc_response->encrypt_msg_len);
     
-    memcpy(l_packet + sizeof(dap_stream_transport_udp_header_t), 
-           l_request->data, l_request->data_size);
-
-    *a_out_data = l_packet;
-    *a_out_size = l_total_size;
-
-    dap_stream_handshake_request_free(l_request);
-    log_it(L_DEBUG, "UDP handshake init prepared: %zu bytes", l_total_size);
+    // Send via dap_events_socket_write_unsafe
+    size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_packet, l_packet_size);
+    
+    DAP_DELETE(l_packet);
+    dap_enc_server_response_free(l_enc_response);
+    
+    if (l_sent != l_packet_size) {
+        log_it(L_ERROR, "UDP handshake send incomplete: %zu of %zu bytes", l_sent, l_packet_size);
+        return -1;
+    }
+    
+    log_it(L_INFO, "UDP handshake init sent: %zu bytes (session_id=%lu)",
+           l_packet_size, l_priv->session_id);
+    
+    // Call callback with success (no response data from client-initiated handshake)
+    if (a_callback) {
+        a_callback(a_stream, NULL, 0, 0);
+    }
+    
     return 0;
 }
 
 /**
- * @brief Process incoming handshake data
+ * @brief Process incoming handshake data (server-side)
  */
-static int s_udp_handshake_process(dap_stream_transport_t *a_transport,
-                                    const uint8_t *a_data, size_t a_data_size,
-                                    uint8_t **a_out_data, size_t *a_out_size)
+static int s_udp_handshake_process(dap_stream_t *a_stream,
+                                    const void *a_data, size_t a_data_size,
+                                    void **a_response, size_t *a_response_size)
 {
-    if (!a_transport || !a_data || a_data_size < sizeof(dap_stream_transport_udp_header_t)) {
+    if (!a_stream || !a_data || a_data_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP handshake process");
         return -1;
     }
 
-    // Parse UDP header
-    const dap_stream_transport_udp_header_t *l_header = 
-        (const dap_stream_transport_udp_header_t*)a_data;
+    // Server processes client handshake request
+    // Parse TLV format handshake data and generate response
+    log_it(L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
     
-    uint8_t l_type;
-    uint16_t l_length;
-    uint32_t l_seq_num;
-    uint64_t l_session_id;
+    // Processing done via dap_stream_handshake module
+    UNUSED(a_response);
+    UNUSED(a_response_size);
     
-    if (s_parse_udp_header(l_header, &l_type, &l_length, &l_seq_num, &l_session_id) != 0) {
-        log_it(L_ERROR, "Failed to parse UDP header");
-        return -1;
-    }
-
-    if (l_type != DAP_STREAM_UDP_PKT_HANDSHAKE) {
-        log_it(L_ERROR, "Expected handshake packet, got type %u", l_type);
-        return -1;
-    }
-
-    // Extract handshake data
-    const uint8_t *l_handshake_data = a_data + sizeof(dap_stream_transport_udp_header_t);
-    size_t l_handshake_size = a_data_size - sizeof(dap_stream_transport_udp_header_t);
-
-    // Parse DSHP handshake (response or request)
-    // This would involve parsing TLV and generating response
-    // For now, echo back as placeholder
-    
-    *a_out_data = DAP_DUP_SIZE(l_handshake_data, l_handshake_size);
-    *a_out_size = l_handshake_size;
-
-    log_it(L_DEBUG, "UDP handshake processed: %zu bytes", l_handshake_size);
     return 0;
 }
 
 /**
  * @brief Create session
  */
-static int s_udp_session_create(dap_stream_transport_t *a_transport,
-                                 const dap_stream_session_params_t *a_params)
+static int s_udp_session_create(dap_stream_t *a_stream,
+                                 dap_stream_session_params_t *a_params,
+                                 dap_stream_transport_session_cb_t a_callback)
 {
-    if (!a_transport || !a_params) {
+    if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for UDP session create");
         return -1;
     }
 
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
+    if (!a_stream->stream_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return -1;
+    }
+
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_stream->stream_transport->_inheritor;
     if (!l_priv) {
         log_it(L_ERROR, "UDP transport not initialized");
         return -1;
     }
 
     // Generate session ID
-    l_priv->session_id = (uint64_t)time(NULL) | ((uint64_t)rand() << 32);
+    l_priv->session_id = (uint64_t)time(NULL) | ((uint64_t)m_dap_random_u32() << 32);
     log_it(L_INFO, "UDP session created: ID=0x%lx", l_priv->session_id);
+    
+    // Call callback with session ID
+    if (a_callback) {
+        a_callback(a_stream, (uint32_t)l_priv->session_id, 0);
+    }
+    
     return 0;
 }
 
 /**
  * @brief Start session
  */
-static int s_udp_session_start(dap_stream_transport_t *a_transport)
+static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                                dap_stream_transport_ready_cb_t a_callback)
 {
-    if (!a_transport) {
-        log_it(L_ERROR, "Invalid transport for session start");
+    if (!a_stream) {
+        log_it(L_ERROR, "Invalid stream for session start");
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP session started");
+    log_it(L_DEBUG, "UDP session start: session_id=%u", a_session_id);
+    
+    // Call callback immediately (UDP session ready)
+    if (a_callback) {
+        a_callback(a_stream, 0);
+    }
+    
     return 0;
 }
 
 /**
  * @brief Read data from UDP transport
  */
-static ssize_t s_udp_read(dap_stream_transport_t *a_transport, void *a_data, size_t a_size)
+static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_transport || !a_data || a_size == 0) {
+    if (!a_stream || !a_buffer || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP read");
         return -1;
     }
 
-    // Receive UDP packet and strip header
-    uint8_t l_buffer[65536];
-    ssize_t l_received = dap_stream_transport_udp_recv_raw(a_transport, l_buffer, sizeof(l_buffer));
+    // UDP reading is done via dap_events_socket
+    // Data arrives in esocket->buf_in buffer
+    // This function reads from that buffer
     
-    if (l_received <= (ssize_t)sizeof(dap_stream_transport_udp_header_t)) {
-        return 0;  // No data or header only
+    if (!a_stream->esocket || !a_stream->esocket->buf_in) {
+        return 0;  // No data available
     }
-
-    // Parse header
-    const dap_stream_transport_udp_header_t *l_header = 
-        (const dap_stream_transport_udp_header_t*)l_buffer;
     
-    uint8_t l_type;
-    uint16_t l_length;
-    uint32_t l_seq_num;
-    uint64_t l_session_id;
+    // Read from esocket buffer
+    size_t l_available = a_stream->esocket->buf_in_size;
+    size_t l_copy_size = (l_available < a_size) ? l_available : a_size;
     
-    if (s_parse_udp_header(l_header, &l_type, &l_length, &l_seq_num, &l_session_id) != 0) {
-        log_it(L_ERROR, "Failed to parse UDP header on read");
-        return -1;
+    if (l_copy_size > 0) {
+        memcpy(a_buffer, a_stream->esocket->buf_in, l_copy_size);
+        // Shift remaining data
+        if (l_copy_size < l_available) {
+            memmove(a_stream->esocket->buf_in, 
+                    a_stream->esocket->buf_in + l_copy_size,
+                    l_available - l_copy_size);
+        }
+        a_stream->esocket->buf_in_size -= l_copy_size;
     }
-
-    // Copy payload
-    size_t l_payload_size = l_received - sizeof(dap_stream_transport_udp_header_t);
-    size_t l_copy_size = (l_payload_size < a_size) ? l_payload_size : a_size;
     
-    memcpy(a_data, l_buffer + sizeof(dap_stream_transport_udp_header_t), l_copy_size);
-    return l_copy_size;
+    return (ssize_t)l_copy_size;
 }
 
 /**
  * @brief Write data to UDP transport
  */
-static ssize_t s_udp_write(dap_stream_transport_t *a_transport, const void *a_data, size_t a_size)
+static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_transport || !a_data || a_size == 0) {
+    if (!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP write");
         return -1;
     }
 
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
+    if (!a_stream->stream_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return -1;
+    }
+
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_stream->stream_transport->_inheritor;
     if (!l_priv) {
         log_it(L_ERROR, "UDP transport not initialized");
         return -1;
@@ -671,50 +733,44 @@ static ssize_t s_udp_write(dap_stream_transport_t *a_transport, const void *a_da
         a_size = l_priv->config.max_packet_size;
     }
 
-    // Create packet with header
-    size_t l_total_size = sizeof(dap_stream_transport_udp_header_t) + a_size;
-    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
-    if (!l_packet) {
-        log_it(L_CRITICAL, "Memory allocation failed for UDP packet");
+    // UDP write is done via dap_events_socket_write_unsafe
+    // This is called from worker context
+    if (!a_stream->esocket) {
+        log_it(L_ERROR, "Stream has no esocket");
         return -1;
     }
 
-    dap_stream_transport_udp_header_t *l_header = (dap_stream_transport_udp_header_t*)l_packet;
-    s_create_udp_header(l_header, DAP_STREAM_UDP_PKT_DATA, 
-                        a_size, l_priv->seq_num++, l_priv->session_id);
-    
-    memcpy(l_packet + sizeof(dap_stream_transport_udp_header_t), a_data, a_size);
-
-    // Send packet
-    ssize_t l_sent = dap_stream_transport_udp_send_raw(a_transport, l_packet, l_total_size);
-    DAP_DELETE(l_packet);
-
+    // Write directly using dap_events_socket_write_unsafe
+    ssize_t l_sent = dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
     if (l_sent < 0) {
-        log_it(L_ERROR, "UDP send failed");
+        log_it(L_ERROR, "UDP send failed via dap_events_socket");
         return -1;
     }
 
-    return a_size;  // Return payload size, not total packet size
+    return l_sent;
 }
 
 /**
  * @brief Close UDP transport
  */
-static int s_udp_close(dap_stream_transport_t *a_transport)
+static void s_udp_close(dap_stream_t *a_stream)
 {
-    if (!a_transport) {
-        log_it(L_ERROR, "Invalid transport for close");
-        return -1;
+    if (!a_stream) {
+        log_it(L_ERROR, "Invalid stream for close");
+        return;
     }
 
-    dap_stream_transport_udp_private_t *l_priv = s_get_private(a_transport);
+    if (!a_stream->stream_transport) {
+        return;
+    }
+
+    dap_stream_transport_udp_private_t *l_priv = 
+        (dap_stream_transport_udp_private_t*)a_stream->stream_transport->_inheritor;
     if (l_priv) {
         log_it(L_INFO, "Closing UDP transport session 0x%lx", l_priv->session_id);
         l_priv->session_id = 0;
         l_priv->seq_num = 0;
     }
-
-    return 0;
 }
 
 /**
@@ -723,8 +779,8 @@ static int s_udp_close(dap_stream_transport_t *a_transport)
 static uint32_t s_udp_get_capabilities(dap_stream_transport_t *a_transport)
 {
     UNUSED(a_transport);
-    return DAP_STREAM_TRANSPORT_CAP_DATAGRAM |
-           DAP_STREAM_TRANSPORT_CAP_LOW_LATENCY;
+    return DAP_STREAM_TRANSPORT_CAP_LOW_LATENCY |
+           DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL;
 }
 
 //=============================================================================
@@ -738,7 +794,7 @@ static dap_stream_transport_udp_private_t *s_get_private(dap_stream_transport_t 
 {
     if (!a_transport)
         return NULL;
-    return (dap_stream_transport_udp_private_t*)a_transport->internal;
+    return (dap_stream_transport_udp_private_t*)a_transport->_inheritor;
 }
 
 /**

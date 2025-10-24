@@ -652,18 +652,166 @@ int dap_stream_session_create_request_create(const dap_stream_session_create_req
                                                void **a_data_out,
                                                size_t *a_data_size_out)
 {
-    // TODO: Implementation similar to handshake_request_create
-    log_it(L_WARNING, "Session create request serialization not yet implemented");
-    return -1;
+    if (!a_request || !a_data_out || !a_data_size_out) {
+        log_it(L_ERROR, "Invalid parameters for session create request");
+        return -1;
+    }
+    
+    // Calculate buffer size
+    size_t l_size = 0;
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // magic
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // version
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint16_t);  // message_type
+    
+    if (a_request->channels) {
+        size_t l_channels_len = strlen(a_request->channels);
+        l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + l_channels_len;
+    }
+    
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint8_t);   // enc_type
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // enc_key_size
+    if (a_request->enc_headers) {
+        l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint8_t);   // enc_headers (optional)
+    }
+    
+    uint8_t *l_buffer = DAP_NEW_Z_SIZE(uint8_t, l_size);
+    if (!l_buffer) {
+        log_it(L_CRITICAL, "Failed to allocate %zu bytes", l_size);
+        return -2;
+    }
+    
+    size_t l_offset = 0;
+    int l_ret = 0;
+    
+    uint32_t l_magic = HTON32(a_request->magic);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_MAGIC, &l_magic, sizeof(l_magic));
+    
+    uint32_t l_version = HTON32(a_request->version);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_VERSION, &l_version, sizeof(l_version));
+    
+    uint16_t l_msg_type = HTON16(DSHP_MSG_SESSION_CREATE);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_MESSAGE_TYPE, &l_msg_type, sizeof(l_msg_type));
+    
+    if (a_request->channels) {
+        size_t l_channels_len = strlen(a_request->channels);
+        l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                                 DSHP_TLV_CHANNELS, a_request->channels, 
+                                                 l_channels_len);
+    }
+    
+    uint8_t l_enc_type = (uint8_t)a_request->enc_type;
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_ENC_TYPE, &l_enc_type, sizeof(l_enc_type));
+    
+    uint32_t l_enc_key_size = HTON32(a_request->enc_key_size);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_BLOCK_KEY_SIZE, &l_enc_key_size, sizeof(l_enc_key_size));
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to write TLV fields");
+        DAP_DELETE(l_buffer);
+        return -3;
+    }
+    
+    *a_data_out = l_buffer;
+    *a_data_size_out = l_offset;
+    
+    log_it(L_DEBUG, "Created session create request (%zu bytes, channels: %s)", 
+           l_offset, a_request->channels ? a_request->channels : "none");
+    return 0;
 }
 
 int dap_stream_session_create_request_parse(const void *a_data,
                                               size_t a_data_size,
                                               dap_stream_session_create_request_t **a_request_out)
 {
-    // TODO: Implementation similar to handshake_request_parse
-    log_it(L_WARNING, "Session create request parsing not yet implemented");
-    return -1;
+    if (!a_data || a_data_size == 0 || !a_request_out) {
+        log_it(L_ERROR, "Invalid parameters for session create request parse");
+        return -1;
+    }
+    
+    dap_stream_session_create_request_t *l_req = DAP_NEW_Z(dap_stream_session_create_request_t);
+    if (!l_req) {
+        log_it(L_CRITICAL, "Failed to allocate session create request");
+        return -2;
+    }
+    
+    const uint8_t *l_data = (const uint8_t *)a_data;
+    size_t l_offset = 0;
+    
+    // Parse TLV fields
+    while (l_offset < a_data_size) {
+        const dap_stream_handshake_tlv_hdr_t *l_tlv = 
+            (const dap_stream_handshake_tlv_hdr_t *)(l_data + l_offset);
+        
+        if (l_offset + sizeof(dap_stream_handshake_tlv_hdr_t) > a_data_size) {
+            log_it(L_ERROR, "Truncated TLV header");
+            dap_stream_session_create_request_free(l_req);
+            return -3;
+        }
+        
+        uint16_t l_type = NTOH16(l_tlv->type);
+        uint16_t l_length = NTOH16(l_tlv->length);
+        const uint8_t *l_value = l_data + l_offset + sizeof(dap_stream_handshake_tlv_hdr_t);
+        
+        if (l_offset + sizeof(dap_stream_handshake_tlv_hdr_t) + l_length > a_data_size) {
+            log_it(L_ERROR, "Truncated TLV value");
+            dap_stream_session_create_request_free(l_req);
+            return -4;
+        }
+        
+        switch (l_type) {
+            case DSHP_TLV_MAGIC:
+                if (l_length == sizeof(uint32_t)) {
+                    l_req->magic = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_VERSION:
+                if (l_length == sizeof(uint32_t)) {
+                    l_req->version = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_CHANNELS:
+                if (l_length > 0) {
+                    l_req->channels = DAP_NEW_Z_SIZE(char, l_length + 1);
+                    if (l_req->channels) {
+                        memcpy(l_req->channels, l_value, l_length);
+                        l_req->channels[l_length] = '\0';
+                    }
+                }
+                break;
+            case DSHP_TLV_ENC_TYPE:
+                if (l_length == sizeof(uint8_t)) {
+                    l_req->enc_type = (dap_enc_key_type_t)(*l_value);
+                }
+                break;
+            case DSHP_TLV_BLOCK_KEY_SIZE:
+                if (l_length == sizeof(uint32_t)) {
+                    l_req->enc_key_size = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            default:
+                log_it(L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
+                break;
+        }
+        
+        l_offset += sizeof(dap_stream_handshake_tlv_hdr_t) + l_length;
+    }
+    
+    // Validate parsed data
+    if (l_req->magic != DAP_STREAM_HANDSHAKE_MAGIC) {
+        log_it(L_ERROR, "Invalid magic: 0x%08x", l_req->magic);
+        dap_stream_session_create_request_free(l_req);
+        return -5;
+    }
+    
+    *a_request_out = l_req;
+    log_it(L_DEBUG, "Parsed session create request (channels: %s)", 
+           l_req->channels ? l_req->channels : "none");
+    return 0;
 }
 
 void dap_stream_session_create_request_free(dap_stream_session_create_request_t *a_request)
@@ -681,18 +829,174 @@ int dap_stream_session_create_response_create(const dap_stream_session_create_re
                                                 void **a_data_out,
                                                 size_t *a_data_size_out)
 {
-    // TODO: Implementation similar to handshake_response_create
-    log_it(L_WARNING, "Session create response serialization not yet implemented");
-    return -1;
+    if (!a_response || !a_data_out || !a_data_size_out) {
+        log_it(L_ERROR, "Invalid parameters for session create response");
+        return -1;
+    }
+    
+    // Calculate buffer size
+    size_t l_size = 0;
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // magic
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // version
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint16_t);  // message_type
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint8_t);   // status
+    l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // session_id
+    
+    if (a_response->status != 0) {
+        l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + sizeof(uint32_t);  // error_code
+        if (a_response->error_message) {
+            size_t l_err_len = strlen(a_response->error_message);
+            l_size += sizeof(dap_stream_handshake_tlv_hdr_t) + l_err_len;
+        }
+    }
+    
+    uint8_t *l_buffer = DAP_NEW_Z_SIZE(uint8_t, l_size);
+    if (!l_buffer) {
+        log_it(L_CRITICAL, "Failed to allocate %zu bytes", l_size);
+        return -2;
+    }
+    
+    size_t l_offset = 0;
+    int l_ret = 0;
+    
+    uint32_t l_magic = HTON32(a_response->magic);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_MAGIC, &l_magic, sizeof(l_magic));
+    
+    uint32_t l_version = HTON32(a_response->version);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_VERSION, &l_version, sizeof(l_version));
+    
+    uint16_t l_msg_type = HTON16(DSHP_MSG_SESSION_CREATE_RESPONSE);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_MESSAGE_TYPE, &l_msg_type, sizeof(l_msg_type));
+    
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_STATUS, &a_response->status, sizeof(a_response->status));
+    
+    uint32_t l_session_id = HTON32(a_response->session_id);
+    l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                             DSHP_TLV_SESSION_ID, &l_session_id, sizeof(l_session_id));
+    
+    if (a_response->status != 0) {
+        uint32_t l_error_code = HTON32(a_response->error_code);
+        l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                                 DSHP_TLV_ERROR_CODE, &l_error_code, sizeof(l_error_code));
+        
+        if (a_response->error_message) {
+            size_t l_err_len = strlen(a_response->error_message);
+            l_ret |= dap_stream_handshake_tlv_write(l_buffer, &l_offset, l_size,
+                                                     DSHP_TLV_ERROR_MESSAGE, a_response->error_message, l_err_len);
+        }
+    }
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to write TLV fields");
+        DAP_DELETE(l_buffer);
+        return -3;
+    }
+    
+    *a_data_out = l_buffer;
+    *a_data_size_out = l_offset;
+    
+    log_it(L_DEBUG, "Created session create response (%zu bytes, status: %u)", 
+           l_offset, a_response->status);
+    return 0;
 }
 
 int dap_stream_session_create_response_parse(const void *a_data,
                                                size_t a_data_size,
                                                dap_stream_session_create_response_t **a_response_out)
 {
-    // TODO: Implementation similar to handshake_response_parse
-    log_it(L_WARNING, "Session create response parsing not yet implemented");
-    return -1;
+    if (!a_data || a_data_size == 0 || !a_response_out) {
+        log_it(L_ERROR, "Invalid parameters for session create response parse");
+        return -1;
+    }
+    
+    dap_stream_session_create_response_t *l_resp = DAP_NEW_Z(dap_stream_session_create_response_t);
+    if (!l_resp) {
+        log_it(L_CRITICAL, "Failed to allocate session create response");
+        return -2;
+    }
+    
+    const uint8_t *l_data = (const uint8_t *)a_data;
+    size_t l_offset = 0;
+    
+    // Parse TLV fields
+    while (l_offset < a_data_size) {
+        const dap_stream_handshake_tlv_hdr_t *l_tlv = 
+            (const dap_stream_handshake_tlv_hdr_t *)(l_data + l_offset);
+        
+        if (l_offset + sizeof(dap_stream_handshake_tlv_hdr_t) > a_data_size) {
+            log_it(L_ERROR, "Truncated TLV header");
+            dap_stream_session_create_response_free(l_resp);
+            return -3;
+        }
+        
+        uint16_t l_type = NTOH16(l_tlv->type);
+        uint16_t l_length = NTOH16(l_tlv->length);
+        const uint8_t *l_value = l_data + l_offset + sizeof(dap_stream_handshake_tlv_hdr_t);
+        
+        if (l_offset + sizeof(dap_stream_handshake_tlv_hdr_t) + l_length > a_data_size) {
+            log_it(L_ERROR, "Truncated TLV value");
+            dap_stream_session_create_response_free(l_resp);
+            return -4;
+        }
+        
+        switch (l_type) {
+            case DSHP_TLV_MAGIC:
+                if (l_length == sizeof(uint32_t)) {
+                    l_resp->magic = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_VERSION:
+                if (l_length == sizeof(uint32_t)) {
+                    l_resp->version = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_STATUS:
+                if (l_length == sizeof(uint8_t)) {
+                    l_resp->status = *l_value;
+                }
+                break;
+            case DSHP_TLV_SESSION_ID:
+                if (l_length == sizeof(uint32_t)) {
+                    l_resp->session_id = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_ERROR_CODE:
+                if (l_length == sizeof(uint32_t)) {
+                    l_resp->error_code = NTOH32(*(const uint32_t*)l_value);
+                }
+                break;
+            case DSHP_TLV_ERROR_MESSAGE:
+                if (l_length > 0) {
+                    l_resp->error_message = DAP_NEW_Z_SIZE(char, l_length + 1);
+                    if (l_resp->error_message) {
+                        memcpy(l_resp->error_message, l_value, l_length);
+                        l_resp->error_message[l_length] = '\0';
+                    }
+                }
+                break;
+            default:
+                log_it(L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
+                break;
+        }
+        
+        l_offset += sizeof(dap_stream_handshake_tlv_hdr_t) + l_length;
+    }
+    
+    // Validate parsed data
+    if (l_resp->magic != DAP_STREAM_HANDSHAKE_MAGIC) {
+        log_it(L_ERROR, "Invalid magic: 0x%08x", l_resp->magic);
+        dap_stream_session_create_response_free(l_resp);
+        return -5;
+    }
+    
+    *a_response_out = l_resp;
+    log_it(L_DEBUG, "Parsed session create response (status: %u, session_id: %u)", 
+           l_resp->status, l_resp->session_id);
+    return 0;
 }
 
 void dap_stream_session_create_response_free(dap_stream_session_create_response_t *a_response)

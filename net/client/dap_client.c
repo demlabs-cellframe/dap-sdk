@@ -77,6 +77,7 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     l_client->_internal = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_pvt_t, NULL, l_client);
     l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
+    l_client->transport_type = DAP_STREAM_TRANSPORT_HTTP; // Default to HTTP for backward compatibility
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
@@ -578,6 +579,37 @@ void dap_client_set_is_always_reconnect(dap_client_t * a_client, bool a_value)
 {
     assert(a_client);
     a_client->always_reconnect = a_value;
+}
+
+/**
+ * @brief dap_client_set_transport_type
+ * Set the transport layer type for stream connection
+ * @param a_client Client instance
+ * @param a_transport_type Transport type (HTTP, UDP, WebSocket, TLS, etc.)
+ */
+void dap_client_set_transport_type(dap_client_t *a_client, dap_stream_transport_type_t a_transport_type)
+{
+    if (!a_client) {
+        log_it(L_ERROR, "Client is NULL for dap_client_set_transport_type");
+        return;
+    }
+    a_client->transport_type = a_transport_type;
+    log_it(L_DEBUG, "Set transport type to %d for client %p", a_transport_type, a_client);
+}
+
+/**
+ * @brief dap_client_get_transport_type
+ * Get the transport layer type for stream connection
+ * @param a_client Client instance
+ * @return Transport type
+ */
+dap_stream_transport_type_t dap_client_get_transport_type(dap_client_t *a_client)
+{
+    if (!a_client) {
+        log_it(L_ERROR, "Client is NULL for dap_client_get_transport_type");
+        return DAP_STREAM_TRANSPORT_HTTP; // Default fallback
+    }
+    return a_client->transport_type;
 }
 
 /**

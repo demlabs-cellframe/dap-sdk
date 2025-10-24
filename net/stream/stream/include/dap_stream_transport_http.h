@@ -60,6 +60,7 @@
 #define DAP_STREAM_TRANSPORT_HTTP_H
 
 #include "dap_stream_transport.h"
+#include "dap_stream_handshake.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_enc.h"

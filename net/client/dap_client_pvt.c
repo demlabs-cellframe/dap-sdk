@@ -421,50 +421,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->stream->stream_transport->ops && 
                         a_client_pvt->stream->stream_transport->ops->handshake_init) {
                         
-                        // New transport architecture path
-                        log_it(L_DEBUG, "Using transport layer for handshake init");
-                        
-                        dap_stream_handshake_params_t l_params = {
-                            .enc_type = a_client_pvt->session_key_type,
-                            .pkey_exchange_type = a_client_pvt->session_key_open_type,
-                            .pkey_exchange_size = a_client_pvt->session_key_open->pub_key_data_size,
-                            .block_key_size = a_client_pvt->session_key_block_size,
-                            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
-                            .pkey_data = l_data,
-                            .pkey_data_size = l_data_size
-                        };
-                        
-                        uint8_t *l_handshake_data = NULL;
-                        size_t l_handshake_size = 0;
-                        
-                        int l_res = a_client_pvt->stream->stream_transport->ops->handshake_init(
-                            a_client_pvt->stream->stream_transport,
-                            &l_params,
-                            &l_handshake_data,
-                            &l_handshake_size
-                        );
-                        
-                        if (l_res == 0 && l_handshake_data && l_handshake_size > 0) {
-                            // Transport prepared handshake data, send it via HTTP for now
-                            // (full transport integration will happen in next stages)
-                            char l_enc_init_url[1024] = { '\0' };
-                            snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                                         "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
-                                         a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
-                                         a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
-                            
-                            l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
-                                    (const char*)l_handshake_data, l_handshake_size, s_enc_init_response, s_enc_init_error);
-                            
-                            DAP_DELETE(l_handshake_data);
-                            
-                            if (l_res < 0)
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        } else {
-                            log_it(L_ERROR, "Transport handshake_init failed: %d", l_res);
-                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        }
-                    } else {
+                        // New transport architecture path - for now just skip it and use legacy path
+                        // Full transport integration will be implemented in Phase 8
+                        log_it(L_DEBUG, "Transport layer available but using legacy HTTP path for now");
+                    }
+                    
+                    {
                         // Legacy HTTP path (backward compatibility)
                         size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
                         char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
@@ -605,6 +567,19 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         log_it(L_WARNING, "Stream worker not initialized, stream functionality may be limited");
                         a_client_pvt->stream_worker = NULL;
                         a_client_pvt->stream->stream_worker = NULL;
+                    }
+
+                    // Initialize transport layer based on client's transport type
+                    dap_stream_transport_type_t l_transport_type = a_client_pvt->client->transport_type;
+                    log_it(L_INFO, "Initializing transport type: %d", l_transport_type);
+                    
+                    dap_stream_transport_t *l_transport = dap_stream_transport_find(l_transport_type);
+                    if (l_transport) {
+                        a_client_pvt->stream->stream_transport = l_transport;
+                        log_it(L_INFO, "Stream transport set to %d", l_transport_type);
+                    } else {
+                        log_it(L_WARNING, "Transport type %d not available, falling back to HTTP", l_transport_type);
+                        a_client_pvt->stream->stream_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
                     }
 
                     // connect

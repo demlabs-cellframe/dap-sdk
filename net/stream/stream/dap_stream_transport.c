@@ -32,6 +32,8 @@
 #include <string.h>
 #include <stdio.h>
 #include "dap_stream_transport.h"
+#include "dap_stream_obfuscation.h"
+#include "dap_stream.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 

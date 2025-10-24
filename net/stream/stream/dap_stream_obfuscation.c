@@ -467,7 +467,7 @@ static int s_obfuscate_impl(dap_stream_obfuscation_t *a_obfs,
     // Add padding
     if (l_padding_size > 0) {
         // Fill padding with random data
-        dap_random_bytes(l_output + a_data_size, l_padding_size);
+        randombytes(l_output + a_data_size, l_padding_size);
     }
 
     // Apply XOR obfuscation if polymorphic enabled
@@ -544,7 +544,7 @@ static int s_generate_fake_traffic_impl(dap_stream_obfuscation_t *a_obfs,
 {
     // Generate random size between min and max
     size_t l_size = a_obfs->config.mixing.min_packet_size + 
-                    (dap_random_uint32() % 
+                    (m_dap_random_u32() % 
                      (a_obfs->config.mixing.max_packet_size - 
                       a_obfs->config.mixing.min_packet_size + 1));
 
@@ -556,7 +556,7 @@ static int s_generate_fake_traffic_impl(dap_stream_obfuscation_t *a_obfs,
     }
 
     // Fill with random data
-    dap_random_bytes(l_fake_data, l_size);
+    randombytes(l_fake_data, l_size);
 
     *a_fake_data = l_fake_data;
     *a_fake_size = l_size;
@@ -577,7 +577,7 @@ static uint32_t s_calc_delay_impl(dap_stream_obfuscation_t *a_obfs)
         return l_min;
     }
 
-    uint32_t l_delay = l_min + (dap_random_uint32() % (l_max - l_min + 1));
+    uint32_t l_delay = l_min + (m_dap_random_u32() % (l_max - l_min + 1));
     return l_delay;
 }
 
@@ -600,7 +600,7 @@ static uint64_t s_get_time_ms(void)
  */
 static uint32_t s_generate_session_key(void)
 {
-    return dap_random_uint32();
+    return m_dap_random_u32();
 }
 
 /**
@@ -611,7 +611,7 @@ static size_t s_calculate_padding_size(dap_stream_obfuscation_t *a_obfs, size_t 
     UNUSED(a_data_size);
     
     // Check if we should add padding based on probability
-    float l_random = (float)dap_random_uint32() / (float)UINT32_MAX;
+    float l_random = (float)m_dap_random_u32() / (float)UINT32_MAX;
     if (l_random > a_obfs->config.padding.padding_probability) {
         return 0;  // No padding this time
     }
@@ -624,7 +624,7 @@ static size_t s_calculate_padding_size(dap_stream_obfuscation_t *a_obfs, size_t 
         return l_min;
     }
 
-    size_t l_padding = l_min + (dap_random_uint32() % (l_max - l_min + 1));
+    size_t l_padding = l_min + (m_dap_random_u32() % (l_max - l_min + 1));
     return l_padding;
 }
 

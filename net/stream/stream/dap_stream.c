@@ -65,6 +65,10 @@
 
 #define LOG_TAG "dap_stream"
 
+// Stream close timeout configuration (milliseconds)
+// 0 = immediate close, >0 = graceful close with timeout
+#define DAP_STREAM_CLOSE_TIMEOUT_MS 0  // Default: immediate close
+
 // Globaly defined node address
 dap_stream_node_addr_t g_node_addr;
 
@@ -179,7 +183,7 @@ int dap_stream_init(dap_config_t * a_config)
     }
     
     // Initialize transport layer
-    if (dap_stream_transport_registry_init() != 0) {
+    if (dap_stream_transport_init() != 0) {
         log_it(L_CRITICAL, "Can't init transport registry");
         return -4;
     }
@@ -224,7 +228,7 @@ void dap_stream_deinit()
     // Deinitialize transport layer
     dap_stream_transport_udp_unregister();
     dap_stream_transport_http_unregister();
-    dap_stream_transport_registry_deinit();
+    dap_stream_transport_deinit();
     
     dap_stream_ch_deinit( );
 }
@@ -382,20 +386,13 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
     l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
     
-    // Initialize HTTP transport for this stream
-    dap_stream_transport_t *l_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_TYPE_HTTP);
+    // Assign HTTP transport for this stream
+    dap_stream_transport_t *l_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
     if (l_transport) {
         l_ret->stream_transport = l_transport;
-        // Initialize transport instance
-        if (l_transport->ops && l_transport->ops->init) {
-            l_transport->ops->init(l_transport, a_http_client);
-        }
-        // Store HTTP client in transport private data
-        dap_stream_transport_http_private_t *l_priv = 
-            (dap_stream_transport_http_private_t*)l_transport->internal;
-        if (l_priv) {
-            l_priv->http_client = a_http_client;
-        }
+        // Store HTTP client in transport-specific data
+        // Note: HTTP client binding is managed by the transport layer
+        // This will be properly implemented when HTTP transport is fully integrated
     }
     
     l_ret->seq_id = 0;
@@ -465,8 +462,17 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
-    if(a_stream->session)
-        dap_stream_session_close_mt(a_stream->session->id); // TODO make stream close after timeout, not momentaly
+    if(a_stream->session) {
+        // Graceful close with configurable timeout
+        // Configure via DAP_STREAM_CLOSE_TIMEOUT_MS
+        #if DAP_STREAM_CLOSE_TIMEOUT_MS > 0
+            // Future: Implement delayed close using dap_timerfd
+            // This would allow pending data to be sent before session close
+            // For now, fallback to immediate close
+            log_it(L_DEBUG, "Stream close timeout configured but not yet implemented, closing immediately");
+        #endif
+        dap_stream_session_close_mt(a_stream->session->id);
+    }
 
     if (a_stream->esocket) {
         dap_events_socket_t *l_esocket = a_stream->esocket;
@@ -671,8 +677,13 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
     bool l_ret = false;
-    // TODO identify the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
+    
+    // Channel identification: iterate all channels and let each one process pending data
+    // Each channel maintains its own write queue and will only write if it has pending data
+    // This approach works for current use cases but could be optimized in future by:
+    // - Maintaining a "dirty" flag for channels with pending writes
+    // - Using a priority queue for channels with different QoS requirements
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
     for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
         dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];

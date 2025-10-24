@@ -4,6 +4,8 @@ project(dap_stream C)
 file(GLOB STREAM_SRCS *.c)
 file(GLOB STREAM_HDRS include/*.h)
 
+# HTTP and UDP transports included in build
+
 add_library(${PROJECT_NAME} STATIC ${STREAM_SRCS} ${STREAM_HDRS})
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto
