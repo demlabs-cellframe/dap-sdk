@@ -238,17 +238,17 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
     }
     // process result
     if (!l_status && a_cmd->cmd_res) {
-        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
-        if (l_id_response != response->id) {
+        dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
+        if (l_id_response != l_response->id) {
             printf("Wrong response from server\n");
             dap_json_rpc_request_free(a_request);
-            dap_json_rpc_response_free(response);
+            dap_json_rpc_response_free(l_response);
             return -1;
         }
-        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name) != 0) {
+        if (dap_json_rpc_response_printf_result(l_response, a_cmd->cmd_name) != 0) {
             printf("Something wrong with response\n");
         }
-        dap_json_rpc_response_free(response);
+        dap_json_rpc_response_free(l_response);
     }
     DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);

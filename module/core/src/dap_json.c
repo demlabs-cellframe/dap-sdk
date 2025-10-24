@@ -120,7 +120,9 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     a_item->owned = false;
     // After this call, a_item is owned by a_array
     // Caller must NOT free a_item after successful add
-    return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
+    int ret = json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
+    dap_json_object_free(a_item);
+    return ret;
 }
 
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
@@ -339,7 +341,9 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     a_value->owned = false;
     // After this call, a_value is owned by a_json
     // Caller must NOT free a_value after successful add
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
+    int l_ret = json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
+    dap_json_object_free(a_value);
+    return l_ret;
 }
 
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array)
@@ -353,7 +357,9 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
     a_array->owned = false;
     // After this call, a_array is owned by a_json
     // Caller must NOT free a_array after successful add
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
+    int l_ret = json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
+    dap_json_array_free(a_array);
+    return l_ret;
 }
 
 // Object field access
@@ -1003,7 +1009,8 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
     if (!l_obj) return NULL;
     
     json_object_get(l_obj); // Increase reference count
-    return _json_c_to_dap_json(l_obj, true);  // OWNED - new reference
+    a_json->owned = true;
+    return a_json;
 }
 
 // Object iteration implementation

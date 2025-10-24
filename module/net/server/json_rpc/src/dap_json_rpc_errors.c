@@ -176,8 +176,8 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json)
 // void dap_json_rpc_add_standart_erros(void)
 // {
 //     log_it(L_DEBUG, "Registration standart type erros");
-//     dap_json_rpc_error_add(*a_json_arr_reply, 0, "Unknown error");
-//     dap_json_rpc_error_add(*a_json_arr_reply, 1, "Not found handler for this request");
+//     dap_json_rpc_error_add(a_json_arr_reply, 0, "Unknown error");
+//     dap_json_rpc_error_add(a_json_arr_reply, 1, "Not found handler for this request");
 // }
 
 dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj)
