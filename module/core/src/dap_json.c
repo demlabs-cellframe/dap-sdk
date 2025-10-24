@@ -893,36 +893,68 @@ dap_json_t* dap_json_object_new_bool(bool a_value)
 
 #define INDENTATION_LEVEL "    "
 
+static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level);
+
+static void s_json_print_value(json_object *a_raw_obj, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator)
+{
+    enum json_type type = json_object_get_type(a_raw_obj);
+
+    switch (type) {
+        case json_type_string:
+            fprintf(a_stream, a_print_separator ? "%s, " : "%s", json_object_get_string(a_raw_obj));
+            break;
+        case json_type_int:
+            fprintf(a_stream, "%"DAP_INT64_FORMAT, json_object_get_int64(a_raw_obj));
+            break;
+        case json_type_double:
+            fprintf(a_stream, "%lf", json_object_get_double(a_raw_obj));
+            break;
+        case json_type_boolean:
+            fprintf(a_stream, "%s", json_object_get_boolean(a_raw_obj) ? "true" : "false");
+            break;
+        case json_type_object:
+        case json_type_array:
+            fprintf(a_stream, "\n");
+            s_json_print_object(a_raw_obj, a_stream, a_indent_level);
+            break;
+        default:
+            break;
+    }
+}
+
 void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level) {
     if (!a_json) {
         return;
     }
 
     json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
-    enum json_type type = json_object_get_type(raw_obj);
+    s_json_print_object(raw_obj, a_stream, a_indent_level);
+}
+
+static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level)
+{
+    enum json_type type = json_object_get_type(a_raw_obj);
 
     switch (type) {
         case json_type_object: {
-            json_object_object_foreach(raw_obj, key, val) {
+            json_object_object_foreach(a_raw_obj, key, val) {
                 for (int i = 0; i <= a_indent_level; i++) {
                     fprintf(a_stream, INDENTATION_LEVEL);
                 }
                 fprintf(a_stream, "%s: ", key);
-                dap_json_t *dap_val = _json_c_to_dap_json(val, false);
-                dap_json_print_value(dap_val, key, a_stream, a_indent_level + 1, false);
+                s_json_print_value(val, key, a_stream, a_indent_level + 1, false);
                 fprintf(a_stream, "\n");
             }
             break;
         }
         case json_type_array: {
-            int length = json_object_array_length(raw_obj);
+            int length = json_object_array_length(a_raw_obj);
             for (int i = 0; i < length; i++) {
                 for (int j = 0; j <= a_indent_level; j++) {
                     fprintf(a_stream, INDENTATION_LEVEL);
                 }
-                json_object *item = json_object_array_get_idx(raw_obj, i);
-                dap_json_t *dap_item = _json_c_to_dap_json(item, false);
-                dap_json_print_value(dap_item, NULL, a_stream, a_indent_level + 1, length - 1 - i);
+                json_object *item = json_object_array_get_idx(a_raw_obj, i);
+                s_json_print_value(item, NULL, a_stream, a_indent_level + 1, length - 1 - i);
                 fprintf(a_stream, "\n");
             }
             break;
@@ -938,29 +970,7 @@ void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream,
     }
 
     json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
-    enum json_type type = json_object_get_type(raw_obj);
-
-    switch (type) {
-        case json_type_string:
-            fprintf(a_stream, a_print_separator ? "%s, " : "%s", json_object_get_string(raw_obj));
-            break;
-        case json_type_int:
-            fprintf(a_stream, "%"DAP_INT64_FORMAT, json_object_get_int64(raw_obj));
-            break;
-        case json_type_double:
-            fprintf(a_stream, "%lf", json_object_get_double(raw_obj));
-            break;
-        case json_type_boolean:
-            fprintf(a_stream, "%s", json_object_get_boolean(raw_obj) ? "true" : "false");
-            break;
-        case json_type_object:
-        case json_type_array:
-            fprintf(a_stream, "\n");
-            dap_json_print_object(a_json, a_stream, a_indent_level);
-            break;
-        default:
-            break;
-    }
+    s_json_print_value(raw_obj, a_key, a_stream, a_indent_level, a_print_separator);
 }
 
 int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
