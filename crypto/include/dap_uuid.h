@@ -24,16 +24,40 @@
 #pragma once
 #include "dap_math_ops.h"
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// UUID string length: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" + null terminator
+#define DAP_UUID_STR_SIZE 37
 
 uint128_t dap_uuid_generate_uint128(); // Produce uint128 global unique id
 uint64_t dap_uuid_generate_uint64(); // Produce uint64 global unique id
 // Produces unique nonce
 void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size);
 
+/**
+ * @brief Convert UUID (16-byte binary) to hex string representation
+ * @param a_uuid Pointer to 16-byte UUID
+ * @param a_buf Output buffer for string (must be at least DAP_UUID_STR_SIZE bytes)
+ * @param a_buf_size Size of output buffer
+ * @return 0 on success, negative error code on failure
+ * @note Output format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+ */
+int dap_uuid_to_str(const void *a_uuid, char *a_buf, size_t a_buf_size);
+
+/**
+ * @brief Check if UUID is blank (all zeros)
+ * @param a_uuid Pointer to 16-byte UUID
+ * @param a_uuid_size Size of UUID (typically 16 bytes)
+ * @return true if UUID is all zeros, false otherwise
+ */
+bool dap_uuid_is_blank(const void *a_uuid, size_t a_uuid_size);
+
 #ifdef __cplusplus
 }
 #endif
+

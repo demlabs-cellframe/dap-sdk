@@ -490,3 +490,54 @@ int dap_stream_ch_del_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_
 {
     return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, false);
 }
+
+/**
+ * @brief Get worker for a channel by UUID (MT-safe)
+ * @param a_ch_uuid Channel UUID
+ * @return Pointer to worker or NULL if channel not found
+ * @note This function searches through all stream workers to find the channel
+ *       Uses proper locking for thread safety
+ */
+dap_worker_t *dap_stream_ch_get_worker_mt(dap_stream_ch_uuid_t a_ch_uuid)
+{
+    uint32_t l_worker_count = dap_events_thread_get_count();
+    
+    // Search through all workers with proper locking
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        dap_worker_t *l_worker = dap_events_worker_get(i);
+        if (!l_worker) {
+            continue;
+        }
+        
+        // Get stream worker from worker
+        dap_stream_worker_t *l_stream_worker = DAP_STREAM_WORKER(l_worker);
+        if (!l_stream_worker) {
+            continue;
+        }
+        
+        // Lock channels for read access (MT-safe)
+        pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
+        
+        // Search through channels hash table
+        dap_stream_ch_t *l_ch = NULL;
+        dap_stream_ch_t *l_ch_iter = NULL;
+        dap_stream_ch_t *l_ch_tmp = NULL;
+        
+        // Iterate through UTHASH table
+        HASH_ITER(hh_worker, l_stream_worker->channels, l_ch_iter, l_ch_tmp) {
+            if (memcmp(&l_ch_iter->uuid, &a_ch_uuid, sizeof(dap_stream_ch_uuid_t)) == 0) {
+                l_ch = l_ch_iter;
+                break;
+            }
+        }
+        
+        pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
+        
+        // If found, return this worker
+        if (l_ch) {
+            return l_worker;
+        }
+    }
+    
+    return NULL;
+}

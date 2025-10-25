@@ -21,6 +21,8 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <time.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
@@ -127,3 +129,50 @@ dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str, bool *succsess)
     if (succsess) *succsess = true;
     return dap_guuid_compose(l_net_id, l_srv_id);
 }
+
+/**
+ * @brief Convert UUID (16-byte binary) to hex string representation
+ * @param a_uuid Pointer to 16-byte UUID
+ * @param a_buf Output buffer for string (must be at least DAP_UUID_STR_SIZE bytes)
+ * @param a_buf_size Size of output buffer
+ * @return 0 on success, negative error code on failure
+ */
+int dap_uuid_to_str(const void *a_uuid, char *a_buf, size_t a_buf_size)
+{
+    if (!a_uuid || !a_buf || a_buf_size < DAP_UUID_STR_SIZE) {
+        return -1; // Invalid arguments
+    }
+    
+    const uint8_t *bytes = (const uint8_t *)a_uuid;
+    snprintf(a_buf, a_buf_size,
+             "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             bytes[0], bytes[1], bytes[2], bytes[3],
+             bytes[4], bytes[5], bytes[6], bytes[7],
+             bytes[8], bytes[9], bytes[10], bytes[11],
+             bytes[12], bytes[13], bytes[14], bytes[15]);
+    
+    return 0;
+}
+
+/**
+ * @brief Check if UUID is blank (all zeros)
+ * @param a_uuid Pointer to UUID
+ * @param a_uuid_size Size of UUID (typically 16 bytes)
+ * @return true if UUID is all zeros, false otherwise
+ */
+bool dap_uuid_is_blank(const void *a_uuid, size_t a_uuid_size)
+{
+    if (!a_uuid || a_uuid_size == 0) {
+        return true;
+    }
+    
+    const uint8_t *bytes = (const uint8_t *)a_uuid;
+    for (size_t i = 0; i < a_uuid_size; i++) {
+        if (bytes[i] != 0) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
