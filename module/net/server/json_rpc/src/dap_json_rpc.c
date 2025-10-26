@@ -312,7 +312,6 @@ char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url)
             dap_strdup_printf("Method '%s' not found", request->method),
             TYPE_RESPONSE_STRING, request->id, request->version);
         char *response_str = dap_json_rpc_response_to_string(response);
-        dap_json_rpc_response_free(response);
         dap_json_rpc_request_free(request);
         return response_str;
     }
@@ -335,7 +334,6 @@ char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url)
     // Cleanup
     if (handler_result)
         DAP_DELETE(handler_result);
-    dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
 
     return response_string ? response_string : dap_strdup("{\"error\":\"Internal error\"}");

@@ -503,79 +503,67 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
                         L_DEBUG, "execute command=%s", l_str_cmd);
             DAP_DELETE(l_str_cmd);
         }
-
-        char **l_argv = dap_strsplit(str_cmd, ";", -1);
-        int l_argc = 0;
-        // Count argc
-        while (l_argv[l_argc] != NULL)
-            l_argc++;
-        // Support alias
-        if (l_finded_by_alias) {
-            cmd_name = l_ncmd;
-            DAP_FREE(l_argv[0]);
-            l_argv[0] = l_ncmd;
-            if (l_append_cmd) {
-                l_argc++;
-                char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-                al_argv[1] = l_ncmd;
-                al_argv[1] = l_append_cmd;
-                for (int i = 1; i < l_argc; i++)
-                    al_argv[i + 1] = l_argv[i];
-                DAP_DEL_Z(l_argv);
-                l_argv = al_argv;
-            }
-        }
-        // Call the command function
-        if(l_cmd &&  l_argv && l_cmd->func) {
-            dap_time_t l_call_time = 0;
-            if (s_stat_callback) {
-                l_call_time = dap_nanotime_now();
-            }
-            // Check if this is JSON-RPC command based on flags
-            if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&l_json_arr_reply, request->version);
-            } else {
-                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply, request->version);
-            }
-            if (s_stat_callback) {
-                s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
-            }
-        } else if (l_cmd) {
-            log_it(L_WARNING, "NULL arguments for input for command \"%s\"", str_cmd);
-            dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
-        } else {
-            log_it(L_WARNING, "No function for command \"%s\" but it registred?!", str_cmd);
-            dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
-        }
-        // find '-verbose' command
-        l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
-        dap_strfreev(l_argv);
     }
-    char *reply_body = NULL;
+
+    char **l_argv = dap_strsplit(str_cmd, ";", -1);
+    int l_argc = 0;
+    // Count argc
+    while (l_argv[l_argc] != NULL)
+        l_argc++;
+    // Support alias
+    if (l_finded_by_alias) {
+        cmd_name = l_ncmd;
+        DAP_FREE(l_argv[0]);
+        l_argv[0] = l_ncmd;
+        if (l_append_cmd) {
+            l_argc++;
+            char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
+            al_argv[1] = l_ncmd;
+            al_argv[1] = l_append_cmd;
+            for (int i = 1; i < l_argc; i++)
+                al_argv[i + 1] = l_argv[i];
+            DAP_DEL_Z(l_argv);
+            l_argv = al_argv;
+        }
+    }
+    // Call the command function
+    if(l_cmd &&  l_argv && l_cmd->func) {
+        dap_time_t l_call_time = 0;
+        if (s_stat_callback) {
+            l_call_time = dap_nanotime_now();
+        }
+        // Check if this is JSON-RPC command based on flags
+        if (l_cmd->arg_func) {
+            res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, l_json_arr_reply, request->version);
+        } else {
+            res = l_cmd->func(l_argc, l_argv, l_json_arr_reply, request->version);
+        }
+        if (s_stat_callback) {
+            s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
+        }
+    } else if (l_cmd) {
+        log_it(L_WARNING, "NULL arguments for input for command \"%s\"", str_cmd);
+        dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
+    } else {
+        log_it(L_WARNING, "No function for command \"%s\" but it registred?!", str_cmd);
+        dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
+    }
+    // find '-verbose' command
+    l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
+    dap_strfreev(l_argv);
+
     // -verbose
     if (l_verbose) {
-        if (str_reply) {
-            reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, str_reply);
-            DAP_DELETE(str_reply);
-        } else {
-            dap_json_t *json_res = dap_json_object_new();
-            dap_json_object_add_int64(json_res, "ret_code", res);
-            dap_json_array_add(l_json_arr_reply, json_res);
-        }
-    } else
-        reply_body = str_reply;
+        dap_json_t *json_res = dap_json_object_new();
+        dap_json_object_add_int64(json_res, "ret_code", res);
+        dap_json_array_add(l_json_arr_reply, json_res);
+    }
 
     // create response
-    dap_json_rpc_response_t* response = reply_body
-            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id, request->version)
-            : dap_json_rpc_response_create(l_json_arr_reply, TYPE_RESPONSE_JSON, request->id, request->version);
-    // Note: l_json_arr_reply will be freed by dap_json_rpc_response_free if it was used in response
-    if (reply_body) {
-        dap_json_object_free(l_json_arr_reply);
-    }
-    char *response_string = dap_json_rpc_response_to_string(response);
-    dap_json_rpc_response_free(response);
+    dap_json_rpc_response_t *l_response = dap_json_rpc_response_create(l_json_arr_reply, TYPE_RESPONSE_JSON, request->id, request->version);
     dap_json_rpc_request_free(request);
+    char *response_string = dap_json_rpc_response_to_string(l_response);
+
     return response_string ? response_string : dap_strdup("Error");
 }
 

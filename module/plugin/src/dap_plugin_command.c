@@ -7,12 +7,13 @@
 #include "uthash.h"
 #include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_plugin_command.h"
+#include "dap_json_rpc.h"
 
 #define LOG_TAG "dap_plugin_command"
 
 static bool s_l_restart_plugins = false;
 
-static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int a_version);
+static int s_command_handler(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a_version);
 
 
 /**
@@ -47,10 +48,10 @@ void dap_plugin_command_deinit(void)
  * @brief s_command_handler
  * @param a_argc
  * @param a_argv
- * @param a_str_reply
+ * @param (void **)a_json_arr_reply
  * @return
  */
-static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int a_version)
+static int s_command_handler(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a_version)
 {
     enum {
         CMD_NONE, CMD_LIST, CMD_SHOW_NAME, CMD_RESTART, CMD_RELOAD_NAME
@@ -76,23 +77,28 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
                                   l_str, "|\t",l_manifest->name, "\t|\t", l_manifest->version, "\t|\t", l_manifest->author, "\t|\n", NULL);
 
             }
-            dap_cli_server_cmd_set_reply_text(a_str_reply, "%s", l_str);
+            dap_json_rpc_error_add(a_json_arr_reply, 0, l_str);
+            DAP_DELETE(l_str);
         }break;
         case CMD_SHOW_NAME:
             if(!l_cmd_arg){
-                dap_cli_server_cmd_set_reply_text(a_str_reply, "Need argument for this command");
+                dap_json_rpc_error_add(a_json_arr_reply, -1, "Need argument for this command");
             }
             HASH_FIND_STR(dap_plugin_manifest_all(), l_cmd_arg, l_manifest);
             if(l_manifest){
                 char *l_deps = dap_plugin_manifests_get_list_dependencies(l_manifest);
-                dap_cli_server_cmd_set_reply_text(a_str_reply, " Name: %s\n Version: %s\n Author: %s\n"
-                                                               " Description: %s\n Dependencies: %s \n\n",
-                                                  l_manifest->name, l_manifest->version, l_manifest->author,
-                                                  l_manifest->description, l_deps?l_deps:" ");
+                char *l_reply_str = dap_strdup_printf(" Name: %s\n Version: %s\n Author: %s\n"
+                                                      " Description: %s\n Dependencies: %s \n\n",
+                                                      l_manifest->name, l_manifest->version, l_manifest->author,
+                                                      l_manifest->description, l_deps?l_deps:" ");
+                dap_json_rpc_error_add(a_json_arr_reply, 0, l_reply_str);
+                DAP_DELETE(l_reply_str);
                 if(l_deps)
                     DAP_DELETE(l_deps);
             } else {
-                dap_cli_server_cmd_set_reply_text(a_str_reply, "Can't find a plugin named %s", l_cmd_arg);
+                char *l_reply_str = dap_strdup_printf("Can't find a plugin named %s", l_cmd_arg);
+                dap_json_rpc_error_add(a_json_arr_reply, -1, l_reply_str);
+                DAP_DELETE(l_reply_str);
             }
             break;
         case CMD_RESTART:
@@ -100,7 +106,7 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
             dap_plugin_stop_all();
             dap_plugin_start_all();
             log_it(L_NOTICE, "Restart completed");
-            dap_cli_server_cmd_set_reply_text(a_str_reply, "Restart completed");
+            dap_json_rpc_error_add(a_json_arr_reply, 0, "Restart completed");
             break;
         case CMD_RELOAD_NAME:{
             int l_result;
@@ -108,47 +114,69 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
             switch (l_result) {
                 case 0: //All is good
                     break;
-                case -4:
-                    dap_cli_server_cmd_set_reply_text(a_str_reply, "A plugin named \"%s\" was not found.", l_cmd_arg);
+                case -4: {
+                    char *l_reply_str = dap_strdup_printf("A plugin named \"%s\" was not found.", l_cmd_arg);
+                    dap_json_rpc_error_add(a_json_arr_reply, -4, l_reply_str);
+                    DAP_DELETE(l_reply_str);
                     break;
-                case -5:
-                    dap_cli_server_cmd_set_reply_text(a_str_reply, "A plugin named \"%s\" is not loaded", l_cmd_arg);
+                }
+                case -5: {
+                    char *l_reply_str = dap_strdup_printf("A plugin named \"%s\" is not loaded", l_cmd_arg);
+                    dap_json_rpc_error_add(a_json_arr_reply, -5, l_reply_str);
+                    DAP_DELETE(l_reply_str);
                     break;
+                }
                 default:
-                    dap_cli_server_cmd_set_reply_text(a_str_reply, "An unforeseen error has occurred.");
+                    dap_json_rpc_error_add(a_json_arr_reply, l_result, "An unforeseen error has occurred.");
                     break;
             }
             if(l_result == 0){
                 l_result = dap_plugin_start(l_cmd_arg);
                 switch (l_result) {
-                    case 0:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Restart \"%s\" plugin is completed successfully.", l_cmd_arg);
+                    case 0: {
+                        char *l_reply_str = dap_strdup_printf("Restart \"%s\" plugin is completed successfully.", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, 0, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
-                    case -1:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Plugin \"%s\" has unsupported type, pls check manifest file", l_cmd_arg);
+                    }
+                    case -1: {
+                        char *l_reply_str = dap_strdup_printf("Plugin \"%s\" has unsupported type, pls check manifest file", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, -1, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
-                    case -2:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply,
-                                                          "\"%s\" plugin has unresolved dependencies. Restart all plugins.",
-                                                          l_cmd_arg);
+                    }
+                    case -2: {
+                        char *l_reply_str = dap_strdup_printf("\"%s\" plugin has unresolved dependencies. Restart all plugins.", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, -2, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
-                    case -3:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Registration manifest for \"%s\" plugin is failed.", l_cmd_arg);
+                    }
+                    case -3: {
+                        char *l_reply_str = dap_strdup_printf("Registration manifest for \"%s\" plugin is failed.", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, -3, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
-                    case -4:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Plugin \"%s\" was not found.", l_cmd_arg);
+                    }
+                    case -4: {
+                        char *l_reply_str = dap_strdup_printf("Plugin \"%s\" was not found.", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, -4, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
-                    case -5:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Plugin \"%s\" can't load", l_cmd_arg);
+                    }
+                    case -5: {
+                        char *l_reply_str = dap_strdup_printf("Plugin \"%s\" can't load", l_cmd_arg);
+                        dap_json_rpc_error_add(a_json_arr_reply, -5, l_reply_str);
+                        DAP_DELETE(l_reply_str);
                         break;
+                    }
                     default:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "An unforeseen error has occurred.");
+                        dap_json_rpc_error_add(a_json_arr_reply, l_result, "An unforeseen error has occurred.");
                         break;
                 }
             }
         }break;
         default:
-            dap_cli_server_cmd_set_reply_text(a_str_reply, "Arguments are incorrect.");
+            dap_json_rpc_error_add(a_json_arr_reply, -1, "Arguments are incorrect.");
             break;
 
     }

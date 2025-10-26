@@ -3,6 +3,10 @@
 #define LOG_TAG "dap_json_rpc_response"
 #define INDENTATION_LEVEL "    "
 
+/**
+ * @brief Initialize a new JSON-RPC response object
+ * @return Pointer to newly allocated dap_json_rpc_response_t structure, or NULL on memory allocation failure
+ */
 dap_json_rpc_response_t *dap_json_rpc_response_init()
 {
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
@@ -11,6 +15,14 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
     return response;
 }
 
+/**
+ * @brief Create a JSON-RPC response with specified result data
+ * @param result Pointer to result data (type depends on 'type' parameter)
+ * @param type Type of the result (string, integer, double, boolean, JSON object, or null)
+ * @param id Request identifier to match response with request
+ * @param a_version JSON-RPC protocol version
+ * @return Pointer to newly created dap_json_rpc_response_t structure, or NULL on error
+ */
 dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id, int a_version) {
 
     dap_return_val_if_fail(result, NULL);
@@ -41,6 +53,11 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     return response;
 }
 
+/**
+ * @brief Free memory allocated for JSON-RPC response object
+ * @param response Pointer to dap_json_rpc_response_t structure to be freed
+ * @note Handles freeing of internal data based on response type
+ */
 void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
 {
     if (response) {
@@ -64,7 +81,14 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
     }
 }
 
-char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
+/**
+ * @brief Convert JSON-RPC response structure to JSON string representation
+ * @param response Pointer to dap_json_rpc_response_t structure to be serialized
+ * @return Dynamically allocated string containing JSON representation, or NULL on error
+ * @note Caller is responsible for freeing the returned string
+ * @note Internal response JSON object dereferenced and highly likely (sic!) to be freed by this call
+ */
+char *dap_json_rpc_response_to_string(dap_json_rpc_response_t* response) {
     if (!response) {
         return NULL;
     }
@@ -93,10 +117,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
             break;
         case TYPE_RESPONSE_JSON:
             if (response->result_json_object) {
-                // Create owned reference before adding (prevents double-free)
-                // dap_json_object_add_object transfers ownership, so we need a separate reference
-                dap_json_t *owned_copy = dap_json_object_ref(response->result_json_object);
-                dap_json_object_add_object(jobj, "result", owned_copy);
+                dap_json_object_add_object(jobj, "result", response->result_json_object);
             } else {
                 dap_json_object_add_null(jobj, "result");
             }
@@ -114,10 +135,18 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
     // convert to string
     char* result_string = dap_json_to_string(jobj);
     dap_json_object_free(jobj);
+    response->result_json_object = NULL;
+    dap_json_rpc_response_free(response);
 
     return result_string;
 }
 
+/**
+ * @brief Parse JSON string and create JSON-RPC response structure 
+ * @param json_string JSON formatted string to be parsed
+ * @return Pointer to newly created dap_json_rpc_response_t structure, or NULL on parsing error
+ * @note Caller is responsible for freeing the returned structure using dap_json_rpc_response_free()
+ */
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string) {
     dap_json_t *jobj = dap_json_parse_string(json_string);
     if (!jobj) {
@@ -165,9 +194,9 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 dap_json_object_free(result_obj); // Free borrowed wrapper
                 break;
             case TYPE_RESPONSE_JSON:
-                // Create a copy of the JSON object for response
-                response->result_json_object = dap_json_object_ref(result_obj);
-                dap_json_object_free(result_obj); // Free borrowed wrapper (after ref increase)
+                // Link the result JSON object for response
+                response->result_json_object = result_obj;
+                dap_json_object_ref(result_obj);
                 break;
             case TYPE_RESPONSE_NULL:
                 dap_json_object_free(result_obj); // Free borrowed wrapper
@@ -182,6 +211,11 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     return response;
 }
 
+/**
+ * @brief Check if command requires special JSON printing format
+ * @param a_name Command name to check
+ * @return Index of special command (1-based), or 0 if standard format should be used
+ */
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
@@ -195,10 +229,11 @@ int json_print_commands(const char * a_name) {
     return 0;
 }
 
-
-
-
-
+/**
+ * @brief Print JSON-RPC response with custom format for transaction history command
+ * @param response Pointer to dap_json_rpc_response_t structure containing transaction history data
+ * @note Provides formatted output showing transaction statistics per network and chain
+ */
 void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     if (!response || !response->result_json_object) {
         printf("Response is empty\n");
@@ -248,6 +283,11 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     }
 }
 
+/**
+ * @brief Print JSON-RPC response with custom format for file-related commands
+ * @param response Pointer to dap_json_rpc_response_t structure containing file command output
+ * @note Handles nested array structures and prints file content appropriately
+ */
 void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
     if (!response || !response->result_json_object) {
         printf("Response is empty\n");
@@ -293,6 +333,11 @@ void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
     }
 }
 
+/**
+ * @brief Print JSON-RPC response with custom format for mempool list command
+ * @param response Pointer to dap_json_rpc_response_t structure containing mempool data
+ * @note Displays removed records count and datum information per chain
+ */
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     dap_json_t *json_obj_response = dap_json_array_get_idx(response->result_json_object, 0);
     if (!json_obj_response) return;
@@ -335,6 +380,13 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     // All are borrowed references - no free needed
 }
 
+/**
+ * @brief Print JSON-RPC response result to stdout based on response type
+ * @param response Pointer to dap_json_rpc_response_t structure to print
+ * @param cmd_name Command name used to determine special formatting rules
+ * @return 0 on success, negative value on error
+ * @note Automatically selects appropriate formatting based on response type and command name
+ */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {
     if (!response) {
         printf("Empty response");
@@ -379,6 +431,11 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
     return 0;
 }
 
+/**
+ * @brief Free memory allocated for JSON-RPC request JSON structure
+ * @param l_request_JSON Pointer to dap_json_rpc_request_JSON_t structure to be freed
+ * @note Frees all internal JSON objects and error structures
+ */
 void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
 {
     if (l_request_JSON->struct_error)
