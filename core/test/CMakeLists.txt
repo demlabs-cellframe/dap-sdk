@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.10)
 project(core_test)
 
 set(CMAKE_C_STANDARD 11)
+
+# Include DAP Mock Framework
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
 file(GLOB SRCS *.c)
 
 
@@ -15,7 +19,12 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
 endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
-target_link_libraries(core_test dap_test dap_core pthread)
+target_link_libraries(core_test dap_test dap_test_mocks dap_core pthread)
+
+# Include mock framework headers
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks
+)
 
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
