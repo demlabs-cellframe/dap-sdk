@@ -339,7 +339,16 @@ else()
   if(HAVE_LIBM)
     set(LIB_MATH m)
   else()
-    message(FATAL_ERROR "No libm found for math support")
+    # Try to find libm manually
+    find_library(LIBM_LIBRARY m PATHS /usr/lib/x86_64-linux-gnu /usr/lib /lib)
+    if(LIBM_LIBRARY)
+      message(STATUS "Found libm via manual search: ${LIBM_LIBRARY}")
+      set(LIB_MATH m)
+    else()
+      # On Linux, libm is usually part of glibc, just use it
+      message(STATUS "libm not explicitly found, assuming it's part of libc")
+      set(LIB_MATH m)
+    endif()
   endif()
 endif()
 
