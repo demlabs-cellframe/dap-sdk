@@ -11,6 +11,7 @@
  * @copyright (c) 2025 Demlabs
  */
 
+#include "../../fixtures/utilities/test_helpers.h"
 #include "dap_test.h"
 #include "dap_test_async.h"
 #include "dap_common.h"
@@ -338,13 +339,13 @@ int main(int argc, char **argv)
     UNUSED(argv);
     
     // Initialize DAP SDK
-    int l_ret = dap_common_init("test_async_framework", NULL);
+    int l_ret = dap_common_init("test_async", NULL);
     if (l_ret != 0) {
         printf("Failed to initialize DAP SDK\n");
         return 1;
     }
     
-    log_it(L_INFO, "=== DAP SDK Async Test Framework - Unit Tests ===");
+    log_it(L_INFO, "=== DAP SDK Async Test - Unit Tests ===");
     log_it(L_INFO, "Testing all async utilities...\n");
     
     // Run tests
@@ -358,7 +359,7 @@ int main(int argc, char **argv)
     test_wait_until_macro();
     test_global_timeout_setup();
     
-    log_it(L_INFO, "\n=== All Async Framework Tests PASSED! ===");
+    log_it(L_INFO, "\n=== All Async Tests PASSED! ===");
     
     dap_common_deinit();
     return 0;

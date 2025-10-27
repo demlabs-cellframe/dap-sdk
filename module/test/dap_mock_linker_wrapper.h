@@ -9,14 +9,14 @@
  * 3. __wrap_ function can call original via __real_function_name
  * 4. Mock framework tracks calls and controls behavior
  * 
- * @date 2025-10-26
+ * @date 2025-10-27
  * @copyright (c) 2025 Cellframe Network
  */
 
 #ifndef DAP_MOCK_LINKER_WRAPPER_H
 #define DAP_MOCK_LINKER_WRAPPER_H
 
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 
 /**
  * Helper to extract just parameter names for forwarding
@@ -40,7 +40,7 @@
     int __wrap_##func_name params { \
         if (g_mock_##func_name && g_mock_##func_name->enabled) { \
             void *l_args_array[] = args; \
-            int l_ret = (int)(intptr_t)g_mock_##func_name->return_value; \
+            int l_ret = (int)(intptr_t)g_mock_##func_name->return_value.ptr; \
             dap_mock_record_call(g_mock_##func_name, l_args_array, \
                                 sizeof(l_args_array)/sizeof(void*), (void*)(intptr_t)l_ret); \
             return l_ret; \
@@ -56,7 +56,7 @@
     void* __wrap_##func_name params { \
         if (g_mock_##func_name && g_mock_##func_name->enabled) { \
             void *l_args_array[] = args; \
-            void *l_ret = g_mock_##func_name->return_value; \
+            void *l_ret = g_mock_##func_name->return_value.ptr; \
             dap_mock_record_call(g_mock_##func_name, l_args_array, \
                                 sizeof(l_args_array)/sizeof(void*), l_ret); \
             return l_ret; \
@@ -87,7 +87,7 @@
     bool __wrap_##func_name params { \
         if (g_mock_##func_name && g_mock_##func_name->enabled) { \
             void *l_args_array[] = args; \
-            bool l_ret = (bool)g_mock_##func_name->return_value; \
+            bool l_ret = (bool)(intptr_t)g_mock_##func_name->return_value.ptr; \
             dap_mock_record_call(g_mock_##func_name, l_args_array, \
                                 sizeof(l_args_array)/sizeof(void*), (void*)(intptr_t)l_ret); \
             return l_ret; \
@@ -103,7 +103,7 @@
     size_t __wrap_##func_name params { \
         if (g_mock_##func_name && g_mock_##func_name->enabled) { \
             void *l_args_array[] = args; \
-            size_t l_ret = (size_t)g_mock_##func_name->return_value; \
+            size_t l_ret = (size_t)(intptr_t)g_mock_##func_name->return_value.ptr; \
             dap_mock_record_call(g_mock_##func_name, l_args_array, \
                                 sizeof(l_args_array)/sizeof(void*), (void*)(intptr_t)l_ret); \
             return l_ret; \

@@ -8,8 +8,8 @@
  * @copyright (c) 2025 Cellframe Network
  */
 
-#ifndef DAP_MOCK_FRAMEWORK_H
-#define DAP_MOCK_FRAMEWORK_H
+#ifndef DAP_MOCK_H
+#define DAP_MOCK_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -136,9 +136,9 @@ typedef struct dap_mock_function_state {
 // MOCK FRAMEWORK API
 // ===========================================================================
 
-int dap_mock_framework_init(void);
-void dap_mock_framework_deinit(void);
-void dap_mock_framework_reset_all(void);
+int dap_mock_init(void);
+void dap_mock_deinit(void);
+void dap_mock_reset_all(void);
 dap_mock_function_state_t* dap_mock_register(const char *a_name);
 void dap_mock_set_enabled(dap_mock_function_state_t *a_state, bool a_enabled);
 void dap_mock_set_return_value(dap_mock_function_state_t *a_state, void *a_value);
@@ -402,4 +402,4 @@ void dap_mock_execute_delay(dap_mock_function_state_t *a_state);  // Internal: e
 #define DAP_MOCK_SET_DELAY_VARIANCE_MS(func_name, center_ms, variance_ms) \
     DAP_MOCK_SET_DELAY_VARIANCE(func_name, (center_ms) * 1000, (variance_ms) * 1000)
 
-#endif // DAP_MOCK_FRAMEWORK_H
+#endif // DAP_MOCK_H

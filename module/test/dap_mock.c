@@ -5,32 +5,33 @@
  * @copyright (c) 2025 Cellframe Network
  */
 
-#include "dap_mock_framework.h"
-#include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
-#define LOG_TAG "dap_mock_framework"
+#include "dap_common.h"
+#include "dap_mock.h"
+
+#define LOG_TAG "dap_mock"
 #define DAP_MOCK_MAX_REGISTERED 100
 
 static dap_mock_function_state_t *s_registered_mocks[DAP_MOCK_MAX_REGISTERED] = {0};
 static int s_mock_count = 0;
-static pthread_mutex_t s_framework_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 
-int dap_mock_framework_init(void)
+int dap_mock_init(void)
 {
-    pthread_mutex_lock(&s_framework_lock);
+    pthread_mutex_lock(&s_lock);
     memset(s_registered_mocks, 0, sizeof(s_registered_mocks));
     s_mock_count = 0;
-    pthread_mutex_unlock(&s_framework_lock);
+    pthread_mutex_unlock(&s_lock);
     return 0;
 }
 
-void dap_mock_framework_deinit(void)
+void dap_mock_deinit(void)
 {
-    pthread_mutex_lock(&s_framework_lock);
+    pthread_mutex_lock(&s_lock);
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
             pthread_mutex_destroy(&s_registered_mocks[i]->lock);
@@ -38,18 +39,18 @@ void dap_mock_framework_deinit(void)
         }
     }
     s_mock_count = 0;
-    pthread_mutex_unlock(&s_framework_lock);
+    pthread_mutex_unlock(&s_lock);
 }
 
-void dap_mock_framework_reset_all(void)
+void dap_mock_reset_all(void)
 {
-    pthread_mutex_lock(&s_framework_lock);
+    pthread_mutex_lock(&s_lock);
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
             dap_mock_reset(s_registered_mocks[i]);
         }
     }
-    pthread_mutex_unlock(&s_framework_lock);
+    pthread_mutex_unlock(&s_lock);
 }
 
 dap_mock_function_state_t* dap_mock_register(const char *a_name)
@@ -57,16 +58,16 @@ dap_mock_function_state_t* dap_mock_register(const char *a_name)
     if (!a_name)
         return NULL;
     
-    pthread_mutex_lock(&s_framework_lock);
+    pthread_mutex_lock(&s_lock);
     
     if (s_mock_count >= DAP_MOCK_MAX_REGISTERED) {
-        pthread_mutex_unlock(&s_framework_lock);
+        pthread_mutex_unlock(&s_lock);
         return NULL;
     }
     
     dap_mock_function_state_t *l_mock = DAP_NEW_Z(dap_mock_function_state_t);
     if (!l_mock) {
-        pthread_mutex_unlock(&s_framework_lock);
+        pthread_mutex_unlock(&s_lock);
         return NULL;
     }
     
@@ -78,7 +79,7 @@ dap_mock_function_state_t* dap_mock_register(const char *a_name)
     
     s_registered_mocks[s_mock_count++] = l_mock;
     
-    pthread_mutex_unlock(&s_framework_lock);
+    pthread_mutex_unlock(&s_lock);
     return l_mock;
 }
 
