@@ -359,18 +359,9 @@ int dap_events_start()
     return 0;
 lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
+    for( uint32_t j = 0; j < s_threads_count; j++)
+        DAP_DEL_Z(s_workers[j]);
     DAP_DEL_Z(s_threads_id);
-    for( uint32_t j = 0; j < s_threads_count; j++) {
-        if (s_workers[j]) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-            DAP_DEL_Z(s_workers[j]->queue_es_new_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_delete_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_io_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_reassign_input);
-#endif
-            DAP_DEL_Z(s_workers[j]);
-        }
-    }
     return l_ret;
 }
 
