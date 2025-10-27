@@ -5,7 +5,7 @@ project(core_test)
 set(CMAKE_C_STANDARD 11)
 
 # Include DAP Mock Framework
-include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks/DAPMockAutoWrap.cmake)
 
 file(GLOB SRCS *.c)
 
@@ -23,7 +23,7 @@ target_link_libraries(core_test dap_test dap_test_mocks dap_core pthread)
 
 # Include mock framework headers
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks
 )
 
 if (DAP_USE_RPMALLOC)

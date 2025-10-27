@@ -71,8 +71,12 @@ Write-Info "Scanning $TestSource for mock declarations..."
 $Content = Get-Content -Path $TestSource -Raw
 
 # Extract mock declarations using regex
-$MockPattern = 'DAP_MOCK_DECLARE\s*\(\s*(\w+)\s*\)'
-$MockMatches = [regex]::Matches($Content, $MockPattern)
+# Match both DAP_MOCK_DECLARE(func_name) and DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
+$MockPattern1 = 'DAP_MOCK_DECLARE\s*\(\s*(\w+)\s*\)'
+$MockPattern2 = 'DAP_MOCK_DECLARE_CUSTOM\s*\(\s*(\w+)\s*,'
+$MockMatches1 = [regex]::Matches($Content, $MockPattern1)
+$MockMatches2 = [regex]::Matches($Content, $MockPattern2)
+$MockMatches = $MockMatches1 + $MockMatches2
 
 if ($MockMatches.Count -eq 0) {
     Write-Warning2 "No mock declarations found"
@@ -89,12 +93,20 @@ foreach ($func in $MockFunctions) {
 # Step 2: Scan for existing wrapper definitions
 Write-Info "Scanning for wrapper definitions..."
 
-$WrapperPattern = 'DAP_MOCK_WRAPPER_[A-Z_]+\s*\(\s*(\w+)\s*,'
-$WrapperMatches = [regex]::Matches($Content, $WrapperPattern)
+# Match DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)
+# Extract func_name which is the second argument
+$WrapperPattern1 = 'DAP_MOCK_WRAPPER_CUSTOM\s*\(\s*[^,]+\s*,\s*(\w+)\s*,'
+$WrapperMatches1 = [regex]::Matches($Content, $WrapperPattern1)
+
+# Also match explicit __wrap_ definitions
+$WrapperPattern2 = '__wrap_(\w+)'
+$WrapperMatches2 = [regex]::Matches($Content, $WrapperPattern2)
 
 $WrapperFunctions = @()
-if ($WrapperMatches.Count -gt 0) {
-    $WrapperFunctions = $WrapperMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+if ($WrapperMatches1.Count -gt 0 -or $WrapperMatches2.Count -gt 0) {
+    $Funcs1 = $WrapperMatches1 | ForEach-Object { $_.Groups[1].Value }
+    $Funcs2 = $WrapperMatches2 | ForEach-Object { $_.Groups[1].Value }
+    $WrapperFunctions = ($Funcs1 + $Funcs2) | Sort-Object -Unique
     
     foreach ($func in $WrapperFunctions) {
         Write-Host "   ✅ ${func}: wrapper found"
