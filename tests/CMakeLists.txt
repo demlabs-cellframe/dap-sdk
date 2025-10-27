@@ -140,6 +140,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
+
+# test framework async unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_async.c)
+    add_dap_test(unit_dap_test_async unit/test/test_async.c)
+    register_dap_test(unit_dap_test_async "unit;test")
+endif()
+
+# test framework mock unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_mock.c)
+    add_dap_test(unit_dap_test_mock unit/test/test_mock.c)
+    register_dap_test(unit_dap_test_mock "unit;test")
+endif()
+
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 
