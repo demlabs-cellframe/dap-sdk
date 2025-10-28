@@ -62,7 +62,7 @@ void test_state_disconnected_cleanup(void) {
     assert(DAP_MOCK_GET_CALL_COUNT(dap_chain_node_client_close_mt) == 1);
     
     teardown_test();
-    log_it(L_INFO, "✅ PASS");
+    log_it(L_INFO, "[+] PASS");
 }
 
 int main() {
@@ -70,7 +70,7 @@ int main() {
     
     test_state_disconnected_cleanup();
     
-    log_it(L_INFO, "All tests PASSED ✅");
+    log_it(L_INFO, "All tests PASSED [OK]");
     dap_common_deinit();
     return 0;
 }
@@ -145,7 +145,12 @@ Example from `test_http_client_mocks.c` using `DAP_MOCK_WRAPPER_CUSTOM`:
 DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_async, 
                         HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
 
-// Custom wrapper implementation
+// Custom wrapper implementation with full control
+// DAP_MOCK_WRAPPER_CUSTOM generates:
+// - __wrap_dap_client_http_request_async function signature
+// - void* args array for mock framework
+// - Automatic delay execution
+// - Call recording
 DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
     PARAM(dap_worker_t*, a_worker),
     PARAM(const char*, a_uplink_addr),
@@ -156,10 +161,14 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
     PARAM(dap_client_http_callback_error_t, a_error_callback),
     PARAM(void*, a_callbacks_arg)
 ) {
-    // Custom mock logic - simulate async behavior
+    // Custom mock logic - simulate async HTTP behavior
+    // This directly invokes callbacks based on mock configuration
+    
     if (g_mock_http_response.should_fail && a_error_callback) {
+        // Simulate error response
         a_error_callback(g_mock_http_response.error_code, a_callbacks_arg);
     } else if (a_response_callback) {
+        // Simulate successful response with configured data
         a_response_callback(
             g_mock_http_response.body,
             g_mock_http_response.body_size,
@@ -168,6 +177,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
             g_mock_http_response.status_code
         );
     }
+    // Note: Configured delay is executed automatically before this code
 }
 ```
 
@@ -219,7 +229,7 @@ void test_retry_logic() {
     assert(result == 0);
     assert(DAP_MOCK_GET_CALL_COUNT(flaky_network_send) == 3);
     
-    log_it(L_INFO, "✓ Retry logic works correctly");
+    log_it(L_INFO, "[+] Retry logic works correctly");
 }
 ```
 

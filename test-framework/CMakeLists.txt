@@ -16,6 +16,9 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/dap_mock.c)
     list(APPEND DAP_TEST_SOURCES dap_mock.c)
 endif()
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/dap_mock_async.c)
+    list(APPEND DAP_TEST_SOURCES dap_mock_async.c)
+endif()
 
 if(DAP_TEST_SOURCES)
     add_library(dap_test STATIC

@@ -22,12 +22,12 @@ A complete testing solution that includes:
 - External dependencies complicate testing
 
 **Solution:** This framework provides
-- ✅ Timeout protection (global + per-operation)
-- ✅ Efficient waiting (polling + condition variables)
-- ✅ Dependency isolation (mocking)
-- ✅ Realistic simulation (delays, failures)
-- ✅ Thread-safe operations
-- ✅ Cross-platform support
+- [x] Timeout protection (global + per-operation)
+- [x] Efficient waiting (polling + condition variables)
+- [x] Dependency isolation (mocking)
+- [x] Realistic simulation (delays, failures)
+- [x] Thread-safe operations
+- [x] Cross-platform support
 
 ### 1.3 Key Features at a Glance
 
@@ -46,7 +46,7 @@ A complete testing solution that includes:
 
 **Traditional Approach:**
 ```c
-// ❌ Busy waiting, no timeout, CPU waste
+// [!] Busy waiting, no timeout, CPU waste
 while (!done) {
     usleep(10000);  // 10ms sleep
 }
@@ -54,7 +54,7 @@ while (!done) {
 
 **With DAP Test Framework:**
 ```c
-// ✅ Efficient, timeout-protected, automatic logging
+// [+] Efficient, timeout-protected, automatic logging
 DAP_TEST_WAIT_UNTIL(done == true, 5000, "Should complete");
 ```
 

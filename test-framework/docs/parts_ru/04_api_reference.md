@@ -22,6 +22,23 @@ bool dap_test_wait_condition(
     const dap_test_async_config_t *a_config
 );
 // Возвращает: true если условие выполнено, false при таймауте
+// 
+// Сигнатура callback:
+// typedef bool (*dap_test_condition_cb_t)(void *a_user_data);
+//
+// Структура конфигурации:
+// typedef struct {
+//     uint32_t timeout_ms;          // Макс. время ожидания (мс)
+//     uint32_t poll_interval_ms;    // Интервал опроса (мс)
+//     bool fail_on_timeout;         // abort() при таймауте?
+//     const char *operation_name;   // Для логирования
+// } dap_test_async_config_t;
+//
+// Дефолтная конфигурация: DAP_TEST_ASYNC_CONFIG_DEFAULT
+//   - timeout_ms: 5000 (5 секунд)
+//   - poll_interval_ms: 100 (100 мс)
+//   - fail_on_timeout: true
+//   - operation_name: "async operation"
 ```
 
 #### pthread хелперы
@@ -151,24 +168,35 @@ typedef struct dap_mock_delay {
 ```c
 DAP_MOCK_ENABLE(func_name)
 // Включить мок (перехват вызовов)
+// Пример: DAP_MOCK_ENABLE(dap_stream_write);
 
 DAP_MOCK_DISABLE(func_name)
 // Выключить мок (вызов реальной функции)
+// Пример: DAP_MOCK_DISABLE(dap_stream_write);
 
 DAP_MOCK_RESET(func_name)
-// Сбросить историю вызовов
+// Сбросить историю вызовов и статистику
+// Пример: DAP_MOCK_RESET(dap_stream_write);
 
 DAP_MOCK_SET_RETURN(func_name, value)
-// Установить возвращаемое значение (приведение через (void*))
+// Установить возвращаемое значение (приведение через (void*) или (void*)(intptr_t))
+// Пример: DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)42);
 
 DAP_MOCK_GET_CALL_COUNT(func_name)
-// Получить количество вызовов мока
+// Получить количество вызовов мока (возвращает int)
+// Пример: int count = DAP_MOCK_GET_CALL_COUNT(dap_stream_write);
 
 DAP_MOCK_WAS_CALLED(func_name)
-// Возвращает true если был вызван хотя бы раз
+// Возвращает true если был вызван хотя бы раз (возвращает bool)
+// Пример: assert(DAP_MOCK_WAS_CALLED(dap_stream_write));
 
 DAP_MOCK_GET_ARG(func_name, call_idx, arg_idx)
-// Получить конкретный аргумент из вызова
+// Получить конкретный аргумент из конкретного вызова
+// call_idx: 0-базированный индекс вызова (0 = первый вызов)
+// arg_idx: 0-базированный индекс аргумента (0 = первый аргумент)
+// Возвращает: void* (приведите к нужному типу)
+// Пример: void *buffer = DAP_MOCK_GET_ARG(dap_stream_write, 0, 1);
+//          size_t size = (size_t)DAP_MOCK_GET_ARG(dap_stream_write, 0, 2);
 ```
 
 #### Макросы конфигурации задержек

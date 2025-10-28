@@ -22,6 +22,23 @@ bool dap_test_wait_condition(
     const dap_test_async_config_t *a_config
 );
 // Returns: true if condition met, false on timeout
+// 
+// Callback signature:
+// typedef bool (*dap_test_condition_cb_t)(void *a_user_data);
+//
+// Config structure:
+// typedef struct {
+//     uint32_t timeout_ms;          // Max wait time (ms)
+//     uint32_t poll_interval_ms;    // Polling interval (ms)
+//     bool fail_on_timeout;         // abort() on timeout?
+//     const char *operation_name;   // For logging
+// } dap_test_async_config_t;
+//
+// Default config: DAP_TEST_ASYNC_CONFIG_DEFAULT
+//   - timeout_ms: 5000 (5 seconds)
+//   - poll_interval_ms: 100 (100 ms)
+//   - fail_on_timeout: true
+//   - operation_name: "async operation"
 ```
 
 #### pthread Helpers
@@ -151,24 +168,35 @@ typedef struct dap_mock_delay {
 ```c
 DAP_MOCK_ENABLE(func_name)
 // Enable mock (intercept calls)
+// Example: DAP_MOCK_ENABLE(dap_stream_write);
 
 DAP_MOCK_DISABLE(func_name)
 // Disable mock (call real function)
+// Example: DAP_MOCK_DISABLE(dap_stream_write);
 
 DAP_MOCK_RESET(func_name)
-// Reset call history
+// Reset call history and statistics
+// Example: DAP_MOCK_RESET(dap_stream_write);
 
 DAP_MOCK_SET_RETURN(func_name, value)
-// Set return value (cast with (void*))
+// Set return value (cast with (void*) or (void*)(intptr_t))
+// Example: DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)42);
 
 DAP_MOCK_GET_CALL_COUNT(func_name)
-// Get number of times mock was called
+// Get number of times mock was called (returns int)
+// Example: int count = DAP_MOCK_GET_CALL_COUNT(dap_stream_write);
 
 DAP_MOCK_WAS_CALLED(func_name)
-// Returns true if called at least once
+// Returns true if called at least once (returns bool)
+// Example: assert(DAP_MOCK_WAS_CALLED(dap_stream_write));
 
 DAP_MOCK_GET_ARG(func_name, call_idx, arg_idx)
-// Get specific argument from call
+// Get specific argument from a specific call
+// call_idx: 0-based index of call (0 = first call)
+// arg_idx: 0-based index of argument (0 = first argument)
+// Returns: void* (cast to appropriate type)
+// Example: void *buffer = DAP_MOCK_GET_ARG(dap_stream_write, 0, 1);
+//          size_t size = (size_t)DAP_MOCK_GET_ARG(dap_stream_write, 0, 2);
 ```
 
 #### Delay Configuration Macros

@@ -72,15 +72,17 @@ typedef union dap_mock_return_value {
  *   DAP_MOCK_DECLARE(func, { .return_value.l = 0xDEAD });
  *   DAP_MOCK_DECLARE(func, { .enabled = false });
  *   DAP_MOCK_DECLARE(func, { .return_value.ptr = NULL, .delay.type = DAP_MOCK_DELAY_FIXED, .delay.fixed_us = 1000 });
+ *   DAP_MOCK_DECLARE(func, { .async = true });  // Execute callback asynchronously
  */
 typedef struct dap_mock_config {
     bool enabled;                       /**< Enable mock (default: true) */
     dap_mock_return_value_t return_value;  /**< Return value (default: all zeros) */
     dap_mock_delay_t delay;             /**< Execution delay (default: none) */
+    bool async;                         /**< Execute callback asynchronously (default: false) */
 } dap_mock_config_t;
 
-// Default config: enabled=true, return=0, no delay
-#define DAP_MOCK_CONFIG_DEFAULT { .enabled = true, .return_value = {0}, .delay = {.type = DAP_MOCK_DELAY_NONE} }
+// Default config: enabled=true, return=0, no delay, sync
+#define DAP_MOCK_CONFIG_DEFAULT { .enabled = true, .return_value = {0}, .delay = {.type = DAP_MOCK_DELAY_NONE}, .async = false }
 
 // ===========================================================================
 // CUSTOM CALLBACK SUPPORT
@@ -124,6 +126,7 @@ typedef struct dap_mock_function_state {
     dap_mock_callback_t callback;    // Custom callback function (overrides return_value if set)
     void *callback_user_data;        // User data passed to callback
     dap_mock_delay_t delay;          // Execution delay configuration
+    bool async;                      // Execute callback asynchronously (requires dap_mock_async_init)
     int call_count;
     int max_calls;
     dap_mock_call_record_t calls[DAP_MOCK_MAX_CALLS];
@@ -228,6 +231,7 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
                 g_mock_##func_name->enabled = l_cfg.enabled; \
                 g_mock_##func_name->return_value = l_cfg.return_value; \
                 g_mock_##func_name->delay = l_cfg.delay; \
+                g_mock_##func_name->async = l_cfg.async; \
             } \
         } \
     }
@@ -245,6 +249,7 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
                 g_mock_##func_name->enabled = l_cfg.enabled; \
                 g_mock_##func_name->return_value = l_cfg.return_value; \
                 g_mock_##func_name->delay = l_cfg.delay; \
+                g_mock_##func_name->async = l_cfg.async; \
                 g_mock_##func_name->callback = dap_mock_callback_##func_name; \
             } \
         } \

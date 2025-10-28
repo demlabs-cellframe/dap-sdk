@@ -18,7 +18,7 @@ int main() {
     int result = 2 + 2;
     dap_assert_PIF(result == 4, "Math should work");
     
-    log_it(L_INFO, "✓ Тест пройден!");
+    log_it(L_INFO, "[+] Тест пройден!");
     
     dap_common_deinit();
     return 0;
@@ -80,6 +80,7 @@ target_link_libraries(my_test dap_test dap_core pthread)
 #include "dap_test.h"
 #include "dap_mock.h"
 #include "dap_common.h"
+#include <assert.h>
 
 #define LOG_TAG "my_test"
 
@@ -90,14 +91,17 @@ int main() {
     dap_common_init("my_test", NULL);
     dap_mock_init();
     
-    // Настройте мок
+    // Настройте мок на возврат 42
     DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
     
     // Запустите код, который вызывает external_api_call
     int result = my_code_under_test();
     
-    // Проверьте
+    // Проверьте что мок был вызван один раз и вернул правильное значение
     assert(DAP_MOCK_GET_CALL_COUNT(external_api_call) == 1);
+    assert(result == 42);
+    
+    log_it(L_INFO, "[+] Тест пройден!");
     
     dap_mock_deinit();
     dap_common_deinit();

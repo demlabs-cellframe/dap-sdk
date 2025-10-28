@@ -62,7 +62,7 @@ void test_state_disconnected_cleanup(void) {
     assert(DAP_MOCK_GET_CALL_COUNT(dap_chain_node_client_close_mt) == 1);
     
     teardown_test();
-    log_it(L_INFO, "✅ УСПЕХ");
+    log_it(L_INFO, "[+] УСПЕХ");
 }
 
 int main() {
@@ -70,7 +70,7 @@ int main() {
     
     test_state_disconnected_cleanup();
     
-    log_it(L_INFO, "Все тесты ПРОЙДЕНЫ ✅");
+    log_it(L_INFO, "Все тесты ПРОЙДЕНЫ [OK]");
     dap_common_deinit();
     return 0;
 }
@@ -145,7 +145,12 @@ DAP_MOCK_DECLARE_CUSTOM(dap_client_http_close_unsafe, {
 DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_async, 
                         HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
 
-// Реализация пользовательской обертки
+// Реализация пользовательской обертки с полным контролем
+// DAP_MOCK_WRAPPER_CUSTOM генерирует:
+// - сигнатуру функции __wrap_dap_client_http_request_async
+// - массив void* args для фреймворка моков
+// - Автоматическое выполнение задержки
+// - Запись вызова
 DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
     PARAM(dap_worker_t*, a_worker),
     PARAM(const char*, a_uplink_addr),
@@ -156,10 +161,14 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
     PARAM(dap_client_http_callback_error_t, a_error_callback),
     PARAM(void*, a_callbacks_arg)
 ) {
-    // Пользовательская логика мока - симуляция асинхронного поведения
+    // Пользовательская логика мока - симуляция асинхронного HTTP поведения
+    // Это напрямую вызывает callback'и на основе конфигурации мока
+    
     if (g_mock_http_response.should_fail && a_error_callback) {
+        // Симуляция ошибочного ответа
         a_error_callback(g_mock_http_response.error_code, a_callbacks_arg);
     } else if (a_response_callback) {
+        // Симуляция успешного ответа с настроенными данными
         a_response_callback(
             g_mock_http_response.body,
             g_mock_http_response.body_size,
@@ -168,6 +177,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
             g_mock_http_response.status_code
         );
     }
+    // Примечание: настроенная задержка выполняется автоматически перед этим кодом
 }
 ```
 
@@ -219,7 +229,7 @@ void test_retry_logic() {
     assert(result == 0);
     assert(DAP_MOCK_GET_CALL_COUNT(flaky_network_send) == 3);
     
-    log_it(L_INFO, "✓ Логика повторных попыток работает корректно");
+    log_it(L_INFO, "[+] Логика повторных попыток работает корректно");
 }
 ```
 

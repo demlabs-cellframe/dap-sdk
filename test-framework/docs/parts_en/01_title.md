@@ -2,16 +2,16 @@
 title: "DAP SDK Test Framework - Complete Guide"
 subtitle: "Async Testing, Mocking, and Test Automation"
 author: "Cellframe Development Team"
-date: "October 27, 2025"
-version: "1.0.0"
+date: "October 28, 2025"
+version: "1.0.1"
 ---
 
 \newpage
 
 # Document Information
 
-**Version:** 1.0.0  
-**Date:** October 27, 2025  
+**Version:** 1.0.1  
+**Date:** October 28, 2025  
 **Status:** Production Ready  
 **Language:** English
 
@@ -19,6 +19,7 @@ version: "1.0.0"
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 1.0.1 | 2025-10-28 | Updated examples, improved API reference, added troubleshooting | Cellframe Team |
 | 1.0.0 | 2025-10-27 | Initial comprehensive guide | Cellframe Team |
 
 ## Copyright
