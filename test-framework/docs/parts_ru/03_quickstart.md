@@ -89,7 +89,7 @@ DAP_MOCK_DECLARE(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);
-    dap_mock_init();
+    // Примечание: dap_mock_init() не нужен - авто-инициализация!
     
     // Настройте мок на возврат 42
     DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
@@ -103,7 +103,8 @@ int main() {
     
     log_it(L_INFO, "[+] Тест пройден!");
     
-    dap_mock_deinit();
+    // Опциональная очистка (если нужно сбросить моки)
+    // dap_mock_deinit();
     dap_common_deinit();
     return 0;
 }

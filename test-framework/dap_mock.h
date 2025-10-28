@@ -85,6 +85,59 @@ typedef struct dap_mock_config {
 #define DAP_MOCK_CONFIG_DEFAULT { .enabled = true, .return_value = {0}, .delay = {.type = DAP_MOCK_DELAY_NONE}, .async = false }
 
 // ===========================================================================
+// MOCK SYSTEM SETTINGS
+// ===========================================================================
+
+/**
+ * @brief Global mock system settings
+ * 
+ * Configured via DAP_MOCK_SETTINGS() macro before any mock usage.
+ * Settings are applied during automatic initialization.
+ */
+typedef struct dap_mock_settings {
+    uint32_t async_worker_threads;   /**< Number of async worker threads (0 = auto-detect CPUs) */
+    dap_mock_delay_t default_delay;  /**< Default delay for all mocks (can be overridden per mock) */
+    bool enable_logging;             /**< Enable detailed mock call logging */
+    bool log_timestamps;             /**< Include timestamps in mock logs */
+} dap_mock_settings_t;
+
+/**
+ * @brief Set global mock system settings
+ * @param a_settings Settings structure
+ * 
+ * Must be called BEFORE any mocks are used (typically at program start).
+ * If not called, defaults are used:
+ *   - async_worker_threads = 0 (auto-detect CPUs)
+ *   - default_delay = none
+ *   - enable_logging = false
+ *   - log_timestamps = false
+ */
+void dap_mock_apply_settings(const dap_mock_settings_t *a_settings);
+
+/**
+ * @brief Get current mock system settings
+ * @return Pointer to current settings
+ */
+const dap_mock_settings_t* dap_mock_get_settings(void);
+
+/**
+ * Convenience macro for setting mock system configuration
+ * 
+ * Usage example:
+ *   DAP_MOCK_SETTINGS({
+ *       .async_worker_threads = 4,
+ *       .default_delay = {.type = DAP_MOCK_DELAY_FIXED, .value_us = 1000},
+ *       .enable_logging = true,
+ *       .log_timestamps = true
+ *   });
+ */
+#define DAP_MOCK_SETTINGS(settings_struct) \
+    do { \
+        dap_mock_settings_t __settings = settings_struct; \
+        dap_mock_apply_settings(&__settings); \
+    } while(0)
+
+// ===========================================================================
 // CUSTOM CALLBACK SUPPORT
 // ===========================================================================
 

@@ -9,9 +9,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #include "dap_common.h"
 #include "dap_mock.h"
+#include "dap_mock_async.h"
 
 #define LOG_TAG "dap_mock"
 #define DAP_MOCK_MAX_REGISTERED 100
@@ -21,8 +23,32 @@ static int s_mock_count = 0;
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool s_initialized = false;
 
+// Global settings with defaults
+static dap_mock_settings_t s_settings = {
+    .async_worker_threads = 0,  // 0 = auto-detect CPUs
+    .default_delay = {.type = DAP_MOCK_DELAY_NONE},
+    .enable_logging = false,
+    .log_timestamps = false
+};
+
+// Cross-platform constructor/destructor support
+#if defined(__GNUC__) || defined(__clang__)
+    // GCC, Clang, MinGW support
+    #define DAP_CONSTRUCTOR __attribute__((constructor))
+    #define DAP_DESTRUCTOR __attribute__((destructor))
+#elif defined(_MSC_VER)
+    // MSVC doesn't support constructor attribute directly
+    // Use #pragma init_seg and static object initialization
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+    // Will use atexit() for cleanup in MSVC
+#else
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+#endif
+
 // Auto-init constructor (called before main())
-static void __attribute__((constructor)) dap_mock_auto_init(void)
+static void DAP_CONSTRUCTOR dap_mock_auto_init(void)
 {
     if (!s_initialized) {
         pthread_mutex_lock(&s_lock);
@@ -31,18 +57,36 @@ static void __attribute__((constructor)) dap_mock_auto_init(void)
             s_mock_count = 0;
             s_initialized = true;
             
-            // Auto-init async system if available (optional, lightweight)
-            #ifdef DAP_MOCK_ASYNC_AVAILABLE
-            extern bool dap_mock_async_is_initialized(void);
-            extern int dap_mock_async_init(uint32_t);
+            // Always init async system with configured worker count
             if (!dap_mock_async_is_initialized()) {
-                dap_mock_async_init(0);  // 0 = auto worker count
+                dap_mock_async_init(s_settings.async_worker_threads);
             }
+            
+            // Register auto-cleanup for platforms without destructor attribute
+            #ifdef _MSC_VER
+            atexit(dap_mock_auto_deinit);
             #endif
         }
         pthread_mutex_unlock(&s_lock);
     }
 }
+
+// Auto-deinit destructor (called after main())
+static void DAP_DESTRUCTOR dap_mock_auto_deinit(void)
+{
+    if (s_initialized) {
+        dap_mock_deinit();
+    }
+}
+
+// For MSVC: ensure initialization happens via static initialization
+#ifdef _MSC_VER
+static struct dap_mock_msvc_init_helper {
+    dap_mock_msvc_init_helper() {
+        dap_mock_auto_init();
+    }
+} s_msvc_init_helper;
+#endif
 
 int dap_mock_init(void)
 {
@@ -59,14 +103,10 @@ void dap_mock_deinit(void)
 {
     pthread_mutex_lock(&s_lock);
     
-    // Deinit async system if it was auto-initialized
-    #ifdef DAP_MOCK_ASYNC_AVAILABLE
-    extern bool dap_mock_async_is_initialized(void);
-    extern void dap_mock_async_deinit(void);
+    // Always deinit async system
     if (dap_mock_async_is_initialized()) {
         dap_mock_async_deinit();
     }
-    #endif
     
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
@@ -112,6 +152,7 @@ dap_mock_function_state_t* dap_mock_register(const char *a_name)
     l_mock->enabled = true;
     l_mock->call_count = 0;
     l_mock->max_calls = DAP_MOCK_MAX_CALLS;
+    l_mock->delay = s_settings.default_delay;  // Apply default delay from settings
     pthread_mutex_init(&l_mock->lock, NULL);
     
     s_registered_mocks[s_mock_count++] = l_mock;
@@ -377,6 +418,27 @@ void dap_mock_execute_delay(dap_mock_function_state_t *a_state)
         usleep(l_delay_us);
 }
 
+// ===========================================================================
+// LOGGING HELPERS
+// ===========================================================================
+
+static void s_log_mock_call(const char *a_func_name, const char *a_action)
+{
+    if (!s_settings.enable_logging)
+        return;
+    
+    if (s_settings.log_timestamps) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        struct tm *tm_info = localtime(&tv.tv_sec);
+        char time_buf[32];
+        strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
+        log_it(L_DEBUG, "[%s.%06ld] MOCK %s: %s", time_buf, tv.tv_usec, a_func_name, a_action);
+    } else {
+        log_it(L_DEBUG, "MOCK %s: %s", a_func_name, a_action);
+    }
+}
+
 /**
  * @brief Prepare mock call - executes delay, records call, and checks if mock is enabled
  * 
@@ -394,7 +456,13 @@ void dap_mock_execute_delay(dap_mock_function_state_t *a_state)
  */
 bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count)
 {
-    if (!a_state || !a_state->enabled)
+    if (!a_state)
+        return false;
+    
+    // Log the call if enabled
+    s_log_mock_call(a_state->name, a_state->enabled ? "CALLED" : "CALLED (disabled, passing through)");
+    
+    if (!a_state->enabled)
         return false;
     
     // Execute configured delay before any mock logic
@@ -406,3 +474,28 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
     return true;
 }
 
+// ===========================================================================
+// SETTINGS API
+// ===========================================================================
+
+void dap_mock_apply_settings(const dap_mock_settings_t *a_settings)
+{
+    if (!a_settings)
+        return;
+    
+    pthread_mutex_lock(&s_lock);
+    s_settings = *a_settings;
+    pthread_mutex_unlock(&s_lock);
+    
+    // If async is already initialized, we can't change worker count
+    // Log a warning if user tries to change it after init
+    if (s_initialized && dap_mock_async_is_initialized() && 
+        a_settings->async_worker_threads != s_settings.async_worker_threads) {
+        log_it(L_WARNING, "Cannot change async_worker_threads after mock system is initialized");
+    }
+}
+
+const dap_mock_settings_t* dap_mock_get_settings(void)
+{
+    return &s_settings;
+}

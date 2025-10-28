@@ -25,7 +25,7 @@ DAP_MOCK_DECLARE(dap_chain_node_client_connect_mt, {
 static vpn_sm_t *s_test_sm = NULL;
 
 static void setup_test(void) {
-    dap_mock_init();
+    // Note: dap_mock_init() auto-called, not needed here
     s_test_sm = vpn_sm_init();
     assert(s_test_sm != NULL);
 }
@@ -35,7 +35,7 @@ static void teardown_test(void) {
         vpn_sm_deinit(s_test_sm);
         s_test_sm = NULL;
     }
-    dap_mock_deinit();
+    // Optional: dap_mock_deinit() to reset mocks between tests
 }
 
 void test_state_disconnected_cleanup(void) {
@@ -239,7 +239,6 @@ Example demonstrating async mock callbacks with thread pool:
 
 ```c
 #include "dap_mock.h"
-#include "dap_mock_async.h"
 #include "dap_test_async.h"
 
 // Async mock for HTTP request with 50ms delay
@@ -276,9 +275,7 @@ static void http_response_callback(const char *body, int status, void *arg) {
 void test_async_http_request(void) {
     log_it(L_INFO, "TEST: Async HTTP request");
     
-    // Initialize async mock system with 1 worker thread
-    dap_mock_async_init(1);
-    
+   
     s_callback_executed = false;
     s_http_status = 0;
     
@@ -305,13 +302,10 @@ void test_async_http_request(void) {
     
     log_it(L_INFO, "[+] Async mock test passed");
     
-    // Cleanup async system
-    dap_mock_async_deinit();
 }
 
 // Fast-forward example: test without real delays
 void test_async_with_flush(void) {
-    dap_mock_async_init(1);
     
     s_callback_executed = false;
     
@@ -325,7 +319,6 @@ void test_async_with_flush(void) {
     assert(s_callback_executed);
     
     log_it(L_INFO, "[+] Fast-forward test passed");
-    dap_mock_async_deinit();
 }
 ```
 

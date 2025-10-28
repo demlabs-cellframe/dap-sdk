@@ -25,7 +25,7 @@ DAP_MOCK_DECLARE(dap_chain_node_client_connect_mt, {
 static vpn_sm_t *s_test_sm = NULL;
 
 static void setup_test(void) {
-    dap_mock_init();
+    // Примечание: dap_mock_init() вызывается авто, здесь не нужен
     s_test_sm = vpn_sm_init();
     assert(s_test_sm != NULL);
 }
@@ -35,7 +35,7 @@ static void teardown_test(void) {
         vpn_sm_deinit(s_test_sm);
         s_test_sm = NULL;
     }
-    dap_mock_deinit();
+    // Опционально: dap_mock_deinit() для сброса моков между тестами
 }
 
 void test_state_disconnected_cleanup(void) {

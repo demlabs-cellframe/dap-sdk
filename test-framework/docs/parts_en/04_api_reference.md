@@ -71,10 +71,14 @@ int dap_mock_init(void);
 // Optional: Reinitialize mock framework (auto-initialized via constructor)
 // Returns: 0 on success
 // Note: Framework auto-initializes before main(), manual call not required
+// Cross-platform: Uses __attribute__((constructor)) on GCC/Clang/MinGW,
+//                 static C++ object on MSVC
 
 void dap_mock_deinit(void);
 // Cleanup mock framework (call in teardown if needed)
 // Note: Also auto-deinitializes async system if enabled
+// Auto-cleanup: Uses __attribute__((destructor)) on GCC/Clang,
+//               atexit() on MSVC for automatic cleanup after main()
 ```
 
 #### Mock Declaration Macros

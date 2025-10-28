@@ -89,7 +89,7 @@ DAP_MOCK_DECLARE(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);
-    dap_mock_init();
+    // Note: dap_mock_init() not needed - auto-initialized!
     
     // Configure mock to return 42
     DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
@@ -103,7 +103,8 @@ int main() {
     
     log_it(L_INFO, "[+] Test passed!");
     
-    dap_mock_deinit();
+    // Optional cleanup (if you need to reset mocks)
+    // dap_mock_deinit();
     dap_common_deinit();
     return 0;
 }
