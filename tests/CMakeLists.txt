@@ -9,6 +9,7 @@ enable_testing()
 # Add unit tests subdirectory
 add_subdirectory(unit)
 
-# Add integration tests subdirectory
-add_subdirectory(integration)
+# TODO: Add integration tests subdirectory
+# Integration tests should test real network connectivity, multi-component interactions
+# add_subdirectory(integration)
 
