@@ -72,8 +72,8 @@ function(dap_mock_autowrap TARGET_NAME)
     set(CMAKE_FRAGMENT "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mocks.cmake")
     set(WRAPPER_TEMPLATE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrappers_template.c")
     
-    # Path to generator script
-    set(GENERATOR_SCRIPT "${CMAKE_SOURCE_DIR}/cellframe-node/dap-sdk/test-framework/mocks/dap_mock_autowrap.${SCRIPT_EXT}")
+    # Path to generator script (use CMAKE_CURRENT_LIST_DIR for portability)
+    set(GENERATOR_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
     
     if(NOT EXISTS ${GENERATOR_SCRIPT})
         message(FATAL_ERROR "Mock generator script not found: ${GENERATOR_SCRIPT}")
