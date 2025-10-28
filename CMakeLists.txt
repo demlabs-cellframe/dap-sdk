@@ -115,6 +115,12 @@ if (DAPSDK_MODULES MATCHES "test-framework")
     message("[+] Testing framework")
 endif()
 
+# DAP SDK Tests
+if (BUILD_DAP_TESTS)
+    add_subdirectory(tests)
+    message("[+] DAP SDK tests")
+endif()
+
 # Core, add it always
 add_subdirectory(core)
 

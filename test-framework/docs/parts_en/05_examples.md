@@ -1,44 +1,76 @@
 ## 4. Complete Examples
 
-### 4.1 State Machine Test
+### 4.1 State Machine Test (Real Project Example)
+
+Example from `cellframe-srv-vpn-client/tests/unit/test_vpn_state_handlers.c`:
 
 ```c
 #include "dap_test.h"
-#include "dap_test_async.h"
+#include "dap_mock.h"
 #include "vpn_state_machine.h"
+#include "vpn_state_handlers_internal.h"
 
-#define LOG_TAG "test_vpn_sm"
-#define TIMEOUT_SEC 30
+#define LOG_TAG "test_vpn_state_handlers"
 
-bool check_connected(void *data) {
-    return vpn_sm_get_state((vpn_sm_t*)data) == VPN_STATE_CONNECTED;
+// Declare mocks with simple configuration
+DAP_MOCK_DECLARE(dap_net_tun_deinit);
+DAP_MOCK_DECLARE(dap_chain_node_client_close_mt);
+DAP_MOCK_DECLARE(vpn_wallet_close);
+
+// Mock with return value configuration
+DAP_MOCK_DECLARE(dap_chain_node_client_connect_mt, {
+    .return_value.l = 0xDEADBEEF
+});
+
+static vpn_sm_t *s_test_sm = NULL;
+
+static void setup_test(void) {
+    dap_mock_init();
+    s_test_sm = vpn_sm_init();
+    assert(s_test_sm != NULL);
 }
 
-void test_connection() {
-    vpn_sm_t *sm = vpn_sm_init();
-    vpn_sm_transition(sm, VPN_EVENT_USER_CONNECT);
+static void teardown_test(void) {
+    if (s_test_sm) {
+        vpn_sm_deinit(s_test_sm);
+        s_test_sm = NULL;
+    }
+    dap_mock_deinit();
+}
+
+void test_state_disconnected_cleanup(void) {
+    log_it(L_INFO, "TEST: state_disconnected_entry() cleanup");
     
-    dap_test_async_config_t cfg = DAP_TEST_ASYNC_CONFIG_DEFAULT;
-    cfg.timeout_ms = 10000;
-    cfg.operation_name = "VPN connection";
+    setup_test();
     
-    bool ok = dap_test_wait_condition(check_connected, sm, &cfg);
-    dap_assert_PIF(ok, "Should connect within 10 sec");
+    // Setup state with resources
+    s_test_sm->tun_handle = (void*)0x12345678;
+    s_test_sm->wallet = (void*)0xABCDEF00;
+    s_test_sm->node_client = (void*)0x22222222;
     
-    vpn_sm_deinit(sm);
+    // Enable mocks
+    DAP_MOCK_ENABLE(dap_net_tun_deinit);
+    DAP_MOCK_ENABLE(vpn_wallet_close);
+    DAP_MOCK_ENABLE(dap_chain_node_client_close_mt);
+    
+    // Call state handler
+    state_disconnected_entry(s_test_sm);
+    
+    // Verify cleanup was performed
+    assert(DAP_MOCK_GET_CALL_COUNT(dap_net_tun_deinit) == 1);
+    assert(DAP_MOCK_GET_CALL_COUNT(vpn_wallet_close) == 1);
+    assert(DAP_MOCK_GET_CALL_COUNT(dap_chain_node_client_close_mt) == 1);
+    
+    teardown_test();
+    log_it(L_INFO, "✅ PASS");
 }
 
 int main() {
-    dap_common_init("test_vpn_sm", NULL);
+    dap_common_init("test_vpn_state_handlers", NULL);
     
-    dap_test_global_timeout_t timeout;
-    if (dap_test_set_global_timeout(&timeout, TIMEOUT_SEC, "VPN Tests")) {
-        return 1;
-    }
+    test_state_disconnected_cleanup();
     
-    test_connection();
-    
-    dap_test_cancel_global_timeout();
+    log_it(L_INFO, "All tests PASSED ✅");
     dap_common_deinit();
     return 0;
 }
@@ -47,7 +79,7 @@ int main() {
 ### 4.2 Mock with Callback
 
 ```c
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 
 DAP_MOCK_DECLARE(dap_hash_fast, {.return_value.i = 0}, {
     if (a_arg_count >= 2) {
@@ -69,29 +101,125 @@ void test_hash() {
 }
 ```
 
-### 4.3 Network Test with Retry
+### 4.3 Mock with Execution Delays
+
+Example from `dap-sdk/net/client/test/test_http_client_mocks.h`:
 
 ```c
-void test_http_with_retry() {
-    const char *hosts[] = {"httpbin.org", "postman-echo.com", NULL};
-    
-    for (int i = 0; hosts[i]; i++) {
-        http_ctx_t ctx = {0};
-        http_request_async(hosts[i], &ctx);
-        
-        dap_test_async_config_t cfg = {
-            .timeout_ms = 30000,
-            .poll_interval_ms = 500,
-            .fail_on_timeout = false,
-            .operation_name = "HTTP request"
-        };
-        
-        if (dap_test_wait_condition(check_complete, &ctx, &cfg)) {
-            log_it(L_INFO, "✓ Host %s responded", hosts[i]);
-            return;
-        }
-        log_it(L_WARNING, "Host %s failed, trying next", hosts[i]);
+#include "dap_mock.h"
+
+// Mock with variance delay: simulates realistic network jitter
+// 100ms ± 50ms = range of 50-150ms
+#define HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY ((dap_mock_config_t){ \
+    .enabled = true, \
+    .delay = { \
+        .type = DAP_MOCK_DELAY_VARIANCE, \
+        .variance = { \
+            .center_us = 100000,   /* 100ms center */ \
+            .variance_us = 50000   /* ±50ms variance */ \
+        } \
+    } \
+})
+
+// Declare mock with simulated network latency
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_full, 
+                        HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
+
+// Mock without delay for cleanup operations (instant execution)
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_close_unsafe, {
+    .enabled = true,
+    .delay = {.type = DAP_MOCK_DELAY_NONE}
+});
+```
+
+### 4.4 Custom Linker Wrapper (Advanced)
+
+Example from `test_http_client_mocks.c` using `DAP_MOCK_WRAPPER_CUSTOM`:
+
+```c
+#include "dap_mock.h"
+#include "dap_mock_linker_wrapper.h"
+#include "dap_client_http.h"
+
+// Declare mock (registers with framework)
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_async, 
+                        HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
+
+// Custom wrapper implementation
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
+    PARAM(dap_worker_t*, a_worker),
+    PARAM(const char*, a_uplink_addr),
+    PARAM(uint16_t, a_uplink_port),
+    PARAM(const char*, a_method),
+    PARAM(const char*, a_path),
+    PARAM(dap_client_http_callback_full_t, a_response_callback),
+    PARAM(dap_client_http_callback_error_t, a_error_callback),
+    PARAM(void*, a_callbacks_arg)
+) {
+    // Custom mock logic - simulate async behavior
+    if (g_mock_http_response.should_fail && a_error_callback) {
+        a_error_callback(g_mock_http_response.error_code, a_callbacks_arg);
+    } else if (a_response_callback) {
+        a_response_callback(
+            g_mock_http_response.body,
+            g_mock_http_response.body_size,
+            g_mock_http_response.headers,
+            a_callbacks_arg,
+            g_mock_http_response.status_code
+        );
     }
+}
+```
+
+**CMakeLists.txt:**
+```cmake
+# Include auto-wrap helper
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_http_client 
+    test_http_client_mocks.c 
+    test_http_client_mocks.h
+    test_main.c
+)
+
+target_link_libraries(test_http_client
+    dap_test     # Test framework with mocks
+    dap_core     # DAP core library
+    pthread      # Threading support
+)
+
+# Auto-generate --wrap linker flags by scanning all sources
+dap_mock_autowrap(test_http_client)
+```
+
+### 4.5 Dynamic Mock Behavior
+
+```c
+// Mock that changes behavior based on call count
+// Simulates flaky network: fails first 2 times, then succeeds
+DAP_MOCK_DECLARE(flaky_network_send, {.return_value.i = 0}, {
+    int call_count = DAP_MOCK_GET_CALL_COUNT(flaky_network_send);
+    
+    // Fail first 2 calls (simulate network issues)
+    if (call_count < 2) {
+        log_it(L_DEBUG, "Simulating network failure (attempt %d)", call_count + 1);
+        return (void*)(intptr_t)-1;  // Error code
+    }
+    
+    // Succeed on 3rd and subsequent calls
+    log_it(L_DEBUG, "Network call succeeded");
+    return (void*)(intptr_t)0;  // Success code
+});
+
+void test_retry_logic() {
+    // Test function that retries on failure
+    int result = send_with_retry(data, 3);  // Max 3 retries
+    
+    // Should succeed on 3rd attempt
+    assert(result == 0);
+    assert(DAP_MOCK_GET_CALL_COUNT(flaky_network_send) == 3);
+    
+    log_it(L_INFO, "✓ Retry logic works correctly");
 }
 ```
 

@@ -74,4 +74,45 @@ int main() {
 target_link_libraries(my_test dap_test dap_core pthread)
 ```
 
+### 2.3 Добавление моков (5 минут)
+
+```c
+#include "dap_test.h"
+#include "dap_mock.h"
+#include "dap_common.h"
+
+#define LOG_TAG "my_test"
+
+// Объявите мок
+DAP_MOCK_DECLARE(external_api_call);
+
+int main() {
+    dap_common_init("my_test", NULL);
+    dap_mock_init();
+    
+    // Настройте мок
+    DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
+    
+    // Запустите код, который вызывает external_api_call
+    int result = my_code_under_test();
+    
+    // Проверьте
+    assert(DAP_MOCK_GET_CALL_COUNT(external_api_call) == 1);
+    
+    dap_mock_deinit();
+    dap_common_deinit();
+    return 0;
+}
+```
+
+Обновите CMakeLists.txt:
+```cmake
+include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
+
+target_link_libraries(my_test dap_test dap_core pthread)
+
+# Автогенерация --wrap флагов линкера
+dap_mock_autowrap(my_test)
+```
+
 \newpage

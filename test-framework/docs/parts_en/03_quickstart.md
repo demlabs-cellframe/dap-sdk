@@ -78,7 +78,7 @@ target_link_libraries(my_test dap_test dap_core pthread)
 
 ```c
 #include "dap_test.h"
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 #include "dap_common.h"
 
 #define LOG_TAG "my_test"
@@ -88,7 +88,7 @@ DAP_MOCK_DECLARE(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);
-    dap_mock_framework_init();
+    dap_mock_init();
     
     // Configure mock
     DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
@@ -99,7 +99,7 @@ int main() {
     // Verify
     assert(DAP_MOCK_GET_CALL_COUNT(external_api_call) == 1);
     
-    dap_mock_framework_deinit();
+    dap_mock_deinit();
     dap_common_deinit();
     return 0;
 }
@@ -109,9 +109,10 @@ Update CMakeLists.txt:
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
-target_link_libraries(my_test dap_test dap_test_mocks dap_core pthread)
+target_link_libraries(my_test dap_test dap_core pthread)
 
-dap_mock_autowrap(TARGET my_test SOURCE my_test.c)
+# Auto-generate --wrap linker flags
+dap_mock_autowrap(my_test)
 ```
 
 \newpage
