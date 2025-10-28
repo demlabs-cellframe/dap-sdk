@@ -5,6 +5,9 @@
 #   include(DAPMockAutoWrap.cmake)
 #   dap_mock_autowrap(test_my_module test_my_module.c)
 
+# Save the directory where this module is located
+set(DAP_MOCK_AUTOWRAP_MODULE_DIR ${CMAKE_CURRENT_LIST_DIR})
+
 # Find bash or powershell for running the generator script
 if(UNIX)
     find_program(BASH_EXECUTABLE bash)
@@ -72,8 +75,8 @@ function(dap_mock_autowrap TARGET_NAME)
     set(CMAKE_FRAGMENT "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mocks.cmake")
     set(WRAPPER_TEMPLATE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrappers_template.c")
     
-    # Path to generator script (use CMAKE_CURRENT_LIST_DIR for portability)
-    set(GENERATOR_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
+    # Path to generator script (use saved module directory)
+    set(GENERATOR_SCRIPT "${DAP_MOCK_AUTOWRAP_MODULE_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
     
     if(NOT EXISTS ${GENERATOR_SCRIPT})
         message(FATAL_ERROR "Mock generator script not found: ${GENERATOR_SCRIPT}")
