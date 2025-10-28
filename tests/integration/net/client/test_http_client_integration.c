@@ -25,6 +25,8 @@
 #include <pthread.h>
 #include "dap_client_http.h"
 #include "dap_server.h"
+#include "dap_http_server.h"
+#include "dap_http_client.h"
 #include "dap_http_simple.h"
 #include "dap_worker.h"
 #include "dap_events.h"
@@ -39,7 +41,8 @@
 #define TEST_SERVER_PORT 18080
 
 static dap_worker_t *s_worker = NULL;
-static dap_server_t *s_http_server = NULL;
+static dap_http_server_t *s_http_server = NULL;
+static dap_server_t *s_dap_server = NULL;
 
 // Test completion flags
 static volatile bool s_test_completed = false;
@@ -56,58 +59,83 @@ static volatile size_t s_test_body_size = 0;
 // ==============================================
 
 static void s_http_handler_get(dap_http_simple_t *a_http_simple, void *a_arg) {
+    UNUSED(a_arg);
     TEST_INFO("Server: Handling GET request");
     
     const char *response = "{\"status\":\"ok\",\"message\":\"GET success\"}";
-    dap_http_simple_reply(a_http_simple, (void*)response, strlen(response),
-                         "application/json", 200, NULL);
+    dap_http_simple_reply(a_http_simple, (void*)response, strlen(response));
 }
 
 static void s_http_handler_404(dap_http_simple_t *a_http_simple, void *a_arg) {
+    UNUSED(a_arg);
     TEST_INFO("Server: Handling 404 request");
     
     const char *response = "{\"error\":\"Not Found\"}";
-    dap_http_simple_reply(a_http_simple, (void*)response, strlen(response),
-                         "application/json", 404, NULL);
+    
+    // Set 404 status code in HTTP response
+    dap_http_t *l_http = DAP_HTTP(a_http_simple->http_client);
+    if (l_http) {
+        l_http->reply_status_code = 404;
+    }
+    
+    dap_http_simple_reply(a_http_simple, (void*)response, strlen(response));
 }
 
 static void s_http_handler_redirect(dap_http_simple_t *a_http_simple, void *a_arg) {
+    UNUSED(a_arg);
     TEST_INFO("Server: Handling redirect");
     
-    // Send 302 redirect to /get
-    dap_http_header_t *headers = dap_http_header_add(NULL, "Location", "/get");
-    dap_http_simple_reply(a_http_simple, NULL, 0, NULL, 302, headers);
+    // Set 302 redirect with Location header
+    dap_http_t *l_http = DAP_HTTP(a_http_simple->http_client);
+    if (l_http) {
+        l_http->reply_status_code = 302;
+        l_http->out_headers = dap_http_header_add(l_http->out_headers, "Location", "/get");
+    }
+    
+    dap_http_simple_reply(a_http_simple, NULL, 0);
 }
 
 static void s_setup_integration_test(void) {
     TEST_INFO("=== Starting LOCAL HTTP server for integration test ===");
     
     // Initialize DAP event system (2 workers for client+server)
-    dap_events_init(2, 60000);
+    int l_ret = dap_events_init(2, 60000);
+    TEST_ASSERT(l_ret == 0, "dap_events_init failed");
     dap_events_start();
     
-    // Initialize HTTP server
-    dap_http_simple_module_init();
+    // Initialize HTTP module
+    l_ret = dap_http_init();
+    TEST_ASSERT(l_ret == 0, "dap_http_init failed");
     
-    // Start HTTP server on localhost
-    s_http_server = dap_server_new(NULL, TEST_SERVER_ADDR, TEST_SERVER_PORT, 
-                                   DAP_SERVER_TCP, NULL);
-    if (!s_http_server) {
-        TEST_ERROR("Failed to create HTTP server on %s:%d", 
-                   TEST_SERVER_ADDR, TEST_SERVER_PORT);
-        return;
-    }
+    // Initialize HTTP simple module
+    l_ret = dap_http_simple_module_init();
+    TEST_ASSERT(l_ret == 0, "dap_http_simple_module_init failed");
     
-    // Register HTTP handlers
-    dap_http_simple_proc_add(s_http_server, "/get", 10000, s_http_handler_get, NULL);
-    dap_http_simple_proc_add(s_http_server, "/status/404", 10000, s_http_handler_404, NULL);
-    dap_http_simple_proc_add(s_http_server, "/redirect", 10000, s_http_handler_redirect, NULL);
+    // Create HTTP server (with config section NULL, auto-config)
+    s_dap_server = dap_http_server_new(NULL, "test_http_server");
+    TEST_ASSERT(s_dap_server != NULL, "dap_http_server_new failed");
+    
+    // Get HTTP server structure
+    s_http_server = DAP_HTTP_SERVER(s_dap_server);
+    TEST_ASSERT(s_http_server != NULL, "HTTP server structure not found");
+    
+    // Add listen address
+    l_ret = dap_server_listen_addr_add(s_dap_server, TEST_SERVER_ADDR, TEST_SERVER_PORT,
+                                       DAP_SOCK_TYPE_TCP, NULL);
+    TEST_ASSERT(l_ret == 0, "dap_server_listen_addr_add failed on %s:%d", 
+                TEST_SERVER_ADDR, TEST_SERVER_PORT);
+    
+    // Register HTTP handlers using dap_http_simple_proc_add
+    dap_http_simple_proc_add(s_http_server, "/get", 10000, s_http_handler_get);
+    dap_http_simple_proc_add(s_http_server, "/status/404", 10000, s_http_handler_404);
+    dap_http_simple_proc_add(s_http_server, "/redirect", 10000, s_http_handler_redirect);
     
     // Initialize HTTP client
     dap_client_http_init();
     
     // Get worker for async operations
     s_worker = dap_events_worker_get_auto();
+    TEST_ASSERT(s_worker != NULL, "Failed to get worker");
     
     TEST_INFO("✅ HTTP server started on http://%s:%d", TEST_SERVER_ADDR, TEST_SERVER_PORT);
     TEST_INFO("✅ HTTP client initialized (worker: %p)", s_worker);
@@ -120,13 +148,15 @@ static void s_teardown_integration_test(void) {
     TEST_INFO("=== Stopping HTTP server and cleaning up ===");
     
     // Stop HTTP server
-    if (s_http_server) {
-        dap_server_delete(s_http_server);
+    if (s_dap_server) {
+        dap_server_delete(s_dap_server);
+        s_dap_server = NULL;
         s_http_server = NULL;
     }
     
-    // Cleanup HTTP module
+    // Cleanup HTTP modules
     dap_http_simple_module_deinit();
+    dap_http_deinit();
     
     // Stop and cleanup event system
     dap_events_stop_all();

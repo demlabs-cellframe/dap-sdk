@@ -23,6 +23,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/http_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/enc_server/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/session/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
