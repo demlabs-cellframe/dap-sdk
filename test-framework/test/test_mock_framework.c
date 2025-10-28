@@ -16,13 +16,13 @@
 
 #include "dap_test.h"
 #include "dap_test_async.h"
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 #include "dap_common.h"
 #include <pthread.h>
 #include <string.h>
 #include <stdint.h>
 
-#define LOG_TAG "test_mock_framework"
+#define LOG_TAG "test_mock"
 
 // =============================================================================
 // MOCK DECLARATIONS FOR TESTING
@@ -478,14 +478,14 @@ int main(int argc, char **argv)
     UNUSED(argv);
     
     // Initialize DAP SDK
-    int l_ret = dap_common_init("test_mock_framework", NULL);
+    int l_ret = dap_common_init("test_mock", NULL);
     if (l_ret != 0) {
         printf("Failed to initialize DAP SDK\n");
         return 1;
     }
     
     // Initialize mock framework
-    dap_mock_framework_init();
+    dap_mock_init();
     
     log_it(L_INFO, "=== DAP SDK Mock Framework V4 - Unit Tests ===");
     log_it(L_INFO, "Testing all mock features...\n");
@@ -507,7 +507,7 @@ int main(int argc, char **argv)
     log_it(L_INFO, "\n=== All Mock Framework Tests PASSED! ===");
     log_it(L_INFO, "Total: 12 tests");
     
-    dap_mock_framework_deinit();
+    dap_mock_deinit();
     dap_common_deinit();
     return 0;
 }

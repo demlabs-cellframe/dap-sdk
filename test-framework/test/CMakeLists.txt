@@ -37,7 +37,6 @@ target_include_directories(test_mock_framework PRIVATE
 
 target_link_libraries(test_mock_framework
     dap_test
-    dap_test_mocks
     dap_core
     pthread
 )
