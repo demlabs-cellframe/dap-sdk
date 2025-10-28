@@ -10,6 +10,7 @@ DAP SDK Test Framework - это production-ready инфраструктура т
 
 - **Async Testing Framework** - Инструменты для тестирования асинхронных операций с таймаутами
 - **Mock Framework V4** - Мокирование функций без модификации кода
+- **Async Mock Execution** - Асинхронное выполнение моков с пулом потоков
 - **Auto-Wrapper System** - Автоматическая конфигурация линкера
 - **Self-Tests** - 21 тест, валидирующий надёжность фреймворка
 
@@ -37,7 +38,8 @@ DAP SDK Test Framework - это production-ready инфраструктура т
 | Condition Polling | Конфигурируемые интервалы | Эффективное ожидание |
 | pthread Helpers | Обёртки для condition variables | Потокобезопасная координация |
 | Mock Framework | На основе линкера (`--wrap`) | Нулевой техдолг |
-| Задержки | Fixed, Range, Variance | Реалистичная симуляция |
+| Async Mocks | Выполнение в thread pool | Реальная симуляция async поведения |
+| Задержки | Fixed, Range, Variance | Реалистичная симуляция времени |
 | Callbacks | Inline + Runtime | Динамическое поведение моков |
 | Auto-Wrapper | Bash/PowerShell скрипты | Автоматическая настройка |
 | Self-Tests | 21 комплексный тест | Проверенная надёжность |

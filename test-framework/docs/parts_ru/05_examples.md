@@ -233,4 +233,107 @@ void test_retry_logic() {
 }
 ```
 
+### 4.6 Асинхронное выполнение моков
+
+Пример демонстрации async mock callback'ов с thread pool:
+
+```c
+#include "dap_mock.h"
+#include "dap_mock_async.h"
+#include "dap_test_async.h"
+
+// Async мок для HTTP запроса с задержкой 50ms
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+    .enabled = true,
+    .async = true,  // Выполнять в worker потоке
+    .delay = {
+        .type = DAP_MOCK_DELAY_FIXED,
+        .fixed_us = 50000  // 50ms реалистичная сетевая латентность
+    }
+});
+
+// Mock обертка - выполняется асинхронно
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_client_http_request,
+    PARAM(const char*, a_url),
+    PARAM(http_callback_t, a_callback),
+    PARAM(void*, a_arg)
+) {
+    // Этот код выполняется в worker потоке после задержки 50ms
+    const char *response = "{\"status\":\"ok\",\"data\":\"test\"}";
+    a_callback(response, 200, a_arg);
+    return 0;
+}
+
+static volatile bool s_callback_executed = false;
+static volatile int s_http_status = 0;
+
+static void http_response_callback(const char *body, int status, void *arg) {
+    s_http_status = status;
+    s_callback_executed = true;
+    log_it(L_INFO, "HTTP ответ получен: status=%d", status);
+}
+
+void test_async_http_request(void) {
+    log_it(L_INFO, "TEST: Async HTTP request");
+    
+    // Инициализировать async mock систему с 1 worker потоком
+    dap_mock_async_init(1);
+    
+    s_callback_executed = false;
+    s_http_status = 0;
+    
+    // Вызвать HTTP запрос - мок выполнится асинхронно
+    int result = dap_client_http_request(
+        "http://test.com/api",
+        http_response_callback,
+        NULL
+    );
+    
+    assert(result == 0);
+    log_it(L_DEBUG, "HTTP запрос инициирован, ждём callback...");
+    
+    // Ждать завершения async мока (до 5 секунд)
+    DAP_TEST_WAIT_UNTIL(s_callback_executed, 5000, "HTTP callback");
+    
+    // Проверка
+    assert(s_callback_executed);
+    assert(s_http_status == 200);
+    
+    // Альтернатива: ждать все async моки
+    bool all_completed = dap_mock_async_wait_all(5000);
+    assert(all_completed);
+    
+    log_it(L_INFO, "[+] Async mock тест пройден");
+    
+    // Очистка async системы
+    dap_mock_async_deinit();
+}
+
+// Пример fast-forward: тест без реальных задержек
+void test_async_with_flush(void) {
+    dap_mock_async_init(1);
+    
+    s_callback_executed = false;
+    
+    // Запланировать async задачу с большой задержкой
+    dap_client_http_request("http://test.com", http_response_callback, NULL);
+    
+    // Вместо ожидания 50ms, выполнить немедленно
+    dap_mock_async_flush();  // "Промотать" время
+    
+    // Callback уже выполнен
+    assert(s_callback_executed);
+    
+    log_it(L_INFO, "[+] Fast-forward тест пройден");
+    dap_mock_async_deinit();
+}
+```
+
+**Преимущества Async Моков:**
+- Реалистичная симуляция сетевой/IO латентности
+- Не требуется полная инфраструктура `dap_events` в unit тестах
+- Потокобезопасное выполнение
+- Детерминированное тестирование с `flush()`
+- Отслеживание статистики с `get_pending_count()` / `get_completed_count()`
+
 \newpage

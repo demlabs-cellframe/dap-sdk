@@ -68,11 +68,13 @@ DAP_TEST_WAIT_UNTIL(condition, timeout_ms, msg)
 #### Framework Initialization
 ```c
 int dap_mock_init(void);
-// Initialize mock framework (required before using mocks)
+// Optional: Reinitialize mock framework (auto-initialized via constructor)
 // Returns: 0 on success
+// Note: Framework auto-initializes before main(), manual call not required
 
 void dap_mock_deinit(void);
-// Cleanup mock framework
+// Cleanup mock framework (call in teardown if needed)
+// Note: Also auto-deinitializes async system if enabled
 ```
 
 #### Mock Declaration Macros
@@ -311,5 +313,124 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 2. Extracts function names
 3. Adds `-Wl,--wrap=function_name` to linker flags
 4. Works with GCC, Clang, MinGW
+
+### 3.5 Async Mock Execution
+
+**Header:** `dap_mock_async.h`
+
+Provides lightweight asynchronous execution for mock callbacks without requiring full `dap_events` infrastructure. Perfect for unit tests that need to simulate async behavior in isolation.
+
+#### Initialization
+
+```c
+// Initialize async system with worker threads
+int dap_mock_async_init(uint32_t a_worker_count);
+// a_worker_count: 0 = auto, typically 1-2 for unit tests
+// Returns: 0 on success
+
+// Deinitialize (waits for all pending tasks)
+void dap_mock_async_deinit(void);
+
+// Check if initialized
+bool dap_mock_async_is_initialized(void);
+```
+
+#### Task Scheduling
+
+```c
+// Schedule async callback execution
+dap_mock_async_task_t* dap_mock_async_schedule(
+    dap_mock_async_callback_t a_callback,
+    void *a_arg,
+    uint32_t a_delay_ms  // 0 = immediate
+);
+
+// Cancel pending task
+bool dap_mock_async_cancel(dap_mock_async_task_t *a_task);
+```
+
+#### Waiting for Completion
+
+```c
+// Wait for specific task
+bool dap_mock_async_wait_task(
+    dap_mock_async_task_t *a_task,
+    int a_timeout_ms  // -1 = infinite, 0 = no wait
+);
+
+// Wait for all pending tasks
+bool dap_mock_async_wait_all(int a_timeout_ms);
+// Returns: true if all completed, false on timeout
+```
+
+#### Async Mock Configuration
+
+To enable async execution for a mock, set `.async = true` in config:
+
+```c
+// Async mock with delay
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+    .enabled = true,
+    .async = true,  // Execute callback asynchronously
+    .delay = {
+        .type = DAP_MOCK_DELAY_FIXED,
+        .fixed_us = 50000  // 50ms
+    }
+});
+
+// Mock wrapper (executes asynchronously if dap_mock_async_init() was called)
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request,
+    PARAM(const char*, a_url),
+    PARAM(callback_t, a_callback),
+    PARAM(void*, a_arg)
+) {
+    // This code runs in worker thread after delay
+    a_callback("response data", 200, a_arg);
+}
+```
+
+#### Utility Functions
+
+```c
+// Get pending task count
+size_t dap_mock_async_get_pending_count(void);
+
+// Get completed task count
+size_t dap_mock_async_get_completed_count(void);
+
+// Execute all pending tasks immediately (fast-forward time)
+void dap_mock_async_flush(void);
+
+// Reset statistics
+void dap_mock_async_reset_stats(void);
+
+// Set default delay for async mocks
+void dap_mock_async_set_default_delay(uint32_t a_delay_ms);
+```
+
+#### Usage Pattern
+
+```c
+void test_async_http(void) {
+    // Note: No manual init needed! Async system auto-initializes with mock framework
+    
+    volatile bool done = false;
+    
+    // Call function with async mock (configured with .async = true)
+    dap_client_http_request("http://test.com", callback, &done);
+    
+    // Wait for async completion
+    DAP_TEST_WAIT_UNTIL(done, 5000, "HTTP request");
+    
+    // Or wait for all async mocks
+    bool completed = dap_mock_async_wait_all(5000);
+    assert(completed && done);
+    
+    // Cleanup (optional, handled by dap_mock_deinit())
+    // dap_mock_deinit();  // Auto-cleans async system too
+}
+```
+
+**Note:** Async system is automatically initialized when mock framework starts (via constructor). Manual `dap_mock_async_init()` only needed if you want to customize worker count.
 
 \newpage

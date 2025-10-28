@@ -68,11 +68,13 @@ DAP_TEST_WAIT_UNTIL(condition, timeout_ms, msg)
 #### Инициализация фреймворка
 ```c
 int dap_mock_init(void);
-// Инициализация мок-фреймворка (обязательно перед использованием моков)
+// Опционально: переинициализация мок-фреймворка (авто-инициализируется через конструктор)
 // Возвращает: 0 при успехе
+// Примечание: Фреймворк авто-инициализируется до main(), ручной вызов не требуется
 
 void dap_mock_deinit(void);
-// Очистка мок-фреймворка
+// Очистка мок-фреймворка (вызывать в teardown при необходимости)
+// Примечание: Также авто-деинициализирует async систему если она была включена
 ```
 
 #### Макросы объявления моков
@@ -311,5 +313,124 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 2. Извлекает имена функций
 3. Добавляет `-Wl,--wrap=function_name` к флагам линкера
 4. Работает с GCC, Clang, MinGW
+
+### 3.5 Асинхронное выполнение моков
+
+**Заголовок:** `dap_mock_async.h`
+
+Предоставляет легковесное асинхронное выполнение mock callback'ов без необходимости полной инфраструктуры `dap_events`. Идеально для unit тестов, требующих симуляции async поведения в изоляции.
+
+#### Инициализация
+
+```c
+// Инициализация async системы с worker потоками
+int dap_mock_async_init(uint32_t a_worker_count);
+// a_worker_count: 0 = auto, обычно 1-2 для unit тестов
+// Возвращает: 0 при успехе
+
+// Деинициализация (ждёт завершения всех задач)
+void dap_mock_async_deinit(void);
+
+// Проверка инициализации
+bool dap_mock_async_is_initialized(void);
+```
+
+#### Планирование задач
+
+```c
+// Запланировать выполнение async callback
+dap_mock_async_task_t* dap_mock_async_schedule(
+    dap_mock_async_callback_t a_callback,
+    void *a_arg,
+    uint32_t a_delay_ms  // 0 = немедленно
+);
+
+// Отменить pending задачу
+bool dap_mock_async_cancel(dap_mock_async_task_t *a_task);
+```
+
+#### Ожидание завершения
+
+```c
+// Ждать конкретную задачу
+bool dap_mock_async_wait_task(
+    dap_mock_async_task_t *a_task,
+    int a_timeout_ms  // -1 = бесконечно, 0 = не ждать
+);
+
+// Ждать все pending задачи
+bool dap_mock_async_wait_all(int a_timeout_ms);
+// Возвращает: true если все завершены, false при таймауте
+```
+
+#### Конфигурация async мока
+
+Для включения async выполнения установите `.async = true` в конфигурации:
+
+```c
+// Async мок с задержкой
+DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+    .enabled = true,
+    .async = true,  // Выполнять callback асинхронно
+    .delay = {
+        .type = DAP_MOCK_DELAY_FIXED,
+        .fixed_us = 50000  // 50ms
+    }
+});
+
+// Mock обертка (выполняется асинхронно если был вызван dap_mock_async_init())
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request,
+    PARAM(const char*, a_url),
+    PARAM(callback_t, a_callback),
+    PARAM(void*, a_arg)
+) {
+    // Этот код выполняется в worker потоке после задержки
+    a_callback("response data", 200, a_arg);
+}
+```
+
+#### Утилиты
+
+```c
+// Получить количество pending задач
+size_t dap_mock_async_get_pending_count(void);
+
+// Получить количество completed задач
+size_t dap_mock_async_get_completed_count(void);
+
+// Выполнить все pending задачи немедленно ("промотать время")
+void dap_mock_async_flush(void);
+
+// Сбросить статистику
+void dap_mock_async_reset_stats(void);
+
+// Установить дефолтную задержку для async моков
+void dap_mock_async_set_default_delay(uint32_t a_delay_ms);
+```
+
+#### Паттерн использования
+
+```c
+void test_async_http(void) {
+    // Примечание: Ручная инициализация не нужна! Async система авто-инициализируется с mock фреймворком
+    
+    volatile bool done = false;
+    
+    // Вызвать функцию с async моком (сконфигурированным с .async = true)
+    dap_client_http_request("http://test.com", callback, &done);
+    
+    // Ждать async завершения
+    DAP_TEST_WAIT_UNTIL(done, 5000, "HTTP request");
+    
+    // Или ждать все async моки
+    bool completed = dap_mock_async_wait_all(5000);
+    assert(completed && done);
+    
+    // Очистка (опционально, обрабатывается dap_mock_deinit())
+    // dap_mock_deinit();  // Также авто-очищает async систему
+}
+```
+
+**Примечание:** Async система автоматически инициализируется при старте mock фреймворка (через конструктор). Ручной `dap_mock_async_init()` нужен только если хотите настроить количество worker потоков.
 
 \newpage

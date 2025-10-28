@@ -19,12 +19,38 @@
 static dap_mock_function_state_t *s_registered_mocks[DAP_MOCK_MAX_REGISTERED] = {0};
 static int s_mock_count = 0;
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
+static bool s_initialized = false;
+
+// Auto-init constructor (called before main())
+static void __attribute__((constructor)) dap_mock_auto_init(void)
+{
+    if (!s_initialized) {
+        pthread_mutex_lock(&s_lock);
+        if (!s_initialized) {  // Double-check
+            memset(s_registered_mocks, 0, sizeof(s_registered_mocks));
+            s_mock_count = 0;
+            s_initialized = true;
+            
+            // Auto-init async system if available (optional, lightweight)
+            #ifdef DAP_MOCK_ASYNC_AVAILABLE
+            extern bool dap_mock_async_is_initialized(void);
+            extern int dap_mock_async_init(uint32_t);
+            if (!dap_mock_async_is_initialized()) {
+                dap_mock_async_init(0);  // 0 = auto worker count
+            }
+            #endif
+        }
+        pthread_mutex_unlock(&s_lock);
+    }
+}
 
 int dap_mock_init(void)
 {
+    // Now just a no-op / reset function (kept for backward compatibility)
     pthread_mutex_lock(&s_lock);
-    memset(s_registered_mocks, 0, sizeof(s_registered_mocks));
-    s_mock_count = 0;
+    if (!s_initialized) {
+        dap_mock_auto_init();
+    }
     pthread_mutex_unlock(&s_lock);
     return 0;
 }
@@ -32,6 +58,16 @@ int dap_mock_init(void)
 void dap_mock_deinit(void)
 {
     pthread_mutex_lock(&s_lock);
+    
+    // Deinit async system if it was auto-initialized
+    #ifdef DAP_MOCK_ASYNC_AVAILABLE
+    extern bool dap_mock_async_is_initialized(void);
+    extern void dap_mock_async_deinit(void);
+    if (dap_mock_async_is_initialized()) {
+        dap_mock_async_deinit();
+    }
+    #endif
+    
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
             pthread_mutex_destroy(&s_registered_mocks[i]->lock);
@@ -39,6 +75,7 @@ void dap_mock_deinit(void)
         }
     }
     s_mock_count = 0;
+    s_initialized = false;
     pthread_mutex_unlock(&s_lock);
 }
 

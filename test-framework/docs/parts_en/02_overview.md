@@ -10,6 +10,7 @@ A complete testing solution that includes:
 
 - **Async Testing Framework** - Tools for testing asynchronous operations with timeouts
 - **Mock Framework V4** - Function mocking without code modification
+- **Async Mock Execution** - Asynchronous mock callbacks with thread pool
 - **Auto-Wrapper System** - Automatic linker configuration
 - **Self-Tests** - 21 tests validating framework reliability
 
@@ -37,7 +38,8 @@ A complete testing solution that includes:
 | Condition Polling | Configurable intervals | Efficient async waiting |
 | pthread Helpers | Condition variable wrappers | Thread-safe coordination |
 | Mock Framework | Linker-based (`--wrap`) | Zero technical debt |
-| Delays | Fixed, Range, Variance | Realistic simulation |
+| Async Mocks | Thread pool execution | Real async behavior simulation |
+| Delays | Fixed, Range, Variance | Realistic timing simulation |
 | Callbacks | Inline + Runtime | Dynamic mock behavior |
 | Auto-Wrapper | Bash/PowerShell scripts | Automatic setup |
 | Self-Tests | 21 comprehensive tests | Validated reliability |
