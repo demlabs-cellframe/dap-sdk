@@ -96,7 +96,13 @@ if(UNIX)
         add_definitions ("-DDAP_OS_LINUX")
     endif()
     
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare  -Wno-unused-command-line-argument -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    # Base warning flags (compatible with both GCC and Clang)
+    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    
+    # Add Clang-specific warning flags
+    if (CMAKE_C_COMPILER_ID MATCHES ".*[Cc][Ll][Aa][Nn][Gg].*")
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
+    endif()
     if (LINUX)
         set(CCOPT_SYSTEM "")
         set(LDOPT_SYSTEM "")
