@@ -465,11 +465,12 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
     if (!a_state->enabled)
         return false;
     
-    // Execute configured delay before any mock logic
-    dap_mock_execute_delay(a_state);
-    
-    // Record the call
+    // Record the call BEFORE delay/async execution
+    // This ensures call_count is incremented immediately, not after async completion
     dap_mock_record_call(a_state, a_args, a_arg_count, NULL);
+    
+    // Execute configured delay (may be async)
+    dap_mock_execute_delay(a_state);
     
     return true;
 }
