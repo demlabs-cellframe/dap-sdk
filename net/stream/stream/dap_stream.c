@@ -62,6 +62,7 @@
 #include "dap_stream_transport.h"
 #include "dap_stream_transport_http.h"
 #include "dap_stream_transport_udp.h"
+#include "dap_stream_transport_websocket.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -200,6 +201,12 @@ int dap_stream_init(dap_config_t * a_config)
         // Non-fatal, continue
     }
     
+    // Register WebSocket transport adapter
+    if (dap_stream_transport_websocket_register() != 0) {
+        log_it(L_ERROR, "Can't register WebSocket transport adapter");
+        // Non-fatal, continue
+    }
+    
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
     s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
@@ -226,6 +233,7 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     // Deinitialize transport layer
+    dap_stream_transport_websocket_unregister();
     dap_stream_transport_udp_unregister();
     dap_stream_transport_http_unregister();
     dap_stream_transport_deinit();
