@@ -19,12 +19,15 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
 endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
-target_link_libraries(core_test dap_test dap_test_mocks dap_core pthread)
+target_link_libraries(core_test dap_test dap_core pthread)
 
 # Include mock framework headers
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks
 )
+
+# Apply mock autowrap
+dap_mock_autowrap(${PROJECT_NAME})
 
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test

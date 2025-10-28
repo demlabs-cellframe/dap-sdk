@@ -7,12 +7,15 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks/DAPMockAutoWrap.c
 
 add_executable(${PROJECT_NAME} dap_global_db_test.c)
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_test dap_test_mocks dap_global_db)
+target_link_libraries(${PROJECT_NAME} dap_core dap_test dap_global_db)
 
 # Include mock framework headers
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks
 )
+
+# Apply mock autowrap
+dap_mock_autowrap(${PROJECT_NAME})
 
 add_test(
 		NAME global_db_test

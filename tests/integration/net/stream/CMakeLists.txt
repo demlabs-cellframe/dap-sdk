@@ -1,5 +1,8 @@
 project(test_stream_integration)
 
+# Include DAP Mock Framework
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+
 add_executable(${PROJECT_NAME}
     test_stream_integration.c
 )
@@ -17,6 +20,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/stream/include
 )
+
+# Apply mock autowrap
+dap_mock_autowrap(${PROJECT_NAME})
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)
