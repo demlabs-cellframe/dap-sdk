@@ -10,11 +10,8 @@ enable_testing()
 # Network Module Integration Tests
 # ============================================================================
 
-# HTTP Client Integration Tests
-add_subdirectory(net/client)
-
-# HTTP Server Integration Tests
-add_subdirectory(net/server)
+# HTTP Integration Tests (Client + Server)
+add_subdirectory(net/http)
 
 # Stream Integration Tests
 add_subdirectory(net/stream)

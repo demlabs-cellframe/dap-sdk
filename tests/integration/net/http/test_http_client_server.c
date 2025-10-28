@@ -1,18 +1,27 @@
 /**
- * HTTP Client + Server Integration Test Suite
+ * HTTP Client-Server Integration Test Suite
  * 
- * Tests REAL client-server interaction with LOCAL HTTP server.
+ * Complete integration test for HTTP stack - tests BOTH client AND server together.
+ * 
+ * Test Architecture:
+ * - Local HTTP server started on 127.0.0.1:18080
+ * - HTTP client makes real requests to local server
+ * - Full request/response cycle tested
+ * - Real network stack, real TCP connections (no mocks)
  * 
  * Features tested:
- * - Client connects to locally running HTTP server (127.0.0.1)
- * - Real GET/POST requests processing
- * - Redirect following (3xx responses)
+ * - Client-server connection establishment
+ * - GET/POST request processing
+ * - HTTP status codes (200, 302, 404)
+ * - Redirect handling (3xx responses)
  * - Error handling (4xx, 5xx)
- * - Connection lifecycle
+ * - Request headers and response headers
+ * - Connection lifecycle (setup, request, teardown)
+ * - Concurrent connections
  * 
- * @note This is a TRUE INTEGRATION test - tests both client AND server
- * @note Server is started locally on 127.0.0.1:18080
- * @note No mocks - real network stack, real TCP connections
+ * @note This is a TRUE INTEGRATION test - verifies client+server interaction
+ * @note Uses real network stack - no component mocking
+ * @note Server is ephemeral - started for test, stopped after
  */
 
 #include <stdio.h>
@@ -30,11 +39,26 @@
 #include "dap_http_simple.h"
 #include "dap_worker.h"
 #include "dap_events.h"
+#include "dap_events_socket.h"
 #include "dap_http_header.h"
+#include "dap_strfuncs.h"
 #include "dap_test_helpers.h"
 #include "dap_test_async.h"
 
-#define LOG_TAG "test_http_client_server_integration"
+#define LOG_TAG "test_http_client_server"
+
+/**
+ * This integration test verifies the complete HTTP request/response cycle
+ * by testing client and server components together in a single process.
+ * 
+ * Test flow:
+ * 1. Start local HTTP server (dap_http_server)
+ * 2. Register HTTP handlers (dap_http_simple_proc_add)
+ * 3. Create HTTP client (dap_client_http)
+ * 4. Make requests to local server
+ * 5. Verify responses
+ * 6. Shutdown server and client
+ */
 
 // Local test server configuration
 #define TEST_SERVER_ADDR "127.0.0.1"
@@ -73,12 +97,15 @@ static void s_http_handler_404(dap_http_simple_t *a_http_simple, void *a_arg) {
     const char *response = "{\"error\":\"Not Found\"}";
     
     // Set 404 status code in HTTP response
-    dap_http_t *l_http = DAP_HTTP(a_http_simple->http_client);
-    if (l_http) {
-        l_http->reply_status_code = 404;
-    }
+    a_http_simple->http_client->reply_status_code = 404;
     
     dap_http_simple_reply(a_http_simple, (void*)response, strlen(response));
+    dap_strncpy(a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1);
+    
+    // Copy reply and MIME to response
+    a_http_simple->http_client->out_content_length = a_http_simple->reply_size;
+    dap_strncpy(a_http_simple->http_client->out_content_type, a_http_simple->reply_mime, 
+                sizeof(a_http_simple->http_client->out_content_type) - 1);
 }
 
 static void s_http_handler_redirect(dap_http_simple_t *a_http_simple, void *a_arg) {
@@ -86,11 +113,8 @@ static void s_http_handler_redirect(dap_http_simple_t *a_http_simple, void *a_ar
     TEST_INFO("Server: Handling redirect");
     
     // Set 302 redirect with Location header
-    dap_http_t *l_http = DAP_HTTP(a_http_simple->http_client);
-    if (l_http) {
-        l_http->reply_status_code = 302;
-        l_http->out_headers = dap_http_header_add(l_http->out_headers, "Location", "/get");
-    }
+    a_http_simple->http_client->reply_status_code = 302;
+    dap_http_header_add(&a_http_simple->http_client->out_headers, "Location", "/get");
     
     dap_http_simple_reply(a_http_simple, NULL, 0);
 }
@@ -121,7 +145,7 @@ static void s_setup_integration_test(void) {
     
     // Add listen address
     l_ret = dap_server_listen_addr_add(s_dap_server, TEST_SERVER_ADDR, TEST_SERVER_PORT,
-                                       DAP_SOCK_TYPE_TCP, NULL);
+                                       DESCRIPTOR_TYPE_SOCKET_LISTENING, NULL);
     TEST_ASSERT(l_ret == 0, "dap_server_listen_addr_add failed on %s:%d", 
                 TEST_SERVER_ADDR, TEST_SERVER_PORT);
     

@@ -1,10 +1,10 @@
-project(test_stream_integration)
+project(test_stream)
 
 # Include DAP Mock Framework
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
 
 add_executable(${PROJECT_NAME}
-    test_stream_integration.c
+    test_stream.c
 )
 
 target_link_libraries(${PROJECT_NAME}

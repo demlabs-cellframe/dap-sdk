@@ -23,7 +23,7 @@
 #include "dap_test_helpers.h"
 #include "dap_test_async.h"
 
-#define LOG_TAG "test_stream_integration"
+#define LOG_TAG "test_stream"
 
 static volatile bool s_test_completed = false;
 static volatile bool s_test_success = false;
@@ -37,7 +37,7 @@ static void s_setup_stream_test(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
-    dap_stream_init();
+    dap_stream_init(NULL);
     
     TEST_INFO("Stream system initialized");
 }
@@ -70,7 +70,7 @@ static void test_01_stream_initialization(void) {
     // Initialize
     dap_events_init(1, 60000);
     dap_events_start();
-    int result = dap_stream_init();
+    int result = dap_stream_init(NULL);
     
     TEST_ASSERT(result == 0, "Stream init should return 0");
     
@@ -90,7 +90,7 @@ static void test_02_transport_registration(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
-    dap_stream_init();
+    dap_stream_init(NULL);
     
     // After dap_stream_init, default transports should be registered
     dap_stream_transport_t *http_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
@@ -117,14 +117,15 @@ static void test_03_client_creation(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
-    dap_stream_init();
+    dap_stream_init(NULL);
     
     // Create client
-    dap_client_t *client = dap_client_new(NULL, NULL, NULL);
+    dap_client_t *client = dap_client_new(NULL, NULL);
     TEST_ASSERT_NOT_NULL(client, "Client should be created");
     
     // Set uplink (dummy address for this test)
-    dap_client_set_uplink_unsafe(client, "127.0.0.1", 8079);
+    dap_stream_node_addr_t l_node = {};
+    dap_client_set_uplink_unsafe(client, &l_node, "127.0.0.1", 8079);
     
     // Delete client
     dap_client_delete_unsafe(client);
@@ -144,9 +145,9 @@ static void test_04_channel_configuration(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
-    dap_stream_init();
+    dap_stream_init(NULL);
     
-    dap_client_t *client = dap_client_new(NULL, NULL, NULL);
+    dap_client_t *client = dap_client_new(NULL, NULL);
     TEST_ASSERT_NOT_NULL(client, "Client should be created");
     
     // Set active channels
