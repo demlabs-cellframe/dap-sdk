@@ -13,6 +13,7 @@
 #define TEST_HTTP_CLIENT_MOCKS_H
 
 #include "dap_mock.h"
+#include "dap_mock_async.h"
 #include "dap_mock_linker_wrapper.h"
 #include "dap_client_http.h"
 #include <string.h>
@@ -24,9 +25,9 @@
  * 100ms ± 50ms (50-150ms range)
  */
 
-// Config with 100±50ms delay
-#define HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY ((dap_mock_config_t){.enabled=true, .delay={.type=DAP_MOCK_DELAY_VARIANCE, .variance={.center_us=100000, .variance_us=50000}}})
-#define HTTP_CLIENT_MOCK_CONFIG_NO_DELAY ((dap_mock_config_t){.enabled=true, .delay={.type=DAP_MOCK_DELAY_NONE}})
+// Config with 100±50ms delay + async execution
+#define HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY ((dap_mock_config_t){.enabled=true, .async=true, .delay={.type=DAP_MOCK_DELAY_VARIANCE, .variance={.center_us=100000, .variance_us=50000}}})
+#define HTTP_CLIENT_MOCK_CONFIG_NO_DELAY ((dap_mock_config_t){.enabled=true, .async=false, .delay={.type=DAP_MOCK_DELAY_NONE}})
 
 // Mock for dap_client_http_request_full with 100±50ms delay
 DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_full, HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY)
@@ -66,20 +67,25 @@ extern dap_http_client_mock_response_t g_mock_http_response;
 
 /**
  * Initialize HTTP client mocks
- * Note: DAP_MOCK_DECLARE already auto-registers mocks via constructor,
- * so we only need to initialize mock response configuration and enable mocks
+ * Note: 
+ * - DAP_MOCK_DECLARE auto-registers mocks via constructor
+ * - dap_mock_init() is now called AUTOMATICALLY at program start
+ * - dap_mock_async_init() is called automatically if async=true in config
+ * - We only need to initialize mock response configuration
  */
 static inline void dap_http_client_mocks_init(void) {
-    dap_mock_init();
+    // Initialize dap_mock_async for async execution
+    // (required because mocks have async=true)
+    dap_mock_async_init(2);  // 2 worker threads
     
     // Initialize default response
     memset(&g_mock_http_response, 0, sizeof(g_mock_http_response));
     g_mock_http_response.status_code = Http_Status_OK;
-    
 }
 
 /**
  * Cleanup HTTP client mocks
+ * Note: dap_mock_deinit() is now called AUTOMATICALLY at program exit
  */
 static inline void dap_http_client_mocks_deinit(void) {
     // Free any allocated mock response body
@@ -88,7 +94,10 @@ static inline void dap_http_client_mocks_deinit(void) {
         g_mock_http_response.body = NULL;
     }
     
-    dap_mock_deinit();
+    // Deinitialize async mock system
+    dap_mock_async_deinit();
+    
+    // Note: dap_mock_deinit() called automatically via destructor
 }
 
 /**
