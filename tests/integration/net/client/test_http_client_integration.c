@@ -20,6 +20,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <time.h>
+#include <errno.h>
+#include <pthread.h>
 #include "dap_client_http.h"
 #include "dap_server.h"
 #include "dap_http_simple.h"
@@ -341,20 +344,65 @@ static void test_05_connection_failure(void) {
 /**
  * Test 6: Multiple concurrent requests to LOCAL server
  */
+
+// State for concurrent requests test
+static struct {
+    volatile int completed_count;
+    volatile int success_count;
+    volatile int error_count;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} s_concurrent_state;
+
+static void s_concurrent_response_callback(void *a_body, size_t a_body_size,
+                                          struct dap_http_header *a_headers,
+                                          void *a_arg, http_status_code_t a_status_code)
+{
+    int request_id = (int)(intptr_t)a_arg;
+    
+    pthread_mutex_lock(&s_concurrent_state.mutex);
+    
+    s_concurrent_state.completed_count++;
+    if (a_status_code == Http_Status_OK) {
+        s_concurrent_state.success_count++;
+        TEST_INFO("Request #%d: SUCCESS (status=%d, size=%zu)", 
+                  request_id, a_status_code, a_body_size);
+    } else {
+        TEST_INFO("Request #%d: UNEXPECTED status=%d", request_id, a_status_code);
+    }
+    
+    pthread_cond_signal(&s_concurrent_state.cond);
+    pthread_mutex_unlock(&s_concurrent_state.mutex);
+}
+
+static void s_concurrent_error_callback(int a_error_code, void *a_arg)
+{
+    int request_id = (int)(intptr_t)a_arg;
+    
+    pthread_mutex_lock(&s_concurrent_state.mutex);
+    
+    s_concurrent_state.completed_count++;
+    s_concurrent_state.error_count++;
+    TEST_INFO("Request #%d: ERROR (code=%d)", request_id, a_error_code);
+    
+    pthread_cond_signal(&s_concurrent_state.cond);
+    pthread_mutex_unlock(&s_concurrent_state.mutex);
+}
+
 static void test_06_concurrent_requests(void) {
     TEST_INFO("Testing multiple concurrent requests to local server");
     
     #define CONCURRENT_COUNT 5
-    volatile bool completed[CONCURRENT_COUNT] = {false};
-    volatile bool success[CONCURRENT_COUNT] = {false};
-    volatile int status_codes[CONCURRENT_COUNT] = {0};
+    
+    // Initialize concurrent state
+    s_concurrent_state.completed_count = 0;
+    s_concurrent_state.success_count = 0;
+    s_concurrent_state.error_count = 0;
+    pthread_mutex_init(&s_concurrent_state.mutex, NULL);
+    pthread_cond_init(&s_concurrent_state.cond, NULL);
     
     // Launch multiple requests
     for (int i = 0; i < CONCURRENT_COUNT; i++) {
-        s_test_completed = false;
-        s_test_success = false;
-        s_test_status_code = 0;
-        
         dap_client_http_request_simple_async(
             s_worker,
             TEST_SERVER_ADDR,
@@ -365,19 +413,54 @@ static void test_06_concurrent_requests(void) {
             NULL,
             0,
             NULL,
-            s_response_callback,
-            s_error_callback,
+            s_concurrent_response_callback,
+            s_concurrent_error_callback,
             (void*)(intptr_t)i,
             NULL,
             false
         );
+        TEST_INFO("Launched request #%d", i);
     }
     
-    // Wait for all to complete
-    usleep(2000000);  // 2 seconds for all concurrent requests
+    // Wait for all to complete with timeout
+    pthread_mutex_lock(&s_concurrent_state.mutex);
     
-    TEST_INFO("All concurrent requests completed");
-    TEST_SUCCESS("Concurrent requests work");
+    struct timespec timeout;
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_sec += 10;  // 10 second timeout
+    
+    while (s_concurrent_state.completed_count < CONCURRENT_COUNT) {
+        int ret = pthread_cond_timedwait(&s_concurrent_state.cond, 
+                                         &s_concurrent_state.mutex, 
+                                         &timeout);
+        if (ret == ETIMEDOUT) {
+            TEST_ERROR("Timeout waiting for concurrent requests: %d/%d completed",
+                      s_concurrent_state.completed_count, CONCURRENT_COUNT);
+            break;
+        }
+    }
+    
+    int completed = s_concurrent_state.completed_count;
+    int success = s_concurrent_state.success_count;
+    int errors = s_concurrent_state.error_count;
+    
+    pthread_mutex_unlock(&s_concurrent_state.mutex);
+    
+    // Verify results
+    TEST_INFO("Results: %d completed, %d success, %d errors", 
+              completed, success, errors);
+    
+    TEST_ASSERT_EQUAL_INT(CONCURRENT_COUNT, completed, 
+                         "All requests should complete");
+    TEST_ASSERT_EQUAL_INT(CONCURRENT_COUNT, success, 
+                         "All requests should succeed");
+    TEST_ASSERT_EQUAL_INT(0, errors, "No errors expected");
+    
+    // Cleanup
+    pthread_mutex_destroy(&s_concurrent_state.mutex);
+    pthread_cond_destroy(&s_concurrent_state.cond);
+    
+    TEST_SUCCESS("Concurrent requests work correctly");
 }
 
 // ==============================================
