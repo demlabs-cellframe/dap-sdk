@@ -1120,8 +1120,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         } else if (a_store_obj->key)
             rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
         else {
-            if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, false)))
-                log_it (L_ERROR, "mdbx_drop: (%d) %s", rc, mdbx_strerror(rc));
+            assert(false); // No else here!
         }
         if (l_key.iov_len && rc == MDBX_SUCCESS) {
             rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL);
@@ -1150,7 +1149,7 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
         }
         dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, l_txn);
         if (!l_db_ctx) {
-            return MDBX_SUCCESS;
+            return DAP_GLOBAL_DB_RC_NOT_FOUND;
         }
         rc = mdbx_drop(l_txn, l_db_ctx->dbi, false);
         if (rc != MDBX_SUCCESS) {
@@ -1163,13 +1162,16 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
         struct iovec l_data_iov, l_key_iov;
         l_data_iov.iov_base =  l_key_iov.iov_base = l_db_ctx->name;
         l_data_iov.iov_len = l_key_iov.iov_len = l_db_ctx->namelen + 1;    /* Count '\0' */
-
+        bool l_notfound = false;
         if (MDBX_SUCCESS != (rc = mdbx_del(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov))) {
-            log_it (L_ERROR, "mdbx_del: (%d) %s", rc, mdbx_strerror(rc));
+            if (rc != MDBX_NOTFOUND)
+                log_it (L_ERROR, "mdbx_del: (%d) %s", rc, mdbx_strerror(rc));
+            else 
+                l_notfound = true;
             rc = mdbx_txn_abort(l_txn);
             if (rc != MDBX_SUCCESS)
                 log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
-            return DAP_GLOBAL_DB_RC_ERROR;
+            return l_notfound ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_ERROR;
         }
         rc = mdbx_txn_commit(l_txn);
         if (rc != MDBX_SUCCESS) {
