@@ -412,15 +412,3 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
     }
 }
-
-bool dap_json_rpc_get_int64_uint64(dap_json_t *a_json, const char *a_key, void *a_out, bool a_is_uint64)
-{
-    if(!a_json || !a_key || !a_out)
-        return false;
-    if (a_is_uint64) {
-        *(uint64_t*)a_out = dap_json_object_get_uint64(a_json, a_key);
-    } else {
-        *(int64_t*)a_out = dap_json_object_get_int64(a_json, a_key);
-    }
-    return true;
-}

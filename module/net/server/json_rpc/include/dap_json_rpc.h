@@ -70,7 +70,6 @@ void dap_json_rpc_unregister_url_handler(const char *a_url);
 // JSON-RPC request processing (called internally by HTTP handlers)
 char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url);
 
-bool dap_json_rpc_get_int64_uint64(dap_json_t *a_json, const char *a_key, void *a_out, bool a_is_uint64);
 #ifdef __cplusplus
 }
 #endif

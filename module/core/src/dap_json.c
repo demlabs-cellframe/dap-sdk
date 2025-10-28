@@ -409,6 +409,32 @@ uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key)
     return json_object_get_uint64(l_obj);
 }
 
+bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_t *a_out)
+{
+    dap_return_val_if_pass(!a_json || !a_key, false);
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return false;
+    }
+    if (a_out)
+        *a_out = json_object_get_int64(l_obj);
+    return true;
+}
+
+bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out)
+{
+    dap_return_val_if_pass(!a_json || !a_key, false);
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return false;
+    }
+    if (a_out)
+        *a_out = json_object_get_uint64(l_obj);
+    return true;
+}
+
 uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
