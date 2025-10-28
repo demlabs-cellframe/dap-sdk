@@ -26,7 +26,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <ctype.h>
 
 #include "uthash.h"
 #include "utlist.h"
@@ -157,6 +156,70 @@ size_t dap_cert_sign_output_size(dap_cert_t * a_cert)
 }
 
 /**
+ * @brief Determine certificate type (public or private)
+ * @param a_cert Certificate object pointer
+ * @return Certificate type: DAP_CERT_TYPE_PRIVATE if contains private key,
+ *         DAP_CERT_TYPE_PUBLIC if only public key, DAP_CERT_TYPE_INVALID on error
+ */
+dap_cert_type_t dap_cert_get_type(dap_cert_t *a_cert)
+{
+    if (!a_cert) {
+        log_it(L_ERROR, "Certificate pointer is NULL");
+        return DAP_CERT_TYPE_INVALID;
+    }
+    
+    if (!a_cert->enc_key) {
+        log_it(L_ERROR, "Certificate enc_key is NULL");
+        return DAP_CERT_TYPE_INVALID;
+    }
+    
+    // Check if private key data exists and has non-zero size
+    if (a_cert->enc_key->priv_key_data && a_cert->enc_key->priv_key_data_size > 0) {
+        return DAP_CERT_TYPE_PRIVATE;
+    }
+    
+    return DAP_CERT_TYPE_PUBLIC;
+}
+
+/**
+ * @brief Check if certificate is private (contains private key)
+ * @param a_cert Certificate object pointer
+ * @return true if certificate contains private key, false otherwise
+ */
+bool dap_cert_is_private(dap_cert_t *a_cert)
+{
+    return dap_cert_get_type(a_cert) == DAP_CERT_TYPE_PRIVATE;
+}
+
+/**
+ * @brief Check if certificate is public (does not contain private key)
+ * @param a_cert Certificate object pointer
+ * @return true if certificate is public only, false otherwise
+ */
+bool dap_cert_is_public(dap_cert_t *a_cert)
+{
+    return dap_cert_get_type(a_cert) == DAP_CERT_TYPE_PUBLIC;
+}
+
+/**
+ * @brief Convert certificate type to string representation
+ * @param a_type Certificate type
+ * @return String representation of certificate type
+ */
+const char *dap_cert_type_to_str(dap_cert_type_t a_type)
+{
+    switch (a_type) {
+        case DAP_CERT_TYPE_PRIVATE:
+            return "private";
+        case DAP_CERT_TYPE_PUBLIC:
+            return "public";
+        case DAP_CERT_TYPE_INVALID:
+        default:
+            return "invalid";
+    }
+}
+
+/**
  * @brief dap_cert_sign_output
  * @param a_cert
  * @param a_data
@@ -168,6 +231,17 @@ size_t dap_cert_sign_output_size(dap_cert_t * a_cert)
 int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data_size,
                                         void * a_output, size_t *a_output_size)
 {
+    if (!a_cert) {
+        log_it(L_ERROR, "Certificate pointer is NULL, cannot perform signing");
+        return -1;
+    }
+    
+    if (!dap_cert_is_private(a_cert)) {
+        log_it(L_ERROR, "Certificate '%s' is public (no private key), cannot perform signing. "
+                        "Only private certificates can be used for signing operations", a_cert->name);
+        return -2;
+    }
+    
     return dap_sign_create_output( a_cert->enc_key, a_data, a_data_size, a_output, a_output_size);
 }
 
@@ -181,14 +255,34 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
  */
 dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type)
 {
-    dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
-                           a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
+    if (!a_cert) {
+        log_it(L_ERROR, "Certificate pointer is NULL, cannot perform signing");
+        return NULL;
+    }
+    
+    if (!a_cert->enc_key) {
+        log_it(L_ERROR, "Certificate '%s' has no encryption key, cannot perform signing", a_cert->name);
+        return NULL;
+    }
+    
+    // Check if certificate is private (has private key)
+    if (!dap_cert_is_private(a_cert)) {
+        log_it(L_ERROR, "Certificate '%s' is public (no private key), cannot perform signing. "
+                        "Only private certificates can be used for signing operations", a_cert->name);
+        return NULL;
+    }
+    
+    if (!a_data || !a_data_size) {
+        log_it(L_ERROR, "Invalid data for signing: data pointer or size is zero");
+        return NULL;
+    }
+    
     dap_sign_t *l_ret = dap_sign_create_with_hash_type(a_cert->enc_key, a_data, a_data_size, a_hash_type);
 
     if (l_ret)
         log_it(L_INFO, "Sign sizes: %d %d", l_ret->header.sign_size, l_ret->header.sign_pkey_size);
     else
-        log_it(L_ERROR, "dap_sign_create return NULL");
+        log_it(L_ERROR, "dap_sign_create return NULL for certificate '%s'", a_cert->name);
 
     return l_ret;
 }
@@ -202,6 +296,18 @@ dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data,
  */
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
 {
+    if (!a_cert_signer) {
+        log_it(L_ERROR, "Signer certificate pointer is NULL");
+        return -3;
+    }
+    
+    // Check if signer certificate has private key
+    if (!dap_cert_is_private(a_cert_signer)) {
+        log_it(L_ERROR, "Signer certificate '%s' is public (no private key), cannot perform signing. "
+                        "Only private certificates can be used for signing operations", a_cert_signer->name);
+        return -2;
+    }
+    
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
         if (!l_sign_item) {
@@ -209,6 +315,11 @@ int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
             return -1;
         }
         l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size);
+        if (!l_sign_item->sign) {
+            log_it(L_ERROR, "Failed to sign certificate '%s' with '%s'", a_cert->name, a_cert_signer->name);
+            DAP_DELETE(l_sign_item);
+            return -4;
+        }
         DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
         return 0;
     } else {

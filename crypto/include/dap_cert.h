@@ -55,6 +55,13 @@ typedef struct dap_cert {
     dap_binary_tree_t *metadata;
 } dap_cert_t;
 
+// Certificate type enumeration
+typedef enum dap_cert_type {
+    DAP_CERT_TYPE_INVALID = -1,
+    DAP_CERT_TYPE_PUBLIC = 0,
+    DAP_CERT_TYPE_PRIVATE = 1
+} dap_cert_type_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -131,6 +138,13 @@ dap_sign_t *dap_cert_get_meta_sign(dap_cert_t *a_cert, const char *a_field);
 void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *a_meta_size_out);
 dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index);
 char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type);
+
+// Certificate type checking functions
+dap_cert_type_t dap_cert_get_type(dap_cert_t *a_cert);
+bool dap_cert_is_private(dap_cert_t *a_cert);
+bool dap_cert_is_public(dap_cert_t *a_cert);
+const char *dap_cert_type_to_str(dap_cert_type_t a_type);
+
 #ifdef __cplusplus
 }
 #endif
