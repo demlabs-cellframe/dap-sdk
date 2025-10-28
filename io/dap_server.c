@@ -213,6 +213,11 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     fcntl(l_socket, F_SETFL, O_NONBLOCK);
 #endif
     dap_events_socket_t *l_es = dap_events_socket_wrap_listener(a_server, l_socket, a_callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to wrap listener socket for %s:%u", a_addr, a_port);
+        dap_close_socket(l_socket);
+        return -1;
+    }
 #ifdef DAP_EVENTS_CAPS_EPOLL
     l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE

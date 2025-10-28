@@ -91,7 +91,7 @@ MOCK_FUNCTIONS=$(sort -u "$TMP_MOCKS")
 rm -f "$TMP_MOCKS"
 
 if [ -z "$MOCK_FUNCTIONS" ]; then
-    print_warning "No mock declarations found in any source files"
+    print_info "No mock declarations found in any source files"
     exit 0
 fi
 

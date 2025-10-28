@@ -49,6 +49,10 @@ static void s_setup_server_test(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
+    
+    // Give workers time to start up
+    usleep(100000); // 100ms
+    
     dap_http_simple_module_init();
     
     s_server_initialized = true;

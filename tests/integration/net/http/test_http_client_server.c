@@ -143,9 +143,9 @@ static void s_setup_integration_test(void) {
     s_http_server = DAP_HTTP_SERVER(s_dap_server);
     TEST_ASSERT(s_http_server != NULL, "HTTP server structure not found");
     
-    // Add listen address
+    // Add listen address (use server's client_callbacks)
     l_ret = dap_server_listen_addr_add(s_dap_server, TEST_SERVER_ADDR, TEST_SERVER_PORT,
-                                       DESCRIPTOR_TYPE_SOCKET_LISTENING, NULL);
+                                       DESCRIPTOR_TYPE_SOCKET_LISTENING, &s_dap_server->client_callbacks);
     TEST_ASSERT(l_ret == 0, "dap_server_listen_addr_add failed on %s:%d", 
                 TEST_SERVER_ADDR, TEST_SERVER_PORT);
     
