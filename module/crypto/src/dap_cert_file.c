@@ -280,7 +280,8 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
             l_metadata_size = l_key->_inheritor_size;
             
     uint8_t *l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size),
-            *l_priv_key_data = dap_enc_key_serialize_priv_key(l_key, &l_priv_key_data_size),
+            *l_priv_key_data = (l_key->priv_key_data && l_key->priv_key_data_size) ?
+                      dap_enc_key_serialize_priv_key(l_key, &l_priv_key_data_size) : NULL,
             *l_metadata = dap_cert_serialize_meta(a_cert, &l_metadata_size);
     if (!l_pub_key_data && !l_priv_key_data)
         return log_it(L_ERROR, "Neither pvt, nor pub key in certificate, nothing to do"), DAP_DELETE(l_metadata), NULL;

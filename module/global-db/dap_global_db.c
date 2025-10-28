@@ -1400,7 +1400,7 @@ static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a
         // Drop the whole table
         l_store_obj.flags |= DAP_GLOBAL_DB_RECORD_ERASE;
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);
-        if (l_res)
+        if (l_res && l_res != DAP_GLOBAL_DB_RC_NOT_FOUND)
             log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
     }    
     return l_res;
