@@ -103,3 +103,9 @@ add_test(
 # Set test timeout (5 minutes)
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 300)
 
+
+
+# ============================================================================
+# Network Module Unit Tests
+# ============================================================================
+add_subdirectory(net/client)
