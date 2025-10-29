@@ -296,11 +296,11 @@ if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
 endif()
 
-# if(BUILD_CRYPTO_TESTS)
+if(BUILD_CRYPTO_TESTS)
     enable_testing()
     add_subdirectory(test)
     add_definitions("-DDAP_CRYPTO_TESTS")
-# endif()
+endif()
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")
