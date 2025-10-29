@@ -24,6 +24,7 @@
 #include <stdint.h>
 
 #include "dap_common.h"
+#include "dap_events_socket.h"
 
 int dap_notify_server_init();
 void dap_notify_server_deinit();
