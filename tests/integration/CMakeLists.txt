@@ -16,3 +16,6 @@ add_subdirectory(net/http)
 # Stream Integration Tests
 add_subdirectory(net/stream)
 
+# Global DB Integration Tests
+add_subdirectory(global-db)
+

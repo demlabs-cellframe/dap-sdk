@@ -2,6 +2,7 @@
 # These tests verify full HTTP stack integration (client + server)
 
 # Test 1: HTTP Client-Server Integration (full request/response cycle)
+# ✅ Refactored with v2.1 mock API - elegant, comprehensive, async-enabled
 project(test_http_client_server)
 
 # Include DAP Mock Framework
@@ -39,6 +40,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Apply mock autowrap
 dap_mock_autowrap(${PROJECT_NAME})
+
+# Enable --whole-archive for libraries with mocked functions
+# This makes --wrap work for functions inside static libraries
+dap_mock_autowrap_with_static(${PROJECT_NAME} dap_http_server)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)

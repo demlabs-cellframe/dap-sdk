@@ -8,7 +8,9 @@ This directory contains common test fixtures, mocks, and helper utilities shared
 fixtures/
 ├── README.md                    # This file
 ├── dap_test_helpers.h          # Modern test macros and utilities
-└── dap_common_mocks.h          # Common DAP SDK function mocks
+├── dap_common_mocks.h          # Common DAP SDK function mocks
+├── dap_client_test_fixtures.h  # Client and event system test fixtures (header)
+└── dap_client_test_fixtures.c  # Client and event system test fixtures (implementation)
 ```
 
 ## Files
@@ -60,6 +62,52 @@ int main(void) {
     TEST_SUITE_END();
     return 0;
 }
+```
+
+### dap_client_test_fixtures.h / dap_client_test_fixtures.c
+
+Provides intelligent waiting functions for testing DAP client initialization, cleanup, and event system state. Uses `dap_test_wait_condition` for async state verification instead of fixed sleep delays.
+
+**Client State Checks:**
+- `dap_test_client_check_initialized()` - Check if client is properly initialized
+- `dap_test_client_check_ready_for_deletion()` - Check if client has no active resources
+
+**Event System Checks:**
+- `dap_test_events_check_ready_for_deinit()` - Check if events system is ready for deinit
+
+**Convenience Macros:**
+- `DAP_TEST_WAIT_CLIENT_INITIALIZED(client, timeout_ms)` - Wait for client initialization
+- `DAP_TEST_WAIT_CLIENT_READY_FOR_DELETION(client, timeout_ms)` - Wait for client cleanup
+- `DAP_TEST_WAIT_EVENTS_READY_FOR_DEINIT(timeout_ms)` - Wait for events system stop
+
+**Example:**
+```c
+#include "dap_client_test_fixtures.h"
+
+void test_client(void) {
+    dap_client_t *client = dap_client_new(NULL, NULL);
+    
+    // Wait for client to be initialized (intelligent polling)
+    bool l_ready = DAP_TEST_WAIT_CLIENT_INITIALIZED(client, 1000);
+    TEST_ASSERT(l_ready, "Client should initialize");
+    
+    // ... use client ...
+    
+    dap_client_delete_unsafe(client);
+    dap_test_sleep_ms(100); // Small delay for cleanup
+    
+    dap_events_stop_all();
+    dap_events_deinit();
+}
+```
+
+**Note:** For tests that use these fixtures, add `dap_client_test_fixtures.c` to your CMakeLists.txt:
+
+```cmake
+add_executable(${PROJECT_NAME}
+    your_test.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_client_test_fixtures.c
+)
 ```
 
 ### dap_common_mocks.h

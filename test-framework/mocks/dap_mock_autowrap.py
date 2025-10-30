@@ -37,9 +37,12 @@ class MockAutoWrapper:
         matches = re.findall(pattern, content)
         
         self.mock_functions = set(matches)
-        print(f"✅ Found {len(self.mock_functions)} mock declarations:")
-        for func in sorted(self.mock_functions):
-            print(f"   - {func}")
+        if len(self.mock_functions) > 0:
+            print(f"✅ Found {len(self.mock_functions)} mock declarations:")
+            for func in sorted(self.mock_functions):
+                print(f"   - {func}")
+        else:
+            print(f"ℹ️  No mock declarations found - will create empty wrap file")
         
         return self.mock_functions
     
@@ -70,11 +73,16 @@ class MockAutoWrapper:
         
         print(f"\n📝 Generating linker response file: {response_file}")
         
-        with open(response_file, 'w') as f:
-            for func in sorted(self.mock_functions):
-                f.write(f"-Wl,--wrap={func}\n")
+        if len(self.mock_functions) > 0:
+            with open(response_file, 'w') as f:
+                for func in sorted(self.mock_functions):
+                    f.write(f"-Wl,--wrap={func}\n")
+            print(f"✅ Generated {len(self.mock_functions)} --wrap options")
+        else:
+            with open(response_file, 'w') as f:
+                f.write("# Empty mock wrap file - no mocks declared\n")
+            print(f"ℹ️  Created empty wrap file (no mocks to wrap)")
         
-        print(f"✅ Generated {len(self.mock_functions)} --wrap options")
         return response_file
     
     def generate_cmake_integration(self) -> Path:
@@ -101,14 +109,21 @@ class MockAutoWrapper:
             f.write(f"    ${{{test_name.upper()}_WRAP_LIST}}\n")
             f.write(f")\n\n")
             f.write(f"# Wrapped functions (for documentation):\n")
-            for func in sorted(self.mock_functions):
-                f.write(f"#   - {func}\n")
+            if len(self.mock_functions) > 0:
+                for func in sorted(self.mock_functions):
+                    f.write(f"#   - {func}\n")
+            else:
+                f.write(f"#   (none - no mocks declared)\n")
         
         print(f"✅ Generated CMake integration")
         return cmake_file
     
     def generate_wrapper_template(self) -> Path:
         """Generate template for missing wrappers"""
+        if len(self.mock_functions) == 0:
+            print(f"\nℹ️  No mocks declared - skipping template generation")
+            return None
+        
         missing_wrappers = self.mock_functions - set(self.wrapper_info.keys())
         
         if not missing_wrappers:

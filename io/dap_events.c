@@ -303,10 +303,28 @@ void dap_events_deinit( )
 
     dap_events_wait();
 
-    if ( s_workers )
+    if ( s_workers ) {
+        // Free individual worker structures
+        // Note: dap_context_t is freed by worker thread itself before pthread_exit
+        for (uint32_t i = 0; i < s_threads_count; i++) {
+            if (s_workers[i]) {
+#ifndef DAP_EVENTS_CAPS_IOCP
+                // Free inter-context message queue inputs
+                DAP_DEL_Z(s_workers[i]->queue_es_new_input);
+                DAP_DEL_Z(s_workers[i]->queue_es_delete_input);
+                DAP_DEL_Z(s_workers[i]->queue_es_io_input);
+                DAP_DEL_Z(s_workers[i]->queue_es_reassign_input);
+#endif
+                DAP_DELETE(s_workers[i]);
+                s_workers[i] = NULL;
+            }
+        }
         DAP_DELETE( s_workers );
+        s_workers = NULL;
+    }
 
     s_workers_init = 0;
+    s_threads_count = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif

@@ -79,12 +79,12 @@ TMP_MOCKS="/tmp/mock_funcs_$$.txt"
 
 for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
     [ ! -f "$SOURCE_FILE" ] && continue
-    # Find DAP_MOCK_DECLARE(func_name, ...)
-    grep -o 'DAP_MOCK_DECLARE\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)' "$SOURCE_FILE" | \
-        sed 's/DAP_MOCK_DECLARE\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*)/\1/' >> "$TMP_MOCKS" || true
+    # Find DAP_MOCK_DECLARE(func_name) or DAP_MOCK_DECLARE(func_name, ...)
+    grep -o 'DAP_MOCK_DECLARE\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
+        sed 's/DAP_MOCK_DECLARE\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_MOCKS" || true
     # Find DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
-    grep -o 'DAP_MOCK_DECLARE_CUSTOM\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*\s*,' "$SOURCE_FILE" | \
-        sed 's/DAP_MOCK_DECLARE_CUSTOM\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*,/\1/' >> "$TMP_MOCKS" || true
+    grep -o 'DAP_MOCK_DECLARE_CUSTOM\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
+        sed 's/DAP_MOCK_DECLARE_CUSTOM\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_MOCKS" || true
 done
 
 MOCK_FUNCTIONS=$(sort -u "$TMP_MOCKS")
@@ -92,14 +92,16 @@ rm -f "$TMP_MOCKS"
 
 if [ -z "$MOCK_FUNCTIONS" ]; then
     print_info "No mock declarations found in any source files"
-    exit 0
+    print_info "Creating empty wrap file: $WRAP_FILE"
+    echo "# Empty mock wrap file - no mocks declared" > "$WRAP_FILE"
+    FUNC_COUNT=0
+else
+    FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
+    print_success "Found $FUNC_COUNT mock declarations:"
+    echo "$MOCK_FUNCTIONS" | while read func; do
+        echo "   - $func"
+    done
 fi
-
-FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
-print_success "Found $FUNC_COUNT mock declarations:"
-echo "$MOCK_FUNCTIONS" | while read func; do
-    echo "   - $func"
-done
 
 # Step 2: Scan for existing wrapper definitions
 print_info "Scanning for wrapper definitions..."
@@ -109,10 +111,20 @@ TMP_WRAPPERS="/tmp/wrapper_funcs_$$.txt"
 
 for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
     [ ! -f "$SOURCE_FILE" ] && continue
+    
     # Find DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)
     # Extract func_name which is the second argument after the return type
-    # Use perl for better regex support to handle multiline and complex types
-    perl -0777 -ne 'while (/DAP_MOCK_WRAPPER_CUSTOM\s*\(\s*[^,]+\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*,/gs) { print "$1\n"; }' "$SOURCE_FILE" >> "$TMP_WRAPPERS" 2>/dev/null || true
+    grep -o 'DAP_MOCK_WRAPPER_CUSTOM\s*([^)]*' "$SOURCE_FILE" | \
+        sed -n 's/.*,\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*,.*/\1/p' >> "$TMP_WRAPPERS" || true
+    
+    # Find DAP_MOCK_WRAPPER_PASSTHROUGH(return_type, func_name, ...) - v2.1
+    grep -o 'DAP_MOCK_WRAPPER_PASSTHROUGH\s*([^)]*' "$SOURCE_FILE" | \
+        sed -n 's/.*,\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*,.*/\1/p' >> "$TMP_WRAPPERS" || true
+    
+    # Find DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, ...) - v2.1
+    grep -o 'DAP_MOCK_WRAPPER_PASSTHROUGH_VOID\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
+        sed 's/DAP_MOCK_WRAPPER_PASSTHROUGH_VOID\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_WRAPPERS" || true
+    
     # Find explicit __wrap_ definitions
     grep -o '__wrap_[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
         sed 's/__wrap_//' >> "$TMP_WRAPPERS" || true
@@ -131,12 +143,16 @@ fi
 print_info "Generating linker response file: $WRAP_FILE"
 
 > "$WRAP_FILE"  # Clear file
-echo "$MOCK_FUNCTIONS" | while read func; do
-    # Note: For -Wl,@file usage, we need just --wrap=func (without -Wl,)
-    echo "--wrap=$func" >> "$WRAP_FILE"
-done
-
-print_success "Generated $FUNC_COUNT --wrap options"
+if [ -n "$MOCK_FUNCTIONS" ]; then
+    echo "$MOCK_FUNCTIONS" | while read func; do
+        # Note: For -Wl,@file usage, we need just --wrap=func (without -Wl,)
+        echo "--wrap=$func" >> "$WRAP_FILE"
+    done
+    print_success "Generated $FUNC_COUNT --wrap options"
+else
+    echo "# Empty mock wrap file - no mocks declared" > "$WRAP_FILE"
+    print_info "Created empty wrap file (no mocks to wrap)"
+fi
 
 # Step 4: Generate CMake integration
 print_info "Generating CMake integration: $CMAKE_FILE"
@@ -148,24 +164,63 @@ cat > "$CMAKE_FILE" << EOF
 # Wrapped functions:
 EOF
 
-echo "$MOCK_FUNCTIONS" | while read func; do
-    echo "#   - $func" >> "$CMAKE_FILE"
-done
+if [ -n "$MOCK_FUNCTIONS" ]; then
+    echo "$MOCK_FUNCTIONS" | while read func; do
+        echo "#   - $func" >> "$CMAKE_FILE"
+    done
+else
+    echo "#   (none - no mocks declared)" >> "$CMAKE_FILE"
+fi
 
 print_success "Generated CMake integration"
 
 # Step 5: Find missing wrappers and generate template
-if [ -n "$WRAPPER_FUNCTIONS" ]; then
+if [ -z "$MOCK_FUNCTIONS" ]; then
+    print_info "No mocks declared - skipping template generation"
+elif [ -n "$WRAPPER_FUNCTIONS" ]; then
     MISSING_FUNCTIONS=$(comm -23 <(echo "$MOCK_FUNCTIONS" | sort) <(echo "$WRAPPER_FUNCTIONS" | sort))
-else
-    MISSING_FUNCTIONS="$MOCK_FUNCTIONS"
-fi
+    
+    if [ -z "$MISSING_FUNCTIONS" ]; then
+        print_success "All wrappers are defined"
+    else
+        MISSING_COUNT=$(echo "$MISSING_FUNCTIONS" | wc -l)
+        print_warning "Missing wrappers for $MISSING_COUNT functions"
+        print_info "Generating template: $TEMPLATE_FILE"
+        
+        cat > "$TEMPLATE_FILE" << 'EOF'
+/**
+ * Auto-generated wrapper template
+ * Copy the needed wrappers to your test file and customize as needed
+ */
 
-if [ -z "$MISSING_FUNCTIONS" ]; then
-    print_success "All wrappers are defined"
+#include "dap_mock.h"
+#include "dap_mock_linker_wrapper.h"
+
+EOF
+        
+        echo "$MISSING_FUNCTIONS" | while read func; do
+            cat >> "$TEMPLATE_FILE" << EOF
+// Wrapper for $func
+DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
+    (/* add parameters here */))
+{
+    if (g_mock_$func && g_mock_$func->enabled) {
+        // Add your mock logic here
+        return g_mock_$func->return_value.ptr;
+    }
+    return __real_$func(/* forward parameters */);
+}
+
+EOF
+            echo "   ⚠️  $func"
+        done
+        
+        print_success "Template generated with $MISSING_COUNT function stubs"
+    fi
 else
-    MISSING_COUNT=$(echo "$MISSING_FUNCTIONS" | wc -l)
-    print_warning "Missing wrappers for $MISSING_COUNT functions"
+    # No wrappers found but mocks exist - generate template for all
+    FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
+    print_warning "No wrappers found for $FUNC_COUNT functions"
     print_info "Generating template: $TEMPLATE_FILE"
     
     cat > "$TEMPLATE_FILE" << 'EOF'
@@ -179,7 +234,7 @@ else
 
 EOF
     
-    echo "$MISSING_FUNCTIONS" | while read func; do
+    echo "$MOCK_FUNCTIONS" | while read func; do
         cat >> "$TEMPLATE_FILE" << EOF
 // Wrapper for $func
 DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
@@ -196,7 +251,7 @@ EOF
         echo "   ⚠️  $func"
     done
     
-    print_success "Template generated with $MISSING_COUNT function stubs"
+    print_success "Template generated with $FUNC_COUNT function stubs"
 fi
 
 # Final summary

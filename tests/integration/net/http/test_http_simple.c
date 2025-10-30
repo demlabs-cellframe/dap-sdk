@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <time.h>
 #include "dap_http_simple.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
@@ -37,12 +38,15 @@
 #include "dap_strfuncs.h"
 #include "dap_common.h"
 #include "dap_test_helpers.h"
+#include "dap_test_async.h"
 
 #define LOG_TAG "test_http_simple"
 #define TEST_SERVER_ADDR "127.0.0.1"
 #define TEST_SERVER_PORT 18081
+#define TEST_TIMEOUT_SEC 10  // Global timeout for each test
 
 static bool s_server_initialized = false;
+static dap_test_global_timeout_t s_test_timeout;
 
 // ==============================================
 // Test Infrastructure
@@ -54,16 +58,15 @@ static dap_http_server_t *s_http_server = NULL;
 
 // Simple test handler
 static void s_test_handler(dap_http_simple_t *a_http_simple, void *a_arg) {
-    UNUSED(a_arg);
+    http_status_code_t *return_code = (http_status_code_t *)a_arg;
+    
     const char *response = "{\"status\":\"ok\",\"test\":\"simple_handler\"}";
     
-    a_http_simple->http_client->reply_status_code = 200;
     dap_http_simple_reply(a_http_simple, (void*)response, strlen(response));
     dap_strncpy(a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1);
     
-    a_http_simple->http_client->out_content_length = a_http_simple->reply_size;
-    dap_strncpy(a_http_simple->http_client->out_content_type, a_http_simple->reply_mime, 
-                sizeof(a_http_simple->http_client->out_content_type) - 1);
+    // Set return code through pointer (required by dap_http_simple framework)
+    *return_code = Http_Status_OK;
 }
 
 static void s_setup_server_test(void) {
@@ -105,22 +108,35 @@ static void s_teardown_server_test(void) {
     TEST_INFO("Shutting down HTTP server...");
     
     if (s_server_initialized) {
+        // Proper shutdown sequence:
+        
+        // 1. Delete server and its listeners (this removes them from workers)
         if (s_dap_server) {
+            dap_server_delete(s_dap_server);
             s_dap_server = NULL;
             s_http_server = NULL;
         }
         
+        // 2. Deinitialize HTTP modules
         dap_http_simple_module_deinit();
         dap_http_deinit();
         
-        // Note: dap_events_stop_all() can hang if workers are waiting for events
-        // For test purposes, we do minimal cleanup
-        // In production, proper shutdown sequence is needed
+        // 3. Stop all event workers (sends exit signal to eventfd)
+        TEST_INFO("Sending stop signal to workers...");
+        dap_events_stop_all();
+        
+        // 4. Cleanup event system resources
+        // NOTE: dap_events_deinit() internally calls dap_events_wait() to join threads
+        // We should NOT call dap_events_wait() explicitly before deinit!
+        TEST_INFO("Cleaning up event system...");
+        dap_events_deinit();
+        
+        TEST_INFO("Event system cleaned up");
         
         s_server_initialized = false;
     }
     
-    TEST_INFO("HTTP server shutdown complete (minimal cleanup for test)");
+    TEST_INFO("HTTP server shutdown complete");
 }
 
 // ==============================================
@@ -133,6 +149,12 @@ static void s_teardown_server_test(void) {
  * Integration test: Start server, verify it's listening
  */
 static void test_01_server_lifecycle(void) {
+    // Set global timeout to prevent hanging
+    if (dap_test_set_global_timeout(&s_test_timeout, TEST_TIMEOUT_SEC, "test_01_server_lifecycle")) {
+        TEST_INFO("Test timeout triggered!");
+        return;
+    }
+    
     TEST_INFO("Testing HTTP simple server lifecycle");
     
     s_setup_server_test();
@@ -145,6 +167,7 @@ static void test_01_server_lifecycle(void) {
     
     s_teardown_server_test();
     
+    dap_test_cancel_global_timeout();
     TEST_SUCCESS("HTTP simple server lifecycle works");
 }
 
@@ -154,6 +177,12 @@ static void test_01_server_lifecycle(void) {
  * Integration test: Register handler, verify it can be called
  */
 static void test_02_simple_handler(void) {
+    // Set global timeout to prevent hanging
+    if (dap_test_set_global_timeout(&s_test_timeout, TEST_TIMEOUT_SEC, "test_02_simple_handler")) {
+        TEST_INFO("Test timeout triggered!");
+        return;
+    }
+    
     TEST_INFO("Testing dap_http_simple handler registration");
     
     s_setup_server_test();
@@ -168,6 +197,7 @@ static void test_02_simple_handler(void) {
     
     s_teardown_server_test();
     
+    dap_test_cancel_global_timeout();
     TEST_SUCCESS("Simple handler registration works");
 }
 
