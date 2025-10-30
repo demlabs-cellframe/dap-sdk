@@ -461,13 +461,15 @@ pthread_t       l_tid;
  */
 void dap_events_stop_all( )
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return;
+    }
 
+    s_workers_init = 0;
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
-    s_workers_init = 0;
 }
 
 
