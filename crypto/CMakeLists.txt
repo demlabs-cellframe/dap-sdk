@@ -256,6 +256,11 @@ endfunction(print_target_properties)
 
 add_dependencies(${PROJECT_NAME} dap_crypto_XKCP) 
 target_link_libraries(${PROJECT_NAME} dap_crypto_XKCP)
+# Get XKCP include directory from the target property
+get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
+if(XKCP_INCLUDE_DIR)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${XKCP_INCLUDE_DIR})
+endif()
 
 if (DAP_PQRL)
 
@@ -272,6 +277,12 @@ endif()
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
+# Add XKCP include directories for KeccakHash.h
+get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
+if(XKCP_INCLUDE_DIR)
+    target_include_directories(dap_crypto PUBLIC ${XKCP_INCLUDE_DIR})
+    target_include_directories(dap_crypto INTERFACE ${XKCP_INCLUDE_DIR})
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
@@ -296,11 +307,6 @@ if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
 endif()
 
-if(BUILD_CRYPTO_TESTS)
-    enable_testing()
-    add_subdirectory(test)
-    add_definitions("-DDAP_CRYPTO_TESTS")
-endif()
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")

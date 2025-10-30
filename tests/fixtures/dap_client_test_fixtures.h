@@ -129,14 +129,7 @@ bool dap_test_events_check_ready_for_deinit(void *a_user_data);
  * @param timeout_ms Timeout in milliseconds
  * @return true if initialized, false on timeout
  */
-#define DAP_TEST_WAIT_CLIENT_INITIALIZED(client, timeout_ms) \
-    dap_test_wait_condition(dap_test_client_check_initialized, (client), \
-        &(dap_test_async_config_t){ \
-            .timeout_ms = (timeout_ms), \
-            .poll_interval_ms = 50, \
-            .fail_on_timeout = false, \
-            .operation_name = "client_initialization" \
-        })
+bool dap_test_wait_client_initialized(dap_client_t *client, uint32_t timeout_ms);
 
 /**
  * @brief Wait for client to be ready for deletion with default config
@@ -144,28 +137,24 @@ bool dap_test_events_check_ready_for_deinit(void *a_user_data);
  * @param timeout_ms Timeout in milliseconds
  * @return true if ready, false on timeout
  */
-#define DAP_TEST_WAIT_CLIENT_READY_FOR_DELETION(client, timeout_ms) \
-    dap_test_wait_condition(dap_test_client_check_ready_for_deletion, (client), \
-        &(dap_test_async_config_t){ \
-            .timeout_ms = (timeout_ms), \
-            .poll_interval_ms = 50, \
-            .fail_on_timeout = false, \
-            .operation_name = "client_cleanup" \
-        })
+bool dap_test_wait_client_ready_for_deletion(dap_client_t *client, uint32_t timeout_ms);
 
 /**
  * @brief Wait for events system to be ready for deinit with default config
  * @param timeout_ms Timeout in milliseconds
  * @return true if ready, false on timeout
  */
+bool dap_test_wait_events_ready_for_deinit(uint32_t timeout_ms);
+
+// Convenience macros for backward compatibility
+#define DAP_TEST_WAIT_CLIENT_INITIALIZED(client, timeout_ms) \
+    dap_test_wait_client_initialized((client), (timeout_ms))
+
+#define DAP_TEST_WAIT_CLIENT_READY_FOR_DELETION(client, timeout_ms) \
+    dap_test_wait_client_ready_for_deletion((client), (timeout_ms))
+
 #define DAP_TEST_WAIT_EVENTS_READY_FOR_DEINIT(timeout_ms) \
-    dap_test_wait_condition(dap_test_events_check_ready_for_deinit, NULL, \
-        &(dap_test_async_config_t){ \
-            .timeout_ms = (timeout_ms), \
-            .poll_interval_ms = 100, \
-            .fail_on_timeout = false, \
-            .operation_name = "events_stop" \
-        })
+    dap_test_wait_events_ready_for_deinit((timeout_ms))
 
 #ifdef __cplusplus
 }

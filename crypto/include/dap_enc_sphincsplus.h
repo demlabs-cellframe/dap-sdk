@@ -79,9 +79,4 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const voi
     return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
 }
 
-#ifdef DAP_CRYPTO_TESTS
-void dap_enc_sig_sphincsplus_set_default_config (sphincsplus_config_t  a_new_config);
-int dap_enc_sig_sphincsplus_get_configs_count();
-#endif
-
 #endif //_DAP_ENC_SPHINCSPLUS_H

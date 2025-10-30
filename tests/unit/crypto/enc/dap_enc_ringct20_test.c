@@ -415,7 +415,7 @@ static void test_signing_verifying2(void)
 
     const int allpbknum = 100;
     void *allpbk_buf = NULL;
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if (! ringct20_params_init( p, RINGCT20_MINSEC))
     {
         ringct20_params_free(p);

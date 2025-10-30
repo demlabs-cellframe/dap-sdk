@@ -79,8 +79,10 @@ class MockAutoWrapper:
                     f.write(f"-Wl,--wrap={func}\n")
             print(f"✅ Generated {len(self.mock_functions)} --wrap options")
         else:
+            # Create truly empty file - linker response files cannot contain comments
+            # Comments are interpreted as linker options and cause errors
             with open(response_file, 'w') as f:
-                f.write("# Empty mock wrap file - no mocks declared\n")
+                pass  # Create empty file
             print(f"ℹ️  Created empty wrap file (no mocks to wrap)")
         
         return response_file

@@ -7,13 +7,8 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
-#ifndef DAP_CRYPTO_TESTS
-static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
-static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
-#else
-static _Thread_local sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
-static _Thread_local sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
-#endif
+_Thread_local sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
+_Thread_local sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key)
@@ -396,15 +391,3 @@ inline uint64_t dap_enc_sig_sphincsplus_calc_signature_unserialized_size()
 {
     return sizeof(sphincsplus_signature_t); 
 }
-
-
-#ifdef DAP_CRYPTO_TESTS
-inline void dap_enc_sig_sphincsplus_set_default_config(sphincsplus_config_t  a_new_config) 
-{
-    s_default_config = a_new_config;
-}
-inline int dap_enc_sig_sphincsplus_get_configs_count() 
-{
-    return SPHINCSPLUS_CONFIG_MAX_ARG - 1;
-}
-#endif

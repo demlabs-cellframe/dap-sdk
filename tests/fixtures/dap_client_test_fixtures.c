@@ -28,6 +28,7 @@
 
 #include "dap_client_test_fixtures.h"
 #include "dap_client_pvt.h"
+#include "dap_test_async.h"
 #include "dap_common.h"
 
 #define LOG_TAG "dap_client_test_fixtures"
@@ -84,5 +85,39 @@ bool dap_test_events_check_ready_for_deinit(void *a_user_data) {
     // TODO: Add actual worker state checking if needed
     
     return true; // Always return true after stop_all() is called
+}
+
+// ============================================================================
+// Convenience Functions for Waiting
+// ============================================================================
+
+bool dap_test_wait_client_initialized(dap_client_t *client, uint32_t timeout_ms) {
+    dap_test_async_config_t l_cfg = {
+        .timeout_ms = timeout_ms,
+        .poll_interval_ms = 50,
+        .fail_on_timeout = false,
+        .operation_name = "client_initialization"
+    };
+    return dap_test_wait_condition(dap_test_client_check_initialized, client, &l_cfg);
+}
+
+bool dap_test_wait_client_ready_for_deletion(dap_client_t *client, uint32_t timeout_ms) {
+    dap_test_async_config_t l_cfg = {
+        .timeout_ms = timeout_ms,
+        .poll_interval_ms = 50,
+        .fail_on_timeout = false,
+        .operation_name = "client_cleanup"
+    };
+    return dap_test_wait_condition(dap_test_client_check_ready_for_deletion, client, &l_cfg);
+}
+
+bool dap_test_wait_events_ready_for_deinit(uint32_t timeout_ms) {
+    dap_test_async_config_t l_cfg = {
+        .timeout_ms = timeout_ms,
+        .poll_interval_ms = 100,
+        .fail_on_timeout = false,
+        .operation_name = "events_stop"
+    };
+    return dap_test_wait_condition(dap_test_events_check_ready_for_deinit, NULL, &l_cfg);
 }
 

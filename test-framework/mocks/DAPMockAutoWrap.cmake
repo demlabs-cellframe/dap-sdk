@@ -138,44 +138,47 @@ function(dap_mock_autowrap TARGET_NAME)
     
     # STAGE 3: Apply wrap options (file should exist now)
     if(EXISTS ${WRAP_RESPONSE_FILE})
-        # Detect if compiler supports response files
-        if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
-           CMAKE_C_COMPILER_ID MATCHES "Clang" OR
-           CMAKE_C_COMPILER_ID MATCHES "AppleClang")
-            # GCC and Clang support -Wl,@file for response files
-            target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
-            #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
-        else()
-            # Fallback: read file and add options individually
-            file(READ ${WRAP_RESPONSE_FILE} WRAP_OPTIONS_CONTENT)
-            string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_OPTIONS_CONTENT}")
-            target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
-            #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
-        endif()
-        
-        # Count wrapped functions
+        # Check if file is empty (no mocks)
         file(READ ${WRAP_RESPONSE_FILE} WRAP_CONTENT)
-        string(REGEX MATCHALL "--wrap=" WRAP_MATCHES "${WRAP_CONTENT}")
-        list(LENGTH WRAP_MATCHES WRAP_COUNT)
+        string(STRIP "${WRAP_CONTENT}" WRAP_CONTENT_STRIPPED)
         
-        if(WRAP_COUNT GREATER 0)
-            message(STATUS " Mocked ${WRAP_COUNT} functions")
+        # Only apply wrap options if file is not empty
+        if(WRAP_CONTENT_STRIPPED)
+            # Detect if compiler supports response files
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
+               CMAKE_C_COMPILER_ID MATCHES "Clang" OR
+               CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+                # GCC and Clang support -Wl,@file for response files
+                target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
+            else()
+                # Fallback: read file and add options individually
+                string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_CONTENT}")
+                target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
+            endif()
+            
+            # Count wrapped functions
+            string(REGEX MATCHALL "--wrap=" WRAP_MATCHES "${WRAP_CONTENT}")
+            list(LENGTH WRAP_MATCHES WRAP_COUNT)
+            
+            if(WRAP_COUNT GREATER 0)
+                message(STATUS " Mocked ${WRAP_COUNT} functions")
+            endif()
         else()
-            #message(STATUS "   No mocks found - empty wrap file created")
+            # File is empty - don't apply to linker
+            #message(STATUS "   No mocks found - empty wrap file (not applied to linker)")
         endif()
         #message(STATUS "   Output: ${MOCK_GEN_DIR}")
     else()
-        # File was not generated - create empty stub file to avoid linker errors
-        file(WRITE ${WRAP_RESPONSE_FILE} "# Empty mock wrap file - no mocks declared\n")
+        # File was not generated - create empty stub file (truly empty, no comments)
+        # Linker response files cannot contain comments - they are interpreted as options
+        file(WRITE ${WRAP_RESPONSE_FILE} "")
         #message(STATUS "   No mocks found for ${TARGET_NAME} - created empty wrap file")
         
-        # Still apply the file (even if empty) to avoid linker warnings
-        if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
-           CMAKE_C_COMPILER_ID MATCHES "Clang" OR
-           CMAKE_C_COMPILER_ID MATCHES "AppleClang")
-            target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
-        endif()
-        #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (empty wrap file)")
+        # Don't apply empty file to linker - it will cause errors
+        # Empty file is created only for consistency and to avoid file-not-found errors
+        #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (empty wrap file - no mocks)")
     endif()
 endfunction()
 

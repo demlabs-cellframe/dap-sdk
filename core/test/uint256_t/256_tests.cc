@@ -449,7 +449,7 @@ TEST(InputTests, DecimalInputOne) {
 
 TEST(InputTests, DecimalInputTen) {
     uint256_t a = dap_uint256_scan_decimal("10.0");
-    check_equality256(a, 10000000000000000000);
+    check_equality256(a, 10000000000000000000ULL);
 }
 
 TEST(InputTests, DecimalInputBig) {

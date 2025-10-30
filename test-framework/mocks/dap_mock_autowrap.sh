@@ -93,7 +93,9 @@ rm -f "$TMP_MOCKS"
 if [ -z "$MOCK_FUNCTIONS" ]; then
     print_info "No mock declarations found in any source files"
     print_info "Creating empty wrap file: $WRAP_FILE"
-    echo "# Empty mock wrap file - no mocks declared" > "$WRAP_FILE"
+    # Create truly empty file - linker response files cannot contain comments
+    # Comments are interpreted as linker options and cause errors
+    > "$WRAP_FILE"
     FUNC_COUNT=0
 else
     FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
@@ -150,7 +152,9 @@ if [ -n "$MOCK_FUNCTIONS" ]; then
     done
     print_success "Generated $FUNC_COUNT --wrap options"
 else
-    echo "# Empty mock wrap file - no mocks declared" > "$WRAP_FILE"
+    # Create truly empty file - linker response files cannot contain comments
+    # Comments are interpreted as linker options and cause errors
+    > "$WRAP_FILE"
     print_info "Created empty wrap file (no mocks to wrap)"
 fi
 

@@ -121,7 +121,9 @@ if ($MockFunctions.Count -gt 0) {
     "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -Append -NoNewline
     Write-Success "Generated $($MockFunctions.Count) --wrap options"
 } else {
-    "# Empty mock wrap file - no mocks declared" | Out-File -FilePath $WrapFile -Encoding ASCII
+    # Create truly empty file - linker response files cannot contain comments
+    # Comments are interpreted as linker options and cause errors
+    "" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
     Write-Info "Created empty wrap file (no mocks to wrap)"
 }
 

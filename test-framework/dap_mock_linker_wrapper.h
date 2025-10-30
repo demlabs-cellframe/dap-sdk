@@ -39,16 +39,12 @@
 #define _DAP_MOCK_PARAM_NAME(type, name) name
 
 /**
- * Extract name and cast to void* from PARAM(type, name) -> _Generic((name), ...)
+ * Extract name and cast to void* from PARAM(type, name)
+ * Always uses uintptr_t as intermediate cast to avoid warnings
+ * This is safe because we're just storing the value for tracking, not dereferencing
  */
 #define _DAP_MOCK_PARAM_TO_VOIDPTR(type, name) \
-    _Generic((name), \
-        char*: (void*)(name), \
-        const char*: (void*)(name), \
-        void*: (void*)(name), \
-        const void*: (void*)(name), \
-        default: (void*)(intptr_t)(name) \
-    )
+    ((void*)(uintptr_t)(name))
 
 /**
  * Convert PARAM(type, name) to "type name" for function signature
