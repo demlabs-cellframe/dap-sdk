@@ -9,9 +9,10 @@ The DAP SDK Test Framework is a production-ready testing infrastructure designed
 A complete testing solution that includes:
 
 - **Async Testing Framework** - Tools for testing asynchronous operations with timeouts
-- **Mock Framework V4** - Function mocking without code modification
+- **Mock Framework** - Function mocking without code modification
+- **Async Mock Execution** - Asynchronous mock callbacks with thread pool
 - **Auto-Wrapper System** - Automatic linker configuration
-- **Self-Tests** - 21 tests validating framework reliability
+- **Self-Tests** - 21 test functions validating framework reliability
 
 ### 1.2 Why Use This Framework?
 
@@ -22,12 +23,12 @@ A complete testing solution that includes:
 - External dependencies complicate testing
 
 **Solution:** This framework provides
-- ✅ Timeout protection (global + per-operation)
-- ✅ Efficient waiting (polling + condition variables)
-- ✅ Dependency isolation (mocking)
-- ✅ Realistic simulation (delays, failures)
-- ✅ Thread-safe operations
-- ✅ Cross-platform support
+- [x] Timeout protection (global + per-operation)
+- [x] Efficient waiting (polling + condition variables)
+- [x] Dependency isolation (mocking)
+- [x] Realistic simulation (delays, failures)
+- [x] Thread-safe operations
+- [x] Cross-platform support
 
 ### 1.3 Key Features at a Glance
 
@@ -37,16 +38,17 @@ A complete testing solution that includes:
 | Condition Polling | Configurable intervals | Efficient async waiting |
 | pthread Helpers | Condition variable wrappers | Thread-safe coordination |
 | Mock Framework | Linker-based (`--wrap`) | Zero technical debt |
-| Delays | Fixed, Range, Variance | Realistic simulation |
+| Async Mocks | Thread pool execution | Real async behavior simulation |
+| Delays | Fixed, Range, Variance | Realistic timing simulation |
 | Callbacks | Inline + Runtime | Dynamic mock behavior |
 | Auto-Wrapper | Bash/PowerShell scripts | Automatic setup |
-| Self-Tests | 21 comprehensive tests | Validated reliability |
+| Self-Tests | 21 test functions | Validated reliability |
 
 ### 1.4 Quick Comparison
 
 **Traditional Approach:**
 ```c
-// ❌ Busy waiting, no timeout, CPU waste
+// [!] Busy waiting, no timeout, CPU waste
 while (!done) {
     usleep(10000);  // 10ms sleep
 }
@@ -54,7 +56,7 @@ while (!done) {
 
 **With DAP Test Framework:**
 ```c
-// ✅ Efficient, timeout-protected, automatic logging
+// [+] Efficient, timeout-protected, automatic logging
 DAP_TEST_WAIT_UNTIL(done == true, 5000, "Should complete");
 ```
 

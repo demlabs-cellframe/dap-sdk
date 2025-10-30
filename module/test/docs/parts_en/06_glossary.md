@@ -1,5 +1,7 @@
 ## 5. Glossary
 
+**Async Mock** - Mock callback executing in separate thread with configurable delay
+
 **Async Operation** - Operation completing at unpredictable future time
 
 **Auto-Wrapper** - System auto-generating linker `--wrap` flags from source
@@ -31,6 +33,8 @@
 **Self-Test** - Test validating the testing framework itself
 
 **siglongjmp/sigsetjmp** - Signal-safe non-local jump
+
+**Thread Pool** - Set of worker threads for async task execution
 
 **Thread-Safe** - Works correctly with concurrent access
 

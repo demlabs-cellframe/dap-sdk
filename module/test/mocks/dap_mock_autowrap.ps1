@@ -71,30 +71,41 @@ Write-Info "Scanning $TestSource for mock declarations..."
 $Content = Get-Content -Path $TestSource -Raw
 
 # Extract mock declarations using regex
-$MockPattern = 'DAP_MOCK_DECLARE\s*\(\s*(\w+)\s*\)'
-$MockMatches = [regex]::Matches($Content, $MockPattern)
+# Match both DAP_MOCK_DECLARE(func_name) and DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
+$MockPattern1 = 'DAP_MOCK_DECLARE\s*\(\s*(\w+)\s*\)'
+$MockPattern2 = 'DAP_MOCK_DECLARE_CUSTOM\s*\(\s*(\w+)\s*,'
+$MockMatches1 = [regex]::Matches($Content, $MockPattern1)
+$MockMatches2 = [regex]::Matches($Content, $MockPattern2)
+$MockMatches = $MockMatches1 + $MockMatches2
 
 if ($MockMatches.Count -eq 0) {
-    Write-Warning2 "No mock declarations found"
-    exit 0
-}
-
-$MockFunctions = $MockMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
-
-Write-Success "Found $($MockFunctions.Count) mock declarations:"
-foreach ($func in $MockFunctions) {
-    Write-Host "   - $func"
+    Write-Info "No mock declarations found - will create empty wrap file"
+    $MockFunctions = @()
+} else {
+    $MockFunctions = $MockMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    Write-Success "Found $($MockFunctions.Count) mock declarations:"
+    foreach ($func in $MockFunctions) {
+        Write-Host "   - $func"
+    }
 }
 
 # Step 2: Scan for existing wrapper definitions
 Write-Info "Scanning for wrapper definitions..."
 
-$WrapperPattern = 'DAP_MOCK_WRAPPER_[A-Z_]+\s*\(\s*(\w+)\s*,'
-$WrapperMatches = [regex]::Matches($Content, $WrapperPattern)
+# Match DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)
+# Extract func_name which is the second argument
+$WrapperPattern1 = 'DAP_MOCK_WRAPPER_CUSTOM\s*\(\s*[^,]+\s*,\s*(\w+)\s*,'
+$WrapperMatches1 = [regex]::Matches($Content, $WrapperPattern1)
+
+# Also match explicit __wrap_ definitions
+$WrapperPattern2 = '__wrap_(\w+)'
+$WrapperMatches2 = [regex]::Matches($Content, $WrapperPattern2)
 
 $WrapperFunctions = @()
-if ($WrapperMatches.Count -gt 0) {
-    $WrapperFunctions = $WrapperMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+if ($WrapperMatches1.Count -gt 0 -or $WrapperMatches2.Count -gt 0) {
+    $Funcs1 = $WrapperMatches1 | ForEach-Object { $_.Groups[1].Value }
+    $Funcs2 = $WrapperMatches2 | ForEach-Object { $_.Groups[1].Value }
+    $WrapperFunctions = ($Funcs1 + $Funcs2) | Sort-Object -Unique
     
     foreach ($func in $WrapperFunctions) {
         Write-Host "   ✅ ${func}: wrapper found"
@@ -104,11 +115,17 @@ if ($WrapperMatches.Count -gt 0) {
 # Step 3: Generate linker response file
 Write-Info "Generating linker response file: $WrapFile"
 
-$WrapContent = $MockFunctions | ForEach-Object { "-Wl,--wrap=$_" }
-$WrapContent -join "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
-"`n" | Out-File -FilePath $WrapFile -Encoding ASCII -Append -NoNewline
-
-Write-Success "Generated $($MockFunctions.Count) --wrap options"
+if ($MockFunctions.Count -gt 0) {
+    $WrapContent = $MockFunctions | ForEach-Object { "-Wl,--wrap=$_" }
+    $WrapContent -join "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
+    "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -Append -NoNewline
+    Write-Success "Generated $($MockFunctions.Count) --wrap options"
+} else {
+    # Create truly empty file - linker response files cannot contain comments
+    # Comments are interpreted as linker options and cause errors
+    "" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
+    Write-Info "Created empty wrap file (no mocks to wrap)"
+}
 
 # Step 4: Generate CMake integration
 Write-Info "Generating CMake integration: $CMakeFile"
@@ -137,8 +154,12 @@ target_link_options($BaseName PRIVATE
 # Wrapped functions (for documentation):
 "@
 
-foreach ($func in $MockFunctions) {
-    $CMakeContent += "`n#   - $func"
+if ($MockFunctions.Count -gt 0) {
+    foreach ($func in $MockFunctions) {
+        $CMakeContent += "`n#   - $func"
+    }
+} else {
+    $CMakeContent += "`n#   (none - no mocks declared)"
 }
 
 $CMakeContent | Out-File -FilePath $CMakeFile -Encoding ASCII
@@ -146,15 +167,19 @@ $CMakeContent | Out-File -FilePath $CMakeFile -Encoding ASCII
 Write-Success "Generated CMake integration"
 
 # Step 5: Find missing wrappers and generate template
-$MissingFunctions = $MockFunctions | Where-Object { $WrapperFunctions -notcontains $_ }
-
-if ($MissingFunctions.Count -eq 0) {
-    Write-Success "All wrappers are defined, no template needed"
+if ($MockFunctions.Count -eq 0) {
+    Write-Info "No mocks declared - skipping template generation"
+    $MissingFunctions = @()
 } else {
-    Write-Warning2 "Missing wrappers for $($MissingFunctions.Count) functions"
-    Write-Info "Generating template: $TemplateFile"
+    $MissingFunctions = $MockFunctions | Where-Object { $WrapperFunctions -notcontains $_ }
     
-    $TemplateContent = @"
+    if ($MissingFunctions.Count -eq 0) {
+        Write-Success "All wrappers are defined, no template needed"
+    } else {
+        Write-Warning2 "Missing wrappers for $($MissingFunctions.Count) functions"
+        Write-Info "Generating template: $TemplateFile"
+        
+        $TemplateContent = @"
 // Auto-generated wrapper templates for $TestSource
 // Copy these to your test file and fill in parameter types
 
@@ -162,9 +187,9 @@ if ($MissingFunctions.Count -eq 0) {
 #include "dap_mock_linker_wrapper.h"
 
 "@
-    
-    foreach ($func in $MissingFunctions) {
-        $TemplateContent += @"
+        
+        foreach ($func in $MissingFunctions) {
+            $TemplateContent += @"
 
 // TODO: Define wrapper for $func
 // Example for int return:
@@ -183,13 +208,14 @@ if ($MissingFunctions.Count -eq 0) {
 //     (a_param1))
 
 "@
-    }
-    
-    $TemplateContent | Out-File -FilePath $TemplateFile -Encoding ASCII
-    
-    Write-Success "Template generated with $($MissingFunctions.Count) function stubs"
-    foreach ($func in $MissingFunctions) {
-        Write-Host "   ⚠️  $func"
+        }
+        
+        $TemplateContent | Out-File -FilePath $TemplateFile -Encoding ASCII
+        
+        Write-Success "Template generated with $($MissingFunctions.Count) function stubs"
+        foreach ($func in $MissingFunctions) {
+            Write-Host "   ⚠️  $func"
+        }
     }
 }
 
@@ -200,7 +226,7 @@ Write-Host ""
 Write-Host "Generated files:"
 Write-Host "  📄 $WrapFile"
 Write-Host "  📄 $CMakeFile"
-if ($MissingFunctions.Count -gt 0) {
+if ($MissingFunctions -and $MissingFunctions.Count -gt 0) {
     Write-Host "  📄 $TemplateFile"
 }
 

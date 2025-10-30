@@ -5,15 +5,22 @@
 #   include(DAPMockAutoWrap.cmake)
 #   dap_mock_autowrap(test_my_module test_my_module.c)
 
+# Save the directory where this module is located
+set(DAP_MOCK_AUTOWRAP_MODULE_DIR ${CMAKE_CURRENT_LIST_DIR})
+
 # Find bash or powershell for running the generator script
 if(UNIX)
     find_program(BASH_EXECUTABLE bash)
-    set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE})
-    set(SCRIPT_EXT "sh")
+    if(BASH_EXECUTABLE)
+        set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+        set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
+    endif()
 elseif(WIN32)
     find_program(POWERSHELL_EXECUTABLE powershell)
-    set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE})
-    set(SCRIPT_EXT "ps1")
+    if(POWERSHELL_EXECUTABLE)
+        set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+        set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
+    endif()
 endif()
 
 if(NOT SCRIPT_EXECUTOR)
@@ -21,27 +28,65 @@ if(NOT SCRIPT_EXECUTOR)
 endif()
 
 #
-# dap_mock_autowrap(target_name source_file)
+# dap_mock_autowrap(target_name)
 #
-# Automatically scans source_file for DAP_MOCK_DECLARE() calls and:
+# Automatically scans ALL source files of target for DAP_MOCK_DECLARE() calls and:
 # 1. Generates linker response file with --wrap options
 # 2. Generates CMake fragment with configuration
 # 3. Applies wrap options to target_name
 # 4. Generates wrapper template if needed
 #
 # Example:
-#   add_executable(test_vpn_tun test_vpn_tun.c)
-#   dap_mock_autowrap(test_vpn_tun test_vpn_tun.c)
+#   add_executable(test_vpn_tun test_vpn_tun.c test_mocks.c)
+#   dap_mock_autowrap(test_vpn_tun)
 #
-function(dap_mock_autowrap TARGET_NAME SOURCE_FILE)
+function(dap_mock_autowrap TARGET_NAME)
+    # Check if script executor is available (CACHE variables are accessible in functions)
     if(NOT SCRIPT_EXECUTOR)
-        message(FATAL_ERROR "Bash or PowerShell required for dap_mock_autowrap()")
+        # Try to find bash/powershell again in case variable wasn't set
+        if(UNIX)
+            find_program(BASH_EXECUTABLE bash)
+            if(BASH_EXECUTABLE)
+                set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+                set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
+            endif()
+        elseif(WIN32)
+            find_program(POWERSHELL_EXECUTABLE powershell)
+            if(POWERSHELL_EXECUTABLE)
+                set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+                set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
+            endif()
+        endif()
     endif()
     
-    # Get absolute path to source
-    get_filename_component(SOURCE_ABS ${SOURCE_FILE} ABSOLUTE)
-    get_filename_component(SOURCE_DIR ${SOURCE_ABS} DIRECTORY)
-    get_filename_component(SOURCE_BASENAME ${SOURCE_ABS} NAME_WE)
+    if(NOT SCRIPT_EXECUTOR)
+        message(FATAL_ERROR "Bash or PowerShell required for dap_mock_autowrap(). Please install bash (Unix) or PowerShell (Windows)")
+    endif()
+    
+    # Get all source files from the target
+    get_target_property(TARGET_SOURCES ${TARGET_NAME} SOURCES)
+    if(NOT TARGET_SOURCES)
+        #message(WARNING "No sources found for target ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Collect all .c and .h files
+    set(ALL_SOURCES "")
+    foreach(SOURCE_FILE ${TARGET_SOURCES})
+        get_filename_component(SOURCE_ABS ${SOURCE_FILE} ABSOLUTE)
+        get_filename_component(SOURCE_EXT ${SOURCE_ABS} EXT)
+        if(SOURCE_EXT MATCHES "\\.(c|h)$")
+            list(APPEND ALL_SOURCES ${SOURCE_ABS})
+        endif()
+    endforeach()
+    
+    if(NOT ALL_SOURCES)
+        #message(WARNING "No C/H sources found for target ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Use target name as basename for output files
+    set(SOURCE_BASENAME ${TARGET_NAME})
     
     # Output files go to build directory (CMAKE_CURRENT_BINARY_DIR)
     # This keeps generated files separate from source files
@@ -52,69 +97,142 @@ function(dap_mock_autowrap TARGET_NAME SOURCE_FILE)
     set(CMAKE_FRAGMENT "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mocks.cmake")
     set(WRAPPER_TEMPLATE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrappers_template.c")
     
-    # Path to generator script
-    set(GENERATOR_SCRIPT "${CMAKE_SOURCE_DIR}/cellframe-node/dap-sdk/test-framework/mocks/dap_mock_autowrap.${SCRIPT_EXT}")
+    # Path to generator script (use saved module directory)
+    set(GENERATOR_SCRIPT "${DAP_MOCK_AUTOWRAP_MODULE_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
     
     if(NOT EXISTS ${GENERATOR_SCRIPT})
         message(FATAL_ERROR "Mock generator script not found: ${GENERATOR_SCRIPT}")
     endif()
     
-    # Custom command to run generator
-    # Pass MOCK_GEN_DIR as output directory to script
-    if(UNIX)
-        add_custom_command(
-            OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
-            COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${SOURCE_ABS} ${MOCK_GEN_DIR}
-            DEPENDS ${SOURCE_ABS}
-            COMMENT "Generating mock wrappers for ${TARGET_NAME} in ${MOCK_GEN_DIR}"
-            VERBATIM
-        )
-    elseif(WIN32)
-        add_custom_command(
-            OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
-            COMMAND ${SCRIPT_EXECUTOR} -ExecutionPolicy Bypass -File ${GENERATOR_SCRIPT} ${SOURCE_ABS} ${MOCK_GEN_DIR}
-            DEPENDS ${SOURCE_ABS}
-            COMMENT "Generating mock wrappers for ${TARGET_NAME} in ${MOCK_GEN_DIR}"
-            VERBATIM
-        )
+    # STAGE 1: Generate wrap file at configure time
+    #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
+    #message(STATUS "   Scanning ${list_length_result} source files...")
+    
+    execute_process(
+        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE MOCK_GEN_RESULT
+        OUTPUT_VARIABLE MOCK_GEN_OUTPUT
+        ERROR_VARIABLE MOCK_GEN_ERROR
+    )
+    
+    if(NOT MOCK_GEN_RESULT EQUAL 0)
+        message(WARNING "Mock generator failed: ${MOCK_GEN_ERROR}")
+        message(STATUS "   This is not fatal - mock wrapping will be disabled")
+        return()
     endif()
     
-    # Add as dependency
+    # STAGE 2: Setup re-generation on source file changes
+    add_custom_command(
+        OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
+        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
+        DEPENDS ${ALL_SOURCES}
+        COMMENT "Regenerating mock wrappers for ${TARGET_NAME}"
+        VERBATIM
+    )
+    
     add_custom_target(${TARGET_NAME}_mock_gen
         DEPENDS ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
     )
     add_dependencies(${TARGET_NAME} ${TARGET_NAME}_mock_gen)
     
-    # Read wrap options from generated file
+    # STAGE 3: Apply wrap options (file should exist now)
     if(EXISTS ${WRAP_RESPONSE_FILE})
-        # Detect if compiler supports response files
-        if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
-           CMAKE_C_COMPILER_ID MATCHES "Clang" OR
-           CMAKE_C_COMPILER_ID MATCHES "AppleClang")
-            # GCC and Clang support -Wl,@file for response files
-            # This is much cleaner than reading and parsing the file
-            target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
-            message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
-            message(STATUS "   Generated files in: ${MOCK_GEN_DIR}")
+        # Check if file is empty (no mocks)
+        file(READ ${WRAP_RESPONSE_FILE} WRAP_CONTENT)
+        string(STRIP "${WRAP_CONTENT}" WRAP_CONTENT_STRIPPED)
+        
+        # Only apply wrap options if file is not empty
+        if(WRAP_CONTENT_STRIPPED)
+            # Detect if compiler supports response files
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
+               CMAKE_C_COMPILER_ID MATCHES "Clang" OR
+               CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+                # GCC and Clang support -Wl,@file for response files
+                target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
+            else()
+                # Fallback: read file and add options individually
+                string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_CONTENT}")
+                target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
+            endif()
+            
+            # Count wrapped functions
+            string(REGEX MATCHALL "--wrap=" WRAP_MATCHES "${WRAP_CONTENT}")
+            list(LENGTH WRAP_MATCHES WRAP_COUNT)
+            
+            if(WRAP_COUNT GREATER 0)
+                message(STATUS " Mocked ${WRAP_COUNT} functions")
+            endif()
         else()
-            # Fallback: read file and add options individually
-            file(READ ${WRAP_RESPONSE_FILE} WRAP_OPTIONS_CONTENT)
-            string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_OPTIONS_CONTENT}")
-            target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
-            message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
-            message(STATUS "   Generated files in: ${MOCK_GEN_DIR}")
+            # File is empty - don't apply to linker
+            #message(STATUS "   No mocks found - empty wrap file (not applied to linker)")
         endif()
-
-        message(STATUS "   Wrap options: ${WRAP_RESPONSE_FILE}")
+        #message(STATUS "   Output: ${MOCK_GEN_DIR}")
     else()
-        message(STATUS "⏳ Mock autowrap will generate: ${WRAP_RESPONSE_FILE}")
-        message(STATUS "   Output directory: ${MOCK_GEN_DIR}")
+        # File was not generated - create empty stub file (truly empty, no comments)
+        # Linker response files cannot contain comments - they are interpreted as options
+        file(WRITE ${WRAP_RESPONSE_FILE} "")
+        #message(STATUS "   No mocks found for ${TARGET_NAME} - created empty wrap file")
+        
+        # Don't apply empty file to linker - it will cause errors
+        # Empty file is created only for consistency and to avoid file-not-found errors
+        #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (empty wrap file - no mocks)")
     endif()
+endfunction()
 
-    # Show template location if it will be generated
-    if(NOT EXISTS ${WRAPPER_TEMPLATE})
-        message(STATUS "   Wrapper template will be generated if needed in ${MOCK_GEN_DIR}")
+#
+# dap_mock_autowrap_with_static(target_name library1 library2 ...)
+#
+# Wrap specified static libraries with --whole-archive to make --wrap work
+# This forces linker to process all symbols from static libraries
+#
+# Example:
+#   target_link_libraries(test_http dap_core dap_http_server dap_test)
+#   dap_mock_autowrap_with_static(test_http dap_http_server)
+#
+# Result:
+#   Links as: dap_core -Wl,--whole-archive dap_http_server -Wl,--no-whole-archive dap_test
+#
+function(dap_mock_autowrap_with_static TARGET_NAME)
+    set(LIBS_TO_WRAP ${ARGN})
+    
+    if(NOT LIBS_TO_WRAP)
+        message(WARNING "dap_mock_autowrap_with_static: No libraries specified")
+        return()
     endif()
+    
+    # Get current link libraries
+    get_target_property(CURRENT_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+    
+    if(NOT CURRENT_LIBS)
+        message(WARNING "dap_mock_autowrap_with_static: No libraries linked to ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Rebuild link libraries list with --whole-archive around specified libs
+    set(NEW_LIBS "")
+    foreach(LIB ${CURRENT_LIBS})
+        # Check if this lib should be wrapped
+        list(FIND LIBS_TO_WRAP ${LIB} LIB_INDEX)
+        if(LIB_INDEX GREATER -1)
+            list(APPEND NEW_LIBS "-Wl,--whole-archive")
+            list(APPEND NEW_LIBS ${LIB})
+            list(APPEND NEW_LIBS "-Wl,--no-whole-archive")
+        else()
+            list(APPEND NEW_LIBS ${LIB})
+        endif()
+    endforeach()
+    
+    # Clear and reset link libraries
+    set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
+    target_link_libraries(${TARGET_NAME} ${NEW_LIBS})
+    
+    # Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
+    target_link_options(${TARGET_NAME} PRIVATE "-Wl,--allow-multiple-definition")
+    
+    #message(STATUS "✅ Enabled --whole-archive for ${LIBS_TO_WRAP} in ${TARGET_NAME}")
 endfunction()
 
 #
@@ -165,7 +283,7 @@ function(dap_mock_wrap_from_file TARGET_NAME WRAP_FILE)
     get_filename_component(WRAP_FILE_ABS ${WRAP_FILE} ABSOLUTE)
     
     if(NOT EXISTS ${WRAP_FILE_ABS})
-        message(FATAL_ERROR "Wrap file not found: ${WRAP_FILE_ABS}")
+        #message(FATAL_ERROR "Wrap file not found: ${WRAP_FILE_ABS}")
     endif()
     
     # Detect if compiler supports response files directly
@@ -174,7 +292,7 @@ function(dap_mock_wrap_from_file TARGET_NAME WRAP_FILE)
        CMAKE_C_COMPILER_ID MATCHES "AppleClang")
         # GCC/Clang: use -Wl,@file directly (most efficient)
         target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_FILE_ABS}")
-        message(STATUS "✅ Mock wrap from file: ${WRAP_FILE} (via @file)")
+        #message(STATUS "✅ Mock wrap from file: ${WRAP_FILE} (via @file)")
         return()
     endif()
     
@@ -212,9 +330,5 @@ function(dap_mock_wrap_from_file TARGET_NAME WRAP_FILE)
 endfunction()
 
 # Print helpful info
-message(STATUS "DAP Mock AutoWrap CMake module loaded")
-message(STATUS "  Functions available:")
-message(STATUS "    - dap_mock_autowrap(target source)")
-message(STATUS "    - dap_mock_manual_wrap(target func1 func2 ...)")
-message(STATUS "    - dap_mock_wrap_from_file(target wrap_file)")
+#message(STATUS "DAP Mock AutoWrap CMake module loaded")
 

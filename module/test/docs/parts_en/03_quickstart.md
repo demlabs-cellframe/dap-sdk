@@ -18,7 +18,7 @@ int main() {
     int result = 2 + 2;
     dap_assert_PIF(result == 4, "Math should work");
     
-    log_it(L_INFO, "✓ Test passed!");
+    log_it(L_INFO, "[+] Test passed!");
     
     dap_common_deinit();
     return 0;
@@ -71,6 +71,7 @@ int main() {
 
 Update CMakeLists.txt:
 ```cmake
+# Link test framework library (includes dap_test, dap_mock, etc.)
 target_link_libraries(my_test dap_test dap_core pthread)
 ```
 
@@ -78,8 +79,9 @@ target_link_libraries(my_test dap_test dap_core pthread)
 
 ```c
 #include "dap_test.h"
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 #include "dap_common.h"
+#include <assert.h>
 
 #define LOG_TAG "my_test"
 
@@ -88,18 +90,22 @@ DAP_MOCK_DECLARE(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);
-    dap_mock_framework_init();
+    // Note: dap_mock_init() not needed - auto-initialized!
     
-    // Configure mock
+    // Configure mock to return 42
     DAP_MOCK_SET_RETURN(external_api_call, (void*)42);
     
     // Run code that calls external_api_call
     int result = my_code_under_test();
     
-    // Verify
+    // Verify mock was called once and returned correct value
     assert(DAP_MOCK_GET_CALL_COUNT(external_api_call) == 1);
+    assert(result == 42);
     
-    dap_mock_framework_deinit();
+    log_it(L_INFO, "[+] Test passed!");
+    
+    // Optional cleanup (if you need to reset mocks)
+    // dap_mock_deinit();
     dap_common_deinit();
     return 0;
 }
@@ -109,9 +115,14 @@ Update CMakeLists.txt:
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
-target_link_libraries(my_test dap_test dap_test_mocks dap_core pthread)
+# Link test framework library (includes dap_test, dap_mock, etc.)
+target_link_libraries(my_test dap_test dap_core pthread)
 
-dap_mock_autowrap(TARGET my_test SOURCE my_test.c)
+# Auto-generate --wrap linker flags
+dap_mock_autowrap(my_test)
+
+# If you need to mock functions in static libraries:
+# dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
 
 \newpage
