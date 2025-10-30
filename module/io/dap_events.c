@@ -301,9 +301,6 @@ void dap_events_deinit( )
     dap_proc_thread_deinit();
     dap_events_socket_deinit();
     dap_worker_deinit();
-
-    DAP_DEL_Z( s_workers );
-    s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif
@@ -425,6 +422,7 @@ void dap_events_stop_all( )
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
+    DAP_DEL_Z(s_workers);
 }
 
 
@@ -458,8 +456,10 @@ uint32_t dap_events_thread_get_count()
  */
 dap_worker_t *dap_events_worker_get_auto( )
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return NULL;
+    }
 
     return s_workers[dap_events_worker_get_index_min()];
 }
