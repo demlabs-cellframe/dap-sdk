@@ -84,17 +84,16 @@ static void* s_cli_cmd_exec(void *a_arg);
 static char* s_generate_additional_headers(void);
 
 static bool s_allowed_cmd_check(const char *a_buf) {
+    if (!s_allowed_cmd_control)
+        return true;
     if (!s_allowed_cmd_array)
         return false;
     dap_json_tokener_error_t jterr;
-    const char *l_method;
-    dap_json_t *jobj = dap_json_tokener_parse_verbose(a_buf, &jterr),
-                *jobj_method = NULL;
+    dap_json_t *jobj = dap_json_tokener_parse_verbose(a_buf, &jterr);
     if ( jterr != DAP_JSON_TOKENER_SUCCESS ) 
         return log_it(L_ERROR, "Can't parse json command, error %s", dap_json_tokener_error_desc(jterr)), false;
-    if ( dap_json_object_get_ex(jobj, "method", &jobj_method) )
-        l_method = dap_json_object_get_string(jobj_method, NULL);
-    else {
+    const char *l_method = dap_json_object_get_string(jobj, "method");
+    if (!l_method) {
         log_it(L_ERROR, "Invalid command request, dump it");
         dap_json_object_free(jobj);
         return false;
@@ -139,12 +138,11 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK);
+        l_arg->restricted = ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
 #ifdef DAP_OS_UNIX
-            a_es->addr_storage.ss_family == AF_UNIX ||
+            && a_es->addr_storage.ss_family != AF_UNIX
 #endif
-            ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK) && !s_allowed_cmd_control) ||
-            (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr && s_allowed_cmd_control && s_allowed_cmd_check(l_arg->buf));
+            && !s_allowed_cmd_check(l_arg->buf);
 
 
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
@@ -503,54 +501,54 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
                         L_DEBUG, "execute command=%s", l_str_cmd);
             DAP_DELETE(l_str_cmd);
         }
-    }
 
-    char **l_argv = dap_strsplit(str_cmd, ";", -1);
-    int l_argc = 0;
-    // Count argc
-    while (l_argv[l_argc] != NULL)
-        l_argc++;
-    // Support alias
-    if (l_finded_by_alias) {
-        cmd_name = l_ncmd;
-        DAP_FREE(l_argv[0]);
-        l_argv[0] = l_ncmd;
-        if (l_append_cmd) {
+        char **l_argv = dap_strsplit(str_cmd, ";", -1);
+        int l_argc = 0;
+        // Count argc
+        while (l_argv[l_argc] != NULL)
             l_argc++;
-            char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-            al_argv[1] = l_ncmd;
-            al_argv[1] = l_append_cmd;
-            for (int i = 1; i < l_argc; i++)
-                al_argv[i + 1] = l_argv[i];
-            DAP_DEL_Z(l_argv);
-            l_argv = al_argv;
+        // Support alias
+        if (l_finded_by_alias) {
+            cmd_name = l_ncmd;
+            DAP_FREE(l_argv[0]);
+            l_argv[0] = l_ncmd;
+            if (l_append_cmd) {
+                l_argc++;
+                char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
+                al_argv[1] = l_ncmd;
+                al_argv[1] = l_append_cmd;
+                for (int i = 1; i < l_argc; i++)
+                    al_argv[i + 1] = l_argv[i];
+                DAP_DEL_Z(l_argv);
+                l_argv = al_argv;
+            }
         }
-    }
-    // Call the command function
-    if(l_cmd &&  l_argv && l_cmd->func) {
-        dap_time_t l_call_time = 0;
-        if (s_stat_callback) {
-            l_call_time = dap_nanotime_now();
-        }
-        // Check if this is JSON-RPC command based on flags
-        if (l_cmd->arg_func) {
-            res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, l_json_arr_reply, request->version);
+        // Call the command function
+        if(l_cmd &&  l_argv && l_cmd->func) {
+            dap_time_t l_call_time = 0;
+            if (s_stat_callback) {
+                l_call_time = dap_nanotime_now();
+            }
+            // Check if this is JSON-RPC command based on flags
+            if (l_cmd->arg_func) {
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, l_json_arr_reply, request->version);
+            } else {
+                res = l_cmd->func(l_argc, l_argv, l_json_arr_reply, request->version);
+            }
+            if (s_stat_callback) {
+                s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
+            }
+        } else if (l_cmd) {
+            log_it(L_WARNING, "NULL arguments for input for command \"%s\"", str_cmd);
+            dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
         } else {
-            res = l_cmd->func(l_argc, l_argv, l_json_arr_reply, request->version);
+            log_it(L_WARNING, "No function for command \"%s\" but it registred?!", str_cmd);
+            dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
         }
-        if (s_stat_callback) {
-            s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);
-        }
-    } else if (l_cmd) {
-        log_it(L_WARNING, "NULL arguments for input for command \"%s\"", str_cmd);
-        dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
-    } else {
-        log_it(L_WARNING, "No function for command \"%s\" but it registred?!", str_cmd);
-        dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
+            // find '-verbose' command
+        l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
+        dap_strfreev(l_argv);
     }
-    // find '-verbose' command
-    l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
-    dap_strfreev(l_argv);
 
     // -verbose
     if (l_verbose) {
