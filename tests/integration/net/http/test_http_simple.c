@@ -38,7 +38,7 @@
 #include "dap_strfuncs.h"
 #include "dap_common.h"
 #include "dap_test_helpers.h"
-#include "dap_test_async.h"
+#include "dap_client_test_fixtures.h"
 
 #define LOG_TAG "test_http_simple"
 #define TEST_SERVER_ADDR "127.0.0.1"
@@ -121,17 +121,13 @@ static void s_teardown_server_test(void) {
         dap_http_simple_module_deinit();
         dap_http_deinit();
         
-        // 3. Stop all event workers (sends exit signal to eventfd)
-        TEST_INFO("Sending stop signal to workers...");
-        dap_events_stop_all();
-        
-        // 4. Cleanup event system resources
-        // NOTE: dap_events_deinit() internally calls dap_events_wait() to join threads
-        // We should NOT call dap_events_wait() explicitly before deinit!
-        TEST_INFO("Cleaning up event system...");
-        dap_events_deinit();
-        
-        TEST_INFO("Event system cleaned up");
+        // 3. Deinitialize event system (it will stop workers and wait for threads internally)
+        // Only if events system is still initialized
+        if (dap_events_workers_init_status()) {
+            TEST_INFO("Cleaning up event system...");
+            dap_events_deinit();
+            TEST_INFO("Event system cleaned up");
+        }
         
         s_server_initialized = false;
     }

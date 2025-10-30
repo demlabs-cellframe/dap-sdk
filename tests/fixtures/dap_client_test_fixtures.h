@@ -120,6 +120,36 @@ bool dap_test_client_check_ready_for_deletion(void *a_user_data);
 bool dap_test_events_check_ready_for_deinit(void *a_user_data);
 
 // ============================================================================
+// Certificate Test Setup Functions
+// ============================================================================
+
+/**
+ * @brief Setup test certificate environment
+ * @details Creates test certificate folder and generates node-addr certificate
+ *          for stream module initialization. This should be called before
+ *          dap_stream_init() in tests that require stream functionality.
+ * 
+ * @param a_test_dir Directory for test files (certificates will be stored here)
+ * @return 0 on success, negative error code on failure
+ * 
+ * @example
+ * // In test setup:
+ * dap_test_setup_certificates(".");
+ * dap_stream_init(NULL);
+ */
+int dap_test_setup_certificates(const char *a_test_dir);
+
+/**
+ * @brief Cleanup test certificate environment
+ * @details Removes test certificate folder and cleans up certificates.
+ *          Should be called in test teardown.
+ * 
+ * @param a_test_dir Directory with test files
+ * @return 0 on success, negative error code on failure
+ */
+int dap_test_cleanup_certificates(const char *a_test_dir);
+
+// ============================================================================
 // Convenience Macros
 // ============================================================================
 

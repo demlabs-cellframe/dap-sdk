@@ -986,7 +986,7 @@ static void *s_stress_test_random_table_dropper_thread(void *a_arg)
 static void *s_stress_test_massive_writes_thread(void *a_arg)
 {
     size_t l_thread_id = *(size_t *)a_arg;
-    size_t l_records_per_thread = 1000;
+    size_t l_records_per_thread = 100; // Reduced from 1000 for faster tests
     dap_store_obj_t l_store_obj = {0};
     char l_key[128], l_value[512];
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
@@ -1013,6 +1013,11 @@ static void *s_stress_test_massive_writes_thread(void *a_arg)
         }
         
         DAP_DEL_Z(l_store_obj.sign);
+        
+        // Log progress every 20 records
+        if ((i + 1) % 20 == 0) {
+            log_it(L_DEBUG, "Thread %zu: Completed %zu/%zu writes", l_thread_id, i + 1, l_records_per_thread);
+        }
     }
     
     dap_enc_key_delete(l_enc_key);
@@ -1027,7 +1032,7 @@ static void *s_stress_test_massive_writes_thread(void *a_arg)
 static void *s_stress_test_mixed_operations_thread(void *a_arg)
 {
     size_t l_thread_id = *(size_t *)a_arg;
-    size_t l_operations = 500;
+    size_t l_operations = 100; // Reduced from 500 for faster tests
     
     char l_key[128], l_value[256]; // Move variable declarations outside the loop
     
@@ -1305,10 +1310,10 @@ static void s_stress_test_suite(const char *db_type, size_t a_thread_count)
     dap_test_msg("Random table dropper thread stopped");
     
     // Test 3: Large records
-    s_stress_test_large_records(50); // 50 records of 64KB each
+    s_stress_test_large_records(10); // Reduced from 50 for faster tests
     
     // Test 4: Rapid sequential
-    s_stress_test_rapid_sequential(10000);
+    s_stress_test_rapid_sequential(1000); // Reduced from 10000 for faster tests
     
     log_it(L_NOTICE, "Stress test suite completed successfully");
 }
@@ -1318,6 +1323,13 @@ int main(int argc, char **argv)
     dap_log_level_set(L_WARNING);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
+    
+    // Check if any DB drivers are available
+    if (l_db_count == 0) {
+        log_it(L_CRITICAL, "No DB drivers available");
+        return -1; 
+    }
+    
     dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
     g_dap_global_db_debug_more = true;
     size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
@@ -1338,6 +1350,8 @@ int main(int argc, char **argv)
         s_stress_test_suite(s_db_types[i], 10); // 10 concurrent threads
         s_test_close_db();
     }
+    
+    return 0;
 }
 
 

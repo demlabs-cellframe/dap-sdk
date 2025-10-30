@@ -24,14 +24,17 @@ target_link_libraries(${PROJECT_NAME}
 # Add database driver libraries based on build configuration
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     target_link_libraries(${PROJECT_NAME} mdbx-static)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CHAIN_GDB_ENGINE_MDBX)
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_SQLITE)
     target_link_libraries(${PROJECT_NAME} sqlite3)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CHAIN_GDB_ENGINE_SQLITE)
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_PGSQL)
     target_link_libraries(${PROJECT_NAME} pq)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CHAIN_GDB_ENGINE_PGSQL)
     if(WIN32)
         target_link_libraries(${PROJECT_NAME} ssl crypto z pgcommon pgport)
     endif()

@@ -39,6 +39,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 //#include <netdb.h>
@@ -297,11 +298,27 @@ err:
  */
 void dap_events_deinit( )
 {
-    dap_proc_thread_deinit();
-    dap_events_socket_deinit();
-    dap_worker_deinit();
-
+    if (!s_workers_init) {
+        log_it(L_WARNING, "dap_events_deinit called when not initialized.");
+        return;
+    }
+    
+    // Stop all workers FIRST, before deinitializing anything
+    // This sends exit signal to event_exit sockets which must still exist
+    dap_events_stop_all();
+    
+    // Wait for worker threads to finish BEFORE stopping proc threads
+    // This ensures we don't have race conditions with thread joining
     dap_events_wait();
+    
+    // Stop proc threads (they use different mechanism)
+    dap_proc_thread_deinit();
+    
+    // Now safe to deinitialize sockets (threads have exited)
+    dap_events_socket_deinit();
+    
+    // Now safe to deinitialize workers (they have already exited)
+    dap_worker_deinit();
 
     if ( s_workers ) {
         // Free individual worker structures
@@ -464,12 +481,65 @@ pthread_t       l_tid;
 
 #endif
 
-
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        void *ret;
-        pthread_t l_thread_id = s_workers[i]->context->thread_id;
-        pthread_join(l_thread_id , &ret );
+    // Check if workers are initialized and valid
+    if (!s_workers_init || !s_workers) {
+        log_it(L_WARNING, "dap_events_wait called when workers not initialized");
+        return 0;
     }
+
+    // Save thread IDs before threads exit and free their contexts
+    // Context is freed by the thread itself before pthread_exit, so we need
+    // to save thread_id before calling this function
+    pthread_t *l_thread_ids = DAP_NEW_Z_SIZE(pthread_t, s_threads_count);
+    if (!l_thread_ids) {
+        log_it(L_ERROR, "Failed to allocate memory for thread IDs");
+        return -1;
+    }
+    
+    uint32_t l_valid_threads = 0;
+    for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        if (!s_workers[i] || !s_workers[i]->context) {
+            log_it(L_DEBUG, "Worker %u or its context is NULL, skipping", i);
+            l_thread_ids[i] = 0; // Mark as invalid
+            continue;
+        }
+        
+        l_thread_ids[i] = s_workers[i]->context->thread_id;
+        if (l_thread_ids[i] != 0) {
+            l_valid_threads++;
+        }
+    }
+    
+    if (l_valid_threads == 0) {
+        log_it(L_DEBUG, "No valid threads to join");
+        DAP_DELETE(l_thread_ids);
+        return 0;
+    }
+    
+    // Small delay to allow threads to process stop signal
+    usleep(100000); // 100ms
+    
+    // Now join threads using saved thread IDs
+    // Context may be freed by thread at this point, but thread_id is still valid
+    for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        if (l_thread_ids[i] == 0) {
+            continue; // Skip invalid threads
+        }
+        
+        void *ret;
+        int l_join_result = pthread_join(l_thread_ids[i], &ret);
+        if (l_join_result == ESRCH) {
+            // Thread doesn't exist - already joined or never started
+            log_it(L_DEBUG, "Worker %u thread already joined or doesn't exist", i);
+        } else if (l_join_result == EINVAL) {
+            // Thread is not joinable or already joined
+            log_it(L_DEBUG, "Worker %u thread is not joinable", i);
+        } else if (l_join_result != 0) {
+            log_it(L_WARNING, "pthread_join failed for worker %u: %d", i, l_join_result);
+        }
+    }
+    
+    DAP_DELETE(l_thread_ids);
     return 0;
 }
 
@@ -482,7 +552,22 @@ void dap_events_stop_all( )
     if ( !s_workers_init )
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
 
+    if (!s_workers) {
+        log_it(L_WARNING, "dap_events_stop_all called but s_workers is NULL");
+        return;
+    }
+
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        if (!s_workers[i] || !s_workers[i]->context) {
+            log_it(L_DEBUG, "Worker %u or context is NULL, skipping stop signal", i);
+            continue;
+        }
+        
+        if (!s_workers[i]->context->event_exit) {
+            log_it(L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
+            continue;
+        }
+        
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
 }

@@ -80,14 +80,17 @@ static void test_01_stream_initialization(void) {
     
     TEST_ASSERT(result == 0, "Stream init should return 0");
     
-    // Deinitialize
+    // Deinitialize stream system (this should clean up all transport handlers)
     dap_stream_deinit();
-    dap_events_stop_all();
     
-    // Give workers time to stop
-    dap_test_sleep_ms(100);
+    // Give time for cleanup to propagate
+    dap_test_sleep_ms(200);
     
-    dap_events_deinit();
+    // Deinit events system (it will stop workers and wait for threads internally)
+    // Only deinit if still initialized
+    if (dap_events_workers_init_status()) {
+        dap_events_deinit();
+    }
     
     TEST_SUCCESS("Stream initialization works");
 }
@@ -113,8 +116,14 @@ static void test_02_transport_registration(void) {
     TEST_ASSERT_NOT_NULL(ws_transport, "WebSocket transport should be registered");
     
     dap_stream_deinit();
-    dap_events_stop_all();
-    dap_events_deinit();
+    
+    // Give time for cleanup to propagate
+    dap_test_sleep_ms(200);
+    
+    // Deinit events system (it will stop workers and wait for threads internally)
+    if (dap_events_workers_init_status()) {
+        dap_events_deinit();
+    }
     
     TEST_SUCCESS("Transport registration works");
 }
@@ -161,12 +170,14 @@ static void test_03_client_creation(void) {
     dap_test_sleep_ms(100);
     
     dap_stream_deinit();
-    dap_events_stop_all();
     
-    // Give workers time to stop (events system internal operation)
-    dap_test_sleep_ms(100);
+    // Give time for cleanup to propagate
+    dap_test_sleep_ms(200);
     
-    dap_events_deinit();
+    // Deinit events system (it will stop workers and wait for threads internally)
+    if (dap_events_workers_init_status()) {
+        dap_events_deinit();
+    }
     
     TEST_SUCCESS("Client creation works");
 }
@@ -209,12 +220,14 @@ static void test_04_channel_configuration(void) {
     dap_test_sleep_ms(100);
     
     dap_stream_deinit();
-    dap_events_stop_all();
     
-    // Give workers time to stop
-    dap_test_sleep_ms(100);
+    // Give time for cleanup to propagate
+    dap_test_sleep_ms(200);
     
-    dap_events_deinit();
+    // Deinit events system (it will stop workers and wait for threads internally)
+    if (dap_events_workers_init_status()) {
+        dap_events_deinit();
+    }
     
     TEST_SUCCESS("Channel configuration works");
 }
@@ -225,8 +238,9 @@ static void test_04_channel_configuration(void) {
 
 int main(void) {
     // Create minimal config file for tests
+    // Note: ca_folders should point to test_ca directory where certificates will be stored
     const char *config_content = "[resources]\n"
-                                 "ca_folders=[.]\n";
+                                 "ca_folders=[./test_ca]\n";
     FILE *f = fopen("test_stream.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
@@ -235,7 +249,9 @@ int main(void) {
     
     // Initialize common DAP subsystems (logging first!)
     dap_common_init(LOG_TAG, NULL);
-    
+
+    dap_log_level_set(L_DEBUG);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     // Initialize config system AFTER dap_common_init (needs logging)
     dap_config_init(".");
     
@@ -247,10 +263,16 @@ int main(void) {
         return -1;
     }
     
-    // Re-init crypto and certs with proper config
-    // (they were initialized by dap_common_init but without g_config set)
-    dap_enc_deinit();
-    dap_enc_init();
+    dap_enc_init();  // This calls dap_cert_init() which initializes s_cert_folders
+    
+    // Setup test certificate environment AFTER dap_cert_init()
+    // This creates test_ca folder and generates node-addr certificate
+    // Must be done AFTER dap_enc_init() so s_cert_folders is initialized
+    int l_cert_ret = dap_test_setup_certificates(".");
+    if (l_cert_ret != 0) {
+        printf("Failed to setup test certificates\n");
+        return -1;
+    }
     
     TEST_SUITE_START("Stream Integration Tests");
     printf("\n");
