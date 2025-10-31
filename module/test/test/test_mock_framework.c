@@ -462,7 +462,7 @@ static void test_mock_dynamic_return_values(void)
                    "Should set via union.i");
     
     g_mock_simple_function->return_value.l = 0xDEADBEEF;
-    dap_assert_PIF(g_mock_simple_function->return_value.l == 0xDEADBEEF,
+    dap_assert_PIF(g_mock_simple_function->return_value.l == (long)0xDEADBEEF,
                    "Should set via union.l");
     
     log_it(L_INFO, "✓ Test 12: Dynamic Return Values PASSED\n");
