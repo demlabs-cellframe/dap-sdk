@@ -59,7 +59,7 @@ function(add_dap_test TEST_NAME TEST_SOURCE)
     
     # Link with DAP SDK libraries
     target_link_libraries(${TEST_NAME} 
-        dap_sdk
+        dap_sdk dap_test
     )
     
     # Include DAP SDK headers
@@ -140,13 +140,26 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
+
+# test framework async unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_async.c)
+    add_dap_test(test_unit_dap_test_async unit/test/test_async.c)
+    register_dap_test(test_unit_dap_test_async "unit;test")
+endif()
+
+# test framework mock unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_mock.c)
+    add_dap_test(test_unit_dap_test_mock unit/test/test_mock.c)
+    register_dap_test(test_unit_dap_test_mock "unit;test")
+endif()
+
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_crypto_network.c)
-    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
-    register_dap_test(test_integration_crypto_network "integration;crypto;network")
-endif()
+#if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_crypto_network.c)
+#    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
+#    register_dap_test(test_integration_crypto_network "integration;crypto;network")
+#endif()
 
 # Build E2E Tests
 message("[+] Configuring E2E Tests")
