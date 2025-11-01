@@ -9,17 +9,28 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../test-framework/mocks/DAPMockAutoWrap.c
 
 file(GLOB SRCS *.c)
 
-
+# IMPORTANT: Do NOT compile unix/*.c here - they are compiled in dap_core_unix
+# Instead, we will link dap_core_unix library
+# But we DO compile unix/*_test.c (test files)
 if(UNIX)
-if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
-    file(GLOB PLATROFM_DEP_SRC unix/dap_cpu*.c unix/dap_process*.c unix/dap_cpu*.h unix/dap_process*.h)  
-  else()
-    file(GLOB PLATROFM_DEP_SRC unix/*.c unix/*.h)  
-  endif()
+    if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
+        file(GLOB PLATROFM_DEP_TEST_SRCS unix/dap_cpu*_test.c unix/dap_process*_test.c)
+        file(GLOB PLATROFM_DEP_HEADERS unix/dap_cpu*.h unix/dap_process*.h)  
+    else()
+        file(GLOB PLATROFM_DEP_TEST_SRCS unix/*_test.c)
+        file(GLOB PLATROFM_DEP_HEADERS unix/*.h)  
+    endif()
+    list(APPEND SRCS ${PLATROFM_DEP_TEST_SRCS})
 endif()
 
-add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
-target_link_libraries(core_test dap_test dap_core pthread)
+add_executable(${PROJECT_NAME} ${SRCS})
+
+# Link dap_core + dap_core_unix (contains unix/*.c functions)
+if(UNIX AND TARGET dap_core_unix)
+    target_link_libraries(core_test dap_test dap_core dap_core_unix pthread)
+else()
+    target_link_libraries(core_test dap_test dap_core pthread)
+endif()
 
 # Include mock framework headers
 target_include_directories(${PROJECT_NAME} PRIVATE
