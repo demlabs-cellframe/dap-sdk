@@ -103,6 +103,13 @@ static void test_02_transport_registration(void) {
     
     dap_events_init(1, 60000);
     dap_events_start();
+    
+    // Initialize transport layer first to ensure registry is ready
+    dap_stream_transport_init();
+    
+    // Give time for constructors to run (if they haven't already)
+    dap_test_sleep_ms(100);
+    
     dap_stream_init(NULL);
     
     // After dap_stream_init, default transports should be registered

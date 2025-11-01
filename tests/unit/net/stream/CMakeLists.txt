@@ -28,6 +28,10 @@ target_link_libraries(${PROJECT_NAME}
     dap_link_manager
     dap_client
     dap_global_db
+    dap_transport_websocket
+    dap_transport_http
+    dap_transport_udp
+    dap_server_transport
     dap_test
 )
 
@@ -42,15 +46,22 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/common/http/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/enc_server/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/link_manager/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../global-db/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../io/include
-)
-
-# Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../global-db/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/websocket/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/http/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/udp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/transport_server/include
+    )
 dap_mock_autowrap(${PROJECT_NAME})
+
+# Use dap_mock_autowrap_with_static for static libraries to ensure --wrap works
+# This is needed because --wrap doesn't work for symbols inside static libraries
+# without --whole-archive flag
+# Note: dap_server functions are in dap_io, so we need to wrap dap_io as well
+dap_mock_autowrap_with_static(${PROJECT_NAME} dap_transport_websocket dap_transport_http dap_transport_udp dap_http_server dap_io)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} pthread)
