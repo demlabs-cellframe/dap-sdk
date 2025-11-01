@@ -4,6 +4,9 @@ set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
 include(cmake/OS_Detection.cmake)
+# Include LibraryHelpers for object library creation
+# This must be included early to override target_link_libraries
+include(cmake/LibraryHelpers.cmake)
 
 # Check for secure memory clearing functions
 include(CheckSymbolExists)
@@ -111,33 +114,10 @@ if (DAPSDK_MODULES MATCHES "test-framework")
     message("[+] Testing framework")
 endif()
 
-# DAP SDK Tests
-if (BUILD_DAP_TESTS)
-    add_subdirectory(tests)
-    message("[+] DAP SDK tests")
-endif()
-
 # Core, add it always
 add_subdirectory(core)
 
-# DAP SDK main library (moved from core to root)
-if (DAPSDK_MODULES MATCHES "core")
-    add_library(dap_sdk STATIC dap_sdk.c)
-    target_include_directories(dap_sdk PRIVATE 
-        core/include
-        io/include  
-        crypto/include
-        net/stream/stream/include
-        net/stream/session/include
-        net/stream/ch/include
-        net/client/include
-        net/server/http_server/include
-        global-db/include
-        plugin/include
-    )
-    target_link_libraries(dap_sdk dap_core)
-    message("[+] DAP SDK main library")
-endif()
+# No STATIC library needed - all modules are OBJECT libraries now
 
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
@@ -209,6 +189,38 @@ endif()
 
 if(ANDROID)
     include_directories(3rdparty/)
+endif()
+
+# DAP SDK main library - create as OBJECT library from all modules
+# This allows --wrap to work for internal calls within the SDK
+# Create this AFTER all modules are added to ensure DAP_INTERNAL_MODULES is populated
+
+# Post-process all OBJECT libraries to propagate include directories
+# This must be done AFTER all modules are created and configured
+# This ensures transitive dependencies (like XKCP via dap_crypto) are propagated
+post_process_object_libraries()
+
+if(BUILD_DAP_SDK_TESTS OR BUILD_DAP_TESTS)
+    # Create single OBJECT library from all DAP SDK modules for tests
+    # This enables --wrap to work for internal calls within the SDK
+    create_combined_object_library(
+        TARGET_NAME dap_sdk_object
+        MODULE_LIST_VAR DAP_INTERNAL_MODULES
+    )
+    
+    # Execute deferred include propagation for all OBJECT libraries
+    # This ensures all dependencies are configured before propagation
+    file(GLOB PROPAGATE_FILES "${CMAKE_BINARY_DIR}/**/propagate_*.cmake")
+    foreach(PROPAGATE_FILE ${PROPAGATE_FILES})
+        include(${PROPAGATE_FILE})
+    endforeach()
+    
+    # Add DAP SDK Tests AFTER dap_sdk_object is created
+    # This ensures tests can use the combined object library for proper --wrap support
+    if (BUILD_DAP_TESTS)
+        add_subdirectory(tests)
+        message("[+] DAP SDK tests")
+    endif()
 endif()
 
 

@@ -25,6 +25,7 @@ function(dap_test_add_includes TARGET_NAME)
         
         # Core modules
         ${DAP_SDK_ROOT}/core/include
+        ${DAP_SDK_ROOT}/core/src/unix
         ${DAP_SDK_ROOT}/crypto/include
         ${DAP_SDK_ROOT}/io/include
         
@@ -44,6 +45,7 @@ function(dap_test_add_includes TARGET_NAME)
         
         # 3rd party
         ${DAP_SDK_ROOT}/3rdparty/uthash/src
+        ${DAP_SDK_ROOT}/3rdparty
     )
     
     # Get XKCP include directory from dap_crypto_XKCP (if available)
@@ -62,31 +64,16 @@ endfunction()
 # Uses the combined object library dap_sdk_object if available
 # Usage: dap_test_link_libraries(TARGET_NAME)
 function(dap_test_link_libraries TARGET_NAME)
-    # Check if combined object library exists
-    if(TARGET dap_sdk_object)
-        # Use combined object library - all functions in one place
-        # This allows --wrap to work for internal calls
-        target_link_libraries(${TARGET_NAME} PRIVATE dap_sdk_object)
-        message(STATUS "[TEST] ${TARGET_NAME}: Using dap_sdk_object (--wrap will work for internal calls)")
-    else()
-        # Fallback: use individual object libraries
-        target_link_libraries(${TARGET_NAME} PRIVATE
-            dap_core
-            dap_crypto
-            dap_io
-            dap_stream
-            dap_stream_ch
-            dap_session
-            dap_http_server
-            dap_http_common
-            dap_enc_server
-            dap_client
-            dap_link_manager
-            dap_global_db
-            dap_test
-        )
-        message(STATUS "[TEST] ${TARGET_NAME}: Using individual OBJECT libraries")
+    # Use combined object library - all functions in one place
+    # This allows --wrap to work for internal calls
+    if(NOT TARGET dap_sdk_object)
+        message(FATAL_ERROR "dap_sdk_object target not found. Tests require combined object library for --wrap support.")
     endif()
+    # For OBJECT libraries, need to use $<TARGET_OBJECTS:> generator expression
+    # to include the actual object files in the link command
+    target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:dap_sdk_object>)
+    target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
+    message(STATUS "[TEST] ${TARGET_NAME}: Using dap_sdk_object (--wrap will work for internal calls)")
     
     # External dependencies (if needed)
     if(TARGET dap_json-c)
