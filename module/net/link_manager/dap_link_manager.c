@@ -72,9 +72,11 @@ static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
     dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_net_id, NULL);
     dap_list_t *l_item = NULL;
+    pthread_rwlock_rdlock(&s_link_manager->nets_lock);
     DL_FOREACH(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
             break;
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
     if (!l_item) {
         debug_if(s_debug_more, L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not controlled by link manager", a_net_id);
         return NULL;
@@ -242,11 +244,13 @@ void dap_link_manager_deinit()
         s_link_delete(&l_link, true, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     dap_list_t *it = NULL, *tmp;
+    pthread_rwlock_wrlock(&s_link_manager->nets_lock);
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
     pthread_rwlock_destroy(&s_link_manager->links_lock);
     pthread_rwlock_destroy(&s_link_manager->nets_lock);
-    DAP_DELETE(s_link_manager);
+    DAP_DEL_Z(s_link_manager);
 }
 
 /**
