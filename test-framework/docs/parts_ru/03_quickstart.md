@@ -29,9 +29,26 @@ int main() {
 
 ```cmake
 add_executable(my_test my_test.c)
+
+# Простой способ: линковка одной библиотеки
 target_link_libraries(my_test dap_core)
+
 add_test(NAME my_test COMMAND my_test)
 ```
+
+**Шаг 2 (альтернатива):** Автоматическая линковка всех модулей SDK
+
+```cmake
+add_executable(my_test my_test.c)
+
+# Универсальный способ: автоматически линкует ВСЕ модули DAP SDK
+# + все внешние зависимости (XKCP, Kyber, SQLite, PostgreSQL и т.д.)
+dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES)
+
+add_test(NAME my_test COMMAND my_test)
+```
+
+> **Преимущество:** `dap_link_all_sdk_modules()` автоматически подключает все модули SDK и их внешние зависимости. Не нужно перечислять десятки библиотек вручную!
 
 **Шаг 3:** Соберите и запустите
 
@@ -73,6 +90,9 @@ int main() {
 ```cmake
 # Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
 target_link_libraries(my_test dap_test dap_core pthread)
+
+# Или используйте универсальный способ (автоматически подключит dap_core + все зависимости):
+# dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES LINK_LIBRARIES dap_test)
 ```
 
 ### 2.3 Добавление моков (5 минут)
@@ -115,8 +135,13 @@ int main() {
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
-# Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
+# Вариант 1: Ручная линковка
 target_link_libraries(my_test dap_test dap_core pthread)
+
+# Вариант 2: Автоматическая линковка всех SDK модулей + test framework
+# (рекомендуется для комплексных тестов)
+dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test)
 
 # Автогенерация --wrap флагов линкера
 dap_mock_autowrap(my_test)
@@ -124,5 +149,42 @@ dap_mock_autowrap(my_test)
 # Если нужно мокировать функции в статических библиотеках:
 # dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
+
+### 2.4 Универсальная функция линковки (РЕКОМЕНДУЕТСЯ)
+
+Для упрощения работы с тестами используйте `dap_link_all_sdk_modules()`:
+
+**Простой тест (минимальный набор):**
+```cmake
+add_executable(simple_test simple_test.c)
+dap_link_all_sdk_modules(simple_test DAP_INTERNAL_MODULES)
+```
+
+**Тест с моками (включает test framework):**
+```cmake
+add_executable(mock_test mock_test.c mock_wrappers.c)
+dap_link_all_sdk_modules(mock_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test)
+dap_mock_autowrap(mock_test)
+```
+
+**Тест с дополнительными библиотеками:**
+```cmake
+add_executable(complex_test complex_test.c)
+dap_link_all_sdk_modules(complex_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test my_custom_lib)
+```
+
+**Что делает `dap_link_all_sdk_modules()`:**
+1. ✅ Линкует все объектные файлы SDK модулей
+2. ✅ Автоматически находит внешние зависимости (XKCP, Kyber, SQLite, PostgreSQL, MDBX)
+3. ✅ Добавляет системные библиотеки (pthread, rt, dl)
+4. ✅ Линкует дополнительные библиотеки из параметра `LINK_LIBRARIES`
+
+**Преимущества:**
+- 🚀 Одна строка вместо десятков `target_link_libraries`
+- 🔄 Автоматическое обновление при добавлении новых SDK модулей
+- ✅ Работает с параллельной сборкой (`make -j`)
+- 🎯 Правильная обработка транзитивных зависимостей
 
 \newpage

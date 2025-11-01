@@ -29,9 +29,26 @@ int main() {
 
 ```cmake
 add_executable(my_test my_test.c)
+
+# Simple way: link single library
 target_link_libraries(my_test dap_core)
+
 add_test(NAME my_test COMMAND my_test)
 ```
+
+**Step 2 (alternative):** Automatic linking of all SDK modules
+
+```cmake
+add_executable(my_test my_test.c)
+
+# Universal way: automatically links ALL DAP SDK modules
+# + all external dependencies (XKCP, Kyber, SQLite, PostgreSQL, etc.)
+dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES)
+
+add_test(NAME my_test COMMAND my_test)
+```
+
+> **Advantage:** `dap_link_all_sdk_modules()` automatically connects all SDK modules and their external dependencies. No need to list dozens of libraries manually!
 
 **Step 3:** Build and run
 
@@ -73,6 +90,9 @@ Update CMakeLists.txt:
 ```cmake
 # Link test framework library (includes dap_test, dap_mock, etc.)
 target_link_libraries(my_test dap_test dap_core pthread)
+
+# Or use universal way (automatically connects dap_core + all dependencies):
+# dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES LINK_LIBRARIES dap_test)
 ```
 
 ### 2.3 Adding Mocks (5 minutes)
@@ -115,8 +135,13 @@ Update CMakeLists.txt:
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
-# Link test framework library (includes dap_test, dap_mock, etc.)
+# Option 1: Manual linking
 target_link_libraries(my_test dap_test dap_core pthread)
+
+# Option 2: Automatic linking of all SDK modules + test framework
+# (recommended for complex tests)
+dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test)
 
 # Auto-generate --wrap linker flags
 dap_mock_autowrap(my_test)
@@ -124,6 +149,43 @@ dap_mock_autowrap(my_test)
 # If you need to mock functions in static libraries:
 # dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
+
+### 2.4 Universal Linking Function (RECOMMENDED)
+
+To simplify working with tests, use `dap_link_all_sdk_modules()`:
+
+**Simple test (minimal setup):**
+```cmake
+add_executable(simple_test simple_test.c)
+dap_link_all_sdk_modules(simple_test DAP_INTERNAL_MODULES)
+```
+
+**Test with mocks (includes test framework):**
+```cmake
+add_executable(mock_test mock_test.c mock_wrappers.c)
+dap_link_all_sdk_modules(mock_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test)
+dap_mock_autowrap(mock_test)
+```
+
+**Test with additional libraries:**
+```cmake
+add_executable(complex_test complex_test.c)
+dap_link_all_sdk_modules(complex_test DAP_INTERNAL_MODULES 
+    LINK_LIBRARIES dap_test my_custom_lib)
+```
+
+**What does `dap_link_all_sdk_modules()` do:**
+1. ✅ Links all object files from SDK modules
+2. ✅ Automatically finds external dependencies (XKCP, Kyber, SQLite, PostgreSQL, MDBX)
+3. ✅ Adds system libraries (pthread, rt, dl)
+4. ✅ Links additional libraries from `LINK_LIBRARIES` parameter
+
+**Benefits:**
+- 🚀 One line instead of dozens of `target_link_libraries`
+- 🔄 Automatic updates when adding new SDK modules
+- ✅ Works with parallel builds (`make -j`)
+- 🎯 Correct handling of transitive dependencies
 
 \newpage
 
