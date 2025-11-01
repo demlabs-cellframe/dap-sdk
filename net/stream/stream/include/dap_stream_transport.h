@@ -85,8 +85,7 @@ typedef enum dap_stream_transport_type {
     DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE  = 0x04,  ///< QUIC-inspired multiplexed UDP
     DAP_STREAM_TRANSPORT_WEBSOCKET      = 0x05,  ///< WebSocket (HTTP upgrade)
     DAP_STREAM_TRANSPORT_TLS_DIRECT     = 0x06,  ///< Direct TLS connection
-    DAP_STREAM_TRANSPORT_DNS_TUNNEL     = 0x07,  ///< DNS-based tunneling
-    DAP_STREAM_TRANSPORT_OBFS4          = 0x08   ///< Tor-style obfuscation (obfs4)
+    DAP_STREAM_TRANSPORT_DNS_TUNNEL     = 0x07   ///< DNS-based tunneling
 } dap_stream_transport_type_t;
 
 /**
@@ -399,6 +398,22 @@ dap_stream_transport_t *dap_stream_transport_find(dap_stream_transport_type_t a_
  * @return Transport instance or NULL if not found
  */
 dap_stream_transport_t *dap_stream_transport_find_by_name(const char *a_name);
+
+/**
+ * @brief Get transport name string
+ * @param a_type Transport type enum
+ * @return Transport name or "UNKNOWN"
+ */
+const char *dap_stream_transport_type_to_str(dap_stream_transport_type_t a_type);
+
+/**
+ * @brief Parse transport type from string
+ * @param a_str Transport type string (e.g., "http", "udp", "websocket")
+ * @return Transport type enum, or DAP_STREAM_TRANSPORT_HTTP if unknown
+ * @note Supported strings: "http", "https", "udp", "udp_basic", "udp_reliable",
+ *       "udp_quic", "quic", "websocket", "ws", "tls", "tls_direct", "dns", "dns_tunnel"
+ */
+dap_stream_transport_type_t dap_stream_transport_type_from_str(const char *a_str);
 
 /**
  * @brief Get list of all registered transports

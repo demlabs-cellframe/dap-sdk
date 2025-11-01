@@ -251,6 +251,67 @@ dap_list_t *dap_stream_transport_list_all(void)
 }
 
 /**
+ * @brief Get transport name string
+ */
+const char *dap_stream_transport_type_to_str(dap_stream_transport_type_t a_type)
+{
+    switch (a_type) {
+        case DAP_STREAM_TRANSPORT_HTTP:          return "HTTP";
+        case DAP_STREAM_TRANSPORT_UDP_BASIC:     return "UDP_BASIC";
+        case DAP_STREAM_TRANSPORT_UDP_RELIABLE:  return "UDP_RELIABLE";
+        case DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE: return "UDP_QUIC_LIKE";
+        case DAP_STREAM_TRANSPORT_WEBSOCKET:     return "WEBSOCKET";
+        case DAP_STREAM_TRANSPORT_TLS_DIRECT:    return "TLS_DIRECT";
+        case DAP_STREAM_TRANSPORT_DNS_TUNNEL:    return "DNS_TUNNEL";
+        default:                                 return "UNKNOWN";
+    }
+}
+
+/**
+ * @brief Parse transport type from string
+ */
+dap_stream_transport_type_t dap_stream_transport_type_from_str(const char *a_str)
+{
+    if (!a_str) {
+        return DAP_STREAM_TRANSPORT_HTTP;
+    }
+    
+    // HTTP/HTTPS
+    if (strcmp(a_str, "http") == 0 || strcmp(a_str, "https") == 0) {
+        return DAP_STREAM_TRANSPORT_HTTP;
+    }
+    
+    // UDP variants
+    if (strcmp(a_str, "udp") == 0 || strcmp(a_str, "udp_basic") == 0) {
+        return DAP_STREAM_TRANSPORT_UDP_BASIC;
+    }
+    if (strcmp(a_str, "udp_reliable") == 0) {
+        return DAP_STREAM_TRANSPORT_UDP_RELIABLE;
+    }
+    if (strcmp(a_str, "udp_quic") == 0 || strcmp(a_str, "quic") == 0) {
+        return DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE;
+    }
+    
+    // WebSocket
+    if (strcmp(a_str, "websocket") == 0 || strcmp(a_str, "ws") == 0) {
+        return DAP_STREAM_TRANSPORT_WEBSOCKET;
+    }
+    
+    // TLS Direct
+    if (strcmp(a_str, "tls") == 0 || strcmp(a_str, "tls_direct") == 0) {
+        return DAP_STREAM_TRANSPORT_TLS_DIRECT;
+    }
+    
+    // DNS Tunnel
+    if (strcmp(a_str, "dns") == 0 || strcmp(a_str, "dns_tunnel") == 0) {
+        return DAP_STREAM_TRANSPORT_DNS_TUNNEL;
+    }
+    
+    log_it(L_WARNING, "Unknown transport type '%s', defaulting to HTTP", a_str);
+    return DAP_STREAM_TRANSPORT_HTTP;
+}
+
+/**
  * @brief Attach obfuscation engine to transport
  * @param a_transport Transport to attach obfuscation to
  * @param a_obfuscation Obfuscation engine instance

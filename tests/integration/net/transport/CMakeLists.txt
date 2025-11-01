@@ -1,4 +1,4 @@
-project(test_stream)
+project(test_transport_integration)
 
 # Include DAP Mock Framework
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
@@ -6,7 +6,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAuto
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
 add_executable(${PROJECT_NAME}
-    test_stream.c
+    test_transport_integration.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_client_test_fixtures.c
 )
 
@@ -30,7 +30,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
-    LABELS "integration;net;stream"
+    TIMEOUT 180
+    LABELS "integration;net;transport;client-server"
 )
 

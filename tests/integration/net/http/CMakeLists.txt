@@ -7,55 +7,21 @@ project(test_http_client_server)
 
 # Include DAP Mock Framework
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+# Include test helpers
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
 add_executable(${PROJECT_NAME}
     test_http_client_server.c
 )
 
-# Link both client AND server libraries (true integration test)
-target_link_libraries(${PROJECT_NAME}
-    dap_core
-    dap_crypto
-    dap_io
-    dap_client
-    dap_stream
-    dap_stream_ch
-    dap_session
-    dap_http_server
-    dap_http_common
-    dap_enc_server
-    dap_link_manager
-    dap_global_db
-    dap_test
-)
+# Add all DAP SDK includes using helper function
+dap_test_add_includes(${PROJECT_NAME})
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/http_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/enc_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/session/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/stream/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/ch/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/common/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/link_manager/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../global-db/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
-)
+# Link all DAP SDK libraries using helper function
+dap_test_link_libraries(${PROJECT_NAME})
 
-# Apply mock autowrap
+# Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
 dap_mock_autowrap(${PROJECT_NAME})
-
-# Enable --whole-archive for libraries with mocked functions
-# This makes --wrap work for functions inside static libraries
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_http_server)
-
-if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} pthread)
-endif()
 
 add_test(
     NAME ${PROJECT_NAME}
@@ -72,48 +38,27 @@ project(test_http_simple)
 
 # Include DAP Mock Framework  
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+# Include test helpers
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
 add_executable(${PROJECT_NAME}
     test_http_simple.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_client_test_fixtures.c
 )
 
-target_link_libraries(${PROJECT_NAME}
-    dap_core
-    dap_crypto
-    dap_io
-    dap_client
-    dap_stream
-    dap_stream_ch
-    dap_session
-    dap_http_server
-    dap_http_common
-    dap_enc_server
-    dap_link_manager
-    dap_global_db
-    dap_test
-)
+# Link all DAP SDK libraries using helper function
+dap_test_link_libraries(${PROJECT_NAME})
 
+# Add all DAP SDK includes using helper function
+dap_test_add_includes(${PROJECT_NAME})
+
+# Add fixtures include path
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/stream/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/ch/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/session/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/common/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/enc_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/link_manager/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../global-db/include
 )
 
-# Apply mock autowrap
+# Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
 dap_mock_autowrap(${PROJECT_NAME})
-
-if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} pthread)
-endif()
 
 add_test(
     NAME ${PROJECT_NAME}
