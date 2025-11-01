@@ -1,6 +1,6 @@
 # Prerequisites
-build/*
-debug/*
+build*/*
+debug*/*
 crypto/XKCP/Makefile
 .devcontainer/*
 cmake-build-*/

@@ -459,7 +459,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 l_peol++;                                                   /* Count terminal  <LF> */
                 l_len = l_peol - a_esocket->buf_in;
 
-                if ( 0 > (l_ret = dap_http_header_parse( l_http_client, (char *) a_esocket->buf_in, l_len )) ) {
+                if ( 0 > (l_ret = dap_http_header_server_parse( l_http_client, (char *) a_esocket->buf_in, l_len )) ) {
                     log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, a_esocket->buf_in );
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );

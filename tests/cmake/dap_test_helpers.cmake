@@ -69,24 +69,10 @@ function(dap_test_link_libraries TARGET_NAME)
     if(NOT TARGET dap_sdk_object)
         message(FATAL_ERROR "dap_sdk_object target not found. Tests require combined object library for --wrap support.")
     endif()
-    # For OBJECT libraries, need to use $<TARGET_OBJECTS:> generator expression
-    # to include the actual object files in the link command
-    target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:dap_sdk_object>)
-    target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
-    message(STATUS "[TEST] ${TARGET_NAME}: Using dap_sdk_object (--wrap will work for internal calls)")
     
-    # External dependencies (if needed)
-    if(TARGET dap_json-c)
-        target_link_libraries(${TARGET_NAME} PRIVATE dap_json-c)
-    endif()
-    
-    # System libraries
-    if(NOT ANDROID)
-        target_link_libraries(${TARGET_NAME} PRIVATE pthread)
-    endif()
-    if(UNIX AND NOT ANDROID AND NOT DARWIN)
-        target_link_libraries(${TARGET_NAME} PRIVATE rt)
-    endif()
+    # Link all SDK modules and their external dependencies
+    # This single call does everything: object files + external libs
+    dap_link_all_sdk_modules_for_test(${TARGET_NAME} DAP_INTERNAL_MODULES)
 endfunction()
 
 # =========================================

@@ -71,6 +71,7 @@ int main() {
 
 Обновите CMakeLists.txt:
 ```cmake
+# Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
 target_link_libraries(my_test dap_test dap_core pthread)
 ```
 
@@ -114,10 +115,14 @@ int main() {
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
+# Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
 target_link_libraries(my_test dap_test dap_core pthread)
 
 # Автогенерация --wrap флагов линкера
 dap_mock_autowrap(my_test)
+
+# Если нужно мокировать функции в статических библиотеках:
+# dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
 
 \newpage

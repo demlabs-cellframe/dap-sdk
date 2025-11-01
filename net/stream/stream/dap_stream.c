@@ -593,7 +593,7 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
         dap_http_out_header_add(a_http_client,"Cache-Control","no-cache");
 
         if(l_stream->stream_size>0)
-            dap_http_out_header_add_f(a_http_client,"Content-Length","%u", (unsigned int) l_stream->stream_size );
+            dap_http_header_server_out_header_add_f(a_http_client,"Content-Length","%u", (unsigned int) l_stream->stream_size );
 
         a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
         dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);

@@ -233,7 +233,106 @@ void test_retry_logic() {
 }
 ```
 
-### 4.6 Асинхронное выполнение моков
+### 4.6 Мокирование в статических библиотеках
+
+Пример теста, который мокирует функции внутри статической библиотеки `dap_stream`:
+
+**CMakeLists.txt:**
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_stream_mocks
+    test_stream_mocks.c
+    test_stream_mocks_wrappers.c
+)
+
+target_link_libraries(test_stream_mocks
+    dap_test
+    dap_stream       # Статическая библиотека - функции внутри нужно мокировать
+    dap_net
+    dap_core
+    pthread
+)
+
+target_include_directories(test_stream_mocks PRIVATE
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework
+    ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
+)
+
+# Шаг 1: Автогенерация --wrap флагов из исходников теста
+dap_mock_autowrap(test_stream_mocks)
+
+# Шаг 2: Оборачивание статической библиотеки --whole-archive
+# Это заставляет линкер включить все символы из dap_stream,
+# включая внутренние функции, которые нужно мокировать
+dap_mock_autowrap_with_static(test_stream_mocks dap_stream)
+```
+
+**test_stream_mocks.c:**
+```c
+#include "dap_test.h"
+#include "dap_mock.h"
+#include "dap_stream.h"
+#include "dap_common.h"
+#include <assert.h>
+
+#define LOG_TAG "test_stream_mocks"
+
+// Мокируем функцию, которая используется внутри dap_stream
+DAP_MOCK_DECLARE(dap_net_tun_write, {
+    .return_value.i = 0,  // Успешная запись
+    .delay = {
+        .type = DAP_MOCK_DELAY_FIXED,
+        .fixed_us = 10000  // 10ms задержка
+    }
+});
+
+// Оборачиваем функцию для мокирования
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_net_tun_write,
+    PARAM(int, a_fd),
+    PARAM(const void*, a_buf),
+    PARAM(size_t, a_len)
+) {
+    // Логика мока - симулируем успешную запись
+    log_it(L_DEBUG, "Mock: dap_net_tun_write called (fd=%d, len=%zu)", a_fd, a_len);
+    return 0;
+}
+
+void test_stream_write_with_mock(void) {
+    log_it(L_INFO, "TEST: Stream write with mocked tun_write");
+    
+    // Создаём стрим (dap_stream использует dap_net_tun_write внутри)
+    dap_stream_t *stream = dap_stream_create(...);
+    assert(stream != NULL);
+    
+    // Выполняем запись - должна использовать мок dap_net_tun_write
+    int result = dap_stream_write(stream, "test data", 9);
+    
+    // Проверяем что мок был вызван
+    assert(result == 0);
+    assert(DAP_MOCK_GET_CALL_COUNT(dap_net_tun_write) > 0);
+    
+    dap_stream_delete(stream);
+    log_it(L_INFO, "[+] Test passed");
+}
+
+int main() {
+    dap_common_init("test_stream_mocks", NULL);
+    
+    test_stream_write_with_mock();
+    
+    dap_common_deinit();
+    return 0;
+}
+```
+
+**Ключевые моменты:**
+1. `dap_mock_autowrap()` должно быть вызвано **до** `dap_mock_autowrap_with_static()`
+2. Укажите все статические библиотеки, в которых нужно мокировать функции
+3. `--whole-archive` может увеличить размер исполняемого файла
+4. Работает только с GCC, Clang и MinGW
+
+### 4.7 Асинхронное выполнение моков
 
 Пример демонстрации async mock callback'ов с thread pool:
 

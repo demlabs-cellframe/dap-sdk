@@ -536,7 +536,7 @@ pthread_t       l_tid;
             log_it(L_DEBUG, "Worker %u thread is not joinable", i);
         } else if (l_join_result != 0) {
             log_it(L_WARNING, "pthread_join failed for worker %u: %d", i, l_join_result);
-        }
+    }
     }
     
     DAP_DELETE(l_thread_ids);

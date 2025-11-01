@@ -124,9 +124,9 @@ static void s_teardown_server_test(void) {
         // 3. Deinitialize event system (it will stop workers and wait for threads internally)
         // Only if events system is still initialized
         if (dap_events_workers_init_status()) {
-            TEST_INFO("Cleaning up event system...");
-            dap_events_deinit();
-            TEST_INFO("Event system cleaned up");
+        TEST_INFO("Cleaning up event system...");
+        dap_events_deinit();
+        TEST_INFO("Event system cleaned up");
         }
         
         s_server_initialized = false;

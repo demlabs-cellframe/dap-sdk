@@ -738,6 +738,92 @@ function(create_final_shared_library)
 endfunction()
 
 # =========================================
+# COLLECT EXTERNAL LIBRARIES FROM OBJECT MODULES
+# =========================================
+# Collects all external (non-OBJECT) libraries from a list of OBJECT modules
+# This is useful for tests and final library linking
+# Usage: collect_external_libraries_from_modules(MODULE_LIST RESULT_VAR)
+#   MODULE_LIST - list of module names (e.g., ${DAP_INTERNAL_MODULES})
+#   RESULT_VAR  - output variable name for collected libraries
+function(collect_external_libraries_from_modules MODULE_LIST RESULT_VAR)
+    set(ALL_EXTERNAL_LIBS "")
+    
+    foreach(MODULE ${MODULE_LIST})
+        if(TARGET ${MODULE})
+            # Collect INTERFACE_LINK_LIBRARIES from each module
+            get_target_property(MODULE_INTERFACE_LIBS ${MODULE} INTERFACE_LINK_LIBRARIES)
+            if(MODULE_INTERFACE_LIBS)
+                foreach(LIB ${MODULE_INTERFACE_LIBS})
+                    if(TARGET ${LIB})
+                        # Check if it's an OBJECT library (internal) or external library
+                        get_target_property(LIB_TYPE ${LIB} TYPE)
+                        if(NOT LIB_TYPE STREQUAL "OBJECT_LIBRARY")
+                            # External library - collect it
+                            list(APPEND ALL_EXTERNAL_LIBS ${LIB})
+                        endif()
+                    else()
+                        # System library (like pthread, rt, dl)
+                        list(APPEND ALL_EXTERNAL_LIBS ${LIB})
+                    endif()
+                endforeach()
+            endif()
+        endif()
+    endforeach()
+    
+    # Remove duplicates
+    if(ALL_EXTERNAL_LIBS)
+        list(REMOVE_DUPLICATES ALL_EXTERNAL_LIBS)
+    endif()
+    
+    set(${RESULT_VAR} ${ALL_EXTERNAL_LIBS} PARENT_SCOPE)
+endfunction()
+
+# =========================================
+# LINK ALL SDK MODULES TO TEST TARGET
+# =========================================
+# Links all SDK object modules and their external dependencies to a test target
+# This is a convenience function that:
+#   1. Adds all object files from SDK modules
+#   2. Links the test framework
+#   3. Automatically collects and links all external dependencies
+# Usage: dap_link_all_sdk_modules_for_test(TEST_TARGET MODULE_LIST_VAR)
+#   TEST_TARGET      - test executable target name
+#   MODULE_LIST_VAR  - variable containing list of SDK modules (e.g., DAP_INTERNAL_MODULES)
+function(dap_link_all_sdk_modules_for_test TEST_TARGET MODULE_LIST_VAR)
+    # Get list of SDK modules from cache
+    get_property(SDK_MODULES CACHE ${MODULE_LIST_VAR} PROPERTY VALUE)
+    
+    if(NOT SDK_MODULES)
+        message(FATAL_ERROR "dap_link_all_sdk_modules_for_test: No modules found in ${MODULE_LIST_VAR}")
+    endif()
+    
+    # Collect object files from all SDK modules
+    set(ALL_OBJECTS "")
+    foreach(MODULE ${SDK_MODULES})
+        if(TARGET ${MODULE})
+            list(APPEND ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
+        endif()
+    endforeach()
+    
+    # Add all SDK object files to the test executable
+    target_sources(${TEST_TARGET} PRIVATE ${ALL_OBJECTS})
+    
+    # Link test framework
+    if(TARGET dap_test)
+        target_link_libraries(${TEST_TARGET} PRIVATE dap_test)
+    endif()
+    
+    # Collect and link all external libraries from SDK modules
+    collect_external_libraries_from_modules("${SDK_MODULES}" ALL_EXTERNAL_LIBS)
+    if(ALL_EXTERNAL_LIBS)
+        target_link_libraries(${TEST_TARGET} PRIVATE ${ALL_EXTERNAL_LIBS})
+        message(STATUS "[TEST] ${TEST_TARGET}: External libs: ${ALL_EXTERNAL_LIBS}")
+    endif()
+    
+    message(STATUS "[TEST] ${TEST_TARGET}: Linked ${MODULE_LIST_VAR} modules")
+endfunction()
+
+# =========================================
 # INSTALLATION HELPER
 # =========================================
 # Installs library, headers, and pkg-config profile

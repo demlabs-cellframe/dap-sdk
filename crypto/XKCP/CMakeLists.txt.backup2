@@ -187,11 +187,9 @@ else()
     SET(XKCP_BUILD_LIB ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET})
     file(MAKE_DIRECTORY ${XKCP_BUILD_INCLUDES})
 
-    # Build the library - Makefile automatically copies headers to .headers/ directory
     add_custom_target(BuildXKCP ALL
         COMMAND ${CMAKE_COMMAND} -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} CFLAGS=${MAKE_C_FLAGS} SDKROOT=${CMAKE_OSX_SYSROOT} ${MAKE} -C ${XKCP_BUILD_DIR} ${XKCP_TARGET}
         BYPRODUCTS ${XKCP_BUILD_LIB}
-        COMMENT "Building XKCP library ${XKCP_TARGET} (headers are automatically copied by Makefile)"
     )
 endif()
 

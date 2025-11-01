@@ -55,7 +55,7 @@ struct ht_field {
     char    name [128];                                                     /* Name of the HTTP Field */
     size_t  namelen;                                                        /* Length of the field */
 
-} ht_fields [HTTP_FLD$K_EOL + 1] = {
+} ht_fields_server [HTTP_FLD$K_EOL + 1] = {
     {HTTP_FLD$K_CONNECTION,     $STRINI("Connection")},
     {HTTP_FLD$K_CONTENT_TYPE,   $STRINI("Content-Type")},
     {HTTP_FLD$K_CONTENT_LEN,    $STRINI("Content-Length")},
@@ -68,26 +68,26 @@ struct ht_field {
 
 
 /**
- * @brief dap_http_header_init Init module
+ * @brief dap_http_header_server_init Init module
  * @return Zero if ok others if not
  */
-int dap_http_header_init( )
+int dap_http_header_server_init( )
 {
     log_it( L_NOTICE, "Initialized HTTP headers module" );
     return 0;
 }
 
 /**
- * @brief dap_http_header_deinit Deinit module
+ * @brief dap_http_header_server_deinit Deinit module
  */
-void dap_http_header_deinit()
+void dap_http_header_server_deinit()
 {
     log_it( L_INFO, "HTTP headers module deinit" );
 }
 
 
 /**
- * @brief dap_http_header_parse Parse string with HTTP header
+ * @brief dap_http_header_server_parse Parse string with HTTP header
  * Server-specific parser that fills dap_http_client_t fields
  * @param cl_ht HTTP client instance
  * @param ht_line String to parse
@@ -98,7 +98,7 @@ void dap_http_header_deinit()
 #define	CR      '\r'
 #define	LF      '\n'
 
-int dap_http_header_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len)
+int dap_http_header_server_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len)
 {
 char l_name[DAP_HTTP$SZ_FIELD_NAME] = {0};
 char l_value[DAP_HTTP$SZ_FIELD_VALUE] = {0};
@@ -121,7 +121,7 @@ struct ht_field *l_ht;
      * So at this moment we known start and end of a field name, so we can try to recognize it
      * against a set of interested fields
      */
-    for ( l_ht = ht_fields; l_ht->namelen; l_ht++)
+    for ( l_ht = ht_fields_server; l_ht->namelen; l_ht++)
         {
             if ( l_namelen == l_ht->namelen )
                 if ( !memcmp(l_name, l_ht->name, l_namelen) )
@@ -163,14 +163,14 @@ struct ht_field *l_ht;
 
 
 /**
- * @brief dap_http_out_header_add_f Add header to the output queue with format-filled string
+ * @brief dap_http_header_server_out_header_add_f Add header to the output queue with format-filled string
  * @param ht HTTP client instance
  * @param name Header name
  * @param value Formatted string to header value
  * @param ... Arguments for formatted string
  * @return
  */
-dap_http_header_t * dap_http_out_header_add_f(dap_http_client_t *ht, const char *name, const char *value, ...)
+dap_http_header_t * dap_http_header_server_out_header_add_f(dap_http_client_t *ht, const char *name, const char *value, ...)
 {
     va_list ap;
     dap_http_header_t * ret;

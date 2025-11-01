@@ -130,13 +130,29 @@ typedef struct dap_mock_config {
     bool enabled;                      // Включить/выключить мок
     dap_mock_return_value_t return_value;  // Возвращаемое значение
     dap_mock_delay_t delay;            // Задержка выполнения
+    bool async;                        // Выполнять callback асинхронно (default: false)
+    bool call_original_before;        // Вызвать оригинальную функцию ДО мок-логики (default: false)
+    bool call_original_after;         // Вызвать оригинальную функцию ПОСЛЕ мок-логики (default: false)
 } dap_mock_config_t;
 
-// По умолчанию: enabled=true, return=0, без задержки
+// По умолчанию: enabled=true, return=0, без задержки, sync, без вызова оригинала
 #define DAP_MOCK_CONFIG_DEFAULT { \
     .enabled = true, \
     .return_value = {0}, \
-    .delay = {.type = DAP_MOCK_DELAY_NONE} \
+    .delay = {.type = DAP_MOCK_DELAY_NONE}, \
+    .async = false, \
+    .call_original_before = false, \
+    .call_original_after = false \
+}
+
+// Passthrough конфигурация: отслеживание вызовов, но всегда вызывается оригинал перед моком
+#define DAP_MOCK_CONFIG_PASSTHROUGH { \
+    .enabled = true, \
+    .return_value = {0}, \
+    .delay = {.type = DAP_MOCK_DELAY_NONE}, \
+    .async = false, \
+    .call_original_before = true, \
+    .call_original_after = false \
 }
 ```
 
@@ -284,7 +300,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
 - Формат: `PARAM(type, name)`
 - Автоматически извлекает тип и имя
 - Правильно обрабатывает приведение к void*
-- Использует `_Generic()` для корректного приведения указателей
+- Использует `uintptr_t` для безопасного приведения указателей и целочисленных типов
 
 #### Упрощенные макросы оберток
 
@@ -317,6 +333,122 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 2. Извлекает имена функций
 3. Добавляет `-Wl,--wrap=function_name` к флагам линкера
 4. Работает с GCC, Clang, MinGW
+
+#### Мокирование функций в статических библиотеках
+
+**Проблема:** При линковке статических библиотек (`lib*.a`) функции могут быть исключены из финального исполняемого файла, если они не используются напрямую. Это приводит к тому, что `--wrap` флаги не работают для функций внутри статических библиотек.
+
+**Решение:** Используйте функцию `dap_mock_autowrap_with_static()` для оборачивания статических библиотек флагами `--whole-archive`, что заставляет линкер включить все символы из статической библиотеки.
+
+**Пример использования:**
+
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_http_client 
+    test_http_client.c
+    test_http_client_mocks.c
+)
+
+# Обычная линковка
+target_link_libraries(test_http_client
+    dap_test           # Test framework
+    dap_core           # Core library
+    dap_http_server    # Статическая библиотека, которую нужно мокировать
+    pthread
+)
+
+# Автогенерация --wrap флагов из исходников теста
+dap_mock_autowrap(test_http_client)
+
+# Важно: обернуть статическую библиотеку --whole-archive ПОСЛЕ dap_mock_autowrap!
+# Это заставляет линкер включить все символы из dap_http_server,
+# включая те, которые используются только внутри библиотеки
+dap_mock_autowrap_with_static(test_http_client dap_http_server)
+```
+
+**Что делает `dap_mock_autowrap_with_static`:**
+1. Перестраивает список линкуемых библиотек
+2. Оборачивает указанные статические библиотеки флагами:
+   - `-Wl,--whole-archive` (перед библиотекой)
+   - `<library_name>` (сама библиотека)
+   - `-Wl,--no-whole-archive` (после библиотеки)
+3. Добавляет `-Wl,--allow-multiple-definition` для обработки дублирующихся символов
+
+**Важные замечания:**
+
+1. **Порядок вызовов важен:**
+   ```cmake
+   # Правильно:
+   dap_mock_autowrap(test_target)                    # Сначала автогенерация
+   dap_mock_autowrap_with_static(test_target lib)    # Потом --whole-archive
+   
+   # Неправильно:
+   dap_mock_autowrap_with_static(test_target lib)    # Это перезапишет предыдущие настройки
+   dap_mock_autowrap(test_target)
+   ```
+
+2. **Множественные библиотеки:**
+   ```cmake
+   # Можно обернуть несколько статических библиотек сразу
+   dap_mock_autowrap_with_static(test_target 
+       dap_http_server
+       dap_stream
+       dap_crypto
+   )
+   ```
+
+3. **Ограничения:**
+   - Работает только с GCC, Clang и MinGW
+   - Может увеличить размер исполняемого файла
+   - Не используйте для shared библиотек (`.so`, `.dll`)
+
+**Пример полной конфигурации:**
+
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_stream_mocks
+    test_stream_mocks.c
+    test_stream_mocks_wrappers.c
+)
+
+target_link_libraries(test_stream_mocks
+    dap_test
+    dap_stream       # Статическая библиотека
+    dap_net          # Статическая библиотека
+    dap_core
+    pthread
+)
+
+target_include_directories(test_stream_mocks PRIVATE
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework
+    ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
+)
+
+# Автогенерация --wrap флагов
+dap_mock_autowrap(test_stream_mocks)
+
+# Оборачивание статических библиотек для мокирования внутренних функций
+dap_mock_autowrap_with_static(test_stream_mocks 
+    dap_stream
+    dap_net
+)
+```
+
+**Проверка правильности настройки:**
+
+```bash
+# Проверьте флаги линкера
+cd build
+make VERBOSE=1 | grep -E "--wrap|--whole-archive"
+
+# Должно быть:
+# -Wl,--wrap=dap_stream_write
+# -Wl,--wrap=dap_net_tun_create
+# -Wl,--whole-archive ... dap_stream ... -Wl,--no-whole-archive
+# -Wl,--whole-archive ... dap_net ... -Wl,--no-whole-archive
+```
 
 ### 3.5 Асинхронное выполнение моков
 

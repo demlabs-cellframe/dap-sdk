@@ -71,6 +71,7 @@ int main() {
 
 Update CMakeLists.txt:
 ```cmake
+# Link test framework library (includes dap_test, dap_mock, etc.)
 target_link_libraries(my_test dap_test dap_core pthread)
 ```
 
@@ -114,10 +115,14 @@ Update CMakeLists.txt:
 ```cmake
 include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
 
+# Link test framework library (includes dap_test, dap_mock, etc.)
 target_link_libraries(my_test dap_test dap_core pthread)
 
 # Auto-generate --wrap linker flags
 dap_mock_autowrap(my_test)
+
+# If you need to mock functions in static libraries:
+# dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
 
 \newpage

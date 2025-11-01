@@ -597,3 +597,14 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 #define DAP_MOCK_SET_DELAY_VARIANCE_MS(func_name, center_ms, variance_ms) \
     DAP_MOCK_SET_DELAY_VARIANCE(func_name, (center_ms) * 1000, (variance_ms) * 1000)
 
+// ===========================================================================
+// LINKER WRAPPER MACROS (automatically included)
+// ===========================================================================
+
+// Include linker wrapper macros if not already included
+// This allows using DAP_MOCK_WRAPPER_CUSTOM without explicit include
+// Note: Generated macros header (if exists) is included via CMake's -include flag
+// before this file, so _DAP_MOCK_MAP macros are already available
+#ifndef DAP_MOCK_LINKER_WRAPPER_H
+#include "dap_mock_linker_wrapper.h"
+#endif

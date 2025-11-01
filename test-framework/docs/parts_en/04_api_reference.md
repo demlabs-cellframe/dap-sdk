@@ -130,13 +130,29 @@ typedef struct dap_mock_config {
     bool enabled;                      // Enable/disable mock
     dap_mock_return_value_t return_value;  // Return value
     dap_mock_delay_t delay;            // Execution delay
+    bool async;                        // Execute callback asynchronously (default: false)
+    bool call_original_before;         // Call original function BEFORE mock logic (default: false)
+    bool call_original_after;          // Call original function AFTER mock logic (default: false)
 } dap_mock_config_t;
 
-// Default: enabled=true, return=0, no delay
+// Default: enabled=true, return=0, no delay, sync, no original call
 #define DAP_MOCK_CONFIG_DEFAULT { \
     .enabled = true, \
     .return_value = {0}, \
-    .delay = {.type = DAP_MOCK_DELAY_NONE} \
+    .delay = {.type = DAP_MOCK_DELAY_NONE}, \
+    .async = false, \
+    .call_original_before = false, \
+    .call_original_after = false \
+}
+
+// Passthrough config: track calls but always call original before mock (for integration tests)
+#define DAP_MOCK_CONFIG_PASSTHROUGH { \
+    .enabled = true, \
+    .return_value = {0}, \
+    .delay = {.type = DAP_MOCK_DELAY_NONE}, \
+    .async = false, \
+    .call_original_before = true, \
+    .call_original_after = false \
 }
 ```
 
@@ -284,7 +300,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
 - Format: `PARAM(type, name)`
 - Extracts type and name automatically
 - Handles casting to void* correctly
-- Uses `_Generic()` for proper pointer casting
+- Uses `uintptr_t` for safe casting of pointers and integer types
 
 #### Simpler Wrapper Macros
 
@@ -317,6 +333,122 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 2. Extracts function names
 3. Adds `-Wl,--wrap=function_name` to linker flags
 4. Works with GCC, Clang, MinGW
+
+#### Mocking Functions in Static Libraries
+
+**Problem:** When linking static libraries (`lib*.a`), functions may be excluded from the final executable if they are not directly used. This causes `--wrap` flags to not work for functions inside static libraries.
+
+**Solution:** Use the `dap_mock_autowrap_with_static()` function to wrap static libraries with `--whole-archive` flags, which forces the linker to include all symbols from the static library.
+
+**Usage Example:**
+
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_http_client 
+    test_http_client.c
+    test_http_client_mocks.c
+)
+
+# Normal linking
+target_link_libraries(test_http_client
+    dap_test           # Test framework
+    dap_core           # Core library
+    dap_http_server   # Static library to mock
+    pthread
+)
+
+# Auto-generate --wrap flags from test sources
+dap_mock_autowrap(test_http_client)
+
+# Important: wrap static library with --whole-archive AFTER dap_mock_autowrap!
+# This forces linker to include all symbols from dap_http_server,
+# including those only used internally
+dap_mock_autowrap_with_static(test_http_client dap_http_server)
+```
+
+**What `dap_mock_autowrap_with_static` does:**
+1. Rebuilds the link libraries list
+2. Wraps specified static libraries with flags:
+   - `-Wl,--whole-archive` (before library)
+   - `<library_name>` (the library itself)
+   - `-Wl,--no-whole-archive` (after library)
+3. Adds `-Wl,--allow-multiple-definition` to handle duplicate symbols
+
+**Important Notes:**
+
+1. **Order of calls matters:**
+   ```cmake
+   # Correct:
+   dap_mock_autowrap(test_target)                    # First auto-generation
+   dap_mock_autowrap_with_static(test_target lib)    # Then --whole-archive
+   
+   # Incorrect:
+   dap_mock_autowrap_with_static(test_target lib)    # This overwrites previous setup
+   dap_mock_autowrap(test_target)
+   ```
+
+2. **Multiple libraries:**
+   ```cmake
+   # Can wrap multiple static libraries at once
+   dap_mock_autowrap_with_static(test_target 
+       dap_http_server
+       dap_stream
+       dap_crypto
+   )
+   ```
+
+3. **Limitations:**
+   - Works only with GCC, Clang, and MinGW
+   - May increase executable size
+   - Do not use for shared libraries (`.so`, `.dll`)
+
+**Complete Configuration Example:**
+
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_stream_mocks
+    test_stream_mocks.c
+    test_stream_mocks_wrappers.c
+)
+
+target_link_libraries(test_stream_mocks
+    dap_test
+    dap_stream       # Static library
+    dap_net          # Static library
+    dap_core
+    pthread
+)
+
+target_include_directories(test_stream_mocks PRIVATE
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework
+    ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
+)
+
+# Auto-generate --wrap flags
+dap_mock_autowrap(test_stream_mocks)
+
+# Wrap static libraries for mocking internal functions
+dap_mock_autowrap_with_static(test_stream_mocks 
+    dap_stream
+    dap_net
+)
+```
+
+**Verifying Configuration:**
+
+```bash
+# Check linker flags
+cd build
+make VERBOSE=1 | grep -E "--wrap|--whole-archive"
+
+# Should see:
+# -Wl,--wrap=dap_stream_write
+# -Wl,--wrap=dap_net_tun_create
+# -Wl,--whole-archive ... dap_stream ... -Wl,--no-whole-archive
+# -Wl,--whole-archive ... dap_net ... -Wl,--no-whole-archive
+```
 
 ### 3.5 Async Mock Execution
 

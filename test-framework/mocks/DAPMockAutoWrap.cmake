@@ -1,68 +1,48 @@
-# DAP SDK Mock Auto-Wrapper CMake Integration
-# Provides function to automatically generate and apply linker wrapping
-# 
+# DAP Mock AutoWrap CMake Module
+# Provides automatic linker wrapping for DAP mock framework
+#
 # Usage:
 #   include(DAPMockAutoWrap.cmake)
-#   dap_mock_autowrap(test_my_module test_my_module.c)
-
-# Save the directory where this module is located
-set(DAP_MOCK_AUTOWRAP_MODULE_DIR ${CMAKE_CURRENT_LIST_DIR})
-
-# Find bash or powershell for running the generator script
-if(UNIX)
-    find_program(BASH_EXECUTABLE bash)
-    if(BASH_EXECUTABLE)
-        set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
-        set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
-    endif()
-elseif(WIN32)
-    find_program(POWERSHELL_EXECUTABLE powershell)
-    if(POWERSHELL_EXECUTABLE)
-        set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
-        set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
-    endif()
-endif()
-
-if(NOT SCRIPT_EXECUTOR)
-    message(WARNING "Neither bash nor PowerShell found - dap_mock_autowrap() will not work")
-endif()
-
+#   dap_mock_autowrap(my_test_target)
+#   dap_mock_autowrap_with_static(my_test_target dap_client dap_stream)
 #
-# dap_mock_autowrap(target_name)
+# This module automatically:
+# 1. Scans source files for DAP_MOCK_DECLARE macros
+# 2. Generates linker --wrap options
+# 3. Applies them to the target
 #
-# Automatically scans ALL source files of target for DAP_MOCK_DECLARE() calls and:
-# 1. Generates linker response file with --wrap options
-# 2. Generates CMake fragment with configuration
-# 3. Applies wrap options to target_name
-# 4. Generates wrapper template if needed
-#
-# Example:
-#   add_executable(test_vpn_tun test_vpn_tun.c test_mocks.c)
-#   dap_mock_autowrap(test_vpn_tun)
-#
-function(dap_mock_autowrap TARGET_NAME)
-    # Check if script executor is available (CACHE variables are accessible in functions)
-    if(NOT SCRIPT_EXECUTOR)
-        # Try to find bash/powershell again in case variable wasn't set
-        if(UNIX)
-            find_program(BASH_EXECUTABLE bash)
-            if(BASH_EXECUTABLE)
-                set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
-                set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
-            endif()
-        elseif(WIN32)
-            find_program(POWERSHELL_EXECUTABLE powershell)
-            if(POWERSHELL_EXECUTABLE)
-                set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
-                set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
-            endif()
+# For static libraries, use dap_mock_autowrap_with_static to wrap with --whole-archive
+
+# Save module directory for script paths
+get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+
+# Detect script executor (bash or PowerShell)
+if(NOT DEFINED SCRIPT_EXECUTOR)
+    if(UNIX)
+        find_program(BASH_EXECUTABLE bash)
+        if(BASH_EXECUTABLE)
+            set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+            set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
+        endif()
+    elseif(WIN32)
+        find_program(POWERSHELL_EXECUTABLE powershell)
+        if(POWERSHELL_EXECUTABLE)
+            set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+            set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
         endif()
     endif()
     
     if(NOT SCRIPT_EXECUTOR)
         message(FATAL_ERROR "Bash or PowerShell required for dap_mock_autowrap(). Please install bash (Unix) or PowerShell (Windows)")
     endif()
-    
+endif()
+
+#
+# dap_mock_autowrap(target_name)
+#
+# Automatically detect DAP_MOCK_DECLARE in target sources and generate --wrap options
+#
+function(dap_mock_autowrap TARGET_NAME)
     # Get all source files from the target
     get_target_property(TARGET_SOURCES ${TARGET_NAME} SOURCES)
     if(NOT TARGET_SOURCES)
@@ -96,6 +76,7 @@ function(dap_mock_autowrap TARGET_NAME)
     set(WRAP_RESPONSE_FILE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrap.txt")
     set(CMAKE_FRAGMENT "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mocks.cmake")
     set(WRAPPER_TEMPLATE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrappers_template.c")
+    set(MACROS_HEADER "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mock_macros.h")
     
     # Path to generator script (use saved module directory)
     set(GENERATOR_SCRIPT "${DAP_MOCK_AUTOWRAP_MODULE_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
@@ -124,7 +105,7 @@ function(dap_mock_autowrap TARGET_NAME)
     
     # STAGE 2: Setup re-generation on source file changes
     add_custom_command(
-        OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
+        OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT} ${MACROS_HEADER}
         COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
         DEPENDS ${ALL_SOURCES}
         COMMENT "Regenerating mock wrappers for ${TARGET_NAME}"
@@ -135,7 +116,20 @@ function(dap_mock_autowrap TARGET_NAME)
         DEPENDS ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT}
     )
     add_dependencies(${TARGET_NAME} ${TARGET_NAME}_mock_gen)
-    
+
+    # STAGE 2.5: Add include directory for generated macros header
+    target_include_directories(${TARGET_NAME} PRIVATE ${MOCK_GEN_DIR})
+    # Include generated macros header via compiler flag -include
+    # This ensures the macros are available before dap_mock.h is processed
+    # File is generated by dap_mock_autowrap.sh, so it should exist after generation
+    # Use absolute path to ensure it's found
+    target_compile_options(${TARGET_NAME} PRIVATE 
+        "-include" "${MACROS_HEADER}")
+    # Also define macro flag to indicate macros are available (for conditional inclusion)
+    # This is a flag, not a macro with value - used for #ifdef checks
+    target_compile_definitions(${TARGET_NAME} PRIVATE 
+        DAP_MOCK_GENERATED_MACROS_H)
+
     # STAGE 3: Apply wrap options (file should exist now)
     if(EXISTS ${WRAP_RESPONSE_FILE})
         # Check if file is empty (no mocks)
@@ -185,15 +179,17 @@ endfunction()
 #
 # dap_mock_autowrap_with_static(target_name library1 library2 ...)
 #
-# Wrap specified static libraries with --whole-archive to make --wrap work
-# This forces linker to process all symbols from static libraries
+# Wrap specified static libraries with --whole-archive and --start-group/--end-group
+# to make --wrap work correctly with circular dependencies.
+# This forces linker to process all symbols from static libraries and resolve
+# circular dependencies properly.
 #
 # Example:
 #   target_link_libraries(test_http dap_core dap_http_server dap_test)
 #   dap_mock_autowrap_with_static(test_http dap_http_server)
 #
 # Result:
-#   Links as: dap_core -Wl,--whole-archive dap_http_server -Wl,--no-whole-archive dap_test
+#   Links as: dap_core -Wl,--start-group -Wl,--whole-archive dap_http_server -Wl,--no-whole-archive -Wl,--end-group dap_test
 #
 function(dap_mock_autowrap_with_static TARGET_NAME)
     set(LIBS_TO_WRAP ${ARGN})
@@ -211,19 +207,57 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         return()
     endif()
     
-    # Rebuild link libraries list with --whole-archive around specified libs
-    set(NEW_LIBS "")
+    # Remove duplicates first
+    list(REMOVE_DUPLICATES CURRENT_LIBS)
+    
+    # Collect libraries that need wrapping and their dependencies
+    set(WRAPPED_LIBS "")
+    set(OTHER_LIBS "")
+    
     foreach(LIB ${CURRENT_LIBS})
         # Check if this lib should be wrapped
         list(FIND LIBS_TO_WRAP ${LIB} LIB_INDEX)
         if(LIB_INDEX GREATER -1)
+            list(APPEND WRAPPED_LIBS ${LIB})
+        else()
+            list(APPEND OTHER_LIBS ${LIB})
+        endif()
+    endforeach()
+    
+    # Rebuild link libraries list:
+    # - Put wrapped libraries in --start-group with --whole-archive
+    # - Put ALL libraries (including dependencies) in the group to prevent duplicate linking
+    #   This ensures that --wrap works correctly even when libraries are linked multiple times
+    set(NEW_LIBS "")
+    
+    # Add wrapped libraries in --start-group with --whole-archive
+    # Also include all other libraries in the group to handle circular dependencies
+    if(WRAPPED_LIBS)
+        list(APPEND NEW_LIBS "-Wl,--start-group")
+        
+        # Add wrapped libraries with --whole-archive
+        foreach(LIB ${WRAPPED_LIBS})
             list(APPEND NEW_LIBS "-Wl,--whole-archive")
             list(APPEND NEW_LIBS ${LIB})
             list(APPEND NEW_LIBS "-Wl,--no-whole-archive")
-        else()
+        endforeach()
+        
+        # Add ALL other libraries inside the group (including dependencies)
+        # This prevents duplicate linking and ensures --wrap works correctly
+        foreach(LIB ${CURRENT_LIBS})
+            list(FIND WRAPPED_LIBS ${LIB} WRAP_INDEX)
+            if(WRAP_INDEX LESS 0)
+                list(APPEND NEW_LIBS ${LIB})
+            endif()
+        endforeach()
+        
+        list(APPEND NEW_LIBS "-Wl,--end-group")
+    else()
+        # No libraries to wrap - just add all libraries normally
+        foreach(LIB ${CURRENT_LIBS})
             list(APPEND NEW_LIBS ${LIB})
-        endif()
-    endforeach()
+        endforeach()
+    endif()
     
     # Clear and reset link libraries
     set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
@@ -232,7 +266,7 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
     # Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
     target_link_options(${TARGET_NAME} PRIVATE "-Wl,--allow-multiple-definition")
     
-    #message(STATUS "✅ Enabled --whole-archive for ${LIBS_TO_WRAP} in ${TARGET_NAME}")
+    #message(STATUS "✅ Enabled --whole-archive with --start-group/--end-group for ${LIBS_TO_WRAP} in ${TARGET_NAME}")
 endfunction()
 
 #
@@ -331,4 +365,3 @@ endfunction()
 
 # Print helpful info
 #message(STATUS "DAP Mock AutoWrap CMake module loaded")
-

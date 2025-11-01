@@ -23,18 +23,21 @@
 // ===========================================================================
 
 /**
- * PARAM macro - just passes through both arguments
- * This is the user-facing macro for declaring parameters
+ * PARAM macro - expands to type, name (without parentheses)
+ * This format allows ##__VA_ARGS__ to work correctly for empty detection
+ * Usage: PARAM(int, a), PARAM(char*, b) expands to: int, a, char*, b
  */
-#define PARAM(type, name) (type, name)
+#define PARAM(type, name) type, name
 
 /**
  * Extract type from PARAM(type, name) -> type
+ * Now PARAM expands to "type, name", so we need to extract first argument
  */
 #define _DAP_MOCK_PARAM_TYPE(type, name) type
 
 /**
  * Extract name from PARAM(type, name) -> name
+ * Now PARAM expands to "type, name", so we need to extract second argument
  */
 #define _DAP_MOCK_PARAM_NAME(type, name) name
 
@@ -48,43 +51,64 @@
 
 /**
  * Convert PARAM(type, name) to "type name" for function signature
+ * Now PARAM expands to "type, name", so this just combines them
  */
 #define _DAP_MOCK_PARAM_DECL(type, name) type name
 
 /**
- * Macros to apply operation to each PARAM() in parameter list
- * These generate comma-separated results
- */
-#define _DAP_MOCK_MAP_0(macro)
-#define _DAP_MOCK_MAP_1(macro, p1) macro p1
-#define _DAP_MOCK_MAP_2(macro, p1, p2) macro p1, macro p2
-#define _DAP_MOCK_MAP_3(macro, p1, p2, p3) macro p1, macro p2, macro p3
-#define _DAP_MOCK_MAP_4(macro, p1, p2, p3, p4) macro p1, macro p2, macro p3, macro p4
-#define _DAP_MOCK_MAP_5(macro, p1, p2, p3, p4, p5) macro p1, macro p2, macro p3, macro p4, macro p5
-#define _DAP_MOCK_MAP_6(macro, p1, p2, p3, p4, p5, p6) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6
-#define _DAP_MOCK_MAP_7(macro, p1, p2, p3, p4, p5, p6, p7) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7
-#define _DAP_MOCK_MAP_8(macro, p1, p2, p3, p4, p5, p6, p7, p8) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8
-#define _DAP_MOCK_MAP_9(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9
-#define _DAP_MOCK_MAP_10(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10
-#define _DAP_MOCK_MAP_11(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11
-#define _DAP_MOCK_MAP_12(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11, macro p12
-#define _DAP_MOCK_MAP_13(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11, macro p12, macro p13
-#define _DAP_MOCK_MAP_14(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11, macro p12, macro p13, macro p14
-#define _DAP_MOCK_MAP_15(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11, macro p12, macro p13, macro p14, macro p15
-#define _DAP_MOCK_MAP_16(macro, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16) macro p1, macro p2, macro p3, macro p4, macro p5, macro p6, macro p7, macro p8, macro p9, macro p10, macro p11, macro p12, macro p13, macro p14, macro p15, macro p16
-
-/**
  * Count number of PARAM() entries (supports 0-16 params)
+ * Uses a trick: when __VA_ARGS__ is empty, we detect it by checking if
+ * the first expansion yields a different result
+ * 
+ * Note: These macros are defined in generated macros header via -include.
+ * Fail-fast: if DAP_MOCK_GENERATED_MACROS_H is set but macros are missing,
+ * compilation will fail naturally when they are used.
  */
-#define _DAP_MOCK_NARGS(...) _DAP_MOCK_NARGS_IMPL(__VA_ARGS__, 16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
-#define _DAP_MOCK_NARGS_IMPL(_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,N,...) N
+// Macros are defined in generated header via -include flag
+// No fallback - fail-fast approach
 
 /**
- * Select appropriate MAP macro based on param count
+ * Detect empty __VA_ARGS__
+ * Uses GCC extension ##__VA_ARGS__ to remove comma when empty
+ * 
+ * Note: This macro is defined in generated macros header via -include.
+ * Fail-fast: if DAP_MOCK_GENERATED_MACROS_H is set but macros are missing,
+ * compilation will fail naturally when they are used.
  */
-#define _DAP_MOCK_MAP(macro, ...) _DAP_MOCK_MAP_IMPL(_DAP_MOCK_NARGS(__VA_ARGS__), macro, __VA_ARGS__)
-#define _DAP_MOCK_MAP_IMPL(N, macro, ...) _DAP_MOCK_MAP_IMPL2(N, macro, __VA_ARGS__)
-#define _DAP_MOCK_MAP_IMPL2(N, macro, ...) _DAP_MOCK_MAP_##N(macro, __VA_ARGS__)
+// Macros are defined in generated header via -include flag
+// No fallback - fail-fast approach
+
+/**
+ * Main mapping macro _DAP_MOCK_MAP
+ * 
+ * Note: This macro is defined in generated macros header via -include.
+ * Fail-fast: if DAP_MOCK_GENERATED_MACROS_H is set but macros are missing,
+ * compilation will fail naturally when they are used.
+ */
+// Macros are defined in generated header via -include flag
+// No fallback - fail-fast approach
+
+/**
+ * Helper macro to create args array, handling empty parameter list
+ * For 0 params: returns NULL (will be handled by dap_mock_prepare_call)
+ * For N params: returns array literal {param1, param2, ...}
+ * Uses _DAP_MOCK_IS_EMPTY for reliable empty detection
+ * Note: Uses GCC extension ##__VA_ARGS__ to handle empty lists correctly
+ * 
+ * NOTE: _DAP_MOCK_MAP must be defined in generated macros header
+ */
+#define _DAP_MOCK_ARGS_ARRAY(...) \
+    (_DAP_MOCK_IS_EMPTY(__VA_ARGS__) ? NULL : (void*[]){_DAP_MOCK_MAP(_DAP_MOCK_PARAM_TO_VOIDPTR, __VA_ARGS__)})
+
+/**
+ * Helper macro to get args count, handling empty parameter list
+ * For 0 params: returns 0
+ * For N params: returns N
+ * Uses _DAP_MOCK_IS_EMPTY for reliable empty detection
+ * Note: Uses GCC extension ##__VA_ARGS__ to handle empty lists correctly
+ */
+#define _DAP_MOCK_ARGS_COUNT(...) \
+    (_DAP_MOCK_IS_EMPTY(__VA_ARGS__) ? 0 : _DAP_MOCK_NARGS(__VA_ARGS__))
 
 /**
  * Create wrapper with custom logic (NO DUPLICATION!)
@@ -127,8 +151,9 @@
     extern return_type __real_##func_name(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_DECL, __VA_ARGS__)); \
     static return_type __mock_impl_##func_name(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_DECL, __VA_ARGS__)); \
     return_type __wrap_##func_name(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_DECL, __VA_ARGS__)) { \
-        void *__wrap_args[] = {_DAP_MOCK_MAP(_DAP_MOCK_PARAM_TO_VOIDPTR, __VA_ARGS__)}; \
-        if (dap_mock_prepare_call(g_mock_##func_name, __wrap_args, sizeof(__wrap_args)/sizeof(void*))) { \
+        void **__wrap_args = _DAP_MOCK_ARGS_ARRAY(__VA_ARGS__); \
+        int __wrap_args_count = _DAP_MOCK_ARGS_COUNT(__VA_ARGS__); \
+        if (dap_mock_prepare_call(g_mock_##func_name, __wrap_args, __wrap_args_count)) { \
             return __mock_impl_##func_name(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, __VA_ARGS__)); \
         } \
         return __real_##func_name(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, __VA_ARGS__)); \

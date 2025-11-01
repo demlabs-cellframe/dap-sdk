@@ -80,6 +80,10 @@ class RandomInputTestsCoins: public RandomInputTests {
 
 };
 
+// Fixture for unified InputTests suite
+class InputTestsSuite : public ::testing::Test {
+};
+
 class RandomOutputTests: public RandomTests {
 
 };
@@ -141,12 +145,7 @@ void check_equality256(uint256_t a, string aa) {
 
 
 
-TEST(InputTests, ZeroInputBase) {
-    uint256_t a = uint256_0;
-
-    check_equality256(a, 0);
-}
-
+// Parameterized tests for 64-bit input (keep separate as they use parameterization)
 TEST_P(Parameterized64Input, Input) {
     uint64_t a = GetParam();
     check_equality256(GET_256_FROM_64(a), a);
@@ -154,320 +153,229 @@ TEST_P(Parameterized64Input, Input) {
 INSTANTIATE_TEST_SUITE_P(OneBit, Parameterized64Input, testing::ValuesIn(one_bits));
 INSTANTIATE_TEST_SUITE_P(AllBit, Parameterized64Input, testing::ValuesIn(all_bits));
 
-TEST(InputTests, ZeroInputFromString) {
-    uint256_t a = uint256_0;
+// Unified InputTests suite - all 53 individual tests combined into one
+TEST_F(InputTestsSuite, AllInputTests) {
+    uint256_t a;
+    uint128_t a128;
+    uint256_t b;
+    int c;
 
+    // ZeroInputBase
+    a = uint256_0;
     check_equality256(a, 0);
-}
 
-TEST(InputTests, MaxInputFromString) {
-    uint256_t a = dap_uint256_scan_uninteger(MAX64STR);
+    // ZeroInputFromString
+    a = uint256_0;
+    check_equality256(a, 0);
 
+    // MaxInputFromString
+    a = dap_uint256_scan_uninteger(MAX64STR);
     check_equality256(a, MAX64STR);
-}
 
-TEST(InputTests, Min128FromString) {
-    uint256_t a = dap_uint256_scan_uninteger(MIN128STR);
-
+    // Min128FromString
+    a = dap_uint256_scan_uninteger(MIN128STR);
     check_equality256(a, MIN128STR);
-}
 
-TEST(InputTests, Max128FromString) {
-    uint256_t a = dap_uint256_scan_uninteger(MAX128STR);
-
+    // Max128FromString
+    a = dap_uint256_scan_uninteger(MAX128STR);
     check_equality256(a, MAX128STR);
-}
 
-TEST(InputTests, Min256FromString) {
-    uint256_t a = dap_uint256_scan_uninteger(MIN256STR);
-
+    // Min256FromString
+    a = dap_uint256_scan_uninteger(MIN256STR);
     check_equality256(a, MIN256STR);
-}
 
-TEST(InputTests, Max256FromString) {
-    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
-
+    // Max256FromString
+    a = dap_uint256_scan_uninteger(MAX256STR);
     check_equality256(a, MAX256STR);
-}
 
-TEST(InputTests, EmptyInput) {
-    uint256_t a = dap_uint256_scan_uninteger("");
-
+    // EmptyInput
+    a = dap_uint256_scan_uninteger("");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, NullInput) {
-    uint256_t a = dap_uint256_scan_uninteger(NULL);
-
+    // NullInput
+    a = dap_uint256_scan_uninteger(NULL);
     check_equality256(a, 0);
-}
 
-TEST(InputTests, TooLongInputSome) {
-    //some decimal symbols more
-    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993123465");
-
+    // TooLongInputSome
+    a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993123465");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, TooLongInputOne) {
-    //one decimal symbol more
-    uint256_t a = dap_uint256_scan_uninteger("1157920892373161954235709850086879078532699846656405640394575840079131296399351");
-
+    // TooLongInputOne
+    a = dap_uint256_scan_uninteger("1157920892373161954235709850086879078532699846656405640394575840079131296399351");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowTestLeastBit) {
-    //one bit more (like decimal 6 instead of decimal 5 on last symbol)
-    uint256_t a = dap_uint256_scan_uninteger("115792089237316195423570985008687907853269984665640564039457584007913129639936");
-
+    // OverflowTestLeastBit
+    a = dap_uint256_scan_uninteger("115792089237316195423570985008687907853269984665640564039457584007913129639936");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowTestsMostBit) {
-    //2 instead of 1 one most-significant digit
-    uint256_t a = dap_uint256_scan_uninteger("215792089237316195423570985008687907853269984665640564039457584007913129639935");
-
+    // OverflowTestsMostBit
+    a = dap_uint256_scan_uninteger("215792089237316195423570985008687907853269984665640564039457584007913129639935");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowTestsNotMostBit) {
-    //2 instead of 1 one most-significant digit
-    uint256_t a = dap_uint256_scan_uninteger("125792089237316195423570985008687907853269984665640564039457584007913129639935");
-
+    // OverflowTestsNotMostBit
+    a = dap_uint256_scan_uninteger("125792089237316195423570985008687907853269984665640564039457584007913129639935");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, NonDigitSymbolsInputHexadermical) {
-    uint256_t a = dap_uint256_scan_uninteger("123a23");
-    //todo: check that this is logging
-
+    // NonDigitSymbolsInputHexadermical
+    a = dap_uint256_scan_uninteger("123a23");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, NonDigitSymbolsInputNonHexadermicalLead) {
-    uint256_t a = dap_uint256_scan_uninteger("hhh123");
-
+    // NonDigitSymbolsInputNonHexadermicalLead
+    a = dap_uint256_scan_uninteger("hhh123");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, NonDigitSymbolsInputNonHexadermicalTail) {
-    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993q");
-
+    // NonDigitSymbolsInputNonHexadermicalTail
+    a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993q");
     check_equality256(a, 0);
-}
 
-
-TEST(InputTests, LeadingZeroesOne) {
-    uint256_t a = dap_uint256_scan_uninteger("01");
-
+    // LeadingZeroesOne
+    a = dap_uint256_scan_uninteger("01");
     check_equality256(a, 1);
-}
 
-TEST(InputTests, LeadingZeroesMany) {
-    uint256_t a = dap_uint256_scan_uninteger("0000000001");
-
+    // LeadingZeroesMany
+    a = dap_uint256_scan_uninteger("0000000001");
     check_equality256(a, 1);
-}
 
-TEST(InputTests, LeadingZeroesAlot) {
-    //exactly 78
-    uint256_t a = dap_uint256_scan_uninteger("000000000000000000000000000000000000000000000000000000000000000000000000000001");
-
+    // LeadingZeroesAlot
+    a = dap_uint256_scan_uninteger("000000000000000000000000000000000000000000000000000000000000000000000000000001");
     check_equality256(a, 1);
-}
 
-TEST(InputTests, ScientificInputSimplePlus) {
-    uint256_t a = dap_uint256_scan_uninteger("1.0e+10");
-
+    // ScientificInputSimplePlus
+    a = dap_uint256_scan_uninteger("1.0e+10");
     check_equality256(a, 10000000000);
-}
 
-TEST(InputTests, ScientificInputSimple) {
-    uint256_t a = dap_uint256_scan_uninteger("1.0e10");
-
+    // ScientificInputSimple
+    a = dap_uint256_scan_uninteger("1.0e10");
     check_equality256(a, 10000000000);
-}
 
-TEST(InputTests, ScientificInputSimpleCapital) {
-    uint256_t a = dap_uint256_scan_uninteger("1.0E+10");
-
+    // ScientificInputSimpleCapital
+    a = dap_uint256_scan_uninteger("1.0E+10");
     check_equality256(a, 10000000000);
-}
 
-TEST(InputTests, ScientificInputSimpleNotImportantZeroes) {
-    uint256_t a = dap_uint256_scan_uninteger("1.23456709e9");
+    // ScientificInputSimpleNotImportantZeroes
+    a = dap_uint256_scan_uninteger("1.23456709e9");
     check_equality256(a, 1234567090);
-}
 
-TEST(InputTests, ScientificInputSimpleNotImportantZeroesAtAll) {
-    uint256_t a = dap_uint256_scan_uninteger("01.234e4");
-
+    // ScientificInputSimpleNotImportantZeroesAtAll
+    a = dap_uint256_scan_uninteger("01.234e4");
     check_equality256(a, 12340);
-}
 
-TEST(InputTests, ScientificInputSimpleMax64) {
-    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551615e19");
-
+    // ScientificInputSimpleMax64
+    a = dap_uint256_scan_uninteger("1.8446744073709551615e19");
     check_equality256(a, 0xffffffffffffffff);
-}
 
-TEST(InputTests, ScientificInputSimpleMax64Plus) {
-    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551615e+19");
-
+    // ScientificInputSimpleMax64Plus
+    a = dap_uint256_scan_uninteger("1.8446744073709551615e+19");
     check_equality256(a, 0xffffffffffffffff);
-}
 
-TEST(InputTests, ScientificInputSimpleMin128) {
-    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551616e19");
-
+    // ScientificInputSimpleMin128
+    a = dap_uint256_scan_uninteger("1.8446744073709551616e19");
     check_equality256(a, MIN128STR);
-}
 
-TEST(InputTests, ScientificIncputSimpleMin128Plus) {
-    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551616e+19");
-
+    // ScientificIncputSimpleMin128Plus
+    a = dap_uint256_scan_uninteger("1.8446744073709551616e+19");
     check_equality256(a, MIN128STR);
-}
 
-TEST(InputTests, ScientificInputSimple128Max) {
-    uint256_t a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211455e38");
-
+    // ScientificInputSimple128Max
+    a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211455e38");
     check_equality256(a, MAX128STR);
-}
 
-TEST(InputTests, ScientificInputSimple256Min) {
-    uint256_t a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211456e38");
-
+    // ScientificInputSimple256Min
+    a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211456e38");
     check_equality256(a, MIN256STR);
-}
 
-TEST(InputTests, ScientificInputSimple256Max) {
-    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e77");
-
+    // ScientificInputSimple256Max
+    a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e77");
     check_equality256(a, MAX256STR);
-}
 
-TEST(InputTests, ScientificInputSimple256MaxPlus) {
-    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
-
+    // ScientificInputSimple256MaxPlus
+    a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
     check_equality256(a, MAX256STR);
-}
 
-TEST(InputTests, ScientificInputSimpleLessThanOne) {
-    uint256_t a = dap_uint256_scan_uninteger("0.1e1");
-
+    // ScientificInputSimpleLessThanOne
+    a = dap_uint256_scan_uninteger("0.1e1");
     check_equality256(a, 1);
-}
 
-TEST(InputTests, ScientificInputSimpleMoreThanTwo) {
-    uint256_t a = dap_uint256_scan_uninteger("123.123e3");
-
+    // ScientificInputSimpleMoreThanTwo
+    a = dap_uint256_scan_uninteger("123.123e3");
     check_equality256(a, 123123);
-}
 
-TEST(InputTests, ScientificInputSimpleMaxAndMoreThanTwo) {
-    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791.3129639935e10");
-
+    // ScientificInputSimpleMaxAndMoreThanTwo
+    a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791.3129639935e10");
     check_equality256(a, MAX256STR);
-}
 
-TEST(InputTests, IncorrectScientificInputMorePluses) {
-    uint256_t a = dap_uint256_scan_uninteger("1.0E+++10");
-
+    // IncorrectScientificInputMorePluses
+    a = dap_uint256_scan_uninteger("1.0E+++10");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, IncorrectScientificInputMoreExps) {
-    uint256_t a = dap_uint256_scan_uninteger("1.0EEE+10");
-
+    // IncorrectScientificInputMoreExps
+    a = dap_uint256_scan_uninteger("1.0EEE+10");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, IncorrectScientificInputMoreDots) {
-    uint256_t a = dap_uint256_scan_uninteger("1.1.1e3");
-
+    // IncorrectScientificInputMoreDots
+    a = dap_uint256_scan_uninteger("1.1.1e3");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, IncorrectScientificInputFractionPart){
-    // with fraction part
-    uint256_t a = dap_uint256_scan_uninteger("1.123e2");
-
+    // IncorrectScientificInputFractionPart
+    a = dap_uint256_scan_uninteger("1.123e2");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, TooLongScientificInputOneSymb) {
-    //one symbol more
-    uint256_t a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399356e+78");
-
+    // TooLongScientificInputOneSymb
+    a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399356e+78");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, TooLongScientificInputTenSymbs) {
-    //ten symbols more
-    uint256_t a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399351234567890e+88");
-
+    // TooLongScientificInputTenSymbs
+    a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399351234567890e+88");
     check_equality256(a, 0);
-}
 
-
-//todo: make some more tests for better coverage (see coverage on dap_uint256_scan_uninteger)
-TEST(InputTests, OverflowScientificInputBigExp) {
-     uint256_t a = dap_uint256_scan_uninteger("1.0e100");
-
+    // OverflowScientificInputBigExp
+    a = dap_uint256_scan_uninteger("1.0e100");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowScientificInputOneBit) {
-    //last symb changed
-    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639936e+77");
-
+    // OverflowScientificInputOneBit
+    a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639936e+77");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowScientificInputHighBit) {
-    uint256_t a = dap_uint256_scan_uninteger("1.25792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
-
+    // OverflowScientificInputHighBit
+    a = dap_uint256_scan_uninteger("1.25792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, OverflowScientificInputHighBit2) {
-    uint256_t a = dap_uint256_scan_uninteger("2.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
-
+    // OverflowScientificInputHighBit2
+    a = dap_uint256_scan_uninteger("2.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, DecimalInputZero) {
-    uint256_t a = dap_uint256_scan_decimal("0.0");
+    // DecimalInputZero
+    a = dap_uint256_scan_decimal("0.0");
     check_equality256(a, 0);
-}
 
-TEST(InputTests, DecimalInputOne) {
-    uint256_t a = dap_uint256_scan_decimal("1.0");
+    // DecimalInputOne
+    a = dap_uint256_scan_decimal("1.0");
     check_equality256(a, 1000000000000000000);
-}
 
-TEST(InputTests, DecimalInputTen) {
-    uint256_t a = dap_uint256_scan_decimal("10.0");
+    // DecimalInputTen
+    a = dap_uint256_scan_decimal("10.0");
     check_equality256(a, 10000000000000000000ULL);
-}
 
-TEST(InputTests, DecimalInputBig) {
-    uint256_t a = dap_uint256_scan_decimal("10000000000000000000000000.0");
-    uint256_t b = dap_uint256_scan_uninteger("10000000000000000000000000000000000000000000");
-    int c = compare256(a, b);
+    // DecimalInputBig
+    a = dap_uint256_scan_decimal("10000000000000000000000000.0");
+    b = dap_uint256_scan_uninteger("10000000000000000000000000000000000000000000");
+    c = compare256(a, b);
     ASSERT_FALSE(c);
-}
-TEST(InputTests, DecimalInputLow) {
-    uint256_t a = dap_uint256_scan_decimal("0.000000000000000001");
-    uint256_t b = dap_uint256_scan_uninteger("1");
-    int c = compare256(a, b);
-    ASSERT_FALSE(c);
-}
 
-TEST(InputTests, EnteringFractionalNumberWithComma) {
-    uint256_t a = dap_uint256_scan_uninteger("1,0");
+    // DecimalInputLow
+    a = dap_uint256_scan_decimal("0.000000000000000001");
+    b = dap_uint256_scan_uninteger("1");
+    c = compare256(a, b);
+    ASSERT_FALSE(c);
+
+    // EnteringFractionalNumberWithComma
+    a = dap_uint256_scan_uninteger("1,0");
     check_equality256(a, 0);
+
+    // Get256From128
+    a128 = GET_128_FROM_64(123);
+    b = GET_256_FROM_128(a128);
+    check_equality256(b, 123);
 }
 
 TEST_F(RandomInputTestsCoins, CoinsBase) {
@@ -554,12 +462,6 @@ TEST_F(RandomOutputTests, Output256){
 
     uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
     ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
-}
-
-TEST(InputTests, Get256From128) {
-    uint128_t a = GET_128_FROM_64(123);
-    uint256_t b = GET_256_FROM_128(a);
-    check_equality256(b, 123);
 }
 
 TEST_F(RandomInputTests, Input256) {

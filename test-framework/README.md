@@ -12,12 +12,24 @@ This framework provides common testing utilities, mock implementations, and test
 test-framework/
 ├── CMakeLists.txt           # Main build configuration
 ├── README.md                # This file
-├── mocks/                   # Mock implementations
-│   ├── CMakeLists.txt
-│   ├── dap_mock_framework.h
-│   ├── dap_mock_framework.c
-│   └── README.md
-└── dap_test.h              # Test utilities (if exists)
+├── dap_test.h              # Basic test utilities
+├── dap_test.c              # Basic test utilities implementation
+├── dap_test_async.h        # Async testing utilities
+├── dap_test_async.c        # Async testing implementation
+├── dap_mock.h              # Mock framework API
+├── dap_mock.c              # Mock framework implementation
+├── dap_mock_async.h        # Async mock execution
+├── dap_mock_async.c        # Async mock implementation
+├── dap_mock_linker_wrapper.h # Linker wrapper macros
+├── mocks/                   # Mock autowrap scripts
+│   ├── DAPMockAutoWrap.cmake
+│   ├── dap_mock_autowrap.sh
+│   ├── dap_mock_autowrap.ps1
+│   └── dap_mock_autowrap.py
+└── test/                    # Self-tests
+    ├── CMakeLists.txt
+    ├── test_async_framework.c
+    └── test_mock_framework.c
 ```
 
 ## Components
@@ -35,18 +47,18 @@ Generic function mocking with call tracking and verification. See `mocks/README.
 
 **Quick Start:**
 ```c
-#include "dap_mock_framework.h"
+#include "dap_mock.h"
 
 DAP_MOCK_DECLARE(my_function);
 
 int main() {
-    dap_mock_framework_init();
-    g_mock_my_function = dap_mock_register("my_function");
-    dap_mock_set_enabled(g_mock_my_function, true);
+    // Note: dap_mock_init() is auto-called via constructor!
+    // Manual call not needed, but available for compatibility
     
     // Run tests...
     
-    dap_mock_framework_deinit();
+    // Optional cleanup (auto-called via destructor)
+    // dap_mock_deinit();
 }
 ```
 
@@ -67,14 +79,17 @@ add_subdirectory(
     ${CMAKE_BINARY_DIR}/dap-test-framework
 )
 
-# Link against mock framework
+# Link against test framework (includes mocks)
 target_link_libraries(your_test
-    dap_test_mocks
+    dap_test          # Test framework with mocks
+    dap_core          # DAP core library
+    pthread           # Threading support
     # other dependencies...
 )
 
 target_include_directories(your_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework
+    ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
     # other includes...
 )
 ```
@@ -91,7 +106,7 @@ add_subdirectory(
 )
 
 # Use in tests
-target_link_libraries(my_test dap_test_mocks)
+target_link_libraries(my_test dap_test dap_core pthread)
 ```
 
 ## Build System
@@ -99,20 +114,25 @@ target_link_libraries(my_test dap_test_mocks)
 The framework exports the following CMake variables:
 
 - `DAP_TEST_FRAMEWORK_DIR` - Root directory of test framework
-- `DAP_TEST_MOCKS_INCLUDE_DIR` - Include directory for mocks
+- `DAP_TEST_LIBRARY` - Test framework library name (`dap_test`)
 
 ### Building
 
 ```bash
 cd build
 cmake ..
-make dap_test_mocks
+make dap_test
 ```
 
 ### Artifacts
 
-- `libdap_test_mocks.a` - Mock framework static library
-- Headers in `test-framework/mocks/`
+- `libdap_test.a` - Test framework static library (includes mocks)
+- Headers in `test-framework/`:
+  - `dap_test.h` - Basic test utilities
+  - `dap_test_async.h` - Async testing utilities
+  - `dap_mock.h` - Mock framework API
+  - `dap_mock_async.h` - Async mock execution
+  - `dap_mock_linker_wrapper.h` - Linker wrapper macros
 
 ## Coding Standards
 
@@ -142,7 +162,8 @@ All code follows DAP SDK conventions:
 ### Unit Test with Mocks
 
 ```c
-#include "dap_mock_framework.h"
+#include "dap_test.h"
+#include "dap_mock.h"
 #include "my_module.h"
 #include <assert.h>
 
@@ -150,20 +171,15 @@ DAP_MOCK_DECLARE(dap_client_connect);
 
 void test_connection_retry(void) {
     // Setup
-    dap_mock_framework_init();
-    g_mock_dap_client_connect = dap_mock_register("dap_client_connect");
-    dap_mock_set_enabled(g_mock_dap_client_connect, true);
-    DAP_MOCK_SET_RETURN(dap_client_connect, NULL); // Simulate failure
+    DAP_MOCK_SET_RETURN(dap_client_connect, NULL);
     
     // Execute
     int result = my_module_connect_with_retry();
     
     // Verify
     assert(result == -1);
-    assert(dap_mock_get_call_count(g_mock_dap_client_connect) == 3); // 3 retries
+    assert(DAP_MOCK_GET_CALL_COUNT(dap_client_connect) == 3); // 3 retries
     
-    // Cleanup
-    dap_mock_framework_deinit();
 }
 ```
 
@@ -198,10 +214,10 @@ int main(void) {
 
 ### Adding New Mock Implementations
 
-1. Create mock header/source in `mocks/` directory
-2. Follow naming: `dap_<module>_mock.h/.c`
-3. Use `dap_mock_framework.h` as base
-4. Update `mocks/CMakeLists.txt` if needed
+1. Declare mocks using `DAP_MOCK_DECLARE()` macro in your test files
+2. Use `DAP_MOCK_WRAPPER_CUSTOM()` or `DAP_MOCK_WRAPPER_PASSTHROUGH()` for linker wrappers
+3. Include `dap_mock.h` in your test files
+4. Use `dap_mock_autowrap()` in CMakeLists.txt to generate linker flags
 
 ### Adding Test Utilities
 
@@ -231,11 +247,13 @@ Mock framework API is stable. New features added via:
 
 ### Testing the Framework
 
-The mock framework itself should be tested:
+The framework includes comprehensive self-tests:
 
 ```bash
-cd dap-sdk/test-framework/mocks
-# TODO: Add self-tests
+cd dap-sdk/test-framework/build
+make test
+# Runs test_async_framework and test_mock_framework
+# Total: 21 test functions validating framework reliability
 ```
 
 ## Contributing
@@ -250,7 +268,8 @@ When adding new testing utilities:
 
 ## See Also
 
-- `mocks/README.md` - Mock framework detailed documentation
+- `docs/` - Comprehensive documentation (guides, examples, API reference)
+- `docs/DAP_MOCK_ASYNC.md` - Async mock execution guide
 - `../../core/README.md` - DAP Core library
 - `../../../cellframe-sdk/tests/` - Cellframe SDK tests using this framework
 - `../../../../cellframe-srv-vpn-client/tests/` - VPN client tests

@@ -11,7 +11,8 @@ file (GLOB CORE_SRCS src/*.c src/etc/*.c)
 
 if(UNIX)
     file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
+    # DO NOT compile src/unix/*.c here - they are compiled in dap_core_unix
+    # file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
     if(LINUX)
         file (GLOB CORE_HEADERS ${CORE_HEADERS} src/unix/linux/*.h)
         file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/linux/*.c)

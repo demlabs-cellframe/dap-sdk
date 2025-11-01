@@ -83,6 +83,39 @@ DAP_MOCK_ENABLE(func_name);
 ```
 **Note:** Callback return value overrides `.return_value` configuration
 
+### Issue: Mock Not Working for Functions in Static Library
+**Symptom:** Functions from static library (`lib*.a`) are not mocked, real function executes  
+**Cause:** Linker excludes unused symbols from static libraries, so `--wrap` is not applied  
+**Solution:** Use `dap_mock_autowrap_with_static()` to wrap static library with `--whole-archive` flags
+
+```cmake
+# After normal linking and dap_mock_autowrap()
+dap_mock_autowrap(test_target)
+
+# Wrap static library with --whole-archive
+dap_mock_autowrap_with_static(test_target dap_http_server)
+```
+
+**Verify:**
+```bash
+make VERBOSE=1 | grep -E "--whole-archive|dap_http_server"
+# Should see: -Wl,--whole-archive ... dap_http_server ... -Wl,--no-whole-archive
+```
+
+**Important:** Order matters! First `dap_mock_autowrap()`, then `dap_mock_autowrap_with_static()`
+
+### Issue: Linker Error "multiple definition"
+**Symptom:** Error `multiple definition of 'function_name'` when using `--whole-archive`  
+**Cause:** Some symbols are defined in multiple libraries  
+**Solution:** `dap_mock_autowrap_with_static()` automatically adds `--allow-multiple-definition`, but if issue persists:
+
+```cmake
+# Explicitly add flag
+target_link_options(test_target PRIVATE "-Wl,--allow-multiple-definition")
+```
+
+**Alternative:** Use `--whole-archive` only for specific libraries that require mocking
+
 ### Issue: Delay Not Working
 **Symptom:** Mock executes instantly despite delay config  
 **Solution:** Verify delay is set after mock declaration

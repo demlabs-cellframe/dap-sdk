@@ -83,6 +83,39 @@ DAP_MOCK_ENABLE(func_name);
 ```
 **Примечание:** Возвращаемое значение callback переопределяет конфигурацию `.return_value`
 
+### Проблема: Мок не работает для функций в статической библиотеке
+**Симптом:** Функции из статической библиотеки (`lib*.a`) не мокируются, вызывается реальная функция  
+**Причина:** Линкер исключает неиспользуемые символы из статических библиотек, поэтому `--wrap` не применяется  
+**Решение:** Используйте `dap_mock_autowrap_with_static()` для оборачивания статической библиотеки флагами `--whole-archive`
+
+```cmake
+# После обычной линковки и dap_mock_autowrap()
+dap_mock_autowrap(test_target)
+
+# Оборачиваем статическую библиотеку --whole-archive
+dap_mock_autowrap_with_static(test_target dap_http_server)
+```
+
+**Проверка:**
+```bash
+make VERBOSE=1 | grep -E "--whole-archive|dap_http_server"
+# Должно быть: -Wl,--whole-archive ... dap_http_server ... -Wl,--no-whole-archive
+```
+
+**Важно:** Порядок важен! Сначала `dap_mock_autowrap()`, затем `dap_mock_autowrap_with_static()`
+
+### Проблема: Ошибка линкера "multiple definition"
+**Симптом:** Ошибка `multiple definition of 'function_name'` при использовании `--whole-archive`  
+**Причина:** Некоторые символы определены в нескольких библиотеках  
+**Решение:** `dap_mock_autowrap_with_static()` автоматически добавляет `--allow-multiple-definition`, но если проблема сохраняется:
+
+```cmake
+# Явно добавьте флаг
+target_link_options(test_target PRIVATE "-Wl,--allow-multiple-definition")
+```
+
+**Альтернатива:** Используйте `--whole-archive` только для конкретных библиотек, которые требуют мокирования
+
 ### Проблема: Задержка не работает
 **Симптом:** Мок выполняется мгновенно несмотря на конфигурацию задержки  
 **Решение:** Проверьте что задержка установлена после объявления мока

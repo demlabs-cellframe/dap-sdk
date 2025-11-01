@@ -89,7 +89,7 @@ static void test_01_stream_initialization(void) {
     // Deinit events system (it will stop workers and wait for threads internally)
     // Only deinit if still initialized
     if (dap_events_workers_init_status()) {
-        dap_events_deinit();
+    dap_events_deinit();
     }
     
     TEST_SUCCESS("Stream initialization works");
@@ -122,7 +122,7 @@ static void test_02_transport_registration(void) {
     
     // Deinit events system (it will stop workers and wait for threads internally)
     if (dap_events_workers_init_status()) {
-        dap_events_deinit();
+    dap_events_deinit();
     }
     
     TEST_SUCCESS("Transport registration works");
@@ -176,7 +176,7 @@ static void test_03_client_creation(void) {
     
     // Deinit events system (it will stop workers and wait for threads internally)
     if (dap_events_workers_init_status()) {
-        dap_events_deinit();
+    dap_events_deinit();
     }
     
     TEST_SUCCESS("Client creation works");
@@ -226,7 +226,7 @@ static void test_04_channel_configuration(void) {
     
     // Deinit events system (it will stop workers and wait for threads internally)
     if (dap_events_workers_init_status()) {
-        dap_events_deinit();
+    dap_events_deinit();
     }
     
     TEST_SUCCESS("Channel configuration works");
@@ -249,7 +249,7 @@ int main(void) {
     
     // Initialize common DAP subsystems (logging first!)
     dap_common_init(LOG_TAG, NULL);
-
+    
     dap_log_level_set(L_DEBUG);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     // Initialize config system AFTER dap_common_init (needs logging)

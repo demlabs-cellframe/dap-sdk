@@ -61,7 +61,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
 
 ```c
 void test_async_http_request(void) {
-    TEST_INFO("Starting async HTTP request test");
+    log_it(L_INFO, "Starting async HTTP request test");
     
     bool callback_called = false;
     
@@ -74,10 +74,10 @@ void test_async_http_request(void) {
     
     // Ждём завершения асинхронных моков (макс 5 секунд)
     bool completed = dap_mock_async_wait_all(5000);
-    TEST_ASSERT(completed, "Async mocks should complete");
+    assert(completed && "Async mocks should complete");
     
-    TEST_ASSERT(callback_called, "Callback should be called");
-    TEST_SUCCESS("Async test passed");
+    assert(callback_called && "Callback should be called");
+    log_it(L_INFO, "[+] Async test passed");
 }
 ```
 
@@ -92,7 +92,7 @@ void test_async_with_condition(void) {
     // Ждём условие (как в настоящих async тестах)
     DAP_TEST_WAIT_UNTIL(result_ready, 5000, "HTTP request");
     
-    TEST_ASSERT(result_ready, "Result should be ready");
+    assert(result_ready && "Result should be ready");
 }
 ```
 
@@ -172,7 +172,13 @@ uint32_t dap_mock_async_get_default_delay(void);
 // test_http_client_async.c
 #include "dap_mock.h"
 #include "dap_mock_async.h"
-#include "dap_test_helpers.h"
+#include "dap_test_async.h"
+#include "dap_common.h"
+#include <assert.h>
+
+// Примечание: Примеры используют стандартные assert/log_it из dap_common.h
+// Для использования макросов TEST_INFO, TEST_ASSERT и т.д. включите tests/fixtures/dap_test_helpers.h
+// (опционально, не является частью test-framework)
 
 // Мок response structure
 static struct {
@@ -207,7 +213,7 @@ void test_http_async(void) {
     
     // Wait
     DAP_TEST_WAIT_UNTIL(done, 1000, "HTTP request");
-    TEST_ASSERT(done, "Should complete");
+    assert(done && "Should complete");
     
     // Cleanup
     dap_mock_async_deinit();
@@ -234,8 +240,8 @@ void test_multiple_async_requests(void) {
     
     // Ждать все
     bool all_done = dap_mock_async_wait_all(5000);
-    TEST_ASSERT(all_done, "All requests should complete");
-    TEST_ASSERT_EQUAL_INT(10, completed_count, "All callbacks executed");
+    assert(all_done && "All requests should complete");
+    assert(completed_count == 10 && "All callbacks executed");
     
     dap_mock_async_deinit();
 }
@@ -255,7 +261,7 @@ void test_with_flush(void) {
     dap_mock_async_flush();  // Выполнить немедленно
     
     // Проверить сразу
-    TEST_ASSERT(done, "Should be done after flush");
+    assert(done && "Should be done after flush");
     
     dap_mock_async_deinit();
 }
@@ -376,7 +382,7 @@ void test_without_async(void) {
 
 **Решение:**
 ```c
-TEST_ASSERT(dap_mock_async_is_initialized(), "Async должен быть инициализирован");
+assert(dap_mock_async_is_initialized() && "Async должен быть инициализирован");
 dap_mock_async_wait_all(10000);  // Увеличь таймаут
 ```
 
@@ -391,7 +397,7 @@ dap_mock_async_wait_all(10000);  // Увеличь таймаут
 ```c
 // Используй конечный таймаут
 bool done = dap_mock_async_wait_all(5000);
-TEST_ASSERT(done, "Не должно зависнуть");
+assert(done && "Не должно зависнуть");
 ```
 
 ### Проблема: Race conditions
@@ -414,7 +420,7 @@ pthread_mutex_unlock(&mutex);
 
 ## См. также
 
-- [DAP Mock Framework](./README.md) - Основная документация по мокам
-- [DAP Test Helpers](../fixtures/README.md) - Утилиты для тестов
-- [Test Framework Overview](./01_overview.md) - Общий обзор тестового фреймворка
+- [DAP Mock Framework](../README.md) - Основная документация по мокам
+- [DAP Test Framework Guide](../docs/DAP_TEST_FRAMEWORK_GUIDE_RU.md) - Полное руководство по тестовому фреймворку
+- [Test Helpers](../../tests/fixtures/README.md) - Утилиты для тестов (TEST_INFO, TEST_ASSERT и т.д., опционально)
 

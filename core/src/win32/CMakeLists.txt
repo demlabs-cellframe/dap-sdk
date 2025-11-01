@@ -2,10 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 
 project (dap_core_win32 C)
 
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
+
 file(GLOB CORE_SRCS *.c)
 file(GLOB CORE_HEADERS *.h)
 
-add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${CORE_SRCS} HEADERS ${CORE_HEADERS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 

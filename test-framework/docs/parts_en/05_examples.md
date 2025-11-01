@@ -233,7 +233,106 @@ void test_retry_logic() {
 }
 ```
 
-### 4.6 Asynchronous Mock Execution
+### 4.6 Mocking Functions in Static Libraries
+
+Example test that mocks functions inside static library `dap_stream`:
+
+**CMakeLists.txt:**
+```cmake
+include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+
+add_executable(test_stream_mocks
+    test_stream_mocks.c
+    test_stream_mocks_wrappers.c
+)
+
+target_link_libraries(test_stream_mocks
+    dap_test
+    dap_stream       # Static library - need to mock functions inside
+    dap_net
+    dap_core
+    pthread
+)
+
+target_include_directories(test_stream_mocks PRIVATE
+    ${CMAKE_SOURCE_DIR}/dap-sdk/test-framework
+    ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
+)
+
+# Step 1: Auto-generate --wrap flags from test sources
+dap_mock_autowrap(test_stream_mocks)
+
+# Step 2: Wrap static library with --whole-archive
+# This forces linker to include all symbols from dap_stream,
+# including internal functions that need to be mocked
+dap_mock_autowrap_with_static(test_stream_mocks dap_stream)
+```
+
+**test_stream_mocks.c:**
+```c
+#include "dap_test.h"
+#include "dap_mock.h"
+#include "dap_stream.h"
+#include "dap_common.h"
+#include <assert.h>
+
+#define LOG_TAG "test_stream_mocks"
+
+// Mock function used inside dap_stream
+DAP_MOCK_DECLARE(dap_net_tun_write, {
+    .return_value.i = 0,  // Success
+    .delay = {
+        .type = DAP_MOCK_DELAY_FIXED,
+        .fixed_us = 10000  // 10ms delay
+    }
+});
+
+// Wrap function for mocking
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_net_tun_write,
+    PARAM(int, a_fd),
+    PARAM(const void*, a_buf),
+    PARAM(size_t, a_len)
+) {
+    // Mock logic - simulate successful write
+    log_it(L_DEBUG, "Mock: dap_net_tun_write called (fd=%d, len=%zu)", a_fd, a_len);
+    return 0;
+}
+
+void test_stream_write_with_mock(void) {
+    log_it(L_INFO, "TEST: Stream write with mocked tun_write");
+    
+    // Create stream (dap_stream uses dap_net_tun_write internally)
+    dap_stream_t *stream = dap_stream_create(...);
+    assert(stream != NULL);
+    
+    // Perform write - should use mocked dap_net_tun_write
+    int result = dap_stream_write(stream, "test data", 9);
+    
+    // Verify mock was called
+    assert(result == 0);
+    assert(DAP_MOCK_GET_CALL_COUNT(dap_net_tun_write) > 0);
+    
+    dap_stream_delete(stream);
+    log_it(L_INFO, "[+] Test passed");
+}
+
+int main() {
+    dap_common_init("test_stream_mocks", NULL);
+    
+    test_stream_write_with_mock();
+    
+    dap_common_deinit();
+    return 0;
+}
+```
+
+**Key Points:**
+1. `dap_mock_autowrap()` must be called **before** `dap_mock_autowrap_with_static()`
+2. Specify all static libraries where functions need to be mocked
+3. `--whole-archive` may increase executable size
+4. Works only with GCC, Clang, and MinGW
+
+### 4.7 Asynchronous Mock Execution
 
 Example demonstrating async mock callbacks with thread pool:
 

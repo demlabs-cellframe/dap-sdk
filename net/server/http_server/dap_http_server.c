@@ -64,7 +64,7 @@
  */
 int dap_http_init( )
 {
-    if ( dap_http_header_init() != 0 ) { // Init submodule for headers manipulations
+    if ( dap_http_header_server_init() != 0 ) { // Init submodule for headers manipulations
         log_it(L_CRITICAL,"Can't init HTTP headers processing submodule");
         return -1;
     }
@@ -83,7 +83,7 @@ int dap_http_init( )
  */
 void dap_http_deinit()
 {
-    dap_http_header_deinit( );
+    dap_http_header_server_deinit( );
     dap_http_client_deinit( );
 }
 
@@ -190,6 +190,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a
     l_url_proc->error_callback = a_error_callback;
 
     l_url_proc->_inheritor = a_inheritor;
+    l_url_proc->http = a_http;  // Set reference to HTTP server
     pthread_rwlock_init(& l_url_proc->cache_rwlock, NULL);
 
     HASH_ADD_STR( a_http->url_proc, url, l_url_proc );

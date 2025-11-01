@@ -47,9 +47,10 @@ The DAP SDK Test Framework is a production-ready testing infrastructure designed
 A complete testing solution that includes:
 
 - **Async Testing Framework** - Tools for testing asynchronous operations with timeouts
-- **Mock Framework V4** - Function mocking without code modification
+- **Mock Framework** - Function mocking without code modification
+- **Async Mock Execution** - Asynchronous mock callbacks with thread pool
 - **Auto-Wrapper System** - Automatic linker configuration
-- **Self-Tests** - 21 tests validating framework reliability
+- **Self-Tests** - 21 test functions validating framework reliability
 
 ### 1.2 Why Use This Framework?
 
@@ -78,7 +79,7 @@ A complete testing solution that includes:
 | Delays | Fixed, Range, Variance | Realistic simulation |
 | Callbacks | Inline + Runtime | Dynamic mock behavior |
 | Auto-Wrapper | Bash/PowerShell scripts | Automatic setup |
-| Self-Tests | 21 comprehensive tests | Validated reliability |
+| Self-Tests | 21 test functions | Validated reliability |
 
 ### 1.4 Quick Comparison
 
@@ -526,7 +527,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
 - Format: `PARAM(type, name)`
 - Extracts type and name automatically
 - Handles casting to void* correctly
-- Uses `_Generic()` for proper pointer casting
+- Uses `uintptr_t` for safe casting of pointers and integer types
 
 #### Simpler Wrapper Macros
 
