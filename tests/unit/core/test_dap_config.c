@@ -1,7 +1,16 @@
-#include "dap_config_test.h"
+/**
+ * @file test_dap_config.c
+ * @brief Unit tests for dap_config module
+ * @date 2025
+ */
 
-static const char * testconfigName = "test_dap_config.cfg";
-static const char * config_data = "[db_options]\n"
+#include <dap_test.h>
+#include <dap_config.h>
+#include <stdio.h>
+#include <string.h>
+
+static const char *testconfigName = "test_dap_config.cfg";
+static const char *config_data = "[db_options]\n"
                                   "db_type=mongoDb\n"
                                   "[server_options]\n"
                                   "timeout=1,0\n"
@@ -12,7 +21,7 @@ static const char * config_data = "[db_options]\n"
                                   "int_arr=[1, 3, 5]\n";
 
 static const size_t STR_ARR_LEN = 4;
-static const char * str_add_test_case[] = {
+static const char *str_add_test_case[] = {
     "vasya",
     "petya",
     "grisha",
@@ -21,50 +30,51 @@ static const char * str_add_test_case[] = {
 static const size_t INT_ARR_LEN = 3;
 static const int32_t int_arr_test_cases[] = {1, 3, 5};
 
+static FILE *config_file;
+static dap_config_t *config;
 
-static FILE * config_file;
-static dap_config_t * config;
-
-void create_test_config_file() {
+static void create_test_config_file(void)
+{
     config_file = fopen(testconfigName, "w+");
     dap_assert(config_file != NULL, "Create config file");
 
-    fwrite(config_data, sizeof(char),
-           strlen(config_data), config_file);
-
+    fwrite(config_data, sizeof(char), strlen(config_data), config_file);
     fclose(config_file);
 }
 
-void init_test_case() {
+static void init_test_case(void)
+{
     create_test_config_file();
 
     // init dir path for configs files
     dap_config_init(".");
 
     config = dap_config_open("test_dap_config");
+    dap_assert(config != NULL, "Config opened");
 }
 
-void cleanup_test_case() {
-    dap_assert(remove("test_dap_config.cfg") == 0,
-           "Remove config file");
+static void cleanup_test_case(void)
+{
+    dap_assert(remove("test_dap_config.cfg") == 0, "Remove config file");
     dap_config_close(config);
     dap_config_deinit();
 }
 
-void test_config_open_fail() {
+static void test_config_open_fail(void)
+{
     dap_assert(dap_config_open("RandomNeverExistName") == NULL,
            "Try open not exists config file");
 }
 
-void test_get_int() {
+static void test_get_int(void)
+{
     int32_t resultTTL = dap_config_get_item_int32(config,
                                                   "server_options",
                                                   "TTL_session_key");
     dap_assert(resultTTL == 600, "Get int from config");
-
 }
 
-void test_get_int_default()
+static void test_get_int_default(void)
 {
     int32_t resultTTLDefault = dap_config_get_item_int32_default(config,
                                                                  "server_options",
@@ -79,14 +89,15 @@ void test_get_int_default()
     dap_assert(resultTTLDefault1 == 650, "The correct default value of int from the default function is obtained");
 }
 
-void test_get_double() {
+static void test_get_double(void)
+{
     double timeout = dap_config_get_item_double(config,
                                                 "server_options",
                                                 "timeout");
     dap_assert(timeout == 1.0, "Get double from config");
 }
 
-void test_get_double_default()
+static void test_get_double_default(void)
 {
     double timeoutDefault = dap_config_get_item_double_default(config,
                                                                 "server_options",
@@ -101,14 +112,15 @@ void test_get_double_default()
     dap_assert(timeoutDefault2 == 1.5, "The correct default value of double from the default function is obtained");
 }
 
-void test_get_bool() {
+static void test_get_bool(void)
+{
     bool rBool = dap_config_get_item_bool(config, "server_options", "vpn_enable");
     dap_assert(rBool == true, "Get bool from config");
     rBool = dap_config_get_item_bool(config, "server_options", "proxy_enable");
     dap_assert(rBool == false, "Get bool from config");
 }
 
-void test_get_bool_default()
+static void test_get_bool_default(void)
 {
     bool rBool = dap_config_get_item_bool_default(config, "server_options", "proxy_enable", true);
     dap_assert(rBool == false, "received true true bool value from a function default");
@@ -116,7 +128,7 @@ void test_get_bool_default()
     dap_assert(rBool == false, "the correct default value of bool is obtained from the default function");
 }
 
-void test_array_str()
+static void test_array_str(void)
 {
     uint16_t arraySize;
     const char **result_arr = dap_config_get_array_str(config, "server_options", "str_arr", &arraySize);
@@ -124,12 +136,13 @@ void test_array_str()
     dap_assert(result_arr != NULL, "Get array str from config");
     dap_assert(arraySize == STR_ARR_LEN, "Check array length");
 
-    for(uint32_t i = 0; i < arraySize; i++) {
-        assert(strcmp(result_arr[i], str_add_test_case[i]) == 0 && "test_array_str failed");
+    for (uint32_t i = 0; i < arraySize; i++) {
+        dap_assert(strcmp(result_arr[i], str_add_test_case[i]) == 0, "test_array_str value");
     }
 }
 
-void test_array_int() {
+static void test_array_int(void)
+{
     uint16_t arraySize;
     const char **result_arr = dap_config_get_array_str(config, "server_options", "int_arr", &arraySize);
 
@@ -137,33 +150,33 @@ void test_array_int() {
     dap_assert(arraySize == INT_ARR_LEN, "Check array int length");
 
     dap_test_msg("Testing array int values.");
-    for(uint32_t i = 0; i < arraySize; i++) {
+    for (uint32_t i = 0; i < arraySize; i++) {
         dap_assert_PIF(atoi(result_arr[i]) == int_arr_test_cases[i], "Check array int");
     }
 }
 
-void test_get_item_str()
+static void test_get_item_str(void)
 {
     const char* dct = dap_config_get_item_str(config, "db_options", "db_type");
     const char* E1 = "mongoDb";
-    dap_assert(memcmp(dct,E1,7) == 0, "The function returns const char*");
+    dap_assert(memcmp(dct, E1, 7) == 0, "The function returns const char*");
 }
 
-void test_get_item_str_default()
+static void test_get_item_str_default(void)
 {
     const char* E1 = "mongoDb";
     const char* E2 = "EDb";
 
     const char* dct2 = dap_config_get_item_str_default(config, "db_options", "db_type", "EDb");
-    dap_assert(memcmp(dct2,E1,7) == 0, "The function returns the true value of const char *");
+    dap_assert(memcmp(dct2, E1, 7) == 0, "The function returns the true value of const char *");
 
     const char* dct3 = dap_config_get_item_str_default(config, "db_options", "db_type2", "EDb");
-    dap_assert(memcmp(dct3,E2,3) == 0, "The function returns the default const char *");
+    dap_assert(memcmp(dct3, E2, 3) == 0, "The function returns the default const char *");
 }
 
-
-void dap_config_tests_run()
+int main(void)
 {
+    dap_log_level_set(L_CRITICAL);
     dap_print_module_name("dap_config");
 
     init_test_case();
@@ -181,4 +194,6 @@ void dap_config_tests_run()
     test_get_double_default();
 
     cleanup_test_case();
+
+    return 0;
 }

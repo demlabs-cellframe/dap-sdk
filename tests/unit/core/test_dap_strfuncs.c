@@ -1,9 +1,19 @@
-#include "dap_common.h"
-#include "dap_strfuncs_test.h"
-#include "dap_list.h"
-#include "dap_string.h"
+/**
+ * @file test_dap_strfuncs.c
+ * @brief Unit tests for string functions, list, and string builder
+ * @date 2025
+ */
 
-void dap_str_dup_test(void)
+#include <dap_test.h>
+#include <dap_common.h>
+#include <dap_list.h>
+#include <dap_string.h>
+#include <dap_strfuncs.h>
+#include <dap_time.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void dap_str_dup_test(void)
 {
     int l_a = rand(), l_b = rand();
     const char *l_s = "test string";
@@ -26,7 +36,7 @@ void dap_str_dup_test(void)
     DAP_DELETE(l_str2);
 }
 
-void dap_str_modify_test(void)
+static void dap_str_modify_test(void)
 {
     const char *l_s_in = "Test String";
     const char *l_s_up_check = "TEST STRING";
@@ -54,14 +64,14 @@ void dap_str_modify_test(void)
     DAP_DELETE(l_s_out);
 }
 
-void dap_str_array_test(void)
+static void dap_str_array_test(void)
 {
     const char *l_s_in = "1:23:: Test:  :\n:String:";
     char **l_s_array = dap_strsplit(l_s_in, ":", -1);
 
     size_t l_count = 1;
     char *l_s_tmp = dap_strstr_len(l_s_in, -1, ":");
-    while(l_s_tmp) {
+    while (l_s_tmp) {
         l_s_tmp = dap_strstr_len(l_s_tmp + 1, -1, ":");
         l_count++;
     }
@@ -83,13 +93,13 @@ static void list_delete(void* a_pointer)
     DAP_DELETE(a_pointer);
 }
 
-void dap_list_test(void)
+static void dap_list_test(void)
 {
     dap_list_t *l_list = NULL;
-    l_list = dap_list_append(l_list, "item 1");
-    l_list = dap_list_append(l_list, "item 2");
-    l_list = dap_list_append(l_list, "item 3");
-    l_list = dap_list_prepend(l_list, "item 0");
+    l_list = dap_list_append(l_list, (void*)"item 1");
+    l_list = dap_list_append(l_list, (void*)"item 2");
+    l_list = dap_list_append(l_list, (void*)"item 3");
+    l_list = dap_list_prepend(l_list, (void*)"item 0");
 
     dap_list_t *l_list_tmp = dap_list_find(l_list, "item 2", NULL);
     unsigned int l_count = dap_list_length(l_list);
@@ -110,7 +120,7 @@ void dap_list_test(void)
     dap_list_free_full(l_list, list_delete);
 }
 
-void dap_string_test(void)
+static void dap_string_test(void)
 {
     dap_string_t *l_str = dap_string_new(NULL);
     dap_string_append(l_str, "str=string 1");
@@ -129,8 +139,9 @@ void dap_string_test(void)
     dap_string_free(l_str, true);
 }
 
-void dap_strfuncs_tests_run(void)
+int main(void)
 {
+    dap_log_level_set(L_CRITICAL);
     dap_print_module_name("dap_strfuncs");
 
     dap_str_dup_test();
@@ -142,4 +153,5 @@ void dap_strfuncs_tests_run(void)
     dap_usleep(0.5 * DAP_USEC_PER_SEC);
     dap_assert(1, "Test dap_usleep(0.5 sec.)");
 
+    return 0;
 }

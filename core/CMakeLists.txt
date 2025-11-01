@@ -78,12 +78,8 @@ if(TARGET dap_json-c)
     target_link_libraries(${PROJECT_NAME} INTERFACE dap_json-c)
 endif()
 
-if(BUILD_DAP_TESTS)
-    add_definitions ("-DDAP_CORE_TESTS")
-    enable_testing()
-    add_definitions("-DDAP_NETWORK_MONITOR_TEST_OFF")
-    add_subdirectory(test)
-endif()
+# Old tests moved to dap-sdk/tests/unit/core/
+# Using new test infrastructure with GoogleTest
 
 if(INSTALL_DAP_SDK)
     set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CORE_HEADERS}")
