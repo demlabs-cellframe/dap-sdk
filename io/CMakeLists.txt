@@ -5,6 +5,9 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibraryHelpers.cmake)
+
 file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
 if(WIN32)
@@ -23,23 +26,28 @@ elseif(MACOS)
     set (DAP_IO_SOURCES ${DAP_IO_SOURCES} ${DAP_IO_MACOS_SRCS})
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${DAP_IO_HEADERS} ${DAP_IO_SOURCES})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_IO_SOURCES} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
+# Link dependencies as INTERFACE
+# XKCP include directories are automatically propagated from dap_crypto via INTERFACE_INCLUDE_DIRECTORIES
+# Use dap_link_libraries for automatic include propagation with cycle detection
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto)
+
 if(DAPSDK_MODULES MATCHES "ssl-support")
-  target_link_libraries(${PROJECT_NAME} wolfssl)
+  target_link_libraries(${PROJECT_NAME} INTERFACE wolfssl)
 endif()
-
+# pthread is a system library, will be linked at final stage
 if(UNIX)
   if(NOT ANDROID)
-      target_link_libraries(${PROJECT_NAME} pthread)
+      # Store for later linking at final library stage
+      set(DAP_IO_LIBRARIES pthread)
   endif()
-
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_include_directories(${PROJECT_NAME} PRIVATE ../crypto/src/rand)
+# All dependency include directories (including dap_crypto/src/rand) are automatically propagated via dap_link_libraries
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll)

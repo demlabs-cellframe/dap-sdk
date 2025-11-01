@@ -1,22 +1,28 @@
 cmake_minimum_required(VERSION 3.10)
 project(dap_stream C)
+
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
   
 file(GLOB STREAM_SRCS *.c)
 file(GLOB STREAM_HDRS include/*.h)
 
 # HTTP and UDP transports included in build
 
-add_library(${PROJECT_NAME} STATIC ${STREAM_SRCS} ${STREAM_HDRS})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${STREAM_SRCS} HEADERS ${STREAM_HDRS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto
-    dap_http_server dap_enc_server dap_session dap_stream_ch dap_client dap_global_db)
-
-if(DAP_STREAM_TEST)
-    target_link_libraries(${PROJECT_NAME} dap_stream_test)
-endif()
+# Link dependencies as INTERFACE
+# XKCP include directories are automatically propagated from dap_crypto via INTERFACE_INCLUDE_DIRECTORIES
+# Use dap_link_libraries for automatic include propagation with cycle detection
+# Note: dap_link_manager creates a cycle (dap_stream <-> dap_link_manager), but INTERFACE linking handles this
+dap_link_libraries(${PROJECT_NAME} INTERFACE 
+    dap_core dap_io dap_crypto
+    dap_http_server dap_http_common dap_enc_server dap_session dap_stream_ch dap_client dap_global_db dap_link_manager)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
+# All dependency include directories are automatically propagated via dap_link_libraries
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${STREAM_HDRS}")

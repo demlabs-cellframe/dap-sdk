@@ -229,7 +229,11 @@ if ( DAP_PQLR)
 endif()
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibraryHelpers.cmake)
+
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
 
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -254,8 +258,21 @@ function(print_target_properties tgt)
     endforeach(prop)
 endfunction(print_target_properties)
 
-add_dependencies(${PROJECT_NAME} dap_crypto_XKCP) 
-target_link_libraries(${PROJECT_NAME} dap_crypto_XKCP)
+add_dependencies(${PROJECT_NAME} dap_crypto_XKCP)
+# Ensure BuildXKCP completes before compiling dap_crypto (needed for KeccakHash.h headers)
+# This is critical for parallel builds to prevent compilation errors
+# Set DAP_BUILD_DEPENDENCIES property BEFORE dap_link_libraries to ensure it's available
+# when propagate_build_dependencies processes dependencies
+if(TARGET BuildXKCP)
+    add_dependencies(${PROJECT_NAME} BuildXKCP)
+    # Set DAP_BUILD_DEPENDENCIES property to transitively propagate BuildXKCP dependency
+    # Consumers of dap_crypto will automatically get BuildXKCP dependency through dap_link_libraries
+    # This property is read by propagate_build_dependencies function
+    set_target_properties(${PROJECT_NAME} PROPERTIES DAP_BUILD_DEPENDENCIES "BuildXKCP")
+endif()
+# Link as INTERFACE for OBJECT library
+# Use dap_link_libraries for automatic include propagation with cycle detection
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto_XKCP)
 # Get XKCP include directory from the target property
 get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
 if(XKCP_INCLUDE_DIR)
@@ -284,22 +301,23 @@ if(XKCP_INCLUDE_DIR)
     target_include_directories(dap_crypto INTERFACE ${XKCP_INCLUDE_DIR})
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+# All dependency include directories (including dap_core with 3rdparty/uthash/src and 3rdparty/json-c) are automatically propagated via dap_link_libraries
 
-
-
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
-
-target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+# Link dependencies as INTERFACE for OBJECT library
+# Use dap_link_libraries for automatic include propagation with cycle detection
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto_kyber512 dap_json-c)
 
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    target_link_libraries(dap_crypto secp256k1)
+    target_link_libraries(${PROJECT_NAME} INTERFACE secp256k1)
 endif()
 
-
-if(UNIX)
-  target_link_libraries(dap_crypto m)
+# Ensure XKCP includes are available for compilation (not just INTERFACE)
+get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
+if(XKCP_INCLUDE_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${XKCP_INCLUDE_DIR})
 endif()
+
+# m (math library) is a system library, will be linked at final stage
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 if (BUILD_WITH_ECDSA)

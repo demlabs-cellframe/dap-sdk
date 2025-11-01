@@ -10,6 +10,7 @@ if (ANDROID)
   message(${HTTP_SERVER_SRCS})
 endif()
 
+
 if(WIN32)
     add_definitions ("-DUNDEBUG")
     add_definitions ("-DNDEBUG")
@@ -19,12 +20,18 @@ if(WIN32)
     add_definitions ("-D_CRT_SECURE_NO_WARNINGS")
 endif()
 
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
+
 include_directories(${PROJECT_NAME} include http_client/include)
-add_library(${PROJECT_NAME} STATIC ${HTTP_SERVER_SRCS} ${HTTP_SERVER_HDRS})
-target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
-target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../common/http/include)
+
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${HTTP_SERVER_SRCS} HEADERS ${HTTP_SERVER_HDRS})
+# Include directories - use absolute paths for proper propagation
+target_include_directories(${PROJECT_NAME} INTERFACE . ${CMAKE_CURRENT_SOURCE_DIR}/http_client/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/http_client/include)
+# All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
@@ -55,7 +62,11 @@ if(WIN32)
   secur32
 )
 endif()
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c dap_http_common)
+# Link dependencies as INTERFACE for OBJECT library
+# System libraries (iconv, kernel32, etc.) will be linked at final stage
+# Use dap_link_libraries for automatic include propagation with cycle detection
+# dap_crypto is needed because dap_http_ban_list_client.h includes dap_hash.h which needs KeccakHash.h
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_json-c dap_http_common dap_crypto)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${HTTP_SERVER_HDRS}")

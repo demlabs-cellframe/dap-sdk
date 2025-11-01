@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(dap_enc_server C)
+
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
   
 file(GLOB DAP_ENC_SERVER_SRCS FILES *.c)
 file(GLOB DAP_ENC_SERVER_HDRS FILES include/*.h)
@@ -13,33 +16,16 @@ if(WIN32)
     add_definitions ("-D_CRT_SECURE_NO_WARNINGS")
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${DAP_ENC_SERVER_SRCS} ${DAP_ENC_SERVER_HDRS})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_ENC_SERVER_SRCS} HEADERS ${DAP_ENC_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+# All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_json-c)
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME}
-    kernel32
-    user32
-    shell32
-    winmm
-    gdi32
-    advapi32
-    ole32
-    version
-    imm32
-    oleaut32
-    ws2_32
-    ntdll
-    psapi
-    shlwapi
-    bcrypt
-    crypt32
-    secur32
-)
-endif()
+# Link dependencies as INTERFACE for OBJECT library
+# System libraries (kernel32, etc.) will be linked at final stage
+# Use dap_link_libraries for automatic include propagation with cycle detection
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_http_server dap_json-c)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_ENC_SERVER_HDRS}")

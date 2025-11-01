@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project (dap_core)
 
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibraryHelpers.cmake)
+
 add_definitions("-D_GNU_SOURCE") 
 
 file (GLOB CORE_HEADERS include/*.h)
@@ -24,12 +27,17 @@ if (DAP_USE_RPMALLOC)
     file (GLOB CORE_SRCS ${CORE_SRCS} ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${CORE_SRCS} HEADERS ${CORE_HEADERS})
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty
     ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+# json-c headers are needed for compilation
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
+# json-c config.h is generated in build directory
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 if (DAP_USE_RPMALLOC)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc/rpmalloc/)
     target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
@@ -37,14 +45,21 @@ endif()
 if(WIN32)
     include_directories(include/)
     add_subdirectory(src/win32)
-    set(CORE_LIBRARIES dap_core_win32)
+    # dap_core_win32 is now OBJECT library
+    if(TARGET dap_core_win32)
+        target_link_libraries(${PROJECT_NAME} INTERFACE dap_core_win32)
+    endif()
 endif()
 
 if(UNIX)
     add_subdirectory(src/unix)
-    set(CORE_LIBRARIES dap_core_unix)
+    # dap_core_unix is now OBJECT library
+    if(TARGET dap_core_unix)
+        target_link_libraries(${PROJECT_NAME} INTERFACE dap_core_unix)
+    endif()
+    # rt is a system library, will be linked at final stage
     if(LINUX)
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+        list(APPEND CORE_LIBRARIES rt)
     endif() 
 endif()
 
@@ -53,11 +68,17 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
-target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
+# For OBJECT libraries, target_link_libraries only propagates interfaces
+# External libraries (like dap_json-c) will be linked at final library stage
+# System libraries (like rt) are handled by create_final_shared_library
+target_link_libraries(${PROJECT_NAME} INTERFACE ${CORE_LIBRARIES})
+# dap_json-c is an OBJECT library, link it as interface
+if(TARGET dap_json-c)
+    target_link_libraries(${PROJECT_NAME} INTERFACE dap_json-c)
+endif()
 
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")
-    message("Enabled dap_core test")
     enable_testing()
     add_definitions("-DDAP_NETWORK_MONITOR_TEST_OFF")
     add_subdirectory(test)

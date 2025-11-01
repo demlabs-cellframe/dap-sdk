@@ -1,16 +1,23 @@
 cmake_minimum_required(VERSION 3.10)
 project (dap_stream_ch)
+
+# Include LibraryHelpers for object library creation
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
   
 file(GLOB DAP_STREAM_CH_SRCS *.c)
 file(GLOB DAP_STREAM_CH_HDRS include/*.h)
 
-add_library(${PROJECT_NAME} STATIC ${DAP_STREAM_CH_SRCS} ${DAP_STREAM_CH_HDRS})
+# Create OBJECT library instead of STATIC
+create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_STREAM_CH_SRCS} HEADERS ${DAP_STREAM_CH_HDRS})
 
-target_link_libraries(dap_stream_ch dap_core dap_crypto dap_stream )
+# Link dependencies as INTERFACE
+# Use dap_link_libraries for automatic include propagation with cycle detection
+# dap_io is needed for dap_events_socket functions used in dap_stream_ch_pkt.c
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_stream)
 
 target_include_directories(dap_stream_ch INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+# All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_STREAM_CH_HDRS}")

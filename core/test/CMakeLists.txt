@@ -28,7 +28,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Apply mock autowrap
 dap_mock_autowrap(${PROJECT_NAME})
-
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/test.h
