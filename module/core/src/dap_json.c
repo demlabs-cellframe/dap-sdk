@@ -24,7 +24,7 @@
 
 #include "dap_json.h"
 #include "dap_strfuncs.h"
-#include "json.h"
+#include <json-c/json.h> // IWYU pragma: keep
 #include <string.h>
 
 #define LOG_TAG "dap_json"
@@ -107,11 +107,8 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
     
     // Transfer ownership - no refcount increment needed
     a_item->owned = false;
-    // After this call, a_item is owned by a_array
-    // Caller must NOT free a_item after successful add
-    int ret = json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
-    dap_json_object_free(a_item);
-    return ret;
+    // After this call, a_item is owned by a_array (wrapper becomes borrowed)
+    return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
 }
 
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
@@ -329,10 +326,8 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
     // Transfer ownership - no refcount increment needed
     a_value->owned = false;
     // After this call, a_value is owned by a_json
-    // Caller must NOT free a_value after successful add
-    int l_ret = json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
-    dap_json_object_free(a_value);
-    return l_ret;
+    // Wrapper becomes borrowed; caller should call dap_json_object_free() when it no longer needs direct access
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
 }
 
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array)
@@ -345,10 +340,8 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
     // Transfer ownership - no refcount increment needed
     a_array->owned = false;
     // After this call, a_array is owned by a_json
-    // Caller must NOT free a_array after successful add
-    int l_ret = json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
-    dap_json_array_free(a_array);
-    return l_ret;
+    // Wrapper becomes borrowed; caller should call dap_json_array_free() when it no longer needs direct access
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
 }
 
 // Object field access

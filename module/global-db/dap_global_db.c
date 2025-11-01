@@ -290,6 +290,7 @@ static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_i
 {
     a_obj->timestamp = a_new_timestamp;
     DAP_DELETE(a_obj->sign);
+    a_obj->sign = NULL;
     a_obj->crc = 0;
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }

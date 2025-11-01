@@ -72,15 +72,17 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
     int l_array_length = dap_json_array_length(a_json_arr_reply);
     dap_json_t *l_json_obj_errors = NULL;
     dap_json_t *l_json_arr_errors = NULL;
+    bool l_obj_errors_borrowed = false;
     for (int i = 0; i < l_array_length; i++) {
         dap_json_t *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
         if (l_json_obj && dap_json_get_type(l_json_obj) == DAP_JSON_TYPE_OBJECT) {
             l_json_arr_errors = dap_json_object_get_array(l_json_obj, "errors");
             if (l_json_arr_errors) {
                 l_json_obj_errors = l_json_obj;
+                l_obj_errors_borrowed = true;
                 break;  // Keep l_json_obj, l_json_arr_errors is borrowed ref
             }
-            // l_json_obj is borrowed - no free needed
+            dap_json_object_free(l_json_obj);
         }
         // l_json_obj is borrowed - no free needed
     }
@@ -90,6 +92,8 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
         l_json_arr_errors = dap_json_array_new();
         dap_json_object_add_array(l_json_obj_errors, "errors", l_json_arr_errors);
         dap_json_array_add(a_json_arr_reply, l_json_obj_errors);
+        // l_json_obj_errors wrapper is freed inside dap_json_array_add
+        l_json_obj_errors = NULL;
     } 
 
     dap_json_t* l_obj_error = dap_json_object_new();
@@ -98,7 +102,10 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
     dap_json_array_add(l_json_arr_errors, l_obj_error);
     // l_obj_error ownership transferred to array - no free needed
 
-    // l_json_obj_errors and l_json_arr_errors are borrowed - no free needed
+    if (l_json_arr_errors)
+        dap_json_array_free(l_json_arr_errors);
+    if (l_obj_errors_borrowed && l_json_obj_errors)
+        dap_json_object_free(l_json_obj_errors);
 
     log_it(L_ERROR, "Registration type error. Code error: %d message: %s", a_code_error, l_msg);
     DAP_DEL_Z(l_msg);
@@ -205,9 +212,14 @@ void dap_json_rpc_sign_get_information(dap_json_t* a_json_arr_reply, dap_sign_t*
     dap_hash_fast_t l_hash_pkey;
     dap_json_object_add_string(a_json_out, a_version == 1 ? "Type" : "sig_type", dap_sign_type_to_str(a_sign->header.type));
     if (dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_hash_fast_to_str_static(&l_hash_pkey);
+        const char *l_hash_str = NULL;
+        if (dap_strcmp(a_hash_out_type, "hex")) {
+            dap_enc_b58_hash_str_t l_hash_str_buf = dap_enc_base58_encode_hash_to_str_static_(&l_hash_pkey);
+            l_hash_str = l_hash_str_buf.s;
+        } else {
+            dap_hash_str_t l_hash_str_buf = dap_chain_hash_fast_to_hash_str(&l_hash_pkey);
+            l_hash_str = l_hash_str_buf.s;
+        }
         dap_json_object_add_string(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", l_hash_str);             
     }
     dap_json_object_add_int(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", (int)a_sign->header.sign_pkey_size);
