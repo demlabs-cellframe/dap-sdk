@@ -779,22 +779,23 @@ function(collect_external_libraries_from_modules MODULE_LIST RESULT_VAR)
 endfunction()
 
 # =========================================
-# LINK ALL SDK MODULES TO TEST TARGET
+# LINK ALL SDK MODULES TO TARGET
 # =========================================
-# Links all SDK object modules and their external dependencies to a test target
-# This is a convenience function that:
-#   1. Adds all object files from SDK modules
-#   2. Links the test framework
-#   3. Automatically collects and links all external dependencies
-# Usage: dap_link_all_sdk_modules_for_test(TEST_TARGET MODULE_LIST_VAR)
-#   TEST_TARGET      - test executable target name
+# Universal function to link all SDK object modules and their external dependencies
+# Works for both applications and tests
+# Usage: dap_link_all_sdk_modules(TARGET MODULE_LIST_VAR [LINK_LIBRARIES ...])
+#   TARGET           - executable or library target name
 #   MODULE_LIST_VAR  - variable containing list of SDK modules (e.g., DAP_INTERNAL_MODULES)
-function(dap_link_all_sdk_modules_for_test TEST_TARGET MODULE_LIST_VAR)
+#   LINK_LIBRARIES   - optional additional libraries to link
+function(dap_link_all_sdk_modules TARGET MODULE_LIST_VAR)
+    # Parse optional LINK_LIBRARIES argument
+    cmake_parse_arguments(LINK_ALL "" "" "LINK_LIBRARIES" ${ARGN})
+    
     # Get list of SDK modules from cache
     get_property(SDK_MODULES CACHE ${MODULE_LIST_VAR} PROPERTY VALUE)
     
     if(NOT SDK_MODULES)
-        message(FATAL_ERROR "dap_link_all_sdk_modules_for_test: No modules found in ${MODULE_LIST_VAR}")
+        message(FATAL_ERROR "dap_link_all_sdk_modules: No modules found in ${MODULE_LIST_VAR}")
     endif()
     
     # Collect object files from all SDK modules
@@ -805,22 +806,23 @@ function(dap_link_all_sdk_modules_for_test TEST_TARGET MODULE_LIST_VAR)
         endif()
     endforeach()
     
-    # Add all SDK object files to the test executable
-    target_sources(${TEST_TARGET} PRIVATE ${ALL_OBJECTS})
-    
-    # Link test framework
-    if(TARGET dap_test)
-        target_link_libraries(${TEST_TARGET} PRIVATE dap_test)
-    endif()
+    # Add all SDK object files to the target
+    target_sources(${TARGET} PRIVATE ${ALL_OBJECTS})
     
     # Collect and link all external libraries from SDK modules
     collect_external_libraries_from_modules("${SDK_MODULES}" ALL_EXTERNAL_LIBS)
     if(ALL_EXTERNAL_LIBS)
-        target_link_libraries(${TEST_TARGET} PRIVATE ${ALL_EXTERNAL_LIBS})
-        message(STATUS "[TEST] ${TEST_TARGET}: External libs: ${ALL_EXTERNAL_LIBS}")
+        target_link_libraries(${TARGET} PRIVATE ${ALL_EXTERNAL_LIBS})
+        message(STATUS "[DAP SDK] ${TARGET}: Linked external libs: ${ALL_EXTERNAL_LIBS}")
     endif()
     
-    message(STATUS "[TEST] ${TEST_TARGET}: Linked ${MODULE_LIST_VAR} modules")
+    # Link additional libraries if provided
+    if(LINK_ALL_LINK_LIBRARIES)
+        target_link_libraries(${TARGET} PRIVATE ${LINK_ALL_LINK_LIBRARIES})
+        message(STATUS "[DAP SDK] ${TARGET}: Additional libs: ${LINK_ALL_LINK_LIBRARIES}")
+    endif()
+    
+    message(STATUS "[DAP SDK] ${TARGET}: Linked all SDK modules from ${MODULE_LIST_VAR}")
 endfunction()
 
 # =========================================

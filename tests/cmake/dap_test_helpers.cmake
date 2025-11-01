@@ -71,8 +71,14 @@ function(dap_test_link_libraries TARGET_NAME)
     endif()
     
     # Link all SDK modules and their external dependencies
-    # This single call does everything: object files + external libs
-    dap_link_all_sdk_modules_for_test(${TARGET_NAME} DAP_INTERNAL_MODULES)
+    # Plus test framework if it exists
+    set(ADDITIONAL_LIBS "")
+    if(TARGET dap_test)
+        list(APPEND ADDITIONAL_LIBS dap_test)
+    endif()
+    
+    dap_link_all_sdk_modules(${TARGET_NAME} DAP_INTERNAL_MODULES 
+        LINK_LIBRARIES ${ADDITIONAL_LIBS})
 endfunction()
 
 # =========================================
