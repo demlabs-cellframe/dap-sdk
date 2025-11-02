@@ -258,11 +258,15 @@ int dap_net_transport_server_register_handlers(dap_net_transport_server_context_
     log_it(L_DEBUG, "Registered enc_init handler (path: /enc_init)");
 
     // Register stream handler (DAP stream protocol)
-    dap_stream_add_proc_http(a_context->http_server, "stream");
+    dap_stream_add_proc_http(a_context->http_server, "/stream");
     log_it(L_DEBUG, "Registered stream handler");
 
     // Register stream_ctl handler (stream session control)
-    dap_stream_ctl_add_proc(a_context->http_server, "stream_ctl");
+    // The client uses "stream_ctl/..." path for stream_ctl requests
+    // HTTP server parses URL and looks for processor by dirname first, then extracts basename
+    // z_dirname() returns "/stream_ctl" for path "/stream_ctl/..." (without trailing slash)
+    // So we register processor for "/stream_ctl" directory path (without trailing slash)
+    dap_stream_ctl_add_proc(a_context->http_server, "/stream_ctl");
     log_it(L_DEBUG, "Registered stream_ctl handler");
 
     // Register transport-specific handlers via transport's callback
