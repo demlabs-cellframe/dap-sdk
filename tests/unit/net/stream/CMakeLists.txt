@@ -31,7 +31,7 @@ target_link_libraries(${PROJECT_NAME}
     dap_transport_websocket
     dap_transport_http
     dap_transport_udp
-    dap_server_transport
+    dap_net_transport
     dap_test
 )
 
@@ -53,7 +53,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/websocket/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/http/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/udp/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/transport_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/include
     )
 dap_mock_autowrap(${PROJECT_NAME})
 

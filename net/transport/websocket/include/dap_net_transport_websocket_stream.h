@@ -22,7 +22,7 @@
 */
 
 /**
- * @file dap_stream_transport_websocket.h
+ * @file dap_net_transport_websocket_stream.h
  * @brief WebSocket Transport Adapter for DAP Stream Protocol
  * 
  * This module implements a WebSocket-based transport layer for DAP Stream,
@@ -223,13 +223,13 @@ typedef struct dap_stream_transport_ws_private {
  * @brief Register WebSocket transport adapter
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_websocket_register(void);
+int dap_net_transport_websocket_stream_register(void);
 
 /**
  * @brief Unregister WebSocket transport adapter
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_websocket_unregister(void);
+int dap_net_transport_websocket_stream_unregister(void);
 
 // ============================================================================
 // Configuration Functions

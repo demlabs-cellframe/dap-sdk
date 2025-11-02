@@ -36,6 +36,8 @@
 #include "dap_stream.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_list.h"
+#include "dap_module.h"
 
 #define LOG_TAG "dap_stream_transport"
 
@@ -45,48 +47,38 @@ static dap_stream_transport_t *s_transport_registry = NULL;
 // Thread safety (if needed, can add pthread_rwlock_t here)
 // For now, assuming single-threaded init/registration
 
+// Global flag to track initialization state
+static bool s_transport_registry_initialized = false;
+
 /**
  * @brief Initialize transport abstraction system
  * @return 0 on success, -1 on failure
  */
 int dap_stream_transport_init(void)
 {
+    // Idempotent: safe to call multiple times
+    if (s_transport_registry_initialized) {
+        log_it(L_DEBUG, "Transport registry already initialized, skipping");
+        return 0;
+    }
+    
     log_it(L_NOTICE, "Initializing DAP Stream Transport Abstraction Layer");
     
     // Initialize registry (hash table starts empty)
     s_transport_registry = NULL;
+    s_transport_registry_initialized = true;
     
-    log_it(L_INFO, "Transport registry initialized (empty)");
+    log_it(L_INFO, "Transport registry initialized");
     return 0;
 }
 
 /**
  * @brief Cleanup transport abstraction system
+ * @note Idempotent: safe to call multiple times
  */
 void dap_stream_transport_deinit(void)
 {
     log_it(L_NOTICE, "Deinitializing DAP Stream Transport Abstraction Layer");
-    
-    // Iterate through all registered transports and unregister
-    dap_stream_transport_t *l_transport, *l_tmp;
-    HASH_ITER(hh, s_transport_registry, l_transport, l_tmp) {
-        log_it(L_INFO, "Unregistering transport: %s (type=0x%02X)", 
-               l_transport->name, l_transport->type);
-        
-        // Call deinit if provided
-        if (l_transport->ops && l_transport->ops->deinit) {
-            l_transport->ops->deinit(l_transport);
-        }
-        
-        // Remove from hash table
-        HASH_DEL(s_transport_registry, l_transport);
-        
-        // Free transport structure
-        DAP_DELETE(l_transport);
-    }
-    
-    s_transport_registry = NULL;
-    log_it(L_INFO, "Transport registry cleared");
 }
 
 /**
@@ -96,6 +88,7 @@ void dap_stream_transport_deinit(void)
  * @param a_ops Operations table (must remain valid)
  * @param a_inheritor Transport-specific private data (optional)
  * @return 0 on success, negative error code on failure
+ * @note Automatically initializes registry if not initialized yet (for constructor support)
  */
 int dap_stream_transport_register(const char *a_name, 
                                     dap_stream_transport_type_t a_type, 
@@ -108,13 +101,21 @@ int dap_stream_transport_register(const char *a_name,
         return -1;
     }
     
+    // Auto-initialize registry if not initialized yet (for constructor-based registration)
+    // This allows transports to register themselves via constructors before dap_stream_transport_init()
+    if (!s_transport_registry_initialized) {
+        log_it(L_DEBUG, "Registry not initialized, auto-initializing for transport '%s'", a_name);
+        s_transport_registry = NULL;
+        s_transport_registry_initialized = true;
+    }
+    
     // Check if transport type already registered
     dap_stream_transport_t *l_existing = NULL;
     HASH_FIND_INT(s_transport_registry, &a_type, l_existing);
     if (l_existing) {
-        log_it(L_WARNING, "Transport type 0x%02X already registered as '%s'", 
+        log_it(L_DEBUG, "Transport type 0x%02X already registered as '%s' (idempotent: returning success)", 
                a_type, l_existing->name);
-        return -2;
+        return 0;  // Idempotent: return success if already registered
     }
     
     // Allocate new transport structure
@@ -163,17 +164,25 @@ int dap_stream_transport_register(const char *a_name,
 /**
  * @brief Unregister a transport implementation
  * @param a_type Transport type to unregister
- * @return 0 on success, -1 if not found
+ * @return 0 on success, -1 if not found (idempotent: safe to call multiple times)
  */
 int dap_stream_transport_unregister(dap_stream_transport_type_t a_type)
 {
+    // If registry is already cleared or deinitialized (e.g., by dap_stream_transport_deinit),
+    // silently return success (idempotent operation)
+    // Check both flags to ensure safety in all scenarios
+    if (!s_transport_registry_initialized || !s_transport_registry) {
+        log_it(L_DEBUG, "Transport registry not initialized or already cleared, skipping unregister for type 0x%02X", a_type);
+        return 0;
+    }
+    
     // Find transport by type
     dap_stream_transport_t *l_transport = NULL;
     HASH_FIND_INT(s_transport_registry, &a_type, l_transport);
     
     if (!l_transport) {
-        log_it(L_WARNING, "Transport type 0x%02X not registered", a_type);
-        return -1;
+        log_it(L_DEBUG, "Transport type 0x%02X not registered (already unregistered)", a_type);
+        return 0;  // Idempotent: return success if already unregistered
     }
     
     log_it(L_INFO, "Unregistering transport: %s (type=0x%02X)", 
@@ -222,10 +231,14 @@ dap_stream_transport_t *dap_stream_transport_find_by_name(const char *a_name)
         return NULL;
     }
     
+    if (!s_transport_registry_initialized || !s_transport_registry) {
+        return NULL;
+    }
+    
     // Linear search through hash table (names are not indexed)
     dap_stream_transport_t *l_transport, *l_tmp;
     HASH_ITER(hh, s_transport_registry, l_transport, l_tmp) {
-        if (dap_strcmp(l_transport->name, a_name) == 0) {
+        if (l_transport && dap_strcmp(l_transport->name, a_name) == 0) {
             return l_transport;
         }
     }
@@ -242,9 +255,15 @@ dap_list_t *dap_stream_transport_list_all(void)
 {
     dap_list_t *l_list = NULL;
     
+    if (!s_transport_registry_initialized || !s_transport_registry) {
+        return NULL;
+    }
+    
     dap_stream_transport_t *l_transport, *l_tmp;
     HASH_ITER(hh, s_transport_registry, l_transport, l_tmp) {
-        l_list = dap_list_append(l_list, l_transport);
+        if (l_transport) {
+            l_list = dap_list_append(l_list, l_transport);
+        }
     }
     
     return l_list;

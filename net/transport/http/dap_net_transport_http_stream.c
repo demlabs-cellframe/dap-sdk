@@ -29,7 +29,8 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_stream.h"
-#include "dap_stream_transport_http.h"
+#include "dap_net_transport_http_stream.h"
+#include "dap_net_transport_http_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_ks.h"
@@ -377,7 +378,8 @@ static const dap_stream_transport_ops_t s_http_transport_ops = {
     .read = s_http_transport_read,
     .write = s_http_transport_write,
     .close = s_http_transport_close,
-    .get_capabilities = s_http_transport_get_capabilities
+    .get_capabilities = s_http_transport_get_capabilities,
+    .register_server_handlers = NULL  // HTTP transport doesn't need additional handlers
 };
 
 // ============================================================================
@@ -387,15 +389,27 @@ static const dap_stream_transport_ops_t s_http_transport_ops = {
 /**
  * @brief Register HTTP transport adapter
  */
-int dap_stream_transport_http_register(void)
+int dap_net_transport_http_stream_register(void)
 {
-    int l_ret = dap_stream_transport_register("HTTP", 
+    log_it(L_DEBUG, "dap_net_transport_http_stream_register: Starting HTTP transport registration");
+    // Initialize HTTP server module first (registers server operations)
+    int l_ret = dap_net_transport_http_server_init();
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to initialize HTTP server module: %d", l_ret);
+        return l_ret;
+    }
+    
+    log_it(L_DEBUG, "dap_net_transport_http_stream_register: HTTP server module initialized, registering transport");
+    
+    // Register HTTP transport operations
+    int l_ret_transport = dap_stream_transport_register("HTTP", 
                                                 DAP_STREAM_TRANSPORT_HTTP,
                                                 &s_http_transport_ops,
                                                 NULL);  // No inheritor needed at registration
-    if (l_ret < 0) {
-        log_it(L_ERROR, "Failed to register HTTP transport");
-        return l_ret;
+    if (l_ret_transport < 0) {
+        log_it(L_ERROR, "Failed to register HTTP transport: %d", l_ret_transport);
+        dap_net_transport_http_server_deinit();
+        return l_ret_transport;
     }
     
     log_it(L_NOTICE, "HTTP transport adapter registered");
@@ -405,7 +419,7 @@ int dap_stream_transport_http_register(void)
 /**
  * @brief Unregister HTTP transport adapter
  */
-int dap_stream_transport_http_unregister(void)
+int dap_net_transport_http_stream_unregister(void)
 {
     int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_HTTP);
     if (l_ret < 0) {

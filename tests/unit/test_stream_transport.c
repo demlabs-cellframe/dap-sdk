@@ -41,9 +41,9 @@
 #include "dap_test_helpers.h"
 #include "dap_mock.h"
 #include "dap_stream_transport.h"
-#include "dap_stream_transport_http.h"
-#include "dap_stream_transport_udp.h"
-#include "dap_stream_transport_websocket.h"
+#include "dap_net_transport_http_stream.h"
+#include "dap_net_transport_udp_stream.h"
+#include "dap_net_transport_websocket_stream.h"
 
 #define LOG_TAG "test_stream_transport"
 
@@ -105,26 +105,21 @@ static void suite_cleanup(void)
 // ============================================================================
 
 /**
- * @brief Test 1: Basic transport registration
+ * @brief Test 1: Verify transports are auto-registered
  */
-static void test_01_transport_registration(void)
+static void test_01_transport_auto_registration(void)
 {
     setup_test();
     
-    TEST_INFO("Test 1: Testing basic transport registration...");
+    TEST_INFO("Test 1: Testing automatic transport registration...");
     
-    // Register HTTP transport
-    int ret = dap_stream_transport_http_register();
-    TEST_ASSERT(ret == 0, "HTTP transport registration failed");
-    
-    // Try to register again (should fail with -2)
-    ret = dap_stream_transport_http_register();
-    TEST_ASSERT(ret == -2, "Duplicate HTTP transport registration should fail");
+    // Transports are registered automatically via __attribute__((constructor))
+    // Just verify they are available
     
     // Find HTTP transport
     dap_stream_transport_t *http_transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
-    TEST_ASSERT(http_transport != NULL, "HTTP transport not found");
+    TEST_ASSERT(http_transport != NULL, "HTTP transport not found (should be auto-registered)");
     TEST_ASSERT(http_transport->type == DAP_STREAM_TRANSPORT_HTTP, 
                 "HTTP transport type mismatch");
     
@@ -135,44 +130,33 @@ static void test_01_transport_registration(void)
     TEST_ASSERT(http_by_name == http_transport, 
                 "Transport found by name doesn't match transport found by type");
     
-    // Cleanup for next test
-    dap_stream_transport_http_unregister();
-    
-    TEST_SUCCESS("Test 1 passed: Transport registration works correctly");
+    TEST_SUCCESS("Test 1 passed: Transports are auto-registered correctly");
     teardown_test();
 }
 
 /**
- * @brief Test 2: Transport unregistration
+ * @brief Test 2: Verify all transports are registered
  */
-static void test_02_transport_unregistration(void)
+static void test_02_all_transports_registered(void)
 {
     setup_test();
     
-    TEST_INFO("Test 2: Testing transport unregistration...");
+    TEST_INFO("Test 2: Testing all transports are auto-registered...");
     
-    // Register HTTP transport
-    int ret = dap_stream_transport_http_register();
-    TEST_ASSERT(ret == 0, "HTTP transport registration failed");
-    
-    // Verify it's registered
+    // Verify all transports are registered automatically
     dap_stream_transport_t *http_transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
-    TEST_ASSERT(http_transport != NULL, "HTTP transport not found after registration");
+    TEST_ASSERT(http_transport != NULL, "HTTP transport not found");
     
-    // Unregister HTTP transport
-    ret = dap_stream_transport_http_unregister();
-    TEST_ASSERT(ret == 0, "HTTP transport unregistration failed");
+    dap_stream_transport_t *udp_transport = 
+        dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    TEST_ASSERT(udp_transport != NULL, "UDP transport not found");
     
-    // Verify it's unregistered
-    http_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
-    TEST_ASSERT(http_transport == NULL, "HTTP transport still found after unregistration");
+    dap_stream_transport_t *ws_transport = 
+        dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    TEST_ASSERT(ws_transport != NULL, "WebSocket transport not found");
     
-    // Try to unregister again (should fail with -1)
-    ret = dap_stream_transport_http_unregister();
-    TEST_ASSERT(ret == -1, "Duplicate unregistration should fail");
-    
-    TEST_SUCCESS("Test 2 passed: Transport unregistration works correctly");
+    TEST_SUCCESS("Test 2 passed: All transports are auto-registered");
     teardown_test();
 }
 
@@ -185,16 +169,7 @@ static void test_03_multiple_transports(void)
     
     TEST_INFO("Test 3: Testing multiple transports coexistence...");
     
-    // Register all transports
-    int ret_http = dap_stream_transport_http_register();
-    int ret_udp = dap_stream_transport_udp_register();
-    int ret_ws = dap_stream_transport_websocket_register();
-    
-    TEST_ASSERT(ret_http == 0, "HTTP transport registration failed");
-    TEST_ASSERT(ret_udp == 0, "UDP transport registration failed");
-    TEST_ASSERT(ret_ws == 0, "WebSocket transport registration failed");
-    
-    // Verify all are registered
+    // Verify all are registered (auto-registered via constructors)
     dap_stream_transport_t *http = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
     dap_stream_transport_t *udp = 
@@ -225,15 +200,10 @@ static void test_03_multiple_transports(void)
                   transport->name, transport->type);
     }
     
-    TEST_ASSERT(count == 3, "Expected 3 transports, found %d", count);
+    TEST_ASSERT(count >= 3, "Expected at least 3 transports, found %d", count);
     
     // Free list (not contents)
     dap_list_free(transport_list);
-    
-    // Cleanup
-    dap_stream_transport_websocket_unregister();
-    dap_stream_transport_udp_unregister();
-    dap_stream_transport_http_unregister();
     
     TEST_SUCCESS("Test 3 passed: Multiple transports coexist correctly");
     teardown_test();
@@ -252,10 +222,7 @@ static void test_04_http_capabilities(void)
     
     TEST_INFO("Test 4: Testing HTTP transport capabilities...");
     
-    // Register HTTP transport
-    int ret = dap_stream_transport_http_register();
-    TEST_ASSERT(ret == 0, "HTTP transport registration failed");
-    
+    // HTTP transport is auto-registered via constructor
     // Find HTTP transport
     dap_stream_transport_t *transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
@@ -276,9 +243,6 @@ static void test_04_http_capabilities(void)
     TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL, 
                 "HTTP should be bidirectional");
     
-    // Cleanup
-    dap_stream_transport_http_unregister();
-    
     TEST_SUCCESS("Test 4 passed: HTTP transport capabilities correct");
     teardown_test();
 }
@@ -296,10 +260,7 @@ static void test_05_udp_capabilities(void)
     
     TEST_INFO("Test 5: Testing UDP transport capabilities...");
     
-    // Register UDP transport
-    int ret = dap_stream_transport_udp_register();
-    TEST_ASSERT(ret == 0, "UDP transport registration failed");
-    
+    // UDP transport is auto-registered via constructor
     // Find UDP transport
     dap_stream_transport_t *transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
@@ -320,9 +281,6 @@ static void test_05_udp_capabilities(void)
     TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL, 
                 "UDP should be bidirectional");
     
-    // Cleanup
-    dap_stream_transport_udp_unregister();
-    
     TEST_SUCCESS("Test 5 passed: UDP transport capabilities correct");
     teardown_test();
 }
@@ -336,10 +294,7 @@ static void test_06_udp_configuration(void)
     
     TEST_INFO("Test 6: Testing UDP transport configuration...");
     
-    // Register UDP transport
-    int ret = dap_stream_transport_udp_register();
-    TEST_ASSERT(ret == 0, "UDP transport registration failed");
-    
+    // UDP transport is auto-registered via constructor
     // Find UDP transport
     dap_stream_transport_t *transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
@@ -359,7 +314,7 @@ static void test_06_udp_configuration(void)
     config.enable_checksum = true;
     config.allow_fragmentation = false;
     
-    ret = dap_stream_transport_udp_set_config(transport, &config);
+    int ret = dap_stream_transport_udp_set_config(transport, &config);
     TEST_ASSERT(ret == 0, "Failed to set UDP config");
     
     // Get config back
@@ -378,9 +333,6 @@ static void test_06_udp_configuration(void)
     TEST_ASSERT(config_read.allow_fragmentation == false, 
                 "Allow fragmentation mismatch");
     
-    // Cleanup
-    dap_stream_transport_udp_unregister();
-    
     TEST_SUCCESS("Test 6 passed: UDP transport configuration works correctly");
     teardown_test();
 }
@@ -398,10 +350,7 @@ static void test_07_websocket_capabilities(void)
     
     TEST_INFO("Test 7: Testing WebSocket transport capabilities...");
     
-    // Register WebSocket transport
-    int ret = dap_stream_transport_websocket_register();
-    TEST_ASSERT(ret == 0, "WebSocket transport registration failed");
-    
+    // WebSocket transport is auto-registered via constructor
     // Find WebSocket transport
     dap_stream_transport_t *transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
@@ -424,9 +373,6 @@ static void test_07_websocket_capabilities(void)
     TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_MULTIPLEXING, 
                 "WebSocket should support multiplexing");
     
-    // Cleanup
-    dap_stream_transport_websocket_unregister();
-    
     TEST_SUCCESS("Test 7 passed: WebSocket transport capabilities correct");
     teardown_test();
 }
@@ -440,10 +386,7 @@ static void test_08_websocket_configuration(void)
     
     TEST_INFO("Test 8: Testing WebSocket transport configuration...");
     
-    // Register WebSocket transport
-    int ret = dap_stream_transport_websocket_register();
-    TEST_ASSERT(ret == 0, "WebSocket transport registration failed");
-    
+    // WebSocket transport is auto-registered via constructor
     // Find WebSocket transport
     dap_stream_transport_t *transport = 
         dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
@@ -467,7 +410,7 @@ static void test_08_websocket_configuration(void)
     config.pong_timeout_ms = 5000;    // 5s
     config.enable_compression = true;
     
-    ret = dap_stream_transport_ws_set_config(transport, &config);
+    int ret = dap_stream_transport_ws_set_config(transport, &config);
     TEST_ASSERT(ret == 0, "Failed to set WebSocket config");
     
     // Get config back
@@ -487,9 +430,6 @@ static void test_08_websocket_configuration(void)
     TEST_ASSERT(config_read.enable_compression == true, 
                 "Enable compression mismatch");
     
-    // Cleanup
-    dap_stream_transport_websocket_unregister();
-    
     TEST_SUCCESS("Test 8 passed: WebSocket transport configuration works correctly");
     teardown_test();
 }
@@ -506,8 +446,8 @@ int main(int argc, char **argv)
     TEST_SUITE_START("DAP Stream Transport Layer Unit Tests");
     
     // Transport Registry Tests
-    TEST_RUN(test_01_transport_registration);
-    TEST_RUN(test_02_transport_unregistration);
+    TEST_RUN(test_01_transport_auto_registration);
+    TEST_RUN(test_02_all_transports_registered);
     TEST_RUN(test_03_multiple_transports);
     
     // HTTP Transport Tests

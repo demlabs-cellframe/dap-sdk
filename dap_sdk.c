@@ -27,6 +27,7 @@
 #include "dap_config.h"
 #include "dap_events.h"
 #include "dap_string.h"
+#include "dap_module.h"
 
 // Core includes
 #include "dap_strfuncs.h"
@@ -489,6 +490,10 @@ void dap_sdk_deinit(void) {
     if (s_current_modules & DAP_SDK_MODULE_CORE) {
         s_deinit_core();
     }
+    
+    // Deinitialize all registered modules (must be called after all subsystems)
+    // This ensures all module destructors are called in proper order
+    dap_module_deinit_all();
     
     s_dap_sdk_initialized = false;
     s_current_modules = 0;

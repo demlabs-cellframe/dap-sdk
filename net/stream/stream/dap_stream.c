@@ -60,9 +60,6 @@
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
 #include "dap_stream_transport.h"
-#include "dap_stream_transport_http.h"
-#include "dap_stream_transport_udp.h"
-#include "dap_stream_transport_websocket.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -184,27 +181,10 @@ int dap_stream_init(dap_config_t * a_config)
     }
     
     // Initialize transport layer
+    // Transports will register themselves automatically via constructors
     if (dap_stream_transport_init() != 0) {
         log_it(L_CRITICAL, "Can't init transport registry");
         return -4;
-    }
-    
-    // Register HTTP transport adapter (backward compatibility)
-    if (dap_stream_transport_http_register() != 0) {
-        log_it(L_ERROR, "Can't register HTTP transport adapter");
-        // Non-fatal, continue
-    }
-    
-    // Register UDP transport adapter
-    if (dap_stream_transport_udp_register() != 0) {
-        log_it(L_ERROR, "Can't register UDP transport adapter");
-        // Non-fatal, continue
-    }
-    
-    // Register WebSocket transport adapter
-    if (dap_stream_transport_websocket_register() != 0) {
-        log_it(L_ERROR, "Can't register WebSocket transport adapter");
-        // Non-fatal, continue
     }
     
     s_stream_load_preferred_encryption_type(a_config);
@@ -233,9 +213,7 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     // Deinitialize transport layer
-    dap_stream_transport_websocket_unregister();
-    dap_stream_transport_udp_unregister();
-    dap_stream_transport_http_unregister();
+    // Transports will unregister themselves automatically via destructors
     dap_stream_transport_deinit();
     
     dap_stream_ch_deinit( );
@@ -276,6 +254,23 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server)
 }
 
 /**
+ * @brief stream_add_proc_dns Add processor callback for DNS streaming
+ * @param a_dns_server DNS server instance
+ * @note DNS uses the same callbacks as UDP since both are connectionless protocols
+ */
+void dap_stream_add_proc_dns(dap_server_t *a_dns_server)
+{
+    // DNS is connectionless like UDP, so we can reuse the same callbacks
+    // The actual DNS query/response parsing will be handled by the transport layer
+    a_dns_server->client_callbacks.read_callback = s_esocket_data_read;
+    a_dns_server->client_callbacks.write_callback = s_esocket_write;
+    a_dns_server->client_callbacks.delete_callback = s_esocket_callback_delete;
+    a_dns_server->client_callbacks.new_callback = s_udp_esocket_new;  // Reuse UDP new callback
+    a_dns_server->client_callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
+    a_dns_server->client_callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+}
+
+/**
  * @brief s_stream_states_update
  * @param a_stream stream instance
  */
@@ -287,12 +282,8 @@ static void s_stream_states_update(dap_stream_t *a_stream)
         ready_to_write|=a_stream->channel[i]->ready_to_write;
     dap_events_socket_set_writable_unsafe(a_stream->esocket,ready_to_write);
     
-    // Get HTTP client via transport if available
-    if(a_stream->stream_transport && dap_stream_transport_is_http(a_stream)) {
-        dap_http_client_t *l_http_client = dap_stream_transport_http_get_client(a_stream);
-        if(l_http_client)
-            l_http_client->out_content_ready=true;
-    }
+    // Transport-specific state updates should be handled by transport callbacks
+    // No direct transport-specific logic here - all through dap_stream_transport API
 }
 
 

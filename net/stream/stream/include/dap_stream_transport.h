@@ -83,7 +83,7 @@ typedef enum dap_stream_transport_type {
     DAP_STREAM_TRANSPORT_UDP_BASIC      = 0x02,  ///< Basic UDP (unreliable, low latency)
     DAP_STREAM_TRANSPORT_UDP_RELIABLE   = 0x03,  ///< UDP with ARQ (reliable, ordered)
     DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE  = 0x04,  ///< QUIC-inspired multiplexed UDP
-    DAP_STREAM_TRANSPORT_WEBSOCKET      = 0x05,  ///< WebSocket (HTTP upgrade)
+    DAP_STREAM_TRANSPORT_WEBSOCKET      = 0x05,  ///< WebSocket 
     DAP_STREAM_TRANSPORT_TLS_DIRECT     = 0x06,  ///< Direct TLS connection
     DAP_STREAM_TRANSPORT_DNS_TUNNEL     = 0x07   ///< DNS-based tunneling
 } dap_stream_transport_type_t;
@@ -321,6 +321,17 @@ typedef struct dap_stream_transport_ops {
      * @return Bitfield of DAP_STREAM_TRANSPORT_CAP_* flags
      */
     uint32_t (*get_capabilities)(dap_stream_transport_t *a_transport);
+
+    /**
+     * @brief Register server-side handlers for DAP protocol endpoints
+     * @param a_transport Transport instance
+     * @param a_transport_context Transport server context (dap_net_transport_server_context_t*)
+     * @return 0 on success, negative error code on failure
+     * @note Optional: If NULL, transport doesn't need server-side handler registration
+     *       Called by dap_net_transport_server_register_handlers() to register
+     *       transport-specific handlers (e.g., WebSocket upgrade handlers)
+     */
+    int (*register_server_handlers)(dap_stream_transport_t *a_transport, void *a_transport_context);
 } dap_stream_transport_ops_t;
 
 /**

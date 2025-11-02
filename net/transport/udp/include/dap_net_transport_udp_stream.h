@@ -28,7 +28,7 @@
 #include "dap_events_socket.h"
 
 /**
- * @file dap_stream_transport_udp.h
+ * @file dap_net_transport_udp_stream.h
  * @brief UDP Transport Adapter for DAP Stream Protocol
  * 
  * This module implements a UDP-based transport layer for DAP Stream,
@@ -182,7 +182,7 @@ typedef struct dap_stream_transport_udp_private {
  * dap_stream_transport_udp_register();  // Register UDP
  * ```
  */
-int dap_stream_transport_udp_register(void);
+int dap_net_transport_udp_stream_register(void);
 
 /**
  * @brief Unregister UDP transport adapter
@@ -192,7 +192,7 @@ int dap_stream_transport_udp_register(void);
  * 
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_udp_unregister(void);
+int dap_net_transport_udp_stream_unregister(void);
 
 /**
  * @brief Create UDP transport configuration with defaults

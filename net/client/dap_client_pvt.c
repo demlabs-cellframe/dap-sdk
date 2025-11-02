@@ -440,11 +440,19 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                      "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
                                      a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
                                      a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
+                        debug_if(s_debug_more, L_INFO, "Sending enc_init request to %s:%u%s", 
+                               a_client_pvt->client->link_info.uplink_addr,
+                               a_client_pvt->client->link_info.uplink_port,
+                               l_enc_init_url);
                         int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
                                 l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
                         // bad request
-                        if (l_res < 0)
+                        if (l_res < 0) {
+                            log_it(L_ERROR, "Failed to create HTTP request for enc_init (return code: %d)", l_res);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        } else {
+                            debug_if(s_debug_more, L_DEBUG, "HTTP request created successfully for enc_init");
+                        }
                         DAP_DELETE(l_data_str);
                     }
                     
@@ -811,6 +819,9 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error)
 {
+    debug_if(s_debug_more, L_DEBUG, "dap_client_pvt_request: path='%s', request_size=%zu, worker=%p", 
+             a_path, a_request_size, a_client_internal->worker);
+    
     a_client_internal->request_response_callback = a_response_proc;
     a_client_internal->request_error_callback = a_response_error;
     a_client_internal->is_encrypted = false;
@@ -818,6 +829,13 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
                                             a_client_internal->client->link_info.uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
                                             a_request_size, NULL, s_request_response, s_request_error, a_client_internal, NULL);
+    
+    if (a_client_internal->http_client == NULL) {
+        debug_if(s_debug_more, L_ERROR, "dap_client_http_request returned NULL for path='%s'", a_path);
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "dap_client_http_request succeeded for path='%s'", a_path);
+    }
+    
     return a_client_internal->http_client == NULL;
 }
 

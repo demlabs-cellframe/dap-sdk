@@ -44,3 +44,17 @@ int dap_module_add(const char * a_name, unsigned int a_version, const char * a_d
 
 int dap_module_init_all(void);
 void dap_module_deinit_all(void);
+
+/**
+ * @brief Check if a module is initialized
+ * @param a_name Module name
+ * @return true if initialized, false otherwise
+ */
+bool dap_module_is_initialized(const char *a_name);
+
+/**
+ * @brief Get module version
+ * @param a_name Module name
+ * @return Module version or 0 if not found
+ */
+unsigned int dap_module_get_version(const char *a_name);

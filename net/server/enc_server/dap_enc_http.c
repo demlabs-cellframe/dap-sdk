@@ -104,10 +104,26 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
     log_it(L_DEBUG, "Processing HTTP encryption request (via adapter)");
     http_status_code_t *return_code = (http_status_code_t*)arg;
     
-    // Validate URL path
-    if (!cl_st || strcmp(cl_st->http_client->url_path, "gd4y5yh78w42aaagh")) {
-        log_it(L_ERROR, "Wrong path '%s' in enc_http request", 
-               cl_st ? cl_st->http_client->url_path : "NULL");
+    // HTTP server extracts basename before calling processor
+    // So url_path should be "gd4y5yh78w42aaagh", not "enc_init/gd4y5yh78w42aaagh"
+    const char *l_expected_path = "gd4y5yh78w42aaagh";
+    
+    if (!cl_st) {
+        log_it(L_ERROR, "HTTP simple client is NULL");
+        *return_code = Http_Status_BadRequest;
+        return;
+    }
+    
+    // Log actual path for debugging
+    log_it(L_DEBUG, "enc_http_proc: url_path='%s' (len=%u), expected='%s'", 
+           cl_st->http_client->url_path, 
+           cl_st->http_client->url_path_len,
+           l_expected_path);
+    
+    // Validate URL path - should be basename after HTTP server processing
+    if (strcmp(cl_st->http_client->url_path, l_expected_path) != 0) {
+        log_it(L_ERROR, "Wrong path '%s' in enc_http request (expected '%s')", 
+               cl_st->http_client->url_path, l_expected_path);
         *return_code = Http_Status_NotFound;
         return;
     }

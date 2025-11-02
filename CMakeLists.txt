@@ -144,7 +144,9 @@ endif()
 # Networking core
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(net/stream)
+    add_subdirectory(net/transport)
     message("[+] Module 'stream'")
+    message("[+] Module 'transport'")
 endif()
 
 # Networking link manager
@@ -195,11 +197,11 @@ endif()
 # This allows --wrap to work for internal calls within the SDK
 # Create this AFTER all modules are added to ensure DAP_INTERNAL_MODULES is populated
 
-# Post-process all OBJECT libraries to propagate include directories
-# This must be done AFTER all modules are created and configured
+    # Post-process all OBJECT libraries to propagate include directories
+    # This must be done AFTER all modules are created and configured
 # This ensures transitive dependencies (like XKCP via dap_crypto) are propagated
-post_process_object_libraries()
-
+    post_process_object_libraries()
+    
 if(BUILD_DAP_SDK_TESTS OR BUILD_DAP_TESTS)
     # Create single OBJECT library from all DAP SDK modules for tests
     # This enables --wrap to work for internal calls within the SDK

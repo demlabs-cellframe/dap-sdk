@@ -16,12 +16,22 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${STREAM_SRCS} HEADER
 # XKCP include directories are automatically propagated from dap_crypto via INTERFACE_INCLUDE_DIRECTORIES
 # Use dap_link_libraries for automatic include propagation with cycle detection
 # Note: dap_link_manager creates a cycle (dap_stream <-> dap_link_manager), but INTERFACE linking handles this
+# Note: transport modules depend on dap_stream, but dap_stream needs transport headers
+# for transport registration functions. This creates a circular dependency at link time,
+# but it's resolved through INTERFACE linking - dap_stream only needs headers, not implementation.
 dap_link_libraries(${PROJECT_NAME} INTERFACE 
     dap_core dap_io dap_crypto
-    dap_http_server dap_http_common dap_enc_server dap_session dap_stream_ch dap_client dap_global_db dap_link_manager)
+    dap_http_server dap_http_common dap_enc_server dap_session dap_stream_ch dap_client dap_global_db dap_link_manager
+    dap_transport_websocket dap_transport_http dap_transport_udp)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
+# Add transport include directories
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/websocket/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/http/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/udp/include
+)
 # All dependency include directories are automatically propagated via dap_link_libraries
 
 if(INSTALL_DAP_SDK)

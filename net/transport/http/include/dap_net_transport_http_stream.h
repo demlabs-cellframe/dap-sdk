@@ -22,7 +22,7 @@
 */
 
 /**
- * @file dap_stream_transport_http.h
+ * @file dap_net_transport_http_stream.h
  * @brief HTTP Transport Adapter for DAP Stream
  * 
  * This module provides backward compatibility by wrapping the existing HTTP
@@ -134,7 +134,7 @@ typedef struct dap_stream_transport_http_config {
  * }
  * @endcode
  */
-int dap_stream_transport_http_register(void);
+int dap_net_transport_http_stream_register(void);
 
 /**
  * @brief Unregister HTTP transport adapter
@@ -145,7 +145,7 @@ int dap_stream_transport_http_register(void);
  * 
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_http_unregister(void);
+int dap_net_transport_http_stream_unregister(void);
 
 // ============================================================================
 // HTTP Server Integration

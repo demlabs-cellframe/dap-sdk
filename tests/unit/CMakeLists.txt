@@ -75,6 +75,7 @@ add_subdirectory(core)
 add_subdirectory(net/client)
 add_subdirectory(net/stream)
 add_subdirectory(net/server)
+add_subdirectory(net/transport)
 
 # ============================================================================
 # Crypto Module Unit Tests

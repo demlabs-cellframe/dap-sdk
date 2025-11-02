@@ -492,6 +492,9 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     # Register OBJECT library for post-processing
     register_object_library(${TARGET_NAME})
     
+    # Set directory property for DapModule.cmake to find current target
+    set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY DAP_CURRENT_TARGET ${TARGET_NAME})
+    
     message(STATUS "[SDK] Module: ${TARGET_NAME} (OBJECT)")
 endmacro()
 
@@ -813,21 +816,103 @@ function(dap_link_all_sdk_modules TARGET MODULE_LIST_VAR)
     collect_external_libraries_from_modules("${SDK_MODULES}" ALL_EXTERNAL_LIBS)
     if(ALL_EXTERNAL_LIBS)
         target_link_libraries(${TARGET} PRIVATE ${ALL_EXTERNAL_LIBS})
-        message(STATUS "[DAP SDK] ${TARGET}: Linked external libs: ${ALL_EXTERNAL_LIBS}")
+#        message(STATUS "[DAP SDK] ${TARGET}: Linked external libs: ${ALL_EXTERNAL_LIBS}")
     endif()
     
     # Link additional libraries if provided
     if(LINK_ALL_LINK_LIBRARIES)
         target_link_libraries(${TARGET} PRIVATE ${LINK_ALL_LINK_LIBRARIES})
-        message(STATUS "[DAP SDK] ${TARGET}: Additional libs: ${LINK_ALL_LINK_LIBRARIES}")
+#        message(STATUS "[DAP SDK] ${TARGET}: Additional libs: ${LINK_ALL_LINK_LIBRARIES}")
     endif()
     
-    message(STATUS "[DAP SDK] ${TARGET}: Linked all SDK modules from ${MODULE_LIST_VAR}")
+#    message(STATUS "[DAP SDK] ${TARGET}: Linked all SDK modules from ${MODULE_LIST_VAR}")
 endfunction()
 
 # =========================================
-# INSTALLATION HELPER
+# AUTOMATIC INSTALL PATH SETUP
 # =========================================
+# Automatically determines install paths based on target name and project structure
+# Usage: dap_setup_install_paths(TARGET_NAME [HEADERS headers_list])
+# 
+# For target "dap_net_transport" in "dap-sdk/net/transport/", automatically sets:
+# - LIBRARY DESTINATION: lib/dap/net/transport/
+# - ARCHIVE DESTINATION: lib/dap/net/transport/
+# - PUBLIC_HEADER DESTINATION: include/dap/net/transport/
+function(dap_setup_install_paths TARGET_NAME)
+    cmake_parse_arguments(
+        SETUP_INSTALL
+        ""
+        ""
+        "HEADERS"
+        ${ARGN}
+    )
+    
+    if(NOT INSTALL_DAP_SDK)
+        return()
+    endif()
+    
+    # Get current source directory relative to dap-sdk root
+    # We need to find the dap-sdk root first
+    get_filename_component(CURRENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+    
+    # Try to find dap-sdk root by looking for common markers
+    set(DAP_SDK_ROOT "")
+    set(SEARCH_DIR "${CURRENT_DIR}")
+    while(SEARCH_DIR AND NOT SEARCH_DIR STREQUAL "/")
+        if(EXISTS "${SEARCH_DIR}/dap-sdk.c" OR EXISTS "${SEARCH_DIR}/CMakeLists.txt")
+            # Check if this looks like dap-sdk root
+            if(EXISTS "${SEARCH_DIR}/core" AND EXISTS "${SEARCH_DIR}/net")
+                set(DAP_SDK_ROOT "${SEARCH_DIR}")
+                break()
+            endif()
+        endif()
+        get_filename_component(SEARCH_DIR "${SEARCH_DIR}" DIRECTORY)
+    endwhile()
+    
+    # If we couldn't find dap-sdk root, try common location
+    if(NOT DAP_SDK_ROOT)
+        # Try relative to current dir
+        if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../core")
+            get_filename_component(DAP_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+        else()
+            # Fallback: use current directory as base
+            set(DAP_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+        endif()
+    endif()
+    
+    # Calculate relative path from dap-sdk root
+    file(RELATIVE_PATH REL_PATH "${DAP_SDK_ROOT}" "${CMAKE_CURRENT_SOURCE_DIR}")
+    
+    # Convert path separators and build install path
+    string(REPLACE "/" "/" NORMALIZED_PATH "${REL_PATH}")
+    string(REPLACE "\\" "/" NORMALIZED_PATH "${NORMALIZED_PATH}")
+    
+    # Remove leading/trailing slashes
+    string(REGEX REPLACE "^/*" "" NORMALIZED_PATH "${NORMALIZED_PATH}")
+    string(REGEX REPLACE "/*$" "" NORMALIZED_PATH "${NORMALIZED_PATH}")
+    
+    # Build install paths
+    set(LIB_INSTALL_PATH "lib/dap/${NORMALIZED_PATH}")
+    set(INCLUDE_INSTALL_PATH "include/dap/${NORMALIZED_PATH}")
+    
+    # Clean up paths (remove any double slashes)
+    string(REPLACE "//" "/" LIB_INSTALL_PATH "${LIB_INSTALL_PATH}")
+    string(REPLACE "//" "/" INCLUDE_INSTALL_PATH "${INCLUDE_INSTALL_PATH}")
+    
+    # Set PUBLIC_HEADER property if headers provided
+    if(SETUP_INSTALL_HEADERS)
+        set_target_properties(${TARGET_NAME} PROPERTIES PUBLIC_HEADER "${SETUP_INSTALL_HEADERS}")
+    endif()
+    
+    # Setup install rules
+    install(TARGETS ${TARGET_NAME}
+            LIBRARY DESTINATION ${LIB_INSTALL_PATH}
+            ARCHIVE DESTINATION ${LIB_INSTALL_PATH}
+            PUBLIC_HEADER DESTINATION ${INCLUDE_INSTALL_PATH}
+    )
+    
+    message(STATUS "[DAP SDK] ${TARGET_NAME}: Install paths: lib=${LIB_INSTALL_PATH}, headers=${INCLUDE_INSTALL_PATH}")
+endfunction()
 # Installs library, headers, and pkg-config profile
 # Usage: install_sdk_library(
 #            LIBRARY_NAME "dap-sdk"

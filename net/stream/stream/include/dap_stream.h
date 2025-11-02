@@ -150,6 +150,8 @@ void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
 
 void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 
+void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
+
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_node_addr_t *a_addr, bool a_authorized);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);

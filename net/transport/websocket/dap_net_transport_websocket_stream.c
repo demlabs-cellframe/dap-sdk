@@ -28,7 +28,9 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "dap_stream_transport_websocket.h"
+#include "dap_net_transport_websocket_stream.h"
+#include "dap_net_transport_websocket_server.h"
+#include "dap_net_transport_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
 #include "dap_enc_base64.h"
@@ -37,7 +39,7 @@
 #include "dap_timerfd.h"
 #include "dap_worker.h"
 
-#define LOG_TAG "dap_stream_transport_websocket"
+#define LOG_TAG "dap_net_transport_websocket_stream"
 
 // WebSocket magic GUID for handshake (RFC 6455)
 #define WS_MAGIC_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -69,6 +71,7 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_ws_close(dap_stream_t *a_stream);
 static uint32_t s_ws_get_capabilities(dap_stream_transport_t *a_transport);
+static int s_ws_register_server_handlers(dap_stream_transport_t *a_transport, void *a_transport_context);
 
 // WebSocket protocol helpers
 static int s_ws_generate_key(char *a_key_out, size_t a_key_size);
@@ -103,7 +106,8 @@ static const dap_stream_transport_ops_t s_websocket_ops = {
     .read = s_ws_read,
     .write = s_ws_write,
     .close = s_ws_close,
-    .get_capabilities = s_ws_get_capabilities
+    .get_capabilities = s_ws_get_capabilities,
+    .register_server_handlers = s_ws_register_server_handlers
 };
 
 // ============================================================================
@@ -113,15 +117,26 @@ static const dap_stream_transport_ops_t s_websocket_ops = {
 /**
  * @brief Register WebSocket transport adapter
  */
-int dap_stream_transport_websocket_register(void)
+int dap_net_transport_websocket_stream_register(void)
 {
-    int l_ret = dap_stream_transport_register("WebSocket",
+    // Initialize WebSocket server module first (registers server operations)
+    int l_ret = dap_net_transport_websocket_server_init();
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to initialize WebSocket server module: %d", l_ret);
+        return l_ret;
+    }
+    
+    log_it(L_DEBUG, "dap_net_transport_websocket_stream_register: WebSocket server module initialized, registering transport");
+    
+    // Register WebSocket transport operations
+    int l_ret_transport = dap_stream_transport_register("WebSocket",
                                                 DAP_STREAM_TRANSPORT_WEBSOCKET,
                                                 &s_websocket_ops,
                                                 NULL);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to register WebSocket transport: %d", l_ret);
-        return l_ret;
+    if (l_ret_transport != 0) {
+        log_it(L_ERROR, "Failed to register WebSocket transport: %d", l_ret_transport);
+        dap_net_transport_websocket_server_deinit();
+        return l_ret_transport;
     }
 
     log_it(L_NOTICE, "WebSocket transport registered successfully");
@@ -131,13 +146,16 @@ int dap_stream_transport_websocket_register(void)
 /**
  * @brief Unregister WebSocket transport adapter
  */
-int dap_stream_transport_websocket_unregister(void)
+int dap_net_transport_websocket_stream_unregister(void)
 {
     int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_WEBSOCKET);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister WebSocket transport: %d", l_ret);
         return l_ret;
     }
+
+    // Deinitialize WebSocket server module
+    dap_net_transport_websocket_server_deinit();
 
     log_it(L_NOTICE, "WebSocket transport unregistered successfully");
     return 0;
@@ -1015,5 +1033,38 @@ static dap_stream_transport_ws_private_t *s_get_private_from_stream(dap_stream_t
         return NULL;
     }
     return s_get_private(a_stream->stream_transport);
+}
+
+/**
+ * @brief Register server-side handlers for WebSocket transport
+ * 
+ * Registers WebSocket upgrade handler for stream path.
+ * Called by dap_net_transport_server_register_handlers().
+ */
+static int s_ws_register_server_handlers(dap_stream_transport_t *a_transport, void *a_transport_context)
+{
+    if (!a_transport || !a_transport_context) {
+        log_it(L_ERROR, "Invalid parameters for s_ws_register_server_handlers");
+        return -1;
+    }
+
+    // a_transport_context is dap_net_transport_server_context_t*
+    dap_net_transport_server_context_t *l_context = (dap_net_transport_server_context_t *)a_transport_context;
+    
+    if (!l_context->transport_specific) {
+        log_it(L_WARNING, "WebSocket server instance not provided in transport context");
+        return -2;
+    }
+
+    // Register WebSocket upgrade handler for stream path
+    int l_ret = dap_net_transport_websocket_server_add_upgrade_handler(
+        (dap_net_transport_websocket_server_t *)l_context->transport_specific, "stream");
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to register WebSocket upgrade handler for stream");
+        return l_ret;
+    }
+
+    log_it(L_DEBUG, "Registered WebSocket upgrade handler for stream path");
+    return 0;
 }
 

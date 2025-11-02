@@ -26,7 +26,8 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "dap_stream_transport_udp.h"
+#include "dap_net_transport_udp_stream.h"
+#include "dap_net_transport_udp_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
 #include "dap_server.h"
@@ -81,7 +82,8 @@ static const dap_stream_transport_ops_t s_udp_ops = {
     .read = s_udp_read,
     .write = s_udp_write,
     .close = s_udp_close,
-    .get_capabilities = s_udp_get_capabilities
+    .get_capabilities = s_udp_get_capabilities,
+    .register_server_handlers = NULL  // UDP transport registers handlers via dap_stream_add_proc_udp
 };
 
 // Helper functions
@@ -96,15 +98,26 @@ static int s_parse_udp_header(const dap_stream_transport_udp_header_t *a_header,
 /**
  * @brief Register UDP transport adapter
  */
-int dap_stream_transport_udp_register(void)
+int dap_net_transport_udp_stream_register(void)
 {
-    int l_ret = dap_stream_transport_register("UDP",
+    // Initialize UDP server module first (registers server operations)
+    int l_ret = dap_net_transport_udp_server_init();
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to initialize UDP server module: %d", l_ret);
+        return l_ret;
+    }
+
+    log_it(L_DEBUG, "dap_net_transport_udp_stream_register: UDP server module initialized, registering transport");
+    
+    // Register UDP transport operations
+    int l_ret_transport = dap_stream_transport_register("UDP",
                                                 DAP_STREAM_TRANSPORT_UDP_BASIC,
                                                 &s_udp_ops,
                                                 NULL);  // No inheritor needed at registration
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to register UDP transport: %d", l_ret);
-        return l_ret;
+    if (l_ret_transport != 0) {
+        log_it(L_ERROR, "Failed to register UDP transport: %d", l_ret_transport);
+        dap_net_transport_udp_server_deinit();
+        return l_ret_transport;
     }
 
     log_it(L_NOTICE, "UDP transport registered successfully");
@@ -114,13 +127,16 @@ int dap_stream_transport_udp_register(void)
 /**
  * @brief Unregister UDP transport adapter
  */
-int dap_stream_transport_udp_unregister(void)
+int dap_net_transport_udp_stream_unregister(void)
 {
     int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_UDP_BASIC);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister UDP transport: %d", l_ret);
         return l_ret;
     }
+
+    // Deinitialize UDP server module
+    dap_net_transport_udp_server_deinit();
 
     log_it(L_NOTICE, "UDP transport unregistered successfully");
     return 0;

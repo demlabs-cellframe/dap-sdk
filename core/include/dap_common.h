@@ -143,9 +143,11 @@
 #ifdef __cplusplus
 #define DAP_CAST(t,v) reinterpret_cast<t>(v)
 #define DAP_CAST_PTR(t,v) DAP_CAST(t*,v)
+#define DAP_CAST_REINT(t,v) reinterpret_cast<t>(v)
 #else
 #define DAP_CAST(t,v) v
 #define DAP_CAST_PTR(t,v) v
+#define DAP_CAST_REINT(t,v) ((t)(v))
 #endif
 
 #define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
