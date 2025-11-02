@@ -32,6 +32,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_transport_server.h"
 #include "dap_events_socket.h"
 #include "dap_http_simple.h"
+#include "dap_net_server_common.h"
 
 #define LOG_TAG "dap_net_transport_http_server"
 
@@ -197,8 +198,9 @@ int dap_net_transport_http_server_start(dap_net_transport_http_server_t *a_http_
     a_http_server->server = l_server;
     a_http_server->http_server = l_http_server;
 
-    // Set HTTP server as inheritor
-    a_http_server->server->_inheritor = a_http_server;
+    // DO NOT overwrite _inheritor - it must remain as dap_http_server_t
+    // for DAP_HTTP_SERVER macro to work correctly
+    // a_http_server->server->_inheritor = a_http_server;  // WRONG - overwrites dap_http_server_t!
 
     // Create transport context for handler registration
     dap_net_transport_server_context_t *l_context = dap_net_transport_server_context_from_http(
@@ -227,14 +229,15 @@ int dap_net_transport_http_server_start(dap_net_transport_http_server_t *a_http_
 
     log_it(L_DEBUG, "Registered all DAP protocol handlers for HTTP server");
 
-    // Start listening on all specified address:port pairs
+    // Start listening on all specified address:port pairs using common accept callback
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
         uint16_t l_port = a_ports[i];
 
-        l_ret = dap_server_listen_addr_add(a_http_server->server, l_addr, l_port,
-                                            DESCRIPTOR_TYPE_SOCKET_LISTENING,
-                                            &a_http_server->server->client_callbacks);
+        l_ret = dap_net_server_listen_addr_add_with_callback(a_http_server->server, l_addr, l_port,
+                                                               DESCRIPTOR_TYPE_SOCKET_LISTENING,
+                                                               NULL,  // No pre_worker_added callback needed
+                                                               NULL);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start HTTP server on %s:%u", l_addr, l_port);
             dap_net_transport_http_server_stop(a_http_server);

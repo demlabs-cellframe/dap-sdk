@@ -32,6 +32,7 @@ target_link_libraries(${PROJECT_NAME}
     dap_transport_http
     dap_transport_udp
     dap_net_transport
+    dap_net_server_common
     dap_test
 )
 

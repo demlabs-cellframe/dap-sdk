@@ -104,29 +104,18 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
     log_it(L_DEBUG, "Processing HTTP encryption request (via adapter)");
     http_status_code_t *return_code = (http_status_code_t*)arg;
     
-    // HTTP server extracts basename before calling processor
-    // So url_path should be "gd4y5yh78w42aaagh", not "enc_init/gd4y5yh78w42aaagh"
-    const char *l_expected_path = "gd4y5yh78w42aaagh";
-    
     if (!cl_st) {
         log_it(L_ERROR, "HTTP simple client is NULL");
         *return_code = Http_Status_BadRequest;
         return;
     }
     
-    // Log actual path for debugging
-    log_it(L_DEBUG, "enc_http_proc: url_path='%s' (len=%u), expected='%s'", 
+    // HTTP server extracts basename before calling processor
+    // So url_path should be basename (e.g., "gd4y5yh78w42aaagh"), not full path
+    // We accept any basename - it's just an identifier, not validated
+    log_it(L_DEBUG, "enc_http_proc: url_path='%s' (len=%u)", 
            cl_st->http_client->url_path, 
-           cl_st->http_client->url_path_len,
-           l_expected_path);
-    
-    // Validate URL path - should be basename after HTTP server processing
-    if (strcmp(cl_st->http_client->url_path, l_expected_path) != 0) {
-        log_it(L_ERROR, "Wrong path '%s' in enc_http request (expected '%s')", 
-               cl_st->http_client->url_path, l_expected_path);
-        *return_code = Http_Status_NotFound;
-        return;
-    }
+           cl_st->http_client->url_path_len);
     
     // Parse query string into request structure
     dap_enc_server_request_t l_request = {0};
@@ -206,6 +195,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
  */
 void enc_http_add_proc(struct dap_http_server* sh, const char * url)
 {
+    log_it(L_DEBUG, "enc_http_add_proc: registering handler for URL '%s' on HTTP server '%s' (sh=%p)", 
+           url, sh ? sh->server_name : "NULL", (void*)sh);
     dap_http_simple_proc_add(sh, url, 140000, enc_http_proc);
     log_it(L_INFO, "HTTP encryption endpoint registered: %s", url);
 }

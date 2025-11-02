@@ -37,6 +37,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_net_transport_server.h"
+#include "dap_events_socket.h"
+#include "dap_net_server_common.h"
 
 #define LOG_TAG "dap_net_transport_websocket_server"
 
@@ -222,14 +224,15 @@ int dap_net_transport_websocket_server_start(dap_net_transport_websocket_server_
     // Cleanup transport context (handlers are registered, context is no longer needed)
     dap_net_transport_server_context_delete(l_context);
 
-    // Start listening on all specified address:port pairs
+    // Start listening on all specified address:port pairs using common accept callback
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
         uint16_t l_port = a_ports[i];
 
-        int l_ret = dap_server_listen_addr_add(a_ws_server->server, l_addr, l_port,
-                                                 DESCRIPTOR_TYPE_SOCKET_LISTENING,
-                                                 &l_client_callbacks);
+        int l_ret = dap_net_server_listen_addr_add_with_callback(a_ws_server->server, l_addr, l_port,
+                                                                  DESCRIPTOR_TYPE_SOCKET_LISTENING,
+                                                                  NULL,  // No pre_worker_added callback needed
+                                                                  NULL);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start WebSocket server on %s:%u", l_addr, l_port);
             dap_net_transport_websocket_server_stop(a_ws_server);

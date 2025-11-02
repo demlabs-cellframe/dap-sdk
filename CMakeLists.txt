@@ -157,6 +157,8 @@ endif()
 
 # Common HTTP functionality for client and server
 if (DAPSDK_MODULES MATCHES "network-client" OR DAPSDK_MODULES MATCHES "network-server")
+    add_subdirectory(net/common/server)
+    message("[+] Module 'common server'")
     add_subdirectory(net/common/http)
     message("[+] Module 'common http'")
 endif()

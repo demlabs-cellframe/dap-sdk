@@ -179,6 +179,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a
     }
 
     strncpy( l_url_proc->url, a_url_path, sizeof(l_url_proc->url)-1 );
+    l_url_proc->url[sizeof(l_url_proc->url)-1] = '\0';  // Ensure null termination
 
     l_url_proc->new_callback    = a_new_callback;
     l_url_proc->delete_callback = a_delete_callback;

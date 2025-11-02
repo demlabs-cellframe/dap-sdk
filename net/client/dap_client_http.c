@@ -1346,11 +1346,39 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             
             // Headers parsed successfully, body data remains in buf_in for BODY processing
             // No copying here - let BODY block handle all body data processing
+            // BUT: if body data is already in buf_in and we're in non-streaming mode,
+            // we need to copy it to response buffer here and check completion
+            // After parsing headers, we're now in DAP_HTTP_PARSE_BODY state
+            // Check if we already have all the data and can finalize immediately
+            if (l_client_http->parse_state == DAP_HTTP_PARSE_BODY && 
+                !l_client_http->is_chunked &&
+                l_client_http->content_length > 0 &&
+                l_client_http->response_size >= l_client_http->content_length &&
+                a_es->buf_in_size == 0) {
+                log_it(L_DEBUG, "All body data received during header parsing (response_size=%zu >= content_length=%zu), finalizing immediately", 
+                       l_client_http->response_size, l_client_http->content_length);
+                s_http_finalize_response(l_client_http, l_ctx);
+                break; // Don't fall through to BODY processing
+            }
         }
         // FALLTHROUGH
             
         case DAP_HTTP_PARSE_BODY:
         {
+            // Check if we already have all the data (body came with headers)
+            log_it(L_DEBUG, "DAP_HTTP_PARSE_BODY: is_chunked=%d, content_length=%zu, response_size=%zu, buf_in_size=%zu", 
+                   l_client_http->is_chunked, l_client_http->content_length, l_client_http->response_size, a_es->buf_in_size);
+            
+            if (!l_client_http->is_chunked &&
+                l_client_http->content_length > 0 &&
+                l_client_http->response_size >= l_client_http->content_length &&
+                a_es->buf_in_size == 0) {
+                log_it(L_DEBUG, "All body data already received (response_size=%zu >= content_length=%zu), finalizing", 
+                       l_client_http->response_size, l_client_http->content_length);
+                s_http_finalize_response(l_client_http, l_ctx);
+                break;
+            }
+            
             if (l_client_http->is_chunked) {
                 bool l_zero_copy = (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED);
                 bool l_chunked_complete = s_process_chunked_data(l_client_http, l_ctx, a_es, l_zero_copy);
@@ -1431,6 +1459,9 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                         }
                         l_client_http->response_size += l_read_bytes;
                         
+                        log_it(L_DEBUG, "Read %zu bytes, total response_size=%zu, content_length=%zu", 
+                               l_read_bytes, l_client_http->response_size, l_client_http->content_length);
+                        
                         if (l_ctx && l_ctx->progress_callback) {
                             l_ctx->progress_callback(
                                 l_client_http->response + l_client_http->response_size - l_read_bytes,
@@ -1448,7 +1479,14 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                      !l_client_http->is_chunked &&
                      a_es->buf_in_size == 0)) {
                     // Complete if: content received OR HTTP error without data
+                    log_it(L_DEBUG, "HTTP response complete: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
+                           l_client_http->content_length, l_client_http->response_size, 
+                           l_client_http->status_code, a_es->buf_in_size);
                     s_http_finalize_response(l_client_http, l_ctx);
+                } else {
+                    log_it(L_DEBUG, "HTTP response not complete yet: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
+                           l_client_http->content_length, l_client_http->response_size, 
+                           l_client_http->status_code, a_es->buf_in_size);
                 }
             }
             
@@ -2220,6 +2258,7 @@ static bool s_http_ensure_buffer_space(dap_client_http_t *a_client_http, dap_cli
 static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx)
 {
     if (a_client_http->parse_state != DAP_HTTP_PARSE_BODY) {
+        log_it(L_DEBUG, "s_http_finalize_response: parse_state=%d, not ready yet", a_client_http->parse_state);
         return; // Not ready yet
     }
     
@@ -2231,9 +2270,14 @@ static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_clien
     // NEW: response buffer contains ONLY body data (no headers)
     size_t l_body_size = a_client_http->response_size;
     
+    log_it(L_DEBUG, "s_http_finalize_response: body_size=%zu, status_code=%d, response_callback=%p, response_callback_full=%p", 
+           l_body_size, a_client_http->status_code, 
+           (void*)a_client_http->response_callback, (void*)a_client_http->response_callback_full);
+    
     // Call appropriate callback using cached status code
     if(a_client_http->response_callback_full) {
         // Call full callback with headers
+        log_it(L_DEBUG, "Calling response_callback_full with body_size=%zu", l_body_size);
         a_client_http->response_callback_full(
                 a_client_http->response, // Direct pointer - no offset needed
                 l_body_size,
@@ -2242,11 +2286,14 @@ static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_clien
                 a_client_http->status_code);
     } else if(a_client_http->response_callback) {
         // Call simple callback without headers
+        log_it(L_DEBUG, "Calling response_callback with body_size=%zu", l_body_size);
         a_client_http->response_callback(
                 a_client_http->response, // Direct pointer - no offset needed
                 l_body_size,
                 a_client_http->callbacks_arg, 
                 a_client_http->status_code);
+    } else {
+        log_it(L_WARNING, "s_http_finalize_response: No callback registered!");
     }
     
     // Mark as complete
@@ -2408,12 +2455,20 @@ static int s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_clien
     
     size_t l_body_start = l_headers_length;
     size_t l_body_remaining = a_es->buf_in_size - l_body_start;
+    
+    // Move body data to start of buf_in BEFORE allocating buffer
+    // This ensures body data is available for copying
     if (l_body_remaining > 0) {
         memmove(a_es->buf_in, a_es->buf_in + l_body_start, l_body_remaining);
     }
     a_es->buf_in_size = l_body_remaining;
     
     a_client_http->parse_state = DAP_HTTP_PARSE_BODY;
+    
+    // NOTE: Body buffer allocation happens AFTER this function returns
+    // So we can't copy body data here - it will be copied in the next s_http_read call
+    // when we're in DAP_HTTP_PARSE_BODY state
+    
     return 1;
 }
 

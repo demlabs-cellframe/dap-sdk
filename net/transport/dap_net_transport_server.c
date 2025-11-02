@@ -252,9 +252,10 @@ int dap_net_transport_server_register_handlers(dap_net_transport_server_context_
     // Register enc_init handler (encryption handshake)
     // The client uses "enc_init/gd4y5yh78w42aaagh" path for enc_init requests
     // HTTP server parses URL and looks for processor by dirname first, then extracts basename
-    // So we register processor for "enc_init/" directory path
-    enc_http_add_proc(a_context->http_server, "enc_init/");
-    log_it(L_DEBUG, "Registered enc_init handler (path: enc_init/)");
+    // z_dirname() returns "/enc_init" for path "/enc_init/gd4y5yh78w42aaagh" (without trailing slash)
+    // So we register processor for "/enc_init" directory path (without trailing slash)
+    enc_http_add_proc(a_context->http_server, "/enc_init");
+    log_it(L_DEBUG, "Registered enc_init handler (path: /enc_init)");
 
     // Register stream handler (DAP stream protocol)
     dap_stream_add_proc_http(a_context->http_server, "stream");

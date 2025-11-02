@@ -92,6 +92,9 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     l_http_client->esocket = a_esocket;
     l_http_client->http = DAP_HTTP_SERVER( a_esocket->server );
+    log_it(L_DEBUG, "dap_http_client_new: created HTTP client, server=%p, http_server=%p (name='%s')", 
+           (void*)a_esocket->server, (void*)l_http_client->http,
+           l_http_client->http ? l_http_client->http->server_name : "NULL");
     l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
     l_http_client->socket_num = a_esocket->socket;
 
@@ -382,12 +385,22 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 
                 /*
                  * Find URL processor
-                */
+                 */
                                                                             /* url_path = '/p1/p2/p3/target' */
                 l_ret = z_dirname( l_http_client->url_path, l_http_client->url_path_len );
                                                                             /* url_path = '/p1/p2/p3/ */
+                log_it(L_DEBUG, "Searching for URL processor with path '%s' (len=%d, original_len=%u)", 
+                       l_http_client->url_path, l_ret, l_http_client->url_path_len);
                 HASH_FIND_STR( l_http_client->http->url_proc, l_http_client->url_path, url_proc );
                 l_http_client->proc = url_proc;
+                
+                if (!url_proc) {
+                    log_it(L_WARNING, "URL processor not found for path '%s'. Available processors:", l_http_client->url_path);
+                    dap_http_url_proc_t *l_tmp_proc, *l_tmp;
+                    HASH_ITER(hh, l_http_client->http->url_proc, l_tmp_proc, l_tmp) {
+                        log_it(L_WARNING, "  - '%s'", l_tmp_proc->url);
+                    }
+                }
 
                 if ( l_ret )
                     l_http_client->url_path[ l_ret ] = '/';

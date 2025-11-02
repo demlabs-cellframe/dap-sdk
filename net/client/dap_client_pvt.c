@@ -929,6 +929,8 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
+    debug_if(s_debug_more, L_DEBUG, "s_request_response: response_size=%zu, is_encrypted=%d, callback=%p", 
+             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
     if ( !l_client_pvt->request_response_callback )
         return log_it(L_ERROR, "No request_response_callback in encrypted client!");
     l_client_pvt->http_client = NULL;
@@ -944,8 +946,12 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
             l_response[l_len] = '\0';
             l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
             DAP_DELETE(l_response);
-        } else
+        } else {
+            debug_if(s_debug_more, L_DEBUG, "s_request_response: calling callback with unencrypted response (size=%zu)", a_response_size);
             l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
+        }
+    } else {
+        log_it(L_WARNING, "s_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
     }
 }
 

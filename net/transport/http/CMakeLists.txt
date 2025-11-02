@@ -55,6 +55,7 @@ dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_stream
     dap_stream_ch
     dap_net_transport
+    dap_net_server_common
 )
 
 if(INSTALL_DAP_SDK)
