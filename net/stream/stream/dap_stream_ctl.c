@@ -114,9 +114,18 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
    // unsigned int action_cmd=0;
     bool l_new_session = false;
 
+    // 🔍 SERVER DEBUG: Log incoming request details
+    log_it(L_INFO, "[SERVER /stream_ctl] ========== NEW REQUEST ==========");
+    log_it(L_INFO, "[SERVER /stream_ctl] Raw URL path: %s", a_http_simple->http_client->url_path);
+    log_it(L_INFO, "[SERVER /stream_ctl] Request size: %zu bytes", a_http_simple->request_size);
+    
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
 
     if(l_dg){
+        // 🔍 SERVER DEBUG: Log decoded request
+        log_it(L_INFO, "[SERVER /stream_ctl] Request decoded successfully");
+        log_it(L_INFO, "[SERVER /stream_ctl] Decoded URL path: %s", l_dg->url_path ? l_dg->url_path : "NULL");
+        log_it(L_INFO, "[SERVER /stream_ctl] Decoded query: %s", l_dg->in_query ? l_dg->in_query : "NULL");
         size_t l_channels_str_size = sizeof(l_stream_session->active_channels);
         char l_channels_str[sizeof(l_stream_session->active_channels)];
         dap_enc_key_type_t l_enc_type = s_socket_forward_key.type;
@@ -162,40 +171,67 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
 
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;
+        
+        // 🔍 SERVER DEBUG: Log KeyID header
         if (l_hdr_key_id) {
+            log_it(L_INFO, "[SERVER /stream_ctl] KeyID header found: %s", l_hdr_key_id->value);
             l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
             if (!l_ks_key) {
-                log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
+                log_it(L_WARNING, "[SERVER /stream_ctl] ❌ Key with ID %s NOT FOUND in KS!", l_hdr_key_id->value);
                 *return_code = Http_Status_BadRequest;
                 return;
+            } else {
+                log_it(L_INFO, "[SERVER /stream_ctl] ✅ Key with ID %s found in KS", l_hdr_key_id->value);
+                log_it(L_INFO, "[SERVER /stream_ctl] Key type: %s", dap_enc_get_type_name(l_ks_key->key->type));
             }
+        } else {
+            log_it(L_WARNING, "[SERVER /stream_ctl] ⚠️  No KeyID header in request!");
         }
         if(l_new_session){
+            // 🔍 SERVER DEBUG: Creating new stream session
+            log_it(L_INFO, "[SERVER /stream_ctl] Creating new stream session...");
+            log_it(L_INFO, "[SERVER /stream_ctl] Channels: %s", l_channels_str);
+            log_it(L_INFO, "[SERVER /stream_ctl] Enc type: %s", dap_enc_get_type_name(l_enc_type));
+            log_it(L_INFO, "[SERVER /stream_ctl] Enc key size: %zu", l_enc_key_size);
+            log_it(L_INFO, "[SERVER /stream_ctl] Enc headers: %d", l_enc_headers);
+            log_it(L_INFO, "[SERVER /stream_ctl] Legacy mode: %s", l_is_legacy ? "YES" : "NO");
+            
             l_stream_session = dap_stream_session_pure_new();
             strncpy(l_stream_session->active_channels, l_channels_str, l_channels_str_size);
             char *l_key_str = DAP_NEW_Z_SIZE(char, KEX_KEY_STR_SIZE + 1);
             dap_random_string_fill(l_key_str, KEX_KEY_STR_SIZE);
             l_stream_session->key = dap_enc_key_new_generate( l_enc_type, l_key_str, KEX_KEY_STR_SIZE,
                                                NULL, 0, s_socket_forward_key.size);
+            
+            // 🔍 SERVER DEBUG: Log generated stream_id and stream_server_key
+            log_it(L_INFO, "[SERVER /stream_ctl] Generated stream_id: %u", l_stream_session->id);
+            log_it(L_INFO, "[SERVER /stream_ctl] Generated stream_server_key (first 32 chars): %.32s...", l_key_str);
+            
             dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
             if (l_hdr_key_id) {
                 dap_enc_ks_key_t *l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
                 if (!l_ks_key) {
-                    log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
+                    log_it(L_WARNING, "[SERVER /stream_ctl] ❌ Key with ID %s not found (2nd check)", l_hdr_key_id->value);
                     *return_code = Http_Status_BadRequest;
                     return;
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
             }
-            if (l_is_legacy)
+            
+            // 🔍 SERVER DEBUG: Log response format
+            if (l_is_legacy) {
+                log_it(L_INFO, "[SERVER /stream_ctl] Response format: LEGACY (2 fields)");
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
-            else
+            } else {
+                log_it(L_INFO, "[SERVER /stream_ctl] Response format: NON-LEGACY (5 fields)");
+                log_it(L_INFO, "[SERVER /stream_ctl] Protocol version: %u", DAP_PROTOCOL_VERSION);
                 enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
                                        DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
+            }
             *return_code = Http_Status_OK;
 
-            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
+            log_it(L_INFO, "[SERVER /stream_ctl] ✅ New stream session %u initialized",l_stream_session->id);
 
             DAP_DELETE(l_key_str);
         }else{
@@ -204,7 +240,17 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             return;
         }
 
+        // 🔍 SERVER DEBUG: Before encoding response
+        log_it(L_INFO, "[SERVER /stream_ctl] Encoding response with key from KS...");
+        log_it(L_INFO, "[SERVER /stream_ctl] Plaintext response size: %zu bytes", l_dg->response_size);
+        
         enc_http_reply_encode(a_http_simple,l_dg);
+        
+        // 🔍 SERVER DEBUG: After encoding response
+        log_it(L_INFO, "[SERVER /stream_ctl] Response encoded successfully");
+        log_it(L_INFO, "[SERVER /stream_ctl] Encrypted response size: %zu bytes", a_http_simple->reply_size);
+        log_it(L_INFO, "[SERVER /stream_ctl] ========================================");
+        
         dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{

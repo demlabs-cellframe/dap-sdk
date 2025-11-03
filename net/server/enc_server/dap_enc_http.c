@@ -346,6 +346,30 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
     if (!a_http_delegate->response)
         return;
 
+    // 🔍 SERVER DEBUG: Log encryption key details
+    log_it(L_INFO, "[SERVER enc_http_reply_encode] ========== ENCRYPTING RESPONSE ==========");
+    log_it(L_INFO, "[SERVER enc_http_reply_encode] Plaintext response size: %zu bytes", a_http_delegate->response_size);
+    log_it(L_INFO, "[SERVER enc_http_reply_encode] Plaintext (first 100 chars): %.100s", (char*)a_http_delegate->response);
+    
+    if (a_http_delegate->key) {
+        log_it(L_INFO, "[SERVER enc_http_reply_encode] Encryption key type: %s", dap_enc_get_type_name(a_http_delegate->key->type));
+        log_it(L_INFO, "[SERVER enc_http_reply_encode] Key priv_key_data_size: %zu bytes", a_http_delegate->key->priv_key_data_size);
+        
+        // Log key hex (first 64 bytes for debugging)
+        if (a_http_delegate->key->priv_key_data && a_http_delegate->key->priv_key_data_size > 0) {
+            char l_key_hex[129] = {0};
+            size_t l_bytes_to_log = a_http_delegate->key->priv_key_data_size < 64 ? a_http_delegate->key->priv_key_data_size : 64;
+            for (size_t i = 0; i < l_bytes_to_log; i++) {
+                snprintf(l_key_hex + i*2, 3, "%02x", ((unsigned char*)a_http_delegate->key->priv_key_data)[i]);
+            }
+            log_it(L_INFO, "[SERVER enc_http_reply_encode] Key priv_key_data (first 64 bytes hex): %s", l_key_hex);
+        } else {
+            log_it(L_WARNING, "[SERVER enc_http_reply_encode] ⚠️  Key priv_key_data is NULL or empty!");
+        }
+    } else {
+        log_it(L_ERROR, "[SERVER enc_http_reply_encode] ❌ Encryption key is NULL!");
+    }
+
     if(a_http_simple->reply)
         DAP_DELETE(a_http_simple->reply);
 
@@ -358,6 +382,19 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
                                               a_http_delegate->response, a_http_delegate->response_size,
                                               a_http_simple->reply, l_reply_size_max,
                                               DAP_ENC_DATA_TYPE_RAW);
+    
+    // 🔍 SERVER DEBUG: Log encrypted result
+    log_it(L_INFO, "[SERVER enc_http_reply_encode] Encrypted response size: %zu bytes (max: %zu)", a_http_simple->reply_size, l_reply_size_max);
+    if (a_http_simple->reply_size > 0) {
+        // Log encrypted hex (first 64 bytes)
+        char l_encrypted_hex[129] = {0};
+        size_t l_bytes_to_log = a_http_simple->reply_size < 64 ? a_http_simple->reply_size : 64;
+        for (size_t i = 0; i < l_bytes_to_log; i++) {
+            snprintf(l_encrypted_hex + i*2, 3, "%02x", ((unsigned char*)a_http_simple->reply)[i]);
+        }
+        log_it(L_INFO, "[SERVER enc_http_reply_encode] Encrypted response (first 64 bytes hex): %s", l_encrypted_hex);
+    }
+    log_it(L_INFO, "[SERVER enc_http_reply_encode] ========================================");
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)

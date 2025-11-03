@@ -105,19 +105,46 @@ dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
 
 dap_enc_key_t * dap_enc_ks_find_http(struct dap_http_client * a_http_client)
 {
+    // 🔍 SERVER DEBUG: Log HTTP request details
+    log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ========== SEARCHING FOR KEY IN KS ==========");
+    log_it(L_INFO, "[SERVER dap_enc_ks_find_http] HTTP Method: %s", a_http_client->action);
+    log_it(L_INFO, "[SERVER dap_enc_ks_find_http] URL path: %s", a_http_client->url_path);
+    
     dap_http_header_t * hdr_key_id=dap_http_header_find(a_http_client->in_headers,"KeyID");
 
     if(hdr_key_id){
+        log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ✅ KeyID header found: %s", hdr_key_id->value);
         
         dap_enc_ks_key_t * ks_key=dap_enc_ks_find(hdr_key_id->value);
-        if(ks_key)
+        if(ks_key) {
+            log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ✅ Key FOUND in KS! Type: %s", dap_enc_get_type_name(ks_key->key->type));
+            log_it(L_INFO, "[SERVER dap_enc_ks_find_http] Key priv_key_data_size: %zu bytes", ks_key->key->priv_key_data_size);
+            
+            // Log key hex (first 32 bytes)
+            if (ks_key->key->priv_key_data && ks_key->key->priv_key_data_size > 0) {
+                char l_key_hex[65] = {0};
+                size_t l_bytes_to_log = ks_key->key->priv_key_data_size < 32 ? ks_key->key->priv_key_data_size : 32;
+                for (size_t i = 0; i < l_bytes_to_log; i++) {
+                    snprintf(l_key_hex + i*2, 3, "%02x", ((unsigned char*)ks_key->key->priv_key_data)[i]);
+                }
+                log_it(L_INFO, "[SERVER dap_enc_ks_find_http] Key priv_key_data (first 32 bytes hex): %s", l_key_hex);
+            }
+            log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ==========================================");
             return ks_key->key;
-        else{
-            log_it(L_WARNING, "Not found keyID %s in storage", hdr_key_id->value);
+        } else {
+            log_it(L_WARNING, "[SERVER dap_enc_ks_find_http] ❌ Not found keyID %s in storage", hdr_key_id->value);
+            log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ==========================================");
             return NULL;
         }
     }else{
-        log_it(L_WARNING, "No KeyID in HTTP headers");
+        log_it(L_WARNING, "[SERVER dap_enc_ks_find_http] ❌ No KeyID in HTTP headers");
+        
+        // Log all headers for debugging
+        log_it(L_INFO, "[SERVER dap_enc_ks_find_http] Available headers:");
+        for (dap_http_header_t *l_hdr = a_http_client->in_headers; l_hdr; l_hdr = l_hdr->next) {
+            log_it(L_INFO, "[SERVER dap_enc_ks_find_http]   %s: %s", l_hdr->name, l_hdr->value);
+        }
+        log_it(L_INFO, "[SERVER dap_enc_ks_find_http] ==========================================");
         return NULL;
     }
 }
