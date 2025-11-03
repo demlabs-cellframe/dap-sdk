@@ -31,7 +31,14 @@
 #include "dap_net_transport_server.h"
 
 #include "dap_stream_ch.h"
+#include "dap_stream_ch_proc.h"
+#include "dap_stream_ch_pkt.h"
 #include "dap_module.h"
+#include "dap_link_manager.h"
+#include "dap_global_db.h"
+#include "dap_global_db_driver.h"
+#include "dap_mock.h"
+#include "dap_enc_ks.h"  // For DAP_STREAM_NODE_ADDR_CERT_TYPE
 
 // Test framework headers
 #include "dap_test_async.h"
@@ -70,6 +77,7 @@ typedef struct transport_test_context {
     dap_net_transport_server_t *server;
     dap_client_t *clients[TEST_PARALLEL_TRANSPORTS];
     test_stream_ch_context_t stream_ctxs[TEST_PARALLEL_TRANSPORTS];
+    dap_stream_node_addr_t client_node_addrs[TEST_PARALLEL_TRANSPORTS];  // Unique client node addresses
     pthread_t thread;
     int result;
     bool running;
@@ -84,45 +92,105 @@ static pthread_mutex_t s_test_mutex = PTHREAD_MUTEX_INITIALIZER;
 // =======================================================================================
 
 /**
+ * @brief Echo callback for test channels - sends received data back to client
+ */
+static bool s_test_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
+{
+    if (!a_ch || !a_arg) {
+        return false;
+    }
+    
+    // a_arg is dap_stream_ch_pkt_t*
+    dap_stream_ch_pkt_t *a_pkt = (dap_stream_ch_pkt_t *)a_arg;
+    
+    // Echo data back to client
+    debug_if(true, L_DEBUG, "Echoing %u bytes back to client on channel '%c'", 
+             a_pkt->hdr.data_size, a_ch->proc->id);
+    
+    // Send data back through the same channel
+    ssize_t l_sent = dap_stream_ch_pkt_write_unsafe(a_ch, a_pkt->hdr.type, 
+                                                    a_pkt->data, a_pkt->hdr.data_size);
+    
+    if (l_sent < 0) {
+        log_it(L_WARNING, "Failed to echo data back to client");
+        return false;
+    }
+    
+    return true; // Security check passed
+}
+
+/**
+ * @brief Test fill_net_info callback for link manager
+ */
+static int s_test_fill_net_info(dap_link_t *a_link) {
+    // Minimal stub for testing - just return success
+    (void)a_link;
+    return 0;
+}
+
+// Mock functions for global_db dependencies
+DAP_MOCK_DECLARE(dap_global_db_driver_get_groups_by_mask);
+DAP_MOCK_DECLARE(dap_global_db_erase_table_sync);
+
+// Mock implementations using DAP_MOCK_WRAPPER_CUSTOM
+DAP_MOCK_WRAPPER_CUSTOM(dap_list_t*, dap_global_db_driver_get_groups_by_mask,
+    PARAM(const char*, a_group_mask)
+)
+{
+    UNUSED(a_group_mask);
+    // Return empty list - no groups to clean up
+    return NULL;
+}
+
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_global_db_erase_table_sync,
+    PARAM(const char*, a_table_name)
+)
+{
+    UNUSED(a_table_name);
+    // Mock successful erase
+    return 0;
+}
+
+/**
  * @brief Initialize all transport systems
  */
 static int test_init_all_transports(void)
 {
     TEST_INFO("Initializing all transport systems");
     
-    // Initialize event system
-    int l_ret = dap_events_init(1, 60000);
-    if (l_ret != 0) {
-        TEST_ERROR("Events initialization failed");
+    // Events system is already initialized in main()
+    // Just check if it's initialized
+    if (!dap_events_workers_init_status()) {
+        TEST_ERROR("Events system not initialized");
         return -1;
     }
     
-    dap_events_start();
-    
     // Initialize stream system first (required for some modules)
-    l_ret = dap_stream_init(NULL);
+    int l_ret = dap_stream_init(NULL);
     if (l_ret != 0) {
         TEST_ERROR("Stream initialization failed");
         return -2;
     }
     
-    // Initialize all registered modules via dap_module system
-    // This must be called after basic subsystems are initialized
-    // to ensure transport server modules are initialized and registered
-    // Note: Some modules may fail to initialize, but that's OK if they're not needed
+    // Register channel processors for test channels A, B, C
+    // These channels are used in tests but don't have processors registered by default
+    // Add packet_in_callback to echo data back to client
+    dap_stream_ch_proc_add('A', NULL, NULL, s_test_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('B', NULL, NULL, s_test_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('C', NULL, NULL, s_test_channel_echo_callback, NULL);
+    log_it(L_DEBUG, "Registered channel processors for test channels A, B, C with echo callback");
     
-    // Check if any modules are registered before calling init_all
-    // If constructors didn't run, we need to manually register transport modules
-    log_it(L_DEBUG, "Calling dap_module_init_all()...");
-    int l_module_ret = dap_module_init_all();
-    if (l_module_ret != 0) {
-        // Log warning but continue - some modules may fail if dependencies aren't met
-        TEST_ERROR("Some modules failed to initialize");
-        return -22;
+    // Modules are initialized automatically via constructors when libraries are loaded
+    // Constructors call init functions directly, which register transports
+    // No need to call dap_module_init_all() manually - constructors handle initialization
+    log_it(L_DEBUG, "Waiting for modules to initialize via constructors...");
+    
+    // Verify all transports are registered (with intelligent waiting)
+    // Constructors may take some time to execute, so we wait for transports
+    if (!test_wait_for_transports_registered(2000)) {
+        TEST_ERROR("Not all transports registered within timeout");
+        return -4;
     }
-    
-    // Give system time to stabilize
-    dap_test_sleep_ms(200);
     
     // Verify all transports are registered
     // This is the actual check - if transports are registered, initialization was successful
@@ -186,8 +254,11 @@ static int test_create_transport_server(transport_test_context_t *a_ctx)
         return -2;
     }
     
-    // Give server time to bind and start listening
-    dap_test_sleep_ms(500);
+    // Wait for server to be ready (listening)
+    if (!test_wait_for_server_ready(a_ctx->server, 2000)) {
+        TEST_ERROR("Server not ready within timeout");
+        return -6;
+    }
     
     TEST_INFO("%s server started on %s:%u", a_ctx->config.name, l_addr, l_port);
     return 0;
@@ -235,7 +306,7 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
 /**
  * @brief Create and configure client for a transport
  */
-static dap_client_t *test_create_transport_client(transport_test_config_t *a_config, uint16_t a_port_offset)
+static dap_client_t *test_create_transport_client(transport_test_config_t *a_config, uint16_t a_port_offset, dap_stream_node_addr_t *a_client_node_addr)
 {
     // Initialize client system (idempotent)
     dap_client_init();
@@ -258,13 +329,33 @@ static dap_client_t *test_create_transport_client(transport_test_config_t *a_con
         return NULL;
     }
     
-    // Initialize test node address
-    dap_stream_node_addr_t l_node_addr;
-    memset(&l_node_addr, 0, sizeof(l_node_addr));
-    
     // Set uplink address and port
-    uint16_t l_port = a_config->base_port + a_port_offset;
-    dap_client_set_uplink_unsafe(l_client, &l_node_addr, a_config->address, l_port);
+    // NOTE: All clients connect to the same server port (base_port)
+    // The server handles multiple clients on the same port
+    // link_info.node_addr should be server's address (g_node_addr)
+    // This will be updated from server signature during handshake
+    uint16_t l_port = a_config->base_port;
+    dap_stream_node_addr_t l_server_node_addr = g_node_addr; // Use server's global node address
+    dap_client_set_uplink_unsafe(l_client, &l_server_node_addr, a_config->address, l_port);
+    
+    // Set client's certificate if node address provided
+    // This certificate will be used during handshake to identify client
+    // The address from certificate will be used on server side to identify the stream
+    if (a_client_node_addr && a_client_node_addr->uint64 != 0) {
+        // Find certificate by name (it was created by dap_test_generate_unique_node_addr)
+        // Format: "test_client_%s_%zu_%zu"
+        char l_cert_name[256];
+        snprintf(l_cert_name, sizeof(l_cert_name), "test_client_%s_%zu_%zu", 
+                 a_config->name, (size_t)pthread_self(), (size_t)a_port_offset);
+        dap_cert_t *l_client_cert = dap_cert_find_by_name(l_cert_name);
+        if (l_client_cert) {
+            dap_client_set_auth_cert(l_client, l_cert_name);
+            log_it(L_DEBUG, "Set client certificate '%s' for node address "NODE_ADDR_FP_STR, 
+                   l_cert_name, NODE_ADDR_FP_ARGS_S(*a_client_node_addr));
+        } else {
+            log_it(L_WARNING, "Certificate '%s' not found, client address may not be set correctly", l_cert_name);
+        }
+    }
     
     // Set active channels
     dap_client_set_active_channels_unsafe(l_client, "ABC");
@@ -292,7 +383,13 @@ static void *test_transport_worker(void *a_arg)
         return NULL;
     }
     
-    // Initialize all client contexts
+    // Note: We don't need to generate unique server node address for tests
+    // Server uses g_node_addr which is set from node-addr certificate during dap_stream_init()
+    // Each transport server uses the same g_node_addr
+    // For tests, we generate unique client node addresses to ensure each client has unique identity
+    // But server address is always g_node_addr (the global server node address)
+    
+    // Initialize all client contexts and generate unique client node addresses
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
         if (test_stream_ch_context_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, TEST_LARGE_DATA_SIZE) != 0) {
             TEST_ERROR("Failed to initialize stream channel context %zu for %s", i, l_ctx->config.name);
@@ -300,11 +397,25 @@ static void *test_transport_worker(void *a_arg)
             l_ctx->running = false;
             return NULL;
         }
+        
+        // Generate unique client node address
+        char l_client_cert_name[256];
+        snprintf(l_client_cert_name, sizeof(l_client_cert_name), "test_client_%s_%zu_%zu", 
+                 l_ctx->config.name, (size_t)pthread_self(), i);
+        if (dap_test_generate_unique_node_addr(l_client_cert_name, DAP_STREAM_NODE_ADDR_CERT_TYPE, 
+                                               &l_ctx->client_node_addrs[i]) != 0) {
+            TEST_ERROR("Failed to generate client node address %zu for %s", i, l_ctx->config.name);
+            l_ctx->result = -2;
+            l_ctx->running = false;
+            return NULL;
+        }
+        log_it(L_DEBUG, "Generated client %zu node address for %s: "NODE_ADDR_FP_STR, 
+               i, l_ctx->config.name, NODE_ADDR_FP_ARGS_S(l_ctx->client_node_addrs[i]));
     }
     
-    // Create all clients
+    // Create all clients with their unique node addresses
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
-        l_ctx->clients[i] = test_create_transport_client(&l_ctx->config, i);
+        l_ctx->clients[i] = test_create_transport_client(&l_ctx->config, i, &l_ctx->client_node_addrs[i]);
         if (!l_ctx->clients[i]) {
             TEST_ERROR("Failed to create client %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -3;
@@ -339,6 +450,29 @@ static void *test_transport_worker(void *a_arg)
     printf("  All %s clients completed handshake successfully\n", l_ctx->config.name);
     pthread_mutex_unlock(&s_test_mutex);
     
+    // link_info.node_addr should already be set to g_node_addr (server address)
+    // No need to update it after handshake - it's already correct
+    // Server address is used for finding stream on server when registering receivers
+    
+    // Wait for stream connection to complete and channels to be created
+    // Channels are created on server when client connects to stream endpoint
+    // Channels are created on client in STAGE_STREAM_CONNECTED
+    // We need to wait for this before registering receivers
+    bool l_all_channels_ready = true;
+    for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
+        if (!test_wait_for_stream_channels_ready(l_ctx->clients[i], "ABC", 5000)) {
+            TEST_ERROR("Channels not ready for client %zu in %s", i, l_ctx->config.name);
+            l_all_channels_ready = false;
+        }
+    }
+    
+    if (!l_all_channels_ready) {
+        TEST_ERROR("Not all channels ready");
+        l_ctx->result = -4;
+        l_ctx->running = false;
+        return NULL;
+    }
+    
     // Register stream channel receivers for all clients
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
         int l_ret = test_stream_ch_register_receiver(l_ctx->clients[i], TEST_STREAM_CH_ID, &l_ctx->stream_ctxs[i]);
@@ -349,9 +483,6 @@ static void *test_transport_worker(void *a_arg)
             return NULL;
         }
     }
-    
-    // Give system time to stabilize
-    dap_test_sleep_ms(500);
     
     // Send large data volumes for all clients in parallel
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
@@ -411,11 +542,17 @@ static void test_cleanup_transport_context(transport_test_context_t *a_ctx)
     // Cleanup clients
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
         if (a_ctx->clients[i]) {
-            dap_client_delete_unsafe(a_ctx->clients[i]);
+            // Use mt version to safely delete from any thread
+            dap_client_delete_mt(a_ctx->clients[i]);
+            // Wait for client to be deleted
+            test_wait_for_client_deleted(&a_ctx->clients[i], 1000);
             a_ctx->clients[i] = NULL;
         }
         test_stream_ch_context_cleanup(&a_ctx->stream_ctxs[i]);
     }
+    
+    // Wait for all streams to close
+    test_wait_for_all_streams_closed(1000);
     
     // Cleanup server
     if (a_ctx->server) {
@@ -437,8 +574,8 @@ static void test_01_init_all_transports(void)
     TEST_INFO("Test 1: Initializing all transport systems");
     
     int l_ret = test_init_all_transports();
-    // Check return value - if transports are registered, initialization is successful
-    // even if dap_module_init_all() returned non-zero (some modules may fail if not needed)
+    // Modules are initialized automatically via constructors when libraries are loaded
+    // We just verify that transports are registered
     TEST_ASSERT(l_ret == 0, "All transport systems should initialize successfully (transports must be registered)");
     
     TEST_SUCCESS("Test 1 passed: All transport systems initialized");
@@ -456,6 +593,7 @@ static void test_02_parallel_transport_testing(void)
         s_transport_contexts[i].config = s_transport_configs[i];
         s_transport_contexts[i].server = NULL;
         memset(s_transport_contexts[i].clients, 0, sizeof(s_transport_contexts[i].clients));
+        memset(s_transport_contexts[i].client_node_addrs, 0, sizeof(s_transport_contexts[i].client_node_addrs));
         s_transport_contexts[i].result = 0;
         s_transport_contexts[i].running = false;
     }
@@ -492,10 +630,13 @@ static void test_03_cleanup_all_resources(void)
 {
     TEST_INFO("Test 3: Cleaning up all resources");
     
-    // Cleanup all transport contexts
+    // Cleanup all transport contexts (stops servers and deletes clients)
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
         test_cleanup_transport_context(&s_transport_contexts[i]);
     }
+    
+    // Wait for all streams to close
+    test_wait_for_all_streams_closed(1000);
     
     // Cleanup client system
     dap_client_deinit();
@@ -503,14 +644,17 @@ static void test_03_cleanup_all_resources(void)
     // Cleanup stream system
     dap_stream_deinit();
     
-    // Deinitialize all modules via dap_module system
+    // Deinitialize link manager
+    dap_link_manager_deinit();
+    
+    // Deinitialize modules BEFORE stopping events system
+    // Some modules may need events system to be active during cleanup
+    log_it(L_DEBUG, "Deinitializing all modules...");
     dap_module_deinit_all();
     
-    // Give time for cleanup to propagate
-    dap_test_sleep_ms(200);
-    
-    // Deinit events system
+    // Deinit events system (it will stop workers and wait for them internally)
     if (dap_events_workers_init_status()) {
+        log_it(L_DEBUG, "Deinitializing events system...");
         dap_events_deinit();
     }
     
@@ -530,7 +674,11 @@ int main(void)
                                  "max_tries=3\n"
                                  "timeout=20\n"
                                  "debug_more=true\n"
-                                 "timeout_active_after_connect=15\n";
+                                 "timeout_active_after_connect=15\n"
+                                 "[stream]\n"
+                                 "debug_more=true\n"
+                                 "debug_channels=true\n"
+                                 "debug_dump_stream_headers=false\n";
     FILE *f = fopen("test_transport.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
@@ -554,6 +702,31 @@ int main(void)
     
     // Initialize encryption system
     dap_enc_init();
+    
+    // Initialize events system (required for dap_proc_thread_get_auto used by dap_link_manager)
+    int l_events_ret = dap_events_init(1, 60000);
+    if (l_events_ret != 0) {
+        log_it(L_ERROR, "dap_events_init failed: %d", l_events_ret);
+        return -10;
+    }
+    
+    // Start events system (required for dap_proc_thread_init inside dap_events_start)
+    dap_events_start();
+    
+    // Initialize link manager (required for stream operations)
+    dap_link_manager_callbacks_t l_link_manager_callbacks = {
+        .connected = NULL,
+        .disconnected = NULL,
+        .error = NULL,
+        .fill_net_info = s_test_fill_net_info,
+        .link_request = NULL,
+        .link_count_changed = NULL
+    };
+    int l_link_manager_ret = dap_link_manager_init(&l_link_manager_callbacks);
+    if (l_link_manager_ret != 0) {
+        log_it(L_ERROR, "Link manager initialization failed (may be OK for basic tests): %d", l_link_manager_ret);
+        return -11;
+    }
     
     // Setup test certificate environment
     int l_ret = dap_test_setup_certificates(".");

@@ -421,13 +421,19 @@ int dap_net_transport_http_stream_register(void)
  */
 int dap_net_transport_http_stream_unregister(void)
 {
+    log_it(L_DEBUG, "dap_net_transport_http_stream_unregister: Starting HTTP transport unregistration");
+    
     int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_HTTP);
     if (l_ret < 0) {
         log_it(L_WARNING, "Failed to unregister HTTP transport");
         return l_ret;
     }
     
-    log_it(L_NOTICE, "HTTP transport adapter unregistered");
+    // Deinitialize HTTP server module (unregisters server operations)
+    log_it(L_DEBUG, "dap_net_transport_http_stream_unregister: Deinitializing HTTP server module");
+    dap_net_transport_http_server_deinit();
+    
+    log_it(L_NOTICE, "HTTP transport adapter unregistered successfully");
     return 0;
 }
 

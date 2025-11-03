@@ -53,6 +53,13 @@ void dap_module_deinit_all(void);
 bool dap_module_is_initialized(const char *a_name);
 
 /**
+ * @brief Mark a module as initialized (for use by constructors)
+ * @param a_name Module name
+ * @return 0 on success, -1 if module not found
+ */
+int dap_module_mark_initialized(const char *a_name);
+
+/**
  * @brief Get module version
  * @param a_name Module name
  * @return Module version or 0 if not found

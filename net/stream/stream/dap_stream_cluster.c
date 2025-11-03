@@ -133,10 +133,12 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     pthread_rwlock_wrlock(&a_cluster->members_lock);
     HASH_FIND(hh, a_cluster->members, a_addr, sizeof(*a_addr), l_member);
     if (l_member) {
+        // Member already exists - return existing member (idempotent operation)
+        // This is safe and expected when stream is added to existing link
         pthread_rwlock_unlock(&a_cluster->members_lock);
-        log_it(L_WARNING, "Trying to add member "NODE_ADDR_FP_STR" but its already present in cluster ",
-                                                NODE_ADDR_FP_ARGS(a_addr));
-        return NULL;
+        log_it(L_DEBUG, "Member "NODE_ADDR_FP_STR" already present in cluster, returning existing member",
+               NODE_ADDR_FP_ARGS(a_addr));
+        return l_member;
     }
     l_member = DAP_NEW_Z(dap_cluster_member_t);
     if (!l_member) {

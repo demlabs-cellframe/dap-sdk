@@ -549,8 +549,10 @@ pthread_t       l_tid;
  */
 void dap_events_stop_all( )
 {
-    if ( !s_workers_init )
-        log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+    if ( !s_workers_init ) {
+        log_it(L_DEBUG, "dap_events_stop_all: Event socket reactor not initialized, skipping");
+        return;
+    }
 
     if (!s_workers) {
         log_it(L_WARNING, "dap_events_stop_all called but s_workers is NULL");
@@ -565,6 +567,13 @@ void dap_events_stop_all( )
         
         if (!s_workers[i]->context->event_exit) {
             log_it(L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
+            continue;
+        }
+        
+        // Check if socket is still valid before signaling
+        // After deinitialization, socket may be freed but pointer may still be non-NULL
+        if (s_workers[i]->context->event_exit->fd2 < 0) {
+            log_it(L_DEBUG, "Worker %u event_exit socket fd2 is invalid, skipping stop signal", i);
             continue;
         }
         

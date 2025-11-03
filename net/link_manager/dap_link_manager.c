@@ -975,8 +975,15 @@ static bool s_stream_add_callback(void *a_arg)
     if (!l_link && !l_args->uplink)
         l_link = s_link_manager_downlink_create(l_node_addr);
     if (!l_link) {
-        log_it(L_ERROR, "Can't %s link for address " NODE_ADDR_FP_STR,
-                 l_args->uplink ? "find" : "create", NODE_ADDR_FP_ARGS(l_node_addr));
+        // For uplink: link may not exist yet if stream is created before link is established
+        // This is normal in some scenarios (e.g., tests), so use DEBUG level instead of ERROR
+        if (l_args->uplink) {
+            log_it(L_DEBUG, "Can't find link for address " NODE_ADDR_FP_STR,
+                   NODE_ADDR_FP_ARGS(l_node_addr));
+        } else {
+            log_it(L_ERROR, "Can't create link for address " NODE_ADDR_FP_STR,
+                   NODE_ADDR_FP_ARGS(l_node_addr));
+        }
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         
         DAP_DELETE(l_args);
@@ -1023,7 +1030,7 @@ static bool s_stream_add_callback(void *a_arg)
  */
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink)
 {
-    dap_return_val_if_pass(!a_node_addr || !s_link_manager->active, -1);
+    dap_return_val_if_pass(!a_node_addr || !s_link_manager || !s_link_manager->active, -1);
     struct link_moving_args *l_args = DAP_NEW_Z_RET_VAL_IF_FAIL(struct link_moving_args, -2);
     *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
     return dap_proc_thread_callback_add_pri(s_query_thread, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);

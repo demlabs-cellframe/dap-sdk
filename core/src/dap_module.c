@@ -186,6 +186,21 @@ void dap_module_deinit_all(void)
     
     // Deinitialize in reverse order (last added first)
     if (l_deinit_list) {
+        // Count total modules to deinitialize and total list size
+        size_t l_total_modules = 0;
+        size_t l_list_size = 0;
+        dap_list_t *l_count_iter = l_deinit_list;
+        while (l_count_iter) {
+            l_entry = (dap_module_registry_entry_t *)l_count_iter->data;
+            if (l_entry && l_entry->deinit_cb && l_entry->initialized) {
+                l_total_modules++;
+            }
+            l_list_size++;
+            l_count_iter = l_count_iter->next;
+        }
+        log_it(L_INFO, "dap_module_deinit_all: Found %zu module(s) to deinitialize out of %zu entries in list", 
+               l_total_modules, l_list_size);
+        
         // Get last element
         dap_list_t *l_iter = l_deinit_list;
         while (l_iter && l_iter->next) {
@@ -193,16 +208,68 @@ void dap_module_deinit_all(void)
         }
         
         // Iterate backwards
+        size_t l_module_index = 0;
+        size_t l_iteration_count = 0;
+        size_t l_consecutive_skipped = 0; // Track consecutive skipped entries
+        const size_t l_max_iterations = l_list_size + 1; // Allow one extra iteration for safety
         while (l_iter != NULL) {
+            // Safety check: prevent infinite loop
+            if (l_iteration_count >= l_max_iterations) {
+                log_it(L_ERROR, "dap_module_deinit_all: Infinite loop detected! Breaking after %zu iterations", 
+                       l_iteration_count);
+                break;
+            }
+            l_iteration_count++;
+            
             l_entry = (dap_module_registry_entry_t *)l_iter->data;
             if (l_entry && l_entry->deinit_cb && l_entry->initialized) {
-                log_it(L_INFO, "dap_module_deinit_all: Deinitializing module '%s'", l_entry->name);
+                // Reset consecutive skipped counter when we find a module to deinitialize
+                l_consecutive_skipped = 0;
+                
+                log_it(L_INFO, "dap_module_deinit_all: [%zu/%zu] Deinitializing module '%s'", 
+                       l_module_index + 1, l_total_modules, l_entry->name);
+                fflush(stdout); // Ensure log is flushed before calling deinit_cb
+                
+                // Call deinit callback - this may hang if module has issues
                 l_entry->deinit_cb();
+                
                 l_entry->initialized = false;
+                log_it(L_DEBUG, "dap_module_deinit_all: Module '%s' deinitialized successfully", l_entry->name);
+                l_module_index++;
+                
+                // Early exit: if we've processed all modules, break
+                if (l_module_index >= l_total_modules) {
+                    log_it(L_DEBUG, "dap_module_deinit_all: All modules processed, exiting iteration loop");
+                    break;
+                }
+            } else {
+                l_consecutive_skipped++;
+                // Log why this entry is skipped (only for first few or if all modules are processed)
+                if (l_module_index >= l_total_modules && l_consecutive_skipped <= 3) {
+                    if (!l_entry) {
+                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping NULL entry at iteration %zu", l_iteration_count);
+                    } else if (!l_entry->deinit_cb) {
+                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (no deinit_cb) at iteration %zu", 
+                               l_entry->name, l_iteration_count);
+                    } else if (!l_entry->initialized) {
+                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (already deinitialized) at iteration %zu", 
+                               l_entry->name, l_iteration_count);
+                    }
+                }
             }
+            
+            // Move to previous element
             dap_list_t *l_prev = l_iter->prev;
+            if (l_prev == l_iter) {
+                // Circular reference detected - break to prevent infinite loop
+                log_it(L_ERROR, "dap_module_deinit_all: Circular reference detected in deinit list! Breaking.");
+                break;
+            }
             l_iter = l_prev;
         }
+        
+        log_it(L_DEBUG, "dap_module_deinit_all: Finished iteration loop: processed %zu modules in %zu iterations", 
+               l_module_index, l_iteration_count);
         
         dap_list_free(l_deinit_list);
     }
@@ -252,6 +319,38 @@ bool dap_module_is_initialized(const char *a_name)
 {
     dap_module_registry_entry_t *l_entry = s_module_find(a_name);
     return l_entry ? l_entry->initialized : false;
+}
+
+/**
+ * @brief Mark a module as initialized (for use by constructors)
+ * 
+ * This function allows constructors to mark modules as initialized after
+ * successfully calling init functions directly, preventing duplicate initialization.
+ * 
+ * @param a_name Module name
+ * @return 0 on success, -1 if module not found
+ */
+int dap_module_mark_initialized(const char *a_name)
+{
+    if (!a_name) {
+        log_it(L_ERROR, "dap_module_mark_initialized: Invalid module name");
+        return -1;
+    }
+    
+    dap_module_registry_entry_t *l_entry = s_module_find(a_name);
+    if (!l_entry) {
+        log_it(L_WARNING, "dap_module_mark_initialized: Module '%s' not found in registry", a_name);
+        return -1;
+    }
+    
+    if (l_entry->initialized) {
+        log_it(L_DEBUG, "dap_module_mark_initialized: Module '%s' already marked as initialized", a_name);
+        return 0;
+    }
+    
+    l_entry->initialized = true;
+    log_it(L_DEBUG, "dap_module_mark_initialized: Module '%s' marked as initialized", a_name);
+    return 0;
 }
 
 /**
