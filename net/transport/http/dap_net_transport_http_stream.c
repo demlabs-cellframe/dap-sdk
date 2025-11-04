@@ -100,6 +100,9 @@ typedef struct {
 
 static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL};
 
+// Static HTTP transport instance (initialized once)
+static dap_net_transport_t *s_http_transport = NULL;
+
 /**
  * @brief Handshake error callback wrapper
  */
@@ -232,6 +235,9 @@ static int s_http_transport_init(dap_net_transport_t *a_transport, dap_config_t 
     
     a_transport->_inheritor = l_priv;
     
+    // Store HTTP transport instance statically
+    s_http_transport = a_transport;
+    
     UNUSED(a_config); // Config not used in legacy HTTP transport
     log_it(L_DEBUG, "HTTP transport initialized");
     return 0;
@@ -260,6 +266,11 @@ static void s_http_transport_deinit(dap_net_transport_t *a_transport)
     
     DAP_DELETE(l_priv);
     a_transport->_inheritor = NULL;
+    
+    // Clear static HTTP transport instance
+    if (s_http_transport == a_transport) {
+        s_http_transport = NULL;
+    }
     
     log_it(L_DEBUG, "HTTP transport deinitialized");
 }
@@ -413,8 +424,8 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     s_http_handshake_ctx.stream = a_stream;
     s_http_handshake_ctx.callback = a_callback;
     
-    // Get HTTP transport
-    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    // Use static HTTP transport instance
+    dap_net_transport_t *l_transport = s_http_transport;
     
     // Make HTTP request using legacy infrastructure
     int l_res = s_http_request(l_client_pvt, l_transport, l_enc_init_url,
@@ -512,8 +523,8 @@ static int s_http_transport_session_create(dap_stream_t *a_stream,
     s_http_session_ctx.stream = a_stream;
     s_http_session_ctx.callback = a_callback;
     
-    // Get HTTP transport
-    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    // Use static HTTP transport instance
+    dap_net_transport_t *l_transport = s_http_transport;
     
     // Make HTTP request using legacy infrastructure
     s_http_request_enc(l_client_pvt, l_transport, DAP_UPLINK_PATH_STREAM_CTL,
@@ -606,9 +617,8 @@ int dap_net_transport_http_request(dap_client_pvt_t * a_client_internal, const c
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error)
 {
-    // Get HTTP transport from client's stream
-    dap_net_transport_t *l_transport = NULL;
-    l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    // Use static HTTP transport instance
+    dap_net_transport_t *l_transport = s_http_transport;
     
     return s_http_request(a_client_internal, l_transport, a_path, a_request, a_request_size, a_response_proc, a_response_error);
 }
@@ -632,8 +642,8 @@ void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, co
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
 {
-    // Get HTTP transport
-    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    // Use static HTTP transport instance
+    dap_net_transport_t *l_transport = s_http_transport;
     
     s_http_request_enc(a_client_internal, l_transport, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error);
 }
