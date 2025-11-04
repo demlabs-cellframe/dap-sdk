@@ -897,6 +897,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // Set done callback to advance to next stage when handshake completes
                     a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+                    s_stage_status_after(a_client_pvt);
                 } break;
 
                 case STAGE_STREAM_CTL: {

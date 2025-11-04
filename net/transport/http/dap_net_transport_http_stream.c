@@ -426,6 +426,11 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "HTTP transport not initialized");
+        DAP_DELETE(l_data_str);
+        return -6;
+    }
     
     // Make HTTP request using legacy infrastructure
     int l_res = s_http_request(l_client_pvt, l_transport, l_enc_init_url,
@@ -525,6 +530,11 @@ static int s_http_transport_session_create(dap_stream_t *a_stream,
     
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "HTTP transport not initialized");
+        DAP_DELETE(l_suburl);
+        return -6;
+    }
     
     // Make HTTP request using legacy infrastructure
     s_http_request_enc(l_client_pvt, l_transport, DAP_UPLINK_PATH_STREAM_CTL,
@@ -619,6 +629,10 @@ int dap_net_transport_http_request(dap_client_pvt_t * a_client_internal, const c
 {
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "HTTP transport not initialized");
+        return -1;
+    }
     
     return s_http_request(a_client_internal, l_transport, a_path, a_request, a_request_size, a_response_proc, a_response_error);
 }
@@ -644,6 +658,13 @@ void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, co
 {
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "HTTP transport not initialized");
+        if (a_response_error) {
+            a_response_error(a_client_internal->client, a_client_internal->callback_arg, -1);
+        }
+        return;
+    }
     
     s_http_request_enc(a_client_internal, l_transport, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error);
 }
