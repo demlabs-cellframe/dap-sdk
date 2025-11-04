@@ -1488,8 +1488,17 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
         
         // Load encryption context into transport after successful handshake
+        // Use the transport from the temporary stream if available (for HTTP/WebSocket)
+        // or from the main stream (for UDP/DNS)
+        dap_net_transport_t *l_transport = NULL;
         if (l_client_pvt->stream && l_client_pvt->stream->stream_transport) {
-            dap_net_transport_t *l_transport = l_client_pvt->stream->stream_transport;
+            l_transport = l_client_pvt->stream->stream_transport;
+        } else {
+            // Fallback: find transport by client's transport type
+            l_transport = dap_net_transport_find(l_client_pvt->client->transport_type);
+        }
+        
+        if (l_transport) {
             l_transport->session_key = l_client_pvt->session_key;
             if (l_client_pvt->session_key_id) {
                 l_transport->session_key_id = dap_strdup(l_client_pvt->session_key_id);
