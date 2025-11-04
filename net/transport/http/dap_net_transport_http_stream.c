@@ -413,13 +413,8 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     s_http_handshake_ctx.stream = a_stream;
     s_http_handshake_ctx.callback = a_callback;
     
-    // Get HTTP transport from stream
-    dap_net_transport_t *l_transport = a_stream ? a_stream->stream_transport : NULL;
-    if (!l_transport || l_transport->type != DAP_NET_TRANSPORT_HTTP) {
-        log_it(L_ERROR, "Invalid HTTP transport for handshake");
-        DAP_DELETE(l_data_str);
-        return -6;
-    }
+    // Get HTTP transport
+    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     // Make HTTP request using legacy infrastructure
     int l_res = s_http_request(l_client_pvt, l_transport, l_enc_init_url,
@@ -517,13 +512,8 @@ static int s_http_transport_session_create(dap_stream_t *a_stream,
     s_http_session_ctx.stream = a_stream;
     s_http_session_ctx.callback = a_callback;
     
-    // Get HTTP transport from stream
-    dap_net_transport_t *l_transport = a_stream ? a_stream->stream_transport : NULL;
-    if (!l_transport || l_transport->type != DAP_NET_TRANSPORT_HTTP) {
-        log_it(L_ERROR, "Invalid HTTP transport for session create");
-        DAP_DELETE(l_suburl);
-        return -6;
-    }
+    // Get HTTP transport
+    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     // Make HTTP request using legacy infrastructure
     s_http_request_enc(l_client_pvt, l_transport, DAP_UPLINK_PATH_STREAM_CTL,
@@ -618,13 +608,7 @@ int dap_net_transport_http_request(dap_client_pvt_t * a_client_internal, const c
 {
     // Get HTTP transport from client's stream
     dap_net_transport_t *l_transport = NULL;
-    if (a_client_internal->stream && a_client_internal->stream->stream_transport &&
-        a_client_internal->stream->stream_transport->type == DAP_NET_TRANSPORT_HTTP) {
-        l_transport = a_client_internal->stream->stream_transport;
-    } else {
-        // Fallback: find HTTP transport by type
-        l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
-    }
+    l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     return s_http_request(a_client_internal, l_transport, a_path, a_request, a_request_size, a_response_proc, a_response_error);
 }
@@ -648,15 +632,8 @@ void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, co
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
 {
-    // Get HTTP transport from client's stream
-    dap_net_transport_t *l_transport = NULL;
-    if (a_client_internal->stream && a_client_internal->stream->stream_transport &&
-        a_client_internal->stream->stream_transport->type == DAP_NET_TRANSPORT_HTTP) {
-        l_transport = a_client_internal->stream->stream_transport;
-    } else {
-        // Fallback: find HTTP transport by type
-        l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
-    }
+    // Get HTTP transport
+    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     s_http_request_enc(a_client_internal, l_transport, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error);
 }
