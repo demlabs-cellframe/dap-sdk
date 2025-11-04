@@ -98,6 +98,22 @@ DAP_STATIC_INLINE dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_da
 // Sign raw data, without hashing
 int dap_cert_sign_output(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, void *a_output, size_t *a_output_size);
 
+/**
+ * @brief Add certificate signature to data buffer
+ * 
+ * Creates a signature using the certificate's encryption key and appends it to the data buffer.
+ * The buffer is automatically reallocated if needed.
+ * 
+ * @param a_cert Certificate to get signature from
+ * @param a_data Input/output data buffer (will be reallocated)
+ * @param a_size Input/output data size
+ * @param a_signing_data Data to sign
+ * @param a_signing_size Size of signing data
+ * @return Number of signatures added (1 on success, 0 on failure)
+ */
+int dap_cert_add_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, 
+                               const void* a_signing_data, size_t a_signing_size);
+
 int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign);
 
 size_t dap_cert_sign_output_size(dap_cert_t *a_cert);

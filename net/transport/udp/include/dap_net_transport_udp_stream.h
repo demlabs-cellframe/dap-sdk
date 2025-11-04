@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_server.h"
 #include "dap_events_socket.h"
 
@@ -216,7 +216,7 @@ dap_stream_transport_udp_config_t dap_stream_transport_udp_config_default(void);
  * @param a_config New configuration
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_udp_set_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_set_config(dap_net_transport_t *a_transport,
                                         const dap_stream_transport_udp_config_t *a_config);
 
 /**
@@ -228,7 +228,7 @@ int dap_stream_transport_udp_set_config(dap_stream_transport_t *a_transport,
  * @param[out] a_config Configuration structure to fill
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_udp_get_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_get_config(dap_net_transport_t *a_transport,
                                         dap_stream_transport_udp_config_t *a_config);
 
 /**
@@ -293,7 +293,7 @@ uint32_t dap_stream_transport_udp_get_seq_num(const dap_stream_t *a_stream);
  * @param a_addr_len Address length
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_udp_set_remote_addr(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_set_remote_addr(dap_net_transport_t *a_transport,
                                               const struct sockaddr *a_addr,
                                               socklen_t a_addr_len);
 
@@ -307,7 +307,7 @@ int dap_stream_transport_udp_set_remote_addr(dap_stream_transport_t *a_transport
  * @param[out] a_addr_len Address length
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_udp_get_remote_addr(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_get_remote_addr(dap_net_transport_t *a_transport,
                                               struct sockaddr *a_addr,
                                               socklen_t *a_addr_len);
 
@@ -330,7 +330,7 @@ int dap_stream_transport_udp_get_remote_addr(dap_stream_transport_t *a_transport
  * @note Must be called from worker context (which is always the case
  *       for stream operations)
  */
-ssize_t dap_stream_transport_udp_send_raw(dap_stream_transport_t *a_transport,
+ssize_t dap_stream_transport_udp_send_raw(dap_net_transport_t *a_transport,
                                            const void *a_data,
                                            size_t a_data_size);
 
@@ -345,7 +345,7 @@ ssize_t dap_stream_transport_udp_send_raw(dap_stream_transport_t *a_transport,
  * @param a_data_size Buffer size
  * @return Number of bytes received or negative error code
  */
-ssize_t dap_stream_transport_udp_recv_raw(dap_stream_transport_t *a_transport,
+ssize_t dap_stream_transport_udp_recv_raw(dap_net_transport_t *a_transport,
                                            void *a_data,
                                            size_t a_data_size);
 

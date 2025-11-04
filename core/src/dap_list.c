@@ -36,6 +36,9 @@ void dap_list_free(dap_list_t *a_list)
  */
 void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func)
 {
+    if (!a_list) {
+        return; // Safe to call with NULL
+    }
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
         DL_DELETE(a_list, l_el);

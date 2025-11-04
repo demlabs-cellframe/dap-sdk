@@ -140,6 +140,20 @@ bool dap_test_events_check_ready_for_deinit(void *a_user_data);
 int dap_test_setup_certificates(const char *a_test_dir);
 
 /**
+ * @brief Generate unique node address from certificate in memory
+ * @details Creates a certificate in memory and extracts node address from it.
+ *          This is useful for tests that need multiple unique node addresses
+ *          without creating certificate files.
+ * 
+ * @param a_cert_name Unique certificate name (must be unique for each call)
+ * @param a_key_type Certificate key type (usually DAP_STREAM_NODE_ADDR_CERT_TYPE)
+ * @param a_node_addr_out Output parameter for node address
+ * @return 0 on success, negative error code on failure
+ */
+int dap_test_generate_unique_node_addr(const char *a_cert_name, dap_enc_key_type_t a_key_type, 
+                                      dap_stream_node_addr_t *a_node_addr_out);
+
+/**
  * @brief Cleanup test certificate environment
  * @details Removes test certificate folder and cleans up certificates.
  *          Should be called in test teardown.

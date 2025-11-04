@@ -38,6 +38,7 @@
 #include "dap_enc.h"
 #include "include/dap_enc_ks.h"
 #include "dap_enc_key.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_enc_ks"
 
@@ -61,8 +62,20 @@ void dap_enc_ks_deinit()
 
 inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE])
 {
-    for(short i = 0; i < DAP_ENC_KS_KEY_ID_SIZE; i++)
-        a_id_buf[i] = 65 + rand() % 25;
+    // Use thread-safe randombytes instead of rand() to ensure unique KeyID
+    // for parallel clients. rand() is not thread-safe and can generate
+    // identical values for concurrent requests.
+    uint8_t l_random_bytes[DAP_ENC_KS_KEY_ID_SIZE];
+    if (randombytes(l_random_bytes, DAP_ENC_KS_KEY_ID_SIZE) == 0) {
+        // Map random bytes to ASCII uppercase letters (A-Z)
+        for(short i = 0; i < DAP_ENC_KS_KEY_ID_SIZE; i++)
+            a_id_buf[i] = 65 + (l_random_bytes[i] % 25);
+    } else {
+        // Fallback to rand() if randombytes fails (shouldn't happen)
+        log_it(L_WARNING, "randombytes failed, using rand() fallback");
+        for(short i = 0; i < DAP_ENC_KS_KEY_ID_SIZE; i++)
+            a_id_buf[i] = 65 + rand() % 25;
+    }
 }
 
 void s_save_key_in_storge(dap_enc_ks_key_t *a_key)

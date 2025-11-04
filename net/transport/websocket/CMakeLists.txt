@@ -28,7 +28,7 @@ dap_register_module(
     VERSION 1
     INIT_FUNCTION "dap_net_transport_websocket_stream_register"
     DEINIT_FUNCTION "dap_net_transport_websocket_stream_unregister"
-    DEPENDENCIES "dap_stream_transport"
+    DEPENDENCIES "dap_net_transport"
     INCLUDE_HEADER "dap_net_transport_websocket_stream.h"
 )
 

@@ -19,8 +19,25 @@
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream.h"
+#include "dap_net_transport.h"
+#include "dap_net_transport_server.h"
+#include "dap_cert.h"  // For dap_stream_node_addr_from_cert
 #include "dap_test.h"
 #include "dap_test_async.h"
+
+// Forward declaration of transport config structure
+typedef struct transport_test_config {
+    dap_net_transport_type_t transport_type;
+    const char *name;
+    uint16_t base_port;
+    const char *address;
+} transport_test_config_t;
+
+// External references to transport configs (defined in test_transport_integration.c)
+extern const transport_test_config_t g_transport_configs[];
+// Count is defined as macro in test_transport_integration.c for compile-time use
+// For runtime use, use g_transport_config_count
+extern const size_t g_transport_config_count;
 
 /**
  * @brief Create test data for stream testing
@@ -170,8 +187,12 @@ static inline void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
     
     test_stream_ch_context_t *l_ctx = (test_stream_ch_context_t*)a_arg;
     if (!l_ctx) {
+        fprintf(stderr, "ERROR: test_stream_ch_receive_callback: context is NULL\n");
         return;
     }
+    
+    fprintf(stderr, "DEBUG: test_stream_ch_receive_callback called: ch=%p, type=%u, size=%zu\n",
+            (void*)a_ch, a_type, a_data_size);
     
     pthread_mutex_lock(&l_ctx->mutex);
     
@@ -185,6 +206,9 @@ static inline void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
         memcpy(l_ctx->received_data, a_data, a_data_size);
         l_ctx->received_data_size = a_data_size;
         l_ctx->data_received = true;
+        fprintf(stderr, "DEBUG: test_stream_ch_receive_callback: data received successfully, size=%zu\n", a_data_size);
+    } else {
+        fprintf(stderr, "ERROR: test_stream_ch_receive_callback: failed to allocate memory\n");
     }
     
     pthread_cond_signal(&l_ctx->cond);
@@ -252,12 +276,18 @@ static inline int test_stream_ch_send_and_wait(dap_client_t *a_client,
     pthread_mutex_unlock(&a_ctx->mutex);
     
     // Send data
-    ssize_t l_sent = dap_client_write_unsafe(a_client, a_ctx->channel_id, 
-                                              a_ctx->packet_type,
-                                              a_ctx->sent_data, a_ctx->sent_data_size);
+    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: sending %zu bytes on channel '%c'\n", 
+            a_ctx->sent_data_size, a_ctx->channel_id);
+    int l_sent = dap_client_write_mt(a_client, a_ctx->channel_id, 
+                                     a_ctx->packet_type,
+                                     a_ctx->sent_data, a_ctx->sent_data_size);
+    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: dap_client_write_mt returned %d\n", l_sent);
     if (l_sent < 0) {
+        fprintf(stderr, "ERROR: test_stream_ch_send_and_wait: failed to send data\n");
         return -1;
     }
+    
+    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: waiting for response (timeout=%u ms)\n", a_timeout_ms);
     
     // Wait for response
     pthread_mutex_lock(&a_ctx->mutex);
@@ -274,9 +304,14 @@ static inline int test_stream_ch_send_and_wait(dap_client_t *a_client,
     while (!a_ctx->data_received) {
         int l_cond_ret = pthread_cond_timedwait(&a_ctx->cond, &a_ctx->mutex, &l_timeout);
         if (l_cond_ret == ETIMEDOUT) {
+            fprintf(stderr, "ERROR: test_stream_ch_send_and_wait: timeout waiting for response\n");
             l_ret = -1;
             break;
         }
+    }
+    
+    if (l_ret == 0) {
+        fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: response received successfully\n");
     }
     
     pthread_mutex_unlock(&a_ctx->mutex);
@@ -305,14 +340,90 @@ static inline int test_stream_ch_register_receiver(dap_client_t *a_client,
         return -1;
     }
     
-    dap_stream_node_addr_t l_node_addr = l_stream->node;
+    // For client streams, we need to find the SERVER stream by CLIENT's address
+    // Server creates stream with client's address (from session->node)
+    // So we need to use client's own address to find the stream on server
+    // Client's address comes from certificate used during handshake
+    dap_stream_node_addr_t l_node_addr = {0};
+    
+    // Try to get client address from certificate
+    if (a_client->auth_cert) {
+        l_node_addr = dap_stream_node_addr_from_cert(a_client->auth_cert);
+        fprintf(stderr, "DEBUG: Using client address from certificate: "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_node_addr));
+    } else {
+        // Fallback: try to get from stream->node if it's set (but it might be server address)
+        if (l_stream->node.uint64 != 0) {
+            l_node_addr = l_stream->node;
+            fprintf(stderr, "DEBUG: Using client address from stream->node: "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_node_addr));
+        } else {
+            // Both are zero - this is an error
+            fprintf(stderr, "ERROR: Cannot register receiver: client address is unknown\n");
+            return -1;
+        }
+    }
+    
+    if (l_node_addr.uint64 == 0) {
+        fprintf(stderr, "ERROR: Cannot register receiver: client node address is zero\n");
+        return -1;
+    }
+    
+    fprintf(stderr, "DEBUG: Registering receiver for channel '%c' using node address "NODE_ADDR_FP_STR"\n", 
+            a_channel_id, NODE_ADDR_FP_ARGS_S(l_node_addr));
     
     // Register notifier for incoming packets
+    // Use client's address to find server stream (server stream has client's address in stream->node)
     int l_ret = dap_stream_ch_add_notifier(&l_node_addr, 
                                            (uint8_t)a_channel_id,
                                            DAP_STREAM_PKT_DIR_IN,
                                            test_stream_ch_receive_callback,
                                            a_callback_arg);
     
+    if (l_ret != 0) {
+        fprintf(stderr, "ERROR: dap_stream_ch_add_notifier failed with code %d\n", l_ret);
+    }
+    
     return l_ret;
 }
+
+// ============================================================================
+// Intelligent Waiting Functions (implemented in test_transport_helpers.c)
+// ============================================================================
+
+/**
+ * @brief Wait for transports to be registered
+ * @param a_timeout_ms Timeout in milliseconds
+ * @return true if all transports registered, false on timeout
+ */
+bool test_wait_for_transports_registered(uint32_t a_timeout_ms);
+
+/**
+ * @brief Wait for server to be ready (listening)
+ * @param a_server Server instance
+ * @param a_timeout_ms Timeout in milliseconds
+ * @return true if server is ready, false on timeout
+ */
+bool test_wait_for_server_ready(dap_net_transport_server_t *a_server, uint32_t a_timeout_ms);
+
+/**
+ * @brief Wait for stream channels to be created
+ * @param a_client Client to check
+ * @param a_expected_channels Expected channel IDs (e.g., "ABC")
+ * @param a_timeout_ms Timeout in milliseconds
+ * @return true if channels are ready, false on timeout
+ */
+bool test_wait_for_stream_channels_ready(dap_client_t *a_client, const char *a_expected_channels, uint32_t a_timeout_ms);
+
+/**
+ * @brief Wait for client to be deleted
+ * @param a_client_ptr Pointer to client pointer (will be set to NULL after deletion)
+ * @param a_timeout_ms Timeout in milliseconds
+ * @return true if client deleted, false on timeout
+ */
+bool test_wait_for_client_deleted(dap_client_t **a_client_ptr, uint32_t a_timeout_ms);
+
+/**
+ * @brief Wait for all streams to be closed
+ * @param a_timeout_ms Timeout in milliseconds
+ * @return true if all streams closed, false on timeout
+ */
+bool test_wait_for_all_streams_closed(uint32_t a_timeout_ms);

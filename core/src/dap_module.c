@@ -100,10 +100,171 @@ int dap_module_add(const char *a_name, unsigned int a_version, const char *a_dep
 }
 
 /**
+ * @brief Find a module by name
+ * 
+ * @param a_name Module name
+ * @return Module registry entry or NULL if not found
+ */
+static dap_module_registry_entry_t *s_module_find(const char *a_name)
+{
+    if (!a_name) {
+        return NULL;
+    }
+    
+    dap_module_registry_entry_t *l_entry = NULL;
+    HASH_FIND_STR(s_module_registry, a_name, l_entry);
+    return l_entry;
+}
+
+/**
+ * @brief Parse comma-separated dependency string into array of module names
+ * 
+ * @param a_dependencies Dependency string (comma-separated, can be NULL)
+ * @param a_dep_names Output array of dependency names (allocated, caller must free)
+ * @param a_dep_count Output number of dependencies
+ * @return 0 on success, -1 on failure
+ */
+static int s_parse_dependencies(const char *a_dependencies, char ***a_dep_names, size_t *a_dep_count)
+{
+    if (!a_dependencies || !a_dependencies[0]) {
+        *a_dep_names = NULL;
+        *a_dep_count = 0;
+        return 0;
+    }
+    
+    // Count dependencies
+    size_t l_count = 1;
+    const char *l_ptr = a_dependencies;
+    while (*l_ptr) {
+        if (*l_ptr == ',') {
+            l_count++;
+        }
+        l_ptr++;
+    }
+    
+    // Allocate array
+    char **l_names = DAP_NEW_SIZE(char *, l_count);
+    if (!l_names) {
+        log_it(L_ERROR, "s_parse_dependencies: Failed to allocate memory");
+        return -1;
+    }
+    
+    // Parse dependencies
+    size_t l_idx = 0;
+    const char *l_start = a_dependencies;
+    l_ptr = a_dependencies;
+    
+    while (*l_ptr) {
+        if (*l_ptr == ',') {
+            // Extract dependency name
+            size_t l_len = l_ptr - l_start;
+            if (l_len > 0) {
+                l_names[l_idx] = DAP_NEW_Z_SIZE(char, l_len + 1);
+                if (!l_names[l_idx]) {
+                    // Free already allocated names
+                    for (size_t i = 0; i < l_idx; i++) {
+                        DAP_DELETE(l_names[i]);
+                    }
+                    DAP_DELETE(l_names);
+                    return -1;
+                }
+                strncpy(l_names[l_idx], l_start, l_len);
+                l_names[l_idx][l_len] = '\0';
+                // Trim whitespace
+                while (*l_names[l_idx] == ' ') {
+                    memmove(l_names[l_idx], l_names[l_idx] + 1, strlen(l_names[l_idx]));
+                }
+                l_idx++;
+            }
+            l_start = l_ptr + 1;
+        }
+        l_ptr++;
+    }
+    
+    // Last dependency
+    size_t l_len = l_ptr - l_start;
+    if (l_len > 0) {
+        l_names[l_idx] = DAP_NEW_Z_SIZE(char, l_len + 1);
+        if (!l_names[l_idx]) {
+            // Free already allocated names
+            for (size_t i = 0; i < l_idx; i++) {
+                DAP_DELETE(l_names[i]);
+            }
+            DAP_DELETE(l_names);
+            return -1;
+        }
+        strncpy(l_names[l_idx], l_start, l_len);
+        l_names[l_idx][l_len] = '\0';
+        // Trim whitespace
+        while (*l_names[l_idx] == ' ') {
+            memmove(l_names[l_idx], l_names[l_idx] + 1, strlen(l_names[l_idx]));
+        }
+        l_idx++;
+    }
+    
+    *a_dep_names = l_names;
+    *a_dep_count = l_idx;
+    return 0;
+}
+
+/**
+ * @brief Free dependency array
+ */
+static void s_free_dependencies(char **a_dep_names, size_t a_dep_count)
+{
+    if (a_dep_names) {
+        for (size_t i = 0; i < a_dep_count; i++) {
+            DAP_DELETE(a_dep_names[i]);
+        }
+        DAP_DELETE(a_dep_names);
+    }
+}
+
+/**
+ * @brief Check if all dependencies of a module are initialized
+ * 
+ * @param a_entry Module entry
+ * @return true if all dependencies are initialized, false otherwise
+ */
+static bool s_all_dependencies_initialized(dap_module_registry_entry_t *a_entry)
+{
+    if (!a_entry->dependencies || !a_entry->dependencies[0]) {
+        return true; // No dependencies
+    }
+    
+    char **l_dep_names = NULL;
+    size_t l_dep_count = 0;
+    
+    if (s_parse_dependencies(a_entry->dependencies, &l_dep_names, &l_dep_count) != 0) {
+        log_it(L_ERROR, "s_all_dependencies_initialized: Failed to parse dependencies for '%s'", 
+               a_entry->name);
+        return false;
+    }
+    
+    bool l_all_initialized = true;
+    for (size_t i = 0; i < l_dep_count; i++) {
+        dap_module_registry_entry_t *l_dep = s_module_find(l_dep_names[i]);
+        if (!l_dep) {
+            log_it(L_ERROR, "s_all_dependencies_initialized: Dependency '%s' not found for module '%s'", 
+                   l_dep_names[i], a_entry->name);
+            l_all_initialized = false;
+            break;
+        }
+        if (!l_dep->initialized) {
+            l_all_initialized = false;
+            break;
+        }
+    }
+    
+    s_free_dependencies(l_dep_names, l_dep_count);
+    return l_all_initialized;
+}
+
+/**
  * @brief Initialize all registered modules
  * 
- * Modules are initialized in registration order. If a module has dependencies,
- * they should be registered first.
+ * Modules are initialized in dependency order using topological sorting.
+ * Dependencies are initialized before dependents.
  * 
  * @return 0 on success, -1 on failure
  */
@@ -114,39 +275,87 @@ int dap_module_init_all(void)
         return 0;
     }
     
-    log_it(L_NOTICE, "dap_module_init_all: Initializing all registered modules");
+    log_it(L_NOTICE, "dap_module_init_all: Initializing all registered modules (with dependency resolution)");
     
     int l_failed = 0;
-    dap_module_registry_entry_t *l_entry, *l_tmp;
+    size_t l_total_modules = HASH_COUNT(s_module_registry);
+    size_t l_initialized_count = 0;
+    size_t l_iterations = 0;
+    const size_t l_max_iterations = l_total_modules * l_total_modules; // Prevent infinite loops
     
-    HASH_ITER(hh, s_module_registry, l_entry, l_tmp) {
-        if (l_entry->initialized) {
-            log_it(L_DEBUG, "dap_module_init_all: Module '%s' already initialized, skipping", 
-                   l_entry->name);
-            continue;
-        }
+    // Iteratively initialize modules whose dependencies are satisfied
+    while (l_initialized_count < l_total_modules && l_iterations < l_max_iterations) {
+        l_iterations++;
+        bool l_progress_made = false;
         
-        log_it(L_INFO, "dap_module_init_all: Initializing module '%s' (version %u)", 
-               l_entry->name, l_entry->version);
-        
-        int l_ret = l_entry->init_cb(NULL);
-        if (l_ret != 0) {
-            // If init returns error code -2 (already registered from dap_stream_transport_register),
-            // treat it as success (idempotent operation)
-            if (l_ret == -2) {
-                log_it(L_DEBUG, "dap_module_init_all: Module '%s' already registered (idempotent), marking as initialized", 
-                       l_entry->name);
-                l_entry->initialized = true;
-            } else {
-                log_it(L_ERROR, "dap_module_init_all: Failed to initialize module '%s': %d", 
-                       l_entry->name, l_ret);
-                l_failed++;
+        dap_module_registry_entry_t *l_entry, *l_tmp;
+        HASH_ITER(hh, s_module_registry, l_entry, l_tmp) {
+            if (l_entry->initialized) {
+                continue;
             }
-        } else {
-            l_entry->initialized = true;
-            log_it(L_INFO, "dap_module_init_all: Module '%s' initialized successfully", 
-                   l_entry->name);
+            
+            // Check if all dependencies are initialized
+            if (!s_all_dependencies_initialized(l_entry)) {
+                continue;
+            }
+            
+            // All dependencies satisfied, initialize this module
+            log_it(L_INFO, "dap_module_init_all: Initializing module '%s' (version %u) [%zu/%zu]", 
+                   l_entry->name, l_entry->version, l_initialized_count + 1, l_total_modules);
+            
+            if (l_entry->dependencies && l_entry->dependencies[0]) {
+                log_it(L_DEBUG, "dap_module_init_all: Module '%s' dependencies satisfied", l_entry->name);
+            }
+            
+            int l_ret = l_entry->init_cb(NULL);
+            if (l_ret != 0) {
+                // If init returns error code -2 (already registered from dap_net_transport_register),
+                // treat it as success (idempotent operation)
+                if (l_ret == -2) {
+                    log_it(L_DEBUG, "dap_module_init_all: Module '%s' already registered (idempotent), marking as initialized", 
+                           l_entry->name);
+                    l_entry->initialized = true;
+                    l_initialized_count++;
+                    l_progress_made = true;
+                } else {
+                    log_it(L_ERROR, "dap_module_init_all: Failed to initialize module '%s': %d", 
+                           l_entry->name, l_ret);
+                    l_failed++;
+                    // Still mark as initialized to prevent infinite loop
+                    l_entry->initialized = true;
+                    l_initialized_count++;
+                    l_progress_made = true;
+                }
+            } else {
+                l_entry->initialized = true;
+                l_initialized_count++;
+                l_progress_made = true;
+                log_it(L_INFO, "dap_module_init_all: Module '%s' initialized successfully", 
+                       l_entry->name);
+            }
         }
+        
+        if (!l_progress_made) {
+            // No progress made - might be circular dependency or missing dependency
+            log_it(L_ERROR, "dap_module_init_all: No progress made in iteration %zu, checking for unresolved dependencies", 
+                   l_iterations);
+            
+            HASH_ITER(hh, s_module_registry, l_entry, l_tmp) {
+                if (!l_entry->initialized) {
+                    log_it(L_ERROR, "dap_module_init_all: Module '%s' cannot be initialized (unresolved dependencies?)", 
+                           l_entry->name);
+                    if (l_entry->dependencies && l_entry->dependencies[0]) {
+                        log_it(L_ERROR, "  Dependencies: %s", l_entry->dependencies);
+                    }
+                }
+            }
+            break;
+        }
+    }
+    
+    if (l_iterations >= l_max_iterations) {
+        log_it(L_ERROR, "dap_module_init_all: Maximum iterations reached (%zu), possible circular dependency", 
+               l_max_iterations);
     }
     
     s_module_system_initialized = true;
@@ -156,7 +365,8 @@ int dap_module_init_all(void)
         return -1;
     }
     
-    log_it(L_INFO, "dap_module_init_all: All modules initialized successfully");
+    log_it(L_INFO, "dap_module_init_all: All modules initialized successfully (%zu modules in %zu iterations)", 
+           l_initialized_count, l_iterations);
     return 0;
 }
 
@@ -290,23 +500,6 @@ void dap_module_deinit_all(void)
     s_module_system_initialized = false;
     
     log_it(L_INFO, "dap_module_deinit_all: All modules deinitialized");
-}
-
-/**
- * @brief Find a module by name
- * 
- * @param a_name Module name
- * @return Module registry entry or NULL if not found
- */
-static dap_module_registry_entry_t *s_module_find(const char *a_name)
-{
-    if (!a_name) {
-        return NULL;
-    }
-    
-    dap_module_registry_entry_t *l_entry = NULL;
-    HASH_FIND_STR(s_module_registry, a_name, l_entry);
-    return l_entry;
 }
 
 /**

@@ -24,6 +24,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_dns_server.h"
 #include "dap_net_transport_dns_stream.h"
 #include "dap_stream.h"
@@ -70,7 +71,7 @@ static const dap_net_transport_server_ops_t s_dns_server_ops = {
 int dap_net_transport_dns_server_init(void)
 {
     // Register transport server operations
-    int l_ret = dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_DNS_TUNNEL, &s_dns_server_ops);
+    int l_ret = dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_DNS_TUNNEL, &s_dns_server_ops);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register DNS transport server operations");
         return l_ret;
@@ -86,7 +87,7 @@ int dap_net_transport_dns_server_init(void)
 void dap_net_transport_dns_server_deinit(void)
 {
     // Unregister transport server operations
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_DNS_TUNNEL);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_DNS_TUNNEL);
     
     log_it(L_INFO, "DNS server module deinitialized");
 }
@@ -113,7 +114,7 @@ dap_net_transport_dns_server_t *dap_net_transport_dns_server_new(const char *a_s
     // Note: DNS transport implementation will be created separately
     // For now, we create the server structure but transport will be NULL
     // until DNS transport stream implementation is created
-    l_dns_server->transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_DNS_TUNNEL);
+    l_dns_server->transport = dap_net_transport_find(DAP_NET_TRANSPORT_DNS_TUNNEL);
     if (!l_dns_server->transport) {
         log_it(L_WARNING, "DNS transport not registered yet - server will be created but transport operations will be limited");
         // Don't fail - server can be created before transport is registered

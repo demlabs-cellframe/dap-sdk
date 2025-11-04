@@ -26,8 +26,20 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
+
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_websocket_stream.h"
 #include "dap_net_transport_websocket_server.h"
 #include "dap_net_transport_server.h"
@@ -38,6 +50,8 @@
 #include "rand/dap_rand.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_events_socket.h"
+#include "dap_net.h"
 
 #define LOG_TAG "dap_net_transport_websocket_stream"
 
@@ -51,27 +65,30 @@
 #define WS_INITIAL_FRAME_BUFFER    4096           // 4KB initial buffer
 
 // Forward declarations
-static const dap_stream_transport_ops_t s_websocket_ops;
-static int s_ws_init(dap_stream_transport_t *a_transport, dap_config_t *a_config);
-static void s_ws_deinit(dap_stream_transport_t *a_transport);
+static const dap_net_transport_ops_t s_websocket_ops;
+static int s_ws_init(dap_net_transport_t *a_transport, dap_config_t *a_config);
+static void s_ws_deinit(dap_net_transport_t *a_transport);
 static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port,
-                         dap_stream_transport_connect_cb_t a_callback);
-static int s_ws_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+                         dap_net_transport_connect_cb_t a_callback);
+static int s_ws_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                         dap_server_t *a_server);
 static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out);
-static int s_ws_handshake_init(dap_stream_t *a_stream, dap_stream_handshake_params_t *a_params,
-                                dap_stream_transport_handshake_cb_t a_callback);
+static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_t *a_params,
+                                dap_net_transport_handshake_cb_t a_callback);
 static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
                                    void **a_response, size_t *a_response_size);
-static int s_ws_session_create(dap_stream_t *a_stream, dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback);
+static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback);
 static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback);
+                                dap_net_transport_ready_cb_t a_callback);
 static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_ws_close(dap_stream_t *a_stream);
-static uint32_t s_ws_get_capabilities(dap_stream_transport_t *a_transport);
-static int s_ws_register_server_handlers(dap_stream_transport_t *a_transport, void *a_transport_context);
+static uint32_t s_ws_get_capabilities(dap_net_transport_t *a_transport);
+static int s_ws_register_server_handlers(dap_net_transport_t *a_transport, void *a_transport_context);
+static int s_ws_stage_prepare(dap_net_transport_t *a_transport,
+                              const dap_net_stage_prepare_params_t *a_params,
+                              dap_net_stage_prepare_result_t *a_result);
 
 // WebSocket protocol helpers
 static int s_ws_generate_key(char *a_key_out, size_t a_key_size);
@@ -86,14 +103,14 @@ static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key
 static bool s_ws_ping_timer_callback(void *a_user_data);
 
 // Helper to get private data
-static dap_stream_transport_ws_private_t *s_get_private(dap_stream_transport_t *a_transport);
+static dap_stream_transport_ws_private_t *s_get_private(dap_net_transport_t *a_transport);
 static dap_stream_transport_ws_private_t *s_get_private_from_stream(dap_stream_t *a_stream);
 
 // ============================================================================
 // Transport Operations Table
 // ============================================================================
 
-static const dap_stream_transport_ops_t s_websocket_ops = {
+static const dap_net_transport_ops_t s_websocket_ops = {
     .init = s_ws_init,
     .deinit = s_ws_deinit,
     .connect = s_ws_connect,
@@ -107,6 +124,7 @@ static const dap_stream_transport_ops_t s_websocket_ops = {
     .write = s_ws_write,
     .close = s_ws_close,
     .get_capabilities = s_ws_get_capabilities,
+    .stage_prepare = s_ws_stage_prepare,
     .register_server_handlers = s_ws_register_server_handlers
 };
 
@@ -129,9 +147,10 @@ int dap_net_transport_websocket_stream_register(void)
     log_it(L_DEBUG, "dap_net_transport_websocket_stream_register: WebSocket server module initialized, registering transport");
     
     // Register WebSocket transport operations
-    int l_ret_transport = dap_stream_transport_register("WebSocket",
-                                                DAP_STREAM_TRANSPORT_WEBSOCKET,
+    int l_ret_transport = dap_net_transport_register("WebSocket",
+                                                DAP_NET_TRANSPORT_WEBSOCKET,
                                                 &s_websocket_ops,
+                                                DAP_NET_TRANSPORT_SOCKET_TCP,
                                                 NULL);
     if (l_ret_transport != 0) {
         log_it(L_ERROR, "Failed to register WebSocket transport: %d", l_ret_transport);
@@ -148,7 +167,7 @@ int dap_net_transport_websocket_stream_register(void)
  */
 int dap_net_transport_websocket_stream_unregister(void)
 {
-    int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    int l_ret = dap_net_transport_unregister(DAP_NET_TRANSPORT_WEBSOCKET);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister WebSocket transport: %d", l_ret);
         return l_ret;
@@ -186,7 +205,7 @@ dap_stream_transport_ws_config_t dap_stream_transport_ws_config_default(void)
 /**
  * @brief Set WebSocket configuration
  */
-int dap_stream_transport_ws_set_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
                                         const dap_stream_transport_ws_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -226,7 +245,7 @@ int dap_stream_transport_ws_set_config(dap_stream_transport_t *a_transport,
 /**
  * @brief Get WebSocket configuration
  */
-int dap_stream_transport_ws_get_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_ws_get_config(dap_net_transport_t *a_transport,
                                         dap_stream_transport_ws_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -251,7 +270,7 @@ int dap_stream_transport_ws_get_config(dap_stream_transport_t *a_transport,
 /**
  * @brief Initialize WebSocket transport
  */
-static int s_ws_init(dap_stream_transport_t *a_transport, dap_config_t *a_config)
+static int s_ws_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
 {
     if (!a_transport) {
         log_it(L_ERROR, "Invalid transport pointer");
@@ -288,7 +307,7 @@ static int s_ws_init(dap_stream_transport_t *a_transport, dap_config_t *a_config
 /**
  * @brief Deinitialize WebSocket transport
  */
-static void s_ws_deinit(dap_stream_transport_t *a_transport)
+static void s_ws_deinit(dap_net_transport_t *a_transport)
 {
     if (!a_transport || !a_transport->_inheritor) {
         return;
@@ -333,7 +352,7 @@ static void s_ws_deinit(dap_stream_transport_t *a_transport)
  * @brief Connect WebSocket transport (client-side)
  */
 static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port,
-                         dap_stream_transport_connect_cb_t a_callback)
+                         dap_net_transport_connect_cb_t a_callback)
 {
     if (!a_stream || !a_host) {
         log_it(L_ERROR, "Invalid parameters");
@@ -381,7 +400,7 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
 /**
  * @brief Listen on WebSocket transport (server-side)
  */
-static int s_ws_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+static int s_ws_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                         dap_server_t *a_server)
 {
     if (!a_transport) {
@@ -418,8 +437,8 @@ static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_
 /**
  * @brief Initialize handshake (client-side)
  */
-static int s_ws_handshake_init(dap_stream_t *a_stream, dap_stream_handshake_params_t *a_params,
-                                dap_stream_transport_handshake_cb_t a_callback)
+static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_t *a_params,
+                                dap_net_transport_handshake_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid parameters");
@@ -459,8 +478,8 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
 /**
  * @brief Create session
  */
-static int s_ws_session_create(dap_stream_t *a_stream, dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback)
+static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid parameters");
@@ -479,7 +498,7 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_stream_session_params
  * @brief Start streaming
  */
 static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback)
+                                dap_net_transport_ready_cb_t a_callback)
 {
     if (!a_stream) {
         log_it(L_ERROR, "Invalid stream pointer");
@@ -634,16 +653,57 @@ static void s_ws_close(dap_stream_t *a_stream)
 }
 
 /**
+ * @brief Prepare TCP socket for WebSocket transport (client-side stage preparation)
+ */
+static int s_ws_stage_prepare(dap_net_transport_t *a_transport,
+                              const dap_net_stage_prepare_params_t *a_params,
+                              dap_net_stage_prepare_result_t *a_result)
+{
+    if (!a_transport || !a_params || !a_result) {
+        log_it(L_ERROR, "Invalid arguments for WebSocket stage_prepare");
+        return -1;
+    }
+    
+    // Initialize result
+    a_result->esocket = NULL;
+    a_result->error_code = 0;
+    
+    // Create TCP socket using platform-independent function
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create WebSocket TCP socket");
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    l_es->_inheritor = a_params->client_context;
+    
+    // Resolve host and set address using centralized function
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
+        log_it(L_ERROR, "Failed to resolve address for WebSocket transport");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    a_result->esocket = l_es;
+    a_result->error_code = 0;
+    log_it(L_DEBUG, "WebSocket TCP socket prepared for %s:%u", a_params->host, a_params->port);
+    return 0;
+}
+
+/**
  * @brief Get WebSocket transport capabilities
  */
-static uint32_t s_ws_get_capabilities(dap_stream_transport_t *a_transport)
+static uint32_t s_ws_get_capabilities(dap_net_transport_t *a_transport)
 {
     (void)a_transport;
 
-    return DAP_STREAM_TRANSPORT_CAP_RELIABLE |
-           DAP_STREAM_TRANSPORT_CAP_ORDERED |
-           DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL |
-           DAP_STREAM_TRANSPORT_CAP_MULTIPLEXING;
+    return DAP_NET_TRANSPORT_CAP_RELIABLE |
+           DAP_NET_TRANSPORT_CAP_ORDERED |
+           DAP_NET_TRANSPORT_CAP_BIDIRECTIONAL |
+           DAP_NET_TRANSPORT_CAP_MULTIPLEXING;
 }
 
 // ============================================================================
@@ -888,7 +948,7 @@ bool dap_stream_transport_is_websocket(const dap_stream_t *a_stream)
     if (!a_stream || !a_stream->stream_transport) {
         return false;
     }
-    return a_stream->stream_transport->type == DAP_STREAM_TRANSPORT_WEBSOCKET;
+    return a_stream->stream_transport->type == DAP_NET_TRANSPORT_WEBSOCKET;
 }
 
 /**
@@ -1016,9 +1076,9 @@ int dap_stream_transport_ws_get_stats(const dap_stream_t *a_stream, uint64_t *a_
 /**
  * @brief Get private data from transport
  */
-static dap_stream_transport_ws_private_t *s_get_private(dap_stream_transport_t *a_transport)
+static dap_stream_transport_ws_private_t *s_get_private(dap_net_transport_t *a_transport)
 {
-    if (!a_transport || a_transport->type != DAP_STREAM_TRANSPORT_WEBSOCKET) {
+    if (!a_transport || a_transport->type != DAP_NET_TRANSPORT_WEBSOCKET) {
         return NULL;
     }
     return (dap_stream_transport_ws_private_t*)a_transport->_inheritor;
@@ -1041,7 +1101,7 @@ static dap_stream_transport_ws_private_t *s_get_private_from_stream(dap_stream_t
  * Registers WebSocket upgrade handler for stream path.
  * Called by dap_net_transport_server_register_handlers().
  */
-static int s_ws_register_server_handlers(dap_stream_transport_t *a_transport, void *a_transport_context)
+static int s_ws_register_server_handlers(dap_net_transport_t *a_transport, void *a_transport_context)
 {
     if (!a_transport || !a_transport_context) {
         log_it(L_ERROR, "Invalid parameters for s_ws_register_server_handlers");

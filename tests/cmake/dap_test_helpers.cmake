@@ -41,6 +41,7 @@ function(dap_test_add_includes TARGET_NAME)
         ${DAP_SDK_ROOT}/net/link_manager/include
         
         # Transport modules
+        ${DAP_SDK_ROOT}/net/transport/include
         ${DAP_SDK_ROOT}/net/transport/http/include
         ${DAP_SDK_ROOT}/net/transport/udp/include
         ${DAP_SDK_ROOT}/net/transport/websocket/include

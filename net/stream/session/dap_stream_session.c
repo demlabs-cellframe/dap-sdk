@@ -34,12 +34,14 @@
 
 #include "dap_common.h"
 #include "dap_stream_session.h"
+#include "dap_config.h"
 #include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_session"
 
 static dap_stream_session_t *s_sessions = NULL;
 static pthread_mutex_t s_sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool s_debug_more = false;
 
 
 
@@ -49,6 +51,7 @@ static void * session_check(void * data);
 
 void dap_stream_session_init()
 {
+    s_debug_more = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
     log_it(L_INFO,"Init module");
     srand ( time(NULL) );
 }
@@ -222,10 +225,17 @@ dap_stream_session_t *l_stm_sess;
  */
 int dap_stream_session_open(dap_stream_session_t * a_session)
 {
+    if (!a_session) {
+        log_it(L_ERROR, "dap_stream_session_open: session is NULL");
+        return -1;
+    }
     int ret;
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: locking mutex for session %u", a_session->id);
     pthread_mutex_lock(&a_session->mutex);
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: mutex locked, opened=%d", a_session->opened);
     ret=a_session->opened;
     if(a_session->opened==0) a_session->opened=1;
     pthread_mutex_unlock(&a_session->mutex);
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: returning %d", ret);
     return ret;
 }

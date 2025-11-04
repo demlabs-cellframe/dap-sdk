@@ -28,6 +28,19 @@
 #include "dap_strfuncs.h"
 #include "dap_net_transport_udp_stream.h"
 #include "dap_net_transport_udp_server.h"
+#include "dap_events_socket.h"
+#include "dap_net.h"
+
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
 #include "dap_server.h"
@@ -45,31 +58,34 @@
 #define DAP_STREAM_UDP_DEFAULT_KEEPALIVE_MS     30000
 
 // Transport operations forward declarations
-static int s_udp_init(dap_stream_transport_t *a_transport, dap_config_t *a_config);
-static void s_udp_deinit(dap_stream_transport_t *a_transport);
+static int s_udp_init(dap_net_transport_t *a_transport, dap_config_t *a_config);
+static void s_udp_deinit(dap_net_transport_t *a_transport);
 static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port, 
-                          dap_stream_transport_connect_cb_t a_callback);
-static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+                          dap_net_transport_connect_cb_t a_callback);
+static int s_udp_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                          dap_server_t *a_server);
 static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out);
 static int s_udp_handshake_init(dap_stream_t *a_stream,
-                                 dap_stream_handshake_params_t *a_params,
-                                 dap_stream_transport_handshake_cb_t a_callback);
+                                 dap_net_handshake_params_t *a_params,
+                                 dap_net_transport_handshake_cb_t a_callback);
 static int s_udp_handshake_process(dap_stream_t *a_stream,
                                     const void *a_data, size_t a_data_size,
                                     void **a_response, size_t *a_response_size);
 static int s_udp_session_create(dap_stream_t *a_stream,
-                                 dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback);
+                                 dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback);
 static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback);
+                                dap_net_transport_ready_cb_t a_callback);
 static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_udp_close(dap_stream_t *a_stream);
-static uint32_t s_udp_get_capabilities(dap_stream_transport_t *a_transport);
+static uint32_t s_udp_get_capabilities(dap_net_transport_t *a_transport);
+static int s_udp_stage_prepare(dap_net_transport_t *a_transport,
+                               const dap_net_stage_prepare_params_t *a_params,
+                               dap_net_stage_prepare_result_t *a_result);
 
 // UDP transport operations table
-static const dap_stream_transport_ops_t s_udp_ops = {
+static const dap_net_transport_ops_t s_udp_ops = {
     .init = s_udp_init,
     .deinit = s_udp_deinit,
     .connect = s_udp_connect,
@@ -83,11 +99,12 @@ static const dap_stream_transport_ops_t s_udp_ops = {
     .write = s_udp_write,
     .close = s_udp_close,
     .get_capabilities = s_udp_get_capabilities,
-    .register_server_handlers = NULL  // UDP transport registers handlers via dap_stream_add_proc_udp
+    .register_server_handlers = NULL,  // UDP transport registers handlers via dap_stream_add_proc_udp
+    .stage_prepare = s_udp_stage_prepare
 };
 
 // Helper functions
-static dap_stream_transport_udp_private_t *s_get_private(dap_stream_transport_t *a_transport);
+static dap_stream_transport_udp_private_t *s_get_private(dap_net_transport_t *a_transport);
 static int s_create_udp_header(dap_stream_transport_udp_header_t *a_header,
                                 uint8_t a_type, uint16_t a_length,
                                 uint32_t a_seq_num, uint64_t a_session_id);
@@ -110,9 +127,10 @@ int dap_net_transport_udp_stream_register(void)
     log_it(L_DEBUG, "dap_net_transport_udp_stream_register: UDP server module initialized, registering transport");
     
     // Register UDP transport operations
-    int l_ret_transport = dap_stream_transport_register("UDP",
-                                                DAP_STREAM_TRANSPORT_UDP_BASIC,
+    int l_ret_transport = dap_net_transport_register("UDP",
+                                                DAP_NET_TRANSPORT_UDP_BASIC,
                                                 &s_udp_ops,
+                                                DAP_NET_TRANSPORT_SOCKET_UDP,
                                                 NULL);  // No inheritor needed at registration
     if (l_ret_transport != 0) {
         log_it(L_ERROR, "Failed to register UDP transport: %d", l_ret_transport);
@@ -129,7 +147,7 @@ int dap_net_transport_udp_stream_register(void)
  */
 int dap_net_transport_udp_stream_unregister(void)
 {
-    int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    int l_ret = dap_net_transport_unregister(DAP_NET_TRANSPORT_UDP_BASIC);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister UDP transport: %d", l_ret);
         return l_ret;
@@ -159,7 +177,7 @@ dap_stream_transport_udp_config_t dap_stream_transport_udp_config_default(void)
 /**
  * @brief Set UDP configuration
  */
-int dap_stream_transport_udp_set_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_set_config(dap_net_transport_t *a_transport,
                                         const dap_stream_transport_udp_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -181,7 +199,7 @@ int dap_stream_transport_udp_set_config(dap_stream_transport_t *a_transport,
 /**
  * @brief Get UDP configuration
  */
-int dap_stream_transport_udp_get_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_get_config(dap_net_transport_t *a_transport,
                                         dap_stream_transport_udp_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -206,7 +224,7 @@ bool dap_stream_transport_is_udp(const dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->stream_transport)
         return false;
-    return a_stream->stream_transport->type == DAP_STREAM_TRANSPORT_UDP_BASIC;
+    return a_stream->stream_transport->type == DAP_NET_TRANSPORT_UDP_BASIC;
 }
 
 /**
@@ -260,7 +278,7 @@ uint32_t dap_stream_transport_udp_get_seq_num(const dap_stream_t *a_stream)
 /**
  * @brief Set remote peer address
  */
-int dap_stream_transport_udp_set_remote_addr(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_set_remote_addr(dap_net_transport_t *a_transport,
                                               const struct sockaddr *a_addr,
                                               socklen_t a_addr_len)
 {
@@ -283,7 +301,7 @@ int dap_stream_transport_udp_set_remote_addr(dap_stream_transport_t *a_transport
 /**
  * @brief Get remote peer address
  */
-int dap_stream_transport_udp_get_remote_addr(dap_stream_transport_t *a_transport,
+int dap_stream_transport_udp_get_remote_addr(dap_net_transport_t *a_transport,
                                               struct sockaddr *a_addr,
                                               socklen_t *a_addr_len)
 {
@@ -306,7 +324,7 @@ int dap_stream_transport_udp_get_remote_addr(dap_stream_transport_t *a_transport
 /**
  * @brief Send raw UDP packet
  */
-ssize_t dap_stream_transport_udp_send_raw(dap_stream_transport_t *a_transport,
+ssize_t dap_stream_transport_udp_send_raw(dap_net_transport_t *a_transport,
                                            const void *a_data,
                                            size_t a_data_size)
 {
@@ -334,7 +352,7 @@ ssize_t dap_stream_transport_udp_send_raw(dap_stream_transport_t *a_transport,
 /**
  * @brief Receive raw UDP packet
  */
-ssize_t dap_stream_transport_udp_recv_raw(dap_stream_transport_t *a_transport,
+ssize_t dap_stream_transport_udp_recv_raw(dap_net_transport_t *a_transport,
                                            void *a_data,
                                            size_t a_data_size)
 {
@@ -366,7 +384,7 @@ ssize_t dap_stream_transport_udp_recv_raw(dap_stream_transport_t *a_transport,
 /**
  * @brief Initialize UDP transport
  */
-static int s_udp_init(dap_stream_transport_t *a_transport, dap_config_t *a_config)
+static int s_udp_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
 {
     if (!a_transport) {
         log_it(L_ERROR, "Cannot init NULL transport");
@@ -397,7 +415,7 @@ static int s_udp_init(dap_stream_transport_t *a_transport, dap_config_t *a_confi
 /**
  * @brief Deinitialize UDP transport
  */
-static void s_udp_deinit(dap_stream_transport_t *a_transport)
+static void s_udp_deinit(dap_net_transport_t *a_transport)
 {
     if (!a_transport)
         return;
@@ -414,7 +432,7 @@ static void s_udp_deinit(dap_stream_transport_t *a_transport)
  * @brief Connect to remote UDP endpoint
  */
 static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port,
-                          dap_stream_transport_connect_cb_t a_callback)
+                          dap_net_transport_connect_cb_t a_callback)
 {
     if (!a_stream || !a_host) {
         log_it(L_ERROR, "Invalid arguments for UDP connect");
@@ -459,7 +477,7 @@ static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
 /**
  * @brief Start listening for UDP connections
  */
-static int s_udp_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+static int s_udp_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                          dap_server_t *a_server)
 {
     if (!a_transport) {
@@ -505,8 +523,8 @@ static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
  * @brief Initialize encryption handshake
  */
 static int s_udp_handshake_init(dap_stream_t *a_stream,
-                                 dap_stream_handshake_params_t *a_params,
-                                 dap_stream_transport_handshake_cb_t a_callback)
+                                 dap_net_handshake_params_t *a_params,
+                                 dap_net_transport_handshake_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for UDP handshake init");
@@ -631,8 +649,8 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
  * @brief Create session
  */
 static int s_udp_session_create(dap_stream_t *a_stream,
-                                 dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback)
+                                 dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for UDP session create");
@@ -667,7 +685,7 @@ static int s_udp_session_create(dap_stream_t *a_stream,
  * @brief Start session
  */
 static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback)
+                                dap_net_transport_ready_cb_t a_callback)
 {
     if (!a_stream) {
         log_it(L_ERROR, "Invalid stream for session start");
@@ -790,13 +808,55 @@ static void s_udp_close(dap_stream_t *a_stream)
 }
 
 /**
+ * @brief Prepare UDP socket for client stage
+ * Creates UDP socket (SOCK_DGRAM) and wraps it in dap_events_socket_t
+ */
+static int s_udp_stage_prepare(dap_net_transport_t *a_transport,
+                               const dap_net_stage_prepare_params_t *a_params,
+                               dap_net_stage_prepare_result_t *a_result)
+{
+    if (!a_transport || !a_params || !a_result) {
+        log_it(L_ERROR, "Invalid arguments for UDP stage_prepare");
+        return -1;
+    }
+    
+    // Initialize result
+    a_result->esocket = NULL;
+    a_result->error_code = 0;
+    
+    // Create UDP socket using platform-independent function
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create UDP socket");
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    l_es->_inheritor = a_params->client_context;
+    
+    // Resolve host and set address using centralized function
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
+        log_it(L_ERROR, "Failed to resolve address for UDP transport");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    a_result->esocket = l_es;
+    a_result->error_code = 0;
+    log_it(L_DEBUG, "UDP socket prepared for %s:%u", a_params->host, a_params->port);
+    return 0;
+}
+
+/**
  * @brief Get transport capabilities
  */
-static uint32_t s_udp_get_capabilities(dap_stream_transport_t *a_transport)
+static uint32_t s_udp_get_capabilities(dap_net_transport_t *a_transport)
 {
     UNUSED(a_transport);
-    return DAP_STREAM_TRANSPORT_CAP_LOW_LATENCY |
-           DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL;
+    return DAP_NET_TRANSPORT_CAP_LOW_LATENCY |
+           DAP_NET_TRANSPORT_CAP_BIDIRECTIONAL;
 }
 
 //=============================================================================
@@ -806,7 +866,7 @@ static uint32_t s_udp_get_capabilities(dap_stream_transport_t *a_transport)
 /**
  * @brief Get private data from transport
  */
-static dap_stream_transport_udp_private_t *s_get_private(dap_stream_transport_t *a_transport)
+static dap_stream_transport_udp_private_t *s_get_private(dap_net_transport_t *a_transport)
 {
     if (!a_transport)
         return NULL;

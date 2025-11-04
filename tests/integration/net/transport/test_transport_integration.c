@@ -26,8 +26,9 @@
 #include "dap_enc.h"
 #include "dap_events.h"
 #include "dap_client.h"
+#include "dap_client_helpers.h"
 #include "dap_stream.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_server.h"
 
 #include "dap_stream_ch.h"
@@ -54,22 +55,19 @@
 #define TEST_STREAM_CH_ID 'A'
 #define TEST_TRANSPORT_TIMEOUT_MS 10000  // 30 seconds
 
-// Transport type configuration
-typedef struct transport_test_config {
-    dap_stream_transport_type_t transport_type;
-    const char *name;
-    uint16_t base_port;
-    const char *address;
-} transport_test_config_t;
-
-static const transport_test_config_t s_transport_configs[] = {
-    {DAP_STREAM_TRANSPORT_HTTP, "HTTP", 18101, "127.0.0.1"},
-//    {DAP_STREAM_TRANSPORT_WEBSOCKET, "WebSocket", 18102, "127.0.0.1"},
-//    {DAP_STREAM_TRANSPORT_UDP_BASIC, "UDP", 18103, "127.0.0.1"},
- //   {DAP_STREAM_TRANSPORT_DNS_TUNNEL, "DNS", 18104, "127.0.0.1"},
+// Transport configs are defined in test_transport_helpers.h
+// Define the actual array here
+const transport_test_config_t g_transport_configs[] = {
+    {DAP_NET_TRANSPORT_HTTP, "HTTP", 18101, "127.0.0.1"},
+    {DAP_NET_TRANSPORT_WEBSOCKET, "WebSocket", 18102, "127.0.0.1"},
+    {DAP_NET_TRANSPORT_UDP_BASIC, "UDP", 18103, "127.0.0.1"},
+    {DAP_NET_TRANSPORT_DNS_TUNNEL, "DNS", 18104, "127.0.0.1"},
 };
 
-#define TRANSPORT_CONFIG_COUNT (sizeof(s_transport_configs) / sizeof(s_transport_configs[0]))
+// Define count as compile-time constant for use in array declarations
+#define TRANSPORT_CONFIG_COUNT (sizeof(g_transport_configs) / sizeof(g_transport_configs[0]))
+// Also export as runtime variable for use in other files
+const size_t g_transport_config_count = TRANSPORT_CONFIG_COUNT;
 
 // Per-transport test context
 typedef struct transport_test_context {
@@ -196,12 +194,12 @@ static int test_init_all_transports(void)
     // This is the actual check - if transports are registered, initialization was successful
     bool l_all_transports_registered = true;
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        dap_stream_transport_t *l_transport = dap_stream_transport_find(s_transport_configs[i].transport_type);
+        dap_net_transport_t *l_transport = dap_net_transport_find(g_transport_configs[i].transport_type);
         if (!l_transport) {
-            TEST_ERROR("Transport %s not registered", s_transport_configs[i].name);
+            TEST_ERROR("Transport %s not registered", g_transport_configs[i].name);
             l_all_transports_registered = false;
         } else {
-            TEST_INFO("Transport %s registered successfully", s_transport_configs[i].name);
+            TEST_INFO("Transport %s registered successfully", g_transport_configs[i].name);
         }
     }
     
@@ -590,7 +588,7 @@ static void test_02_parallel_transport_testing(void)
     
     // Initialize all transport contexts
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        s_transport_contexts[i].config = s_transport_configs[i];
+        s_transport_contexts[i].config = g_transport_configs[i];
         s_transport_contexts[i].server = NULL;
         memset(s_transport_contexts[i].clients, 0, sizeof(s_transport_contexts[i].clients));
         memset(s_transport_contexts[i].client_node_addrs, 0, sizeof(s_transport_contexts[i].client_node_addrs));
@@ -601,7 +599,7 @@ static void test_02_parallel_transport_testing(void)
     // Start all transport tests in parallel threads
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
         int l_ret = pthread_create(&s_transport_contexts[i].thread, NULL, test_transport_worker, &s_transport_contexts[i]);
-        TEST_ASSERT(l_ret == 0, "Failed to create thread for transport %s", s_transport_configs[i].name);
+        TEST_ASSERT(l_ret == 0, "Failed to create thread for transport %s", g_transport_configs[i].name);
     }
     
     // Wait for all threads to complete
@@ -613,7 +611,7 @@ static void test_02_parallel_transport_testing(void)
     bool l_all_passed = true;
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
         if (s_transport_contexts[i].result != 0) {
-            TEST_ERROR("Transport %s test failed with code %d", s_transport_configs[i].name, s_transport_contexts[i].result);
+            TEST_ERROR("Transport %s test failed with code %d", g_transport_configs[i].name, s_transport_contexts[i].result);
             l_all_passed = false;
         }
     }

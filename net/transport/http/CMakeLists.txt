@@ -27,6 +27,8 @@ target_include_directories(${PROJECT_NAME} INTERFACE . ${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Add stream include directory for stream headers
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../stream/stream/include)
+# Add client include directory
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../client/include)
 # Add enc_server include directory
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../server/enc_server/include)
 # Add http_server include directory
@@ -40,7 +42,7 @@ dap_register_module(
     VERSION 1
     INIT_FUNCTION "dap_net_transport_http_stream_register"
     DEINIT_FUNCTION "dap_net_transport_http_stream_unregister"
-    DEPENDENCIES "dap_stream_transport"
+    DEPENDENCIES "dap_net_transport"
     INCLUDE_HEADER "dap_net_transport_http_stream.h"
 )
 
@@ -52,6 +54,7 @@ dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_crypto 
     dap_http_server
     dap_enc_server
+    dap_client
     dap_stream
     dap_stream_ch
     dap_net_transport

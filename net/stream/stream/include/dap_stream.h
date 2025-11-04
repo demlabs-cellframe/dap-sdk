@@ -85,7 +85,7 @@ typedef struct dap_stream {
      * @see dap_stream_transport.h
      * @see dap_stream_transport_http.h
      */
-    struct dap_stream_transport *stream_transport;
+    struct dap_net_transport *stream_transport;
 } dap_stream_t;
 
 typedef struct dap_stream_info {

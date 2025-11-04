@@ -27,8 +27,20 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_strfuncs.h"
 #include "dap_net_transport_dns_stream.h"
 #include "dap_net_transport_dns_server.h"
-#include "dap_stream_transport.h"  // For dap_stream_transport_t and dap_stream_transport_ops_t
+#include "dap_net_transport.h"  // For dap_net_transport_t and dap_net_transport_ops_t
 #include "dap_events_socket.h"     // For dap_events_socket_t
+#include "dap_net.h"
+
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
 #include "dap_stream_handshake.h"  // For handshake structures
 #include "dap_stream.h"
 #include "dap_server.h"
@@ -46,31 +58,34 @@ See more details here <http://www.gnu.org/licenses/>.
 #define DAP_STREAM_DNS_DEFAULT_TIMEOUT_MS       5000
 
 // Transport operations forward declarations
-static int s_dns_init(dap_stream_transport_t *a_transport, dap_config_t *a_config);
-static void s_dns_deinit(dap_stream_transport_t *a_transport);
+static int s_dns_init(dap_net_transport_t *a_transport, dap_config_t *a_config);
+static void s_dns_deinit(dap_net_transport_t *a_transport);
 static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port, 
-                          dap_stream_transport_connect_cb_t a_callback);
-static int s_dns_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+                          dap_net_transport_connect_cb_t a_callback);
+static int s_dns_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                          dap_server_t *a_server);
 static int s_dns_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out);
 static int s_dns_handshake_init(dap_stream_t *a_stream,
-                                 dap_stream_handshake_params_t *a_params,
-                                 dap_stream_transport_handshake_cb_t a_callback);
+                                 dap_net_handshake_params_t *a_params,
+                                 dap_net_transport_handshake_cb_t a_callback);
 static int s_dns_handshake_process(dap_stream_t *a_stream,
                                     const void *a_data, size_t a_data_size,
                                     void **a_response, size_t *a_response_size);
 static int s_dns_session_create(dap_stream_t *a_stream,
-                                 dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback);
+                                 dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback);
 static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback);
+                                dap_net_transport_ready_cb_t a_callback);
 static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_dns_close(dap_stream_t *a_stream);
-static uint32_t s_dns_get_capabilities(dap_stream_transport_t *a_transport);
+static uint32_t s_dns_get_capabilities(dap_net_transport_t *a_transport);
+static int s_dns_stage_prepare(dap_net_transport_t *a_transport,
+                               const dap_net_stage_prepare_params_t *a_params,
+                               dap_net_stage_prepare_result_t *a_result);
 
 // DNS transport operations table
-static const dap_stream_transport_ops_t s_dns_ops = {
+static const dap_net_transport_ops_t s_dns_ops = {
     .init = s_dns_init,
     .deinit = s_dns_deinit,
     .connect = s_dns_connect,
@@ -84,11 +99,12 @@ static const dap_stream_transport_ops_t s_dns_ops = {
     .write = s_dns_write,
     .close = s_dns_close,
     .get_capabilities = s_dns_get_capabilities,
-    .register_server_handlers = NULL  // DNS transport registers handlers via DNS server implementation
+    .register_server_handlers = NULL,  // DNS transport registers handlers via DNS server implementation
+    .stage_prepare = s_dns_stage_prepare
 };
 
 // Helper functions
-static dap_stream_transport_dns_private_t *s_get_private(dap_stream_transport_t *a_transport);
+static dap_stream_transport_dns_private_t *s_get_private(dap_net_transport_t *a_transport);
 
 /**
  * @brief Register DNS tunnel transport adapter
@@ -105,9 +121,10 @@ int dap_net_transport_dns_stream_register(void)
     log_it(L_DEBUG, "dap_net_transport_dns_stream_register: DNS server module initialized, registering transport");
     
     // Register DNS transport operations
-    int l_ret_transport = dap_stream_transport_register("DNS_TUNNEL",
-                                                DAP_STREAM_TRANSPORT_DNS_TUNNEL,
+    int l_ret_transport = dap_net_transport_register("DNS_TUNNEL",
+                                                DAP_NET_TRANSPORT_DNS_TUNNEL,
                                                 &s_dns_ops,
+                                                DAP_NET_TRANSPORT_SOCKET_UDP,
                                                 NULL);
     if (l_ret_transport != 0) {
         log_it(L_ERROR, "Failed to register DNS tunnel transport: %d", l_ret_transport);
@@ -124,7 +141,7 @@ int dap_net_transport_dns_stream_register(void)
  */
 int dap_net_transport_dns_stream_unregister(void)
 {
-    int l_ret = dap_stream_transport_unregister(DAP_STREAM_TRANSPORT_DNS_TUNNEL);
+    int l_ret = dap_net_transport_unregister(DAP_NET_TRANSPORT_DNS_TUNNEL);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to unregister DNS tunnel transport: %d", l_ret);
         return l_ret;
@@ -156,7 +173,7 @@ dap_stream_transport_dns_config_t dap_stream_transport_dns_config_default(void)
 /**
  * @brief Set DNS tunnel configuration
  */
-int dap_stream_transport_dns_set_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_dns_set_config(dap_net_transport_t *a_transport,
                                         const dap_stream_transport_dns_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -186,7 +203,7 @@ int dap_stream_transport_dns_set_config(dap_stream_transport_t *a_transport,
 /**
  * @brief Get DNS tunnel configuration
  */
-int dap_stream_transport_dns_get_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_dns_get_config(dap_net_transport_t *a_transport,
                                          dap_stream_transport_dns_config_t *a_config)
 {
     if (!a_transport || !a_config) {
@@ -218,7 +235,7 @@ bool dap_stream_transport_is_dns(const dap_stream_t *a_stream)
     if (!a_stream || !a_stream->stream_transport) {
         return false;
     }
-    return a_stream->stream_transport->type == DAP_STREAM_TRANSPORT_DNS_TUNNEL;
+    return a_stream->stream_transport->type == DAP_NET_TRANSPORT_DNS_TUNNEL;
 }
 
 /**
@@ -230,7 +247,7 @@ dap_stream_transport_dns_private_t* dap_stream_transport_dns_get_private(dap_str
         return NULL;
     }
 
-    if (a_stream->stream_transport->type != DAP_STREAM_TRANSPORT_DNS_TUNNEL) {
+    if (a_stream->stream_transport->type != DAP_NET_TRANSPORT_DNS_TUNNEL) {
         return NULL;
     }
 
@@ -246,7 +263,7 @@ dap_stream_transport_dns_private_t* dap_stream_transport_dns_get_private(dap_str
 /**
  * @brief Initialize DNS tunnel transport
  */
-static int s_dns_init(dap_stream_transport_t *a_transport, dap_config_t *a_config)
+static int s_dns_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
 {
     UNUSED(a_config);
     
@@ -275,7 +292,7 @@ static int s_dns_init(dap_stream_transport_t *a_transport, dap_config_t *a_confi
 /**
  * @brief Deinitialize DNS tunnel transport
  */
-static void s_dns_deinit(dap_stream_transport_t *a_transport)
+static void s_dns_deinit(dap_net_transport_t *a_transport)
 {
     if (!a_transport) {
         return;
@@ -297,7 +314,7 @@ static void s_dns_deinit(dap_stream_transport_t *a_transport)
  *       Full DNS query/response parsing can be added later
  */
 static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port, 
-                          dap_stream_transport_connect_cb_t a_callback)
+                          dap_net_transport_connect_cb_t a_callback)
 {
     if (!a_stream || !a_host) {
         log_it(L_ERROR, "Invalid arguments for DNS connect");
@@ -330,7 +347,7 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
 /**
  * @brief Start listening for DNS tunnel connections
  */
-static int s_dns_listen(dap_stream_transport_t *a_transport, const char *a_addr, uint16_t a_port,
+static int s_dns_listen(dap_net_transport_t *a_transport, const char *a_addr, uint16_t a_port,
                          dap_server_t *a_server)
 {
     if (!a_transport) {
@@ -368,8 +385,8 @@ static int s_dns_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
  *       Full DNS-based handshake can be added later
  */
 static int s_dns_handshake_init(dap_stream_t *a_stream,
-                                 dap_stream_handshake_params_t *a_params,
-                                 dap_stream_transport_handshake_cb_t a_callback)
+                                 dap_net_handshake_params_t *a_params,
+                                 dap_net_transport_handshake_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for DNS handshake init");
@@ -469,8 +486,8 @@ static int s_dns_handshake_process(dap_stream_t *a_stream,
  * @note Uses UDP-like approach for basic functionality
  */
 static int s_dns_session_create(dap_stream_t *a_stream,
-                                 dap_stream_session_params_t *a_params,
-                                 dap_stream_transport_session_cb_t a_callback)
+                                 dap_net_session_params_t *a_params,
+                                 dap_net_transport_session_cb_t a_callback)
 {
     if (!a_stream || !a_params) {
         log_it(L_ERROR, "Invalid arguments for DNS session create");
@@ -499,7 +516,7 @@ static int s_dns_session_create(dap_stream_t *a_stream,
  * @note Uses UDP-like approach for basic functionality
  */
 static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
-                                dap_stream_transport_ready_cb_t a_callback)
+                                dap_net_transport_ready_cb_t a_callback)
 {
     if (!a_stream) {
         log_it(L_ERROR, "Invalid stream for DNS session start");
@@ -596,9 +613,51 @@ static void s_dns_close(dap_stream_t *a_stream)
 }
 
 /**
+ * @brief Prepare DNS socket for client stage
+ * Creates UDP socket (SOCK_DGRAM) for DNS tunneling and wraps it in dap_events_socket_t
+ */
+static int s_dns_stage_prepare(dap_net_transport_t *a_transport,
+                               const dap_net_stage_prepare_params_t *a_params,
+                               dap_net_stage_prepare_result_t *a_result)
+{
+    if (!a_transport || !a_params || !a_result) {
+        log_it(L_ERROR, "Invalid arguments for DNS stage_prepare");
+        return -1;
+    }
+    
+    // Initialize result
+    a_result->esocket = NULL;
+    a_result->error_code = 0;
+    
+    // DNS tunneling uses UDP socket - create using platform-independent function
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_DGRAM, IPPROTO_UDP, a_params->callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create DNS socket");
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    l_es->_inheritor = a_params->client_context;
+    
+    // Resolve host and set address using centralized function
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
+        log_it(L_ERROR, "Failed to resolve address for DNS transport");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    a_result->esocket = l_es;
+    a_result->error_code = 0;
+    log_it(L_DEBUG, "DNS socket prepared for %s:%u", a_params->host, a_params->port);
+    return 0;
+}
+
+/**
  * @brief Get DNS tunnel transport capabilities
  */
-static uint32_t s_dns_get_capabilities(dap_stream_transport_t *a_transport)
+static uint32_t s_dns_get_capabilities(dap_net_transport_t *a_transport)
 {
     UNUSED(a_transport);
     
@@ -608,14 +667,14 @@ static uint32_t s_dns_get_capabilities(dap_stream_transport_t *a_transport)
     // - Built-in obfuscation (looks like DNS)
     // - No reliability guarantees
     // - Limited payload size (DNS TXT records)
-    return DAP_STREAM_TRANSPORT_CAP_OBFUSCATION |
-           DAP_STREAM_TRANSPORT_CAP_LOW_LATENCY;
+    return DAP_NET_TRANSPORT_CAP_OBFUSCATION |
+           DAP_NET_TRANSPORT_CAP_LOW_LATENCY;
 }
 
 /**
  * @brief Get private data from transport
  */
-static dap_stream_transport_dns_private_t *s_get_private(dap_stream_transport_t *a_transport)
+static dap_stream_transport_dns_private_t *s_get_private(dap_net_transport_t *a_transport)
 {
     if (!a_transport || !a_transport->_inheritor) {
         return NULL;

@@ -24,7 +24,7 @@
 #include "dap_events.h"
 #include "dap_client.h"
 #include "dap_stream.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 
 // Test framework headers
 #include "dap_test.h"
@@ -67,39 +67,39 @@ static void test_02_transport_registration(void) {
     TEST_INFO("Test 2: Verifying transport registration and string parsing");
     
     // Test string to enum conversion
-    TEST_ASSERT(dap_stream_transport_type_from_str("http") == DAP_STREAM_TRANSPORT_HTTP, 
+    TEST_ASSERT(dap_net_transport_type_from_str("http") == DAP_NET_TRANSPORT_HTTP, 
                 "http string should parse to HTTP enum");
-    TEST_ASSERT(dap_stream_transport_type_from_str("udp") == DAP_STREAM_TRANSPORT_UDP_BASIC, 
+    TEST_ASSERT(dap_net_transport_type_from_str("udp") == DAP_NET_TRANSPORT_UDP_BASIC, 
                 "udp string should parse to UDP_BASIC enum");
-    TEST_ASSERT(dap_stream_transport_type_from_str("websocket") == DAP_STREAM_TRANSPORT_WEBSOCKET, 
+    TEST_ASSERT(dap_net_transport_type_from_str("websocket") == DAP_NET_TRANSPORT_WEBSOCKET, 
                 "websocket string should parse to WEBSOCKET enum");
-    TEST_ASSERT(dap_stream_transport_type_from_str("tls") == DAP_STREAM_TRANSPORT_TLS_DIRECT, 
+    TEST_ASSERT(dap_net_transport_type_from_str("tls") == DAP_NET_TRANSPORT_TLS_DIRECT, 
                 "tls string should parse to TLS_DIRECT enum");
-    TEST_ASSERT(dap_stream_transport_type_from_str("unknown") == DAP_STREAM_TRANSPORT_HTTP, 
+    TEST_ASSERT(dap_net_transport_type_from_str("unknown") == DAP_NET_TRANSPORT_HTTP, 
                 "unknown string should default to HTTP");
     
     // Test enum to string conversion
-    TEST_ASSERT(strcmp(dap_stream_transport_type_to_str(DAP_STREAM_TRANSPORT_HTTP), "HTTP") == 0,
+    TEST_ASSERT(strcmp(dap_net_transport_type_to_str(DAP_NET_TRANSPORT_HTTP), "HTTP") == 0,
                 "HTTP enum should convert to HTTP string");
-    TEST_ASSERT(strcmp(dap_stream_transport_type_to_str(DAP_STREAM_TRANSPORT_UDP_BASIC), "UDP_BASIC") == 0,
+    TEST_ASSERT(strcmp(dap_net_transport_type_to_str(DAP_NET_TRANSPORT_UDP_BASIC), "UDP_BASIC") == 0,
                 "UDP_BASIC enum should convert to UDP_BASIC string");
-    TEST_ASSERT(strcmp(dap_stream_transport_type_to_str(DAP_STREAM_TRANSPORT_WEBSOCKET), "WEBSOCKET") == 0,
+    TEST_ASSERT(strcmp(dap_net_transport_type_to_str(DAP_NET_TRANSPORT_WEBSOCKET), "WEBSOCKET") == 0,
                 "WEBSOCKET enum should convert to WEBSOCKET string");
     
     // Check HTTP transport registration
-    dap_stream_transport_t *l_http = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_http = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_http, "HTTP transport should be registered");
-    TEST_ASSERT(l_http->type == DAP_STREAM_TRANSPORT_HTTP, "HTTP transport type should match");
+    TEST_ASSERT(l_http->type == DAP_NET_TRANSPORT_HTTP, "HTTP transport type should match");
     
     // Check WebSocket transport registration
-    dap_stream_transport_t *l_ws = dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *l_ws = dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     TEST_ASSERT_NOT_NULL(l_ws, "WebSocket transport should be registered");
-    TEST_ASSERT(l_ws->type == DAP_STREAM_TRANSPORT_WEBSOCKET, "WebSocket transport type should match");
+    TEST_ASSERT(l_ws->type == DAP_NET_TRANSPORT_WEBSOCKET, "WebSocket transport type should match");
     
     // Check UDP transport registration
-    dap_stream_transport_t *l_udp = dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *l_udp = dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     TEST_ASSERT_NOT_NULL(l_udp, "UDP transport should be registered");
-    TEST_ASSERT(l_udp->type == DAP_STREAM_TRANSPORT_UDP_BASIC, "UDP transport type should match");
+    TEST_ASSERT(l_udp->type == DAP_NET_TRANSPORT_UDP_BASIC, "UDP transport type should match");
     
     TEST_SUCCESS("Test 2 passed: All transports are registered and string parsing works");
 }
@@ -123,26 +123,26 @@ static void test_03_client_transport_api(void) {
     TEST_ASSERT(l_client_ready, "Client should be properly initialized");
     
     // Test 1: Default transport type should be HTTP
-    dap_stream_transport_type_t l_default_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_default_type == DAP_STREAM_TRANSPORT_HTTP, 
+    dap_net_transport_type_t l_default_type = dap_client_get_transport_type(l_client);
+    TEST_ASSERT(l_default_type == DAP_NET_TRANSPORT_HTTP, 
                 "Default transport type should be HTTP");
     
     // Test 2: Set transport to WebSocket
-    dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_WEBSOCKET);
-    dap_stream_transport_type_t l_ws_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_ws_type == DAP_STREAM_TRANSPORT_WEBSOCKET, 
+    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_WEBSOCKET);
+    dap_net_transport_type_t l_ws_type = dap_client_get_transport_type(l_client);
+    TEST_ASSERT(l_ws_type == DAP_NET_TRANSPORT_WEBSOCKET, 
                 "Transport type should be WebSocket after set");
     
     // Test 3: Set transport to UDP
-    dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_UDP_RELIABLE);
-    dap_stream_transport_type_t l_udp_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_udp_type == DAP_STREAM_TRANSPORT_UDP_RELIABLE, 
+    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_UDP_RELIABLE);
+    dap_net_transport_type_t l_udp_type = dap_client_get_transport_type(l_client);
+    TEST_ASSERT(l_udp_type == DAP_NET_TRANSPORT_UDP_RELIABLE, 
                 "Transport type should be UDP_RELIABLE after set");
     
     // Test 4: Set transport to TLS
-    dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_TLS_DIRECT);
-    dap_stream_transport_type_t l_tls_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_tls_type == DAP_STREAM_TRANSPORT_TLS_DIRECT, 
+    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_TLS_DIRECT);
+    dap_net_transport_type_t l_tls_type = dap_client_get_transport_type(l_client);
+    TEST_ASSERT(l_tls_type == DAP_NET_TRANSPORT_TLS_DIRECT, 
                 "Transport type should be TLS_DIRECT after set");
     
     // Test 5: Direct field access matches getter
@@ -150,9 +150,9 @@ static void test_03_client_transport_api(void) {
                 "Direct field access should match getter");
     
     // Test 6: Set back to HTTP
-    dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_HTTP);
+    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_HTTP);
     l_default_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_default_type == DAP_STREAM_TRANSPORT_HTTP, 
+    TEST_ASSERT(l_default_type == DAP_NET_TRANSPORT_HTTP, 
                 "Transport type should be HTTP after reset");
     
     // Cleanup
@@ -171,13 +171,13 @@ static void test_04_transport_enumeration(void) {
     TEST_INFO("Test 4: Testing transport enumeration");
     
     // Get all registered transports
-    dap_list_t *l_transports = dap_stream_transport_list_all();
+    dap_list_t *l_transports = dap_net_transport_list_all();
     TEST_ASSERT_NOT_NULL(l_transports, "Transport list should not be NULL");
     
     // Count transports
     int l_count = 0;
     for (dap_list_t *l_item = l_transports; l_item; l_item = l_item->next) {
-        dap_stream_transport_t *l_transport = (dap_stream_transport_t *)l_item->data;
+        dap_net_transport_t *l_transport = (dap_net_transport_t *)l_item->data;
         TEST_ASSERT_NOT_NULL(l_transport, "Transport in list should not be NULL");
         TEST_INFO("  Found transport: type=%d, name=%s", 
                   l_transport->type, l_transport->name);

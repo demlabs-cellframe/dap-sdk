@@ -260,8 +260,10 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
     endif()
     
     # Clear and reset link libraries
+    # Note: We always use PRIVATE keyword to match dap_test_link_libraries pattern
+    # which uses PRIVATE in dap_link_all_sdk_modules
     set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
-    target_link_libraries(${TARGET_NAME} ${NEW_LIBS})
+    target_link_libraries(${TARGET_NAME} PRIVATE ${NEW_LIBS})
     
     # Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
     target_link_options(${TARGET_NAME} PRIVATE "-Wl,--allow-multiple-definition")

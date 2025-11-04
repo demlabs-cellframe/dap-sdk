@@ -59,7 +59,7 @@
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -180,12 +180,8 @@ int dap_stream_init(dap_config_t * a_config)
         return -3;
     }
     
-    // Initialize transport layer
-    // Transports will register themselves automatically via constructors
-    if (dap_stream_transport_init() != 0) {
-        log_it(L_CRITICAL, "Can't init transport registry");
-        return -4;
-    }
+    // Transport layer is initialized automatically via dap_module system
+    // No need to call dap_net_transport_init() manually
     
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
@@ -212,9 +208,8 @@ int dap_stream_init(dap_config_t * a_config)
  */
 void dap_stream_deinit()
 {
-    // Deinitialize transport layer
-    // Transports will unregister themselves automatically via destructors
-    dap_stream_transport_deinit();
+    // Transport layer is deinitialized automatically via dap_module system
+    // No need to call dap_net_transport_deinit() manually
     
     dap_stream_ch_deinit( );
 }
@@ -276,10 +271,24 @@ void dap_stream_add_proc_dns(dap_server_t *a_dns_server)
  */
 static void s_stream_states_update(dap_stream_t *a_stream)
 {
+    if (!a_stream) {
+        log_it(L_ERROR, "s_stream_states_update: stream is NULL");
+        return;
+    }
+    if (!a_stream->esocket) {
+        log_it(L_ERROR, "s_stream_states_update: stream->esocket is NULL");
+        return;
+    }
     size_t i;
     bool ready_to_write=false;
-    for(i=0;i<a_stream->channel_count; i++)
+    for(i=0;i<a_stream->channel_count; i++) {
+        if (!a_stream->channel || !a_stream->channel[i]) {
+            log_it(L_ERROR, "s_stream_states_update: channel[%zu] is NULL (channel_count=%zu, channel=%p)", 
+                   i, a_stream->channel_count, (void*)a_stream->channel);
+            continue;
+        }
         ready_to_write|=a_stream->channel[i]->ready_to_write;
+    }
     dap_events_socket_set_writable_unsafe(a_stream->esocket,ready_to_write);
     
     // Transport-specific state updates should be handled by transport callbacks
@@ -371,52 +380,99 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
  */
 dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_addr_t *a_addr)
 {
+    debug_if(s_debug, L_DEBUG, "s_stream_new: entering, a_http_client=%p, a_addr=%p", (void*)a_http_client, (void*)a_addr);
+    if (!a_http_client) {
+        log_it(L_ERROR, "s_stream_new: a_http_client is NULL");
+        return NULL;
+    }
+    if (!a_http_client->esocket) {
+        log_it(L_ERROR, "s_stream_new: a_http_client->esocket is NULL");
+        return NULL;
+    }
+    if (!a_http_client->esocket->worker) {
+        log_it(L_ERROR, "s_stream_new: a_http_client->esocket->worker is NULL");
+        return NULL;
+    }
+    debug_if(s_debug, L_DEBUG, "s_stream_new: allocating dap_stream_t");
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: DAP_NEW_Z returned %p", (void*)l_ret);
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
+    debug_if(s_debug, L_DEBUG, "s_stream_new: allocated stream %p", (void*)l_ret);
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
 
+    debug_if(s_debug, L_DEBUG, "s_stream_new: setting esocket and esocket_uuid");
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
+    debug_if(s_debug, L_DEBUG, "s_stream_new: getting stream_worker");
+    debug_if(s_debug, L_DEBUG, "s_stream_new: worker=%p, worker->_inheritor=%p", 
+           (void*)a_http_client->esocket->worker,
+           a_http_client->esocket->worker ? (void*)a_http_client->esocket->worker->_inheritor : NULL);
     l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: stream_worker=%p", (void*)l_ret->stream_worker);
+    if (!l_ret->stream_worker) {
+        log_it(L_ERROR, "stream_worker is NULL for worker %p (worker->_inheritor=%p)", 
+               (void*)a_http_client->esocket->worker,
+               a_http_client->esocket->worker ? (void*)a_http_client->esocket->worker->_inheritor : NULL);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
     
+    debug_if(s_debug, L_DEBUG, "s_stream_new: assigning HTTP transport");
     // Assign HTTP transport for this stream
-    dap_stream_transport_t *l_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
         l_ret->stream_transport = l_transport;
+        debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
         // This will be properly implemented when HTTP transport is fully integrated
     }
     
+    debug_if(s_debug, L_DEBUG, "s_stream_new: initializing seq_id");
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
+    
+    debug_if(s_debug, L_DEBUG, "s_stream_new: allocating es_uuid");
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: es_uuid allocated=%p", (void*)l_es_uuid);
     if (!l_es_uuid) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_Z(l_ret);
         return NULL;
     }
+    debug_if(s_debug, L_DEBUG, "s_stream_new: copying esocket uuid");
     *l_es_uuid = l_ret->esocket->uuid;
+    debug_if(s_debug, L_DEBUG, "s_stream_new: starting keepalive timer");
     l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->worker,
-                                                         STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                         (dap_timerfd_callback_t)s_callback_server_keepalive,
-                                                         l_es_uuid);
+                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                          (dap_timerfd_callback_t)s_callback_server_keepalive,
+                                                          l_es_uuid);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: setting callbacks");
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
+    debug_if(s_debug, L_DEBUG, "s_stream_new: setting http_client->_inheritor");
     a_http_client->_inheritor = l_ret;
+    debug_if(s_debug, L_DEBUG, "s_stream_new: http_client->_inheritor set");
     if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
+        debug_if(s_debug, L_DEBUG, "s_stream_new: setting node address");
         l_ret->node = *a_addr;
         l_ret->authorized = true;
     }
+    debug_if(s_debug, L_DEBUG, "s_stream_new: adding stream to list");
     dap_stream_add_to_list(l_ret);
+    debug_if(s_debug, L_DEBUG, "s_stream_new: stream added to list");
     log_it(L_NOTICE,"New stream instance");
+    debug_if(s_debug, L_DEBUG, "s_stream_new: returning stream %p", (void*)l_ret);
     return l_ret;
 }
 
@@ -527,27 +583,52 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
-                if(!dap_stream_session_open(l_ss)){ // Create new stream
-                    dap_stream_t *l_stream = s_stream_new(a_http_client, &l_ss->node);
+                debug_if(s_debug, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p", 
+                       (void*)l_ss, (void*)&l_ss->mutex, (void*)l_ss->active_channels);
+                debug_if(s_debug, L_DEBUG, "Calling dap_stream_session_open for session %u", l_id);
+                int l_open_ret = dap_stream_session_open(l_ss);
+                debug_if(s_debug, L_DEBUG, "dap_stream_session_open returned %d for session %u", l_open_ret, l_id);
+                if(!l_open_ret){ // Create new stream
+                    debug_if(s_debug, L_DEBUG, "Opening session %u, creating stream", l_id);
+                    debug_if(s_debug, L_DEBUG, "Before s_stream_new: a_http_client=%p, l_ss=%p, l_ss->node offset=%zu", 
+                           (void*)a_http_client, (void*)l_ss, 
+                           (size_t)((char*)&l_ss->node - (char*)l_ss));
+                    dap_stream_node_addr_t *l_node_addr = &l_ss->node;
+                    debug_if(s_debug, L_DEBUG, "l_node_addr=%p", (void*)l_node_addr);
+                    dap_stream_t *l_stream = s_stream_new(a_http_client, l_node_addr);
+                    debug_if(s_debug, L_DEBUG, "After s_stream_new: l_stream=%p", (void*)l_stream);
                     if (!l_stream) {
                         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                         a_http_client->reply_status_code = Http_Status_NotFound;
                         return;
                     }
+                    debug_if(s_debug, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)", 
+                           (void*)l_stream, (void*)l_stream->esocket, (void*)l_stream->stream_worker);
                     l_stream->session = l_ss;
+                    debug_if(s_debug, L_DEBUG, "Session assigned to stream");
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
                     if (header)
                         l_ss->service_key = strdup(header->value);
                     size_t count_channels = strlen(l_ss->active_channels);
+                    debug_if(s_debug, L_DEBUG, "Creating %zu channels for session %u", count_channels, l_id);
                     for(size_t i = 0; i < count_channels; i++) {
                         dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
+                        if (!l_ch) {
+                            log_it(L_ERROR, "Failed to create channel '%c' for session %u", l_ss->active_channels[i], l_id);
+                            a_http_client->reply_status_code = Http_Status_InternalServerError;
+                            return;
+                        }
                         l_ch->ready_to_read = true;
                         //l_stream->channel[i]->ready_to_write = true;
                     }
+                    debug_if(s_debug, L_DEBUG, "All %zu channels created successfully, updating stream states", count_channels);
 
                     a_http_client->reply_status_code = Http_Status_OK;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
+                    debug_if(s_debug, L_DEBUG, "Calling s_stream_states_update for stream %p (esocket=%p, channel_count=%zu)", 
+                           (void*)l_stream, (void*)l_stream->esocket, l_stream->channel_count);
                     s_stream_states_update(l_stream);
+                    debug_if(s_debug, L_DEBUG, "s_stream_states_update completed successfully");
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
 #ifdef DAP_EVENTS_CAPS_IOCP
                     a_http_client->esocket->flags |= DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
@@ -1007,16 +1088,23 @@ static bool s_callback_server_keepalive(void *a_arg)
 
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: entering, stream=%p", (void*)a_stream);
     dap_stream_t *l_double = NULL;
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
         log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
     a_stream->primary = true;
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: adding to hash table");
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: added to hash, calling dap_cluster_member_add");
     dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: dap_cluster_member_add completed, calling dap_link_manager_stream_add");
     dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: completed successfully");
     return 0;
 }
 
@@ -1052,15 +1140,25 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
 int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: entering, stream=%p, authorized=%d", 
+           (void*)a_stream, a_stream->authorized);
     int l_ret = 0;
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: locking rwlock");
     int lock = pthread_rwlock_wrlock(&s_streams_lock);
     assert(lock != EDEADLK);
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: lock acquired, appending to list");
     DL_APPEND(s_streams, a_stream);
-    if (a_stream->authorized)
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: appended to list, authorized=%d", a_stream->authorized);
+    if (a_stream->authorized) {
+        debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: calling s_stream_add_to_hashtable");
         l_ret = s_stream_add_to_hashtable(a_stream);
+        debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: s_stream_add_to_hashtable returned %d", l_ret);
+    }
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: unlocking rwlock");
     pthread_rwlock_unlock(&s_streams_lock);
+    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: returning %d", l_ret);
     return l_ret;
 }
 

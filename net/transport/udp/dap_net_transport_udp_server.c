@@ -24,6 +24,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_udp_server.h"
 #include "dap_net_transport_udp_stream.h"
 #include "dap_stream.h"
@@ -70,15 +71,15 @@ static const dap_net_transport_server_ops_t s_udp_server_ops = {
 int dap_net_transport_udp_server_init(void)
 {
     // Register transport server operations for all UDP variants
-    int l_ret = dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_UDP_BASIC, &s_udp_server_ops);
+    int l_ret = dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_UDP_BASIC, &s_udp_server_ops);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register UDP_BASIC transport server operations");
         return l_ret;
     }
     
     // Register for other UDP variants too
-    dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_UDP_RELIABLE, &s_udp_server_ops);
-    dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE, &s_udp_server_ops);
+    dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_UDP_RELIABLE, &s_udp_server_ops);
+    dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_UDP_QUIC_LIKE, &s_udp_server_ops);
     
     log_it(L_NOTICE, "Initialized UDP server module");
     return 0;
@@ -90,9 +91,9 @@ int dap_net_transport_udp_server_init(void)
 void dap_net_transport_udp_server_deinit(void)
 {
     // Unregister transport server operations
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_UDP_BASIC);
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_UDP_RELIABLE);
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_UDP_BASIC);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_UDP_RELIABLE);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_UDP_QUIC_LIKE);
     
     log_it(L_INFO, "UDP server module deinitialized");
 }
@@ -116,7 +117,7 @@ dap_net_transport_udp_server_t *dap_net_transport_udp_server_new(const char *a_s
     dap_strncpy(l_udp_server->server_name, a_server_name, sizeof(l_udp_server->server_name) - 1);
     
     // Get UDP transport instance
-    l_udp_server->transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    l_udp_server->transport = dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     if (!l_udp_server->transport) {
         log_it(L_ERROR, "UDP transport not registered");
         DAP_DELETE(l_udp_server);

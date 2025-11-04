@@ -30,7 +30,7 @@ See more details here <http://www.gnu.org/licenses/>.
 // Include headers for handler registration
 #include "dap_stream.h"
 #include "dap_stream_ctl.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_enc_http.h"
 #include "uthash.h"
 
@@ -40,7 +40,7 @@ See more details here <http://www.gnu.org/licenses/>.
  * @brief Registry entry for transport server operations
  */
 typedef struct dap_net_transport_server_ops_entry {
-    dap_stream_transport_type_t transport_type;
+    dap_net_transport_type_t transport_type;
     const dap_net_transport_server_ops_t *ops;
     UT_hash_handle hh;
 } dap_net_transport_server_ops_entry_t;
@@ -51,7 +51,7 @@ static dap_net_transport_server_ops_entry_t *s_ops_registry = NULL;
 /**
  * @brief Register transport server operations for a transport type
  */
-int dap_net_transport_server_register_ops(dap_stream_transport_type_t a_transport_type,
+int dap_net_transport_server_register_ops(dap_net_transport_type_t a_transport_type,
                                             const dap_net_transport_server_ops_t *a_ops)
 {
     if (!a_ops || !a_ops->new || !a_ops->start || !a_ops->stop || !a_ops->delete) {
@@ -90,7 +90,7 @@ int dap_net_transport_server_register_ops(dap_stream_transport_type_t a_transpor
 /**
  * @brief Unregister transport server operations for a transport type
  */
-void dap_net_transport_server_unregister_ops(dap_stream_transport_type_t a_transport_type)
+void dap_net_transport_server_unregister_ops(dap_net_transport_type_t a_transport_type)
 {
     dap_net_transport_server_ops_entry_t *l_entry = NULL;
     HASH_FIND_INT(s_ops_registry, &a_transport_type, l_entry);
@@ -104,7 +104,7 @@ void dap_net_transport_server_unregister_ops(dap_stream_transport_type_t a_trans
 /**
  * @brief Get transport server operations for a transport type
  */
-const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_stream_transport_type_t a_transport_type)
+const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_net_transport_type_t a_transport_type)
 {
     dap_net_transport_server_ops_entry_t *l_entry = NULL;
     HASH_FIND_INT(s_ops_registry, &a_transport_type, l_entry);
@@ -120,7 +120,7 @@ const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_strea
 /**
  * @brief Create new transport server instance
  */
-dap_net_transport_server_t *dap_net_transport_server_new(dap_stream_transport_type_t a_transport_type,
+dap_net_transport_server_t *dap_net_transport_server_new(dap_net_transport_type_t a_transport_type,
                                                           const char *a_server_name)
 {
     if (!a_server_name) {
@@ -271,7 +271,7 @@ int dap_net_transport_server_register_handlers(dap_net_transport_server_context_
 
     // Register transport-specific handlers via transport's callback
     // Each transport registers its own handlers (e.g., WebSocket upgrade handlers)
-    dap_stream_transport_t *l_stream_transport = dap_stream_transport_find(a_context->transport_type);
+    dap_net_transport_t *l_stream_transport = dap_net_transport_find(a_context->transport_type);
     if (l_stream_transport && l_stream_transport->ops && l_stream_transport->ops->register_server_handlers) {
         int l_ret = l_stream_transport->ops->register_server_handlers(l_stream_transport, a_context);
         if (l_ret != 0) {
@@ -310,7 +310,7 @@ int dap_net_transport_server_register_enc_custom(dap_net_transport_server_contex
  * @brief Create transport server context from HTTP server
  */
 dap_net_transport_server_context_t *dap_net_transport_server_context_from_http(dap_http_server_t *a_http_server,
-                                                                                  dap_stream_transport_type_t a_transport_type,
+                                                                                  dap_net_transport_type_t a_transport_type,
                                                                                   void *a_transport_specific)
 {
     if (!a_http_server) {

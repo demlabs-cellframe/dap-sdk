@@ -105,7 +105,7 @@ static void test_02_transport_registration(void) {
     dap_events_start();
     
     // Initialize transport layer first to ensure registry is ready
-    dap_stream_transport_init();
+    dap_net_transport_init();
     
     // Give time for constructors to run (if they haven't already)
     dap_test_sleep_ms(100);
@@ -113,13 +113,13 @@ static void test_02_transport_registration(void) {
     dap_stream_init(NULL);
     
     // After dap_stream_init, default transports should be registered
-    dap_stream_transport_t *http_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *http_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(http_transport, "HTTP transport should be registered");
     
-    dap_stream_transport_t *udp_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *udp_transport = dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     TEST_ASSERT_NOT_NULL(udp_transport, "UDP transport should be registered");
     
-    dap_stream_transport_t *ws_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *ws_transport = dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     TEST_ASSERT_NOT_NULL(ws_transport, "WebSocket transport should be registered");
     
     dap_stream_deinit();

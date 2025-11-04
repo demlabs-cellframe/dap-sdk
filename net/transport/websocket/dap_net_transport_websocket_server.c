@@ -27,6 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <openssl/sha.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_websocket_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
@@ -88,7 +89,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client);
 int dap_net_transport_websocket_server_init(void)
 {
     // Register transport server operations
-    int l_ret = dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_WEBSOCKET, &s_websocket_server_ops);
+    int l_ret = dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_WEBSOCKET, &s_websocket_server_ops);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register WebSocket transport server operations");
         return l_ret;
@@ -104,7 +105,7 @@ int dap_net_transport_websocket_server_init(void)
 void dap_net_transport_websocket_server_deinit(void)
 {
     // Unregister transport server operations
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_WEBSOCKET);
     
     log_it(L_INFO, "WebSocket server module deinitialized");
 }
@@ -128,7 +129,7 @@ dap_net_transport_websocket_server_t *dap_net_transport_websocket_server_new(con
     dap_strncpy(l_ws_server->server_name, a_server_name, sizeof(l_ws_server->server_name) - 1);
     
     // Get WebSocket transport instance
-    l_ws_server->transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    l_ws_server->transport = dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     if (!l_ws_server->transport) {
         log_it(L_ERROR, "WebSocket transport not registered");
         DAP_DELETE(l_ws_server);
@@ -204,7 +205,7 @@ int dap_net_transport_websocket_server_start(dap_net_transport_websocket_server_
     // Register all required handlers for DAP protocol endpoints using unified transport API
     dap_net_transport_server_context_t *l_context = dap_net_transport_server_context_from_http(
         a_ws_server->http_server,
-        DAP_STREAM_TRANSPORT_WEBSOCKET,
+        DAP_NET_TRANSPORT_WEBSOCKET,
         a_ws_server);  // Pass websocket server as transport-specific data
     
     if (!l_context) {
@@ -230,7 +231,7 @@ int dap_net_transport_websocket_server_start(dap_net_transport_websocket_server_
         uint16_t l_port = a_ports[i];
 
         int l_ret = dap_net_server_listen_addr_add_with_callback(a_ws_server->server, l_addr, l_port,
-                                                                  DESCRIPTOR_TYPE_SOCKET_LISTENING,
+                                                 DESCRIPTOR_TYPE_SOCKET_LISTENING,
                                                                   NULL,  // No pre_worker_added callback needed
                                                                   NULL);
         if (l_ret != 0) {
@@ -447,7 +448,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     }
 
     // Get WebSocket transport
-    dap_stream_transport_t *l_ws_transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *l_ws_transport = dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     if (!l_ws_transport) {
         log_it(L_ERROR, "WebSocket transport not registered");
         return -2;

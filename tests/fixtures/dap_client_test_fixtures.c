@@ -45,6 +45,33 @@
 // Certificate Test Setup Functions
 // ============================================================================
 
+int dap_test_generate_unique_node_addr(const char *a_cert_name, dap_enc_key_type_t a_key_type, 
+                                      dap_stream_node_addr_t *a_node_addr_out) {
+    if (!a_cert_name || !a_node_addr_out) {
+        log_it(L_ERROR, "Invalid parameters for node address generation");
+        return -1;
+    }
+    
+    // Generate certificate in memory (no file needed)
+    dap_cert_t *l_cert = dap_cert_generate_mem(a_cert_name, a_key_type);
+    if (!l_cert) {
+        log_it(L_ERROR, "Failed to generate certificate in memory: %s", a_cert_name);
+        return -2;
+    }
+    
+    // Extract node address from certificate
+    *a_node_addr_out = dap_stream_node_addr_from_cert(l_cert);
+    
+    // Add certificate to registry (required for some operations)
+    if (dap_cert_add(l_cert) != 0) {
+        log_it(L_WARNING, "Failed to add certificate to registry: %s", a_cert_name);
+        // Continue anyway - node address is already extracted
+    }
+    
+    log_it(L_DEBUG, "Generated unique node address for certificate: %s", a_cert_name);
+    return 0;
+}
+
 int dap_test_setup_certificates(const char *a_test_dir) {
     if (!a_test_dir) {
         log_it(L_ERROR, "Test directory is NULL");

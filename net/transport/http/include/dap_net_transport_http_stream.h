@@ -59,7 +59,7 @@
 #ifndef DAP_STREAM_TRANSPORT_HTTP_H
 #define DAP_STREAM_TRANSPORT_HTTP_H
 
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_stream_handshake.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
@@ -201,7 +201,7 @@ void dap_stream_transport_http_add_enc_proc(dap_http_server_t *a_http_server,
  */
 int dap_stream_transport_http_parse_query_params(
     const char *a_query_string,
-    dap_stream_handshake_params_t *a_params
+    dap_net_handshake_params_t *a_params
 );
 
 /**
@@ -217,7 +217,7 @@ int dap_stream_transport_http_parse_query_params(
  * @return Number of bytes written, or negative error code
  */
 int dap_stream_transport_http_format_query_params(
-    const dap_stream_handshake_params_t *a_params,
+    const dap_net_handshake_params_t *a_params,
     char *a_query_string_out,
     size_t a_buf_size
 );

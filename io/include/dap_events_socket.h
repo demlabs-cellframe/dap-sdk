@@ -379,6 +379,9 @@ int dap_events_socket_init(void); //  Init clients module
 void dap_events_socket_deinit(void); // Deinit clients module
 
 dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, dap_events_socket_callbacks_t* a_callbacks);
+dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                          dap_events_socket_callbacks_t *a_callbacks);
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
 int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket);
 

@@ -25,7 +25,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include "dap_server.h"
 #include "dap_http_server.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 
 /**
  * @brief HTTP server structure
@@ -40,7 +40,7 @@ typedef struct dap_net_transport_http_server {
     dap_server_t *server;               ///< Back pointer to parent dap_server instance
     dap_http_server_t *http_server;     ///< HTTP server instance
     char server_name[256];              ///< Server name for identification
-    dap_stream_transport_t *transport;  ///< HTTP transport instance
+    dap_net_transport_t *transport;  ///< HTTP transport instance
 } dap_net_transport_http_server_t;
 
 #define DAP_NET_TRANSPORT_HTTP_SERVER(a) ((dap_net_transport_http_server_t *) (a)->_inheritor)

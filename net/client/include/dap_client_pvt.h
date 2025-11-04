@@ -78,6 +78,11 @@ typedef struct dap_client_pvt {
 
     dap_list_t *pkt_queue;
     dap_timerfd_t *reconnect_timer;
+    
+    // Transport fallback support - track tried transports
+    dap_net_transport_type_t *tried_transports; // Already tried transport types (dynamic array)
+    size_t tried_transport_count; // Number of tried transports
+    size_t tried_transport_capacity; // Capacity of tried_transports array
 } dap_client_pvt_t;
 
 typedef struct dap_client_pkt_queue_elm {
@@ -97,11 +102,6 @@ void dap_client_pvt_stage_transaction_begin(dap_client_pvt_t * dap_client_pvt_t,
 
 int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
                     size_t a_request_size,  dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
-
-void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char * a_path, const char * a_sub_url,
-                                     const char * a_query, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc,
-                                     dap_client_callback_int_t a_error_proc);
 
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);

@@ -44,7 +44,7 @@
 #include "dap_test.h"
 #include "dap_test_helpers.h"
 #include "dap_mock.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_server.h"
 #include "dap_net_transport_http_server.h"
 #include "dap_net_transport_http_stream.h"
@@ -84,7 +84,7 @@ DAP_MOCK_DECLARE(enc_http_add_proc);
 DAP_MOCK_DECLARE(dap_stream_add_proc_http);
 DAP_MOCK_DECLARE(dap_stream_ctl_add_proc);
 
-// Don't mock dap_stream_transport_find - use real implementation
+// Don't mock dap_net_transport_find - use real implementation
 // This allows tests to work with real transport registration
 
 // Mock dap_stream functions
@@ -109,7 +109,7 @@ DAP_MOCK_DECLARE(dap_http_deinit);
 // Mock server instance for testing
 static dap_server_t s_mock_server = {0};
 static dap_http_server_t s_mock_http_server = {0};
-static dap_stream_transport_t s_mock_stream_transport = {0};
+static dap_net_transport_t s_mock_stream_transport = {0};
 static dap_stream_t s_mock_stream = {0};
 static dap_http_client_t s_mock_http_client = {0};
 
@@ -219,7 +219,7 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, dap_stream_add_proc_http,
     return NULL;
 }
 
-// dap_stream_transport_find is not mocked - using real implementation
+// dap_net_transport_find is not mocked - using real implementation
 // This allows tests to access real registered transports with proper ops
 
 
@@ -330,17 +330,9 @@ static void setup_test(void)
         // Initialize mock framework
         dap_mock_init();
         
-        // Initialize transport layer
-        l_ret = dap_stream_transport_init();
-        TEST_ASSERT(l_ret == 0, "Transport layer initialization failed");
         
-        // Initialize HTTP transport server (this registers operations)
-        l_ret = dap_net_transport_http_server_init();
-        TEST_ASSERT(l_ret == 0, "HTTP transport server initialization failed");
-        
-        // Initialize HTTP stream transport
         // Check if already registered (might be auto-registered via module constructor)
-        dap_stream_transport_t *l_existing = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+        dap_net_transport_t *l_existing = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
         if (! l_existing) {
             TEST_ASSERT(l_ret == 0, "HTTP stream transport not registred");
         }
@@ -368,14 +360,6 @@ static void teardown_test(void)
 static void suite_cleanup(void)
 {
     if (s_test_initialized) {
-        // Deinitialize HTTP stream transport
-        dap_net_transport_http_stream_unregister();
-        
-        // Deinitialize HTTP transport server (unregisters operations)
-        dap_net_transport_http_server_deinit();
-        
-        // Deinitialize transport layer
-        dap_stream_transport_deinit();
         
         // Deinitialize mock framework
         dap_mock_deinit();
@@ -401,7 +385,7 @@ static void test_01_server_ops_registration(void)
     
     // Verify operations are registered
     const dap_net_transport_server_ops_t *l_ops = 
-        dap_net_transport_server_get_ops(DAP_STREAM_TRANSPORT_HTTP);
+        dap_net_transport_server_get_ops(DAP_NET_TRANSPORT_HTTP);
     
     TEST_ASSERT_NOT_NULL(l_ops, "HTTP transport server operations should be registered");
     TEST_ASSERT_NOT_NULL(l_ops->new, "new callback should be set");
@@ -426,10 +410,10 @@ static void test_02_server_creation(void)
     
     // Create server through unified API
     dap_net_transport_server_t *l_server = 
-        dap_net_transport_server_new(DAP_STREAM_TRANSPORT_HTTP, l_server_name);
+        dap_net_transport_server_new(DAP_NET_TRANSPORT_HTTP, l_server_name);
     
     TEST_ASSERT_NOT_NULL(l_server, "HTTP server should be created");
-    TEST_ASSERT(l_server->transport_type == DAP_STREAM_TRANSPORT_HTTP, 
+    TEST_ASSERT(l_server->transport_type == DAP_NET_TRANSPORT_HTTP, 
                 "Transport type should be HTTP");
     TEST_ASSERT(strcmp(l_server->server_name, l_server_name) == 0,
                 "Server name should match");
@@ -461,11 +445,11 @@ static void test_03_server_start(void)
     DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)&s_mock_server);
     DAP_MOCK_SET_RETURN(dap_server_listen_addr_add, 0);
     DAP_MOCK_SET_RETURN(enc_http_init, 0);  // Ensure enc_http_init succeeds
-    // Note: dap_stream_transport_find is not mocked - using real implementation
+    // Note: dap_net_transport_find is not mocked - using real implementation
     
     // Create server
     dap_net_transport_server_t *l_server = 
-        dap_net_transport_server_new(DAP_STREAM_TRANSPORT_HTTP, l_server_name);
+        dap_net_transport_server_new(DAP_NET_TRANSPORT_HTTP, l_server_name);
     TEST_ASSERT_NOT_NULL(l_server, "Server should be created");
     
     // Start server
@@ -510,7 +494,7 @@ static void test_04_server_stop(void)
     
     // Create and start server
     dap_net_transport_server_t *l_server = 
-        dap_net_transport_server_new(DAP_STREAM_TRANSPORT_HTTP, l_server_name);
+        dap_net_transport_server_new(DAP_NET_TRANSPORT_HTTP, l_server_name);
     TEST_ASSERT_NOT_NULL(l_server, "Server should be created");
     
     // Stop server
@@ -531,7 +515,7 @@ static void test_05_server_invalid_type(void)
     
     // Try to create server with invalid type
     dap_net_transport_server_t *l_server = 
-        dap_net_transport_server_new(DAP_STREAM_TRANSPORT_TLS_DIRECT, "test_server");
+        dap_net_transport_server_new(DAP_NET_TRANSPORT_TLS_DIRECT, "test_server");
     
     TEST_ASSERT_NULL(l_server, "Server should not be created for unregistered transport type");
     
@@ -550,11 +534,11 @@ static void test_06_stream_registration(void)
     TEST_INFO("Testing HTTP stream transport registration");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
-    TEST_ASSERT(l_transport->type == DAP_STREAM_TRANSPORT_HTTP,
+    TEST_ASSERT(l_transport->type == DAP_NET_TRANSPORT_HTTP,
                 "Transport type should be HTTP");
     
     TEST_SUCCESS("HTTP stream transport registration verified");
@@ -568,8 +552,8 @@ static void test_07_stream_capabilities(void)
     TEST_INFO("Testing HTTP stream transport capabilities");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     TEST_ASSERT_NOT_NULL(l_transport->ops, "Transport operations should be set");
@@ -589,8 +573,8 @@ static void test_08_stream_init(void)
     TEST_INFO("Testing HTTP stream transport initialization");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
@@ -613,8 +597,8 @@ static void test_09_stream_unregistration(void)
     TEST_INFO("Testing HTTP stream transport unregistration");
     
     // Find HTTP transport before unregistration
-    dap_stream_transport_t *l_transport_before = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport_before = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport_before, "HTTP transport should be registered");
     
     // Unregister HTTP stream transport
@@ -622,8 +606,8 @@ static void test_09_stream_unregistration(void)
     TEST_ASSERT(l_ret == 0, "Unregistration should succeed");
     
     // Try to find transport after unregistration
-    dap_stream_transport_t *l_transport_after = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport_after = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     
     // Note: unregistration might not remove from registry immediately
     // depending on implementation, so we just verify unregistration call succeeded
@@ -642,8 +626,8 @@ static void test_10_stream_connect(void)
     TEST_INFO("Testing HTTP stream transport connect operation");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport
@@ -671,8 +655,8 @@ static void test_11_stream_read(void)
     TEST_INFO("Testing HTTP stream transport read operation");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport
@@ -701,8 +685,8 @@ static void test_12_stream_write(void)
     TEST_INFO("Testing HTTP stream transport write operation");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport
@@ -733,8 +717,8 @@ static void test_13_stream_handshake(void)
     TEST_INFO("Testing HTTP stream transport handshake operations");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport
@@ -745,7 +729,7 @@ static void test_13_stream_handshake(void)
     s_mock_stream.stream_transport = l_transport;
     
     // Test handshake_init operation
-    dap_stream_handshake_params_t l_params = {0};
+    dap_net_handshake_params_t l_params = {0};
     l_ret = l_transport->ops->handshake_init(&s_mock_stream, &l_params, NULL);
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
     
@@ -772,8 +756,8 @@ static void test_14_stream_session(void)
     TEST_INFO("Testing HTTP stream transport session operations");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport
@@ -784,7 +768,7 @@ static void test_14_stream_session(void)
     s_mock_stream.stream_transport = l_transport;
     
     // Test session_create operation
-    dap_stream_session_params_t l_session_params = {0};
+    dap_net_session_params_t l_session_params = {0};
     l_ret = l_transport->ops->session_create(&s_mock_stream, &l_session_params, NULL);
     TEST_ASSERT(l_ret == 0, "Session create should succeed");
     
@@ -806,8 +790,8 @@ static void test_15_stream_listen(void)
     TEST_INFO("Testing HTTP stream transport listen operation");
     
     // Find HTTP transport
-    dap_stream_transport_t *l_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *l_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT_NOT_NULL(l_transport, "HTTP transport should be registered");
     
     // Initialize transport

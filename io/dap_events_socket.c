@@ -85,6 +85,8 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_timerfd.h"
 #include "dap_context.h"
 #include "dap_events_socket.h"
+#include "dap_net.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_events_socket"
 
@@ -452,6 +454,109 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_mt(dap_worker_t * a_w, 
 }
 
 /**
+ * @brief Create platform-independent socket with specified parameters
+ * 
+ * Creates a socket with the specified domain, type, and protocol,
+ * sets it to non-blocking mode, and wraps it in dap_events_socket_t.
+ * This function centralizes all platform-dependent socket creation logic.
+ * 
+ * @param a_domain Socket domain (AF_INET, AF_INET6, etc.)
+ * @param a_type Socket type (SOCK_STREAM, SOCK_DGRAM, etc.)
+ * @param a_protocol Protocol (IPPROTO_TCP, IPPROTO_UDP, etc.)
+ * @param a_callbacks Socket callbacks structure
+ * @return Created dap_events_socket_t or NULL on error
+ */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                         dap_events_socket_callbacks_t *a_callbacks)
+{
+    if (!a_callbacks) {
+        log_it(L_ERROR, "Callbacks are NULL");
+        return NULL;
+    }
+
+#ifdef DAP_OS_WINDOWS
+    SOCKET l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        int l_err = WSAGetLastError();
+        log_it(L_ERROR, "Socket create error %d", l_err);
+        return NULL;
+    }
+    
+    // Set socket non-blocking
+    u_long l_socket_flags = 1;
+    if (ioctlsocket(l_sock, (long)FIONBIO, &l_socket_flags) == SOCKET_ERROR) {
+        log_it(L_ERROR, "Can't set socket %zu to nonblocking mode, error %d", l_sock, WSAGetLastError());
+        closesocket(l_sock);
+        return NULL;
+    }
+#else
+    int l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        int l_err = errno;
+        log_it(L_ERROR, "Error %d with socket create", l_err);
+        return NULL;
+    }
+    
+    // Set socket non-blocking
+    int l_socket_flags = fcntl(l_sock, F_GETFL);
+    if (l_socket_flags == -1) {
+        log_it(L_ERROR, "Error %d can't get socket flags", errno);
+        close(l_sock);
+        return NULL;
+    }
+    if (fcntl(l_sock, F_SETFL, l_socket_flags | O_NONBLOCK) == -1) {
+        log_it(L_ERROR, "Error %d can't set socket flags", errno);
+        close(l_sock);
+        return NULL;
+    }
+#endif
+
+    // Wrap socket
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to wrap socket");
+#ifdef DAP_OS_WINDOWS
+        closesocket(l_sock);
+#else
+        close(l_sock);
+#endif
+        return NULL;
+    }
+
+    return l_es;
+}
+
+/**
+ * @brief Resolve hostname and set address in events socket
+ * 
+ * Centralized function for resolving hostname/IP and setting address information
+ * in dap_events_socket_t structure.
+ * 
+ * @param a_es Events socket to set address in
+ * @param a_host Hostname or IP address
+ * @param a_port Port number
+ * @return 0 on success, negative error code on failure
+ */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port)
+{
+    if (!a_es || !a_host) {
+        log_it(L_ERROR, "Invalid arguments for resolve_and_set_addr");
+        return -1;
+    }
+
+    // Resolve host
+    if (dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL) < 0) {
+        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_host, a_port);
+        return -1;
+    }
+    
+    a_es->remote_port = a_port;
+    dap_strncpy(a_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN);
+    
+    return 0;
+}
+
+/**
  * @brief dap_events_socket_create
  * @param a_type
  * @param a_callbacks
@@ -463,53 +568,52 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
 
     switch(a_type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-    break;
+        // Use platform-independent function for TCP client socket
+        return dap_events_socket_create_platform(AF_INET, SOCK_STREAM, 0, a_callbacks);
     case DESCRIPTOR_TYPE_SOCKET_UDP:
-        l_type = SOCK_DGRAM;
-        l_prot = IPPROTO_UDP;
-    break;
+        // Use platform-independent function for UDP socket
+        return dap_events_socket_create_platform(AF_INET, SOCK_DGRAM, IPPROTO_UDP, a_callbacks);
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
 #ifdef DAP_OS_UNIX
         l_fam = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
-        l_fam = AF_INET;
+        l_fam = AF_INET;  // Windows doesn't support AF_LOCAL, use AF_INET as fallback
 #endif
-    break;
+        // Use platform-independent function for local socket
+        {
+            dap_events_socket_t *l_es = dap_events_socket_create_platform(l_fam, SOCK_STREAM, 0, a_callbacks);
+            if (l_es) {
+                l_es->type = a_type;
+            }
+            return l_es;
+        }
 #ifdef DAP_OS_LINUX
     case DESCRIPTOR_TYPE_SOCKET_RAW:
+        // RAW sockets require special handling - use platform-specific code
         l_type = SOCK_RAW;
-    break;
+        // Fall through to platform-specific code below
+        break;
 #endif
     default:
         log_it(L_CRITICAL,"Can't create socket type %d", a_type );
         return NULL;
     }
 
-#ifdef DAP_OS_WINDOWS
-    SOCKET l_sock = socket(l_fam, l_type, l_prot);
-    u_long l_socket_flags = 1;
-    if (ioctlsocket((SOCKET)l_sock, (long)FIONBIO, &l_socket_flags))
-        log_it(L_ERROR, "Error ioctl %d", WSAGetLastError());
-#else
-    int l_sock = socket(l_fam, l_type, l_prot);
-    int l_sock_flags = fcntl(l_sock, F_GETFL);
-    l_sock_flags |= O_NONBLOCK;
-    fcntl( l_sock, F_SETFL, l_sock_flags);
-
-    if (l_sock == INVALID_SOCKET) {
-        log_it(L_ERROR, "Socket create error");
-        return NULL;
+    // Special case handling for RAW sockets (Linux only) - use platform-specific code
+    // For other types, we should have returned above
+#ifdef DAP_OS_LINUX
+    if (a_type == DESCRIPTOR_TYPE_SOCKET_RAW) {
+        dap_events_socket_t *l_es = dap_events_socket_create_platform(l_fam, l_type, l_prot, a_callbacks);
+        if (l_es) {
+            l_es->type = a_type;
+        }
+        return l_es;
     }
 #endif
-    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
-    if(!l_es){
-        log_it(L_CRITICAL,"Can't allocate memory for the new esocket");
-        closesocket(l_sock);
-        return NULL;
-    }
-    l_es->type = a_type;
-    debug_if(g_debug_reactor, L_DEBUG, "Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
-    return l_es;
+
+    // Should not reach here for standard socket types
+    log_it(L_ERROR, "Unhandled socket type %d", a_type);
+    return NULL;
 }
 
 /**

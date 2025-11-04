@@ -205,7 +205,11 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
         }
 
         enc_http_reply_encode(a_http_simple,l_dg);
-        dap_enc_ks_delete(l_hdr_key_id->value);
+        // NOTE: Do NOT delete key immediately after STREAM_CTL
+        // The key must remain in storage until stream session closes
+        // Multiple parallel clients may use the same KeyID (though each should have unique KeyID)
+        // Key will be cleaned up automatically when session expires or is closed
+        // dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"No encryption layer was initialized well");

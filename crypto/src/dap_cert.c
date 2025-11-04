@@ -936,3 +936,32 @@ char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type)
     DAP_DELETE(l_pkey);
     return l_ret;
 }
+
+/**
+ * @brief Add certificate signature to data buffer
+ * 
+ * Creates a signature using the certificate's encryption key and appends it to the data buffer.
+ * The buffer is automatically reallocated if needed.
+ * 
+ * @param a_cert Certificate to get signature from
+ * @param a_data Input/output data buffer (will be reallocated)
+ * @param a_size Input/output data size
+ * @param a_signing_data Data to sign
+ * @param a_signing_size Size of signing data
+ * @return Number of signatures added (1 on success, 0 on failure)
+ */
+int dap_cert_add_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, 
+                               const void* a_signing_data, size_t a_signing_size)
+{
+    dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
+
+    dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size);
+    dap_return_val_if_fail(l_sign, 0);    
+    size_t l_sign_size = dap_sign_get_size(l_sign), l_size = *a_size;
+    byte_t *l_data = DAP_REALLOC_RET_VAL_IF_FAIL(*a_data, l_size + l_sign_size, 0, l_sign);
+    memcpy(l_data + l_size, l_sign, l_sign_size);
+    DAP_DELETE(l_sign);
+    *a_data = l_data;
+    *a_size = l_size + l_sign_size;
+    return 1;
+}

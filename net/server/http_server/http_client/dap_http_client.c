@@ -385,7 +385,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 
                 /*
                  * Find URL processor
-                 */
+                */
                                                                             /* url_path = '/p1/p2/p3/target' */
                 l_ret = z_dirname( l_http_client->url_path, l_http_client->url_path_len );
                                                                             /* url_path = '/p1/p2/p3/ */

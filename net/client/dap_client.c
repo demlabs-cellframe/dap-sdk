@@ -27,6 +27,8 @@
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
+#include "dap_config.h"
+#include "dap_net_transport.h"
 
 #define LOG_TAG "dap_client"
 
@@ -71,17 +73,53 @@ void dap_client_deinit()
  * @param a_stage_status_error_callback
  * @return
  */
+/**
+ * @brief Get default transport type from config
+ * @return Default transport type, or DAP_NET_TRANSPORT_HTTP if not configured
+ */
+static dap_net_transport_type_t s_get_default_transport_from_config(void)
+{
+    // Try to get default transport from config
+    const char *l_transport_str = dap_config_get_item_str_default(g_config, "dap_client", 
+                                                                    "default_transport", NULL);
+    
+    if (l_transport_str && l_transport_str[0] != '\0') {
+        dap_net_transport_type_t l_transport_type = dap_net_transport_type_from_str(l_transport_str);
+        log_it(L_INFO, "Default transport loaded from config: %s (%d)", l_transport_str, l_transport_type);
+        return l_transport_type;
+    }
+    
+    // Fallback to HTTP if not configured
+    log_it(L_DEBUG, "No default transport in config, using HTTP");
+    return DAP_NET_TRANSPORT_HTTP;
+}
+
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)
 {
     dap_client_t *l_client = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_t, NULL);
     l_client->_internal = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_pvt_t, NULL, l_client);
     l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
-    l_client->transport_type = DAP_STREAM_TRANSPORT_HTTP; // Default to HTTP for backward compatibility
+    l_client->transport_type = s_get_default_transport_from_config(); // Load from config or default to HTTP
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
     l_client_pvt->worker = dap_events_worker_get_auto();
+    
+    // Initialize tried transports list (dynamic array)
+    l_client_pvt->tried_transport_count = 0;
+    l_client_pvt->tried_transport_capacity = DAP_NET_TRANSPORT_MAX; // Start with capacity for MAX transports
+    l_client_pvt->tried_transports = DAP_NEW_Z_SIZE(dap_net_transport_type_t, 
+                                                    l_client_pvt->tried_transport_capacity);
+    if (!l_client_pvt->tried_transports) {
+        log_it(L_ERROR, "Failed to allocate tried_transports array");
+        DAP_DELETE(l_client_pvt);
+        DAP_DELETE(l_client);
+        return NULL;
+    }
+    // Mark initial transport as tried (will be added via helper function in dap_client_pvt_new if needed)
+    l_client_pvt->tried_transports[l_client_pvt->tried_transport_count++] = l_client->transport_type;
+    
     dap_client_pvt_new(l_client_pvt);
     return l_client;
 }
@@ -349,31 +387,6 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
 
 
 /**
- * @brief dap_client_request_enc
- * @param a_client
- * @param a_path
- * @param a_suburl
- * @param a_query
- * @param a_request
- * @param a_request_size
- * @param a_response_proc
- * @param a_response_error
- */
-void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path, const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error )
-{
-    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
-    dap_client_pvt_request_enc(l_client_internal, a_path, a_suburl, a_query,a_request,a_request_size, a_response_proc,a_response_error);
-}
-
-void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error )
-{
-    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
-    dap_client_pvt_request(l_client_internal, a_full_path, a_request, a_request_size, a_response_proc, a_response_error);
-}
-
-/**
  * @brief dap_client_error_str
  * @param a_client_error
  * @return
@@ -587,7 +600,7 @@ void dap_client_set_is_always_reconnect(dap_client_t * a_client, bool a_value)
  * @param a_client Client instance
  * @param a_transport_type Transport type (HTTP, UDP, WebSocket, TLS, etc.)
  */
-void dap_client_set_transport_type(dap_client_t *a_client, dap_stream_transport_type_t a_transport_type)
+void dap_client_set_transport_type(dap_client_t *a_client, dap_net_transport_type_t a_transport_type)
 {
     if (!a_client) {
         log_it(L_ERROR, "Client is NULL for dap_client_set_transport_type");
@@ -603,11 +616,11 @@ void dap_client_set_transport_type(dap_client_t *a_client, dap_stream_transport_
  * @param a_client Client instance
  * @return Transport type
  */
-dap_stream_transport_type_t dap_client_get_transport_type(dap_client_t *a_client)
+dap_net_transport_type_t dap_client_get_transport_type(dap_client_t *a_client)
 {
     if (!a_client) {
         log_it(L_ERROR, "Client is NULL for dap_client_get_transport_type");
-        return DAP_STREAM_TRANSPORT_HTTP; // Default fallback
+        return DAP_NET_TRANSPORT_HTTP; // Default fallback
     }
     return a_client->transport_type;
 }

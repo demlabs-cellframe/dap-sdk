@@ -78,7 +78,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_events_socket.h"
 
 #ifdef __cplusplus
@@ -156,7 +156,7 @@ dap_stream_transport_dns_config_t dap_stream_transport_dns_config_default(void);
  * @param a_config Configuration structure
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_dns_set_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_dns_set_config(dap_net_transport_t *a_transport,
                                         const dap_stream_transport_dns_config_t *a_config);
 
 /**
@@ -165,7 +165,7 @@ int dap_stream_transport_dns_set_config(dap_stream_transport_t *a_transport,
  * @param a_config Output configuration structure
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_dns_get_config(dap_stream_transport_t *a_transport,
+int dap_stream_transport_dns_get_config(dap_net_transport_t *a_transport,
                                          dap_stream_transport_dns_config_t *a_config);
 
 // ============================================================================

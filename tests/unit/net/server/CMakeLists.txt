@@ -15,7 +15,7 @@ add_executable(${PROJECT_NAME}
     test_dap_http_server.c
 )
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} PRIVATE
     dap_core
     dap_crypto
     dap_io
@@ -42,7 +42,7 @@ dap_mock_autowrap(${PROJECT_NAME})
 dap_mock_autowrap_with_static(${PROJECT_NAME} dap_http_server dap_io dap_core)
 
 if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} pthread)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 endif()
 
 # Add to CTest

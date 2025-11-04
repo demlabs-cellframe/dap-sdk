@@ -23,26 +23,30 @@
 */
 
 /**
- * @file dap_stream_transport.c
- * @brief Transport Abstraction Layer implementation
+ * @file dap_net_transport.c
+ * @brief Network Transport Abstraction Layer implementation
  * @date 2025-10-23
  * @author Cellframe Team
  */
 
 #include <string.h>
 #include <stdio.h>
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_stream_obfuscation.h"
 #include "dap_stream.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_list.h"
 #include "dap_module.h"
+#include "dap_events_socket.h"
+#include "dap_net.h"
 
-#define LOG_TAG "dap_stream_transport"
+
+
+#define LOG_TAG "dap_net_transport"
 
 // Global transport registry (hash table keyed by transport type)
-static dap_stream_transport_t *s_transport_registry = NULL;
+static dap_net_transport_t *s_transport_registry = NULL;
 
 // Thread safety (if needed, can add pthread_rwlock_t here)
 // For now, assuming single-threaded init/registration
@@ -53,8 +57,10 @@ static bool s_transport_registry_initialized = false;
 /**
  * @brief Initialize transport abstraction system
  * @return 0 on success, -1 on failure
+ * @note Called automatically by dap_module system, should not be called directly
+ * @note Not declared in header - internal function accessed only via module system
  */
-int dap_stream_transport_init(void)
+int dap_net_transport_init(void)
 {
     // Idempotent: safe to call multiple times
     if (s_transport_registry_initialized) {
@@ -62,7 +68,7 @@ int dap_stream_transport_init(void)
         return 0;
     }
     
-    log_it(L_NOTICE, "Initializing DAP Stream Transport Abstraction Layer");
+    log_it(L_NOTICE, "Initializing DAP Network Transport Abstraction Layer");
     
     // Initialize registry (hash table starts empty)
     s_transport_registry = NULL;
@@ -75,10 +81,12 @@ int dap_stream_transport_init(void)
 /**
  * @brief Cleanup transport abstraction system
  * @note Idempotent: safe to call multiple times
+ * @note Called automatically by dap_module system, should not be called directly
+ * @note Not declared in header - internal function accessed only via module system
  */
-void dap_stream_transport_deinit(void)
+void dap_net_transport_deinit(void)
 {
-    log_it(L_NOTICE, "Deinitializing DAP Stream Transport Abstraction Layer");
+    log_it(L_NOTICE, "Deinitializing DAP Network Transport Abstraction Layer");
 }
 
 /**
@@ -90,9 +98,10 @@ void dap_stream_transport_deinit(void)
  * @return 0 on success, negative error code on failure
  * @note Automatically initializes registry if not initialized yet (for constructor support)
  */
-int dap_stream_transport_register(const char *a_name, 
-                                    dap_stream_transport_type_t a_type, 
-                                    const dap_stream_transport_ops_t *a_ops, 
+int dap_net_transport_register(const char *a_name, 
+                                    dap_net_transport_type_t a_type, 
+                                    const dap_net_transport_ops_t *a_ops,
+                                    dap_net_transport_socket_type_t a_socket_type,
                                     void *a_inheritor)
 {
     // Validate parameters
@@ -102,7 +111,7 @@ int dap_stream_transport_register(const char *a_name,
     }
     
     // Auto-initialize registry if not initialized yet (for constructor-based registration)
-    // This allows transports to register themselves via constructors before dap_stream_transport_init()
+    // This allows transports to register themselves via constructors before dap_net_transport_init()
     if (!s_transport_registry_initialized) {
         log_it(L_DEBUG, "Registry not initialized, auto-initializing for transport '%s'", a_name);
         s_transport_registry = NULL;
@@ -110,7 +119,7 @@ int dap_stream_transport_register(const char *a_name,
     }
     
     // Check if transport type already registered
-    dap_stream_transport_t *l_existing = NULL;
+    dap_net_transport_t *l_existing = NULL;
     HASH_FIND_INT(s_transport_registry, &a_type, l_existing);
     if (l_existing) {
         log_it(L_DEBUG, "Transport type 0x%02X already registered as '%s' (idempotent: returning success)", 
@@ -119,7 +128,7 @@ int dap_stream_transport_register(const char *a_name,
     }
     
     // Allocate new transport structure
-    dap_stream_transport_t *l_transport = DAP_NEW_Z(dap_stream_transport_t);
+    dap_net_transport_t *l_transport = DAP_NEW_Z(dap_net_transport_t);
     if (!l_transport) {
         log_it(L_CRITICAL, "Failed to allocate memory for transport '%s'", a_name);
         return -3;
@@ -130,6 +139,7 @@ int dap_stream_transport_register(const char *a_name,
     l_transport->ops = a_ops;
     l_transport->_inheritor = a_inheritor;
     l_transport->obfuscation = NULL;  // No obfuscation by default
+    l_transport->socket_type = a_socket_type;  // Set socket type
     
     // Copy name (truncate if too long)
     strncpy(l_transport->name, a_name, sizeof(l_transport->name) - 1);
@@ -155,8 +165,8 @@ int dap_stream_transport_register(const char *a_name,
     // Add to registry hash table
     HASH_ADD_INT(s_transport_registry, type, l_transport);
     
-    log_it(L_NOTICE, "Registered transport: %s (type=0x%02X, caps=0x%04X)", 
-           l_transport->name, l_transport->type, l_transport->capabilities);
+    log_it(L_NOTICE, "Registered transport: %s (type=0x%02X, socket_type=%d, caps=0x%04X)", 
+           l_transport->name, l_transport->type, l_transport->socket_type, l_transport->capabilities);
     
     return 0;
 }
@@ -166,9 +176,9 @@ int dap_stream_transport_register(const char *a_name,
  * @param a_type Transport type to unregister
  * @return 0 on success, -1 if not found (idempotent: safe to call multiple times)
  */
-int dap_stream_transport_unregister(dap_stream_transport_type_t a_type)
+int dap_net_transport_unregister(dap_net_transport_type_t a_type)
 {
-    // If registry is already cleared or deinitialized (e.g., by dap_stream_transport_deinit),
+    // If registry is already cleared or deinitialized (e.g., by dap_net_transport_deinit),
     // silently return success (idempotent operation)
     // Check both flags to ensure safety in all scenarios
     if (!s_transport_registry_initialized || !s_transport_registry) {
@@ -177,7 +187,7 @@ int dap_stream_transport_unregister(dap_stream_transport_type_t a_type)
     }
     
     // Find transport by type
-    dap_stream_transport_t *l_transport = NULL;
+    dap_net_transport_t *l_transport = NULL;
     HASH_FIND_INT(s_transport_registry, &a_type, l_transport);
     
     if (!l_transport) {
@@ -208,9 +218,9 @@ int dap_stream_transport_unregister(dap_stream_transport_type_t a_type)
  * @param a_type Transport type to find
  * @return Transport instance or NULL if not found
  */
-dap_stream_transport_t *dap_stream_transport_find(dap_stream_transport_type_t a_type)
+dap_net_transport_t *dap_net_transport_find(dap_net_transport_type_t a_type)
 {
-    dap_stream_transport_t *l_transport = NULL;
+    dap_net_transport_t *l_transport = NULL;
     HASH_FIND_INT(s_transport_registry, &a_type, l_transport);
     
     if (!l_transport) {
@@ -225,7 +235,7 @@ dap_stream_transport_t *dap_stream_transport_find(dap_stream_transport_type_t a_
  * @param a_name Transport name to find
  * @return Transport instance or NULL if not found
  */
-dap_stream_transport_t *dap_stream_transport_find_by_name(const char *a_name)
+dap_net_transport_t *dap_net_transport_find_by_name(const char *a_name)
 {
     if (!a_name) {
         return NULL;
@@ -236,7 +246,7 @@ dap_stream_transport_t *dap_stream_transport_find_by_name(const char *a_name)
     }
     
     // Linear search through hash table (names are not indexed)
-    dap_stream_transport_t *l_transport, *l_tmp;
+    dap_net_transport_t *l_transport, *l_tmp;
     HASH_ITER(hh, s_transport_registry, l_transport, l_tmp) {
         if (l_transport && dap_strcmp(l_transport->name, a_name) == 0) {
             return l_transport;
@@ -249,9 +259,9 @@ dap_stream_transport_t *dap_stream_transport_find_by_name(const char *a_name)
 
 /**
  * @brief Get list of all registered transports
- * @return Linked list of dap_stream_transport_t* (caller must free list, not contents)
+ * @return Linked list of dap_net_transport_t* (caller must free list, not contents)
  */
-dap_list_t *dap_stream_transport_list_all(void)
+dap_list_t *dap_net_transport_list_all(void)
 {
     dap_list_t *l_list = NULL;
     
@@ -259,7 +269,7 @@ dap_list_t *dap_stream_transport_list_all(void)
         return NULL;
     }
     
-    dap_stream_transport_t *l_transport, *l_tmp;
+    dap_net_transport_t *l_transport, *l_tmp;
     HASH_ITER(hh, s_transport_registry, l_transport, l_tmp) {
         if (l_transport) {
             l_list = dap_list_append(l_list, l_transport);
@@ -272,16 +282,16 @@ dap_list_t *dap_stream_transport_list_all(void)
 /**
  * @brief Get transport name string
  */
-const char *dap_stream_transport_type_to_str(dap_stream_transport_type_t a_type)
+const char *dap_net_transport_type_to_str(dap_net_transport_type_t a_type)
 {
     switch (a_type) {
-        case DAP_STREAM_TRANSPORT_HTTP:          return "HTTP";
-        case DAP_STREAM_TRANSPORT_UDP_BASIC:     return "UDP_BASIC";
-        case DAP_STREAM_TRANSPORT_UDP_RELIABLE:  return "UDP_RELIABLE";
-        case DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE: return "UDP_QUIC_LIKE";
-        case DAP_STREAM_TRANSPORT_WEBSOCKET:     return "WEBSOCKET";
-        case DAP_STREAM_TRANSPORT_TLS_DIRECT:    return "TLS_DIRECT";
-        case DAP_STREAM_TRANSPORT_DNS_TUNNEL:    return "DNS_TUNNEL";
+        case DAP_NET_TRANSPORT_HTTP:          return "HTTP";
+        case DAP_NET_TRANSPORT_UDP_BASIC:     return "UDP_BASIC";
+        case DAP_NET_TRANSPORT_UDP_RELIABLE:  return "UDP_RELIABLE";
+        case DAP_NET_TRANSPORT_UDP_QUIC_LIKE: return "UDP_QUIC_LIKE";
+        case DAP_NET_TRANSPORT_WEBSOCKET:     return "WEBSOCKET";
+        case DAP_NET_TRANSPORT_TLS_DIRECT:    return "TLS_DIRECT";
+        case DAP_NET_TRANSPORT_DNS_TUNNEL:    return "DNS_TUNNEL";
         default:                                 return "UNKNOWN";
     }
 }
@@ -289,45 +299,45 @@ const char *dap_stream_transport_type_to_str(dap_stream_transport_type_t a_type)
 /**
  * @brief Parse transport type from string
  */
-dap_stream_transport_type_t dap_stream_transport_type_from_str(const char *a_str)
+dap_net_transport_type_t dap_net_transport_type_from_str(const char *a_str)
 {
     if (!a_str) {
-        return DAP_STREAM_TRANSPORT_HTTP;
+        return DAP_NET_TRANSPORT_HTTP;
     }
     
     // HTTP/HTTPS
     if (strcmp(a_str, "http") == 0 || strcmp(a_str, "https") == 0) {
-        return DAP_STREAM_TRANSPORT_HTTP;
+        return DAP_NET_TRANSPORT_HTTP;
     }
     
     // UDP variants
     if (strcmp(a_str, "udp") == 0 || strcmp(a_str, "udp_basic") == 0) {
-        return DAP_STREAM_TRANSPORT_UDP_BASIC;
+        return DAP_NET_TRANSPORT_UDP_BASIC;
     }
     if (strcmp(a_str, "udp_reliable") == 0) {
-        return DAP_STREAM_TRANSPORT_UDP_RELIABLE;
+        return DAP_NET_TRANSPORT_UDP_RELIABLE;
     }
     if (strcmp(a_str, "udp_quic") == 0 || strcmp(a_str, "quic") == 0) {
-        return DAP_STREAM_TRANSPORT_UDP_QUIC_LIKE;
+        return DAP_NET_TRANSPORT_UDP_QUIC_LIKE;
     }
     
     // WebSocket
     if (strcmp(a_str, "websocket") == 0 || strcmp(a_str, "ws") == 0) {
-        return DAP_STREAM_TRANSPORT_WEBSOCKET;
+        return DAP_NET_TRANSPORT_WEBSOCKET;
     }
     
     // TLS Direct
     if (strcmp(a_str, "tls") == 0 || strcmp(a_str, "tls_direct") == 0) {
-        return DAP_STREAM_TRANSPORT_TLS_DIRECT;
+        return DAP_NET_TRANSPORT_TLS_DIRECT;
     }
     
     // DNS Tunnel
     if (strcmp(a_str, "dns") == 0 || strcmp(a_str, "dns_tunnel") == 0) {
-        return DAP_STREAM_TRANSPORT_DNS_TUNNEL;
+        return DAP_NET_TRANSPORT_DNS_TUNNEL;
     }
     
     log_it(L_WARNING, "Unknown transport type '%s', defaulting to HTTP", a_str);
-    return DAP_STREAM_TRANSPORT_HTTP;
+    return DAP_NET_TRANSPORT_HTTP;
 }
 
 /**
@@ -336,7 +346,7 @@ dap_stream_transport_type_t dap_stream_transport_type_from_str(const char *a_str
  * @param a_obfuscation Obfuscation engine instance
  * @return 0 on success, -1 on failure
  */
-int dap_stream_transport_attach_obfuscation(dap_stream_transport_t *a_transport, 
+int dap_net_transport_attach_obfuscation(dap_net_transport_t *a_transport, 
                                               dap_stream_obfuscation_t *a_obfuscation)
 {
     if (!a_transport) {
@@ -364,7 +374,7 @@ int dap_stream_transport_attach_obfuscation(dap_stream_transport_t *a_transport,
  * @brief Detach obfuscation engine from transport
  * @param a_transport Transport to detach obfuscation from
  */
-void dap_stream_transport_detach_obfuscation(dap_stream_transport_t *a_transport)
+void dap_net_transport_detach_obfuscation(dap_net_transport_t *a_transport)
 {
     if (!a_transport) {
         log_it(L_ERROR, "Cannot detach obfuscation: transport is NULL");
@@ -391,7 +401,7 @@ void dap_stream_transport_detach_obfuscation(dap_stream_transport_t *a_transport
  * @param a_size Size of data
  * @return Bytes written, or negative error code
  */
-ssize_t dap_stream_transport_write_obfuscated(dap_stream_t *a_stream, 
+ssize_t dap_net_transport_write_obfuscated(dap_stream_t *a_stream, 
                                                const void *a_data, 
                                                size_t a_size)
 {
@@ -400,7 +410,7 @@ ssize_t dap_stream_transport_write_obfuscated(dap_stream_t *a_stream,
         return -1;
     }
 
-    dap_stream_transport_t *l_transport = a_stream->stream_transport;
+    dap_net_transport_t *l_transport = a_stream->stream_transport;
     
     if (!l_transport->ops || !l_transport->ops->write) {
         log_it(L_ERROR, "Transport does not support write operation");
@@ -457,7 +467,7 @@ ssize_t dap_stream_transport_write_obfuscated(dap_stream_t *a_stream,
  * @param a_size Maximum bytes to read
  * @return Bytes read, 0 on EOF, or negative error code
  */
-ssize_t dap_stream_transport_read_deobfuscated(dap_stream_t *a_stream, 
+ssize_t dap_net_transport_read_deobfuscated(dap_stream_t *a_stream, 
                                                 void *a_buffer, 
                                                 size_t a_size)
 {
@@ -466,7 +476,7 @@ ssize_t dap_stream_transport_read_deobfuscated(dap_stream_t *a_stream,
         return -1;
     }
 
-    dap_stream_transport_t *l_transport = a_stream->stream_transport;
+    dap_net_transport_t *l_transport = a_stream->stream_transport;
     
     if (!l_transport->ops || !l_transport->ops->read) {
         log_it(L_ERROR, "Transport does not support read operation");
@@ -533,5 +543,68 @@ ssize_t dap_stream_transport_read_deobfuscated(dap_stream_t *a_stream,
     
     // No obfuscation - direct read
     return l_transport->ops->read(a_stream, a_buffer, a_size);
+}
+
+/**
+ * @brief Prepare transport-specific resources for client stage
+ * 
+ * Routes stage preparation request to transport implementation.
+ * If transport doesn't provide stage_prepare callback, uses default TCP socket creation.
+ * 
+ * @param a_transport_type Transport type to use
+ * @param a_params Stage preparation parameters
+ * @param a_result Output parameter for preparation result
+ * @return 0 on success, negative error code on failure
+ */
+int dap_net_transport_stage_prepare(dap_net_transport_type_t a_transport_type,
+                                      const dap_net_stage_prepare_params_t *a_params,
+                                      dap_net_stage_prepare_result_t *a_result)
+{
+    // Fail-fast: validate inputs immediately
+    if (!a_params || !a_result) {
+        log_it(L_ERROR, "Invalid arguments for stage_prepare");
+        if (a_result) {
+            a_result->esocket = NULL;
+            a_result->error_code = -1;
+        }
+        return -1;
+    }
+    
+    // Initialize result
+    a_result->esocket = NULL;
+    a_result->error_code = 0;
+    
+    // Fail-fast: transport must exist
+    dap_net_transport_t *l_transport = dap_net_transport_find(a_transport_type);
+    if (!l_transport) {
+        log_it(L_ERROR, "Transport type %d not found", a_transport_type);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    // Fail-fast: transport must provide stage_prepare callback
+    if (!l_transport->ops || !l_transport->ops->stage_prepare) {
+        log_it(L_ERROR, "Transport type %d does not provide stage_prepare callback", a_transport_type);
+        a_result->error_code = -2;
+        return -2;
+    }
+    
+    // Delegate to transport-specific implementation
+    int l_ret = l_transport->ops->stage_prepare(l_transport, a_params, a_result);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Transport stage_prepare failed for type %d: %d", a_transport_type, l_ret);
+        a_result->error_code = l_ret;
+        return l_ret;
+    }
+    
+    // Fail-fast: transport must return valid socket
+    if (!a_result->esocket) {
+        log_it(L_ERROR, "Transport stage_prepare returned success but esocket is NULL for type %d", a_transport_type);
+        a_result->error_code = -3;
+        return -3;
+    }
+    
+    log_it(L_DEBUG, "Transport %d prepared socket via stage_prepare callback", a_transport_type);
+    return 0;
 }
 

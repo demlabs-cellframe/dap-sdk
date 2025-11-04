@@ -93,7 +93,7 @@ int dap_net_transport_http_server_init(void)
     log_it(L_DEBUG, "dap_net_transport_http_server_init: Encryption module initialized, registering server operations");
     
     // Register transport server operations
-    l_ret = dap_net_transport_server_register_ops(DAP_STREAM_TRANSPORT_HTTP, &s_http_server_ops);
+    l_ret = dap_net_transport_server_register_ops(DAP_NET_TRANSPORT_HTTP, &s_http_server_ops);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register HTTP transport server operations: %d", l_ret);
         enc_http_deinit();
@@ -111,7 +111,7 @@ int dap_net_transport_http_server_init(void)
 void dap_net_transport_http_server_deinit(void)
 {
     // Unregister transport server operations
-    dap_net_transport_server_unregister_ops(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_server_unregister_ops(DAP_NET_TRANSPORT_HTTP);
     
     enc_http_deinit();
     dap_http_deinit();
@@ -137,7 +137,7 @@ dap_net_transport_http_server_t *dap_net_transport_http_server_new(const char *a
     dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name) - 1);
     
     // Get HTTP transport instance
-    l_http_server->transport = dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    l_http_server->transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     if (!l_http_server->transport) {
         log_it(L_ERROR, "HTTP transport not registered");
         DAP_DELETE(l_http_server);
@@ -204,7 +204,7 @@ int dap_net_transport_http_server_start(dap_net_transport_http_server_t *a_http_
 
     // Create transport context for handler registration
     dap_net_transport_server_context_t *l_context = dap_net_transport_server_context_from_http(
-        l_http_server, DAP_STREAM_TRANSPORT_HTTP, NULL);
+        l_http_server, DAP_NET_TRANSPORT_HTTP, NULL);
     if (!l_context) {
         log_it(L_ERROR, "Failed to create transport context");
         dap_server_delete(l_server);

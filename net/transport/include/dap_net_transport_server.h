@@ -33,7 +33,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_http_server.h"
 #include "dap_server.h"
 
@@ -90,7 +90,7 @@ typedef struct dap_net_transport_server_ops {
  * @param a_ops Operations callbacks structure (must remain valid)
  * @return 0 on success, negative error code on failure
  */
-int dap_net_transport_server_register_ops(dap_stream_transport_type_t a_transport_type,
+int dap_net_transport_server_register_ops(dap_net_transport_type_t a_transport_type,
                                             const dap_net_transport_server_ops_t *a_ops);
 
 /**
@@ -98,7 +98,7 @@ int dap_net_transport_server_register_ops(dap_stream_transport_type_t a_transpor
  * 
  * @param a_transport_type Transport type
  */
-void dap_net_transport_server_unregister_ops(dap_stream_transport_type_t a_transport_type);
+void dap_net_transport_server_unregister_ops(dap_net_transport_type_t a_transport_type);
 
 /**
  * @brief Get transport server operations for a transport type
@@ -106,7 +106,7 @@ void dap_net_transport_server_unregister_ops(dap_stream_transport_type_t a_trans
  * @param a_transport_type Transport type
  * @return Operations structure or NULL if not registered
  */
-const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_stream_transport_type_t a_transport_type);
+const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_net_transport_type_t a_transport_type);
 
 /**
  * @brief Transport server context for handler registration
@@ -116,7 +116,7 @@ const dap_net_transport_server_ops_t *dap_net_transport_server_get_ops(dap_strea
  * Used internally by dap_net_transport_server functions.
  */
 typedef struct dap_net_transport_server_context {
-    dap_stream_transport_type_t transport_type;  ///< Transport type
+    dap_net_transport_type_t transport_type;  ///< Transport type
     dap_http_server_t *http_server;              ///< HTTP server (for HTTP/WebSocket transports)
     dap_server_t *server;                        ///< Underlying server instance
     void *transport_specific;                    ///< Transport-specific data (e.g., websocket server instance)
@@ -129,7 +129,7 @@ typedef struct dap_net_transport_server_context {
  * The actual server implementation is stored in transport_specific field.
  */
 typedef struct dap_net_transport_server {
-    dap_stream_transport_type_t transport_type;  ///< Transport type
+    dap_net_transport_type_t transport_type;  ///< Transport type
     void *transport_specific;                     ///< Transport-specific server instance
     char server_name[256];                        ///< Server name for identification
 } dap_net_transport_server_t;
@@ -144,7 +144,7 @@ typedef struct dap_net_transport_server {
  * @param a_server_name Server name for identification
  * @return Pointer to dap_net_transport_server_t instance or NULL on error
  */
-dap_net_transport_server_t *dap_net_transport_server_new(dap_stream_transport_type_t a_transport_type,
+dap_net_transport_server_t *dap_net_transport_server_new(dap_net_transport_type_t a_transport_type,
                                                           const char *a_server_name);
 
 /**
@@ -233,7 +233,7 @@ int dap_net_transport_server_register_enc_custom(dap_net_transport_server_contex
  * @return Transport server context or NULL on error
  */
 dap_net_transport_server_context_t *dap_net_transport_server_context_from_http(dap_http_server_t *a_http_server,
-                                                                                  dap_stream_transport_type_t a_transport_type,
+                                                                                  dap_net_transport_type_t a_transport_type,
                                                                                   void *a_transport_specific);
 
 /**

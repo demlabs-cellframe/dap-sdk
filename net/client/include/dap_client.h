@@ -28,7 +28,7 @@
 #include "dap_enc_key.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_cert.h"
 
 /**
@@ -103,7 +103,7 @@ typedef struct dap_client {
     dap_client_callback_t stage_status_error_callback;
     void *callbacks_arg;
 
-    dap_stream_transport_type_t transport_type; // Transport layer to use for stream
+    dap_net_transport_type_t transport_type; // Transport layer to use for stream
 
     void *_internal;
     void *_inheritor;
@@ -131,8 +131,8 @@ DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_
 DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_port; }
 
 void dap_client_set_uplink_unsafe(dap_client_t *a_client, dap_stream_node_addr_t *a_node, const char *a_addr, uint16_t a_port);
-void dap_client_set_transport_type(dap_client_t *a_client, dap_stream_transport_type_t a_transport_type);
-dap_stream_transport_type_t dap_client_get_transport_type(dap_client_t *a_client);
+void dap_client_set_transport_type(dap_client_t *a_client, dap_net_transport_type_t a_transport_type);
+dap_net_transport_type_t dap_client_get_transport_type(dap_client_t *a_client);
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
 
 void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_end, dap_client_callback_t a_stage_end_callback);
@@ -142,12 +142,6 @@ void dap_client_delete_unsafe(dap_client_t * a_client);
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 void dap_client_queue_clear(dap_client_t *a_client);
-
-void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path,const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
-
-void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
 
 //int dap_client_disconnect(dap_client_t * a_client);
 

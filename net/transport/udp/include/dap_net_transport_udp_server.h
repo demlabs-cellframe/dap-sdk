@@ -24,7 +24,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "dap_server.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 
 /**
  * @brief UDP server structure
@@ -38,7 +38,7 @@ See more details here <http://www.gnu.org/licenses/>.
 typedef struct dap_net_transport_udp_server {
     dap_server_t *server;               ///< Back pointer to parent dap_server instance
     char server_name[256];              ///< Server name for identification
-    dap_stream_transport_t *transport;  ///< UDP transport instance
+    dap_net_transport_t *transport;  ///< UDP transport instance
 } dap_net_transport_udp_server_t;
 
 #define DAP_NET_TRANSPORT_UDP_SERVER(a) ((dap_net_transport_udp_server_t *) (a)->_inheritor)

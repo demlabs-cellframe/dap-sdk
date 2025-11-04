@@ -230,6 +230,11 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
 
         // Init on stream worker
         dap_stream_worker_t * l_stream_worker = a_stream->stream_worker;
+        if (!l_stream_worker) {
+            log_it(L_ERROR, "stream_worker is NULL for stream %p, cannot create channel", (void*)a_stream);
+            dap_stm_ch_free(l_ch_new);
+            return NULL;
+        }
         l_ch_new->stream_worker = l_stream_worker;
 
         pthread_rwlock_wrlock(&l_stream_worker->channels_rwlock);
@@ -238,10 +243,17 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
 
 
         // Proc new callback
-        if(l_ch_new->proc->new_callback)
+        if(l_ch_new->proc->new_callback) {
+            debug_if(s_debug_more, L_DEBUG, "Calling new_callback for channel '%c' (proc=%p, callback=%p)", 
+                   a_id, (void*)l_ch_new->proc, (void*)l_ch_new->proc->new_callback);
             l_ch_new->proc->new_callback(l_ch_new,NULL);
+            debug_if(s_debug_more, L_DEBUG, "new_callback for channel '%c' completed", a_id);
+        } else {
+            debug_if(s_debug_more, L_DEBUG, "No new_callback for channel '%c'", a_id);
+        }
 
-        a_stream->channel[l_ch_new->stream->channel_count++] = l_ch_new;
+        a_stream->channel[a_stream->channel_count++] = l_ch_new;
+        debug_if(s_debug_more, L_DEBUG, "Channel '%c' added to stream, total channels=%zu", a_id, a_stream->channel_count);
 
         return l_ch_new;
     }else{
@@ -417,6 +429,20 @@ static void s_place_notifier_callback(void *a_arg)
     if (!l_stream) {
         log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
         goto ret_n_clear;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_place_notifier_callback: stream=%p, channel_count=%zu, ch_id='%c'", 
+           (void*)l_stream, l_stream->channel_count, l_arg->ch_id);
+    if (l_stream->channel_count > 0 && l_stream->channel) {
+        for (size_t i = 0; i < l_stream->channel_count; i++) {
+            if (l_stream->channel[i] && l_stream->channel[i]->proc) {
+                debug_if(s_debug_more, L_DEBUG, "  channel[%zu]: id='%c', proc=%p", i, l_stream->channel[i]->proc->id, (void*)l_stream->channel[i]->proc);
+            } else {
+                debug_if(s_debug_more, L_DEBUG, "  channel[%zu]: NULL or no proc", i);
+            }
+        }
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "  stream has no channels (channel_count=%zu, channel=%p)", 
+               l_stream->channel_count, (void*)l_stream->channel);
     }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_arg->ch_id);
     if (!l_ch) {

@@ -40,7 +40,7 @@
 #include "dap_test.h"
 #include "dap_test_helpers.h"
 #include "dap_mock.h"
-#include "dap_stream_transport.h"
+#include "dap_net_transport.h"
 #include "dap_net_transport_http_stream.h"
 #include "dap_net_transport_udp_stream.h"
 #include "dap_net_transport_websocket_stream.h"
@@ -66,9 +66,6 @@ static void setup_test(void)
         // Initialize DAP mock framework
         dap_mock_init();
         
-        // Initialize transport layer
-        int ret = dap_stream_transport_init();
-        TEST_ASSERT(ret == 0, "Transport layer initialization failed");
         
         s_test_initialized = true;
         TEST_INFO("Transport test suite initialized");
@@ -90,7 +87,7 @@ static void suite_cleanup(void)
 {
     if (s_test_initialized) {
         // Deinitialize transport layer
-        dap_stream_transport_deinit();
+        dap_net_transport_deinit();
         
         // Deinitialize mock framework
         dap_mock_deinit();
@@ -117,15 +114,15 @@ static void test_01_transport_auto_registration(void)
     // Just verify they are available
     
     // Find HTTP transport
-    dap_stream_transport_t *http_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *http_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT(http_transport != NULL, "HTTP transport not found (should be auto-registered)");
-    TEST_ASSERT(http_transport->type == DAP_STREAM_TRANSPORT_HTTP, 
+    TEST_ASSERT(http_transport->type == DAP_NET_TRANSPORT_HTTP, 
                 "HTTP transport type mismatch");
     
     // Find by name
-    dap_stream_transport_t *http_by_name = 
-        dap_stream_transport_find_by_name("HTTP");
+    dap_net_transport_t *http_by_name = 
+        dap_net_transport_find_by_name("HTTP");
     TEST_ASSERT(http_by_name != NULL, "HTTP transport not found by name");
     TEST_ASSERT(http_by_name == http_transport, 
                 "Transport found by name doesn't match transport found by type");
@@ -144,16 +141,16 @@ static void test_02_all_transports_registered(void)
     TEST_INFO("Test 2: Testing all transports are auto-registered...");
     
     // Verify all transports are registered automatically
-    dap_stream_transport_t *http_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *http_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT(http_transport != NULL, "HTTP transport not found");
     
-    dap_stream_transport_t *udp_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *udp_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     TEST_ASSERT(udp_transport != NULL, "UDP transport not found");
     
-    dap_stream_transport_t *ws_transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *ws_transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     TEST_ASSERT(ws_transport != NULL, "WebSocket transport not found");
     
     TEST_SUCCESS("Test 2 passed: All transports are auto-registered");
@@ -170,12 +167,12 @@ static void test_03_multiple_transports(void)
     TEST_INFO("Test 3: Testing multiple transports coexistence...");
     
     // Verify all are registered (auto-registered via constructors)
-    dap_stream_transport_t *http = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
-    dap_stream_transport_t *udp = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
-    dap_stream_transport_t *ws = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *http = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    dap_net_transport_t *udp = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *ws = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     
     TEST_ASSERT(http != NULL, "HTTP transport not found");
     TEST_ASSERT(udp != NULL, "UDP transport not found");
@@ -187,14 +184,14 @@ static void test_03_multiple_transports(void)
     TEST_ASSERT(udp != ws, "UDP and WebSocket transports are the same");
     
     // Get list of all transports
-    dap_list_t *transport_list = dap_stream_transport_list_all();
+    dap_list_t *transport_list = dap_net_transport_list_all();
     TEST_ASSERT(transport_list != NULL, "Transport list is NULL");
     
     // Count transports
     int count = 0;
     for (dap_list_t *it = transport_list; it; it = it->next) {
         count++;
-        dap_stream_transport_t *transport = (dap_stream_transport_t*)it->data;
+        dap_net_transport_t *transport = (dap_net_transport_t*)it->data;
         TEST_ASSERT(transport != NULL, "Transport in list is NULL");
         TEST_INFO("  Found transport: %s (type=0x%02X)", 
                   transport->name, transport->type);
@@ -224,8 +221,8 @@ static void test_04_http_capabilities(void)
     
     // HTTP transport is auto-registered via constructor
     // Find HTTP transport
-    dap_stream_transport_t *transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_HTTP);
+    dap_net_transport_t *transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
     TEST_ASSERT(transport != NULL, "HTTP transport not found");
     
     // Check name
@@ -236,11 +233,11 @@ static void test_04_http_capabilities(void)
     uint32_t caps = transport->capabilities;
     TEST_INFO("  HTTP capabilities: 0x%04X", caps);
     
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_RELIABLE, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_RELIABLE, 
                 "HTTP should be reliable");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_ORDERED, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_ORDERED, 
                 "HTTP should be ordered");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_BIDIRECTIONAL, 
                 "HTTP should be bidirectional");
     
     TEST_SUCCESS("Test 4 passed: HTTP transport capabilities correct");
@@ -262,8 +259,8 @@ static void test_05_udp_capabilities(void)
     
     // UDP transport is auto-registered via constructor
     // Find UDP transport
-    dap_stream_transport_t *transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     TEST_ASSERT(transport != NULL, "UDP transport not found");
     
     // Check name
@@ -274,11 +271,11 @@ static void test_05_udp_capabilities(void)
     uint32_t caps = transport->capabilities;
     TEST_INFO("  UDP capabilities: 0x%04X", caps);
     
-    TEST_ASSERT(!(caps & DAP_STREAM_TRANSPORT_CAP_RELIABLE), 
+    TEST_ASSERT(!(caps & DAP_NET_TRANSPORT_CAP_RELIABLE), 
                 "UDP basic should not be reliable");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_LOW_LATENCY, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_LOW_LATENCY, 
                 "UDP should be low latency");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_BIDIRECTIONAL, 
                 "UDP should be bidirectional");
     
     TEST_SUCCESS("Test 5 passed: UDP transport capabilities correct");
@@ -296,8 +293,8 @@ static void test_06_udp_configuration(void)
     
     // UDP transport is auto-registered via constructor
     // Find UDP transport
-    dap_stream_transport_t *transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_UDP_BASIC);
+    dap_net_transport_t *transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
     TEST_ASSERT(transport != NULL, "UDP transport not found");
     
     // Get default config
@@ -352,8 +349,8 @@ static void test_07_websocket_capabilities(void)
     
     // WebSocket transport is auto-registered via constructor
     // Find WebSocket transport
-    dap_stream_transport_t *transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     TEST_ASSERT(transport != NULL, "WebSocket transport not found");
     
     // Check name
@@ -364,13 +361,13 @@ static void test_07_websocket_capabilities(void)
     uint32_t caps = transport->capabilities;
     TEST_INFO("  WebSocket capabilities: 0x%04X", caps);
     
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_RELIABLE, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_RELIABLE, 
                 "WebSocket should be reliable");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_ORDERED, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_ORDERED, 
                 "WebSocket should be ordered");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_BIDIRECTIONAL, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_BIDIRECTIONAL, 
                 "WebSocket should be bidirectional");
-    TEST_ASSERT(caps & DAP_STREAM_TRANSPORT_CAP_MULTIPLEXING, 
+    TEST_ASSERT(caps & DAP_NET_TRANSPORT_CAP_MULTIPLEXING, 
                 "WebSocket should support multiplexing");
     
     TEST_SUCCESS("Test 7 passed: WebSocket transport capabilities correct");
@@ -388,8 +385,8 @@ static void test_08_websocket_configuration(void)
     
     // WebSocket transport is auto-registered via constructor
     // Find WebSocket transport
-    dap_stream_transport_t *transport = 
-        dap_stream_transport_find(DAP_STREAM_TRANSPORT_WEBSOCKET);
+    dap_net_transport_t *transport = 
+        dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
     TEST_ASSERT(transport != NULL, "WebSocket transport not found");
     
     // Get default config
