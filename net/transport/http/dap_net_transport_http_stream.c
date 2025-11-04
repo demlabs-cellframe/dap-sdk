@@ -413,11 +413,25 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     s_http_handshake_ctx.stream = a_stream;
     s_http_handshake_ctx.callback = a_callback;
     
+    // Get HTTP transport private from stream transport (use the stream passed to handshake_init)
+    dap_stream_transport_http_private_t *l_priv = NULL;
+    if (a_stream && a_stream->stream_transport &&
+        a_stream->stream_transport->type == DAP_NET_TRANSPORT_HTTP) {
+        l_priv = (dap_stream_transport_http_private_t*)a_stream->stream_transport->_inheritor;
+    }
+    
     // Make HTTP request using legacy infrastructure
+    // Temporarily set client_pvt->stream to a_stream so s_http_request can find the transport
+    dap_stream_t *l_original_stream = l_client_pvt->stream;
+    l_client_pvt->stream = a_stream;
+    
     int l_res = s_http_request(l_client_pvt, l_enc_init_url,
                                l_data_str, l_data_str_enc_size, 
                                s_http_handshake_response_wrapper, 
                                s_http_handshake_error_wrapper);
+    
+    // Restore original stream
+    l_client_pvt->stream = l_original_stream;
     
     DAP_DELETE(l_data_str);
     

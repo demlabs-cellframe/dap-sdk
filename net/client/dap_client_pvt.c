@@ -215,15 +215,14 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
     // Temporary stream is not the main stream, main stream is stored in l_client_pvt->stream
     bool l_is_temporary_stream = (a_stream != l_client_pvt->stream);
     
-    // Cleanup temporary stream only (for HTTP/WebSocket handshake)
-    // For UDP/DNS, handshake uses main stream, so don't delete it
-    if (l_is_temporary_stream) {
-        log_it(L_DEBUG, "Cleaning up temporary stream for handshake");
-        dap_stream_delete_unsafe(a_stream);
-    }
-    
     if (a_error != 0) {
         log_it(L_WARNING, "Handshake failed with error: %d, trying fallback transport", a_error);
+        
+        // Cleanup temporary stream before error handling
+        if (l_is_temporary_stream) {
+            log_it(L_DEBUG, "Cleaning up temporary stream for handshake (error case)");
+            dap_stream_delete_unsafe(a_stream);
+        }
         
         // Try next fallback transport if available
         if (s_retry_handshake_with_fallback(l_client_pvt) == 0) {
@@ -243,9 +242,23 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         return;
     }
     
-    // Process handshake response
+    // Process handshake response BEFORE deleting temporary stream
+    // This ensures that s_enc_init_response can access stream if needed
     if (a_data && a_data_size > 0) {
+        // For HTTP/WebSocket, we need to pass the temporary stream to s_enc_init_response
+        // so it can load encryption context into the transport
+        // Temporarily store the stream pointer if it's a temporary stream
+        dap_stream_t *l_original_stream = l_client_pvt->stream;
+        if (l_is_temporary_stream) {
+            // For temporary stream, use it to access transport for encryption context loading
+            // The transport is stored in the temporary stream's stream_transport
+            l_client_pvt->stream = a_stream;
+        }
+        
         s_enc_init_response(l_client, a_data, a_data_size);
+        
+        // Restore original stream (may be NULL for HTTP/WebSocket during handshake)
+        l_client_pvt->stream = l_original_stream;
     } else {
         // For UDP/DNS transports, handshake callback may be called without data
         // Check if transport uses UDP socket type
@@ -296,6 +309,13 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             s_stage_status_after(l_client_pvt);
         }
+    }
+    
+    // Cleanup temporary stream AFTER processing response (for HTTP/WebSocket handshake)
+    // For UDP/DNS, handshake uses main stream, so don't delete it
+    if (l_is_temporary_stream) {
+        log_it(L_DEBUG, "Cleaning up temporary stream for handshake");
+        dap_stream_delete_unsafe(a_stream);
     }
 }
 
