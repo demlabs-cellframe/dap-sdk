@@ -164,7 +164,6 @@ bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
     // Check that all resources are cleaned up
     return (client_pvt->stream == NULL && 
             client_pvt->stream_es == NULL &&
-            client_pvt->http_client == NULL &&
             client_pvt->reconnect_timer == NULL);
 }
 

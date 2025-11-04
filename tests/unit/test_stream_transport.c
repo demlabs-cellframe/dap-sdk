@@ -390,8 +390,8 @@ static void test_08_websocket_configuration(void)
     TEST_ASSERT(transport != NULL, "WebSocket transport not found");
     
     // Get default config
-    dap_stream_transport_ws_config_t config = 
-        dap_stream_transport_ws_config_default();
+    dap_net_transport_websocket_config_t config = 
+        dap_net_transport_websocket_config_default();
     TEST_ASSERT(config.max_frame_size > 0, "Default max frame size is 0");
     TEST_ASSERT(config.ping_interval_ms > 0, "Default ping interval is 0");
     TEST_ASSERT(config.client_mask_frames == true, 
@@ -407,12 +407,12 @@ static void test_08_websocket_configuration(void)
     config.pong_timeout_ms = 5000;    // 5s
     config.enable_compression = true;
     
-    int ret = dap_stream_transport_ws_set_config(transport, &config);
+    int ret = dap_net_transport_websocket_set_config(transport, &config);
     TEST_ASSERT(ret == 0, "Failed to set WebSocket config");
     
     // Get config back
-    dap_stream_transport_ws_config_t config_read;
-    ret = dap_stream_transport_ws_get_config(transport, &config_read);
+    dap_net_transport_websocket_config_t config_read;
+    ret = dap_net_transport_websocket_get_config(transport, &config_read);
     TEST_ASSERT(ret == 0, "Failed to get WebSocket config");
     
     TEST_ASSERT(config_read.max_frame_size == 2 * 1024 * 1024, 

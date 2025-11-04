@@ -108,7 +108,6 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
         ret = - 1;
     } else if (a_exec_cmd_request->response) {
             dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
-            l_client_pvt->http_client = NULL;
             size_t l_response_dec_size_max = a_exec_cmd_request->response_size ? a_exec_cmd_request->response_size * 2 + 16 : 0;
             char * l_response_dec = a_exec_cmd_request->response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
             size_t l_response_dec_size = 0;
@@ -392,7 +391,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
                      a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
 
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
+    dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker,
                                                              a_client_internal->client->link_info.uplink_addr,
                                                              a_client_internal->client->link_info.uplink_port,
                                                              "POST", "application/json",

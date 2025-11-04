@@ -29,12 +29,14 @@
 #include "dap_stream_worker.h"
 #include "dap_config.h"
 #include "dap_net_transport.h"
+#include "dap_net_transport_http_stream.h"
 
 #define LOG_TAG "dap_client"
 
 // FSM realization: thats callback executes after the every stage is done
 // and have to select the next one stage
-static void s_stage_fsm_operator_unsafe(dap_client_t *, void *);
+// Forward declaration (implementation defined below)
+void dap_client_pvt_stage_fsm_advance(dap_client_t * a_client, void * a_arg);
 
 /**
  * @brief dap_client_init
@@ -54,7 +56,6 @@ int dap_client_init()
         s_is_first_time = false;
     }
     return 0;
-
 }
 
 /**
@@ -68,14 +69,8 @@ void dap_client_deinit()
 }
 
 /**
- * @brief dap_client_new
- * @param a_stage_status_callback
- * @param a_stage_status_error_callback
- * @return
- */
-/**
  * @brief Get default transport type from config
- * @return Default transport type, or DAP_NET_TRANSPORT_HTTP if not configured
+ * @return Default transport type from config, or DAP_NET_TRANSPORT_HTTP (legacy protocol) if not configured
  */
 static dap_net_transport_type_t s_get_default_transport_from_config(void)
 {
@@ -89,8 +84,8 @@ static dap_net_transport_type_t s_get_default_transport_from_config(void)
         return l_transport_type;
     }
     
-    // Fallback to HTTP if not configured
-    log_it(L_DEBUG, "No default transport in config, using HTTP");
+    // Default to legacy HTTP protocol if not configured
+    log_it(L_DEBUG, "No default transport in config, using legacy HTTP protocol");
     return DAP_NET_TRANSPORT_HTTP;
 }
 
@@ -100,7 +95,7 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     l_client->_internal = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_pvt_t, NULL, l_client);
     l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
-    l_client->transport_type = s_get_default_transport_from_config(); // Load from config or default to HTTP
+    l_client->transport_type = s_get_default_transport_from_config(); // Load from config or default to legacy HTTP protocol
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
@@ -176,7 +171,7 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
         a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                STAGE_BEGIN,
-                                               s_stage_fsm_operator_unsafe);
+                                               dap_client_pvt_stage_fsm_advance);
         return 0;
     }
     return -2;
@@ -309,7 +304,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
                    dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
             dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                    l_cur_stage + 1,
-                                                   s_stage_fsm_operator_unsafe);
+                                                   dap_client_pvt_stage_fsm_advance);
             DAP_DELETE(a_arg);
             return;
         }
@@ -320,7 +315,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
            dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
     dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                            STAGE_BEGIN,
-                                           s_stage_fsm_operator_unsafe);
+                                           dap_client_pvt_stage_fsm_advance);
     DAP_DELETE(a_arg);
 }
 
@@ -346,22 +341,22 @@ void dap_client_go_stage(dap_client_t *a_client, dap_client_stage_t a_stage_targ
     dap_worker_exec_callback_on(l_client_pvt->worker, s_go_stage_on_client_worker_unsafe, l_stage_arg);
 }
 /**
- * @brief s_stage_fsm_operator_unsafe
- * @param a_client
- * @param a_arg
+ * @brief dap_client_pvt_stage_fsm_advance
+ * @brief Advance client stage FSM to next stage
+ * @param a_client Client instance
+ * @param a_arg Unused argument (for callback compatibility)
  */
-static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
+void dap_client_pvt_stage_fsm_advance(dap_client_t * a_client, void * a_arg)
 {
-    UNUSED(a_arg);
     assert(a_client);
     if (!a_client) {
-        log_it(L_ERROR, "Invalid arguments in s_stage_fsm_operator_unsafe");
+        log_it(L_ERROR, "Invalid arguments in dap_client_pvt_stage_fsm_advance");
         return;
     }
     dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     assert(l_client_internal);
     if (!l_client_internal) {
-        log_it(L_ERROR, "Crucial argument is NULL in s_stage_fsm_operator_unsafe");
+        log_it(L_ERROR, "Crucial argument is NULL in dap_client_pvt_stage_fsm_advance");
         return;
     }
 
@@ -381,7 +376,7 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
            ,dap_client_stage_str(l_client_internal->stage), dap_client_stage_str(l_stage_next)
            ,dap_client_stage_str(a_client->stage_target));
     dap_client_pvt_stage_transaction_begin(l_client_internal,
-                                                l_stage_next, s_stage_fsm_operator_unsafe
+                                                l_stage_next, dap_client_pvt_stage_fsm_advance
                                                 );
 }
 
@@ -633,4 +628,230 @@ dap_net_transport_type_t dap_client_get_transport_type(dap_client_t *a_client)
 dap_client_t * dap_client_from_esocket(dap_events_socket_t * a_esocket)
 {
    return (dap_client_t *) a_esocket->_inheritor;
+}
+
+// ============================================================================
+// Request functions (thread-safe)
+// ============================================================================
+
+/**
+ * @brief Request arguments structure for worker callback
+ */
+struct dap_client_request_args {
+    dap_client_t *client;
+    char *path;
+    void *request;
+    size_t request_size;
+    dap_client_callback_data_size_t response_proc;
+    dap_client_callback_int_t response_error;
+    void *callback_arg;
+    int result; // -1 on failure, 0 on success
+};
+
+/**
+ * @brief Encrypted request arguments structure for worker callback
+ */
+struct dap_client_request_enc_args {
+    dap_client_t *client;
+    char *path;
+    char *sub_url;
+    char *query;
+    void *request;
+    size_t request_size;
+    dap_client_callback_data_size_t response_proc;
+    dap_client_callback_int_t response_error;
+    void *callback_arg;
+    int result; // -1 on failure, 0 on success
+};
+
+/**
+ * @brief Execute unencrypted request on worker thread
+ */
+static void s_client_request_on_worker(void *a_arg)
+{
+    struct dap_client_request_args *l_args = (struct dap_client_request_args *)a_arg;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_args->client);
+    
+    if (!l_client_pvt || !l_args->client) {
+        log_it(L_ERROR, "Invalid client in request");
+        DAP_DELETE(l_args->path);
+        if (l_args->request) {
+            DAP_DELETE(l_args->request);
+        }
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    // Set callback argument
+    l_client_pvt->callback_arg = l_args->callback_arg;
+    
+    // Check transport type and use appropriate function
+    if (l_args->client->transport_type == DAP_NET_TRANSPORT_HTTP) {
+        // Use HTTP transport request function
+        l_args->result = dap_net_transport_http_request(l_client_pvt, l_args->path, 
+                                                         l_args->request, l_args->request_size,
+                                                         l_args->response_proc, l_args->response_error);
+    } else {
+        log_it(L_ERROR, "Transport type %d doesn't support request() yet", l_args->client->transport_type);
+        l_args->result = -1;
+    }
+    
+    // Free allocated memory (request data will be freed by HTTP transport)
+    DAP_DELETE(l_args->path);
+    if (l_args->request) {
+        DAP_DELETE(l_args->request);
+    }
+    DAP_DELETE(l_args);
+}
+
+/**
+ * @brief Execute encrypted request on worker thread
+ */
+static void s_client_request_enc_on_worker(void *a_arg)
+{
+    struct dap_client_request_enc_args *l_args = (struct dap_client_request_enc_args *)a_arg;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_args->client);
+    
+    if (!l_client_pvt || !l_args->client) {
+        log_it(L_ERROR, "Invalid client in request_enc");
+        DAP_DELETE(l_args->path);
+        DAP_DELETE(l_args->sub_url);
+        DAP_DELETE(l_args->query);
+        if (l_args->request) {
+            DAP_DELETE(l_args->request);
+        }
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    // Check if session key is available
+    if (!l_client_pvt->session_key) {
+        log_it(L_ERROR, "No session key available for encrypted request");
+        DAP_DELETE(l_args->path);
+        DAP_DELETE(l_args->sub_url);
+        DAP_DELETE(l_args->query);
+        if (l_args->request) {
+            DAP_DELETE(l_args->request);
+        }
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    // Set callback argument
+    l_client_pvt->callback_arg = l_args->callback_arg;
+    
+    // Check transport type and use appropriate function
+    if (l_args->client->transport_type == DAP_NET_TRANSPORT_HTTP) {
+        // Use HTTP transport encrypted request function
+        dap_net_transport_http_request_enc(l_client_pvt, l_args->path, 
+                                            l_args->sub_url, l_args->query,
+                                            l_args->request, l_args->request_size,
+                                            l_args->response_proc, l_args->response_error);
+        l_args->result = 0; // Encrypted request doesn't return error code
+    } else {
+        log_it(L_ERROR, "Transport type %d doesn't support request_enc() yet", l_args->client->transport_type);
+        l_args->result = -1;
+    }
+    
+    // Free allocated memory (request data will be freed by HTTP transport)
+    DAP_DELETE(l_args->path);
+    DAP_DELETE(l_args->sub_url);
+    DAP_DELETE(l_args->query);
+    if (l_args->request) {
+        DAP_DELETE(l_args->request);
+    }
+    DAP_DELETE(l_args);
+}
+
+/**
+ * @brief Send unencrypted HTTP request (thread-safe)
+ */
+int dap_client_request(dap_client_t *a_client, const char *a_path, void *a_request, size_t a_request_size,
+                       dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                       void *a_callback_arg)
+{
+    dap_return_val_if_fail(a_client && a_path, -1);
+    
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Invalid client_pvt");
+        return -1;
+    }
+    
+    // Allocate request arguments
+    struct dap_client_request_args *l_args = DAP_NEW_Z(struct dap_client_request_args);
+    if (!l_args) {
+        log_it(L_ERROR, "Failed to allocate request arguments");
+        return -1;
+    }
+    
+    l_args->client = a_client;
+    l_args->path = dap_strdup(a_path);
+    l_args->request = a_request ? DAP_DUP_SIZE(a_request, a_request_size) : NULL;
+    l_args->request_size = a_request_size;
+    l_args->response_proc = a_response_proc;
+    l_args->response_error = a_response_error;
+    l_args->callback_arg = a_callback_arg;
+    l_args->result = -1;
+    
+    if (!l_args->path) {
+        DAP_DELETE(l_args);
+        return -1;
+    }
+    
+    // Execute on worker thread (worker will free l_args)
+    dap_worker_exec_callback_on(l_client_pvt->worker, s_client_request_on_worker, l_args);
+    
+    return 0; // Request is async, return success
+}
+
+/**
+ * @brief Send encrypted HTTP request (thread-safe)
+ */
+int dap_client_request_enc(dap_client_t *a_client, const char *a_path, const char *a_sub_url, const char *a_query,
+                           void *a_request, size_t a_request_size,
+                           dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                           void *a_callback_arg)
+{
+    dap_return_val_if_fail(a_client && a_path, -1);
+    
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Invalid client_pvt");
+        return -1;
+    }
+    
+    // Check if session key is available
+    if (!l_client_pvt->session_key) {
+        log_it(L_ERROR, "No session key available for encrypted request");
+        return -1;
+    }
+    
+    // Allocate request arguments
+    struct dap_client_request_enc_args *l_args = DAP_NEW_Z(struct dap_client_request_enc_args);
+    if (!l_args) {
+        log_it(L_ERROR, "Failed to allocate request_enc arguments");
+        return -1;
+    }
+    
+    l_args->client = a_client;
+    l_args->path = dap_strdup(a_path);
+    l_args->sub_url = a_sub_url ? dap_strdup(a_sub_url) : NULL;
+    l_args->query = a_query ? dap_strdup(a_query) : NULL;
+    l_args->request = a_request ? DAP_DUP_SIZE(a_request, a_request_size) : NULL;
+    l_args->request_size = a_request_size;
+    l_args->response_proc = a_response_proc;
+    l_args->response_error = a_response_error;
+    l_args->callback_arg = a_callback_arg;
+    l_args->result = -1;
+    
+    if (!l_args->path) {
+        DAP_DEL_MULTY(l_args->sub_url, l_args->query, l_args);
+        return -1;
+    }
+    
+    // Execute on worker thread (worker will free l_args)
+    dap_worker_exec_callback_on(l_client_pvt->worker, s_client_request_enc_on_worker, l_args);
+    
+    return 0; // Request is async, return success
 }

@@ -63,6 +63,7 @@
 #include "dap_stream_handshake.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
+#include "dap_client_http.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 
@@ -80,7 +81,8 @@
  * to legacy HTTP infrastructure.
  */
 typedef struct dap_stream_transport_http_private {
-    dap_http_client_t *http_client;         ///< HTTP client instance
+    dap_http_client_t *http_client;         ///< HTTP client instance (server-side)
+    dap_client_http_t *client_http_instance; ///< Client-side HTTP client instance (for requests)
     dap_http_server_t *http_server;         ///< HTTP server instance (server-side)
     dap_enc_key_t *enc_key;                 ///< Encryption key for this session
     
@@ -313,6 +315,43 @@ bool dap_stream_transport_is_http(dap_stream_t *a_stream);
  * @return HTTP client instance, or NULL
  */
 dap_http_client_t* dap_stream_transport_http_get_client(dap_stream_t *a_stream);
+
+/**
+ * @brief Send unencrypted HTTP request (public API)
+ * 
+ * This function sends an unencrypted HTTP request through the HTTP transport.
+ * Used by dap_client_request() for thread-safe requests.
+ * 
+ * @param a_client_internal Client private structure
+ * @param a_path HTTP path
+ * @param a_request Request data
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @return 0 on success, -1 on failure
+ */
+int dap_net_transport_http_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
+        size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
+        dap_client_callback_int_t a_response_error);
+
+/**
+ * @brief Send encrypted HTTP request (public API)
+ * 
+ * This function sends an encrypted HTTP request through the HTTP transport.
+ * Used by dap_client_request_enc() for thread-safe encrypted requests.
+ * 
+ * @param a_client_internal Client private structure
+ * @param a_path HTTP path
+ * @param a_sub_url Sub-URL (will be encrypted)
+ * @param a_query Query string (will be encrypted)
+ * @param a_request Request data (will be encrypted)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ */
+void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
+                        const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
+                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
 
 /** @} */ // end of dap_stream_transport_http group
 

@@ -773,8 +773,8 @@ static void test_12_stream_write(void)
     
     // Initialize stream transport private data and set state to OPEN for write test
     // In real usage, this would be done by session_start, but for unit test we need to set it manually
-    dap_stream_transport_ws_private_t *l_priv = 
-        (dap_stream_transport_ws_private_t*)l_transport->_inheritor;
+    dap_net_transport_websocket_private_t *l_priv = 
+        (dap_net_transport_websocket_private_t*)l_transport->_inheritor;
     if (l_priv) {
         l_priv->state = DAP_WS_STATE_OPEN;
     }

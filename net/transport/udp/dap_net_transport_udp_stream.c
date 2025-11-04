@@ -673,9 +673,9 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     l_priv->session_id = (uint64_t)time(NULL) | ((uint64_t)m_dap_random_u32() << 32);
     log_it(L_INFO, "UDP session created: ID=0x%lx", l_priv->session_id);
     
-    // Call callback with session ID
+    // Call callback with session ID (no full response data for UDP transport)
     if (a_callback) {
-        a_callback(a_stream, (uint32_t)l_priv->session_id, 0);
+        a_callback(a_stream, (uint32_t)l_priv->session_id, NULL, 0, 0);
     }
     
     return 0;

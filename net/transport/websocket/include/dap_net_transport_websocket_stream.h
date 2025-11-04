@@ -96,6 +96,7 @@
 #include "dap_events_socket.h"
 #include "dap_http_client.h"
 #include "dap_timerfd.h"
+#include "dap_enc_key.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,16 +141,16 @@ typedef enum dap_ws_close_code {
 /**
  * @brief WebSocket transport configuration
  */
-typedef struct dap_stream_transport_ws_config {
+typedef struct dap_net_transport_websocket_config {
     uint32_t max_frame_size;         ///< Maximum WebSocket frame size (bytes)
     uint32_t ping_interval_ms;       ///< Ping interval (milliseconds)
     uint32_t pong_timeout_ms;        ///< Pong response timeout (milliseconds)
     bool enable_compression;         ///< Enable permessage-deflate extension
-    bool client_mask_frames;         ///< Client-to-server frame masking (RFC 6455 требует true)
-    bool server_mask_frames;         ///< Server-to-client frame masking (обычно false)
+    bool client_mask_frames;         ///< Client-to-server frame masking (RFC 6455 requires true)
+    bool server_mask_frames;         ///< Server-to-client frame masking (usually false)
     char *subprotocol;               ///< WebSocket subprotocol (e.g., "dap-stream")
     char *origin;                    ///< Origin header for client connections
-} dap_stream_transport_ws_config_t;
+} dap_net_transport_websocket_config_t;
 
 /**
  * @brief WebSocket frame header (RFC 6455)
@@ -180,21 +181,21 @@ typedef enum dap_ws_state {
 /**
  * @brief WebSocket transport private data
  */
-typedef struct dap_stream_transport_ws_private {
-    dap_stream_transport_ws_config_t config;  ///< Configuration
-    dap_ws_state_t state;                     ///< Connection state
+typedef struct dap_net_transport_websocket_private {
+    dap_net_transport_websocket_config_t config;  ///< Configuration
+    dap_ws_state_t state;                         ///< Connection state
     
     // HTTP upgrade
     char *upgrade_path;                       ///< WebSocket upgrade path (e.g., "/stream")
     char *sec_websocket_key;                  ///< Client's Sec-WebSocket-Key
-    char *sec_websocket_accept;               ///< Server's Sec-WebSocket-Accept
+    char *sec_websocket_accept;                ///< Server's Sec-WebSocket-Accept
     
     // Frame processing
     uint8_t *frame_buffer;                    ///< Buffer for incoming frame assembly
     size_t frame_buffer_size;                 ///< Allocated buffer size
     size_t frame_buffer_used;                 ///< Used buffer space
-    uint64_t payload_remaining;               ///< Bytes remaining in current frame
-    bool is_fragmented;                       ///< Currently receiving fragmented message
+    uint64_t payload_remaining;                ///< Bytes remaining in current frame
+    bool is_fragmented;                        ///< Currently receiving fragmented message
     dap_ws_opcode_t fragment_opcode;          ///< Opcode of first fragment
     
     // Masking
@@ -206,14 +207,14 @@ typedef struct dap_stream_transport_ws_private {
     
     // Events socket
     dap_events_socket_t *esocket;             ///< Underlying events socket
-    dap_http_client_t *http_client;           ///< HTTP client (for upgrade)
+    dap_http_client_t *http_client;            ///< HTTP client (for upgrade)
     
     // Statistics
     uint64_t frames_sent;                     ///< Total frames sent
     uint64_t frames_received;                 ///< Total frames received
     uint64_t bytes_sent;                      ///< Total bytes sent
     uint64_t bytes_received;                  ///< Total bytes received
-} dap_stream_transport_ws_private_t;
+} dap_net_transport_websocket_private_t;
 
 // ============================================================================
 // Registration Functions
@@ -239,7 +240,7 @@ int dap_net_transport_websocket_stream_unregister(void);
  * @brief Get default WebSocket transport configuration
  * @return Default configuration structure
  */
-dap_stream_transport_ws_config_t dap_stream_transport_ws_config_default(void);
+dap_net_transport_websocket_config_t dap_net_transport_websocket_config_default(void);
 
 /**
  * @brief Set WebSocket transport configuration
@@ -247,8 +248,8 @@ dap_stream_transport_ws_config_t dap_stream_transport_ws_config_default(void);
  * @param a_config Configuration structure
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
-                                        const dap_stream_transport_ws_config_t *a_config);
+int dap_net_transport_websocket_set_config(dap_net_transport_t *a_transport,
+                                        const dap_net_transport_websocket_config_t *a_config);
 
 /**
  * @brief Get WebSocket transport configuration
@@ -256,8 +257,8 @@ int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
  * @param a_config Output configuration structure
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_ws_get_config(dap_net_transport_t *a_transport,
-                                        dap_stream_transport_ws_config_t *a_config);
+int dap_net_transport_websocket_get_config(dap_net_transport_t *a_transport,
+                                        dap_net_transport_websocket_config_t *a_config);
 
 // ============================================================================
 // Utility Functions
@@ -275,7 +276,7 @@ bool dap_stream_transport_is_websocket(const dap_stream_t *a_stream);
  * @param a_stream Stream instance
  * @return WebSocket private data or NULL
  */
-dap_stream_transport_ws_private_t* dap_stream_transport_ws_get_private(dap_stream_t *a_stream);
+dap_net_transport_websocket_private_t* dap_net_transport_websocket_get_private(dap_stream_t *a_stream);
 
 /**
  * @brief Send WebSocket close frame
@@ -284,7 +285,7 @@ dap_stream_transport_ws_private_t* dap_stream_transport_ws_get_private(dap_strea
  * @param a_reason Close reason string (optional, can be NULL)
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_ws_send_close(dap_stream_t *a_stream, 
+int dap_net_transport_websocket_send_close(dap_stream_t *a_stream, 
                                         dap_ws_close_code_t a_code,
                                         const char *a_reason);
 
@@ -295,7 +296,7 @@ int dap_stream_transport_ws_send_close(dap_stream_t *a_stream,
  * @param a_payload_size Ping payload size (max 125 bytes)
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_ws_send_ping(dap_stream_t *a_stream,
+int dap_net_transport_websocket_send_ping(dap_stream_t *a_stream,
                                        const void *a_payload,
                                        size_t a_payload_size);
 
@@ -308,7 +309,7 @@ int dap_stream_transport_ws_send_ping(dap_stream_t *a_stream,
  * @param a_bytes_received Output: bytes received
  * @return 0 on success, negative error code on failure
  */
-int dap_stream_transport_ws_get_stats(const dap_stream_t *a_stream,
+int dap_net_transport_websocket_get_stats(const dap_stream_t *a_stream,
                                        uint64_t *a_frames_sent,
                                        uint64_t *a_frames_received,
                                        uint64_t *a_bytes_sent,

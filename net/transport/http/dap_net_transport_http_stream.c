@@ -75,9 +75,14 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
 // HTTP request callbacks (forward declarations)
 static void s_http_request_error(int a_err_code, void * a_obj);
 static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
-void s_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
+static void s_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
+static int s_http_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
+        size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
+        dap_client_callback_int_t a_response_error);
+static void s_http_request_error_unencrypted(int a_err_code, void * a_obj);
+static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
 
 // Context for handshake callbacks
 typedef struct {
@@ -91,45 +96,9 @@ static s_http_handshake_ctx_t s_http_handshake_ctx = {NULL, NULL};
 typedef struct {
     dap_stream_t *stream;
     dap_net_transport_session_cb_t callback;
-    char *response_data;  // Store full response for s_stream_ctl_response
-    size_t response_size;
 } s_http_session_ctx_t;
 
-static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL, NULL, 0};
-
-/**
- * @brief Get and clear session response data from HTTP transport context
- * 
- * This function extracts the stored response data and clears the context.
- * The caller is responsible for freeing the returned memory.
- * 
- * This is an internal HTTP transport function, exported for use by dap_client_pvt.c
- * 
- * @param a_response_size Pointer to store response size (can be NULL)
- * @return Pointer to allocated response data (must be freed by caller), or NULL if no data
- */
-char *dap_net_transport_http_session_get_response(size_t *a_response_size)
-{
-    if (!s_http_session_ctx.response_data || s_http_session_ctx.response_size == 0) {
-        if (a_response_size) {
-            *a_response_size = 0;
-        }
-        return NULL;
-    }
-    
-    char *l_response = s_http_session_ctx.response_data;
-    size_t l_size = s_http_session_ctx.response_size;
-    
-    // Clear context
-    s_http_session_ctx.response_data = NULL;
-    s_http_session_ctx.response_size = 0;
-    
-    if (a_response_size) {
-        *a_response_size = l_size;
-    }
-    
-    return l_response;
-}
+static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL};
 
 /**
  * @brief Handshake error callback wrapper
@@ -180,30 +149,32 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
     
     // Parse session response to extract session_id
     uint32_t l_session_id = 0;
+    char *l_response_data = NULL;
+    size_t l_response_size = 0;
+    
     if (a_data && a_data_size > 0) {
         char *l_response_str = (char*)a_data;
         // Parse response format: "session_id stream_key ..."
         sscanf(l_response_str, "%u", &l_session_id);
         
-        // Store full response for s_stream_ctl_response
-        // This will be retrieved by s_http_session_get_response() in s_session_create_callback_wrapper
-        s_http_session_ctx.response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-        if (s_http_session_ctx.response_data) {
-            memcpy(s_http_session_ctx.response_data, a_data, a_data_size);
-            s_http_session_ctx.response_data[a_data_size] = '\0';
-            s_http_session_ctx.response_size = a_data_size;
+        // Allocate and copy full response data for transport callback
+        // Caller will free it after use
+        l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+        if (l_response_data) {
+            memcpy(l_response_data, a_data, a_data_size);
+            l_response_data[a_data_size] = '\0';
+            l_response_size = a_data_size;
         }
     }
     
-    // Call transport callback with session_id
+    // Call transport callback with session_id and full response data
     if (s_http_session_ctx.callback) {
-        s_http_session_ctx.callback(s_http_session_ctx.stream, l_session_id, 0);
+        s_http_session_ctx.callback(s_http_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
     }
     
-    // Clear stream and callback context (but keep response_data for s_session_create_callback_wrapper)
+    // Clear context
     s_http_session_ctx.stream = NULL;
     s_http_session_ctx.callback = NULL;
-    // response_data will be retrieved and freed in s_session_create_callback_wrapper
 }
 
 /**
@@ -217,17 +188,12 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
     
     // Call transport callback with error
     if (s_http_session_ctx.callback) {
-        s_http_session_ctx.callback(s_http_session_ctx.stream, 0, a_error);
+        s_http_session_ctx.callback(s_http_session_ctx.stream, 0, NULL, 0, a_error);
     }
     
     // Clear context
-    if (s_http_session_ctx.response_data) {
-        DAP_DELETE(s_http_session_ctx.response_data);
-        s_http_session_ctx.response_data = NULL;
-    }
     s_http_session_ctx.stream = NULL;
     s_http_session_ctx.callback = NULL;
-    s_http_session_ctx.response_size = 0;
 }
 
 // ============================================================================
@@ -448,10 +414,10 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     s_http_handshake_ctx.callback = a_callback;
     
     // Make HTTP request using legacy infrastructure
-    int l_res = dap_client_pvt_request(l_client_pvt, l_enc_init_url,
-                                       l_data_str, l_data_str_enc_size, 
-                                       s_http_handshake_response_wrapper, 
-                                       s_http_handshake_error_wrapper);
+    int l_res = s_http_request(l_client_pvt, l_enc_init_url,
+                               l_data_str, l_data_str_enc_size, 
+                               s_http_handshake_response_wrapper, 
+                               s_http_handshake_error_wrapper);
     
     DAP_DELETE(l_data_str);
     
@@ -494,8 +460,7 @@ static int s_http_transport_handshake_process(dap_stream_t *a_stream,
  * @brief Create session after handshake
  * 
  * For HTTP transport, session creation is performed via HTTP POST to /stream_ctl endpoint.
- * This function wraps the legacy HTTP infrastructure (dap_client_pvt_request_enc) 
- * behind the transport abstraction layer.
+ * This function wraps the HTTP request infrastructure behind the transport abstraction layer.
  */
 static int s_http_transport_session_create(dap_stream_t *a_stream,
                                              dap_net_session_params_t *a_params,
@@ -618,14 +583,134 @@ static ssize_t s_http_transport_write(dap_stream_t *a_stream, const void *a_data
 }
 
 /**
+ * @brief Send unencrypted HTTP request (public API)
+ * 
+ * This is a public wrapper for internal HTTP request functionality.
+ * Used by dap_client_request() for thread-safe requests.
+ * 
+ * @param a_client_pvt Client private structure
+ * @param a_path HTTP path
+ * @param a_request Request data
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @return 0 on success, -1 on failure
+ */
+int dap_net_transport_http_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
+        size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
+        dap_client_callback_int_t a_response_error)
+{
+    return s_http_request(a_client_internal, a_path, a_request, a_request_size, a_response_proc, a_response_error);
+}
+
+/**
+ * @brief Send encrypted HTTP request (public API)
+ * 
+ * This is a public wrapper for internal HTTP encrypted request functionality.
+ * Used by dap_client_request_enc() for thread-safe encrypted requests.
+ * 
+ * @param a_client_pvt Client private structure
+ * @param a_path HTTP path
+ * @param a_sub_url Sub-URL (will be encrypted)
+ * @param a_query Query string (will be encrypted)
+ * @param a_request Request data (will be encrypted)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ */
+void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
+                        const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
+                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
+{
+    s_http_request_enc(a_client_internal, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error);
+}
+
+/**
+ * @brief Send unencrypted HTTP request
+ * 
+ * This function is HTTP-specific and encapsulates the unencrypted HTTP request logic.
+ * It's used internally by HTTP transport for handshake (unencrypted requests).
+ */
+static int s_http_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
+        size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
+        dap_client_callback_int_t a_response_error)
+{
+    debug_if(s_debug_more, L_DEBUG, "s_http_request: path='%s', request_size=%zu, worker=%p", 
+             a_path, a_request_size, a_client_internal->worker);
+    
+    a_client_internal->request_response_callback = a_response_proc;
+    a_client_internal->request_error_callback = a_response_error;
+    a_client_internal->is_encrypted = false;
+    
+    // Get HTTP transport private from client's stream transport
+    dap_stream_transport_http_private_t *l_priv = NULL;
+    if (a_client_internal->stream && a_client_internal->stream->stream_transport &&
+        a_client_internal->stream->stream_transport->type == DAP_NET_TRANSPORT_HTTP) {
+        l_priv = (dap_stream_transport_http_private_t*)a_client_internal->stream->stream_transport->_inheritor;
+    }
+    
+    dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker, 
+                                            a_client_internal->client->link_info.uplink_addr,
+                                            a_client_internal->client->link_info.uplink_port,
+                                            a_request ? "POST" : "GET", "text/text", a_path, a_request,
+                                            a_request_size, NULL, s_http_request_response_unencrypted, 
+                                            s_http_request_error_unencrypted, a_client_internal, NULL);
+    
+    if (l_http_client == NULL) {
+        debug_if(s_debug_more, L_ERROR, "dap_client_http_request returned NULL for path='%s'", a_path);
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "dap_client_http_request succeeded for path='%s'", a_path);
+        // Store HTTP client instance in transport private
+        if (l_priv) {
+            l_priv->client_http_instance = l_http_client;
+        }
+    }
+    
+    return l_http_client == NULL;
+}
+
+/**
+ * @brief Unencrypted HTTP request error callback
+ */
+static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
+{
+    if (a_obj == NULL) {
+        log_it(L_ERROR,"Object is NULL for s_http_request_error_unencrypted");
+        return;
+    }
+    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    assert(l_client_pvt);
+    if (l_client_pvt && l_client_pvt->request_error_callback)
+          l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
+}
+
+/**
+ * @brief Unencrypted HTTP request response callback
+ */
+static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+{
+    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    assert(l_client_pvt);
+    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: response_size=%zu, is_encrypted=%d, callback=%p", 
+             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
+    if ( !l_client_pvt->request_response_callback )
+        return log_it(L_ERROR, "No request_response_callback in client!");
+    
+    if (a_response && a_response_size) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: calling callback with unencrypted response (size=%zu)", a_response_size);
+        l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
+    } else {
+        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
+    }
+}
+
+/**
  * @brief Send encrypted HTTP request
  * 
  * This function is HTTP-specific and encapsulates the encryption and HTTP request logic.
  * It's used internally by HTTP transport for session creation and other encrypted requests.
- * 
- * This function is exported for use by dap_client_pvt.c wrapper.
  */
-void s_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
+static void s_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
 {
@@ -668,10 +753,27 @@ void s_http_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path
     a_client_internal->request_response_callback    = a_response_proc;
     a_client_internal->request_error_callback       = a_response_error;
     a_client_internal->is_encrypted                 = true;
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
+    
+    // Get HTTP transport private from client's stream transport
+    dap_stream_transport_http_private_t *l_priv = NULL;
+    if (a_client_internal->stream && a_client_internal->stream->stream_transport &&
+        a_client_internal->stream->stream_transport->type == DAP_NET_TRANSPORT_HTTP) {
+        l_priv = (dap_stream_transport_http_private_t*)a_client_internal->stream->stream_transport->_inheritor;
+    }
+    
+    dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker,
         a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port,
         a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
         s_http_request_response, s_http_request_error, a_client_internal, l_custom);
+    
+    if (!l_http_client) {
+        log_it(L_ERROR, "Failed to create HTTP client for encrypted request");
+    } else {
+        // Store HTTP client instance in transport private
+        if (l_priv) {
+            l_priv->client_http_instance = l_http_client;
+        }
+    }
     
     DAP_DEL_MULTY(l_path, l_request_enc, l_custom);
 }
@@ -687,7 +789,6 @@ static void s_http_request_error(int a_err_code, void * a_obj)
     }
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
-    l_client_pvt->http_client = NULL;
     if (l_client_pvt && l_client_pvt->request_error_callback)
           l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
 }
@@ -703,7 +804,6 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
              a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
     if ( !l_client_pvt->request_response_callback )
         return log_it(L_ERROR, "No request_response_callback in encrypted client!");
-    l_client_pvt->http_client = NULL;
     
     if (a_response && a_response_size) {
         if (l_client_pvt->is_encrypted) {

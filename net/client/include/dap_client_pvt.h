@@ -25,13 +25,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "dap_client.h"
-#include "dap_client_http.h"
 #include "dap_stream.h"
 #include "dap_events_socket.h"
 #include "dap_cert.h"
 
 typedef struct dap_enc_key dap_enc_key_t;
-typedef struct dap_http_client dap_http_client_t;
 
 typedef struct dap_client_pvt {
     dap_client_t *client;
@@ -42,7 +40,6 @@ typedef struct dap_client_pvt {
     bool authorized;
 
     dap_worker_t *worker;
-    dap_client_http_t *http_client;
 
     dap_enc_key_type_t session_key_type;
     dap_enc_key_type_t session_key_open_type;
@@ -100,8 +97,8 @@ void dap_client_pvt_deinit();
 void dap_client_pvt_stage_transaction_begin(dap_client_pvt_t * dap_client_pvt_t, dap_client_stage_t a_stage_next,
                                                  dap_client_callback_t a_done_callback);
 
-int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
-                    size_t a_request_size,  dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
+// Stage FSM advance callback (defined in dap_client.c)
+void dap_client_pvt_stage_fsm_advance(dap_client_t * a_client, void * a_arg);
 
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);

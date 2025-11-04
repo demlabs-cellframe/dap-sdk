@@ -67,10 +67,6 @@ static void s_stream_ctl_response(dap_client_t *a_client, void *a_data, size_t a
 static void s_stream_ctl_error(dap_client_t *a_client, void *a_arg, int a_error);
 static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg);
 
-// STREAM stage callbacks
-static void s_request_response(void *a_response, size_t a_response_size, void * a_obj, http_status_code_t http_status);
-static void s_request_error(int a_error_code, void *a_obj);
-
 // stream callbacks
 static void s_stream_es_callback_connected(dap_events_socket_t * a_es);
 static void s_stream_connected(dap_client_pvt_t * a_client_pvt);
@@ -81,6 +77,8 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error);
 
 // Handshake callback wrapper
 static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, size_t a_data_size, int a_error);
+// Session create callback wrapper
+static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error);
 
 // Timer callbacks
 static bool s_stream_timer_timeout_check(void * a_arg);
@@ -254,11 +252,46 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         dap_net_transport_t *l_transport = l_client_pvt->stream ? l_client_pvt->stream->stream_transport : NULL;
         if (l_transport && l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP) {
             // UDP/DNS handshake callback called without data - this is normal
-            // Proceed to next stage (session creation happens via transport protocol)
-            log_it(L_DEBUG, "UDP/DNS handshake completed, proceeding to next stage");
-            s_enc_init_response(l_client, NULL, 0); // Process empty response for UDP/DNS
+            // Handshake is handled by transport protocol, so we just mark stage as done
+            log_it(L_DEBUG, "UDP/DNS handshake completed via transport protocol, marking stage as done");
+            
+            // For UDP/DNS, if we're in STAGE_STREAM_SESSION, we need to create session after handshake
+            // (for HTTP/WebSocket, session_create happens in STAGE_STREAM_CTL)
+            if (l_client_pvt->stage == STAGE_STREAM_SESSION && l_transport->ops && l_transport->ops->session_create) {
+                log_it(L_DEBUG, "UDP/DNS handshake completed, creating session");
+                
+                // Prepare session parameters
+                dap_net_session_params_t l_session_params = {
+                    .channels = l_client_pvt->client->active_channels,
+                    .enc_type = l_client_pvt->session_key_type,
+                    .enc_key_size = l_client_pvt->session_key_block_size,
+                    .enc_headers = false,
+                    .protocol_version = DAP_CLIENT_PROTOCOL_VERSION
+                };
+                
+                // Call transport session_create
+                int l_session_ret = l_transport->ops->session_create(l_client_pvt->stream, &l_session_params, 
+                                                                     s_session_create_callback_wrapper);
+                
+                if (l_session_ret != 0) {
+                    log_it(L_ERROR, "Failed to initiate session create via transport for UDP/DNS: %d", l_session_ret);
+                    l_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                    l_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                    s_stage_status_after(l_client_pvt);
+                    return;
+                }
+                
+                // Session create is async, callback will handle response
+                // Set done callback to advance to next stage when session create completes
+                l_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
+                l_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+            } else {
+                // For STAGE_ENC_INIT, just mark as done
+                l_client_pvt->stage_status = STAGE_STATUS_DONE;
+                s_stage_status_after(l_client_pvt);
+            }
         } else {
-            log_it(L_ERROR, "Handshake completed but no response data");
+            log_it(L_ERROR, "Handshake completed but no response data for non-UDP transport");
             l_client_pvt->stage_status = STAGE_STATUS_ERROR;
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             s_stage_status_after(l_client_pvt);
@@ -267,7 +300,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 }
 
 // Session create callback wrapper
-static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, int a_error)
+static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error)
 {
     if (!a_stream || !a_stream->esocket || !a_stream->esocket->_inheritor) {
         return;
@@ -279,11 +312,11 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
         return;
     }
     
-    // Check if this is a temporary stream (for HTTP/WebSocket session create) or main stream
+    // Check if this is a temporary stream (for TCP-based transports session create) or main stream
     // Temporary stream is not the main stream, main stream is stored in l_client_pvt->stream
     bool l_is_temporary_stream = (a_stream != l_client_pvt->stream);
     
-    // Cleanup temporary stream only (for HTTP/WebSocket session create)
+    // Cleanup temporary stream only (for TCP-based transports session create)
     if (l_is_temporary_stream) {
         log_it(L_DEBUG, "Cleaning up temporary stream for session create");
         dap_stream_delete_unsafe(a_stream);
@@ -302,36 +335,23 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     }
     
     // Process session create response
-    // For HTTP transport, full response is stored in HTTP transport context
-    // For UDP/DNS, we need to construct response from session_id
+    // Transport provides full response data if available (for TCP-based transports),
+    // or only session_id (for UDP/DNS transports)
     if (a_session_id != 0) {
-        char *l_response_data = NULL;
-        size_t l_response_size = 0;
-        
-        // For HTTP transport, get full response from HTTP transport context
-        if (l_client_pvt->client->transport_type == DAP_NET_TRANSPORT_HTTP) {
-            // Declare helper function from HTTP transport
-            extern char *dap_net_transport_http_session_get_response(size_t *a_response_size);
-            
-            l_response_data = dap_net_transport_http_session_get_response(&l_response_size);
-            
-            if (l_response_data && l_response_size > 0) {
-                // Use full response from HTTP transport
-                s_stream_ctl_response(l_client, l_response_data, l_response_size);
-                // Free response data after use
-                DAP_DELETE(l_response_data);
-            } else {
-                // Fallback: construct minimal response if full response not available
-                log_it(L_WARNING, "HTTP session response not available, constructing minimal response from session_id");
-                char l_response_str[4096];
-                snprintf(l_response_str, sizeof(l_response_str), "%u", a_session_id);
-                s_stream_ctl_response(l_client, l_response_str, strlen(l_response_str));
-            }
+        if (a_response_data && a_response_size > 0) {
+            // Use full response data provided by transport
+            s_stream_ctl_response(l_client, (void*)a_response_data, a_response_size);
+            // Free response data (transport allocated it for us)
+            DAP_DELETE(a_response_data);
         } else {
-            // For UDP/DNS transports, session_id is sufficient
-            // Construct minimal response format: "session_id"
+            // Transport provided only session_id (UDP/DNS transports)
+            // Construct minimal response format: "session_id stream_key"
+            // stream_key is required by s_stream_ctl_response parser, but for UDP/DNS
+            // we don't have a real stream_key from server response
+            // Use a dummy stream_key (empty string) to satisfy parser requirements
+            // The actual stream connection for UDP/DNS happens via transport protocol
             char l_response_str[4096];
-            snprintf(l_response_str, sizeof(l_response_str), "%u", a_session_id);
+            snprintf(l_response_str, sizeof(l_response_str), "%u ", a_session_id);
             s_stream_ctl_response(l_client, l_response_str, strlen(l_response_str));
         }
     } else {
@@ -387,10 +407,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
         a_client_pvt->reconnect_timer = NULL;
     }
-    if (a_client_pvt->http_client) {
-        dap_client_http_close_unsafe(a_client_pvt->http_client);
-        a_client_pvt->http_client = NULL;
-    }
+    // http_client is now managed by transport layer, no need to clean it up here
     if (a_client_pvt->stream_es) {
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
@@ -857,6 +874,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     }
                     
                     // Handshake is async, callback will handle response
+                    // Set done callback to advance to next stage when handshake completes
+                    a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 } break;
 
@@ -947,6 +966,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     }
                     
                     // Session create is async, callback will handle response
+                    // Set done callback to advance to next stage when session create completes
+                    a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 } break;
 
@@ -1023,8 +1044,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->stream->stream_transport = l_transport;
                         log_it(L_INFO, "Stream transport set to %d", l_transport_type);
                     } else {
-                        log_it(L_WARNING, "Transport type %d not available, falling back to HTTP", l_transport_type);
-                        a_client_pvt->stream->stream_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+                        // Fail-fast: configured transport type not available
+                        log_it(L_ERROR, "Transport type %d not available, aborting connection", l_transport_type);
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                        s_stage_status_after(a_client_pvt);
+                        return;
                     }
 
                     // Check if transport uses connectionless protocol (UDP/DNS)
@@ -1240,9 +1265,16 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_list_free_full(a_client_pvt->pkt_queue, NULL);
                     a_client_pvt->pkt_queue = NULL;
                 }
-            } else if (a_client_pvt->stage_status_done_callback) {
-                // go to next stage
-                a_client_pvt->stage_status_done_callback(a_client_pvt->client, NULL);
+            } else {
+                // Go to next stage via callback
+                if (!a_client_pvt->stage_status_done_callback) {
+                    log_it(L_ERROR, "Stage %s completed but stage_status_done_callback is NULL", 
+                           dap_client_stage_str(a_client_pvt->stage));
+                    a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                    a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                } else {
+                    a_client_pvt->stage_status_done_callback(a_client_pvt->client, NULL);
+                }
             }
         } break;
 
@@ -1275,92 +1307,6 @@ void dap_client_pvt_stage_transaction_begin(dap_client_pvt_t * a_client_internal
     a_client_internal->stage = a_stage_next;
     a_client_internal->stage_status = STAGE_STATUS_IN_PROGRESS;
     s_stage_status_after(a_client_internal);
-}
-
-/**
- * @brief dap_client_internal_request
- * @param a_client_internal
- * @param a_path
- * @param a_request
- * @param a_request_size
- * @param a_response_proc
- */
-int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_path, void * a_request,
-        size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
-        dap_client_callback_int_t a_response_error)
-{
-    debug_if(s_debug_more, L_DEBUG, "dap_client_pvt_request: path='%s', request_size=%zu, worker=%p", 
-             a_path, a_request_size, a_client_internal->worker);
-    
-    a_client_internal->request_response_callback = a_response_proc;
-    a_client_internal->request_error_callback = a_response_error;
-    a_client_internal->is_encrypted = false;
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->link_info.uplink_addr,
-                                            a_client_internal->client->link_info.uplink_port,
-                                            a_request ? "POST" : "GET", "text/text", a_path, a_request,
-                                            a_request_size, NULL, s_request_response, s_request_error, a_client_internal, NULL);
-    
-    if (a_client_internal->http_client == NULL) {
-        debug_if(s_debug_more, L_ERROR, "dap_client_http_request returned NULL for path='%s'", a_path);
-    } else {
-        debug_if(s_debug_more, L_DEBUG, "dap_client_http_request succeeded for path='%s'", a_path);
-    }
-    
-    return a_client_internal->http_client == NULL;
-}
-
-/**
- * @brief s_request_error
- * @param a_err_code
- * @param a_obj
- */
-static void s_request_error(int a_err_code, void * a_obj)
-{
-    if (a_obj == NULL) {
-        log_it(L_ERROR,"Object is NULL for s_request_error");
-        return;
-    }
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
-    assert(l_client_pvt);
-    l_client_pvt->http_client = NULL;
-    if (l_client_pvt && l_client_pvt->request_error_callback)
-          l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
-}
-
-/**
- * @brief s_request_response
- * @param a_response
- * @param a_response_size
- * @param a_obj
- */
-static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
-{
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
-    assert(l_client_pvt);
-    debug_if(s_debug_more, L_DEBUG, "s_request_response: response_size=%zu, is_encrypted=%d, callback=%p", 
-             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
-    if ( !l_client_pvt->request_response_callback )
-        return log_it(L_ERROR, "No request_response_callback in encrypted client!");
-    l_client_pvt->http_client = NULL;
-    
-    if (a_response && a_response_size) {
-        if (l_client_pvt->is_encrypted) {
-            if (!l_client_pvt->session_key)
-                return log_it(L_ERROR, "No session key in encrypted client!");
-            size_t l_len = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, DAP_ENC_DATA_TYPE_RAW);
-            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
-            l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
-                                   l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
-            l_response[l_len] = '\0';
-            l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
-            DAP_DELETE(l_response);
-        } else {
-            debug_if(s_debug_more, L_DEBUG, "s_request_response: calling callback with unencrypted response (size=%zu)", a_response_size);
-            l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
-        }
-    } else {
-        log_it(L_WARNING, "s_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
-    }
 }
 
 /**
@@ -1519,6 +1465,18 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
     DAP_DEL_MULTY(l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message);
     if (l_client_pvt->last_error == ERROR_NO_ERROR) {
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
+        
+        // Load encryption context into transport after successful handshake
+        if (l_client_pvt->stream && l_client_pvt->stream->stream_transport) {
+            dap_net_transport_t *l_transport = l_client_pvt->stream->stream_transport;
+            l_transport->session_key = l_client_pvt->session_key;
+            if (l_client_pvt->session_key_id) {
+                l_transport->session_key_id = dap_strdup(l_client_pvt->session_key_id);
+            }
+            l_transport->uplink_protocol_version = l_client_pvt->uplink_protocol_version;
+            l_transport->remote_protocol_version = l_client_pvt->remote_protocol_version;
+            l_transport->is_close_session = l_client_pvt->is_close_session;
+        }
     } else {
         DAP_DEL_Z(l_client_pvt->session_key_id);
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;

@@ -73,6 +73,15 @@ typedef struct dap_events_socket_callbacks dap_events_socket_callbacks_t;
 typedef struct dap_cert dap_cert_t;
 typedef struct dap_stream_session dap_stream_session_t;
 
+// Forward declarations for client types (to avoid circular dependencies)
+typedef struct dap_client dap_client_t;
+typedef struct dap_client_pvt dap_client_pvt_t;
+
+// Forward declarations for client callback types (defined in dap_client.h)
+typedef void (*dap_client_callback_t)(dap_client_t *, void *);
+typedef void (*dap_client_callback_int_t)(dap_client_t *, void *, int);
+typedef void (*dap_client_callback_data_size_t)(dap_client_t *, void *, size_t);
+
 /**
  * @brief Transport type enumeration
  * 
@@ -147,10 +156,17 @@ typedef void (*dap_net_transport_handshake_cb_t)(dap_stream_t *a_stream,
  * @brief Callback invoked when session is created
  * @param a_stream Stream with new session
  * @param a_session_id Assigned session identifier
+ * @param a_response_data Full response data from server (may be NULL, must be freed by caller if not NULL)
+ * @param a_response_size Size of response data in bytes
  * @param a_error_code 0 on success, negative error code on failure
+ * @note If a_response_data is not NULL, the caller is responsible for freeing it.
+ *       Transports that provide full response should allocate and pass it here.
+ *       Transports that only provide session_id should pass NULL for a_response_data.
  */
 typedef void (*dap_net_transport_session_cb_t)(dap_stream_t *a_stream, 
-                                                   uint32_t a_session_id, 
+                                                   uint32_t a_session_id,
+                                                   const char *a_response_data,
+                                                   size_t a_response_size,
                                                    int a_error_code);
 
 /**
@@ -402,6 +418,13 @@ struct dap_net_transport {
     dap_net_transport_socket_type_t socket_type; ///< Underlying socket type (TCP/UDP/other)
     char name[64];                         ///< Human-readable transport name
     UT_hash_handle hh;                     ///< Hash table handle (keyed by type)
+    
+    // Encryption context (loaded from client_pvt after handshake)
+    dap_enc_key_t *session_key;           ///< Session encryption key
+    char *session_key_id;                  ///< Session key ID
+    uint32_t uplink_protocol_version;      ///< Uplink protocol version
+    uint32_t remote_protocol_version;      ///< Remote protocol version
+    bool is_close_session;                 ///< Close session flag
 };
 
 /**

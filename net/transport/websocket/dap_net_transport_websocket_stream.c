@@ -52,6 +52,12 @@
 #include "dap_worker.h"
 #include "dap_events_socket.h"
 #include "dap_net.h"
+#include "dap_client.h"
+#include "dap_client_pvt.h"
+#include "dap_client_http.h"
+#include "http_status_code.h"
+#include "dap_net_transport_http_stream.h"
+#include "dap_stream_ctl.h"
 
 #define LOG_TAG "dap_net_transport_websocket_stream"
 
@@ -103,8 +109,8 @@ static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key
 static bool s_ws_ping_timer_callback(void *a_user_data);
 
 // Helper to get private data
-static dap_stream_transport_ws_private_t *s_get_private(dap_net_transport_t *a_transport);
-static dap_stream_transport_ws_private_t *s_get_private_from_stream(dap_stream_t *a_stream);
+static dap_net_transport_websocket_private_t *s_get_private(dap_net_transport_t *a_transport);
+static dap_net_transport_websocket_private_t *s_get_private_from_stream(dap_stream_t *a_stream);
 
 // ============================================================================
 // Transport Operations Table
@@ -187,9 +193,9 @@ int dap_net_transport_websocket_stream_unregister(void)
 /**
  * @brief Get default WebSocket configuration
  */
-dap_stream_transport_ws_config_t dap_stream_transport_ws_config_default(void)
+dap_net_transport_websocket_config_t dap_net_transport_websocket_config_default(void)
 {
-    dap_stream_transport_ws_config_t l_config = {
+    dap_net_transport_websocket_config_t l_config = {
         .max_frame_size = WS_DEFAULT_MAX_FRAME_SIZE,
         .ping_interval_ms = WS_DEFAULT_PING_INTERVAL,
         .pong_timeout_ms = WS_DEFAULT_PONG_TIMEOUT,
@@ -205,15 +211,15 @@ dap_stream_transport_ws_config_t dap_stream_transport_ws_config_default(void)
 /**
  * @brief Set WebSocket configuration
  */
-int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
-                                        const dap_stream_transport_ws_config_t *a_config)
+int dap_net_transport_websocket_set_config(dap_net_transport_t *a_transport,
+                                        const dap_net_transport_websocket_config_t *a_config)
 {
     if (!a_transport || !a_config) {
         log_it(L_ERROR, "Invalid parameters");
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private(a_transport);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private(a_transport);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
@@ -228,7 +234,7 @@ int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
     }
 
     // Copy configuration
-    memcpy(&l_priv->config, a_config, sizeof(dap_stream_transport_ws_config_t));
+    memcpy(&l_priv->config, a_config, sizeof(dap_net_transport_websocket_config_t));
 
     // Duplicate strings
     if (a_config->subprotocol) {
@@ -245,21 +251,21 @@ int dap_stream_transport_ws_set_config(dap_net_transport_t *a_transport,
 /**
  * @brief Get WebSocket configuration
  */
-int dap_stream_transport_ws_get_config(dap_net_transport_t *a_transport,
-                                        dap_stream_transport_ws_config_t *a_config)
+int dap_net_transport_websocket_get_config(dap_net_transport_t *a_transport,
+                                        dap_net_transport_websocket_config_t *a_config)
 {
     if (!a_transport || !a_config) {
         log_it(L_ERROR, "Invalid parameters");
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private(a_transport);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private(a_transport);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
     }
 
-    memcpy(a_config, &l_priv->config, sizeof(dap_stream_transport_ws_config_t));
+    memcpy(a_config, &l_priv->config, sizeof(dap_net_transport_websocket_config_t));
     return 0;
 }
 
@@ -278,14 +284,14 @@ static int s_ws_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
     }
 
     // Allocate private data
-    dap_stream_transport_ws_private_t *l_priv = DAP_NEW_Z(dap_stream_transport_ws_private_t);
+    dap_net_transport_websocket_private_t *l_priv = DAP_NEW_Z(dap_net_transport_websocket_private_t);
     if (!l_priv) {
         log_it(L_CRITICAL, "Failed to allocate WebSocket private data");
         return -2;
     }
 
     // Set default configuration
-    l_priv->config = dap_stream_transport_ws_config_default();
+    l_priv->config = dap_net_transport_websocket_config_default();
     l_priv->state = DAP_WS_STATE_CLOSED;
     
     // Allocate initial frame buffer
@@ -313,8 +319,8 @@ static void s_ws_deinit(dap_net_transport_t *a_transport)
         return;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = 
-        (dap_stream_transport_ws_private_t*)a_transport->_inheritor;
+    dap_net_transport_websocket_private_t *l_priv = 
+        (dap_net_transport_websocket_private_t*)a_transport->_inheritor;
 
     // Stop ping timer
     if (l_priv->ping_timer) {
@@ -359,7 +365,7 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
@@ -476,21 +482,339 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
 }
 
 /**
- * @brief Create session
+ * @brief WebSocket session create context
+ */
+typedef struct {
+    dap_stream_t *stream;
+    dap_net_transport_session_cb_t callback;
+} s_ws_session_ctx_t;
+
+static s_ws_session_ctx_t s_ws_session_ctx = {NULL, NULL};
+
+/**
+ * @brief WebSocket session create response callback wrapper (HTTP callback signature)
+ */
+static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size, void *a_arg, http_status_code_t a_status)
+{
+    if (!a_data || !s_ws_session_ctx.stream) {
+        return;
+    }
+    
+    // Get encryption context from transport
+    dap_net_transport_t *l_transport = s_ws_session_ctx.stream->stream_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return;
+    }
+    
+    // Parse session response to extract session_id
+    uint32_t l_session_id = 0;
+    char *l_response_data = NULL;
+    size_t l_response_size = 0;
+    
+    if (a_data && a_data_size > 0) {
+        // Decrypt response if encrypted
+        if (l_transport->session_key) {
+            size_t l_len = dap_enc_decode_out_size(l_transport->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
+            if (l_response) {
+                l_len = dap_enc_decode(l_transport->session_key, a_data, a_data_size,
+                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
+                l_response[l_len] = '\0';
+                
+                // Parse response format: "session_id stream_key ..."
+                sscanf(l_response, "%u", &l_session_id);
+                
+                // Allocate and copy full response data for transport callback
+                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
+                if (l_response_data) {
+                    memcpy(l_response_data, l_response, l_len);
+                    l_response_data[l_len] = '\0';
+                    l_response_size = l_len;
+                }
+                
+                DAP_DELETE(l_response);
+            }
+        } else {
+            // Unencrypted response
+            char *l_response_str = (char*)a_data;
+            sscanf(l_response_str, "%u", &l_session_id);
+            
+            // Allocate and copy full response data for transport callback
+            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+            if (l_response_data) {
+                memcpy(l_response_data, a_data, a_data_size);
+                l_response_data[a_data_size] = '\0';
+                l_response_size = a_data_size;
+            }
+        }
+    }
+    
+    // Call transport callback with session_id and full response data
+    if (s_ws_session_ctx.callback) {
+        s_ws_session_ctx.callback(s_ws_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
+    }
+    
+    // Clear context
+    s_ws_session_ctx.stream = NULL;
+    s_ws_session_ctx.callback = NULL;
+}
+
+/**
+ * @brief WebSocket session create error callback wrapper (HTTP callback signature)
+ */
+static void s_ws_session_error_wrapper_http(int a_error, void *a_arg)
+{
+    if (!s_ws_session_ctx.stream) {
+        return;
+    }
+    
+    // Call transport callback with error
+    if (s_ws_session_ctx.callback) {
+        s_ws_session_ctx.callback(s_ws_session_ctx.stream, 0, NULL, 0, a_error);
+    }
+    
+    // Clear context
+    s_ws_session_ctx.stream = NULL;
+    s_ws_session_ctx.callback = NULL;
+}
+
+/**
+ * @brief WebSocket session create response callback wrapper (legacy - kept for compatibility)
+ */
+static void s_ws_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
+{
+    if (!a_client || !s_ws_session_ctx.stream) {
+        return;
+    }
+    
+    // Get encryption context from transport
+    dap_net_transport_t *l_transport = s_ws_session_ctx.stream->stream_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return;
+    }
+    
+    // Parse session response to extract session_id
+    uint32_t l_session_id = 0;
+    char *l_response_data = NULL;
+    size_t l_response_size = 0;
+    
+    if (a_data && a_data_size > 0) {
+        // Decrypt response if encrypted
+        if (l_transport->session_key) {
+            size_t l_len = dap_enc_decode_out_size(l_transport->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
+            if (l_response) {
+                l_len = dap_enc_decode(l_transport->session_key, a_data, a_data_size,
+                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
+                l_response[l_len] = '\0';
+                
+                // Parse response format: "session_id stream_key ..."
+                sscanf(l_response, "%u", &l_session_id);
+                
+                // Allocate and copy full response data for transport callback
+                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
+                if (l_response_data) {
+                    memcpy(l_response_data, l_response, l_len);
+                    l_response_data[l_len] = '\0';
+                    l_response_size = l_len;
+                }
+                
+                DAP_DELETE(l_response);
+            }
+        } else {
+            // Unencrypted response
+            char *l_response_str = (char*)a_data;
+            sscanf(l_response_str, "%u", &l_session_id);
+            
+            // Allocate and copy full response data for transport callback
+            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+            if (l_response_data) {
+                memcpy(l_response_data, a_data, a_data_size);
+                l_response_data[a_data_size] = '\0';
+                l_response_size = a_data_size;
+            }
+        }
+    }
+    
+    // Call transport callback with session_id and full response data
+    if (s_ws_session_ctx.callback) {
+        s_ws_session_ctx.callback(s_ws_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
+    }
+    
+    // Clear context
+    s_ws_session_ctx.stream = NULL;
+    s_ws_session_ctx.callback = NULL;
+}
+
+/**
+ * @brief WebSocket session create error callback wrapper
+ */
+static void s_ws_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
+{
+    if (!a_client || !s_ws_session_ctx.stream) {
+        return;
+    }
+    
+    // Call transport callback with error
+    if (s_ws_session_ctx.callback) {
+        s_ws_session_ctx.callback(s_ws_session_ctx.stream, 0, NULL, 0, a_error);
+    }
+    
+    // Clear context
+    s_ws_session_ctx.stream = NULL;
+    s_ws_session_ctx.callback = NULL;
+}
+
+/**
+ * @brief Send encrypted HTTP request using WebSocket's own HTTP client
+ * 
+ * This function is similar to s_http_request_enc but uses WebSocket's HTTP client
+ * and encryption context from dap_net_transport.
+ */
+static void s_ws_send_http_request_enc(dap_net_transport_t *a_transport, dap_http_client_t *a_http_client,
+                                       dap_worker_t *a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
+                                       const char *a_path, const char *a_sub_url, const char *a_query,
+                                       void *a_request, size_t a_request_size,
+                                       dap_client_callback_data_size_t a_response_proc,
+                                       dap_client_callback_int_t a_response_error)
+{
+    if (!a_transport || !a_http_client || !a_worker) {
+        log_it(L_ERROR, "Invalid parameters for s_ws_send_http_request_enc");
+        return;
+    }
+    
+    dap_enc_data_type_t l_enc_type = a_transport->uplink_protocol_version >= 21
+        ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
+    char *l_path = NULL, *l_request_enc = NULL;
+    if (a_path && *a_path) {
+        size_t l_suburl_len = a_sub_url && *a_sub_url ? dap_strlen(a_sub_url) : 0,
+               l_suburl_enc_size = dap_enc_code_out_size(a_transport->session_key, l_suburl_len, l_enc_type),
+               l_query_len = a_query && *a_query ? dap_strlen(a_query) : 0,
+               l_query_enc_size = dap_enc_code_out_size(a_transport->session_key, l_query_len, l_enc_type),
+               l_path_size = dap_strlen(a_path) + l_suburl_enc_size + l_query_enc_size + 3;
+        l_path = DAP_NEW_Z_SIZE(char, l_path_size);
+        char *l_offset = dap_strncpy(l_path, a_path, l_path_size);
+        *l_offset++ = '/';
+        if (l_suburl_enc_size) {
+            l_offset += dap_enc_code(a_transport->session_key, a_sub_url, l_suburl_len,
+                                     l_offset, l_suburl_enc_size, l_enc_type);
+            if (l_query_enc_size) {
+                *l_offset++ = '?';
+                dap_enc_code(a_transport->session_key, a_query, l_query_len,
+                             l_offset, l_query_enc_size, l_enc_type);
+            }
+        }
+    }
+    size_t l_req_enc_size = 0;
+    if (a_request && a_request_size) {
+        l_req_enc_size = dap_enc_code_out_size(a_transport->session_key, a_request_size, l_enc_type) + 1;
+        l_request_enc = DAP_NEW_Z_SIZE(char, l_req_enc_size);
+        dap_enc_code(a_transport->session_key, a_request, a_request_size,
+                     l_request_enc, l_req_enc_size, DAP_ENC_DATA_TYPE_RAW);
+    }
+    char *l_custom = dap_strdup_printf("KeyID: %s\r\n%s",
+        a_transport->session_key_id ? a_transport->session_key_id : "NULL",
+        a_transport->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
+    
+    // Create new HTTP client for this request (WebSocket uses separate HTTP client)
+    // This allows parallel operation with legacy HTTP transport
+    dap_client_http_t *l_session_http_client = dap_client_http_request(a_worker,
+        a_uplink_addr, a_uplink_port,
+        a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
+        s_ws_session_response_wrapper_http, s_ws_session_error_wrapper_http, NULL, l_custom);
+    
+    if (!l_session_http_client) {
+        log_it(L_ERROR, "Failed to create HTTP client for WebSocket session creation");
+        if (a_response_error) {
+            a_response_error(NULL, NULL, -1);
+        }
+    }
+    
+    DAP_DEL_MULTY(l_path, l_request_enc, l_custom);
+}
+
+/**
+ * @brief Create session after handshake
+ * 
+ * For WebSocket transport, session creation is performed via HTTP POST to /stream_ctl endpoint
+ * using a separate HTTP client created specifically for WebSocket transport. This allows parallel
+ * operation with legacy HTTP transport, as WebSocket uses its own HTTP client instance.
  */
 static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t *a_params,
                                  dap_net_transport_session_cb_t a_callback)
 {
-    if (!a_stream || !a_params) {
+    if (!a_stream || !a_params || !a_callback) {
         log_it(L_ERROR, "Invalid parameters");
         return -1;
     }
-
-    log_it(L_DEBUG, "WebSocket session create");
-
-    // Session creation happens via WebSocket control frames
-    UNUSED(a_callback);
-
+    
+    // Get transport from stream
+    dap_net_transport_t *l_transport = a_stream->stream_transport;
+    if (!l_transport) {
+        log_it(L_ERROR, "Stream has no transport");
+        return -2;
+    }
+    
+    // Get client_pvt from stream esocket for worker and address info
+    if (!a_stream->esocket || !a_stream->esocket->_inheritor) {
+        log_it(L_ERROR, "Stream esocket has no client context");
+        return -3;
+    }
+    
+    dap_client_t *l_client = (dap_client_t*)a_stream->esocket->_inheritor;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Invalid client_pvt");
+        return -4;
+    }
+    
+    // Get WebSocket private data
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
+    if (!l_priv) {
+        log_it(L_ERROR, "WebSocket transport not initialized");
+        return -5;
+    }
+    
+    // Prepare request data (protocol version)
+    char l_request[16];
+    size_t l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
+    
+    // Prepare sub_url based on protocol version
+    uint32_t l_least_common_dap_protocol = dap_min(l_transport->remote_protocol_version,
+                                                   l_transport->uplink_protocol_version);
+    
+    char *l_suburl;
+    if (l_least_common_dap_protocol < 23) {
+        l_suburl = dap_strdup_printf("stream_ctl,channels=%s", a_params->channels);
+    } else {
+        l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
+                                     a_params->channels, a_params->enc_type,
+                                     a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
+    }
+    
+    log_it(L_DEBUG, "WebSocket session create: sending POST to %s:%u%s/%s", 
+           l_client->link_info.uplink_addr, l_client->link_info.uplink_port, 
+           DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
+    
+    // Store callback context
+    s_ws_session_ctx.stream = a_stream;
+    s_ws_session_ctx.callback = a_callback;
+    
+    // Create new HTTP client for session creation (separate from legacy HTTP transport)
+    // Use WebSocket's HTTP client reference as template (though we create a new one for this request)
+    // This ensures WebSocket transport doesn't interfere with legacy HTTP transport's http_client
+    s_ws_send_http_request_enc(l_transport, l_priv->http_client, l_client_pvt->worker,
+                               l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
+                               DAP_UPLINK_PATH_STREAM_CTL,
+                               l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,
+                               s_ws_session_response_wrapper, 
+                               s_ws_session_error_wrapper);
+    
+    DAP_DELETE(l_suburl);
+    
+    log_it(L_DEBUG, "WebSocket session create request sent successfully");
     return 0;
 }
 
@@ -505,7 +829,7 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
@@ -547,7 +871,7 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
@@ -576,7 +900,7 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         log_it(L_ERROR, "WebSocket transport not initialized");
         return -2;
@@ -627,7 +951,7 @@ static void s_ws_close(dap_stream_t *a_stream)
         return;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         return;
     }
@@ -637,7 +961,7 @@ static void s_ws_close(dap_stream_t *a_stream)
     // Send close frame if not already closing
     if (l_priv->state == DAP_WS_STATE_OPEN) {
         l_priv->state = DAP_WS_STATE_CLOSING;
-        dap_stream_transport_ws_send_close(a_stream, DAP_WS_CLOSE_NORMAL, "Connection closed");
+        dap_net_transport_websocket_send_close(a_stream, DAP_WS_CLOSE_NORMAL, "Connection closed");
     }
 
     // Stop ping timer
@@ -916,20 +1240,20 @@ static bool s_ws_ping_timer_callback(void *a_user_data)
         return false;  // Stop timer
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(l_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(l_stream);
     if (!l_priv || l_priv->state != DAP_WS_STATE_OPEN) {
         return false;  // Stop timer
     }
 
     // Send ping
-    dap_stream_transport_ws_send_ping(l_stream, NULL, 0);
+    dap_net_transport_websocket_send_ping(l_stream, NULL, 0);
 
     // Check pong timeout
     int64_t l_now = time(NULL) * 1000;
     if (l_priv->last_pong_time > 0 &&
         (l_now - l_priv->last_pong_time) > (int64_t)l_priv->config.pong_timeout_ms) {
         log_it(L_WARNING, "WebSocket pong timeout, closing connection");
-        dap_stream_transport_ws_send_close(l_stream, DAP_WS_CLOSE_ABNORMAL, "Pong timeout");
+        dap_net_transport_websocket_send_close(l_stream, DAP_WS_CLOSE_ABNORMAL, "Pong timeout");
         return false;  // Stop timer
     }
 
@@ -954,7 +1278,7 @@ bool dap_stream_transport_is_websocket(const dap_stream_t *a_stream)
 /**
  * @brief Get WebSocket private data from stream
  */
-dap_stream_transport_ws_private_t* dap_stream_transport_ws_get_private(dap_stream_t *a_stream)
+dap_net_transport_websocket_private_t* dap_net_transport_websocket_get_private(dap_stream_t *a_stream)
 {
     return s_get_private_from_stream(a_stream);
 }
@@ -962,14 +1286,14 @@ dap_stream_transport_ws_private_t* dap_stream_transport_ws_get_private(dap_strea
 /**
  * @brief Send WebSocket close frame
  */
-int dap_stream_transport_ws_send_close(dap_stream_t *a_stream, dap_ws_close_code_t a_code,
+int dap_net_transport_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code_t a_code,
                                         const char *a_reason)
 {
     if (!a_stream) {
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         return -2;
     }
@@ -1010,7 +1334,7 @@ int dap_stream_transport_ws_send_close(dap_stream_t *a_stream, dap_ws_close_code
 /**
  * @brief Send WebSocket ping frame
  */
-int dap_stream_transport_ws_send_ping(dap_stream_t *a_stream, const void *a_payload,
+int dap_net_transport_websocket_send_ping(dap_stream_t *a_stream, const void *a_payload,
                                        size_t a_payload_size)
 {
     if (!a_stream) {
@@ -1022,7 +1346,7 @@ int dap_stream_transport_ws_send_ping(dap_stream_t *a_stream, const void *a_payl
         return -2;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream(a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
         return -3;
     }
@@ -1048,7 +1372,7 @@ int dap_stream_transport_ws_send_ping(dap_stream_t *a_stream, const void *a_payl
 /**
  * @brief Get WebSocket statistics
  */
-int dap_stream_transport_ws_get_stats(const dap_stream_t *a_stream, uint64_t *a_frames_sent,
+int dap_net_transport_websocket_get_stats(const dap_stream_t *a_stream, uint64_t *a_frames_sent,
                                        uint64_t *a_frames_received, uint64_t *a_bytes_sent,
                                        uint64_t *a_bytes_received)
 {
@@ -1056,7 +1380,7 @@ int dap_stream_transport_ws_get_stats(const dap_stream_t *a_stream, uint64_t *a_
         return -1;
     }
 
-    dap_stream_transport_ws_private_t *l_priv = s_get_private_from_stream((dap_stream_t*)a_stream);
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream((dap_stream_t*)a_stream);
     if (!l_priv) {
         return -2;
     }
@@ -1076,18 +1400,18 @@ int dap_stream_transport_ws_get_stats(const dap_stream_t *a_stream, uint64_t *a_
 /**
  * @brief Get private data from transport
  */
-static dap_stream_transport_ws_private_t *s_get_private(dap_net_transport_t *a_transport)
+static dap_net_transport_websocket_private_t *s_get_private(dap_net_transport_t *a_transport)
 {
     if (!a_transport || a_transport->type != DAP_NET_TRANSPORT_WEBSOCKET) {
         return NULL;
     }
-    return (dap_stream_transport_ws_private_t*)a_transport->_inheritor;
+    return (dap_net_transport_websocket_private_t*)a_transport->_inheritor;
 }
 
 /**
  * @brief Get private data from stream
  */
-static dap_stream_transport_ws_private_t *s_get_private_from_stream(dap_stream_t *a_stream)
+static dap_net_transport_websocket_private_t *s_get_private_from_stream(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->stream_transport) {
         return NULL;

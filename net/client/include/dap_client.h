@@ -169,6 +169,48 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name);
 dap_client_stage_t dap_client_get_stage(dap_client_t * a_client);
 dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client);
 
+/**
+ * @brief Send unencrypted HTTP request (thread-safe)
+ * 
+ * This function sends an unencrypted HTTP request through the transport layer.
+ * The request is executed on the client's worker thread for thread safety.
+ * 
+ * @param a_client Client instance
+ * @param a_path HTTP path
+ * @param a_request Request data (can be NULL for GET requests)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @param a_callback_arg Argument passed to callbacks
+ * @return 0 on success, -1 on failure
+ */
+int dap_client_request(dap_client_t *a_client, const char *a_path, void *a_request, size_t a_request_size,
+                       dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                       void *a_callback_arg);
+
+/**
+ * @brief Send encrypted HTTP request (thread-safe)
+ * 
+ * This function sends an encrypted HTTP request through the transport layer.
+ * The request is executed on the client's worker thread for thread safety.
+ * Requires an established session (session_key must be set).
+ * 
+ * @param a_client Client instance
+ * @param a_path HTTP path
+ * @param a_sub_url Sub-URL (will be encrypted, can be NULL)
+ * @param a_query Query string (will be encrypted, can be NULL)
+ * @param a_request Request data (will be encrypted, can be NULL for GET requests)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @param a_callback_arg Argument passed to callbacks
+ * @return 0 on success, -1 on failure
+ */
+int dap_client_request_enc(dap_client_t *a_client, const char *a_path, const char *a_sub_url, const char *a_query,
+                           void *a_request, size_t a_request_size,
+                           dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                           void *a_callback_arg);
+
 #ifdef __cplusplus
 }
 #endif

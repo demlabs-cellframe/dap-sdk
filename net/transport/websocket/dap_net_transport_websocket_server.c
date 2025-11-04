@@ -485,7 +485,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     
     // Get WebSocket transport private data (shared across all streams)
     // Note: This is transport-level configuration, not stream-specific
-    dap_stream_transport_ws_private_t *l_ws_priv = dap_stream_transport_ws_get_private(l_stream);
+    dap_net_transport_websocket_private_t *l_ws_priv = dap_net_transport_websocket_get_private(l_stream);
     if (l_ws_priv) {
         // Mark WebSocket as OPEN (handshake completed for this connection)
         l_ws_priv->state = DAP_WS_STATE_OPEN;
