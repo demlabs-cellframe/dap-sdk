@@ -127,13 +127,20 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
  */
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
+    debug_if(s_debug_more, L_DEBUG, "s_http_handshake_response_wrapper: client=%p, data=%p, size=%zu, stream=%p, callback=%p", 
+           a_client, a_data, a_data_size, s_http_handshake_ctx.stream, (void*)s_http_handshake_ctx.callback);
+    
     if (!a_client || !s_http_handshake_ctx.stream) {
+        log_it(L_WARNING, "s_http_handshake_response_wrapper: missing client or stream context");
         return;
     }
     
     // Call transport callback with response data
     if (s_http_handshake_ctx.callback) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_handshake_response_wrapper: calling transport callback");
         s_http_handshake_ctx.callback(s_http_handshake_ctx.stream, a_data, a_data_size, 0);
+    } else {
+        log_it(L_WARNING, "s_http_handshake_response_wrapper: callback is NULL");
     }
     
     // Clear context
@@ -734,8 +741,8 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
-    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: response_size=%zu, is_encrypted=%d, callback=%p", 
-             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
+    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: response_size=%zu, is_encrypted=%d, callback=%p, client=%p", 
+             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback, l_client_pvt->client);
     if ( !l_client_pvt->request_response_callback )
         return log_it(L_ERROR, "No request_response_callback in client!");
     

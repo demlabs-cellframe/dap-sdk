@@ -1294,6 +1294,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                     a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                 } else {
+                    log_it(L_DEBUG, "Stage %s completed, calling stage_status_done_callback", 
+                           dap_client_stage_str(a_client_pvt->stage));
                     a_client_pvt->stage_status_done_callback(a_client_pvt->client, NULL);
                 }
             }
@@ -1487,6 +1489,9 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
     if (l_client_pvt->last_error == ERROR_NO_ERROR) {
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
         
+        debug_if(s_debug_more, L_DEBUG, "ENC: Handshake completed successfully, stage_status=%d, stage_status_done_callback=%p", 
+               l_client_pvt->stage_status, (void*)l_client_pvt->stage_status_done_callback);
+        
         // Load encryption context into transport after successful handshake
         // Use the transport from the temporary stream if available (for HTTP/WebSocket)
         // or from the main stream (for UDP/DNS)
@@ -1513,6 +1518,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
     }
     dap_enc_key_delete(l_client_pvt->session_key_open);
     l_client_pvt->session_key_open = NULL;
+    debug_if(s_debug_more, L_DEBUG, "ENC: Calling s_stage_status_after with stage_status=%d", l_client_pvt->stage_status);
     s_stage_status_after(l_client_pvt);
 }
 
