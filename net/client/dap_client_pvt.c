@@ -249,7 +249,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         // so it can load encryption context into the transport
         // Temporarily store the stream pointer if it's a temporary stream
         dap_stream_t *l_original_stream = l_client_pvt->stream;
-        if (l_is_temporary_stream) {
+        if (l_is_temporary_stream && a_stream) {
             // For temporary stream, use it to access transport for encryption context loading
             // The transport is stored in the temporary stream's stream_transport
             l_client_pvt->stream = a_stream;
