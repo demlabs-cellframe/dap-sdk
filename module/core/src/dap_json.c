@@ -34,20 +34,30 @@
  * Can represent both JSON objects and arrays internally
  */
 struct dap_json {
-    void *pvt;  // Internal json-c object pointer (struct json_object*)
+    void *pvt;      // Internal json-c object pointer (struct json_object*)
 };
+
+static void s_json_object_feee_cb(struct json_object *a_json_obj, void *a_userdata)
+{
+    DAP_FREE(a_userdata);
+}
 
 // Helper functions for internal type conversion
 static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
     return a_dap_json ? (struct json_object*)a_dap_json->pvt : NULL;
 }
 
-static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj) {
-    if (!a_json_obj) return NULL;
-    dap_json_t* l_dap_json = DAP_NEW_Z(dap_json_t);
-    if (l_dap_json) {
-        l_dap_json->pvt = a_json_obj;
-    }
+static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj)
+{
+    dap_return_val_if_fail(a_json_obj, NULL);
+
+    if (json_object_get_userdata(a_json_obj))
+        return (dap_json_t*)json_object_get_userdata(a_json_obj);
+    
+    dap_json_t *l_dap_json = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_t, NULL);
+    l_dap_json->pvt = a_json_obj;
+    json_object_set_userdata(a_json_obj, l_dap_json, s_json_object_feee_cb);
+
     return l_dap_json;
 }
 
@@ -80,10 +90,8 @@ void dap_json_object_free(dap_json_t* a_json)
 {
     if (a_json) {
         struct json_object* l_json_obj = _dap_json_to_json_c(a_json);
-        if (l_json_obj) {
-            json_object_put(l_json_obj);
-        }
-        DAP_DELETE(a_json);
+        json_object_put(l_json_obj);
+        // NOT freeing the wrapper itself, it will be freed by the callback
     }
 }
 
@@ -94,25 +102,32 @@ dap_json_t* dap_json_array_new(void)
     return _json_c_to_dap_json(l_json_array);
 }
 
-void dap_json_array_free(dap_json_t* a_array)
-{
-    if (a_array) {
-        struct json_object* l_json_obj = _dap_json_to_json_c(a_array);
-        if (l_json_obj) {
-            json_object_put(l_json_obj);
-        }
-        DAP_DELETE(a_array);
-    }
-}
-
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 {
     if (!a_array || !a_item) {
         log_it(L_ERROR, "Array or item is NULL");
         return -1;
     }
-    
+
     return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
+}
+
+int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
+{
+    if (!a_array) {
+        log_it(L_ERROR, "Array is NULL");
+        return -1;
+    }
+    
+    json_object *l_arr = _dap_json_to_json_c(a_array);
+    if (!l_arr) return -1;
+    
+    // Delete elements one by one
+    for (size_t i = 0; i < a_count; i++) {
+        json_object_array_del_idx(l_arr, a_idx, 1);
+    }
+    
+    return 0;
 }
 
 size_t dap_json_array_length(dap_json_t* a_array)
@@ -133,6 +148,15 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
 }
 
+void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
+{
+    if (!a_array || !a_sort_fn) {
+        return;
+    }
+    
+    json_object_array_sort(_dap_json_to_json_c(a_array), a_sort_fn);
+}
+
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value)
 {
@@ -142,6 +166,22 @@ int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char
     }
     
     struct json_object *l_string = json_object_new_string(a_value);
+    if (!l_string) {
+        log_it(L_ERROR, "Failed to create JSON string object");
+        return -1;
+    }
+    
+    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+}
+
+int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len)
+{
+    if (!a_json || !a_key || !a_value) {
+        log_it(L_ERROR, "JSON object, key or value is NULL");
+        return -1;
+    }
+    
+    struct json_object *l_string = json_object_new_string_len(a_value, a_len);
     if (!l_string) {
         log_it(L_ERROR, "Failed to create JSON string object");
         return -1;
@@ -255,15 +295,34 @@ int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_bool);
 }
 
+int dap_json_object_add_nanotime(dap_json_t* a_json, const char* a_key, dap_nanotime_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    // Store as int64 for compatibility
+    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
+}
+
+int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a_value)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "JSON object or key is NULL");
+        return -1;
+    }
+    
+    // Store as int64 for compatibility
+    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
+}
+
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
 {
     if (!a_json || !a_key || !a_value) {
         log_it(L_ERROR, "JSON object, key or value is NULL");
         return -1;
     }
-    
-    // Increase reference count since json-c will manage the object
-    json_object_get(_dap_json_to_json_c(a_value));
     
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
 }
@@ -274,9 +333,6 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
         log_it(L_ERROR, "JSON object, key or array is NULL");
         return -1;
     }
-    
-    // Increase reference count since json-c will manage the array
-    json_object_get(_dap_json_to_json_c(a_array));
     
     return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
 }
@@ -336,6 +392,32 @@ uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key)
     }
     
     return json_object_get_uint64(l_obj);
+}
+
+bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_t *a_out)
+{
+    dap_return_val_if_pass(!a_json || !a_key, false);
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return false;
+    }
+    if (a_out)
+        *a_out = json_object_get_int64(l_obj);
+    return true;
+}
+
+bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out)
+{
+    dap_return_val_if_pass(!a_json || !a_key, false);
+    
+    struct json_object *l_obj = NULL;
+    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+        return false;
+    }
+    if (a_out)
+        *a_out = json_object_get_uint64(l_obj);
+    return true;
 }
 
 uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
@@ -526,6 +608,26 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
     
     return l_result;
 }
+
+/**
+ * @brief Convenience function to check if a key exists in JSON object
+ * @param a_json JSON object to check
+ * @param a_key Key name to check for
+ * @return true if key exists, false otherwise
+ * 
+ * This is a lightweight alternative to dap_json_object_get_ex() when you only
+ * need to check key existence without retrieving the value.
+ */
+bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return false;
+    }
+    
+    struct json_object* l_temp_obj = NULL;
+    return json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
+}
+ 
 
 int dap_json_object_del(dap_json_t* a_json, const char* a_key)
 {
@@ -725,7 +827,9 @@ dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_get(_dap_json_to_json_c(a_json)));
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    json_object_get(l_obj);  // Increment refcount
+    return _json_c_to_dap_json(l_obj);
 }
 
 // Value object creation (for simple types)
@@ -768,6 +872,16 @@ dap_json_t* dap_json_object_new_string(const char* a_value)
     return _json_c_to_dap_json(json_object_new_string(a_value));
 }
 
+dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
+{
+    if (!a_value) {
+        log_it(L_ERROR, "String value is NULL");
+        return NULL;
+    }
+    
+    return _json_c_to_dap_json(json_object_new_string_len(a_value, a_len));
+}
+
 dap_json_t* dap_json_object_new_double(double a_value)
 {
     return _json_c_to_dap_json(json_object_new_double(a_value));
@@ -780,96 +894,84 @@ dap_json_t* dap_json_object_new_bool(bool a_value)
 
 #define INDENTATION_LEVEL "    "
 
+static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level);
+
+static void s_json_print_value(json_object *a_raw_obj, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator)
+{
+    enum json_type type = json_object_get_type(a_raw_obj);
+
+    switch (type) {
+        case json_type_string:
+            fprintf(a_stream, a_print_separator ? "%s, " : "%s", json_object_get_string(a_raw_obj));
+            break;
+        case json_type_int:
+            fprintf(a_stream, "%"DAP_INT64_FORMAT, json_object_get_int64(a_raw_obj));
+            break;
+        case json_type_double:
+            fprintf(a_stream, "%lf", json_object_get_double(a_raw_obj));
+            break;
+        case json_type_boolean:
+            fprintf(a_stream, "%s", json_object_get_boolean(a_raw_obj) ? "true" : "false");
+            break;
+        case json_type_object:
+        case json_type_array:
+            fprintf(a_stream, "\n");
+            s_json_print_object(a_raw_obj, a_stream, a_indent_level);
+            break;
+        default:
+            break;
+    }
+}
+
 void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level) {
     if (!a_json) {
-        fprintf(a_stream, "null");
         return;
     }
 
-    if (dap_json_is_object(a_json)) {
-        fprintf(a_stream, "{\n");
-        // Use raw json-c object for iteration until dap_json gets object iteration API
-        json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
-        bool first = true;
-        
-        json_object_object_foreach(raw_obj, key, val) {
-            if (!first) {
-                fprintf(a_stream, ",\n");
+    json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
+    s_json_print_object(raw_obj, a_stream, a_indent_level);
+}
+
+static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level)
+{
+    enum json_type type = json_object_get_type(a_raw_obj);
+
+    switch (type) {
+        case json_type_object: {
+            json_object_object_foreach(a_raw_obj, key, val) {
+                for (int i = 0; i <= a_indent_level; i++) {
+                    fprintf(a_stream, INDENTATION_LEVEL);
+                }
+                fprintf(a_stream, "%s: ", key);
+                s_json_print_value(val, key, a_stream, a_indent_level + 1, false);
+                fprintf(a_stream, "\n");
             }
-            first = false;
-            
-            // Print indentation
-            for (int i = 0; i <= a_indent_level + 1; i++) {
-                fprintf(a_stream, INDENTATION_LEVEL);
+            break;
+        }
+        case json_type_array: {
+            int length = json_object_array_length(a_raw_obj);
+            for (int i = 0; i < length; i++) {
+                for (int j = 0; j <= a_indent_level; j++) {
+                    fprintf(a_stream, INDENTATION_LEVEL);
+                }
+                json_object *item = json_object_array_get_idx(a_raw_obj, i);
+                s_json_print_value(item, NULL, a_stream, a_indent_level + 1, length - 1 - i);
+                fprintf(a_stream, "\n");
             }
-            
-            dap_json_t *dap_val = _json_c_to_dap_json(val);
-            fprintf(a_stream, "\"%s\": ", key);
-            dap_json_print_value(dap_val, key, a_stream, a_indent_level + 1, false);
+            break;
         }
-        
-        fprintf(a_stream, "\n");
-        for (int i = 0; i <= a_indent_level; i++) {
-            fprintf(a_stream, INDENTATION_LEVEL);
-        }
-        fprintf(a_stream, "}");
-        
-    } else if (dap_json_is_array(a_json)) {
-        size_t length = dap_json_array_length(a_json);
-        if (length == 0) {
-            fprintf(a_stream, "[]");
-            return;
-        }
-        
-        fprintf(a_stream, "[\n");
-        for (size_t i = 0; i < length; i++) {
-            // Print indentation
-            for (int j = 0; j <= a_indent_level + 1; j++) {
-                fprintf(a_stream, INDENTATION_LEVEL);
-            }
-            
-            dap_json_t *item = dap_json_array_get_idx(a_json, i);
-            dap_json_print_value(item, NULL, a_stream, a_indent_level + 1, false);
-            if (i < length - 1) {
-                fprintf(a_stream, ",");
-            }
-            fprintf(a_stream, "\n");
-        }
-        
-        for (int i = 0; i <= a_indent_level; i++) {
-            fprintf(a_stream, INDENTATION_LEVEL);
-        }
-        fprintf(a_stream, "]");
-        
-    } else {
-        dap_json_print_value(a_json, NULL, a_stream, a_indent_level, false);
+        default:
+            break;
     }
 }
 
 void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator) {
     if (!a_json) {
-        fprintf(a_stream, "null");
         return;
     }
 
-    if (dap_json_is_string(a_json)) {
-        const char *str_val = dap_json_object_get_string(a_json, NULL);
-        fprintf(a_stream, a_print_separator ? "\"%s\", " : "\"%s\"", str_val ? str_val : "");
-    } else if (dap_json_is_int(a_json)) {
-        int64_t int_val = dap_json_object_get_int64(a_json, NULL);
-        fprintf(a_stream, "%"DAP_INT64_FORMAT, int_val);
-    } else if (dap_json_is_double(a_json)) {
-        double double_val = dap_json_object_get_double(a_json, NULL);
-        fprintf(a_stream, "%lf", double_val);
-    } else if (dap_json_is_bool(a_json)) {
-        bool bool_val = dap_json_object_get_bool(a_json, NULL);
-        fprintf(a_stream, "%s", bool_val ? "true" : "false");
-    } else if (dap_json_is_object(a_json) || dap_json_is_array(a_json)) {
-        fprintf(a_stream, "\n");
-        dap_json_print_object(a_json, a_stream, a_indent_level);
-    } else {
-        fprintf(a_stream, "null");
-    }
+    json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
+    s_json_print_value(raw_obj, a_key, a_stream, a_indent_level, a_print_separator);
 }
 
 int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
@@ -910,6 +1012,7 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
         dap_json_t *l_dap_val = _json_c_to_dap_json(val);
         if (l_dap_val) {
             callback(key, l_dap_val, user_data);
+            // Note: User should free l_dap_val in callback if they want to prevent wrapper leak
         }
     }
 }
@@ -924,4 +1027,70 @@ const char* dap_json_get_string(dap_json_t* a_json) {
     return json_object_get_string(l_obj);
 }
 
+int64_t dap_json_get_int64(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_get_int64(l_obj);
+}
 
+double dap_json_get_double(dap_json_t* a_json) {
+    if (!a_json) return 0.0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0.0;
+    
+    return json_object_get_double(l_obj);
+}
+
+bool dap_json_get_bool(dap_json_t* a_json) {
+    if (!a_json) return false;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return false;
+    
+    return json_object_get_boolean(l_obj);
+}
+
+uint64_t dap_json_get_uint64(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_get_uint64(l_obj);
+}
+
+dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    int64_t l_temp = json_object_get_int64(l_obj);
+    // Handle both nanosecond timestamps and legacy second timestamps
+    return l_temp >> 32 ? (dap_nanotime_t)l_temp : dap_nanotime_from_sec(l_temp);
+}
+
+size_t dap_json_object_length(dap_json_t* a_json) {
+    if (!a_json) return 0;
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return 0;
+    
+    return json_object_object_length(l_obj);
+}
+
+int dap_json_to_file(const char* a_file_path, dap_json_t* a_json) {
+    if (!a_file_path || !a_json) {
+        log_it(L_ERROR, "File path or JSON is NULL");
+        return -1;
+    }
+    
+    json_object *l_obj = _dap_json_to_json_c(a_json);
+    if (!l_obj) return -1;
+    
+    return json_object_to_file(a_file_path, l_obj);
+}

@@ -13,6 +13,18 @@
 
 //dap_config_t *g_configs_table = NULL;
 
+// ============================================================================
+// Custom Parser Registry - Dependency Inversion Implementation
+// ============================================================================
+
+typedef struct dap_config_parser_registry {
+    char *parser_name;
+    dap_config_custom_parser_t parser;
+    UT_hash_handle hh;
+} dap_config_parser_registry_t;
+
+static dap_config_parser_registry_t *s_parser_registry = NULL;
+
 typedef struct dap_config_item {
     char type, *name;
     union dap_config_val {
@@ -299,6 +311,52 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
     return 0;
 }
 
+/**
+ * @brief dap_config_create_empty - create empty config in memory (for tests)
+ * @return dap_config_t*
+ */
+dap_config_t *dap_config_create_empty(void)
+{
+    dap_config_t *l_conf = DAP_NEW_Z(dap_config_t);
+    l_conf->path = dap_strdup("<memory>");
+    return l_conf;
+}
+
+/**
+ * @brief dap_config_set_item_str - set string item in config (for tests)
+ * @param a_config config object
+ * @param a_section section name
+ * @param a_item_name item name
+ * @param a_value string value
+ */
+void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_value)
+{
+    if (!a_config || !a_section || !a_item_name || !a_value)
+        return;
+    
+    // Use same format as dap_config_get_item: "section:item_name"
+    char *l_name = dap_strdup_printf("%s:%s", a_section, a_item_name);
+    // Replace dashes with underscores (same as dap_config_get_item)
+    for (char *c = l_name; *c; ++c) {
+        if (*c == '-')
+            *c = '_';
+    }
+    
+    dap_config_item_t *l_item = NULL;
+    HASH_FIND_STR(a_config->items, l_name, l_item);
+    
+    if (l_item) {
+        dap_config_item_del(l_item, false);
+    } else {
+        l_item = DAP_NEW_Z(dap_config_item_t);
+        l_item->name = l_name;
+        HASH_ADD_KEYPTR(hh, a_config->items, l_item->name, strlen(l_item->name), l_item);
+    }
+    
+    l_item->type = DAP_CONFIG_ITEM_STRING;
+    l_item->val.val_str = dap_strdup(a_value);
+}
+
 dap_config_t *dap_config_open(const char* a_file_path) {
     if (!a_file_path || !a_file_path[0]) {
         log_it(L_ERROR, "Empty config name!");
@@ -547,25 +605,83 @@ void dap_config_close(dap_config_t *a_conf) {
     DAP_DELETE(a_conf);
 }
 
-int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, const char *a_section, dap_stream_node_addr_t **a_addrs, uint16_t *a_addrs_count)
+// ============================================================================
+// Custom Parser System Implementation
+// ============================================================================
+
+/**
+ * @brief Register custom parser for specific data type
+ * @param a_parser_name Unique parser name (e.g., "stream_addrs")
+ * @param a_parser Parser callback function
+ * @return 0 on success, negative on error
+ */
+int dap_config_register_parser(const char *a_parser_name, dap_config_custom_parser_t a_parser)
 {
-    dap_return_val_if_pass(!a_cfg || !a_config || !a_config || !a_section || !a_addrs_count, -1);
-    const char **l_nodes_addrs = dap_config_get_array_str(a_cfg, a_config, a_section, a_addrs_count);
-    if (*a_addrs_count) {
-        log_it(L_DEBUG, "Start parse stream addrs in config %s section %s", a_config, a_section);
-        *a_addrs = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, *a_addrs_count, -2);
-        for (uint16_t i = 0; i < *a_addrs_count; ++i) {
-            if (dap_stream_node_addr_from_str(*a_addrs + i, l_nodes_addrs[i])) {
-                log_it(L_ERROR, "Incorrect format of %s address \"%s\", fix net config and restart node", a_section, l_nodes_addrs[i]);
-                return -3;
-            }
-            log_it(L_DEBUG, "Stream addr " NODE_ADDR_FP_STR " parsed successfully", NODE_ADDR_FP_ARGS_S((*a_addrs)[i]));
-        }
+    if (!a_parser_name || !a_parser) {
+        log_it(L_ERROR, "Invalid parser registration: name=%p, parser=%p", a_parser_name, a_parser);
+        return -1;
     }
+
+    // Check if already registered
+    dap_config_parser_registry_t *l_existing = NULL;
+    HASH_FIND_STR(s_parser_registry, a_parser_name, l_existing);
+    if (l_existing) {
+        log_it(L_WARNING, "Parser '%s' already registered, replacing", a_parser_name);
+        l_existing->parser = a_parser;
+        return 0;
+    }
+
+    // Register new parser
+    dap_config_parser_registry_t *l_entry = DAP_NEW_Z(dap_config_parser_registry_t);
+    if (!l_entry) {
+        log_it(L_CRITICAL, "Cannot allocate memory for parser registry entry");
+        return -2;
+    }
+
+    l_entry->parser_name = dap_strdup(a_parser_name);
+    l_entry->parser = a_parser;
+    HASH_ADD_STR(s_parser_registry, parser_name, l_entry);
+
+    log_it(L_INFO, "Registered custom config parser '%s'", a_parser_name);
     return 0;
 }
 
-void dap_config_deinit() {
+/**
+ * @brief Call registered custom parser
+ * @param a_parser_name Parser name
+ * @param a_cfg Config object
+ * @param a_config Config name
+ * @param a_section Section name
+ * @param a_out_data Output pointer
+ * @param a_out_count Output count
+ * @return 0 on success, negative on error
+ */
+int dap_config_call_parser(const char *a_parser_name, struct dap_conf *a_cfg, const char *a_config,
+                           const char *a_section, void **a_out_data, uint16_t *a_out_count)
+{
+    if (!a_parser_name) {
+        log_it(L_ERROR, "Parser name is NULL");
+        return -1;
+    }
 
+    dap_config_parser_registry_t *l_entry = NULL;
+    HASH_FIND_STR(s_parser_registry, a_parser_name, l_entry);
+    if (!l_entry) {
+        log_it(L_ERROR, "Parser '%s' not registered", a_parser_name);
+        return -2;
+    }
+
+    return l_entry->parser(a_cfg, a_config, a_section, a_out_data, a_out_count);
+}
+
+void dap_config_deinit() {
+    // Clean up parser registry
+    dap_config_parser_registry_t *l_entry, *l_tmp;
+    HASH_ITER(hh, s_parser_registry, l_entry, l_tmp) {
+        HASH_DEL(s_parser_registry, l_entry);
+        DAP_DELETE(l_entry->parser_name);
+        DAP_DELETE(l_entry);
+    }
+    s_parser_registry = NULL;
 }
 

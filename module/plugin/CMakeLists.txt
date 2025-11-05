@@ -20,12 +20,12 @@ endif()
 set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external dependencies")
 
 target_include_directories(${PROJECT_NAME} PUBLIC 
-    include/ 
-    ../core/include/
-    ../../3rdparty/uthash/src/
-    ../net/server/cli_server/include/
-    ../io/include/
-    ../../3rdparty/json-c/
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../net/server/cli_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../io/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
 )
 
 # Include paths for json_config.h - support both standalone and embedded builds  
@@ -39,6 +39,8 @@ else()
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/module/core/json-c)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/module/core/json-c)
 endif()
+
+target_link_libraries(${PROJECT_NAME} dap_json_rpc)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")

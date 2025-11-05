@@ -345,7 +345,6 @@ static bool s_test_distributed_consensus_workflow(void) {
     
     DAP_DELETE(l_proposal_json);
     DAP_DELETE(l_result_json);
-    dap_json_object_free(l_proposal);
     dap_json_object_free(l_consensus_result);
     
     log_it(L_INFO, "Distributed consensus integration test passed");

@@ -33,6 +33,7 @@
 #include "dap_hash.h"
 #include "dap_list.h"
 #include "dap_time.h"
+#include "dap_net_common.h"
 
 typedef enum stream_session_type {STREAM_SESSION_TYPE_MEDIA=0,STREAM_SESSION_TYPE_VPN} stream_session_type_t;
 typedef enum stream_session_connection_type {STEAM_SESSION_HTTP = 0, STREAM_SESSION_UDP, STREAM_SESSION_END_TYPE} stream_session_connection_type_t;

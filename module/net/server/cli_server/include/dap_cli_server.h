@@ -33,8 +33,8 @@
 #include "dap_json_rpc_response.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_func_json_t)(dap_json_rpc_response_t* response, char ** cmd_param, int cmd_cnt);
-typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply, int a_version);
-typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply, int a_version);
+typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, dap_json_t *a_json_arr_reply, int a_version);
+typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, dap_json_t *a_json_arr_reply, int a_version);
 typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_call_time);  // use to statistic collect
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
@@ -54,6 +54,26 @@ typedef struct dap_cli_server_cmd_override{
     dap_cli_server_override_log_cmd_callback_t log_cmd_call;
 } dap_cli_server_cmd_override_t;
 
+// Extended command flags
+typedef struct dap_cli_server_cmd_flags {
+    bool is_json_rpc;        // Is this a JSON-RPC command
+    bool is_async;          // Is this an asynchronous command
+    bool requires_auth;      // Does this command require authentication
+    bool is_deprecated;      // Is this command deprecated
+    bool is_experimental;    // Is this command experimental
+} dap_cli_server_cmd_flags_t;
+
+// Extended command parameters
+typedef struct dap_cli_server_cmd_params {
+    const char *name;                           // Command name
+    dap_cli_server_cmd_callback_t func;         // Command callback function
+    const char *doc;                           // Documentation
+    int16_t id;                               // Command ID
+    const char *doc_ex;                       // Extended documentation
+    dap_cli_server_cmd_override_t overrides;  // Command overrides
+    dap_cli_server_cmd_flags_t flags;         // Command flags
+} dap_cli_server_cmd_params_t;
+
 typedef struct dap_cli_cmd{
     char name[32]; /* User printable name of the function. */
     union {
@@ -66,6 +86,7 @@ typedef struct dap_cli_cmd{
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
+    dap_cli_server_cmd_flags_t flags; /* Command flags */
     int16_t id;
     UT_hash_handle hh;
 } dap_cli_cmd_t;
@@ -82,6 +103,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section);
 void dap_cli_server_deinit();
 
 dap_cli_cmd_t *dap_cli_server_cmd_add(const char *a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_ex_func_json_t a_func_rpc, const char *a_doc, int16_t a_id, const char *a_doc_ex);
+dap_cli_cmd_t *dap_cli_server_cmd_add_ext(const dap_cli_server_cmd_params_t *a_params);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);

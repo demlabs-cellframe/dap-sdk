@@ -1,11 +1,16 @@
 #include "dap_json_rpc_request.h"
+#include "dap_json_rpc_params.h"
 #include "dap_cert.h"
 #include "dap_enc.h"
+#include "dap_enc_ks.h"
+#include "dap_client_http.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_json_rpc_request"
 
+// Simple structure for tracking HTTP request/response - no dap_client_pvt dependency
 struct exec_cmd_request {
-    dap_client_pvt_t * client_pvt;
+    dap_client_http_t *http_client;
 #ifdef DAP_OS_WINDOWS
     CONDITION_VARIABLE wait_cond;
     CRITICAL_SECTION wait_crit_sec;
@@ -24,12 +29,12 @@ enum ExecCmdRetCode {
     EXEC_CMD_ERR_UNKNOWN
 };
 
-static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_client_pvt)
+static struct exec_cmd_request* s_exec_cmd_request_init(void)
 {
     struct exec_cmd_request *l_exec_cmd_request = DAP_NEW_Z(struct exec_cmd_request);
     if (!l_exec_cmd_request)
         return NULL;
-    l_exec_cmd_request->client_pvt = a_client_pvt;
+    l_exec_cmd_request->http_client = NULL;
 #ifdef DAP_OS_WINDOWS
     InitializeCriticalSection(&l_exec_cmd_request->wait_crit_sec);
     InitializeConditionVariable(&l_exec_cmd_request->wait_cond);
@@ -47,11 +52,9 @@ static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_cli
     return l_exec_cmd_request;
 }
 
-void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
-{
+static void s_exec_cmd_request_free(struct exec_cmd_request* a_exec_cmd_request) {
     if (!a_exec_cmd_request)
         return;
-
 #ifdef DAP_OS_WINDOWS
     DeleteCriticalSection(&a_exec_cmd_request->wait_crit_sec);
 #else
@@ -61,17 +64,19 @@ void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
     DAP_DEL_MULTY(a_exec_cmd_request->response, a_exec_cmd_request);
 }
 
-static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg,
-                                            http_status_code_t http_status_code) {
-    (void)http_status_code;
+static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg, dap_http_status_code_t a_http_status) {
+    (void)a_http_status;
     struct exec_cmd_request *l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
 #ifdef DAP_OS_WINDOWS
     EnterCriticalSection(&l_exec_cmd_request->wait_crit_sec);
 #else
     pthread_mutex_lock(&l_exec_cmd_request->wait_mutex);
 #endif
-    l_exec_cmd_request->response = DAP_DUP_SIZE(a_response, a_response_size);
-    l_exec_cmd_request->response_size = a_response_size;
+    l_exec_cmd_request->error_code = 0;
+    if (a_response && a_response_size) {
+        l_exec_cmd_request->response = DAP_DUP_SIZE(a_response, a_response_size);
+        l_exec_cmd_request->response_size = a_response_size;
+    }
 #ifdef DAP_OS_WINDOWS
     WakeConditionVariable(&l_exec_cmd_request->wait_cond);
     LeaveCriticalSection(&l_exec_cmd_request->wait_crit_sec);
@@ -81,8 +86,8 @@ static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size
 #endif
 }
 
-static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
-    struct exec_cmd_request * l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
+static void s_exec_cmd_error_handler(int a_error_code, void *a_arg) {
+    struct exec_cmd_request *l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
 #ifdef DAP_OS_WINDOWS
     EnterCriticalSection(&l_exec_cmd_request->wait_crit_sec);
     l_exec_cmd_request->response = NULL;
@@ -96,6 +101,7 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
     pthread_cond_signal(&l_exec_cmd_request->wait_cond);
     pthread_mutex_unlock(&l_exec_cmd_request->wait_mutex);
 #endif
+    log_it(L_ERROR, "JSON-RPC request error: %d", a_error_code);
 }
 
 static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, dap_json_t **a_response_out, size_t *a_response_out_size)
@@ -103,26 +109,17 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
     int ret = 0;
 
     if (a_exec_cmd_request->error_code) {
-        log_it(L_ERROR, "Response error code: %d", ret);
-        ret = - 1;
-    } else if (a_exec_cmd_request->response) {
-            dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
-            l_client_pvt->http_client = NULL;
-            size_t l_response_dec_size_max = a_exec_cmd_request->response_size ? a_exec_cmd_request->response_size * 2 + 16 : 0;
-            char * l_response_dec = a_exec_cmd_request->response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
-            size_t l_response_dec_size = 0;
-            if(a_exec_cmd_request->response_size)
-                l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
-                        a_exec_cmd_request->response, a_exec_cmd_request->response_size,
-                        l_response_dec, l_response_dec_size_max,
-                        DAP_ENC_DATA_TYPE_RAW);
-            *a_response_out = dap_json_parse_string(l_response_dec);
-            if (!*a_response_out && l_response_dec) {
-                *a_response_out = dap_json_object_new_string("Can't decode the response, check the access rights on the remote node");
-                log_it(L_DEBUG, "Wrong response %s", l_response_dec);
-                DAP_DEL_Z(l_response_dec);
-            }
-            *a_response_out_size = l_response_dec_size;
+        log_it(L_ERROR, "Response error code: %d", a_exec_cmd_request->error_code);
+        ret = -1;
+    } else if (a_exec_cmd_request->response && a_exec_cmd_request->response_size) {
+        // Parse response directly - no encryption in basic DAP SDK
+        *a_response_out = dap_json_parse_string((const char *)a_exec_cmd_request->response);
+        if (!*a_response_out) {
+            *a_response_out = dap_json_object_new_string("Failed to parse JSON response");
+            log_it(L_ERROR, "Failed to parse JSON response");
+            ret = -1;
+        }
+        *a_response_out_size = a_exec_cmd_request->response_size;
     } else {
         log_it(L_ERROR, "Empty response in json-rpc");
         ret = -2;
@@ -175,35 +172,79 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
 #endif
 }
 
-char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
-                                char ** a_path, size_t * a_enc_request_size, char ** a_custom_header) {
-
-    char s_query[] = "type=tcp,maxconn=4", s_suburl[128];
-    int l_query_len = sizeof(s_query) - 1,
-        l_suburl_len = snprintf(s_suburl, sizeof(s_suburl), "channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
-                                                            a_client_internal->client->active_channels, a_client_internal->session_key_type,
-                                                            a_client_internal->session_key_block_size, 0);
-    if (l_suburl_len >= (int)sizeof(s_suburl))
+/**
+ * @brief Encrypt JSON-RPC request using enc_server key
+ * @param a_key_id Encryption key ID from enc_server
+ * @param a_request_data_str Request data to encrypt
+ * @param a_request_data_size Request data size
+ * @param a_channels Channels string (e.g., "A,B,C")
+ * @param a_path Output: path for HTTP request
+ * @param a_enc_request_size Output: encrypted request size
+ * @param a_custom_header Output: custom headers
+ * @return Encrypted request data (caller must free)
+ */
+char * dap_json_rpc_enc_request(const char *a_key_id, char *a_request_data_str, size_t a_request_data_size,
+                                const char *a_channels, char **a_path, size_t *a_enc_request_size, 
+                                char **a_custom_header) {
+    if (!a_key_id || !a_request_data_str || !a_path || !a_enc_request_size || !a_custom_header) {
+        log_it(L_ERROR, "Invalid arguments for JSON-RPC encryption");
         return NULL;
-    dap_enc_data_type_t l_enc_type = a_client_internal->uplink_protocol_version >= 21
-        ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
-    int l_suburl_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_suburl_len, l_enc_type),
-        l_query_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_query_len, l_enc_type),
-        l_req_enc_len = dap_enc_code_out_size(a_client_internal->session_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
+    }
 
-    char l_suburl_enc[ l_suburl_enc_len + 1 ], l_query_enc[ l_query_enc_len + 1 ], *l_req_enc = DAP_NEW_Z_SIZE(char, l_req_enc_len + 1);
+    // Get encryption key from enc_server key storage
+    dap_enc_ks_key_t *l_ks_key = dap_enc_ks_find(a_key_id);
+    if (!l_ks_key || !l_ks_key->key) {
+        log_it(L_ERROR, "Failed to get encryption key by ID: %s", a_key_id);
+        return NULL;
+    }
+    dap_enc_key_t *l_enc_key = l_ks_key->key;
 
-    a_client_internal->is_encrypted = true;
-    l_suburl_enc_len = dap_enc_code(a_client_internal->session_key, s_suburl,             l_suburl_len,       l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
-    l_query_enc_len  = dap_enc_code(a_client_internal->session_key, s_query,              l_query_len,        l_query_enc,  l_query_enc_len + 1,  l_enc_type);
-    *a_enc_request_size = dap_enc_code(a_client_internal->session_key, a_request_data_str,a_request_data_size,l_req_enc,    l_req_enc_len + 1,    DAP_ENC_DATA_TYPE_RAW);
+    dap_enc_key_type_t l_key_type = l_enc_key->type;
+    size_t l_key_size = l_enc_key->priv_key_data_size;
+
+    // Prepare suburl and query
+    char s_query[] = "type=tcp,maxconn=4", s_suburl[128];
+    int l_query_len = sizeof(s_query) - 1;
+    int l_suburl_len = snprintf(s_suburl, sizeof(s_suburl), "channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
+                                a_channels ? a_channels : "A", l_key_type, l_key_size, 0);
+    if (l_suburl_len >= (int)sizeof(s_suburl)) {
+        log_it(L_ERROR, "Suburl buffer overflow");
+        return NULL;
+    }
+
+    // Use URL-safe base64 encoding
+    dap_enc_data_type_t l_enc_type = DAP_ENC_DATA_TYPE_B64_URLSAFE;
+    
+    // Calculate sizes for encrypted data
+    int l_suburl_enc_len = dap_enc_code_out_size(l_enc_key, l_suburl_len, l_enc_type);
+    int l_query_enc_len = dap_enc_code_out_size(l_enc_key, l_query_len, l_enc_type);
+    int l_req_enc_len = dap_enc_code_out_size(l_enc_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
+
+    // Allocate buffers
+    char *l_suburl_enc = DAP_NEW_Z_SIZE(char, l_suburl_enc_len + 1);
+    char *l_query_enc = DAP_NEW_Z_SIZE(char, l_query_enc_len + 1);
+    char *l_req_enc = DAP_NEW_Z_SIZE(char, l_req_enc_len + 1);
+    
+    if (!l_suburl_enc || !l_query_enc || !l_req_enc) {
+        log_it(L_ERROR, "Memory allocation failed for encryption buffers");
+        DAP_DEL_MULTY(l_suburl_enc, l_query_enc, l_req_enc);
+        return NULL;
+    }
+
+    // Encode data
+    l_suburl_enc_len = dap_enc_code(l_enc_key, s_suburl, l_suburl_len, l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
+    l_query_enc_len = dap_enc_code(l_enc_key, s_query, l_query_len, l_query_enc, l_query_enc_len + 1, l_enc_type);
+    *a_enc_request_size = dap_enc_code(l_enc_key, a_request_data_str, a_request_data_size, l_req_enc, l_req_enc_len + 1, DAP_ENC_DATA_TYPE_RAW);
 
     l_suburl_enc[l_suburl_enc_len] = l_query_enc[l_query_enc_len] = '\0';
 
+    // Build path and headers
     *a_path = dap_strdup_printf("exec_cmd/%s?%s", l_suburl_enc, l_query_enc);
-    *a_custom_header = dap_strdup_printf("KeyID: %s\r\n%s",
-                                         a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL",
-                                         a_client_internal->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
+    *a_custom_header = dap_strdup_printf("KeyID: %s\r\n", a_key_id);
+
+    DAP_DEL_MULTY(l_suburl_enc, l_query_enc);
+    
+    log_it(L_DEBUG, "Encrypted JSON-RPC request with key ID: %s", a_key_id);
     return l_req_enc;
 }
 
@@ -268,8 +309,10 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
                 if (jobj_subcmd && l_arguments_obj) {
                     request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
                 }
+                // jobj_subcmd and l_arguments_obj are borrowed - no free needed
             } else {
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
+                // jobj_params is borrowed - no free needed
             }
 
             dap_json_object_free(jobj);
@@ -369,61 +412,106 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, dap_json_t** a_response, const char *a_cert_path) {
+/**
+ * @brief Send JSON-RPC request with encryption
+ * @param a_uplink_addr Server address
+ * @param a_uplink_port Server port
+ * @param a_key_id Encryption key ID (NULL for no encryption)
+ * @param a_channels Channels string
+ * @param a_request JSON-RPC request
+ * @param a_response Output: JSON response
+ * @param a_cert_path Certificate path for signing
+ * @return 0 on success, negative on error
+ */
+int dap_json_rpc_request_send(const char *a_uplink_addr, uint16_t a_uplink_port,
+                              const char *a_key_id, const char *a_channels,
+                              dap_json_rpc_request_t *a_request, dap_json_t **a_response, 
+                              const char *a_cert_path) {
+    if (!a_uplink_addr || !a_request || !a_response) {
+        log_it(L_ERROR, "Invalid arguments for JSON-RPC request send");
+        return -EINVAL;
+    }
+
     size_t l_request_data_size, l_enc_request_size, l_response_size;
-    char* l_custom_header = NULL, *l_path = NULL;
+    char *l_custom_header = NULL, *l_path = NULL;
 
-    char* l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size, a_cert_path);
-    if (!l_request_data_str)
+    // Convert request to HTTP string with signature
+    char *l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size, a_cert_path);
+    if (!l_request_data_str) {
+        log_it(L_ERROR, "Failed to convert JSON-RPC request to HTTP string");
         return -1;
+    }
 
-    char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
-    DAP_DELETE(l_request_data_str);
-    if (!l_enc_request || !l_path)
-        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+    // Encrypt request if key ID provided
+    char *l_enc_request = NULL;
+    if (a_key_id) {
+        l_enc_request = dap_json_rpc_enc_request(a_key_id, l_request_data_str, l_request_data_size, 
+                                                 a_channels, &l_path, &l_enc_request_size, &l_custom_header);
+        DAP_DELETE(l_request_data_str);
+        if (!l_enc_request || !l_path) {
+            log_it(L_ERROR, "Failed to encrypt JSON-RPC request");
+            return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+        }
+    } else {
+        // No encryption - use plain request
+        l_enc_request = l_request_data_str;
+        l_enc_request_size = l_request_data_size;
+        l_path = dap_strdup("exec_cmd");
+        l_custom_header = dap_strdup("");
+    }
 
-    struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_internal);
-    if (!l_exec_cmd_request)
-        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+    // Initialize request tracking structure
+    struct exec_cmd_request *l_exec_cmd_request = s_exec_cmd_request_init();
+    if (!l_exec_cmd_request) {
+        log_it(L_ERROR, "Failed to initialize exec_cmd_request");
+        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -ENOMEM;
+    }
 
-    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
-                     a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
+    log_it(L_DEBUG, "Send JSON-RPC request to %s:%d, path = %s, request size = %zu",
+           a_uplink_addr, a_uplink_port, l_path, l_enc_request_size);
 
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
-                                                             a_client_internal->client->link_info.uplink_addr,
-                                                             a_client_internal->client->link_info.uplink_port,
+    // Send HTTP request (worker selected automatically via NULL)
+    l_exec_cmd_request->http_client = dap_client_http_request(NULL, a_uplink_addr, a_uplink_port,
                                                              "POST", "application/json",
                                                              l_path, l_enc_request, l_enc_request_size, NULL,
                                                              s_exec_cmd_response_handler, s_exec_cmd_error_handler,
                                                              l_exec_cmd_request, l_custom_header);
 
+    // Wait for response (15 second timeout)
     int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 15000);
+    
+    // Process result
     switch (l_ret) {
-        case EXEC_CMD_OK :{
+        case EXEC_CMD_OK: {
             if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
-                char l_err[40] = "";
+                char l_err[64] = "";
                 snprintf(l_err, sizeof(l_err), "Response error code: %d", l_exec_cmd_request->error_code);
                 *a_response = dap_json_object_new_string(l_err);
-                break;
+                l_ret = -1;
+            } else {
+                log_it(L_DEBUG, "Got response from %s:%d, response size = %zu",
+                      a_uplink_addr, a_uplink_port, l_response_size);
             }
-            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {
-            *a_response = dap_json_object_new_string("Response time run out ");
-            log_it(L_ERROR, "Response time from %s:%d  run out",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+            *a_response = dap_json_object_new_string("Response timeout");
+            log_it(L_ERROR, "Response timeout from %s:%d", a_uplink_addr, a_uplink_port);
+            l_ret = -ETIMEDOUT;
             break;
         }
-        case EXEC_CMD_ERR_UNKNOWN : {
-            *a_response = dap_json_object_new_string("Unknown error in json-rpc");
-            log_it(L_ERROR, "Response from %s:%d has unknown error",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+        case EXEC_CMD_ERR_UNKNOWN:
+        default: {
+            *a_response = dap_json_object_new_string("Unknown error in JSON-RPC");
+            log_it(L_ERROR, "Unknown error from %s:%d", a_uplink_addr, a_uplink_port);
+            l_ret = -1;
             break;
         }
     }
+
+    // Cleanup
     s_exec_cmd_request_free(l_exec_cmd_request);
     DAP_DEL_MULTY(l_custom_header, l_path, l_enc_request);
+    
     return l_ret;
 }

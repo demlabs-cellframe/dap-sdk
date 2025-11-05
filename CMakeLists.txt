@@ -1,103 +1,51 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 project(DAP_SDK_NATIVE C)
 
-# Отключение SSL по умолчанию - WolfSSL больше не используется
+# Disable SSL by default - WolfSSL is no longer used
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
 
 set(DAP_SDK_NATIVE_VERSION "3.0-0")
+
+# Define SDK root directory for use in submodules
+# Works both when dap-sdk is standalone and when it's a submodule
+set(DAP_SDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "Root directory of DAP SDK")
 
 # Build type detection
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Installation prefix detection
+# Default: /usr/local (for local builds)
+# For deb packages: override to /usr via cmake -DCMAKE_INSTALL_PREFIX=/usr
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "Installation prefix" FORCE)
+    message(STATUS "[Install] Using default prefix: ${CMAKE_INSTALL_PREFIX}")
+else()
+    message(STATUS "[Install] Using custom prefix: ${CMAKE_INSTALL_PREFIX}")
+endif()
+
 # Common includes and definitions
 include(cmake/OS_Detection.cmake)
-
-
-# =========================================  
-# INTERNAL MODULE CREATION MACRO
-# =========================================
-# Creates internal OBJECT modules (always OBJECT for combining)
-# Usage: dap_add_library(target_name sources... HEADERS headers...)
-macro(dap_add_library TARGET_NAME)
-    cmake_parse_arguments(DAP_LIB "" "" "HEADERS" ${ARGN})
-    
-    # Always create modules as OBJECT for combining into final library
-    add_library(${TARGET_NAME} OBJECT ${DAP_LIB_UNPARSED_ARGUMENTS} ${DAP_LIB_HEADERS})
-    
-    # Track modules for final library creation
-    if(NOT DEFINED DAP_INTERNAL_MODULES)
-        set(DAP_INTERNAL_MODULES "")
-    endif()
-    list(APPEND DAP_INTERNAL_MODULES ${TARGET_NAME})
-    set(DAP_INTERNAL_MODULES ${DAP_INTERNAL_MODULES} CACHE INTERNAL "List of DAP internal modules")
-    
-    message("[+] DAP Internal Module: ${TARGET_NAME} (object)")
-endmacro()
+include(cmake/PackageDetection.cmake)
+include(cmake/PackageComponents.cmake)
 
 # =========================================
-# FINAL LIBRARY CREATION
-# =========================================  
-# Creates final combined DAP SDK library from OBJECT modules
-macro(dap_create_final_library)
-    if(DEFINED DAP_INTERNAL_MODULES)
-        message("[+] Creating final DAP SDK library: dap_sdk")
-        message("[+] Internal OBJECT modules to combine: ${DAP_INTERNAL_MODULES}")
-        
-        # Create object file lists for each module
-        set(DAP_ALL_OBJECTS "")
-        foreach(MODULE ${DAP_INTERNAL_MODULES})
-            list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
-        endforeach()
-        
-        # Add DAP SDK unified interface
-        list(APPEND DAP_ALL_OBJECTS $<TARGET_OBJECTS:dap_sdk_interface>)
-        
-        # Create final library
-        add_library(dap_sdk ${DAP_FINAL_LIB_TYPE} ${DAP_ALL_OBJECTS})
-        
-        # Link external static libraries into final library
-        target_link_libraries(dap_sdk PRIVATE
-            dap_json-c
-            dap_crypto_kyber512
-            dap_crypto_XKCP
-            dap_crypto
-            dap_io
-            dap_client
-            dap_link_manager
-            dap_cli_server
-            dap_dns_server
-            dap_enc_server
-            dap_http_server
-            dap_json_rpc
-            dap_notify_srv
-            dap_stream
-            dap_stream_ch
-            dap_session
-        )
-        
-        # Link MDBX only if enabled
-        if(BUILD_WITH_GDB_DRIVER_MDBX)
-            target_link_libraries(dap_sdk PRIVATE mdbx-static)
-        endif()
-        
-        # Link macOS frameworks for network monitoring
-        if(MACOS)
-            target_link_libraries(dap_sdk PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
-            message("[+] macOS frameworks linked: CoreFoundation, SystemConfiguration")
-        endif()
-        
-        message("[+] Final DAP SDK Library: dap_sdk created from real object files")
-    else()
-        message("[!] No DAP internal modules found!")
-    endif()
-endmacro()
+# INCLUDE DAP LIBRARY HELPERS
+# =========================================
+# Object library helpers - automatic include propagation for OBJECT libraries (CMake 3.12+)
+include(cmake/ObjectLibraryHelpers.cmake)
+
+# DAP SDK library creation macros
+include(cmake/DapLibrary.cmake)
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
+
+option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
 
 # Global DB drivers - MDBX is default for all platforms
 option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
@@ -113,9 +61,6 @@ else()
     set(DAP_FINAL_LIB_TYPE STATIC)
 endif()
 
-# Define DAP_SDK_ONLY to distinguish from full Cellframe builds
-add_definitions(-DDAP_SDK_ONLY)
-
 # Set default modules if none are specified
 if (NOT DEFINED DAPSDK_MODULES OR DAPSDK_MODULES STREQUAL "")
     set(DAPSDK_MODULES "crypto plugin io network-core network-server network-client network-link_manager global-db")
@@ -125,8 +70,9 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
-# Add DAP SDK unified interface
-add_library(dap_sdk_interface OBJECT dap_sdk.c)
+# Add DAP SDK unified interface using dap_add_library
+# This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
+dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
@@ -152,6 +98,12 @@ if (DAPSDK_MODULES MATCHES "io")
     message("[+] Module 'io'")
 endif()
 
+# Network common types and functions  
+add_subdirectory(module/net/common)
+
+# HTTP client
+add_subdirectory(module/net/client_http)
+
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(module/net/stream)
     message("[+] Module 'stream'")
@@ -172,6 +124,10 @@ if (DAPSDK_MODULES MATCHES "network-server")
     message("[+] Module 'server'")
 endif()
 
+# App CLI module
+add_subdirectory(module/net/app-cli)
+message("[+] Module 'app-cli'")
+
 if (DAPSDK_MODULES MATCHES "global-db")
     # Check if at least one Global DB driver is enabled
     if(NOT BUILD_WITH_GDB_DRIVER_MDBX AND NOT BUILD_WITH_GDB_DRIVER_SQLITE AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
@@ -191,13 +147,10 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
+if (BUILD_DAP_SDK_TESTS)
+    set(BUILD_TESTS ON)
+endif()
 
-
-# Examples - UPDATED PATH - DISABLED
-# if(BUILD_EXAMPLES)
-#     # add_subdirectory(module/examples) # Отключено - зависит от Cellframe
-#     # message("[+] Module 'examples'")
-# endif()
 
 # Test framework - UPDATED PATH
 if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
@@ -218,3 +171,67 @@ dap_create_final_library()
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")
 message("[+] =========================================")
+
+# =========================================
+# PACKAGE COMPONENTS SETUP
+# =========================================
+# Only setup installation when INSTALL_DAP_SDK is enabled
+# Can be disabled by parent project (e.g., cellframe-node) by setting INSTALL_DAP_SDK to OFF
+if(INSTALL_DAP_SDK)
+    message(STATUS "[DAP-SDK] Installation enabled")
+    
+    # Setup component-based packaging (runtime/dev/doc split)
+    setup_package_components(
+        PACKAGE_BASE_NAME "dap-sdk"
+        VERSION "${DAP_SDK_NATIVE_VERSION}"
+        DESCRIPTION "DAP SDK - Distributed Application Platform Software Development Kit"
+        VENDOR "Demlabs"
+        CONTACT "support@demlabs.net"
+        DEBUG_SUFFIX "${DAP_DEBUG_SUFFIX}"
+        OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
+    )
+
+    # Register 3rd party headers required by public API
+    register_3rdparty_headers(
+        DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
+        DESTINATION "uthash"
+    )
+
+    # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
+
+    # Finalize and install all components
+    finalize_package_components(
+        LIBRARY_TARGET "dap-sdk"
+        INCLUDE_PREFIX "dap-sdk"
+        PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
+        README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+        EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
+    )
+
+    message(STATUS "[Install] Component-based installation configured")
+    message(STATUS "[Install] - Runtime: libdap-sdk.so → ${CMAKE_INSTALL_PREFIX}/lib")
+    message(STATUS "[Install] - Development: headers → ${CMAKE_INSTALL_PREFIX}/include/dap-sdk")
+    message(STATUS "[Install] - Documentation: examples → ${CMAKE_INSTALL_PREFIX}/share/doc/dap-sdk")
+
+    # =========================================
+    # CPACK CONFIGURATION (handled by PackageComponents.cmake)
+    # =========================================
+    # All CPack configuration is now handled by the universal packaging system
+    # in cmake/PackageComponents.cmake which was included earlier
+
+    # Set final package name explicitly before CPack generation
+    set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
+    set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
+    set(CPACK_PACKAGE_FILE_NAME "${PKG_NAME}_${OS_SUFFIX}")
+
+    # Enable component-based packaging
+    set(CPACK_COMPONENT_INSTALL ON)
+
+    message(STATUS "[CPack] Package file name: ${CPACK_PACKAGE_FILE_NAME}")
+    message(STATUS "[CPack] Component-based packaging enabled")
+    message(STATUS "[CPack] Package generation configured")
+
+    include(CPack)
+else()
+    message(STATUS "[DAP-SDK] Installation disabled (build-time dependency only)")
+endif()

@@ -21,7 +21,7 @@ endif()
 # Use universal DAP library macro  
 dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
+target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_net_common)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
@@ -31,10 +31,9 @@ if(UNIX)
   endif()
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC include
-                                                ../../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_include_directories(${PROJECT_NAME} PUBLIC ../core/src/unix)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+                                                ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll)
