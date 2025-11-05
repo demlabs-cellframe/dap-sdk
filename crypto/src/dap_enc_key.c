@@ -716,23 +716,44 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key || !a_key->pub_key_data || !a_key->pub_key_data_size, NULL);
+    dap_return_val_if_pass(!a_key, NULL);
+    
 // func work
     uint8_t *l_data = NULL;
-    switch (a_key->type) {
+    switch(a_key->type)
+    {
+        // Symmetric encryption algorithms don't have public keys - return NULL without warning
+        case DAP_ENC_KEY_TYPE_IAES:
+        case DAP_ENC_KEY_TYPE_OAES:
+        case DAP_ENC_KEY_TYPE_BF_CBC:
+        case DAP_ENC_KEY_TYPE_BF_OFB:
+        case DAP_ENC_KEY_TYPE_GOST_OFB:
+        case DAP_ENC_KEY_TYPE_KUZN_OFB:
+        case DAP_ENC_KEY_TYPE_SALSA2012:
+        case DAP_ENC_KEY_TYPE_SEED_OFB:
+            if(a_buflen_out)
+                *a_buflen_out = 0;
+            return NULL;
+            
+        // Asymmetric signature algorithms with custom serialization
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-            if (!s_callbacks[a_key->type].ser_pub_key) {
+            if(!s_callbacks[a_key->type].ser_pub_key)
+            {
                 log_it(L_ERROR, "No callback for public key serialize to %s enc key", dap_enc_get_type_name(a_key->type));
                 return NULL;
             }
             l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
             break;
+            
+        // Default: asymmetric/KEM algorithms with public key data
         default:
+            // Sanity check: asymmetric algorithms MUST have public key
+            dap_return_val_if_pass(!a_key->pub_key_data || !a_key->pub_key_data_size, NULL);
             l_data = DAP_DUP_SIZE(a_key->pub_key_data, a_key->pub_key_data_size);
             if(a_buflen_out)
                 *a_buflen_out = l_data ? a_key->pub_key_data_size : 0;
