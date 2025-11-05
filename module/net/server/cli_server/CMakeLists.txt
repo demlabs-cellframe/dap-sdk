@@ -8,7 +8,10 @@ file(GLOB DAP_CLI_SRV_HEADERS include/*.h)
 dap_add_library(${PROJECT_NAME} ${DAP_CLI_SRV_SRCS} HEADERS ${DAP_CLI_SRV_HEADERS})
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_io m)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../json_rpc/include
+)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLI_SRV_HEADERS}")

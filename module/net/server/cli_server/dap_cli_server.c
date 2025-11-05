@@ -244,7 +244,7 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
  * @param a_doc
  * @param a_doc_ex
  */
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_ex_func_json_t a_func_rpc const char *a_doc, int16_t a_id, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_ex_func_json_t a_func_rpc, const char *a_doc, int16_t a_id, const char *a_doc_ex)
 {
     return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, a_doc, a_doc_ex, a_id);
 }

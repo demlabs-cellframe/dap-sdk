@@ -13,7 +13,10 @@ dap_add_library(${PROJECT_NAME} ${JSON_RPC_SRCS} HEADERS ${JSON_RPC_HEADERS})
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_net_common dap_http_server dap_enc_server dap_client_http)
 
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
-target_include_directories(${PROJECT_NAME} PUBLIC include)
+target_include_directories(${PROJECT_NAME} PUBLIC 
+    include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cli_server/include
+)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${JSON_RPC_HEADERS}")
