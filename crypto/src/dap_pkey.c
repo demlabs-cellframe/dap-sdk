@@ -80,10 +80,15 @@ dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str)
     if (l_str_len < 1 || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_str_len)) {
         return NULL;
     }
-    dap_pkey_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, l_str_len / 2 + 1, NULL);
+    dap_pkey_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, sizeof(dap_pkey_t) + (l_str_len / 2), NULL);
     size_t l_out_size = dap_hex2bin((uint8_t *)l_ret, a_hex_str + 2, l_str_len);
-    if (l_ret->header.type.type == DAP_PKEY_TYPE_NULL || l_out_size / 2 != dap_pkey_get_size(l_ret)) {
-        log_it(L_ERROR, "Error in read pkey from hex string");
+    
+    // Validate that the parsed pkey structure is valid and size is correct
+    if (l_out_size < sizeof(dap_pkey_t) || 
+        l_ret->header.type.type == DAP_PKEY_TYPE_NULL || 
+        l_ret->header.size > (uint32_t)(l_str_len / 2) ||
+        sizeof(dap_pkey_t) + l_ret->header.size != l_out_size / 2) {
+        log_it(L_ERROR, "Error in read pkey from hex string - invalid structure or size");
         DAP_DEL_Z(l_ret);
     }
     return l_ret;

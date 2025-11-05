@@ -192,7 +192,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
  * @param a_sign_type
  * @return bool
  */
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
     if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
         return true;
     return false;
@@ -614,7 +614,6 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
     json_object_object_add(a_json_out, a_version == 1 ? "Signature size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));
 
 }
-
 /**
  * @brief return string with recommended types
  * @return string with recommended types

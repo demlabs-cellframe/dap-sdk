@@ -1,78 +1,43 @@
 #include "dap_rand.h"
+#include "dap_enc_base64.h"
+#include "dap_common.h"
+
 #include <stdlib.h>
+#include <string.h>
+
+#define LOG_TAG "dap_rand"
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
-#if defined(_WIN32)
+#ifdef DAP_OS_WINDOWS
     #include <windows.h>
 #else
     #include <unistd.h>
     #include <fcntl.h>
-    static int lock = -1;
+    #include <errno.h>
+    #include <pthread.h>
+    static int s_urandom_fd = -1;
+    static pthread_once_t s_urandom_init = PTHREAD_ONCE_INIT;
+    
+    static void init_urandom_fd(void) {
+        s_urandom_fd = open("/dev/urandom", O_RDONLY);
+    }
+    
+    static void deinit_urandom_fd(void) {
+        if (s_urandom_fd != -1) {
+            close(s_urandom_fd);
+            s_urandom_fd = -1;
+        }
+    }
+
+    __attribute__((constructor))
+    static void register_cleanup(void) {
+        atexit(deinit_urandom_fd);
+    }
 #endif
 
 #define passed 0 
 #define failed 1
-
-
-static __inline void delay(unsigned int count)
-{
-    while (count--) {}
-}
-
-uint32_t random_uint32_t(const uint32_t MAX_NUMBER)
-{
-    uint32_t ret;
-    randombytes(&ret, 4);
-    ret %= MAX_NUMBER;
-    return ret;
-}
-
-/**
- * @brief dap_random_byte
- * @return
- */
-byte_t dap_random_byte()
-{
-    byte_t ret;
-    randombytes(&ret, 1);
-    return ret;
-}
-
-/**
- * @brief dap_random_uint16
- * @return
- */
-uint16_t dap_random_uint16()
-{
-    uint16_t l_ret;
-    randombytes(&l_ret, 2);
-    return l_ret;
-}
-
-
-int randombase64(void*random_array, unsigned int size)
-{
-    int off = size - (size/4)*3;
-    unsigned int odd_signs = size - ((size/4)*4);
-    if(odd_signs < size)
-    {
-        randombytes(random_array + off, (size/4)*3);
-        dap_enc_base64_encode(random_array + off, (size/4)*3,random_array,DAP_ENC_DATA_TYPE_B64);
-    }
-    if(odd_signs)
-    {
-        uint8_t tmpv[7];
-        randombytes(tmpv+4,3);
-        dap_enc_base64_encode(tmpv + 4, 3,(char*)tmpv,DAP_ENC_DATA_TYPE_B64);
-        for(unsigned int i = 0; i < odd_signs; ++i)
-        {
-            ((uint8_t*)random_array)[size - odd_signs + i] = tmpv[i];
-        }
-    }
-    return passed;
-}
-
 
 int randombytes(void* random_array, unsigned int nbytes)
 { // Generation of "nbytes" of random values
@@ -85,33 +50,85 @@ int randombytes(void* random_array, unsigned int nbytes)
     }
 
     if (CryptGenRandom(p, nbytes, (BYTE*)random_array) == FALSE) {
+      CryptReleaseContext(p, 0);
       return failed;
     }
 
     CryptReleaseContext(p, 0);
-    return passed;
 #else
-    int r, n = (int)nbytes, count = 0;
-    if (lock == -1) {
-        do {
-            lock = open("/dev/urandom", O_RDONLY);
-            if (lock == -1) {
-                delay(0xFFFFF);
-            }
-        } while (lock == -1);
+    pthread_once(&s_urandom_init, init_urandom_fd);
+    
+    if (s_urandom_fd == -1) {
+        return failed;
     }
-
-    for(int i = 0; i < n;){
-        r = read(lock, (char*)random_array+i, n);
-        if (r >= 0){
-            i += r;
-        } else{
-            delay(0xFFFF);
+    
+    int bytes_read = 0;
+    while (bytes_read < (int)nbytes) {
+        int r = read(s_urandom_fd, (char*)random_array + bytes_read, 
+                    nbytes - bytes_read);
+        if (r > 0) {
+            bytes_read += r;
+        } else if (r == 0) {
+            // EOF on /dev/urandom should never happen, this is a critical error
+            log_it(L_CRITICAL, "Unexpected EOF on /dev/urandom");
+            return failed;
+        } else if (errno != EINTR) {
+            // Any error other than EINTR is critical for crypto security
+            log_it(L_CRITICAL, "Critical error reading from /dev/urandom: %s", strerror(errno));
+            return failed;
         }
+        // Only EINTR continues the loop
     }
-
 #endif
+    return passed;
+}
 
+int randombase64(void*random_array, unsigned int size)
+{
+    // Early parameter validation
+    if (!random_array || size == 0) return failed;
+    
+    // Special handling for small sizes (1-4 chars + null-terminator)
+    if (size <= 5) {
+        // Generate one full base64 block (4 chars) and truncate
+        uint8_t l_binary_data[3];
+        if (randombytes(l_binary_data, 3) != 0)
+            return failed;
+            
+        char l_temp_base64[5];  // 4 chars + null terminator
+        size_t l_encoded_size = dap_enc_base64_encode(l_binary_data, 3, 
+                                                      l_temp_base64, DAP_ENC_DATA_TYPE_B64);
+        
+        // Copy only what fits in user buffer (including null-terminator)
+        unsigned int l_copy_size = dap_min(l_encoded_size, size - 1);
+        memcpy(random_array, l_temp_base64, l_copy_size);
+        ((char*)random_array)[l_copy_size] = '\0';
+        return passed;
+    }
+    
+    // Normal handling for larger sizes
+    // Calculate binary bytes that will give us ≤ size-1 base64 chars (reserve space for null-terminator)
+    unsigned int l_max_chars = size - 1;  // Reserve 1 byte for null-terminator  
+    unsigned int l_binary_bytes = (l_max_chars / 4) * 3;  // Complete 4-char blocks only
+    
+    // Allocate temporary buffer for binary data
+    uint8_t *l_binary_data = DAP_NEW_Z_SIZE(uint8_t, l_binary_bytes);
+    if (!l_binary_data)
+        return failed;
+    
+    // Generate random binary data
+    if (randombytes(l_binary_data, l_binary_bytes) != 0) {
+        DAP_DELETE(l_binary_data);
+        return failed;
+    }
+    
+    // Encode directly to user buffer (safe - will never overflow)
+    size_t l_encoded_size = dap_enc_base64_encode(l_binary_data, l_binary_bytes, 
+                                                  random_array, DAP_ENC_DATA_TYPE_B64);
+    DAP_DELETE(l_binary_data);
+    
+    ((char*)random_array)[dap_min(l_encoded_size, size - 1)] = '\0';
+    
     return passed;
 }
 

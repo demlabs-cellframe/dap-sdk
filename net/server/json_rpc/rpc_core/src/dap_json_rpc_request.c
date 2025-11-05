@@ -41,7 +41,8 @@ static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_cli
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);    
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);
+    pthread_condattr_destroy(&attr);
 #endif
 #endif
     return l_exec_cmd_request;
@@ -274,7 +275,6 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
 
             json_object_put(jobj);
             if (!request->params){
-                dap_json_rpc_params_remove_all(request->params);
                 DAP_DEL_MULTY(request->method, request);
                 return NULL;
             }
@@ -355,9 +355,14 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     return DAP_DELETE(l_sign), l_ret;
 }
 
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size, const char *a_cert_path){
     a_request->id = 0;
-    dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
+    dap_cert_t *l_cert = NULL;
+    if (!a_cert_path) {
+        l_cert = dap_cert_find_by_name("node-addr");
+    } else {
+        l_cert = dap_cert_find_by_name(a_cert_path);
+    }
     if (!l_cert)
         return log_it(L_ERROR, "Can't load cert"), NULL;
 
@@ -367,11 +372,11 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response) {
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path) {
     size_t l_request_data_size, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
-    char* l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size);
+    char* l_request_data_str = dap_json_rpc_request_to_http_str(a_request, &l_request_data_size, a_cert_path);
     if (!l_request_data_str)
         return -1;
 
