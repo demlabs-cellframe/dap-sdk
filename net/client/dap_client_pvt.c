@@ -1301,8 +1301,25 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
             }
         } break;
 
-        case STAGE_STATUS_COMPLETE:
+        case STAGE_STATUS_COMPLETE: {
+            // If we're at COMPLETE status but not at target stage, advance to next stage
+            // This handles the case when client is at STAGE_BEGIN with COMPLETE status
+            if (a_client_pvt->stage < a_client_pvt->client->stage_target) {
+                log_it(L_DEBUG, "Stage %s is COMPLETE but target is %s, advancing to next stage",
+                       dap_client_stage_str(a_client_pvt->stage),
+                       dap_client_stage_str(a_client_pvt->client->stage_target));
+                // Advance to next stage via callback if available
+                if (a_client_pvt->stage_status_done_callback) {
+                    a_client_pvt->stage_status_done_callback(a_client_pvt->client, NULL);
+                } else {
+                    // No callback, use FSM advance
+                    dap_client_pvt_stage_transaction_begin(a_client_pvt,
+                                                          a_client_pvt->stage + 1,
+                                                          dap_client_pvt_stage_fsm_advance);
+                }
+            }
             break;
+        }
 
         default:
             log_it(L_ERROR, "Undefined proccessing actions for stage status %s",

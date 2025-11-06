@@ -290,15 +290,19 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
     l_client->stage_target_done_callback = l_stage_end_callback;
     dap_client_stage_t l_cur_stage = l_client_pvt->stage;
     dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
-    if (l_cur_stage_status == STAGE_STATUS_COMPLETE && l_client_pvt->stage == l_client->stage_target) {
-        if (l_client->stage_target == l_stage_target) {
+    
+    // Handle case when client is at COMPLETE status
+    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
+        // If already at target stage, just call callback
+        if (l_client_pvt->stage == l_client->stage_target && l_client->stage_target == l_stage_target) {
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
                 l_stage_end_callback(l_client, l_client->callbacks_arg);
             DAP_DELETE(a_arg);
             return;
         }
-        if (l_client->stage_target < l_stage_target) {
+        // If current stage is less than new target, advance from current stage
+        if (l_client_pvt->stage < l_stage_target) {
             l_client->stage_target = l_stage_target;
             log_it(L_DEBUG, "Start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
                    dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
@@ -308,6 +312,8 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
             DAP_DELETE(a_arg);
             return;
         }
+        // If current stage is at or beyond target, reset to BEGIN
+        // This handles the case when we need to restart from BEGIN
     }
 
     l_client->stage_target = l_stage_target;
