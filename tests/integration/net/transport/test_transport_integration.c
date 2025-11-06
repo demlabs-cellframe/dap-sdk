@@ -180,18 +180,7 @@ static int test_init_all_transports(void)
     
     // Modules are initialized automatically via constructors when libraries are loaded
     // Constructors call init functions directly, which register transports
-    // No need to call dap_module_init_all() manually - constructors handle initialization
-    log_it(L_DEBUG, "Waiting for modules to initialize via constructors...");
-    
-    // Verify all transports are registered (with intelligent waiting)
-    // Constructors may take some time to execute, so we wait for transports
-    if (!test_wait_for_transports_registered(2000)) {
-        TEST_ERROR("Not all transports registered within timeout");
-        return -4;
-    }
-    
-    // Verify all transports are registered
-    // This is the actual check - if transports are registered, initialization was successful
+    // Verify all transports are registered (constructors should have registered them)
     bool l_all_transports_registered = true;
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
         dap_net_transport_t *l_transport = dap_net_transport_find(g_transport_configs[i].transport_type);
@@ -203,7 +192,6 @@ static int test_init_all_transports(void)
         }
     }
     
-    // If transports are registered, initialization is successful regardless of dap_module_init_all() return value
     if (!l_all_transports_registered) {
         TEST_ERROR("Not all transports are registered");
         return -4;
