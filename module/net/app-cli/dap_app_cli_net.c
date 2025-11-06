@@ -226,7 +226,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         printf("Error sending to server");
         return -1;
     }
-
+    
     //wait for command execution
     time_t l_start_time = time(NULL);
     int l_status = 1;

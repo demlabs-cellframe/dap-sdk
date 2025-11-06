@@ -388,6 +388,7 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
  * @note Automatically selects appropriate formatting based on response type and command name
  */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
+    
     if (!response) {
         printf("Empty response");
         return -1;
@@ -414,10 +415,12 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 printf("json object is NULL\n");
                 return -2;
             }
+            
             if (response->version == 1) {
+                //printf("type %d\n",response->result_json_object);
                 switch(json_print_commands(cmd_name)) {
                     case 1: json_print_for_file_cmd(response); break;
-                    default: {
+                    default: {printf("default\n");
                             dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
                             if (!l_cmd || l_cmd->func_rpc(response, cmd_params, cmd_cnt)){
                                 dap_json_print_object(response->result_json_object, stdout, 0);
@@ -427,6 +430,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                         break;
                 }
             } else {
+                printf("version != 1\n");
                 dap_json_print_object(response->result_json_object, stdout, 0);
             }
             break;
