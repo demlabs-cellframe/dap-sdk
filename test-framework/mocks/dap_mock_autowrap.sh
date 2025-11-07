@@ -39,6 +39,10 @@ print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Load template processing functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/dap_tpl.sh"
+
 # Check arguments
 if [ $# -lt 3 ]; then
     echo "Usage: $0 <output_dir> <basename> <source1> <source2> ..."
@@ -49,6 +53,15 @@ OUTPUT_DIR="$1"
 BASENAME="$2"
 shift 2  # Remove first two arguments
 SOURCE_FILES=("$@")  # Remaining arguments are source files
+
+# Get script directory for template files
+# Note: SCRIPT_DIR is already set by dap_tpl.sh sourcing
+TEMPLATES_DIR="${SCRIPT_DIR}/templates"
+SCRIPTS_DIR="${TEMPLATES_DIR}/scripts"
+
+# Export SCRIPTS_DIR for template processing functions
+export SCRIPTS_DIR
+export TEMPLATES_DIR
 
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
@@ -179,114 +192,273 @@ fi
 
 print_success "Generated CMake integration"
 
-# Step 5: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect parameter counts
+# Step 5: Extract full information about custom mocks for direct function generation
+print_info "Extracting full custom mock declarations for direct function generation..."
+
+# Temporary file for collecting custom mock declarations
+# Use fixed name instead of PID to ensure file exists for later steps
+TMP_CUSTOM_MOCKS="${OUTPUT_DIR}/custom_mocks_list.txt"
+> "$TMP_CUSTOM_MOCKS"
+
+# Scan all source files for DAP_MOCK_WRAPPER_CUSTOM and extract full information
+print_info "Scanning ${#SOURCE_FILES[@]} source files for custom mocks..."
+for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
+    [ ! -f "$SOURCE_FILE" ] && continue
+    print_info "  Scanning: $SOURCE_FILE"
+    
+    # Use awk script to parse DAP_MOCK_WRAPPER_CUSTOM declarations and extract:
+    # - return_type (original, with *)
+    # - func_name
+    # - parameters list (type and name from PARAM(...) or void)
+    awk -f "${SCRIPTS_DIR}/parse_custom_mocks.awk" "$SOURCE_FILE" >> "$TMP_CUSTOM_MOCKS" || true
+    
+    # Debug: show what was extracted
+    if [ -s "$TMP_CUSTOM_MOCKS" ]; then
+        EXTRACTED_COUNT=$(wc -l < "$TMP_CUSTOM_MOCKS" | tr -d ' ')
+        print_info "    Extracted $EXTRACTED_COUNT custom mock(s) so far"
+    fi
+done
+
+# Debug: show final count
+if [ -f "$TMP_CUSTOM_MOCKS" ]; then
+    FINAL_COUNT=$(wc -l < "$TMP_CUSTOM_MOCKS" 2>/dev/null | tr -d ' ' || echo "0")
+    print_info "Total custom mocks extracted: $FINAL_COUNT"
+    if [ "$FINAL_COUNT" -gt 0 ]; then
+        print_info "Sample entries:"
+        head -3 "$TMP_CUSTOM_MOCKS" | while IFS='|' read -r rt fn pl mt; do
+            print_info "  - $fn ($rt)"
+        done
+    fi
+fi
+
+# Step 5.5: Generate named headers for each custom mock
+if [ -f "$TMP_CUSTOM_MOCKS" ] && [ -s "$TMP_CUSTOM_MOCKS" ]; then
+    CUSTOM_MOCKS_COUNT=$(wc -l < "$TMP_CUSTOM_MOCKS" | tr -d ' ')
+    print_info "Generating named headers for custom mocks..."
+    print_info "Found $CUSTOM_MOCKS_COUNT custom mock declarations"
+    
+    # Create directory for custom mock headers
+    CUSTOM_MOCKS_DIR="${OUTPUT_DIR}/custom_mocks"
+    mkdir -p "$CUSTOM_MOCKS_DIR"
+    
+    # Process each custom mock declaration
+    while IFS='|' read -r return_type func_name param_list macro_type; do
+        [ -z "$func_name" ] && continue
+        
+        # Skip if function already has a wrapper defined in source files
+        # Check if function name is in WRAPPER_FUNCTIONS list
+        if echo "$WRAPPER_FUNCTIONS" | grep -q "^${func_name}$"; then
+            print_info "  Skipping $func_name - wrapper already defined in source"
+            continue
+        fi
+        
+        # Create header file name based on function name
+        header_file="${CUSTOM_MOCKS_DIR}/${func_name}_mock.h"
+        
+        # Parse parameters from param_list
+        # Handle PARAM(type, name) entries or void
+        param_decl=""
+        param_names=""
+        param_array=""
+        param_count=0
+        
+        if [ "$param_list" = "void" ] || [ -z "$param_list" ]; then
+            param_decl="void"
+            param_names=""
+            param_array="NULL"
+            param_count=0
+        else
+            # Extract PARAM(type, name) entries
+            # Remove all whitespace for easier parsing
+            clean_params=$(echo "$param_list" | tr -d ' \t\n')
+            
+            # Count PARAM entries
+            param_count=$(echo "$clean_params" | grep -o "PARAM(" | wc -l)
+            
+            if [ "$param_count" -eq 0 ]; then
+                # No PARAM entries, might be direct parameters or void
+                param_decl="void"
+                param_names=""
+                param_array="NULL"
+                param_count=0
+            else
+                # Extract each PARAM(type, name)
+                param_decl_parts=()
+                param_name_parts=()
+                param_array_parts=()
+                
+                # Use awk script to extract PARAM entries
+                echo "$param_list" | awk -f "${SCRIPTS_DIR}/parse_params.awk" > "/tmp/params_${func_name}_$$.txt"
+                
+                # Read extracted parameters
+                param_idx=0
+                while IFS='|' read -r param_type param_name; do
+                    [ -z "$param_type" ] && continue
+                    param_decl_parts+=("$param_type $param_name")
+                    param_name_parts+=("$param_name")
+                    param_array_parts+=("(void*)(intptr_t)$param_name")
+                    param_idx=$((param_idx + 1))
+                done < "/tmp/params_${func_name}_$$.txt"
+                
+                rm -f "/tmp/params_${func_name}_$$.txt"
+                
+                # Join parameters with proper formatting
+                if [ ${#param_decl_parts[@]} -gt 0 ]; then
+                    # Join with ", " for declarations and names
+                    param_decl=$(IFS=','; printf '%s, ' "${param_decl_parts[@]}" | sed 's/, $//')
+                    param_names=$(IFS=','; printf '%s, ' "${param_name_parts[@]}" | sed 's/, $//')
+                    # Join array parts with ", "
+                    param_array="((void*[]){$(IFS=','; printf '%s, ' "${param_array_parts[@]}" | sed 's/, $//')})"
+                    param_count=${#param_decl_parts[@]}
+                else
+                    param_decl="void"
+                    param_names=""
+                    param_array="NULL"
+                    param_count=0
+                fi
+            fi
+        fi
+        
+        # Prepare template variables
+        guard_name="${func_name^^}_MOCK_H"
+        if [ "$return_type" = "void" ]; then
+            wrapper_signature="void __wrap_${func_name}($param_decl)"
+            result_declaration=""
+            if [ "$param_count" -eq 0 ]; then
+                mock_impl_call="        __mock_impl_${func_name}();"
+                real_function_call="        __real_${func_name}();"
+            else
+                mock_impl_call="        __mock_impl_${func_name}($param_names);"
+                real_function_call="        __real_${func_name}($param_names);"
+            fi
+            return_value_override=""
+            record_call=""
+            return_statement=""
+        else
+            wrapper_signature="$return_type __wrap_${func_name}($param_decl)"
+            result_declaration="    $return_type __wrap_result = ($return_type){0};"
+            if [ "$param_count" -eq 0 ]; then
+                mock_impl_call="        __wrap_result = __mock_impl_${func_name}();"
+                real_function_call="        __wrap_result = __real_${func_name}();"
+            else
+                mock_impl_call="        __wrap_result = __mock_impl_${func_name}($param_names);"
+                real_function_call="        __wrap_result = __real_${func_name}($param_names);"
+            fi
+            # Create temporary files for multi-line values
+            return_value_override_file=$(mktemp)
+            record_call_file=$(mktemp)
+            {
+                echo "        if (__wrap_mock_state && __wrap_mock_state->return_value.ptr) {"
+                echo "            __wrap_result = *($return_type*)__wrap_mock_state->return_value.ptr;"
+                echo "        }"
+            } > "$return_value_override_file"
+            echo "        dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, (void*)(intptr_t)__wrap_result);" > "$record_call_file"
+            return_value_override="@$return_value_override_file"
+            record_call="@$record_call_file"
+            return_statement="    return __wrap_result;"
+        fi
+        
+        # Generate header file using template
+        # Note: Temporary files must exist during replace_template_placeholders call
+        replace_template_placeholders \
+            "${TEMPLATES_DIR}/custom_mock_header.h.tpl" \
+            "$header_file" \
+            "FUNC_NAME=$func_name" \
+            "RETURN_TYPE=$return_type" \
+            "PARAM_DECL=$param_decl" \
+            "PARAM_NAMES=$param_names" \
+            "PARAM_ARRAY=$param_array" \
+            "PARAM_COUNT=$param_count" \
+            "GUARD_NAME=$guard_name" \
+            "WRAPPER_FUNCTION_SIGNATURE=$wrapper_signature" \
+            "RESULT_DECLARATION=$result_declaration" \
+            "MOCK_IMPL_CALL=$mock_impl_call" \
+            "RETURN_VALUE_OVERRIDE=$return_value_override" \
+            "RECORD_CALL=$record_call" \
+            "REAL_FUNCTION_CALL=$real_function_call" \
+            "RETURN_STATEMENT=$return_statement"
+        
+        # Clean up temporary files AFTER replacement is done
+        if [ "$return_type" != "void" ]; then
+            rm -f "$return_value_override_file" "$record_call_file"
+        fi
+        
+        print_success "Generated mock header: $header_file"
+    done < "$TMP_CUSTOM_MOCKS"
+    
+    # Create main include file that includes all custom mock headers
+    # Also include the macros header so both can be included via single -include
+    MAIN_CUSTOM_MOCKS_FILE="${OUTPUT_DIR}/${BASENAME}_custom_mocks.h"
+    MACROS_HEADER_FILE="${OUTPUT_DIR}/${BASENAME}_mock_macros.h"
+    
+    # Generate main include file using template
+    # Pass custom mocks list and wrapper functions for generation inside template
+    # Export variables so they're available in replace_template_placeholders and child processes
+    export CUSTOM_MOCKS_LIST="$(cat "$TMP_CUSTOM_MOCKS")"
+    export WRAPPER_FUNCTIONS="$WRAPPER_FUNCTIONS"
+    replace_template_placeholders \
+        "${TEMPLATES_DIR}/custom_mocks_main.h.tpl" \
+        "$MAIN_CUSTOM_MOCKS_FILE" \
+        "BASENAME=$BASENAME"
+    
+    print_success "Generated main custom mocks include: $MAIN_CUSTOM_MOCKS_FILE"
+else
+    print_info "No custom mocks found - creating custom mocks header with macros only"
+    # Create header file that includes macros header so CMake can always include it
+    MAIN_CUSTOM_MOCKS_FILE="${OUTPUT_DIR}/${BASENAME}_custom_mocks.h"
+    MACROS_HEADER_FILE="${OUTPUT_DIR}/${BASENAME}_mock_macros.h"
+    
+    # Generate empty main include file using template
+    replace_template_placeholders \
+        "${TEMPLATES_DIR}/custom_mocks_main_empty.h.tpl" \
+        "$MAIN_CUSTOM_MOCKS_FILE" \
+        "BASENAME=$BASENAME"
+fi
+
+# Step 6: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect return types and parameter counts (for backward compatibility)
 print_info "Analyzing DAP_MOCK_WRAPPER_CUSTOM usage for macro generation..."
 
 # Temporary file for collecting param counts
 TMP_PARAM_COUNTS="/tmp/param_counts_$$.txt"
 > "$TMP_PARAM_COUNTS"
 
-# Scan all source files for DAP_MOCK_WRAPPER_CUSTOM
+# Temporary file for collecting return types
+TMP_RETURN_TYPES="/tmp/return_types_$$.txt"
+> "$TMP_RETURN_TYPES"
+
+# Scan all source files for DAP_MOCK_WRAPPER_CUSTOM and variants
 # Parse multi-line DAP_MOCK_WRAPPER_CUSTOM declarations and count PARAM(...) entries
+# Also search for _DAP_MOCK_WRAPPER_CUSTOM_NONVOID and _DAP_MOCK_WRAPPER_CUSTOM_VOID
 for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
     [ ! -f "$SOURCE_FILE" ] && continue
     
-    # Use awk to parse DAP_MOCK_WRAPPER_CUSTOM declarations
-    # Count PARAM(...) entries between DAP_MOCK_WRAPPER_CUSTOM and opening brace {
+    # Use awk to parse DAP_MOCK_WRAPPER_CUSTOM declarations (and variants)
+    # Extract return_type and count PARAM(...) entries between macro and opening brace {
     # Handle multi-line declarations
-    awk '
-    BEGIN {
-        in_custom = 0
-        param_count = 0
-        paren_level = 0
-        found_opening_paren = 0
-    }
-    /DAP_MOCK_WRAPPER_CUSTOM/ {
-        in_custom = 1
-        param_count = 0
-        paren_level = 0
-        found_opening_paren = 0
-        
-        # Check if this line contains opening parenthesis
-        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
-            found_opening_paren = 1
-            paren_level = 1  # Opening paren of DAP_MOCK_WRAPPER_CUSTOM(
-            # Count PARAM( entries in rest of line
-            rest = substr($0, RSTART + RLENGTH)
-            while (match(rest, /PARAM\s*\(/)) {
-                param_count++
-                rest = substr(rest, RSTART + RLENGTH)
-            }
-            # Check for closing paren on same line
-            while (match(rest, /[()]/)) {
-                char = substr(rest, RSTART, 1)
-                if (char == "(") paren_level++
-                if (char == ")") {
-                    paren_level--
-                    if (paren_level == 0) {
-                        # Found closing paren - output count and reset
-                        print param_count
-                        in_custom = 0
-                        param_count = 0
-                        paren_level = 0
-                        found_opening_paren = 0
-                        next
-                    }
-                }
-                rest = substr(rest, RSTART + RLENGTH)
-            }
-        }
-        next
-    }
-    in_custom {
-        # Count parentheses to track when we exit the macro parameter list
-        for (i = 1; i <= length($0); i++) {
-            char = substr($0, i, 1)
-            if (char == "(") {
-                paren_level++
-                if (!found_opening_paren) {
-                    found_opening_paren = 1
-                    paren_level = 1
-                }
-            }
-            if (char == ")") {
-                paren_level--
-                if (paren_level <= 0 && found_opening_paren) {
-                    # We found the closing parenthesis of DAP_MOCK_WRAPPER_CUSTOM
-                    # Output param count
-                    print param_count
-                    in_custom = 0
-                    param_count = 0
-                    paren_level = 0
-                    found_opening_paren = 0
-                    next
-                }
-            }
-            if (char == "{" && found_opening_paren && paren_level == 0) {
-                # We found opening brace - this means no parameters (or already closed)
-                # Output param count
-                print param_count
-                in_custom = 0
-                param_count = 0
-                paren_level = 0
-                found_opening_paren = 0
-                next
-            }
-        }
-        
-        # Count PARAM( entries in current line
-        line = $0
-        while (match(line, /PARAM\s*\(/)) {
-            param_count++
-            line = substr(line, RSTART + RLENGTH)
-        }
-    }
-    ' "$SOURCE_FILE" >> "$TMP_PARAM_COUNTS" || true
+    awk -f "${SCRIPTS_DIR}/count_params.awk" "$SOURCE_FILE" >> "$TMP_PARAM_COUNTS" || true
+    
+    # Second pass: extract return types (both normalized and original)
+    awk -f "${SCRIPTS_DIR}/extract_return_types.awk" "$SOURCE_FILE" >> "$TMP_RETURN_TYPES" || true
 done
 
 # Collect unique parameter counts
 PARAM_COUNTS=$(sort -u -n "$TMP_PARAM_COUNTS" 2>/dev/null | tr '\n' ' ')
 rm -f "$TMP_PARAM_COUNTS"
+
+# Collect unique return types (normalized|original format)
+RETURN_TYPES_PAIRS=$(sort -u "$TMP_RETURN_TYPES" 2>/dev/null | grep -v '^$' | tr '\n' ' ')
+rm -f "$TMP_RETURN_TYPES"
+
+# Extract normalized types and original types separately
+RETURN_TYPES=""
+declare -A ORIGINAL_TYPES
+for pair in $RETURN_TYPES_PAIRS; do
+    normalized=$(echo "$pair" | cut -d'|' -f1)
+    original=$(echo "$pair" | cut -d'|' -f2)
+    RETURN_TYPES="$RETURN_TYPES $normalized"
+    ORIGINAL_TYPES["$normalized"]="$original"
+done
+RETURN_TYPES=$(echo "$RETURN_TYPES" | tr ' ' '\n' | sort -u | tr '\n' ' ')
 
 if [ -z "$PARAM_COUNTS" ] || [ "$PARAM_COUNTS" = " " ]; then
     print_info "No DAP_MOCK_WRAPPER_CUSTOM found - will generate minimal macros"
@@ -319,198 +491,316 @@ print_info "Max parameter count: $MAX_PARAM_COUNT, generating helpers for 0-$MAX
 # Step 6: Generate specialized macros header file
 print_info "Generating specialized macros header: $MACROS_FILE"
 
-cat > "$MACROS_FILE" << 'EOF'
-/**
- * Auto-generated mock macros for DAP_MOCK_WRAPPER_CUSTOM
- * Generated by dap_mock_autowrap.sh
- * 
- * This file contains only the macros needed for this specific test target.
- * Do not modify manually - it will be regenerated.
- * 
- * This file is included via CMake's -include flag before dap_mock_linker_wrapper.h
- * No include guards needed - file is included unconditionally via -include
- */
+# Generate return type macros and simple wrapper macros in temporary files first
+# These will be appended via AWK sections in mock_map_macros.h.tpl
+RETURN_TYPE_MACROS_FILE="${MACROS_FILE}.return_types"
+SIMPLE_WRAPPER_MACROS_FILE="${MACROS_FILE}.simple_wrappers"
 
-// Include standard headers for size_t and other basic types
-#include <stddef.h>
-
-// Include base macros we need from dap_mock_linker_wrapper.h
-// Since this file is included first, we need the base macros here
-#ifndef _DAP_MOCK_NARGS_DEFINED
-#define _DAP_MOCK_NARGS_DEFINED
-EOF
-
-# Generate _DAP_MOCK_NARGS dynamically based on MAX_ARGS_COUNT
-# _DAP_MOCK_NARGS needs a sequence: N, N-1, N-2, ..., 1, 0
-echo "// Dynamically generated _DAP_MOCK_NARGS supporting up to $MAX_ARGS_COUNT arguments" >> "$MACROS_FILE"
-echo -n "#define _DAP_MOCK_NARGS(...) \\" >> "$MACROS_FILE"
-echo "" >> "$MACROS_FILE"
-echo -n "    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__" >> "$MACROS_FILE"
-# Generate descending sequence: MAX_ARGS_COUNT, MAX_ARGS_COUNT-1, ..., 1, 0
-for i in $(seq $MAX_ARGS_COUNT -1 0); do
-    echo -n ", $i" >> "$MACROS_FILE"
-done
-echo ")" >> "$MACROS_FILE"
-
-# Generate _DAP_MOCK_NARGS_IMPL with enough parameters
-echo -n "#define _DAP_MOCK_NARGS_IMPL(" >> "$MACROS_FILE"
-for i in $(seq 1 $MAX_ARGS_COUNT); do
-    echo -n "_$i" >> "$MACROS_FILE"
-    [ $i -lt $MAX_ARGS_COUNT ] && echo -n "," >> "$MACROS_FILE"
-done
-echo -n ", N, ...) N" >> "$MACROS_FILE"
-echo "" >> "$MACROS_FILE"
-
-cat >> "$MACROS_FILE" << 'EOF'
-
-#define _DAP_MOCK_IS_EMPTY(...) \
-    (_DAP_MOCK_NARGS(__VA_ARGS__) == 0)
-#endif
-
-EOF
-
-       # Generate _DAP_MOCK_MAP_N macros for each needed count
-       # Note: count is the number of PARAM() entries, but each PARAM expands to 2 arguments
-       # So _DAP_MOCK_MAP_N needs to handle 2*count arguments
-       for count in "${PARAM_COUNTS_ARRAY[@]}"; do
-           # Skip empty entries
-           [ -z "$count" ] && continue
-           
-           # Generate _DAP_MOCK_MAP_N macro
-           echo "// Macro for $count parameter(s) (PARAM entries)" >> "$MACROS_FILE"
-           echo -n "#define _DAP_MOCK_MAP_${count}(macro" >> "$MACROS_FILE"
-           
-           if [ "$count" -eq 0 ]; then
-               echo -n ", ...) \\" >> "$MACROS_FILE"
-               echo "" >> "$MACROS_FILE"
-               echo "" >> "$MACROS_FILE"
+# Generate return type macros
+if [ -n "$RETURN_TYPES" ]; then
+    {
+        echo ""
+        echo "// ============================================================================"
+        echo "// Generated specialized macros for return types"
+        echo "// ============================================================================"
+        echo "// These macros are generated based on actual return types found in the code."
+        echo "// Each macro routes to the appropriate void/non-void implementation."
+        echo "// ALL return types MUST have a generated macro - no fallbacks are provided."
+        echo ""
+    } > "$RETURN_TYPE_MACROS_FILE"
+    
+    RETURN_TYPES_ARRAY=($RETURN_TYPES)
+    declare -A GENERATED_MACROS
+    declare -A TYPE_NORMALIZATION_TABLE
+    TYPE_NORMALIZATION_TABLE["_Bool"]="bool"
+    GENERATED_MACROS["void"]="void"
+    
+    for return_type in "${RETURN_TYPES_ARRAY[@]}"; do
+        [ -z "$return_type" ] && continue
+        normalized_type="$return_type"
+        macro_name=$(echo "$normalized_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+        GENERATED_MACROS["$macro_name"]="$normalized_type"
+        
+        for expanded_type in "${!TYPE_NORMALIZATION_TABLE[@]}"; do
+            if [ "${TYPE_NORMALIZATION_TABLE[$expanded_type]}" = "$normalized_type" ]; then
+                expanded_macro_name=$(echo "$expanded_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+                GENERATED_MACROS["$expanded_macro_name"]="$normalized_type"
+            fi
+        done
+        
+        if [[ "$normalized_type" == *_PTR ]]; then
+            base_type="${normalized_type%_PTR}"
+            base_macro_name=$(echo "$base_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+            [ "$base_macro_name" != "$macro_name" ] && GENERATED_MACROS["$base_macro_name"]="$normalized_type"
+        fi
+    done
+    
+    for macro_name in "${!GENERATED_MACROS[@]}"; do
+        original_type="${GENERATED_MACROS[$macro_name]}"
+        echo "// Specialized macro for return type: ${original_type}" >> "$RETURN_TYPE_MACROS_FILE"
+        if [ "$macro_name" = "void" ]; then
+            echo "#define _DAP_MOCK_WRAPPER_CUSTOM_SELECT_${macro_name}(func_name, return_type_full, ...) \\" >> "$RETURN_TYPE_MACROS_FILE"
+            echo "    _DAP_MOCK_WRAPPER_CUSTOM_VOID(func_name, __VA_ARGS__)" >> "$RETURN_TYPE_MACROS_FILE"
            else
-               # Generate parameter list: p1, p2, p3, p4, ... (pairs: type1, name1, type2, name2, ...)
-               # Each PARAM expands to 2 arguments, so we need 2*count arguments
-               total_args=$((count * 2))
-               for i in $(seq 1 $total_args); do
-                   echo -n ", p$i" >> "$MACROS_FILE"
-               done
-               echo -n ", ...) \\" >> "$MACROS_FILE"
-               echo "" >> "$MACROS_FILE"
-               
-               # Generate macro body: macro(p1, p2), macro(p3, p4), ... (apply macro to pairs)
-               echo -n "    macro(p1, p2)" >> "$MACROS_FILE"
-               for i in $(seq 2 $count); do
-                   type_idx=$((i * 2 - 1))
-                   name_idx=$((i * 2))
-                   echo -n ", macro(p${type_idx}, p${name_idx})" >> "$MACROS_FILE"
-               done
-               echo "" >> "$MACROS_FILE"
+            echo "#define _DAP_MOCK_WRAPPER_CUSTOM_SELECT_${macro_name}(func_name, return_type_full, ...) \\" >> "$RETURN_TYPE_MACROS_FILE"
+            echo "    _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(return_type_full, func_name, ##__VA_ARGS__)" >> "$RETURN_TYPE_MACROS_FILE"
+        fi
+        echo "" >> "$RETURN_TYPE_MACROS_FILE"
+    done
+    
+    {
+        echo ""
+        echo "// ============================================================================"
+        echo "// Generated type normalization macros"
+        echo "// ============================================================================"
+        echo "// These macros normalize pointer types by removing * from type names."
+        echo ""
+    } >> "$RETURN_TYPE_MACROS_FILE"
+    
+    declare -A NORMALIZATION_MACROS
+    for normalized_type in $RETURN_TYPES; do
+        [ -z "$normalized_type" ] && continue
+        original_type="${ORIGINAL_TYPES[$normalized_type]}"
+        [ -z "$original_type" ] && continue
+        macro_key="$original_type"
+        if [[ "$original_type" == *"*" ]]; then
+            base_type=$(echo "$original_type" | sed 's/\*//g' | sed 's/[ \t]*$//')
+            NORMALIZATION_MACROS["$macro_key"]="$base_type"
+        else
+            NORMALIZATION_MACROS["$macro_key"]="$original_type"
            fi
        done
        
-       # Always generate _DAP_MOCK_MAP_1 if we have _DAP_MOCK_MAP_IMPL_COND_1_0 (for single parameter case)
-       # Check if 1 is in the array
-       if [[ ! " ${PARAM_COUNTS_ARRAY[@]} " =~ " 1 " ]]; then
-           echo "// Macro for 1 parameter(s) - needed for _DAP_MOCK_MAP_IMPL_COND_1_0" >> "$MACROS_FILE"
-           echo "#define _DAP_MOCK_MAP_1(macro, p1, p2, ...) \\" >> "$MACROS_FILE"
-           echo "    macro(p1, p2)" >> "$MACROS_FILE"
-       fi
-
-# Generate _DAP_MOCK_MAP_IMPL_COND_N macros for each needed count
-cat >> "$MACROS_FILE" << 'EOF'
-
-// Simplified _DAP_MOCK_MAP implementation
-// Only handles the specific parameter counts we need
-// Note: _DAP_MOCK_NARGS and _DAP_MOCK_IS_EMPTY must be defined in dap_mock_linker_wrapper.h
-// which is included after this file, so we forward-reference them here
-// Each PARAM expands to 2 arguments, so we need to divide arg count by 2
-// Use helper macro to compute number of PARAM entries
-#define _DAP_MOCK_MAP(macro, ...) \
-    _DAP_MOCK_MAP_IMPL(_DAP_MOCK_MAP_COUNT_PARAMS(__VA_ARGS__), macro, __VA_ARGS__)
-
-// Count number of PARAM entries (each PARAM is 2 args)
-// Empty: 0 args -> 0 params
-// 1 param: 2 args -> 1 param
-// 3 params: 6 args -> 3 params
-#define _DAP_MOCK_MAP_COUNT_PARAMS(...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(_DAP_MOCK_NARGS(__VA_ARGS__))
-
-// Expand arg count before token concatenation
-#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(N) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND2(N)
-
-#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND2(N) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_##N
-
-// Helper to convert arg count to param count
-#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER(N) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_##N
-
-// Generate mappings dynamically: 0 args -> 0 params, 2 args -> 1 param, 4 args -> 2 params, etc.
-// Each PARAM expands to 2 args (type, name), so N args = N/2 params (rounded down)
-EOF
-
-# Generate _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_N macros dynamically
-# Generate ONLY for arg counts from 0 to MAX_ARGS_COUNT (no hardcoded limit)
-for i in $(seq 0 $MAX_ARGS_COUNT); do
-    # Calculate param count: N args / 2 (integer division)
-    param_count=$((i / 2))
-    echo "#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_${i} ${param_count}" >> "$MACROS_FILE"
-done
-
-# Add default case for safety (should never be reached if generation is correct)
-cat >> "$MACROS_FILE" << 'EOF'
-// Default case for values beyond generated range (should never be reached)
-#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_DEFAULT 0
-
-#define _DAP_MOCK_MAP_IMPL(N, macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND(N, macro, __VA_ARGS__)
-
-#define _DAP_MOCK_MAP_IMPL_COND(N, macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND_EVAL(N, macro, __VA_ARGS__)
-
-#define _DAP_MOCK_MAP_IMPL_COND_EVAL(N, macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND_##N(macro, __VA_ARGS__)
-
-// Handle empty case (0 params)
-#define _DAP_MOCK_MAP_IMPL_COND_0(macro, ...) \
-    _DAP_MOCK_MAP_0(macro)
-
-// Handle empty case (N=1 and is_empty=1)
-// For N=1, check if empty and dispatch accordingly
-// Now with PARAM expanding to 2 args, empty means 0 args, single param means 2 args
-// So we can use _DAP_MOCK_NARGS directly: 0 for empty, 2 for single param
-#define _DAP_MOCK_MAP_IMPL_COND_1(macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND_1_EXPAND(_DAP_MOCK_NARGS(__VA_ARGS__), macro, __VA_ARGS__)
-
-// Expand arg count before token concatenation
-#define _DAP_MOCK_MAP_IMPL_COND_1_EXPAND(N, macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND_1_EXPAND2(N, macro, __VA_ARGS__)
-
-#define _DAP_MOCK_MAP_IMPL_COND_1_EXPAND2(N, macro, ...) \
-    _DAP_MOCK_MAP_IMPL_COND_1_##N(macro, __VA_ARGS__)
-
-// Empty case: 0 arguments
-#define _DAP_MOCK_MAP_IMPL_COND_1_0(macro, ...) \
-    _DAP_MOCK_MAP_0(macro)
-
-// Single param case: 2 arguments (type, name)
-#define _DAP_MOCK_MAP_IMPL_COND_1_2(macro, p1, p2, ...) \
-    _DAP_MOCK_MAP_1(macro, p1, p2)
-
-EOF
-
-# Generate _DAP_MOCK_MAP_IMPL_COND_N for each needed count > 1
-for count in "${PARAM_COUNTS_ARRAY[@]}"; do
-    [ -z "$count" ] && continue
-    [ "$count" -le 1 ] && continue
+    {
+        echo ""
+        echo "// ============================================================================"
+        echo "// Type-to-selector wrapper macros"
+        echo "// ============================================================================"
+        echo ""
+    } >> "$RETURN_TYPE_MACROS_FILE"
     
-    echo "// Conditional macro for $count parameters" >> "$MACROS_FILE"
-    echo "#define _DAP_MOCK_MAP_IMPL_COND_${count}(macro, ...) \\" >> "$MACROS_FILE"
-    echo "    _DAP_MOCK_MAP_${count}(macro, __VA_ARGS__)" >> "$MACROS_FILE"
-done
+    declare -A TYPE_TO_SELECT_MAPPINGS
+    declare -A NORMALIZE_TYPE_MAPPINGS
+    
+    for macro_key in "${!NORMALIZATION_MACROS[@]}"; do
+        base_type="${NORMALIZATION_MACROS[$macro_key]}"
+        normalized_key=$(echo "$macro_key" | sed 's/\*/_PTR/g' | sed 's/[^a-zA-Z0-9_]/_/g')
+        selector_name="_DAP_MOCK_WRAPPER_CUSTOM_SELECT_${normalized_key}"
+        escaped_base_key=$(echo "$base_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+        
+        if [ -z "${NORMALIZE_TYPE_MAPPINGS[$escaped_base_key]}" ]; then
+            if [[ "$macro_key" == *"*" ]]; then
+                echo "// Normalize type: $escaped_base_key -> $normalized_key (from pointer type $macro_key)" >> "$RETURN_TYPE_MACROS_FILE"
+                echo "#define _DAP_MOCK_NORMALIZE_TYPE_${escaped_base_key} ${normalized_key}" >> "$RETURN_TYPE_MACROS_FILE"
+            else
+                echo "// Normalize type: $escaped_base_key -> $escaped_base_key (pass-through)" >> "$RETURN_TYPE_MACROS_FILE"
+                echo "#define _DAP_MOCK_NORMALIZE_TYPE_${escaped_base_key} ${escaped_base_key}" >> "$RETURN_TYPE_MACROS_FILE"
+            fi
+            NORMALIZE_TYPE_MAPPINGS["$escaped_base_key"]=1
+        fi
+        
+        for expanded_type in "${!TYPE_NORMALIZATION_TABLE[@]}"; do
+            if [ "${TYPE_NORMALIZATION_TABLE[$expanded_type]}" = "$base_type" ]; then
+                expanded_macro_name=$(echo "$expanded_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+                if [ -z "${NORMALIZE_TYPE_MAPPINGS[$expanded_macro_name]}" ]; then
+                    echo "// Normalize type: $expanded_macro_name -> $escaped_base_key (from type expansion)" >> "$RETURN_TYPE_MACROS_FILE"
+                    echo "#define _DAP_MOCK_NORMALIZE_TYPE_${expanded_macro_name} ${escaped_base_key}" >> "$RETURN_TYPE_MACROS_FILE"
+                    NORMALIZE_TYPE_MAPPINGS["$expanded_macro_name"]=1
+                fi
+                if [ -z "${TYPE_TO_SELECT_MAPPINGS[$expanded_macro_name]}" ]; then
+                    echo "// Type-to-selector wrapper for: $expanded_macro_name -> calls $selector_name" >> "$RETURN_TYPE_MACROS_FILE"
+                    echo "#define _DAP_MOCK_TYPE_TO_SELECT_NAME_${expanded_macro_name}(func_name, return_type_full, ...) \\" >> "$RETURN_TYPE_MACROS_FILE"
+                    echo "    ${selector_name}(func_name, return_type_full, ##__VA_ARGS__)" >> "$RETURN_TYPE_MACROS_FILE"
+                    TYPE_TO_SELECT_MAPPINGS["$expanded_macro_name"]=1
+                fi
+            fi
+        done
+        
+        if [ -z "${TYPE_TO_SELECT_MAPPINGS[$normalized_key]}" ]; then
+            if [[ "$macro_key" == *"*" ]]; then
+                echo "// Type-to-selector wrapper for normalized type $normalized_key (from $macro_key) -> calls $selector_name" >> "$RETURN_TYPE_MACROS_FILE"
+            else
+                echo "// Type-to-selector wrapper for: $normalized_key -> calls $selector_name" >> "$RETURN_TYPE_MACROS_FILE"
+            fi
+            echo "#define _DAP_MOCK_TYPE_TO_SELECT_NAME_${normalized_key}(func_name, return_type_full, ...) \\" >> "$RETURN_TYPE_MACROS_FILE"
+            echo "    ${selector_name}(func_name, return_type_full, ##__VA_ARGS__)" >> "$RETURN_TYPE_MACROS_FILE"
+            TYPE_TO_SELECT_MAPPINGS["$normalized_key"]=1
+        fi
+    done
+    echo "" >> "$RETURN_TYPE_MACROS_FILE"
+else
+    {
+        echo ""
+        echo "// ============================================================================"
+        echo "// Generated specialized macros for return types"
+        echo "// ============================================================================"
+        echo "// No return types found in code, but void macro is always required"
+        echo "// Specialized macro for return type: void"
+        echo "#define _DAP_MOCK_WRAPPER_CUSTOM_SELECT_void(func_name, return_type_full, ...) \\"
+        echo "    _DAP_MOCK_WRAPPER_CUSTOM_VOID(func_name, __VA_ARGS__)"
+        echo ""
+    } > "$RETURN_TYPE_MACROS_FILE"
+fi
+
+# Generate simple wrapper macros
+if [ -n "$SIMPLE_WRAPPER_MACROS" ]; then
+    {
+        echo ""
+        echo "// ============================================================================"
+        echo "// Generated simple wrapper macros (DAP_MOCK_WRAPPER_INT, DAP_MOCK_WRAPPER_PTR, etc.)"
+        echo "// ============================================================================"
+        echo "// These macros are generated based on actual return types found in the code."
+        echo "// They provide convenient shortcuts for creating simple wrappers without custom logic."
+        echo ""
+        echo "$SIMPLE_WRAPPER_MACROS"
+        echo ""
+    } > "$SIMPLE_WRAPPER_MACROS_FILE"
+else
+    > "$SIMPLE_WRAPPER_MACROS_FILE"
+fi
+
+# Generate mock_map_macros content with AWK sections that append return type and simple wrapper macros
+RETURN_TYPE_MACROS_FILE="$RETURN_TYPE_MACROS_FILE" \
+SIMPLE_WRAPPER_MACROS_FILE="$SIMPLE_WRAPPER_MACROS_FILE" \
+PARAM_COUNTS_ARRAY="${PARAM_COUNTS_ARRAY[*]}" \
+MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
+replace_template_placeholders \
+    "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
+    "${MACROS_FILE}.map_content" \
+    "RETURN_TYPE_MACROS_FILE=$RETURN_TYPE_MACROS_FILE" \
+    "SIMPLE_WRAPPER_MACROS_FILE=$SIMPLE_WRAPPER_MACROS_FILE" \
+    "PARAM_COUNTS_ARRAY=${PARAM_COUNTS_ARRAY[*]}" \
+    "MAX_ARGS_COUNT=$MAX_ARGS_COUNT"
+
+# Generate header using template with AWK section that appends mock_map_macros content
+MAP_MACROS_CONTENT_FILE="${MACROS_FILE}.map_content" \
+PARAM_COUNTS_ARRAY="${PARAM_COUNTS_ARRAY[*]}" \
+MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
+replace_template_placeholders \
+    "${TEMPLATES_DIR}/mock_macros_header.h.tpl" \
+    "$MACROS_FILE" \
+    "MAX_ARGS_COUNT=$MAX_ARGS_COUNT" \
+    "PARAM_COUNTS_ARRAY=${PARAM_COUNTS_ARRAY[*]}" \
+    "MAP_MACROS_CONTENT_FILE=${MACROS_FILE}.map_content"
+
+# Clean up temporary files
+rm -f "${MACROS_FILE}.map_content" "$RETURN_TYPE_MACROS_FILE" "$SIMPLE_WRAPPER_MACROS_FILE"
 
 # End of generated macros file
 # No closing #endif - file is included unconditionally via -include
 
 print_success "Generated macros header with ${#PARAM_COUNTS_ARRAY[@]} parameter count(s)"
+if [ -n "$RETURN_TYPES" ]; then
+    RETURN_TYPES_COUNT=$(echo "$RETURN_TYPES" | wc -w)
+    print_success "Generated specialized macros for $RETURN_TYPES_COUNT return type(s): $RETURN_TYPES"
+fi
+
+# Step 6.5: Generate simple wrapper macros (DAP_MOCK_WRAPPER_INT, DAP_MOCK_WRAPPER_PTR, etc.)
+# based on found return types
+print_info "Generating simple wrapper macros for return types..."
+
+# Helper function to determine macro suffix and cast expression based on return type
+get_wrapper_macro_info() {
+    local original_type="$1"
+    local normalized_type="$2"
+    local macro_suffix=""
+    local cast_expr=""
+    local record_call_value=""
+    
+    # Normalize type name for macro suffix (uppercase, replace special chars with _)
+    macro_suffix=$(echo "$normalized_type" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9_]/_/g')
+    
+    # Determine cast expression and record call value based on type
+    if [[ "$normalized_type" == *"_PTR" ]] || [[ "$original_type" == *"*" ]]; then
+        # Pointer type
+        cast_expr="g_mock_##func_name->return_value.ptr"
+        record_call_value="l_ret"
+    elif [[ "$normalized_type" == "void" ]]; then
+        # Void type - special handling
+        macro_suffix="VOID_FUNC"
+        cast_expr=""
+        record_call_value="NULL"
+    else
+        # Integer or other scalar type - cast through intptr_t
+        cast_expr="($original_type)(intptr_t)g_mock_##func_name->return_value.ptr"
+        record_call_value="(void*)(intptr_t)l_ret"
+    fi
+    
+    echo "$macro_suffix|$cast_expr|$record_call_value"
+}
+
+# Generate simple wrapper macros for each unique return type
+# Note: These macros are now generated via AWK sections in mock_map_macros.h.tpl
+# The SIMPLE_WRAPPER_MACROS variable is used to populate the temporary file that is appended
+SIMPLE_WRAPPER_MACROS=""
+if [ -n "$RETURN_TYPES" ]; then
+    for normalized_type in $RETURN_TYPES; do
+        [ -z "$normalized_type" ] && continue
+        original_type="${ORIGINAL_TYPES[$normalized_type]}"
+        [ -z "$original_type" ] && continue
+        
+        # Skip void - it's handled separately
+        if [ "$normalized_type" = "void" ]; then
+            continue
+        fi
+        
+        # Get macro info
+        macro_info=$(get_wrapper_macro_info "$original_type" "$normalized_type")
+        macro_suffix=$(echo "$macro_info" | cut -d'|' -f1)
+        cast_expr=$(echo "$macro_info" | cut -d'|' -f2)
+        record_call_value=$(echo "$macro_info" | cut -d'|' -f3)
+        
+        # Prepare template variables
+        return_declaration="${original_type} l_ret = "
+        return_statement="return l_ret;"
+        real_function_call="return __real_##func_name args;"
+        semicolon=";"
+        void_empty_line=""
+        
+        # Generate macro using template
+        macro_file=$(mktemp)
+        replace_template_placeholders \
+            "${TEMPLATES_DIR}/simple_wrapper_macro.h.tpl" \
+            "$macro_file" \
+            "RETURN_TYPE=$original_type" \
+            "MACRO_SUFFIX=$macro_suffix" \
+            "RETURN_DECLARATION=$return_declaration" \
+            "CAST_EXPRESSION=$cast_expr" \
+            "SEMICOLON=$semicolon" \
+            "VOID_EMPTY_LINE=$void_empty_line" \
+            "RECORD_CALL_VALUE=$record_call_value" \
+            "RETURN_STATEMENT=$return_statement" \
+            "REAL_FUNCTION_CALL=$real_function_call"
+        
+        SIMPLE_WRAPPER_MACROS="${SIMPLE_WRAPPER_MACROS}$(cat "$macro_file")"$'\n'$'\n'
+        rm -f "$macro_file"
+    done
+    
+    # Always generate VOID_FUNC macro
+    # AWK post-processing is handled automatically by the template's {{AWK:...}} section
+    macro_file=$(mktemp)
+    replace_template_placeholders \
+        "${TEMPLATES_DIR}/simple_wrapper_macro.h.tpl" \
+        "$macro_file" \
+        "RETURN_TYPE=void" \
+        "MACRO_SUFFIX=VOID_FUNC" \
+        "RETURN_DECLARATION=" \
+        "CAST_EXPRESSION=" \
+        "SEMICOLON=" \
+        "VOID_EMPTY_LINE=" \
+        "RECORD_CALL_VALUE=NULL" \
+        "RETURN_STATEMENT=return;" \
+        "REAL_FUNCTION_CALL=__real_##func_name args;"
+    
+    SIMPLE_WRAPPER_MACROS="${SIMPLE_WRAPPER_MACROS}$(cat "$macro_file")"$'\n'$'\n'
+    rm -f "$macro_file"
+fi
+
+# Note: Simple wrapper macros are now generated via AWK sections in mock_map_macros.h.tpl
+# The SIMPLE_WRAPPER_MACROS variable is used to populate the temporary file that is appended
+if [ -n "$SIMPLE_WRAPPER_MACROS" ]; then
+    print_success "Generated simple wrapper macros for return types"
+fi
 
 # Step 7: Find missing wrappers and generate template
 if [ -z "$MOCK_FUNCTIONS" ]; then
@@ -525,31 +815,15 @@ else
     print_warning "Missing wrappers for $MISSING_COUNT functions"
     print_info "Generating template: $TEMPLATE_FILE"
     
-    cat > "$TEMPLATE_FILE" << 'EOF'
-/**
- * Auto-generated wrapper template
- * Copy the needed wrappers to your test file and customize as needed
- */
-
-#include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
-
-EOF
+    # Generate template file using main template
+    MISSING_FUNCTIONS="$MISSING_FUNCTIONS" \
+    replace_template_placeholders \
+        "${TEMPLATES_DIR}/wrapper_template.h.tpl" \
+        "$TEMPLATE_FILE"
     
+    # Show missing functions
     echo "$MISSING_FUNCTIONS" | while read func; do
-        cat >> "$TEMPLATE_FILE" << EOF
-// Wrapper for $func
-DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
-    (/* add parameters here */))
-{
-    if (g_mock_$func && g_mock_$func->enabled) {
-        // Add your mock logic here
-        return g_mock_$func->return_value.ptr;
-    }
-    return __real_$func(/* forward parameters */);
-}
-
-EOF
+        [ -z "$func" ] && continue
         echo "   ⚠️  $func"
     done
     
@@ -561,31 +835,15 @@ else
     print_warning "No wrappers found for $FUNC_COUNT functions"
     print_info "Generating template: $TEMPLATE_FILE"
     
-    cat > "$TEMPLATE_FILE" << 'EOF'
-/**
- * Auto-generated wrapper template
- * Copy the needed wrappers to your test file and customize as needed
- */
-
-#include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
-
-EOF
+    # Generate template file using main template
+    MISSING_FUNCTIONS="$MOCK_FUNCTIONS" \
+    replace_template_placeholders \
+        "${TEMPLATES_DIR}/wrapper_template.h.tpl" \
+        "$TEMPLATE_FILE"
     
+    # Show missing functions
     echo "$MOCK_FUNCTIONS" | while read func; do
-        cat >> "$TEMPLATE_FILE" << EOF
-// Wrapper for $func
-DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
-    (/* add parameters here */))
-{
-    if (g_mock_$func && g_mock_$func->enabled) {
-        // Add your mock logic here
-        return g_mock_$func->return_value.ptr;
-    }
-    return __real_$func(/* forward parameters */);
-}
-
-EOF
+        [ -z "$func" ] && continue
         echo "   ⚠️  $func"
     done
     
