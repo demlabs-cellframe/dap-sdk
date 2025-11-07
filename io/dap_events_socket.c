@@ -557,6 +557,59 @@ int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char
 }
 
 /**
+ * @brief Initiate non-blocking socket connection
+ * 
+ * Initiates a non-blocking connection for the socket. The socket must have
+ * address information set (via dap_events_socket_resolve_and_set_addr or manually).
+ * 
+ * @param a_es Events socket to connect
+ * @param a_error_code Output parameter for error code (0 on success, errno/WSAGetLastError on error)
+ * @return 0 on success (including EINPROGRESS/WSAEWOULDBLOCK), -1 on immediate failure
+ */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
+{
+    if (!a_es) {
+        if (a_error_code) *a_error_code = EINVAL;
+        return -1;
+    }
+    
+    if (a_es->socket == INVALID_SOCKET || a_es->socket == -1) {
+        if (a_error_code) *a_error_code = EBADF;
+        log_it(L_ERROR, "Invalid socket in dap_events_socket_connect");
+        return -1;
+    }
+    
+    // Initiate non-blocking connection
+    int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, sizeof(struct sockaddr_in));
+    if (l_err == 0) {
+        // Connected immediately - this is rare but possible
+        if (a_error_code) *a_error_code = 0;
+        log_it(L_DEBUG, "Connected immediately to %s:%u!", a_es->remote_addr_str, a_es->remote_port);
+        return 0;
+    }
+    
+    // Check if error is expected (EINPROGRESS/WSAEWOULDBLOCK)
+    int l_connect_errno;
+#ifdef DAP_OS_WINDOWS
+    l_connect_errno = WSAGetLastError();
+    if (l_connect_errno != WSAEWOULDBLOCK) {
+#else
+    l_connect_errno = errno;
+    if (l_connect_errno != EINPROGRESS) {
+#endif
+        // Real connection error - fail immediately
+        if (a_error_code) *a_error_code = l_connect_errno;
+        log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
+               a_es->remote_addr_str, a_es->remote_port, a_es->socket, dap_strerror(l_connect_errno), l_connect_errno);
+        return -1;
+    }
+    
+    // EINPROGRESS/WSAEWOULDBLOCK is expected - connection will complete asynchronously
+    if (a_error_code) *a_error_code = 0;
+    return 0;
+}
+
+/**
  * @brief dap_events_socket_create
  * @param a_type
  * @param a_callbacks
@@ -1266,12 +1319,40 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 }
 
 /**
- * @brief dap_events_socket_descriptor_close
- * @param a_socket
+ * @brief Close socket descriptor (platform-independent)
+ * 
+ * Closes a socket descriptor in a platform-independent way.
+ * 
+ * @param a_socket Socket descriptor to close
+ * @return 0 on success, -1 on error
  */
-void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
+int dap_events_socket_close_descriptor(SOCKET a_socket)
 {
-    if ( a_esocket->socket > 0
+    if (a_socket == INVALID_SOCKET || a_socket == -1) {
+        return -1;
+    }
+#ifdef DAP_OS_WINDOWS
+    return closesocket(a_socket);
+#else
+    return close(a_socket);
+#endif
+}
+
+/**
+ * @brief Close socket descriptors in events socket and reset them to INVALID_SOCKET
+ * 
+ * Closes both socket and socket2 descriptors in the events socket structure
+ * and sets them to INVALID_SOCKET.
+ * 
+ * @param a_esocket Events socket to close descriptors for
+ */
+void dap_events_socket_close(dap_events_socket_t *a_esocket)
+{
+    if (!a_esocket) {
+        return;
+    }
+    
+    if (a_esocket->socket > 0
 #ifdef DAP_OS_BSD
         && a_esocket->type != DESCRIPTOR_TYPE_TIMER
 #endif    
@@ -1282,10 +1363,11 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
         // We must set { 1, 0 } when connections must be reset (RST)
         shutdown(a_esocket->socket, SD_BOTH);
 #endif
-        closesocket(a_esocket->socket);
+        dap_events_socket_close_descriptor(a_esocket->socket);
     }
-    if ( a_esocket->fd2 > 0 )
-        closesocket(a_esocket->fd2);
+    if (a_esocket->fd2 > 0) {
+        dap_events_socket_close_descriptor(a_esocket->fd2);
+    }
     a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 }
 
@@ -1324,7 +1406,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
             //l_res = CancelIoEx((HANDLE)a_es->socket, NULL) ? ERROR_IO_PENDING : GetLastError();
             //func = "CancelIoEx";
         }
-        dap_events_socket_descriptor_close(a_es);
+        dap_events_socket_close(a_es);
     break;
     case DESCRIPTOR_TYPE_QUEUE:
         for ( queue_entry_t *l_work_item = (queue_entry_t*)InterlockedFlushSList((PSLIST_HEADER)a_es->buf_out), *l_tmp;
@@ -1350,7 +1432,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
     default:
         debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d: \"%s\"",
                                            func, a_es->uuid, l_res, dap_strerror(l_res));
-        dap_events_socket_descriptor_close(a_es);
+        dap_events_socket_close(a_es);
         return;
     }
     debug_if(g_debug_reactor && FLAG_KEEP_INHERITOR(a_es->flags), L_DEBUG, "Keep inheritor of "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
@@ -1781,7 +1863,7 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
              a_esocket->uuid, dap_events_socket_get_type_str(a_esocket));
     
 #ifndef DAP_EVENTS_CAPS_IOCP
-    dap_events_socket_descriptor_close(a_esocket);
+    dap_events_socket_close(a_esocket);
 #endif
     DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
     if (!a_preserve_inheritor)

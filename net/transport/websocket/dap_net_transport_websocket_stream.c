@@ -978,6 +978,9 @@ static void s_ws_close(dap_stream_t *a_stream)
 
 /**
  * @brief Prepare TCP socket for WebSocket transport (client-side stage preparation)
+ * 
+ * Fully prepares esocket: creates, sets callbacks, connects, and adds to worker.
+ * Transport is responsible for complete esocket lifecycle management.
  */
 static int s_ws_stage_prepare(dap_net_transport_t *a_transport,
                               const dap_net_stage_prepare_params_t *a_params,
@@ -985,6 +988,12 @@ static int s_ws_stage_prepare(dap_net_transport_t *a_transport,
 {
     if (!a_transport || !a_params || !a_result) {
         log_it(L_ERROR, "Invalid arguments for WebSocket stage_prepare");
+        return -1;
+    }
+    
+    if (!a_params->worker) {
+        log_it(L_ERROR, "Worker is required for WebSocket stage_prepare");
+        a_result->error_code = -1;
         return -1;
     }
     
@@ -1011,9 +1020,28 @@ static int s_ws_stage_prepare(dap_net_transport_t *a_transport,
         return -1;
     }
     
+    // Set CONNECTING flag and initiate connection
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+    l_es->is_initalized = false; // Ensure new_callback will be called
+    
+    // Initiate connection using platform-independent function
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
+        log_it(L_ERROR, "Failed to connect WebSocket socket: error %d", l_connect_err);
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    // Add socket to worker - connection will complete asynchronously
+    dap_worker_add_events_socket(a_params->worker, l_es);
+    
     a_result->esocket = l_es;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "WebSocket TCP socket prepared for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "WebSocket TCP socket prepared and connected for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

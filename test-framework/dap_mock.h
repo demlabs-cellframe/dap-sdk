@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "dap_common.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -154,7 +155,7 @@ const dap_mock_settings_t* dap_mock_get_settings(void);
  */
 // Declarative settings (use at global scope, auto-applied at program start via constructor)
 #define DAP_MOCK_SETTINGS(...) \
-    __attribute__((constructor)) \
+    DAP_CONSTRUCTOR \
     static void __dap_mock_settings_init(void) { \
         dap_mock_settings_t __settings = {__VA_ARGS__}; \
         dap_mock_apply_settings(&__settings); \
@@ -226,6 +227,7 @@ int dap_mock_init(void);
 void dap_mock_deinit(void);
 void dap_mock_reset_all(void);
 dap_mock_function_state_t* dap_mock_register(const char *a_name);
+dap_mock_function_state_t* dap_mock_find(const char *a_name);
 void dap_mock_set_enabled(dap_mock_function_state_t *a_state, bool a_enabled);
 void dap_mock_set_return_value(dap_mock_function_state_t *a_state, void *a_value);
 void dap_mock_record_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count, void *a_return_value);
@@ -307,8 +309,8 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 // Variant 2: With config struct
 #define DAP_MOCK_DECLARE_2(func_name, config) \
     static dap_mock_function_state_t *g_mock_##func_name = NULL; \
-    static inline void dap_mock_auto_init_##func_name(void) __attribute__((constructor)); \
-    static inline void dap_mock_auto_init_##func_name(void) { \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
         if (g_mock_##func_name == NULL) { \
             g_mock_##func_name = dap_mock_register(#func_name); \
             if (g_mock_##func_name) { \
@@ -327,8 +329,8 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 #define DAP_MOCK_DECLARE_3(func_name, config, callback_body) \
     static void* dap_mock_callback_##func_name(void **a_args, int a_arg_count, void *a_user_data) callback_body \
     static dap_mock_function_state_t *g_mock_##func_name = NULL; \
-    static inline void dap_mock_auto_init_##func_name(void) __attribute__((constructor)); \
-    static inline void dap_mock_auto_init_##func_name(void) { \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
         if (g_mock_##func_name == NULL) { \
             g_mock_##func_name = dap_mock_register(#func_name); \
             if (g_mock_##func_name) { \
@@ -370,8 +372,8 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
  */
 #define DAP_MOCK_DECLARE_CUSTOM(func_name, config) \
     static dap_mock_function_state_t *g_mock_##func_name = NULL; \
-    static inline void dap_mock_auto_init_##func_name(void) __attribute__((constructor)); \
-    static inline void dap_mock_auto_init_##func_name(void) { \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
         if (g_mock_##func_name == NULL) { \
             g_mock_##func_name = dap_mock_register(#func_name); \
             if (g_mock_##func_name) { \

@@ -43,6 +43,7 @@
 #include "dap_net.h"
 #include "dap_client_pvt.h"
 #include "dap_cert.h"
+#include "dap_worker.h"
 
 #define LOG_TAG "dap_stream_transport_http"
 
@@ -127,7 +128,7 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
  */
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    debug_if(s_debug_more, L_DEBUG, "s_http_handshake_response_wrapper: client=%p, data=%p, size=%zu, stream=%p, callback=%p", 
+    log_it(L_INFO, "s_http_handshake_response_wrapper: CALLED! client=%p, data=%p, size=%zu, stream=%p, callback=%p", 
            a_client, a_data, a_data_size, s_http_handshake_ctx.stream, (void*)s_http_handshake_ctx.callback);
     
     if (!a_client || !s_http_handshake_ctx.stream) {
@@ -137,7 +138,7 @@ static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_da
     
     // Call transport callback with response data
     if (s_http_handshake_ctx.callback) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_handshake_response_wrapper: calling transport callback");
+        log_it(L_INFO, "s_http_handshake_response_wrapper: calling transport callback");
         s_http_handshake_ctx.callback(s_http_handshake_ctx.stream, a_data, a_data_size, 0);
     } else {
         log_it(L_WARNING, "s_http_handshake_response_wrapper: callback is NULL");
@@ -686,8 +687,10 @@ static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transpor
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error)
 {
-    debug_if(s_debug_more, L_DEBUG, "s_http_request: path='%s', request_size=%zu, worker=%p", 
+    log_it(L_INFO, "s_http_request: CALLED! path='%s', request_size=%zu, worker=%p", 
              a_path, a_request_size, a_client_internal->worker);
+    debug_if(s_debug_more, L_DEBUG, "s_http_request: response_proc=%p, response_error=%p", 
+             (void*)a_response_proc, (void*)a_response_error);
     
     a_client_internal->request_response_callback = a_response_proc;
     a_client_internal->request_error_callback = a_response_error;
@@ -699,6 +702,7 @@ static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transpor
         l_priv = (dap_stream_transport_http_private_t*)a_transport->_inheritor;
     }
     
+    log_it(L_INFO, "s_http_request: calling dap_client_http_request for path='%s'", a_path);
     dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker, 
                                             a_client_internal->client->link_info.uplink_addr,
                                             a_client_internal->client->link_info.uplink_port,
@@ -707,9 +711,9 @@ static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transpor
                                             s_http_request_error_unencrypted, a_client_internal, NULL);
     
     if (l_http_client == NULL) {
-        debug_if(s_debug_more, L_ERROR, "dap_client_http_request returned NULL for path='%s'", a_path);
+        log_it(L_ERROR, "s_http_request: dap_client_http_request returned NULL for path='%s'", a_path);
     } else {
-        debug_if(s_debug_more, L_DEBUG, "dap_client_http_request succeeded for path='%s'", a_path);
+        log_it(L_INFO, "s_http_request: dap_client_http_request succeeded for path='%s', http_client=%p", a_path, (void*)l_http_client);
         // Store HTTP client instance in transport private
         if (l_priv) {
             l_priv->client_http_instance = l_http_client;
@@ -741,13 +745,14 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
-    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: response_size=%zu, is_encrypted=%d, callback=%p, client=%p", 
-             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback, l_client_pvt->client);
+    log_it(L_INFO, "s_http_request_response_unencrypted: CALLED! response_size=%zu, callback=%p, client=%p", 
+             a_response_size, (void*)l_client_pvt->request_response_callback, l_client_pvt->client);
+    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: is_encrypted=%d", l_client_pvt->is_encrypted);
     if ( !l_client_pvt->request_response_callback )
         return log_it(L_ERROR, "No request_response_callback in client!");
     
     if (a_response && a_response_size) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: calling callback with unencrypted response (size=%zu)", a_response_size);
+        log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
         l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
     } else {
         log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
@@ -892,6 +897,9 @@ static void s_http_transport_close(dap_stream_t *a_stream)
 
 /**
  * @brief Prepare TCP socket for HTTP transport (client-side stage preparation)
+ * 
+ * Fully prepares esocket: creates, sets callbacks, connects, and adds to worker.
+ * Transport is responsible for complete esocket lifecycle management.
  */
 static int s_http_stage_prepare(dap_net_transport_t *a_transport,
                                 const dap_net_stage_prepare_params_t *a_params,
@@ -899,6 +907,12 @@ static int s_http_stage_prepare(dap_net_transport_t *a_transport,
 {
     if (!a_transport || !a_params || !a_result) {
         log_it(L_ERROR, "Invalid arguments for HTTP stage_prepare");
+        return -1;
+    }
+    
+    if (!a_params->worker) {
+        log_it(L_ERROR, "Worker is required for HTTP stage_prepare");
+        a_result->error_code = -1;
         return -1;
     }
     
@@ -925,9 +939,28 @@ static int s_http_stage_prepare(dap_net_transport_t *a_transport,
         return -1;
     }
     
+    // Set CONNECTING flag and initiate connection
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+    l_es->is_initalized = false; // Ensure new_callback will be called
+    
+    // Initiate connection using platform-independent function
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
+        log_it(L_ERROR, "Failed to connect HTTP socket: error %d", l_connect_err);
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    // Add socket to worker - connection will complete asynchronously
+    dap_worker_add_events_socket(a_params->worker, l_es);
+    
     a_result->esocket = l_es;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "HTTP TCP socket prepared for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "HTTP TCP socket prepared and connected for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

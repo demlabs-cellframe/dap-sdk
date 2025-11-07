@@ -31,22 +31,6 @@ static dap_mock_settings_t s_settings = {
     .log_timestamps = false
 };
 
-// Cross-platform constructor/destructor support
-#if defined(__GNUC__) || defined(__clang__)
-    // GCC, Clang, MinGW support
-    #define DAP_CONSTRUCTOR __attribute__((constructor))
-    #define DAP_DESTRUCTOR __attribute__((destructor))
-#elif defined(_MSC_VER)
-    // MSVC doesn't support constructor attribute directly
-    // Use #pragma init_seg and static object initialization
-    #define DAP_CONSTRUCTOR
-    #define DAP_DESTRUCTOR
-    // Will use atexit() for cleanup in MSVC
-#else
-    #define DAP_CONSTRUCTOR
-    #define DAP_DESTRUCTOR
-#endif
-
 // Auto-init constructor (called before main())
 static void DAP_CONSTRUCTOR dap_mock_auto_init(void)
 {
@@ -103,6 +87,8 @@ void dap_mock_deinit(void)
 {
     pthread_mutex_lock(&s_lock);
     
+    log_it(L_DEBUG, "dap_mock_deinit: deinitializing %d mocks", s_mock_count);
+    
     // Always deinit async system
     if (dap_mock_async_is_initialized()) {
         dap_mock_async_deinit();
@@ -110,6 +96,8 @@ void dap_mock_deinit(void)
     
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
+            log_it(L_DEBUG, "dap_mock_deinit: deleting mock[%d]: '%s'", 
+                   i, s_registered_mocks[i]->name ? s_registered_mocks[i]->name : "NULL");
             pthread_mutex_destroy(&s_registered_mocks[i]->lock);
             DAP_DELETE(s_registered_mocks[i]);
         }
@@ -122,8 +110,11 @@ void dap_mock_deinit(void)
 void dap_mock_reset_all(void)
 {
     pthread_mutex_lock(&s_lock);
+    log_it(L_DEBUG, "dap_mock_reset_all: resetting %d mocks", s_mock_count);
     for (int i = 0; i < s_mock_count; i++) {
         if (s_registered_mocks[i]) {
+            log_it(L_DEBUG, "dap_mock_reset_all: resetting mock[%d]: '%s'", 
+                   i, s_registered_mocks[i]->name ? s_registered_mocks[i]->name : "NULL");
             dap_mock_reset(s_registered_mocks[i]);
         }
     }
@@ -135,15 +126,39 @@ dap_mock_function_state_t* dap_mock_register(const char *a_name)
     if (!a_name)
         return NULL;
     
+    // Ensure framework is initialized before registering mocks
+    // This handles the case when mock constructors (from DAP_MOCK_DECLARE) are called
+    // before dap_mock_auto_init() constructor. The order of constructor execution
+    // is not guaranteed in C, so we need to check and initialize here.
+    // Note: dap_mock_auto_init() is thread-safe and idempotent, so calling it multiple
+    // times is safe.
+    if (!s_initialized) {
+        dap_mock_auto_init();
+    }
+    
     pthread_mutex_lock(&s_lock);
     
+    // Check if mock already registered (avoid duplicates)
+    for (int i = 0; i < s_mock_count; i++) {
+        if (s_registered_mocks[i] && s_registered_mocks[i]->name && 
+            strcmp(s_registered_mocks[i]->name, a_name) == 0) {
+            log_it(L_DEBUG, "dap_mock_register: mock '%s' already registered, returning existing", a_name);
+            dap_mock_function_state_t *l_existing = s_registered_mocks[i];
+            pthread_mutex_unlock(&s_lock);
+            return l_existing;
+        }
+    }
+    
     if (s_mock_count >= DAP_MOCK_MAX_REGISTERED) {
+        log_it(L_ERROR, "dap_mock_register: max registered mocks (%d) reached, cannot register '%s'", 
+               DAP_MOCK_MAX_REGISTERED, a_name);
         pthread_mutex_unlock(&s_lock);
         return NULL;
     }
     
     dap_mock_function_state_t *l_mock = DAP_NEW_Z(dap_mock_function_state_t);
     if (!l_mock) {
+        log_it(L_ERROR, "dap_mock_register: failed to allocate mock state for '%s'", a_name);
         pthread_mutex_unlock(&s_lock);
         return NULL;
     }
@@ -156,9 +171,45 @@ dap_mock_function_state_t* dap_mock_register(const char *a_name)
     pthread_mutex_init(&l_mock->lock, NULL);
     
     s_registered_mocks[s_mock_count++] = l_mock;
+    log_it(L_DEBUG, "dap_mock_register: registered mock '%s' (total: %d)", a_name, s_mock_count);
     
     pthread_mutex_unlock(&s_lock);
     return l_mock;
+}
+
+/**
+ * @brief Find registered mock by function name
+ * @param a_name Function name (e.g., "enc_http_add_proc")
+ * @return Pointer to mock state, or NULL if not found
+ */
+dap_mock_function_state_t* dap_mock_find(const char *a_name)
+{
+    if (!a_name)
+        return NULL;
+    
+    pthread_mutex_lock(&s_lock);
+    
+    log_it(L_DEBUG, "dap_mock_find: searching for '%s' in %d registered mocks", a_name, s_mock_count);
+    
+    dap_mock_function_state_t *l_result = NULL;
+    for (int i = 0; i < s_mock_count; i++) {
+        if (s_registered_mocks[i]) {
+            log_it(L_DEBUG, "dap_mock_find: checking mock[%d]: name='%s', comparing with '%s'", 
+                   i, s_registered_mocks[i]->name ? s_registered_mocks[i]->name : "NULL", a_name);
+            if (s_registered_mocks[i]->name && strcmp(s_registered_mocks[i]->name, a_name) == 0) {
+                l_result = s_registered_mocks[i];
+                log_it(L_DEBUG, "dap_mock_find: found mock '%s' at index %d", a_name, i);
+                break;
+            }
+        }
+    }
+    
+    if (!l_result) {
+        log_it(L_WARNING, "dap_mock_find: mock '%s' not found in registry (total: %d)", a_name, s_mock_count);
+    }
+    
+    pthread_mutex_unlock(&s_lock);
+    return l_result;
 }
 
 void dap_mock_set_enabled(dap_mock_function_state_t *a_state, bool a_enabled)
@@ -185,12 +236,16 @@ void dap_mock_record_call(
     int a_arg_count,
     void *a_return_value)
 {
-    if (!a_state)
+    if (!a_state) {
+        log_it(L_WARNING, "dap_mock_record_call: a_state is NULL");
         return;
+    }
     
     pthread_mutex_lock(&a_state->lock);
     
     if (a_state->call_count >= a_state->max_calls) {
+        log_it(L_WARNING, "dap_mock_record_call: mock '%s' call_count (%d) >= max_calls (%d), ignoring",
+               a_state->name, a_state->call_count, a_state->max_calls);
         pthread_mutex_unlock(&a_state->lock);
         return;
     }
@@ -208,7 +263,10 @@ void dap_mock_record_call(
         }
     }
     
+    int l_old_count = a_state->call_count;
     a_state->call_count++;
+    log_it(L_DEBUG, "dap_mock_record_call: mock '%s' call_count: %d -> %d", 
+           a_state->name, l_old_count, a_state->call_count);
     pthread_mutex_unlock(&a_state->lock);
 }
 
@@ -456,18 +514,26 @@ static void s_log_mock_call(const char *a_func_name, const char *a_action)
  */
 bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count)
 {
-    if (!a_state)
+    if (!a_state) {
+        log_it(L_WARNING, "dap_mock_prepare_call: a_state is NULL");
         return false;
+    }
     
     // Log the call if enabled
     s_log_mock_call(a_state->name, a_state->enabled ? "CALLED" : "CALLED (disabled, passing through)");
     
-    if (!a_state->enabled)
+    if (!a_state->enabled) {
+        log_it(L_DEBUG, "dap_mock_prepare_call: mock '%s' is disabled, passing through", a_state->name);
         return false;
+    }
     
     // Record the call BEFORE delay/async execution
     // This ensures call_count is incremented immediately, not after async completion
+    int l_call_count_before = a_state->call_count;
     dap_mock_record_call(a_state, a_args, a_arg_count, NULL);
+    int l_call_count_after = a_state->call_count;
+    log_it(L_DEBUG, "dap_mock_prepare_call: mock '%s' call_count: %d -> %d", 
+           a_state->name, l_call_count_before, l_call_count_after);
     
     // Execute configured delay (may be async)
     dap_mock_execute_delay(a_state);

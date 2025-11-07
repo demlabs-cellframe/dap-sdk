@@ -48,270 +48,63 @@
 #include "dap_net_transport_server.h"
 #include "dap_net_transport_http_server.h"
 #include "dap_net_transport_http_stream.h"
+#include "dap_net_server_common.h"
 #include "dap_http_server.h"
 #include "dap_server.h"
 #include "dap_stream.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream_session.h"
+#include "dap_transport_test_mocks.h"
 
 #define LOG_TAG "test_transport_http"
 
 // ============================================================================
-// Mock Declarations
+// Mock Declarations (using common transport mocks)
 // ============================================================================
+// Common mocks are declared in dap_transport_test_mocks.h
+// Only transport-specific mocks are declared here
 
-// Mock dap_events functions
-DAP_MOCK_DECLARE(dap_events_init);
-DAP_MOCK_DECLARE(dap_events_start);
-DAP_MOCK_DECLARE(dap_events_stop_all);
-DAP_MOCK_DECLARE(dap_events_deinit);
-
-// Mock dap_server functions
-DAP_MOCK_DECLARE(dap_server_create);
-DAP_MOCK_DECLARE(dap_server_new);
-DAP_MOCK_DECLARE(dap_server_listen_addr_add);
-DAP_MOCK_DECLARE(dap_server_delete);
-
-// Mock dap_http_server functions
-DAP_MOCK_DECLARE(dap_http_server_new);
-
-// Mock enc_http functions
-DAP_MOCK_DECLARE(enc_http_init);
-DAP_MOCK_DECLARE(enc_http_deinit);
-DAP_MOCK_DECLARE(enc_http_add_proc);
-
-// Mock dap_stream functions
-DAP_MOCK_DECLARE(dap_stream_add_proc_http);
-DAP_MOCK_DECLARE(dap_stream_ctl_add_proc);
-
-// Don't mock dap_net_transport_find - use real implementation
-// This allows tests to work with real transport registration
-
-// Mock dap_stream functions
-DAP_MOCK_DECLARE(dap_stream_delete);
-DAP_MOCK_DECLARE(dap_stream_init);
-DAP_MOCK_DECLARE(dap_stream_deinit);
-
-// Mock dap_http_client functions
-DAP_MOCK_DECLARE(dap_http_client_new);
-DAP_MOCK_DECLARE(dap_http_client_delete);
-DAP_MOCK_DECLARE(dap_http_client_connect);
-DAP_MOCK_DECLARE(dap_http_client_write);
-
-// Mock dap_http functions
-DAP_MOCK_DECLARE(dap_http_init);
-DAP_MOCK_DECLARE(dap_http_deinit);
+// Mock declarations are in dap_transport_test_mocks.h
+// The mock scanner now scans header files too, so no need to duplicate declarations here
 
 // ============================================================================
 // Mock Wrappers
 // ============================================================================
+// Common wrappers are implemented in dap_transport_test_mocks.c
+// Only transport-specific wrappers are defined here
 
-// Mock server instance for testing
-static dap_server_t s_mock_server = {0};
-static dap_http_server_t s_mock_http_server = {0};
-static dap_net_transport_t s_mock_stream_transport = {0};
-static dap_stream_t s_mock_stream = {0};
-static dap_http_client_t s_mock_http_client = {0};
-
-// Wrapper for dap_server_new (needed for HTTP server)
-DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
-    PARAM(const char*, a_cfg_section),
-    PARAM(dap_events_socket_callbacks_t*, a_server_callbacks),
-    PARAM(dap_events_socket_callbacks_t*, a_client_callbacks)
-)
-{
-    UNUSED(a_cfg_section);
-    UNUSED(a_server_callbacks);
-    UNUSED(a_client_callbacks);
-    
-    // Return mock server if set, otherwise return NULL
-    if (g_mock_dap_server_new && g_mock_dap_server_new->return_value.ptr) {
-        return (dap_server_t*)g_mock_dap_server_new->return_value.ptr;
-    }
-    
-    // Return default mock server
-    return &s_mock_server;
-}
-
-// Wrapper for dap_http_server_new
-DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_http_server_new,
-    PARAM(const char*, a_cfg_section),
-    PARAM(const char*, a_server_name)
-)
-{
-    UNUSED(a_cfg_section);
-    UNUSED(a_server_name);
-    
-    // Return mock server if set, otherwise return default mock
-    dap_server_t *l_server = &s_mock_server;
-    if (g_mock_dap_http_server_new && g_mock_dap_http_server_new->return_value.ptr) {
-        l_server = (dap_server_t*)g_mock_dap_http_server_new->return_value.ptr;
-    }
-    
-    // Set _inheritor to point to mock HTTP server structure
-    // This is required for DAP_HTTP_SERVER macro to work
-    l_server->_inheritor = &s_mock_http_server;
-    
-    return l_server;
-}
-
-// Wrapper for dap_server_listen_addr_add
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
-    PARAM(dap_server_t*, a_server),
-    PARAM(const char*, a_addr),
-    PARAM(uint16_t, a_port),
-    PARAM(dap_events_desc_type_t, a_type),
-    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_addr);
-    UNUSED(a_port);
-    UNUSED(a_type);
-    UNUSED(a_callbacks);
-    
-    // Return mock value if set, otherwise return 0 (success)
-    if (g_mock_dap_server_listen_addr_add && g_mock_dap_server_listen_addr_add->return_value.i != 0) {
-        return g_mock_dap_server_listen_addr_add->return_value.i;
-    }
-    return 0;
-}
-
-// Mock wrapper for dap_server_delete - just verify it's called, don't actually delete
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete,
-    PARAM(dap_server_t *, a_server)
-)
-{
-    // Just verify the call, don't actually delete anything
-    // In real implementation this would free the server, but in tests we use static mocks
-    (void)a_server;
-}
-
-// Wrapper for enc_http_add_proc
-DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, enc_http_add_proc,
-    PARAM(dap_http_server_t*, a_server),
-    PARAM(const char*, a_url_path)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_url_path);
-    
-    // Return mock value if set, otherwise return NULL
-    if (g_mock_enc_http_add_proc && g_mock_enc_http_add_proc->return_value.ptr) {
-        return (dap_http_url_proc_t*)g_mock_enc_http_add_proc->return_value.ptr;
-    }
-    return NULL;
-}
-
-// Wrapper for dap_stream_add_proc_http
-DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, dap_stream_add_proc_http,
-    PARAM(dap_http_server_t*, a_server),
-    PARAM(const char*, a_url_path)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_url_path);
-    
-    // Return mock value if set, otherwise return NULL
-    if (g_mock_dap_stream_add_proc_http && g_mock_dap_stream_add_proc_http->return_value.ptr) {
-        return (dap_http_url_proc_t*)g_mock_dap_stream_add_proc_http->return_value.ptr;
-    }
-    return NULL;
-}
-
+// All common wrappers are in dap_transport_test_mocks.c
 // dap_net_transport_find is not mocked - using real implementation
 // This allows tests to access real registered transports with proper ops
-
-
-// Wrapper for dap_http_client_new
-DAP_MOCK_WRAPPER_CUSTOM(dap_http_client_t*, dap_http_client_new,
-    PARAM(const char*, a_host),
-    PARAM(uint16_t, a_port)
-)
-{
-    UNUSED(a_host);
-    UNUSED(a_port);
-    
-    // Return mock client if set, otherwise return NULL
-    if (g_mock_dap_http_client_new && g_mock_dap_http_client_new->return_value.ptr) {
-        return (dap_http_client_t*)g_mock_dap_http_client_new->return_value.ptr;
-    }
-    
-    // Return default mock client
-    return &s_mock_http_client;
-}
-
-// Wrapper for dap_http_client_delete
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_client_delete, (dap_http_client_t *a_client), (a_client));
-
-// Wrapper for dap_http_client_write
-DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_http_client_write,
-    PARAM(dap_http_client_t*, a_client),
-    PARAM(const void*, a_data),
-    PARAM(size_t, a_size)
-)
-{
-    UNUSED(a_client);
-    UNUSED(a_data);
-    
-    // Return mock value if set, otherwise return size (success)
-    if (g_mock_dap_http_client_write && g_mock_dap_http_client_write->return_value.i != 0) {
-        return g_mock_dap_http_client_write->return_value.i;
-    }
-    return (ssize_t)a_size;
-}
-
-// Wrapper for dap_http_init
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_init,
-    void
-)
-{
-    // Return mock value if set, otherwise return 0 (success)
-    if (g_mock_dap_http_init && g_mock_dap_http_init->return_value.i != 0) {
-        return g_mock_dap_http_init->return_value.i;
-    }
-    return 0;
-}
-
-// Wrapper for dap_http_deinit
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_deinit, (), ());
-
-// Wrapper for enc_http_init
-DAP_MOCK_WRAPPER_CUSTOM(int, enc_http_init,
-    void
-)
-{
-    // Return mock value if set, otherwise return 0 (success)
-    if (g_mock_enc_http_init && g_mock_enc_http_init->return_value.i != 0) {
-        return g_mock_enc_http_init->return_value.i;
-    }
-    return 0;
-}
-
-// Wrapper for enc_http_deinit
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(enc_http_deinit, (), ());
-
-// Wrapper for dap_stream_ctl_add_proc
-DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, dap_stream_ctl_add_proc,
-    PARAM(dap_http_server_t*, a_server),
-    PARAM(const char*, a_url_path)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_url_path);
-    
-    // Return mock value if set, otherwise return NULL
-    if (g_mock_dap_stream_ctl_add_proc && g_mock_dap_stream_ctl_add_proc->return_value.ptr) {
-        return (dap_http_url_proc_t*)g_mock_dap_stream_ctl_add_proc->return_value.ptr;
-    }
-    return NULL;
-}
 
 // ============================================================================
 // Test Suite State
 // ============================================================================
 
 static bool s_test_initialized = false;
+static bool s_handshake_callback_called = false;
+static bool s_session_callback_called = false;
+
+static void s_handshake_callback(dap_stream_t *a_stream, const void *a_response, size_t a_response_size, int a_error_code) {
+    UNUSED(a_stream);
+    UNUSED(a_response);
+    UNUSED(a_response_size);
+    UNUSED(a_error_code);
+    s_handshake_callback_called = true;
+}
+
+static void s_session_callback(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error_code) {
+    UNUSED(a_stream);
+    UNUSED(a_session_id);
+    UNUSED(a_response_data);
+    UNUSED(a_response_size);
+    UNUSED(a_error_code);
+    s_session_callback_called = true;
+}
+
+// Mock instances for tests
+static dap_server_t s_mock_server = {0};
+static dap_stream_t s_mock_stream = {0};
 
 // ============================================================================
 // Setup/Teardown Functions
@@ -327,9 +120,18 @@ static void setup_test(void)
         int l_ret = dap_common_init("test_transport_http", NULL);
         TEST_ASSERT(l_ret == 0, "DAP common initialization failed");
         
+        // Initialize and start event system (needed for dap_events_worker_get_auto)
+        l_ret = dap_events_init(0, 30); // CPU count threads, 30 second timeout
+        TEST_ASSERT(l_ret == 0, "dap_events_init failed");
+        l_ret = dap_events_start(); // Start worker threads
+        TEST_ASSERT(l_ret == 0, "dap_events_start failed");
+        
+        // Enable DEBUG logging for mock framework debugging
+        dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+        dap_log_level_set(L_DEBUG);
+        
         // Initialize mock framework
         dap_mock_init();
-        
         
         // Check if already registered (might be auto-registered via module constructor)
         dap_net_transport_t *l_existing = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
@@ -406,7 +208,7 @@ static void test_02_server_creation(void)
     const char *l_server_name = "test_http_server";
     
     // Setup mock for dap_http_server_new
-    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)&s_mock_server);
+    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)dap_transport_test_get_mock_server());
     
     // Create server through unified API
     dap_net_transport_server_t *l_server = 
@@ -442,8 +244,9 @@ static void test_03_server_start(void)
     uint16_t l_ports[] = {8080};
     
     // Setup mocks
-    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)&s_mock_server);
-    DAP_MOCK_SET_RETURN(dap_server_listen_addr_add, 0);
+    // Note: dap_net_server_listen_addr_add_with_callback is NOT mocked - using real implementation
+    DAP_MOCK_ENABLE(enc_http_add_proc);  // Enable mock for enc_http_add_proc
+    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)dap_transport_test_get_mock_server());
     DAP_MOCK_SET_RETURN(enc_http_init, 0);  // Ensure enc_http_init succeeds
     // Note: dap_net_transport_find is not mocked - using real implementation
     
@@ -462,7 +265,17 @@ static void test_03_server_start(void)
     TEST_ASSERT(l_ret == 0, "Server start should succeed");
     
     // Verify handlers were registered
-    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(enc_http_add_proc) >= 1,
+    // Use dap_mock_find to get the actual registered mock state
+    // This avoids issues with static g_mock variables in different compilation units
+    dap_mock_function_state_t *l_mock_state = dap_mock_find("enc_http_add_proc");
+    int l_call_count = l_mock_state ? dap_mock_get_call_count(l_mock_state) : 0;
+    if (l_mock_state) {
+        log_it(L_DEBUG, "After server start, enc_http_add_proc call_count=%d, g_mock=%p, found_mock=%p, enabled=%d",
+               l_call_count, (void*)g_mock_enc_http_add_proc, (void*)l_mock_state, l_mock_state->enabled);
+    } else {
+        log_it(L_WARNING, "enc_http_add_proc mock not found in registry!");
+    }
+    TEST_ASSERT(l_call_count >= 1,
                 "enc_http_add_proc should be called for enc_init handler");
     TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_stream_add_proc_http) >= 1,
                 "dap_stream_add_proc_http should be called for stream handler");
@@ -490,7 +303,7 @@ static void test_04_server_stop(void)
     const char *l_server_name = "test_http_server";
     
     // Setup mocks
-    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)&s_mock_server);
+    DAP_MOCK_SET_RETURN(dap_http_server_new, (void*)dap_transport_test_get_mock_server());
     
     // Create and start server
     dap_net_transport_server_t *l_server = 
@@ -725,12 +538,20 @@ static void test_13_stream_handshake(void)
     int l_ret = l_transport->ops->init(l_transport, NULL);
     TEST_ASSERT(l_ret == 0, "Transport initialization should succeed");
     
-    // Create mock stream
+    // Create mock stream with esocket and client context
     s_mock_stream.stream_transport = l_transport;
+    s_mock_stream.esocket = dap_transport_test_get_mock_esocket();
+    s_mock_stream.esocket->_inheritor = (void*)dap_transport_test_get_mock_client();
     
     // Test handshake_init operation
     dap_net_handshake_params_t l_params = {0};
-    l_ret = l_transport->ops->handshake_init(&s_mock_stream, &l_params, NULL);
+    // Set up handshake parameters - need alice_pub_key for handshake
+    static uint8_t s_mock_alice_pub_key[32] = {0}; // Mock public key
+    l_params.alice_pub_key = s_mock_alice_pub_key;
+    l_params.alice_pub_key_size = sizeof(s_mock_alice_pub_key);
+    // handshake_init requires a non-NULL callback
+    s_handshake_callback_called = false;
+    l_ret = l_transport->ops->handshake_init(&s_mock_stream, &l_params, s_handshake_callback);
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
     
     // Test handshake_process operation (server-side)
@@ -764,12 +585,20 @@ static void test_14_stream_session(void)
     int l_ret = l_transport->ops->init(l_transport, NULL);
     TEST_ASSERT(l_ret == 0, "Transport initialization should succeed");
     
-    // Create mock stream
+    // Create mock stream with esocket and client context (required for session_create)
     s_mock_stream.stream_transport = l_transport;
+    s_mock_stream.esocket = dap_transport_test_get_mock_esocket();
+    s_mock_stream.esocket->_inheritor = (void*)dap_transport_test_get_mock_client();
     
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};
-    l_ret = l_transport->ops->session_create(&s_mock_stream, &l_session_params, NULL);
+    // Set required parameters for session_create
+    l_session_params.channels = "0"; // Default channel
+    l_session_params.enc_type = 0;
+    l_session_params.enc_key_size = 0;
+    l_session_params.enc_headers = false;
+    s_session_callback_called = false;
+    l_ret = l_transport->ops->session_create(&s_mock_stream, &l_session_params, s_session_callback);
     TEST_ASSERT(l_ret == 0, "Session create should succeed");
     
     // Test session_start operation
@@ -799,10 +628,10 @@ static void test_15_stream_listen(void)
     TEST_ASSERT(l_ret == 0, "Transport initialization should succeed");
     
     // Setup mock server
-    DAP_MOCK_SET_RETURN(dap_server_new, (void*)&s_mock_server);
+    DAP_MOCK_SET_RETURN(dap_server_new, (void*)dap_transport_test_get_mock_server());
     
     // Test listen operation (server-side)
-    l_ret = l_transport->ops->listen(l_transport, "127.0.0.1", 8080, &s_mock_server);
+    l_ret = l_transport->ops->listen(l_transport, "127.0.0.1", 8080, dap_transport_test_get_mock_server());
     TEST_ASSERT(l_ret == 0, "Listen operation should succeed");
     
     // Deinitialize

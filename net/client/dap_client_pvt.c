@@ -818,7 +818,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .host = a_client_pvt->client->link_info.uplink_addr,
                         .port = a_client_pvt->client->link_info.uplink_port,
                         .callbacks = &s_handshake_callbacks, // Required for socket creation, but not used for handshake
-                        .client_context = a_client_pvt->client
+                        .client_context = a_client_pvt->client,
+                        .worker = l_worker
                     };
                     
                     dap_net_stage_prepare_result_t l_prepare_result;
@@ -832,7 +833,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
-                    // Create temporary stream for handshake
+                    // Esocket is fully prepared by transport (created, callbacks set, connected, added to worker)
+                    // Create temporary stream for handshake using esocket from transport
                     dap_stream_t *l_temp_stream = dap_stream_new_es_client(l_prepare_result.esocket, 
                                                                            &a_client_pvt->client->link_info.node_addr,
                                                                            false);
@@ -1013,7 +1015,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .host = a_client_pvt->client->link_info.uplink_addr,
                         .port = a_client_pvt->client->link_info.uplink_port,
                         .callbacks = &l_s_callbacks,
-                        .client_context = a_client_pvt->client
+                        .client_context = a_client_pvt->client,
+                        .worker = l_worker
                     };
                     
                     dap_net_stage_prepare_result_t l_prepare_result;
@@ -1027,13 +1030,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
+                    // Esocket is fully prepared by transport (created, callbacks set, connected, added to worker)
                     dap_events_socket_t *l_es = l_prepare_result.esocket;
                     a_client_pvt->stream_es = l_es;
-                    
-                    l_es->flags |= DAP_SOCK_CONNECTING;
-                #ifndef DAP_EVENTS_CAPS_IOCP
-                    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-                #endif
 
                     a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->client->link_info.node_addr,
                                                                     a_client_pvt->authorized);
@@ -1078,14 +1077,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     bool l_is_udp_transport = (l_transport && 
                                                l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP);
 
-                    // Connect based on transport socket type
+                    // For UDP/DNS transports, use transport-specific connect callback
                     if (l_is_udp_transport && l_transport && l_transport->ops && l_transport->ops->connect) {
                         // Use transport-specific connect for UDP/DNS (connectionless)
                         log_it(L_DEBUG, "Using transport connect for UDP/DNS transport type: %d", l_transport_type);
                         
-                        // Add socket to worker first
-                        dap_worker_add_events_socket(l_worker, l_es);
-                        
+                        // Esocket is already added to worker by transport stage_prepare
                         // Use transport connect callback
                         int l_connect_ret = l_transport->ops->connect(
                             a_client_pvt->stream,
@@ -1104,71 +1101,21 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         // UDP/DNS connect callback is called immediately (connectionless)
                         // So we don't need to wait for connection
                     } else {
-                        // Use standard TCP connect for HTTP/WebSocket
-                        // connect
-                    #ifdef DAP_EVENTS_CAPS_IOCP
-                        log_it(L_DEBUG, "Stream connecting to remote %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                        // For TCP transports (HTTP/WebSocket), esocket is already connected and added to worker by transport
+                        // Just set up timeout timer for connection check
+                        log_it(L_DEBUG, "Stream esocket prepared by transport, setting up timeout timer");
                         dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_DUP(&a_client_pvt->stream_es->uuid);
-                        a_client_pvt->stream_es->flags &= ~DAP_SOCK_READY_TO_READ;
-                        a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;
-                        dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                         if (!dap_timerfd_start_on_worker(a_client_pvt->worker,
-                                                        (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check, l_stream_es_uuid_ptr)) {
+                                                         (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                         s_stream_timer_timeout_check, l_stream_es_uuid_ptr)) {
                             log_it(L_ERROR, "Can't run timer on worker %u for es %p : %"DAP_UINT64_FORMAT_U,
                                     a_client_pvt->worker->id, a_client_pvt->stream_es, *l_stream_es_uuid_ptr);
-                                DAP_DELETE(l_stream_es_uuid_ptr);
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                        }
-                    #else
-
-                        int l_err = 0;
-                        if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->addr_storage,
-                                sizeof(struct sockaddr_in))) ==0) {
-                            log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-                            // add to dap_worker
-                            dap_worker_add_events_socket(l_worker, l_es);
-
-                            // Add check timer
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr  = l_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
-                        }
-                        else if (l_err != EINPROGRESS && l_err != -1){
-                            log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
-                                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
-                                            l_es->socket, dap_strerror(l_err), l_err);
-                            dap_events_socket_delete_unsafe(l_es, true);
+                            DAP_DELETE(l_stream_es_uuid_ptr);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                            a_client_pvt->last_error = ERROR_STREAM_CONNECT;
-                        } else {
-                            log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-                            // add to dap_worker
-                            dap_worker_add_events_socket(l_worker, l_es);
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr = l_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
+                            a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                            s_stage_status_after(a_client_pvt);
+                            return;
                         }
-                    #endif
                     }
                     if (a_client_pvt->stage_status == STAGE_STATUS_ERROR)
                         s_stage_status_after(a_client_pvt);

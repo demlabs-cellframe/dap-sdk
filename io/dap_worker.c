@@ -182,8 +182,12 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket)
 {
+    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_worker_add_events_socket_unsafe: Adding CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, type=%d)", 
+             a_esocket->socket, a_esocket->flags, a_esocket->type);
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
+        debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_worker_add_events_socket_unsafe: Successfully added CONNECTING socket %"DAP_FORMAT_SOCKET" to context", 
+                 a_esocket->socket);
         switch (a_esocket->type) {
         case DESCRIPTOR_TYPE_SOCKET_RAW:
         case DESCRIPTOR_TYPE_SOCKET_UDP:
@@ -196,6 +200,9 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
 #endif
         default: break;
         }
+    } else {
+        debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_ERROR, "dap_worker_add_events_socket_unsafe: Failed to add CONNECTING socket %"DAP_FORMAT_SOCKET" to context: %d", 
+                 a_esocket->socket, err);
     }
     return err;
 }
@@ -237,10 +244,13 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
             return -2;
         }
 
+    debug_if(g_debug_reactor, L_DEBUG, "s_queue_es_add: Adding socket %"DAP_FORMAT_SOCKET" to worker %u (flags=0x%x, CONNECTING=%d, type=%d)", 
+             l_es_new->socket, l_worker->id, l_es_new->flags, !!(l_es_new->flags & DAP_SOCK_CONNECTING), l_es_new->type);
     if ( dap_worker_add_events_socket_unsafe(l_worker, l_es_new) ) {
         log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
         return -3;
     }
+    debug_if(g_debug_reactor, L_DEBUG, "s_queue_es_add: Successfully added socket %"DAP_FORMAT_SOCKET" to worker %u", l_es_new->socket, l_worker->id);
 
     // We need to differ new and reassigned esockets. If its new - is_initialized is false
     if (!l_es_new->is_initalized && l_es_new->callbacks.new_callback)

@@ -72,6 +72,7 @@ typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_events_socket_callbacks dap_events_socket_callbacks_t;
 typedef struct dap_cert dap_cert_t;
 typedef struct dap_stream_session dap_stream_session_t;
+typedef struct dap_worker dap_worker_t;
 
 // Forward declarations for client types (to avoid circular dependencies)
 typedef struct dap_client dap_client_t;
@@ -181,12 +182,14 @@ typedef void (*dap_net_transport_ready_cb_t)(dap_stream_t *a_stream, int a_error
  * 
  * Contains parameters needed to prepare transport-specific resources
  * for client stage operations (e.g., creating socket for STAGE_STREAM_SESSION).
+ * Transport should fully prepare esocket: create, set callbacks, connect, add to worker.
  */
 typedef struct dap_net_stage_prepare_params {
     const char *host;                      ///< Remote hostname or IP address
     uint16_t port;                         ///< Remote port number
     dap_events_socket_callbacks_t *callbacks; ///< Socket callbacks to use
     void *client_context;                  ///< Client context (dap_client_pvt_t*)
+    dap_worker_t *worker;                  ///< Worker thread to add esocket to (required for connection)
 } dap_net_stage_prepare_params_t;
 
 /**

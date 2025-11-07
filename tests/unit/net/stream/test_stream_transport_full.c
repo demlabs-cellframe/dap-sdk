@@ -146,8 +146,101 @@ DAP_MOCK_WRAPPER_CUSTOM(int, dap_net_transport_websocket_server_add_upgrade_hand
 
 // Mock dap_events_socket functions (used by transport implementations)
 DAP_MOCK_DECLARE(dap_events_socket_create);
+DAP_MOCK_DECLARE(dap_events_socket_create_platform);
 DAP_MOCK_DECLARE(dap_events_socket_delete);
+DAP_MOCK_DECLARE(dap_events_socket_delete_unsafe);
 DAP_MOCK_DECLARE(dap_events_socket_read);
+DAP_MOCK_DECLARE(dap_events_socket_connect);
+DAP_MOCK_DECLARE(dap_events_socket_resolve_and_set_addr);
+DAP_MOCK_DECLARE(dap_worker_add_events_socket);
+
+// Mock socket instance for testing
+static dap_events_socket_t s_mock_events_socket = {0};
+
+// Wrapper for dap_events_socket_create
+DAP_MOCK_WRAPPER_CUSTOM(dap_events_socket_t*, dap_events_socket_create,
+    PARAM(dap_events_desc_type_t, a_type),
+    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
+)
+{
+    UNUSED(a_type);
+    UNUSED(a_callbacks);
+    // Return mock socket if set, otherwise return static mock
+    if (g_mock_dap_events_socket_create && g_mock_dap_events_socket_create->return_value.ptr) {
+        return (dap_events_socket_t*)g_mock_dap_events_socket_create->return_value.ptr;
+    }
+    return &s_mock_events_socket;
+}
+
+// Wrapper for dap_events_socket_create_platform (used by transports)
+DAP_MOCK_WRAPPER_CUSTOM(dap_events_socket_t*, dap_events_socket_create_platform,
+    PARAM(int, a_domain),
+    PARAM(int, a_type),
+    PARAM(int, a_protocol),
+    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
+)
+{
+    UNUSED(a_domain);
+    UNUSED(a_type);
+    UNUSED(a_protocol);
+    UNUSED(a_callbacks);
+    // Return mock socket if set, otherwise return static mock
+    if (g_mock_dap_events_socket_create_platform && g_mock_dap_events_socket_create_platform->return_value.ptr) {
+        return (dap_events_socket_t*)g_mock_dap_events_socket_create_platform->return_value.ptr;
+    }
+    return &s_mock_events_socket;
+}
+
+// Wrapper for dap_events_socket_delete_unsafe (used by transports)
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_events_socket_delete_unsafe,
+    PARAM(dap_events_socket_t*, a_es),
+    PARAM(bool, a_unsafe)
+)
+{
+    UNUSED(a_es);
+    UNUSED(a_unsafe);
+    // Just verify the call, don't actually delete anything in tests
+}
+
+// Wrapper for dap_events_socket_connect
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_events_socket_connect,
+    PARAM(dap_events_socket_t*, a_es),
+    PARAM(int*, a_error_code)
+)
+{
+    UNUSED(a_es);
+    if (a_error_code) {
+        *a_error_code = 0;
+    }
+    // Return mock value if set, otherwise return 0 (success)
+    if (g_mock_dap_events_socket_connect && g_mock_dap_events_socket_connect->return_value.i != 0) {
+        if (a_error_code) {
+            *a_error_code = g_mock_dap_events_socket_connect->return_value.i;
+        }
+        return g_mock_dap_events_socket_connect->return_value.i;
+    }
+    return 0;
+}
+
+// Wrapper for dap_events_socket_resolve_and_set_addr
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_events_socket_resolve_and_set_addr,
+    PARAM(dap_events_socket_t*, a_es),
+    PARAM(const char*, a_host),
+    PARAM(uint16_t, a_port)
+)
+{
+    UNUSED(a_es);
+    UNUSED(a_host);
+    UNUSED(a_port);
+    // Return mock value if set, otherwise return 0 (success)
+    if (g_mock_dap_events_socket_resolve_and_set_addr && g_mock_dap_events_socket_resolve_and_set_addr->return_value.i != 0) {
+        return g_mock_dap_events_socket_resolve_and_set_addr->return_value.i;
+    }
+    return 0;
+}
+
+// Wrapper for dap_worker_add_events_socket
+DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_worker_add_events_socket, (dap_worker_t *a_worker, dap_events_socket_t *a_es), (a_worker, a_es));
 
 // Mock dap_stream functions (transport layer abstraction)
 DAP_MOCK_DECLARE(dap_stream_create);

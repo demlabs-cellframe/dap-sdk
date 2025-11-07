@@ -42,6 +42,8 @@
 #include "dap_net_transport.h"
 #include "dap_stream.h"
 #include "dap_net_server_common.h"
+#include "dap_events_socket.h"
+#include "dap_client.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,8 +54,9 @@ extern "C" {
 // ============================================================================
 
 // Mock dap_events functions
-DAP_MOCK_DECLARE(dap_events_init);
-DAP_MOCK_DECLARE(dap_events_start);
+// dap_events_init and dap_events_start need passthrough to real function (event system initialization required)
+DAP_MOCK_DECLARE(dap_events_init, DAP_MOCK_CONFIG_PASSTHROUGH);
+DAP_MOCK_DECLARE(dap_events_start, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_events_stop_all);
 DAP_MOCK_DECLARE(dap_events_deinit);
 
@@ -64,7 +67,7 @@ DAP_MOCK_DECLARE(dap_server_listen_addr_add);
 DAP_MOCK_DECLARE(dap_server_delete);
 
 // Mock dap_net_server_common functions
-DAP_MOCK_DECLARE(dap_net_server_listen_addr_add_with_callback);
+// Note: dap_net_server_listen_addr_add_with_callback is NOT mocked - using real implementation
 
 // Mock dap_http_server functions
 DAP_MOCK_DECLARE(dap_http_server_new);
@@ -91,6 +94,10 @@ DAP_MOCK_DECLARE(dap_http_client_write);
 DAP_MOCK_DECLARE(dap_http_init);
 DAP_MOCK_DECLARE(dap_http_deinit);
 
+// Mock dap_enc functions (needed for session_create encryption)
+DAP_MOCK_DECLARE(dap_enc_code_out_size);
+DAP_MOCK_DECLARE(dap_enc_code);
+
 // ============================================================================
 // Common Mock Server Instances
 // ============================================================================
@@ -112,6 +119,8 @@ dap_http_server_t* dap_transport_test_get_mock_http_server(void);
  * @return Pointer to static mock HTTP client
  */
 dap_http_client_t* dap_transport_test_get_mock_http_client(void);
+dap_events_socket_t* dap_transport_test_get_mock_esocket(void);
+dap_client_t* dap_transport_test_get_mock_client(void);
 
 #ifdef __cplusplus
 }

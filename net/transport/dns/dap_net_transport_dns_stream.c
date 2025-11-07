@@ -28,7 +28,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_transport_dns_stream.h"
 #include "dap_net_transport_dns_server.h"
 #include "dap_net_transport.h"  // For dap_net_transport_t and dap_net_transport_ops_t
-#include "dap_events_socket.h"     // For dap_events_socket_t
+#include "dap_events_socket.h"
+#include "dap_worker.h"
 #include "dap_net.h"
 
 #ifdef DAP_OS_WINDOWS
@@ -614,7 +615,10 @@ static void s_dns_close(dap_stream_t *a_stream)
 
 /**
  * @brief Prepare DNS socket for client stage
- * Creates UDP socket (SOCK_DGRAM) for DNS tunneling and wraps it in dap_events_socket_t
+ * 
+ * Fully prepares esocket: creates, sets callbacks, and adds to worker.
+ * DNS tunneling uses UDP (connectionless), so no connection step is needed.
+ * Transport is responsible for complete esocket lifecycle management.
  */
 static int s_dns_stage_prepare(dap_net_transport_t *a_transport,
                                const dap_net_stage_prepare_params_t *a_params,
@@ -622,6 +626,12 @@ static int s_dns_stage_prepare(dap_net_transport_t *a_transport,
 {
     if (!a_transport || !a_params || !a_result) {
         log_it(L_ERROR, "Invalid arguments for DNS stage_prepare");
+        return -1;
+    }
+    
+    if (!a_params->worker) {
+        log_it(L_ERROR, "Worker is required for DNS stage_prepare");
+        a_result->error_code = -1;
         return -1;
     }
     
@@ -648,9 +658,12 @@ static int s_dns_stage_prepare(dap_net_transport_t *a_transport,
         return -1;
     }
     
+    // DNS tunneling uses UDP (connectionless) - just add to worker
+    dap_worker_add_events_socket(a_params->worker, l_es);
+    
     a_result->esocket = l_es;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "DNS socket prepared for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "DNS socket prepared and added to worker for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

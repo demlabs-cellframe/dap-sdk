@@ -94,6 +94,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket);
 #ifndef DAP_NET_CLIENT_NO_SSL
 static void s_http_ssl_connected(dap_events_socket_t * a_esocket);
 #endif
+static void s_http_new(dap_events_socket_t * a_esocket, void * a_arg);
 static void s_client_http_delete(dap_client_http_t * a_client_http);
 static void s_http_read(dap_events_socket_t * a_es, void * arg);
 static void s_http_error(dap_events_socket_t * a_es, int a_arg);
@@ -865,68 +866,25 @@ static dap_client_http_t* s_client_http_create_and_connect(
 {
     // Set up socket callbacks
     static dap_events_socket_callbacks_t l_s_callbacks = {
+        .new_callback = s_http_new,
         .connected_callback = s_http_connected,
         .read_callback = s_http_read,
         .error_callback = s_http_error,
         .delete_callback = s_es_delete
     };
 
-    // Create socket
-#ifdef DAP_OS_WINDOWS
-    SOCKET l_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (l_socket == INVALID_SOCKET) {
-        *a_error_code = WSAGetLastError();
-        log_it(L_ERROR, "Socket create error: %d", *a_error_code);
-        return NULL;
-    }
-#else
-    int l_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (l_socket == -1) {
-        *a_error_code = errno;
-        log_it(L_ERROR, "Error %d with socket create", *a_error_code);
-        return NULL;
-    }
-#endif
-
-    // Set socket non-blocking
-#if defined DAP_OS_WINDOWS
-    u_long l_socket_flags = 1;
-    if (ioctlsocket((SOCKET)l_socket, (long)FIONBIO, &l_socket_flags)) {
-        *a_error_code = WSAGetLastError();
-        log_it(L_ERROR, "Error ioctl %d", *a_error_code);
-        closesocket(l_socket);
-        return NULL;
-    }
-#else
-    int l_socket_flags = fcntl(l_socket, F_GETFL);
-    if (l_socket_flags == -1){
-        *a_error_code = errno;
-        log_it(L_ERROR, "Error %d can't get socket flags", *a_error_code);
-        close(l_socket);
-        return NULL;
-    }
-    // Make it non-block
-    if (fcntl(l_socket, F_SETFL, l_socket_flags | O_NONBLOCK) == -1){
-        *a_error_code = errno;
-        log_it(L_ERROR, "Error %d can't set socket flags", *a_error_code);
-        close(l_socket);
-        return NULL;
-    }
-#endif
-
-    dap_events_socket_t *l_ev_socket = dap_events_socket_wrap_no_add(l_socket, &l_s_callbacks);
+    // Create socket using platform-independent function
+    dap_events_socket_t *l_ev_socket = dap_events_socket_create(DESCRIPTOR_TYPE_SOCKET_CLIENT, &l_s_callbacks);
     if (!l_ev_socket) {
-        *a_error_code = ENOMEM;
-        log_it(L_ERROR, "Can't wrap socket");
-#ifdef DAP_OS_WINDOWS
-        closesocket(l_socket);
-#else
-        close(l_socket);
-#endif
+        *a_error_code = errno;
+        log_it(L_ERROR, "Can't create socket");
         return NULL;
     }
+    
+    // Ensure is_initalized is false so new_callback will be called
+    l_ev_socket->is_initalized = false;
 
-    log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_socket);
+    log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_ev_socket->socket);
     
     // Create HTTP client struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
@@ -1000,8 +958,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
 
-    // Setup socket for connection
-    l_ev_socket->flags |= DAP_SOCK_CONNECTING;
+    // Setup socket type (CONNECTING flag will be set in new_callback after adding to worker)
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     
     if (a_over_ssl) {
@@ -1040,59 +997,23 @@ static dap_client_http_t* s_client_http_create_and_connect(
     *a_error_code = 0;
     return l_client_http;
 #else
-    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
-    int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->addr_storage, sizeof(struct sockaddr_in));
-    
-    if (l_err == 0){
-        log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
-        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-        if (a_over_ssl) {
-#ifndef DAP_NET_CLIENT_NO_SSL
-            s_http_ssl_connected(l_ev_socket);
-#endif
-        }
-        *a_error_code = 0;
-        return l_client_http;
-    }
-#ifdef DAP_OS_WINDOWS
-    else if(l_err == SOCKET_ERROR) {
-        int l_err2 = WSAGetLastError();
-        if (l_err2 == WSAEWOULDBLOCK) {
+    // For non-IOCP platforms, initiate connection before adding to worker
+    // Connection status will be checked in epoll event loop (dap_context.c)
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-            dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-            
-            dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-            if (!l_ev_uuid_ptr) {
-                *a_error_code = ENOMEM;
-                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    
+    // Use dap_events_socket_connect to initiate connection
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_ev_socket, &l_connect_err) != 0) {
+        // Connection failed immediately
+        *a_error_code = l_connect_err;
                 s_client_http_delete(l_client_http);
                 l_ev_socket->_inheritor = NULL;
                 dap_events_socket_delete_unsafe(l_ev_socket, true);
                 return NULL;
             }
             
-            *l_ev_uuid_ptr = l_ev_socket->uuid;
-            l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, 
-                                                                s_timer_timeout_check, l_ev_uuid_ptr);
-            if (!l_client_http->timer) {
-                log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
-                       l_client_http->worker->id, *l_ev_uuid_ptr);
-                DAP_DEL_Z(l_ev_uuid_ptr);
-            }
-            *a_error_code = 0;
-            return l_client_http;
-        } else {
-            *a_error_code = l_err2;
-            log_it(L_ERROR, "Socket %zu connecting error: %d", l_ev_socket->socket, l_err2);
-            s_client_http_delete(l_client_http);
-            l_ev_socket->_inheritor = NULL;
-            dap_events_socket_delete_unsafe(l_ev_socket, true);
-            return NULL;
-        }
-    }
-#else
-    else if(errno == EINPROGRESS && l_err == -1){
-        log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
+    // Add socket to worker - s_http_new will be called to set CONNECTING flag
+    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         
         dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
@@ -1110,30 +1031,66 @@ static dap_client_http_t* s_client_http_create_and_connect(
         if (!l_client_http->timer) {
             log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
                    l_client_http->worker->id, *l_ev_uuid_ptr);
-            s_client_http_delete(l_client_http);
-            l_ev_socket->_inheritor = NULL;
-            dap_events_socket_delete_unsafe(l_ev_socket, true);
-            *a_error_code = ENOMEM;
-            return NULL;
-        }
-        
-        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
+        DAP_DEL_Z(l_ev_uuid_ptr);
+    }
         *a_error_code = 0;
         return l_client_http;
-    } else {
-        *a_error_code = errno;
-        log_it(L_ERROR, "Connecting error %d: \"%s\"", errno, dap_strerror(errno));
-        s_client_http_delete(l_client_http);
-        l_ev_socket->_inheritor = NULL;
-        dap_events_socket_delete_unsafe(l_ev_socket, true);
-        return NULL;
-    }
-#endif
 #endif
     
     // Should not reach here
     *a_error_code = EINVAL;
     return NULL;
+}
+
+/**
+ * @brief s_http_new
+ * @param a_esocket
+ * @param a_arg
+ * 
+ * Called when socket is added to worker context.
+ * Sets CONNECTING flag and updates epoll/poll to monitor connection events.
+ */
+static void s_http_new(dap_events_socket_t * a_esocket, void * a_arg)
+{
+    (void)a_arg;
+    assert(a_esocket);
+    if (!a_esocket) {
+        log_it(L_ERROR, "Invalid arguments in s_http_new");
+        return;
+    }
+    
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_esocket);
+    if (!l_client_http) {
+        log_it(L_ERROR, "Invalid client_http in s_http_new");
+        return;
+    }
+    
+    // Set CONNECTING flag now that we're in worker context
+    // This ensures epoll/poll gets EPOLLOUT event for connection monitoring
+    // Note: connect() was already called before adding socket to worker
+    // Connection status will be checked in epoll event loop (dap_context.c)
+    a_esocket->flags |= DAP_SOCK_CONNECTING;
+    a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
+    
+    debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] s_http_new: Set CONNECTING flag for socket %"DAP_FORMAT_SOCKET" to %s:%u (context=%p, is_initialized=%d)", 
+             a_esocket->socket, a_esocket->remote_addr_str, a_esocket->remote_port, 
+             a_esocket->context, a_esocket->is_initalized);
+    
+    // Update epoll/poll to include EPOLLOUT for connecting socket
+    // Note: socket should already be in context at this point
+    // Connection status will be checked in epoll event loop via getsockopt(SO_ERROR)
+    if (a_esocket->context) {
+        int l_ret = dap_context_poll_update(a_esocket);
+        if (l_ret != 0) {
+            debug_if(s_debug_more, L_ERROR, "[HANDSHAKE DEBUG] s_http_new: dap_context_poll_update failed for socket %"DAP_FORMAT_SOCKET": %d", 
+                     a_esocket->socket, l_ret);
+        } else {
+            debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] s_http_new: dap_context_poll_update succeeded for socket %"DAP_FORMAT_SOCKET, 
+                     a_esocket->socket);
+        }
+    } else {
+        debug_if(s_debug_more, L_ERROR, "[HANDSHAKE DEBUG] s_http_new: Socket %"DAP_FORMAT_SOCKET" has no context!", a_esocket->socket);
+    }
 }
 
 /**

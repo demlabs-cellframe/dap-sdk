@@ -78,14 +78,14 @@ DAP_MOCK_DECLARE(dap_config_get_item_bool_default);
 // ============================================================================
 
 // Mock dap_http_header_server functions
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_header_server_init)
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_header_server_init, void)
 {
     return (int)(intptr_t)g_mock_dap_http_header_server_init->return_value.ptr;
 }
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_header_server_deinit, (), ());
 
 // Mock dap_http_client functions
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_client_init)
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_client_init, void)
 {
     return (int)(intptr_t)g_mock_dap_http_client_init->return_value.ptr;
 }

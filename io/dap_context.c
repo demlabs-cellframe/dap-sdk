@@ -1155,10 +1155,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 if(g_debug_reactor)
                     log_it(L_DEBUG, "RDHUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type);
             }
+            // Debug: log all sockets with CONNECTING flag
+            debug_if(g_debug_reactor, L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" has CONNECTING flag: server=%d, type=%d, flag_write=%d, flag_error=%d", 
+                     l_cur->socket, l_cur->server ? 1 : 0, l_cur->type, l_flag_write, l_flag_error);
             // If its outgoing connection
             if (l_flag_write && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE) &&
                     ((!l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING && l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) ||
                     (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_cur->flags & DAP_SOCK_CONNECTING))) {
+                debug_if(g_debug_reactor, L_DEBUG, "Processing connection event for %s:%u (socket %"DAP_FORMAT_SOCKET", flag_write=%d, CONNECTING=%d, type=%d)", 
+                         l_cur->remote_addr_str, l_cur->remote_port, l_cur->socket, l_flag_write, 
+                         !!(l_cur->flags & DAP_SOCK_CONNECTING), l_cur->type);
                 if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL) {
 #ifndef DAP_NET_CLIENT_NO_SSL
                     WOLFSSL *l_ssl = SSL(l_cur);
@@ -1185,8 +1191,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 } else {
                     l_error_len = sizeof(l_errno);
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_error_len);
+                    debug_if(g_debug_reactor, L_DEBUG, "Checking connection status for %s:%u (socket %"DAP_FORMAT_SOCKET", errno=%d, flags=0x%x, type=%d)", 
+                             l_cur->remote_addr_str, l_cur->remote_port, l_cur->socket, l_errno, l_cur->flags, l_cur->type);
                     if(l_errno == EINPROGRESS) {
-                        log_it(L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str);
+                        debug_if(g_debug_reactor, L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str);
                     }else if (l_errno){
                         log_it(L_ERROR,"Connecting with %s failed, error %d: \"%s\"", l_cur->remote_addr_str,
                                         l_errno, dap_strerror(l_errno));
@@ -1194,10 +1202,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_errno);
                     }else{
-                        debug_if(g_debug_reactor, L_NOTICE, "Connected with %s",l_cur->remote_addr_str);
+                        debug_if(g_debug_reactor, L_NOTICE, "Connected with %s:%u (socket %"DAP_FORMAT_SOCKET")", 
+                                 l_cur->remote_addr_str, l_cur->remote_port, l_cur->socket);
                         l_cur->flags ^= DAP_SOCK_CONNECTING;
-                        if (l_cur->callbacks.connected_callback)
+                        if (l_cur->callbacks.connected_callback) {
+                            debug_if(g_debug_reactor, L_DEBUG, "Calling connected_callback for %s:%u", l_cur->remote_addr_str, l_cur->remote_port);
                             l_cur->callbacks.connected_callback(l_cur);
+                        } else {
+                            debug_if(g_debug_reactor, L_WARNING, "No connected_callback set for %s:%u", l_cur->remote_addr_str, l_cur->remote_port);
+                        }
                         dap_context_poll_update(l_cur);
                     }
                 }
@@ -1455,6 +1468,9 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 
     a_esocket->ev.events = events;
 
+    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)", 
+             a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
+
     if( a_esocket->context){
         if ( epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, a_esocket->socket, &a_esocket->ev) ){
 #ifdef DAP_OS_WINDOWS
@@ -1464,6 +1480,9 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #endif
             return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
                 a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
+        } else {
+            debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll", 
+                     a_esocket->socket);
         }
     }
 
@@ -1556,6 +1575,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
  */
 int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
 {
+    debug_if(g_debug_reactor && a_es && (a_es->flags & DAP_SOCK_CONNECTING), L_DEBUG, "[HANDSHAKE DEBUG] dap_context_add: Called for CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, type=%d)", 
+             a_es->socket, a_es->flags, a_es->type);
     // Check & add
     bool l_is_error=false;
     int l_errno=0;
@@ -1595,13 +1616,22 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     a_es->ev.events = a_es->ev_base_flags ;
     if(a_es->flags & DAP_SOCK_READY_TO_READ )
         a_es->ev.events |= EPOLLIN;
-    if(a_es->flags & DAP_SOCK_READY_TO_WRITE )
+    if((a_es->flags & DAP_SOCK_READY_TO_WRITE) || (a_es->flags & DAP_SOCK_CONNECTING))
         a_es->ev.events |= EPOLLOUT;
     a_es->ev.data.ptr = a_es;
+    debug_if(g_debug_reactor && (a_es->flags & DAP_SOCK_CONNECTING), L_DEBUG, "Adding CONNECTING socket %"DAP_FORMAT_SOCKET" to epoll: flags=0x%x, events=0x%x (EPOLLOUT=%d), type=%d, g_debug_reactor=%d", 
+             a_es->socket, a_es->flags, a_es->ev.events, !!(a_es->ev.events & EPOLLOUT), a_es->type, g_debug_reactor);
+    debug_if(g_debug_reactor, L_DEBUG, "Adding socket %"DAP_FORMAT_SOCKET" to epoll: flags=0x%x (READY_TO_READ=%d, READY_TO_WRITE=%d, CONNECTING=%d), events=0x%x (EPOLLIN=%d, EPOLLOUT=%d), type=%d, g_debug_reactor=%d", 
+             a_es->socket, a_es->flags, 
+             !!(a_es->flags & DAP_SOCK_READY_TO_READ), !!(a_es->flags & DAP_SOCK_READY_TO_WRITE), !!(a_es->flags & DAP_SOCK_CONNECTING),
+             a_es->ev.events, !!(a_es->ev.events & EPOLLIN), !!(a_es->ev.events & EPOLLOUT), a_es->type, g_debug_reactor);
     int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, a_es->socket, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
         l_errno = errno;
+        log_it(L_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed for socket %"DAP_FORMAT_SOCKET": %d (%s)", a_es->socket, l_errno, dap_strerror(l_errno));
+    } else {
+        debug_if(g_debug_reactor, L_DEBUG, "Successfully added socket %"DAP_FORMAT_SOCKET" to epoll (g_debug_reactor=%d)", a_es->socket, g_debug_reactor);
     }
 #elif defined (DAP_EVENTS_CAPS_POLL)
     if (  a_context->poll_count == a_context->poll_count_max ){ // realloc

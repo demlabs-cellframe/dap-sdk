@@ -73,6 +73,22 @@
 #endif
 #include "portable_endian.h"
 
+// Cross-platform constructor/destructor support
+#if defined(__GNUC__) || defined(__clang__)
+    // GCC, Clang, MinGW support
+    #define DAP_CONSTRUCTOR __attribute__((constructor))
+    #define DAP_DESTRUCTOR __attribute__((destructor))
+#elif defined(_MSC_VER)
+    // MSVC doesn't support constructor attribute directly
+    // Use #pragma init_seg and static object initialization
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+    // Will use atexit() for cleanup in MSVC
+#else
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+#endif
+
 #define BIT( x ) ( 1 << x )
 
 // Stuffs an integer into a pointer type
