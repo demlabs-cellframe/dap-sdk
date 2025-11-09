@@ -81,3 +81,8 @@ add_subdirectory(net/transport)
 # Crypto Module Unit Tests
 # ============================================================================
 add_subdirectory(crypto)
+
+# ============================================================================
+# Test Framework Unit Tests
+# ============================================================================
+add_subdirectory(test-framework)

@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.10)
 # Include DAP Mock AutoWrap helper
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
 
+# Include test helpers
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
+
 # ============================================================================
 # Test: HTTP Server Module
 # ============================================================================
@@ -15,24 +18,16 @@ add_executable(${PROJECT_NAME}
     test_dap_http_server.c
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    dap_core
-    dap_crypto
-    dap_io
-    dap_http_server
-    dap_http_common
-    dap_test
-)
+# Link all DAP SDK libraries using helper function
+dap_test_link_libraries(${PROJECT_NAME})
 
-# Include test framework headers and fixtures
+# Add all DAP SDK includes using helper function
+dap_test_add_includes(${PROJECT_NAME})
+
+# Additional includes specific to HTTP server tests
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/server/http_server/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/common/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../io/include
 )
 
 # Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
@@ -40,10 +35,6 @@ dap_mock_autowrap(${PROJECT_NAME})
 
 # Wrap static libraries for mocking internal functions
 dap_mock_autowrap_with_static(${PROJECT_NAME} dap_http_server dap_io dap_core)
-
-if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
-endif()
 
 # Add to CTest
 add_test(

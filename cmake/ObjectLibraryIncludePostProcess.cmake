@@ -77,15 +77,9 @@ function(post_process_object_libraries)
             # Process includes with global cache-based cycle detection
             propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
             
-            # Cleanup cache for this traversal
-            # Find all keys matching this visited set and remove them
-            set(CACHE_PATTERN "_DAP_POST_VISITED_${VISITED_SET_ID}_")
-            get_cmake_property(CACHE_VARS CACHE_VARIABLES)
-            foreach(CACHE_VAR ${CACHE_VARS})
-                if(CACHE_VAR MATCHES "^${CACHE_PATTERN}")
-                    unset(${CACHE_VAR} CACHE)
-                endif()
-            endforeach()
+            # Note: Cache cleanup removed for performance
+            # Cache variables with unique VISITED_SET_ID won't conflict between traversals
+            # and get_cmake_property(CACHE_VARIABLES) is too slow with many cache variables
             
             math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
             # Show progress for first 10, last, or every 10th library

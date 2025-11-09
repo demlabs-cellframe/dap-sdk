@@ -1,3 +1,6 @@
+cmake_minimum_required(VERSION 3.10)
+
+# DAP SDK HTTP Client Unit Tests
 project(test_http_client_unit)
 
 # Include DAP Mock AutoWrap helper

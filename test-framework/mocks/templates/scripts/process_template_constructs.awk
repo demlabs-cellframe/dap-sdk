@@ -3,16 +3,31 @@
 # Output: processed content with constructs evaluated
 
 # Function to recursively process nested template constructs in content
-function process_nested_constructs(content_text,    temp_file, constructs_file, processed_file, scripts_dir, env_vars, cmd, line, result) {
+# Processes constructs directly in current process without spawning new AWK processes
+# This prevents infinite recursion that occurs when process_nested_constructs spawns
+# a new AWK process which calls process_nested_constructs again
+function process_nested_constructs(content_text, depth,    temp_file, constructs_file, scripts_dir, nested_constructs, nested_count, i, parts, result, processed_content) {
+    # Initialize depth if not provided
+    if (depth == "") depth = 0
+    
+    # Prevent infinite recursion - max depth is 10
+    if (depth > 10) {
+        print "ERROR: Maximum recursion depth exceeded in process_nested_constructs" > "/dev/stderr"
+        return content_text
+    }
+    
     # Check if content contains template constructs
     if (content_text !~ /{{#(if|for|set|awk)/) {
         return content_text
     }
     
-    # Write content to temporary file
-    # Use printf to ensure proper handling of multi-line content
-    temp_file = "/tmp/nested_content_" NR "_" rand() ".tpl"
-    # Split content by newlines and write line by line to preserve formatting
+    # Parse constructs directly using parse_template_constructs logic
+    # Instead of spawning new AWK process, parse constructs inline
+    scripts_dir = ENVIRON["SCRIPTS_DIR"]
+    if (scripts_dir == "") scripts_dir = "."
+    
+    # Write content to temporary file for parsing
+    temp_file = "/tmp/nested_content_" NR "_" depth "_" rand() ".tpl"
     n_content_lines = split(content_text, content_lines, "\n")
     for (i = 1; i <= n_content_lines; i++) {
         if (content_lines[i] != "") {
@@ -23,52 +38,228 @@ function process_nested_constructs(content_text,    temp_file, constructs_file, 
     }
     close(temp_file)
     
-    # Parse constructs
-    scripts_dir = ENVIRON["SCRIPTS_DIR"]
-    if (scripts_dir == "") scripts_dir = "."
-    
-    # Build environment variables string for child processes
-    env_vars = ""
-    for (var_name in ENVIRON) {
-        var_value = ENVIRON[var_name]
-        # Escape special characters for shell
-        gsub(/"/, "\\\"", var_value)
-        gsub(/`/, "\\`", var_value)
-        gsub(/\$/, "\\$", var_value)
-        gsub(/\|/, "\\|", var_value)
-        env_vars = env_vars " " var_name "=\"" var_value "\""
-    }
-    
-    constructs_file = "/tmp/nested_constructs_" NR "_" rand() ".txt"
-    if (env_vars != "") {
-        cmd = "env" env_vars " awk -f \"" scripts_dir "/parse_template_constructs.awk\" \"" temp_file "\" > \"" constructs_file "\" 2>/dev/null"
-    } else {
-        cmd = "awk -f \"" scripts_dir "/parse_template_constructs.awk\" \"" temp_file "\" > \"" constructs_file "\" 2>/dev/null"
-    }
+    # Parse constructs using external script (this is fast, no recursion)
+    constructs_file = "/tmp/nested_constructs_" NR "_" depth "_" rand() ".txt"
+    cmd = "awk -f \"" scripts_dir "/parse_template_constructs.awk\" \"" temp_file "\" > \"" constructs_file "\" 2>/dev/null"
     system(cmd)
     
-    # Process constructs
-    processed_file = "/tmp/nested_processed_" NR "_" rand() ".txt"
-    if (env_vars != "") {
-        cmd = "env" env_vars " awk -f \"" scripts_dir "/process_template_constructs.awk\" \"" constructs_file "\" > \"" processed_file "\" 2>/dev/null"
-    } else {
-        cmd = "awk -f \"" scripts_dir "/process_template_constructs.awk\" \"" constructs_file "\" > \"" processed_file "\" 2>/dev/null"
-    }
-    system(cmd)
-    
-    # Read processed content
-    result = ""
-    while ((getline line < processed_file) > 0) {
-        if (result != "") {
-            result = result "\n" line
-        } else {
-            result = line
+    # Read parsed constructs and process them directly in current process
+    nested_count = 0
+    delete nested_constructs
+    while ((getline line < constructs_file) > 0) {
+        nested_count++
+        split(line, parts, "|")
+        if (length(parts) >= 5) {
+            nested_constructs[nested_count, "type"] = parts[1]
+            nested_constructs[nested_count, "condition"] = parts[4]
+            nested_constructs[nested_count, "content"] = parts[5]
+            # Handle multi-line content
+            if (length(parts) > 5) {
+                for (i = 6; i <= length(parts); i++) {
+                    nested_constructs[nested_count, "content"] = nested_constructs[nested_count, "content"] "\n" parts[i]
+                }
+            }
+            gsub(/\001/, "\n", nested_constructs[nested_count, "content"])
         }
     }
-    close(processed_file)
+    close(constructs_file)
+    
+    # Process nested constructs using same logic as main processing loop
+    # But without spawning new AWK process - this prevents infinite recursion
+    result = ""
+    for (i = 1; i <= nested_count; i++) {
+        nested_type = nested_constructs[i, "type"]
+        nested_condition = nested_constructs[i, "condition"]
+        nested_content = nested_constructs[i, "content"]
+        
+        if (nested_type == "if") {
+            # Evaluate condition and process content recursively
+            condition_value = ""
+            if (nested_condition in vars) {
+                condition_value = vars[nested_condition]
+            } else if (nested_condition in ENVIRON) {
+                condition_value = ENVIRON[nested_condition]
+            }
+            
+            if (condition_value != "" && condition_value != "0" && condition_value != "false" && condition_value != "no") {
+                # Process nested content recursively (with depth+1)
+                processed_content = process_nested_constructs(nested_content, depth + 1)
+                result = result processed_content
+            }
+        } else if (nested_type == "for") {
+            # Process for loop - extract array and iterate
+            if (match(nested_condition, /^([^ \t]+)[ \t]+in[ \t]+(.+)$/)) {
+                item_var = substr(nested_condition, RSTART, RLENGTH)
+                split(item_var, item_parts, /[ \t]+in[ \t]+/)
+                item_name = item_parts[1]
+                gsub(/^[ \t]+|[ \t]+$/, "", item_name)
+                array_name = item_parts[2]
+                gsub(/^[ \t]+|[ \t]+$/, "", array_name)
+                
+                # Get array data
+                array_data = ""
+                if (array_name in arrays) {
+                    array_data = arrays[array_name]
+                } else if (array_name in ENVIRON) {
+                    array_data = ENVIRON[array_name]
+                }
+                
+                if (array_data != "") {
+                    n = split(array_data, items, /\n|\|/)
+                    for (j = 1; j <= n; j++) {
+                        if (items[j] != "") {
+                            vars[item_name] = items[j]
+                            ENVIRON[item_name] = items[j]
+                            processed_content = nested_content
+                            gsub("{{" item_name "}}", items[j], processed_content)
+                            # Process nested content recursively (with depth+1)
+                            processed_content = process_nested_constructs(processed_content, depth + 1)
+                            result = result processed_content
+                        }
+                    }
+                }
+            }
+        } else if (nested_type == "set") {
+            # Process set - extract variable assignment
+            if (match(nested_condition, /^([^=]+)=(.*)$/)) {
+                var_name = substr(nested_condition, RSTART, RLENGTH)
+                split(var_name, var_parts, "=")
+                var_name = var_parts[1]
+                gsub(/^[ \t]+|[ \t]+$/, "", var_name)
+                var_value = var_parts[2]
+                gsub(/^[ \t]+|[ \t]+$/, "", var_value)
+                # Process variable value (may contain template constructs)
+                var_value = process_nested_constructs(var_value, depth + 1)
+                vars[var_name] = var_value
+                ENVIRON[var_name] = var_value
+            }
+        } else {
+            # Other types - just append content
+            result = result nested_content
+        }
+    }
+    
+    # After processing constructs, process remaining variables (including function calls)
+    # This handles {{VAR}} and {{VAR|function|args}} patterns that may remain in result
+    if (result ~ /{{[^#\/][^}]*}}/) {
+        processed_result = result
+        replacement_iterations = 0
+        max_replacements = 1000
+        while (match(processed_result, /{{[^#\/][^}]*}}/) && replacement_iterations < max_replacements) {
+            replacement_iterations++
+            var_expr = substr(processed_result, RSTART + 2, RLENGTH - 4)
+            gsub(/^[ \t]+|[ \t]+$/, "", var_expr)
+            
+            var_value = ""
+            # Check if it's a function call
+            if (match(var_expr, /\|/)) {
+                split(var_expr, func_parts, "|")
+                var_name_func = func_parts[1]
+                gsub(/^[ \t]+|[ \t]+$/, "", var_name_func)
+                func_name = func_parts[2]
+                gsub(/^[ \t]+|[ \t]+$/, "", func_name)
+                func_arg = ""
+                if (length(func_parts) > 2) {
+                    func_arg = func_parts[3]
+                    gsub(/^[ \t]+|[ \t]+$/, "", func_arg)
+                }
+                
+                # Get variable value
+                source_value = ""
+                if (var_name_func in vars) {
+                    source_value = vars[var_name_func]
+                } else if (var_name_func in ENVIRON) {
+                    source_value = ENVIRON[var_name_func]
+                }
+                
+                # Apply function
+                if (func_name == "split") {
+                    delimiter = func_arg
+                    if (delimiter == "pipe" || delimiter == "|") {
+                        delimiter = "|"
+                    } else if (delimiter == "newline" || delimiter == "\n") {
+                        delimiter = "\n"
+                    }
+                    n = split(source_value, parts_array, delimiter)
+                    for (p = 1; p <= n; p++) {
+                        vars[var_name_func "_parts_" (p-1)] = parts_array[p]
+                        ENVIRON[var_name_func "_parts_" (p-1)] = parts_array[p]
+                    }
+                    vars[var_name_func "_parts_count"] = n
+                    var_value = source_value
+                } else if (func_name == "part") {
+                    index_str = func_arg
+                    gsub(/^[ \t]+|[ \t]+$/, "", index_str)
+                    index_num = int(index_str)
+                    part_var = var_name_func "_parts_" index_num
+                    if (part_var in vars) {
+                        var_value = vars[part_var]
+                    } else if (part_var in ENVIRON) {
+                        var_value = ENVIRON[part_var]
+                    }
+                } else if (func_name == "contains") {
+                    if (index(source_value, func_arg) > 0) {
+                        var_value = "1"
+                    } else {
+                        var_value = "0"
+                    }
+                } else if (func_name == "ne") {
+                    if (source_value != func_arg) {
+                        var_value = "1"
+                    } else {
+                        var_value = "0"
+                    }
+                } else if (func_name == "in_list") {
+                    list_var_name = func_arg
+                    gsub(/^[ \t]+|[ \t]+$/, "", list_var_name)
+                    list_value = ""
+                    if (list_var_name in vars) {
+                        list_value = vars[list_var_name]
+                    } else if (list_var_name in ENVIRON) {
+                        list_value = ENVIRON[list_var_name]
+                    }
+                    
+                    found = 0
+                    if (list_value != "" && source_value != "") {
+                        n = split(list_value, items, /\n|\|/)
+                        for (i = 1; i <= n; i++) {
+                            gsub(/^[ \t]+|[ \t]+$/, "", items[i])
+                            if (items[i] == source_value) {
+                                found = 1
+                                break
+                            }
+                        }
+                    }
+                    var_value = found ? "1" : "0"
+                } else {
+                    var_value = source_value
+                }
+            } else {
+                # Simple variable
+                if (var_expr in vars) {
+                    var_value = vars[var_expr]
+                } else if (var_expr in ENVIRON) {
+                    var_value = ENVIRON[var_expr]
+                }
+            }
+            
+            # Replace marker
+            if (var_value != "") {
+                before = substr(processed_result, 1, RSTART - 1)
+                after = substr(processed_result, RSTART + RLENGTH)
+                processed_result = before var_value after
+            } else {
+                # Remove empty variable marker
+                before = substr(processed_result, 1, RSTART - 1)
+                after = substr(processed_result, RSTART + RLENGTH)
+                processed_result = before after
+            }
+        }
+        result = processed_result
+    }
     
     # Cleanup
-    system("rm -f " temp_file " " constructs_file " " processed_file)
+    system("rm -f " temp_file " " constructs_file)
     
     return result
 }
@@ -190,23 +381,12 @@ function execute_awk_section(awk_code,    script_file, env_vars, scripts_dir, ha
     }
     close(script_file)
     
-    # Build environment variables string - pass ALL variables from ENVIRON
-    # This includes variables from loops (e.g., "entry" from {{#for entry in ARRAY}})
+    # Note: Don't build env_vars string by iterating all ENVIRON variables
+    # This is extremely slow when CMake has many environment variables (hundreds/thousands)
+    # AWK child processes inherit environment automatically, and can access ENVIRON array directly
+    # The env_vars variable is kept for compatibility but will always be empty
+    # Child AWK processes will inherit all environment variables automatically
     env_vars = ""
-    for (var_name in ENVIRON) {
-        var_value = ENVIRON[var_name]
-        # Escape special characters for shell: quotes, dollar signs, backticks, pipes
-        gsub(/"/, "\\\"", var_value)
-        gsub(/`/, "\\`", var_value)
-        gsub(/\$/, "\\$", var_value)
-        gsub(/\|/, "\\|", var_value)
-        # Escape the variable name itself (though it should be safe)
-        var_name_escaped = var_name
-        gsub(/"/, "\\\"", var_name_escaped)
-        gsub(/`/, "\\`", var_name_escaped)
-        gsub(/\$/, "\\$", var_name_escaped)
-        env_vars = env_vars " " var_name_escaped "=\"" var_value "\""
-    }
     
     # Check if script uses @include - need to preprocess
     scripts_dir = ENVIRON["SCRIPTS_DIR"]
@@ -283,16 +463,10 @@ function execute_awk_section(awk_code,    script_file, env_vars, scripts_dir, ha
         close(debug_script)
         
         # Use preprocessed script
-        if (env_vars != "") {
-            # Escape quotes and special characters in preprocessed_script for shell command
-            gsub(/"/, "\\\"", preprocessed_script)
-            # env_vars already contains properly escaped values, just use them directly
-            cmd = "env" env_vars " awk -f \"" preprocessed_script "\" 2>&1"
-        } else {
-            # Escape quotes in preprocessed_script for shell command
-            gsub(/"/, "\\\"", preprocessed_script)
-            cmd = "awk -f \"" preprocessed_script "\" 2>&1"
-        }
+        # AWK inherits environment automatically - no need to pass via env command
+        # Escape quotes in preprocessed_script for shell command
+        gsub(/"/, "\\\"", preprocessed_script)
+        cmd = "awk -f \"" preprocessed_script "\" 2>&1"
         
         while ((cmd | getline line) > 0) {
             print line
@@ -302,16 +476,10 @@ function execute_awk_section(awk_code,    script_file, env_vars, scripts_dir, ha
         system("rm -f " preprocessed_script)
     } else {
         # Regular awk (no @include)
-        if (env_vars != "") {
-            # Escape quotes in script_file for shell command
-            gsub(/"/, "\\\"", script_file)
-            # env_vars already contains properly escaped values, just use them directly
-            cmd = "env" env_vars " awk -f \"" script_file "\" 2>&1"
-        } else {
-            # Escape quotes in script_file for shell command
-            gsub(/"/, "\\\"", script_file)
-            cmd = "awk -f \"" script_file "\" 2>&1"
-        }
+        # AWK inherits environment automatically - no need to pass via env command
+        # Escape quotes in script_file for shell command
+        gsub(/"/, "\\\"", script_file)
+        cmd = "awk -f \"" script_file "\" 2>&1"
         
         while ((cmd | getline line) > 0) {
             print line
@@ -327,6 +495,10 @@ BEGIN {
     delete vars
     delete arrays
     delete array_items
+    
+    # Get recursion depth from environment (set by parent process to prevent infinite recursion)
+    recursion_depth = ENVIRON["DAP_TPL_RECURSION_DEPTH"]
+    if (recursion_depth == "") recursion_depth = 0
     
     # Read all constructs first
     construct_count = 0
@@ -532,8 +704,8 @@ BEGIN {
             # Check if variable exists and is non-empty
             if (condition_value != "" && condition_value != "0" && condition_value != "false" && condition_value != "no") {
                 # True condition - output content
-                # First, process nested constructs recursively
-                processed_content = process_nested_constructs(content)
+                # First, process nested constructs recursively (pass current depth)
+                processed_content = process_nested_constructs(content, recursion_depth)
                 # Then check if content contains AWK sections that need to be processed
                 if (processed_content ~ /{{AWK:/) {
                     # Process AWK sections in content
@@ -545,8 +717,8 @@ BEGIN {
                 # False condition - check for else
                 if (i < construct_count && constructs[i+1, "type"] == "else") {
                     else_content = constructs[i+1, "content"]
-                    # Process nested constructs in else content
-                    processed_else = process_nested_constructs(else_content)
+                    # Process nested constructs in else content (pass current depth)
+                    processed_else = process_nested_constructs(else_content, recursion_depth)
                     if (processed_else ~ /{{AWK:/) {
                         process_awk_sections_in_content(processed_else)
                     } else {
@@ -593,13 +765,17 @@ BEGIN {
                             vars[item_name] = items[j]
                                 ENVIRON[item_name] = items[j]
                             
-                            # First, process nested constructs recursively (this will handle AWK sections inside)
-                            nested_processed = process_nested_constructs(processed_content)
+                            # First, process nested constructs recursively (pass current depth)
+                            nested_processed = process_nested_constructs(processed_content, recursion_depth)
                             
                             # Replace variables in processed content (including function calls)
                             # This handles {{VAR}} and {{VAR|function|args}} patterns
                             final_content = nested_processed
-                            while (match(final_content, /{{[^#\/][^}]*}}/)) {
+                            # Prevent infinite loop: limit variable replacement iterations
+                            replacement_iterations = 0
+                            max_replacements = 1000
+                            while (match(final_content, /{{[^#\/][^}]*}}/) && replacement_iterations < max_replacements) {
+                                replacement_iterations++
                                 var_expr = substr(final_content, RSTART + 2, RLENGTH - 4)
                                 gsub(/^[ \t]+|[ \t]+$/, "", var_expr)
                                 
@@ -701,11 +877,31 @@ BEGIN {
                                     before = substr(final_content, 1, RSTART - 1)
                                     after = substr(final_content, RSTART + RLENGTH)
                                     final_content = before var_value after
+                                    
+                                    # CRITICAL: If var_value contains template constructs, they will be processed
+                                    # in the next iteration. But if var_value itself contains the same variable
+                                    # (e.g., VAR={{VAR}}), this creates infinite loop.
+                                    # Solution: If var_value contains the same variable pattern, break the loop
+                                    # to prevent infinite recursion. The variable will be left as-is.
+                                    if (var_value ~ /^{{[^#\/][^}]*}}$/ && match(var_value, /{{[^#\/][^}]*}}/)) {
+                                        var_in_value = substr(var_value, RSTART + 2, RLENGTH - 4)
+                                        gsub(/^[ \t]+|[ \t]+$/, "", var_in_value)
+                                        if (var_in_value == var_expr) {
+                                            # Variable references itself - break to prevent infinite loop
+                                            print "WARNING: Variable " var_expr " references itself, breaking replacement loop" > "/dev/stderr"
+                                            break
+                                        }
+                                    }
                                 } else {
                                     before = substr(final_content, 1, RSTART - 1)
                                     after = substr(final_content, RSTART + RLENGTH)
                                     final_content = before after
                                 }
+                            }
+                            
+                            # Warn if max iterations reached
+                            if (replacement_iterations >= max_replacements) {
+                                print "WARNING: Maximum variable replacement iterations reached, some variables may be unprocessed" > "/dev/stderr"
                             }
                             
                             # Then check if content still contains AWK sections (after nested processing)

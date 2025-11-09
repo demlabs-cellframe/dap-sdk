@@ -32,6 +32,8 @@ tpl_print_error() {
 replace_template_placeholders() {
     local template_file="$1"
     local output_file="$2"
+    # Save original arguments before shifting (needed for placeholder replacement loop)
+    local placeholder_args=("$@")
     shift 2
     
     if [ ! -f "$template_file" ]; then
@@ -43,6 +45,18 @@ replace_template_placeholders() {
         tpl_print_error "SCRIPTS_DIR is not set"
         return 1
     fi
+    
+    # Export all variables passed as arguments (VAR=value) to ENVIRON
+    # This allows AWK scripts to access them via ENVIRON array
+    local var_args=("$@")
+    for var_arg in "${var_args[@]}"; do
+        if [[ "$var_arg" == *"="* ]]; then
+            local var_name="${var_arg%%=*}"
+            local var_val="${var_arg#*=}"
+            # Export variable to ENVIRON for AWK scripts
+            export "$var_name"="$var_val"
+        fi
+    done
     
     # Ensure environment variables are exported for child processes
     # These are read by AWK scripts via ENVIRON array
@@ -223,16 +237,19 @@ replace_template_placeholders() {
             fi
             rm -f "${gen_sections_file}.parsed" "$gen_sections_file"
         fi
-        
-        # Debug: check temp_file before placeholder replacement
-        if [ "$template_file" = "${TEMPLATES_DIR}/mock_macros_header.h.tpl" ]; then
-            cp "$temp_file" "/tmp/before_placeholder_replace.txt" 2>/dev/null || true
-            grep -c "# Post-process" "/tmp/before_placeholder_replace.txt" 2>/dev/null || echo "0"
-        fi
-        
-        # Replace each placeholder
-        while [ $# -gt 0 ]; do
-            local var_value="$1"
+    fi
+    
+    # Debug: check temp_file before placeholder replacement
+    if [ "$template_file" = "${TEMPLATES_DIR}/mock_macros_header.h.tpl" ]; then
+        cp "$temp_file" "/tmp/before_placeholder_replace.txt" 2>/dev/null || true
+        grep -c "# Post-process" "/tmp/before_placeholder_replace.txt" 2>/dev/null || echo "0"
+    fi
+    
+    # Replace each placeholder (always, not just when sections exist)
+    # Use saved arguments (shifted at function start)
+    local arg_idx=0
+    while [ $arg_idx -lt ${#placeholder_args[@]} ]; do
+            local var_value="${placeholder_args[$arg_idx]}"
             local var_name="${var_value%%=*}"
             local var_val="${var_value#*=}"
             
@@ -280,7 +297,7 @@ replace_template_placeholders() {
                 echo "ERROR: Replacement result is empty for ${var_name}" >&2
                 rm -f "${temp_file}.new"
             fi
-            shift
+            arg_idx=$((arg_idx + 1))
         done
         
         # Remove postproc sections from temp_file after placeholder replacement
@@ -394,7 +411,6 @@ replace_template_placeholders() {
             fi
         fi
         rm -f "$postproc_sections_file"
-    fi
     
     # Debug: check final temp_file before writing to output
     if [ "$template_file" = "${TEMPLATES_DIR}/mock_macros_header.h.tpl" ]; then

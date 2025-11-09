@@ -42,7 +42,5 @@ endif()
 # Export paths for downstream projects
 set(DAP_TEST_FRAMEWORK_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 
-# Add self-tests if testing is enabled
-if(BUILD_TESTS OR ENABLE_TESTING)
-    add_subdirectory(test)
-endif()
+# Note: Self-tests for test framework are now in tests/unit/test-framework/
+# They are built via tests/unit/CMakeLists.txt
