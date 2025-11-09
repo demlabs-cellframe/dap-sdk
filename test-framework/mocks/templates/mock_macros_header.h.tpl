@@ -17,95 +17,43 @@
 #ifndef _DAP_MOCK_NARGS_DEFINED
 #define _DAP_MOCK_NARGS_DEFINED
 // Dynamically generated _DAP_MOCK_NARGS supporting up to {{MAX_ARGS_COUNT}} arguments
-{{#/bin/sh:
-# Generate NARGS_SEQUENCE: MAX_ARGS_COUNT, MAX_ARGS_COUNT-1, ..., 1, 0
-MAX_ARGS_COUNT="${MAX_ARGS_COUNT:-0}"
-NARGS_SEQUENCE=""
-for i in $(seq $MAX_ARGS_COUNT -1 0); do
-    NARGS_SEQUENCE="${NARGS_SEQUENCE}, $i"
-done
+{{#if NARGS_SEQUENCE}}
+#define _DAP_MOCK_NARGS(...) \
+    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__{{NARGS_SEQUENCE}})
+{{else}}
+#define _DAP_MOCK_NARGS(...) \
+    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__, 0)
+{{/if}}
 
-# Generate NARGS_IMPL parameter list
-NARGS_IMPL_PARAMS=""
-for i in $(seq 1 $MAX_ARGS_COUNT); do
-    NARGS_IMPL_PARAMS="${NARGS_IMPL_PARAMS}_$i"
-    [ $i -lt $MAX_ARGS_COUNT ] && NARGS_IMPL_PARAMS="${NARGS_IMPL_PARAMS},"
-done
-
-# Output the macros
-echo "#define _DAP_MOCK_NARGS(...) \\"
-echo "    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__${NARGS_SEQUENCE})"
-echo ""
-echo "#define _DAP_MOCK_NARGS_IMPL(${NARGS_IMPL_PARAMS}, N, ...) N"
-}}
+{{#if NARGS_IMPL_PARAMS}}
+#define _DAP_MOCK_NARGS_IMPL({{NARGS_IMPL_PARAMS}}, N, ...) N
+{{else}}
+#define _DAP_MOCK_NARGS_IMPL(N, ...) N
+{{/if}}
 
 #define _DAP_MOCK_IS_EMPTY(...) \
     (_DAP_MOCK_NARGS(__VA_ARGS__) == 0)
 #endif
 
-{{#/bin/sh:
-# Generate _DAP_MOCK_MAP_N macros for each needed count
-# PARAM_COUNTS_ARRAY is passed as space-separated values in environment
-PARAM_COUNTS="${PARAM_COUNTS_ARRAY:-0}"
-MAX_ARGS_COUNT="${MAX_ARGS_COUNT:-0}"
+{{#if MAP_MACROS_DATA}}
+    {{#for map_entry in MAP_MACROS_DATA}}
+        {{map_entry|split|pipe}}
+        {{#set map_count={{map_entry|part|0}}}}
+        {{#set map_macro={{map_entry|part|1}}}}
+        {{#if map_macro}}
+{{map_macro}}
+        {{/if}}
+    {{/for}}
+{{/if}}
 
-# Convert to array
-IFS=' ' read -ra PARAM_COUNTS_ARRAY <<< "$PARAM_COUNTS"
+{{#if RETURN_TYPE_MACROS_FILE}}
+{{#include RETURN_TYPE_MACROS_FILE}}
+{{/if}}
 
-MAP_MACROS=""
-for count in "${PARAM_COUNTS_ARRAY[@]}"; do
-    [ -z "$count" ] && continue
-    
-    MAP_MACROS="${MAP_MACROS}// Macro for $count parameter(s) (PARAM entries)"$'\n'
-    MAP_MACROS="${MAP_MACROS}#define _DAP_MOCK_MAP_${count}(macro"
-    
-    if [ "$count" -eq 0 ]; then
-        MAP_MACROS="${MAP_MACROS}, ...) \\"$'\n'
-        MAP_MACROS="${MAP_MACROS}"$'\n'
-    else
-        total_args=$((count * 2))
-        for i in $(seq 1 $total_args); do
-            MAP_MACROS="${MAP_MACROS}, p$i"
-        done
-        MAP_MACROS="${MAP_MACROS}, ...) \\"$'\n'
-        
-        MAP_MACROS="${MAP_MACROS}    macro(p1, p2)"
-        for i in $(seq 2 $count); do
-            type_idx=$((i * 2 - 1))
-            name_idx=$((i * 2))
-            MAP_MACROS="${MAP_MACROS}, macro(p${type_idx}, p${name_idx})"
-        done
-        MAP_MACROS="${MAP_MACROS}"$'\n'
-    fi
-done
+{{#if SIMPLE_WRAPPER_MACROS_FILE}}
+{{#include SIMPLE_WRAPPER_MACROS_FILE}}
+{{/if}}
 
-# Always generate _DAP_MOCK_MAP_1 if needed
-if [[ ! " ${PARAM_COUNTS_ARRAY[@]} " =~ " 1 " ]]; then
-    MAP_MACROS="${MAP_MACROS}// Macro for 1 parameter(s) - needed for _DAP_MOCK_MAP_IMPL_COND_1_0"$'\n'
-    MAP_MACROS="${MAP_MACROS}#define _DAP_MOCK_MAP_1(macro, p1, p2, ...) \\"$'\n'
-    MAP_MACROS="${MAP_MACROS}    macro(p1, p2)"$'\n'
-fi
-
-echo -n "$MAP_MACROS"
-}}
-
-{{postproc:{{AWK:
-# Post-process: append content from MAP_MACROS_CONTENT_FILE environment variable if provided
-# This allows mock_map_macros.h.tpl content to be appended to this file
-# First, print all template content
-{
-    print
-}
-
-# Then append content from external file if provided
-END {
-    map_macros_file = ENVIRON["MAP_MACROS_CONTENT_FILE"]
-    if (map_macros_file != "" && map_macros_file != "{{MAP_MACROS_CONTENT_FILE}}") {
-        # Read and append content from the file
-        while ((getline line < map_macros_file) > 0) {
-            print line
-        }
-        close(map_macros_file)
-    }
-}
-}}}}
+{{#if MAP_MACROS_CONTENT_FILE}}
+{{#include MAP_MACROS_CONTENT_FILE}}
+{{/if}}

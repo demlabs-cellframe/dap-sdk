@@ -60,7 +60,105 @@ function process_section() {
         close(script_file)
         
         # Execute AWK script (pass temp_file as input)
+        # Pass environment variables explicitly via env command
+        # Also include common library if @include directive is used
+        env_vars = ""
+        
+        # Pass NORMALIZATION_MACROS_DATA for type normalization templates
+        if ("NORMALIZATION_MACROS_DATA" in ENVIRON && ENVIRON["NORMALIZATION_MACROS_DATA"] != "") {
+            norm_data = ENVIRON["NORMALIZATION_MACROS_DATA"]
+            gsub(/"/, "\\\"", norm_data)
+            env_vars = env_vars " NORMALIZATION_MACROS_DATA=\"" norm_data "\""
+        }
+        
+        # Pass file paths for template constructs
+        if ("POINTER_TYPES_FILE" in ENVIRON && ENVIRON["POINTER_TYPES_FILE"] != "") {
+            env_vars = env_vars " POINTER_TYPES_FILE=\"" ENVIRON["POINTER_TYPES_FILE"] "\""
+        }
+        if ("NON_POINTER_TYPES_FILE" in ENVIRON && ENVIRON["NON_POINTER_TYPES_FILE"] != "") {
+            env_vars = env_vars " NON_POINTER_TYPES_FILE=\"" ENVIRON["NON_POINTER_TYPES_FILE"] "\""
+        }
+        
+        # Check if script uses @include - need to preprocess and include common library
+        # For @include to work, we need to manually include the library file
+        scripts_dir = ENVIRON["SCRIPTS_DIR"]
+        if (scripts_dir == "") scripts_dir = "."
+        
+        # Read script file once to check for @include and collect all lines
+        has_include = 0
+        include_file = ""
+        script_lines_count = 0
+        delete script_lines
+        
+        while ((getline line < script_file) > 0) {
+            script_lines_count++
+            script_lines[script_lines_count] = line
+            
+            if (!has_include && line ~ /^@include[ \t]+"/) {
+                has_include = 1
+                # Extract filename from @include "filename"
+                if (match(line, /"([^"]+)"/)) {
+                    include_file = substr(line, RSTART + 1, RLENGTH - 2)
+                }
+            }
+        }
+        close(script_file)
+        
+        if (has_include && include_file != "") {
+            # Preprocess: create new script file with included library
+            common_lib_file = scripts_dir "/" include_file
+            preprocessed_script = "/tmp/awk_preprocessed_" NR "_" rand() ".awk"
+            
+            # Check if common library file exists and copy it
+            # If library not found, fail immediately - no fallback
+            lib_exists = 0
+            lib_read_error = 0
+            while ((getline line < common_lib_file) > 0) {
+                lib_exists = 1
+                print line > preprocessed_script
+            }
+            if ((getline < common_lib_file) < 0 && lib_exists == 0) {
+                # File doesn't exist or can't be read
+                lib_read_error = 1
+            }
+            close(common_lib_file)
+            
+            if (lib_read_error || !lib_exists) {
+                print "ERROR: Common library file not found: " common_lib_file > "/dev/stderr"
+                print "ERROR: Script requires @include \"" include_file "\" but library is missing" > "/dev/stderr"
+                print "ERROR: Check SCRIPTS_DIR environment variable (current: " scripts_dir ")" > "/dev/stderr"
+                exit 1
+            }
+            
+            # Add separator comment
+            print "" > preprocessed_script
+            print "# ============================================================================" > preprocessed_script
+            print "# Main script (from template)" > preprocessed_script
+            print "# ============================================================================" > preprocessed_script
+            print "" > preprocessed_script
+            
+            # Copy original script lines (skip @include line)
+            for (i = 1; i <= script_lines_count; i++) {
+                if (!(script_lines[i] ~ /^@include/)) {
+                    print script_lines[i] > preprocessed_script
+                }
+            }
+            close(preprocessed_script)
+            
+            # Use preprocessed script
+            if (env_vars != "") {
+                cmd = "env" env_vars " awk -f " preprocessed_script " " temp_file " 2>&1"
+            } else {
+                cmd = "awk -f " preprocessed_script " " temp_file " 2>&1"
+            }
+        } else {
+            # Regular awk (no @include)
+            if (env_vars != "") {
+                cmd = "env" env_vars " awk -f " script_file " " temp_file " 2>&1"
+            } else {
         cmd = "awk -f " script_file " " temp_file " 2>&1"
+            }
+        }
         generated_content = ""
         while ((cmd | getline line) > 0) {
             if (generated_content != "") {
@@ -71,21 +169,16 @@ function process_section() {
         close(cmd)
         
         print "AWK_GEN|" start_line "|" end_line "|" generated_content
+        
+        # Cleanup: remove script file and preprocessed script if it exists
         system("rm -f " script_file)
+        if (has_include && include_file != "") {
+            system("rm -f " preprocessed_script)
+        }
         } else if (section_type == "sh_gen") {
         # Write shell script to temp file
         script_file = "/tmp/sh_script_" NR "_" rand() ".sh"
-        # Add debug output to script if CUSTOM_MOCKS_LIST is involved
-        if (section_code ~ /CUSTOM_MOCKS_LIST/) {
-            # Prepend debug output to stdout (will be filtered later)
-            print "echo 'DEBUG: Script starting, CUSTOM_MOCKS_LIST length='${#CUSTOM_MOCKS_LIST}" > script_file
-            print "echo 'DEBUG: CUSTOM_MOCKS_LIST first 50 chars:'${CUSTOM_MOCKS_LIST:0:50}" > script_file
-            print "echo 'DEBUG: Testing if condition...'" > script_file
-            print "if [ -n \"$CUSTOM_MOCKS_LIST\" ]; then echo 'DEBUG: CUSTOM_MOCKS_LIST is not empty'; else echo 'DEBUG: CUSTOM_MOCKS_LIST is empty'; fi" > script_file
-            # Add debug output inside the while loop
-            print "echo 'DEBUG: About to enter while loop'" > script_file
-        }
-        # Write section code as-is
+        # Write section code as-is (no debug output)
         print section_code > script_file
         close(script_file)
         
@@ -104,11 +197,24 @@ function process_section() {
         for (key in vars_to_include) {
             if (key in ENVIRON && length(ENVIRON[key]) > 0) {
                 value = ENVIRON[key]
+                # Debug: save info about CUSTOM_MOCKS_LIST
+                if (key == "CUSTOM_MOCKS_LIST") {
+                    debug_info = "/tmp/debug_custom_mocks_env_" start_line "_" rand() ".txt"
+                    print "CUSTOM_MOCKS_LIST in ENVIRON: yes" > debug_info
+                    print "Length: " length(value) > debug_info
+                    print "First 100 chars: " substr(value, 1, 100) > debug_info
+                    close(debug_info)
+                }
                 # Escape for shell script - escape single quotes
                 gsub(/'/, "'\\''", value)  # Escape single quotes
                 # Write multi-line value properly
                 print "export " key "='" value "'" > env_file
                 env_count++
+            } else if (key == "CUSTOM_MOCKS_LIST") {
+                # Debug: CUSTOM_MOCKS_LIST not in ENVIRON
+                debug_info = "/tmp/debug_custom_mocks_env_" start_line "_" rand() ".txt"
+                print "CUSTOM_MOCKS_LIST in ENVIRON: no" > debug_info
+                close(debug_info)
             }
         }
         close(env_file)
@@ -126,8 +232,6 @@ function process_section() {
             wrapper_file = "/tmp/sh_wrapper_" NR "_" rand() ".sh"
             print "#!/bin/bash" > wrapper_file
             print ". " env_file > wrapper_file
-            # Debug: verify variables are set and output to stdout (not stderr)
-            print "echo 'DEBUG: CUSTOM_MOCKS_LIST length='${#CUSTOM_MOCKS_LIST}" > wrapper_file
             print "bash " script_file > wrapper_file
             close(wrapper_file)
             system("chmod +x " wrapper_file)
@@ -171,7 +275,15 @@ function process_section() {
                     # Skip debug output lines and variable assignments
                     # But keep lines starting with #include (our generated content)
                     # Skip DEBUG: lines but keep everything else
-                    if (line !~ /^\+/ && line !~ /^CUSTOM_MOCKS_LIST=/ && line !~ /^WRAPPER_FUNCTIONS=/ && line !~ /^set -x/ && line !~ /^DEBUG:/) {
+                    # Don't filter lines starting with #include - these are our generated content
+                    if (line ~ /^#include/) {
+                        # Always keep #include lines
+                        if (generated_content != "") {
+                            generated_content = generated_content "\n"
+                        }
+                        generated_content = generated_content line
+                    } else if (line !~ /^\+/ && line !~ /^CUSTOM_MOCKS_LIST=/ && line !~ /^WRAPPER_FUNCTIONS=/ && line !~ /^set -x/ && line !~ /^DEBUG:/ && line != "") {
+                        # Keep other non-empty lines that are not debug output
                         if (generated_content != "") {
                             generated_content = generated_content "\n"
                         }
@@ -192,6 +304,19 @@ function process_section() {
                 print "Generated content length: " length(generated_content) > debug_raw_file
                 print "Generated content:" > debug_raw_file
                 print generated_content > debug_raw_file
+                print "--- Filtered lines ---" > debug_raw_file
+                # Show what was filtered
+                split(raw_content, lines, "\n")
+                for (i = 1; i <= length(lines); i++) {
+                    line = lines[i]
+                    if (line ~ /^#include/) {
+                        print "KEPT (include): " line > debug_raw_file
+                    } else if (line ~ /^\+/ || line ~ /^CUSTOM_MOCKS_LIST=/ || line ~ /^WRAPPER_FUNCTIONS=/ || line ~ /^set -x/ || line ~ /^DEBUG:/ || line == "") {
+                        print "FILTERED: " line > debug_raw_file
+                    } else {
+                        print "KEPT: " line > debug_raw_file
+                    }
+                }
                 close(debug_raw_file)
             }
             
@@ -232,9 +357,9 @@ function process_section() {
             system("cp " output_file " /tmp/debug_output_" debug_id ".txt 2>/dev/null || true")
             system("cp " error_file " /tmp/debug_error_" debug_id ".txt 2>/dev/null || true")
             # Don't delete files immediately - keep them for debugging
-        } else {
-            system("rm -f " script_file " " env_file " " wrapper_file " " output_file " " error_file)
         }
+        # Always clean up temp files after a delay (they're copied for debugging if needed)
+        system("rm -f " script_file " " env_file " " wrapper_file " " output_file " " error_file)
     }
     
     # Reset for next section

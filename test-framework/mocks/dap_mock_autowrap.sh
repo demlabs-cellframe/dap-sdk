@@ -486,7 +486,67 @@ MAX_ARGS_COUNT=$((MAX_PARAM_COUNT * 2 + 2))
 # Ensure at least 0 for empty case
 [ "$MAX_ARGS_COUNT" -lt 0 ] && MAX_ARGS_COUNT=0
 
+# Prepare NARGS_SEQUENCE and NARGS_IMPL_PARAMS for template
+NARGS_SEQUENCE=""
+for i in $(seq $MAX_ARGS_COUNT -1 0); do
+    if [ -n "$NARGS_SEQUENCE" ]; then
+        NARGS_SEQUENCE="${NARGS_SEQUENCE}, $i"
+    else
+        NARGS_SEQUENCE=", $i"
+    fi
+done
+
+NARGS_IMPL_PARAMS=""
+for i in $(seq 1 $MAX_ARGS_COUNT); do
+    if [ -n "$NARGS_IMPL_PARAMS" ]; then
+        NARGS_IMPL_PARAMS="${NARGS_IMPL_PARAMS}, _$i"
+    else
+        NARGS_IMPL_PARAMS="_$i"
+    fi
+done
+
 print_info "Max parameter count: $MAX_PARAM_COUNT, generating helpers for 0-$MAX_ARGS_COUNT args"
+
+# Prepare MAP_MACROS_DATA for template (pipe-separated: count|macro_def)
+MAP_MACROS_DATA=""
+has_count_1=0
+for count in "${PARAM_COUNTS_ARRAY[@]}"; do
+    [ -z "$count" ] && continue
+    [ "$count" = "1" ] && has_count_1=1
+    
+    if [ "$count" -eq 0 ]; then
+        macro_def="// Macro for 0 parameter(s) (PARAM entries)"$'\n'"#define _DAP_MOCK_MAP_0(macro, ...) \\"$'\n'""
+    else
+        total_args=$((count * 2))
+        macro_def="// Macro for $count parameter(s) (PARAM entries)"$'\n'"#define _DAP_MOCK_MAP_${count}(macro"
+        for j in $(seq 1 $total_args); do
+            macro_def="${macro_def}, p${j}"
+        done
+        macro_def="${macro_def}, ...) \\"$'\n'"    macro(p1, p2)"
+        for j in $(seq 2 $count); do
+            type_idx=$((j * 2 - 1))
+            name_idx=$((j * 2))
+            macro_def="${macro_def}, macro(p${type_idx}, p${name_idx})"
+        done
+        macro_def="${macro_def}"$'\n'
+    fi
+    
+    if [ -n "$MAP_MACROS_DATA" ]; then
+        MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n'"${count}|${macro_def}"
+    else
+        MAP_MACROS_DATA="${count}|${macro_def}"
+    fi
+done
+
+# Always add _DAP_MOCK_MAP_1 if needed
+if [ "$has_count_1" -eq 0 ]; then
+    map_1_def="// Macro for 1 parameter(s) - needed for _DAP_MOCK_MAP_IMPL_COND_1_0"$'\n'"#define _DAP_MOCK_MAP_1(macro, p1, p2, ...) \\"$'\n'"    macro(p1, p2)"$'\n'
+    if [ -n "$MAP_MACROS_DATA" ]; then
+        MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n'"1|${map_1_def}"
+    else
+        MAP_MACROS_DATA="1|${map_1_def}"
+    fi
+fi
 
 # Step 6: Generate specialized macros header file
 print_info "Generating specialized macros header: $MACROS_FILE"
@@ -582,22 +642,42 @@ if [ -n "$RETURN_TYPES" ]; then
     declare -A TYPE_TO_SELECT_MAPPINGS
     declare -A NORMALIZE_TYPE_MAPPINGS
     
+    # Collect normalization macros data for template processing
+    NORMALIZATION_MACROS_DATA=""
+    for macro_key in "${!NORMALIZATION_MACROS[@]}"; do
+        base_type="${NORMALIZATION_MACROS[$macro_key]}"
+        normalized_key=$(echo "$macro_key" | sed 's/\*/_PTR/g' | sed 's/[^a-zA-Z0-9_]/_/g')
+        escaped_base_key=$(echo "$base_type" | sed 's/[^a-zA-Z0-9_]/_/g')
+        escaped_original_key=$(echo "$macro_key" | sed 's/\*/_PTR/g' | sed 's/[^a-zA-Z0-9_]/_/g')
+        escaped_macro_key_for_escape=$(echo "$macro_key" | sed 's/\*/_PTR/g' | sed 's/[ \t]*$//' | sed 's/[^a-zA-Z0-9_]/_/g')
+        
+        if [ -z "${NORMALIZE_TYPE_MAPPINGS[$escaped_base_key]}" ]; then
+            if [ -n "$NORMALIZATION_MACROS_DATA" ]; then
+                NORMALIZATION_MACROS_DATA="${NORMALIZATION_MACROS_DATA}"$'\n'
+            fi
+            NORMALIZATION_MACROS_DATA="${NORMALIZATION_MACROS_DATA}${macro_key}|${base_type}|${normalized_key}|${escaped_base_key}|${escaped_original_key}|${escaped_macro_key_for_escape}"
+            NORMALIZE_TYPE_MAPPINGS["$escaped_base_key"]=1
+        fi
+    done
+    
+    # Generate type normalization macros using template
+    if [ -n "$NORMALIZATION_MACROS_DATA" ]; then
+        export NORMALIZATION_MACROS_DATA="$NORMALIZATION_MACROS_DATA"
+        NORMALIZATION_MACROS_TEMP=$(mktemp)
+        replace_template_placeholders \
+            "${TEMPLATES_DIR}/type_normalization_macros.h.tpl" \
+            "$NORMALIZATION_MACROS_TEMP"
+        cat "$NORMALIZATION_MACROS_TEMP" >> "$RETURN_TYPE_MACROS_FILE"
+        rm -f "$NORMALIZATION_MACROS_TEMP"
+        unset NORMALIZATION_MACROS_DATA
+    fi
+    
+    # Continue with type-to-selector wrapper macros generation
     for macro_key in "${!NORMALIZATION_MACROS[@]}"; do
         base_type="${NORMALIZATION_MACROS[$macro_key]}"
         normalized_key=$(echo "$macro_key" | sed 's/\*/_PTR/g' | sed 's/[^a-zA-Z0-9_]/_/g')
         selector_name="_DAP_MOCK_WRAPPER_CUSTOM_SELECT_${normalized_key}"
         escaped_base_key=$(echo "$base_type" | sed 's/[^a-zA-Z0-9_]/_/g')
-        
-        if [ -z "${NORMALIZE_TYPE_MAPPINGS[$escaped_base_key]}" ]; then
-            if [[ "$macro_key" == *"*" ]]; then
-                echo "// Normalize type: $escaped_base_key -> $normalized_key (from pointer type $macro_key)" >> "$RETURN_TYPE_MACROS_FILE"
-                echo "#define _DAP_MOCK_NORMALIZE_TYPE_${escaped_base_key} ${normalized_key}" >> "$RETURN_TYPE_MACROS_FILE"
-            else
-                echo "// Normalize type: $escaped_base_key -> $escaped_base_key (pass-through)" >> "$RETURN_TYPE_MACROS_FILE"
-                echo "#define _DAP_MOCK_NORMALIZE_TYPE_${escaped_base_key} ${escaped_base_key}" >> "$RETURN_TYPE_MACROS_FILE"
-            fi
-            NORMALIZE_TYPE_MAPPINGS["$escaped_base_key"]=1
-        fi
         
         for expanded_type in "${!TYPE_NORMALIZATION_TABLE[@]}"; do
             if [ "${TYPE_NORMALIZATION_TABLE[$expanded_type]}" = "$base_type" ]; then
@@ -674,16 +754,32 @@ replace_template_placeholders \
 
 # Generate header using template with AWK section that appends mock_map_macros content
 MAP_MACROS_CONTENT_FILE="${MACROS_FILE}.map_content" \
+RETURN_TYPE_MACROS_FILE="$RETURN_TYPE_MACROS_FILE" \
+SIMPLE_WRAPPER_MACROS_FILE="$SIMPLE_WRAPPER_MACROS_FILE" \
 PARAM_COUNTS_ARRAY="${PARAM_COUNTS_ARRAY[*]}" \
 MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
+NARGS_SEQUENCE="$NARGS_SEQUENCE" \
+NARGS_IMPL_PARAMS="$NARGS_IMPL_PARAMS" \
+MAP_MACROS_DATA="$MAP_MACROS_DATA" \
 replace_template_placeholders \
     "${TEMPLATES_DIR}/mock_macros_header.h.tpl" \
     "$MACROS_FILE" \
     "MAX_ARGS_COUNT=$MAX_ARGS_COUNT" \
     "PARAM_COUNTS_ARRAY=${PARAM_COUNTS_ARRAY[*]}" \
-    "MAP_MACROS_CONTENT_FILE=${MACROS_FILE}.map_content"
+    "NARGS_SEQUENCE=$NARGS_SEQUENCE" \
+    "NARGS_IMPL_PARAMS=$NARGS_IMPL_PARAMS" \
+    "MAP_MACROS_DATA=$MAP_MACROS_DATA" \
+    "MAP_MACROS_CONTENT_FILE=${MACROS_FILE}.map_content" \
+    "RETURN_TYPE_MACROS_FILE=$RETURN_TYPE_MACROS_FILE" \
+    "SIMPLE_WRAPPER_MACROS_FILE=$SIMPLE_WRAPPER_MACROS_FILE"
 
-# Clean up temporary files
+# Clean up temporary files AFTER template processing is complete
+# Note: Files must exist during replace_template_placeholders execution
+# Debug: check if files exist before cleanup
+if [ -f "$RETURN_TYPE_MACROS_FILE" ]; then
+    echo "DEBUG: RETURN_TYPE_MACROS_FILE exists before cleanup: $RETURN_TYPE_MACROS_FILE" >&2
+    echo "DEBUG: File size: $(wc -c < "$RETURN_TYPE_MACROS_FILE")" >&2
+fi
 rm -f "${MACROS_FILE}.map_content" "$RETURN_TYPE_MACROS_FILE" "$SIMPLE_WRAPPER_MACROS_FILE"
 
 # End of generated macros file

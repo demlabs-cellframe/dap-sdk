@@ -23,14 +23,3 @@
 // All type normalization logic is handled here - the header just uses these wrappers.
 
 {{TYPE_TO_SELECT_MACROS}}
-
-{{AWK:
-# Post-process: remove empty lines at the end if any
-{
-    print
-}
-END {
-    # No additional processing needed - content is already formatted
-}
-}}
-

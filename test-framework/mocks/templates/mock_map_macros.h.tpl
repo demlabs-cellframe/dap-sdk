@@ -43,34 +43,40 @@
 #define _DAP_MOCK_MAP_COUNT_PARAMS(...) \
     _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID(__VA_ARGS__, _DAP_MOCK_NARGS(__VA_ARGS__))
 #define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID(first_arg, arg_count, ...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_IMPL(first_arg, arg_count, __VA_ARGS__)
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_IMPL(first_arg, arg_count, ...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT(arg_count, first_arg, __VA_ARGS__)
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT(arg_count, first_arg, ...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_##arg_count(first_arg, __VA_ARGS__)
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_0(first_arg, ...) 0
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1(first_arg, ...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK(first_arg)
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK(first_arg) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_##first_arg
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_void 0
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_DEFAULT \
-    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(1)
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_IMPL(first_arg, arg_count, first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_IMPL(first_arg, arg_count, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT(arg_count, first_arg, saved_first_arg, saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT(arg_count, first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_##arg_count(first_arg, original_first_arg, saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_0(first_arg, original_first_arg, saved_first_arg, ...) 0
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK(first_arg, original_first_arg, saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_EXPAND(first_arg, original_first_arg, saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_EXPAND(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_EXPAND_IMPL(first_arg, original_first_arg, saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_EXPAND_IMPL(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_##first_arg(saved_first_arg, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_void(saved_first_arg, ...) 0
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_1_CHECK_DEFAULT(saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(saved_first_arg, ##__VA_ARGS__)
 // For arg_count >= 2, use normal logic (arg_count / 2)
 // We need to recalculate arg_count from __VA_ARGS__ since we lost it in the chain
 // Generate macros for specific arg_count values to avoid DEFAULT fallback issues
-{{#/bin/sh:
-# Generate _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_N macros for arg_count >= 2
-MAX_ARGS_COUNT="${MAX_ARGS_COUNT:-0}"
-MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS=""
-for i in $(seq 2 $MAX_ARGS_COUNT); do
-    MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS="${MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS}#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_${i}(first_arg, ...) \\"$'\n'
-    MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS="${MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS}    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(__VA_ARGS__)"$'\n'
-done
-echo -n "$MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS"
+{{AWK:
+BEGIN {
+    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
+    if (max_args_count < 0) max_args_count = 0
+    
+    # Generate _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_N macros for arg_count >= 2
+    for (i = 2; i <= max_args_count; i++) {
+        printf "#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_%d(first_arg, original_first_arg, saved_first_arg, ...) \\\n", i
+        print "    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(first_arg, ##__VA_ARGS__)"
+    }
+}
 }}
-#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_DEFAULT(first_arg, ...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_DEFAULT(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(first_arg, ##__VA_ARGS__)
 #define _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(...) \
     _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(_DAP_MOCK_NARGS(__VA_ARGS__))
 #define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(arg_count) \
@@ -84,15 +90,17 @@ echo -n "$MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_MACROS"
 
 // Generate mappings dynamically: 0 args -> 0 params, 2 args -> 1 param, 4 args -> 2 params, etc.
 // Each PARAM expands to 2 args (type, name), so N args = N/2 params (rounded down)
-{{#/bin/sh:
-# Generate _DAP_MOCK_MAP_COUNT_PARAMS_HELPER macros
-MAX_ARGS_COUNT="${MAX_ARGS_COUNT:-0}"
-MAP_COUNT_PARAMS_HELPER_MACROS=""
-for i in $(seq 0 $MAX_ARGS_COUNT); do
-    param_count=$((i / 2))
-    MAP_COUNT_PARAMS_HELPER_MACROS="${MAP_COUNT_PARAMS_HELPER_MACROS}#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_${i} ${param_count}"$'\n'
-done
-echo -n "$MAP_COUNT_PARAMS_HELPER_MACROS"
+{{AWK:
+BEGIN {
+    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
+    if (max_args_count < 0) max_args_count = 0
+    
+    # Generate _DAP_MOCK_MAP_COUNT_PARAMS_HELPER macros
+    for (i = 0; i <= max_args_count; i++) {
+        param_count = int(i / 2)
+        printf "#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_%d %d\n", i, param_count
+    }
+}
 }}
 
 // Default case for values beyond generated range (should never be reached)
@@ -128,69 +136,101 @@ echo -n "$MAP_COUNT_PARAMS_HELPER_MACROS"
 #define _DAP_MOCK_MAP_IMPL_COND_1_0(macro, ...) \
     _DAP_MOCK_MAP_0(macro)
 
-{{#/bin/sh:
-# Generate _DAP_MOCK_MAP_IMPL_COND_1_N macros
-PARAM_COUNTS="${PARAM_COUNTS_ARRAY:-0}"
-MAX_ARGS_COUNT="${MAX_ARGS_COUNT:-0}"
-
-IFS=' ' read -ra PARAM_COUNTS_ARRAY <<< "$PARAM_COUNTS"
-
-MAP_IMPL_COND_1_N_MACROS=""
-for arg_count in $(seq 1 $MAX_ARGS_COUNT); do
-    param_count=$((arg_count / 2))
+{{AWK:
+BEGIN {
+    param_counts_str = ENVIRON["PARAM_COUNTS_ARRAY"]
+    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
+    if (max_args_count < 0) max_args_count = 0
     
-    macro_sig="_DAP_MOCK_MAP_IMPL_COND_1_${arg_count}(macro"
-    for i in $(seq 1 $arg_count); do
-        macro_sig="${macro_sig}, p$i"
-    done
-    macro_sig="${macro_sig}, ...)"
+    # Parse PARAM_COUNTS_ARRAY (space-separated)
+    delete param_counts_array
+    param_count_idx = 0
+    if (param_counts_str != "") {
+        n = split(param_counts_str, parts, /[ \t]+/)
+        for (i = 1; i <= n; i++) {
+            count = int(parts[i])
+            if (count >= 0) {
+                param_counts_array[++param_count_idx] = count
+            }
+        }
+    }
     
-    if [[ " ${PARAM_COUNTS_ARRAY[@]} " =~ " ${param_count} " ]] || [ "$param_count" -eq 0 ]; then
-        macro_body="_DAP_MOCK_MAP_${param_count}(macro"
-        for i in $(seq 1 $arg_count); do
-            macro_body="${macro_body}, p$i"
-        done
-        macro_body="${macro_body})"
-    else
-        fallback_count=0
-        for available_count in "${PARAM_COUNTS_ARRAY[@]}"; do
-            [ -z "$available_count" ] && continue
-            [ "$available_count" -le "$param_count" ] && [ "$available_count" -gt "$fallback_count" ] && fallback_count=$available_count
-        done
-        macro_body="_DAP_MOCK_MAP_${fallback_count}(macro"
-        for i in $(seq 1 $arg_count); do
-            macro_body="${macro_body}, p$i"
-        done
-        macro_body="${macro_body})"
-    fi
+    # Track which counts we have
+    delete has_count
+    for (i = 1; i <= param_count_idx; i++) {
+        has_count[param_counts_array[i]] = 1
+    }
     
-    MAP_IMPL_COND_1_N_MACROS="${MAP_IMPL_COND_1_N_MACROS}// ${param_count} param(s) case: ${arg_count} arguments"$'\n'
-    MAP_IMPL_COND_1_N_MACROS="${MAP_IMPL_COND_1_N_MACROS}#define ${macro_sig} \\"$'\n'
-    MAP_IMPL_COND_1_N_MACROS="${MAP_IMPL_COND_1_N_MACROS}    ${macro_body}"$'\n'
-    MAP_IMPL_COND_1_N_MACROS="${MAP_IMPL_COND_1_N_MACROS}"$'\n'
-done
-
-echo -n "$MAP_IMPL_COND_1_N_MACROS"
+    # Generate _DAP_MOCK_MAP_IMPL_COND_1_N macros
+    for (arg_count = 1; arg_count <= max_args_count; arg_count++) {
+        param_count = int(arg_count / 2)
+        
+        # Build macro signature
+        macro_sig = "_DAP_MOCK_MAP_IMPL_COND_1_" arg_count "(macro"
+        for (i = 1; i <= arg_count; i++) {
+            macro_sig = macro_sig ", p" i
+        }
+        macro_sig = macro_sig ", ...)"
+        
+        # Determine macro body
+        if (has_count[param_count] || param_count == 0) {
+            macro_body = "_DAP_MOCK_MAP_" param_count "(macro"
+            for (i = 1; i <= arg_count; i++) {
+                macro_body = macro_body ", p" i
+            }
+            macro_body = macro_body ")"
+        } else {
+            # Find fallback count
+            fallback_count = 0
+            for (i = 1; i <= param_count_idx; i++) {
+                available_count = param_counts_array[i]
+                if (available_count <= param_count && available_count > fallback_count) {
+                    fallback_count = available_count
+                }
+            }
+            macro_body = "_DAP_MOCK_MAP_" fallback_count "(macro"
+            for (i = 1; i <= arg_count; i++) {
+                macro_body = macro_body ", p" i
+            }
+            macro_body = macro_body ")"
+        }
+        
+        printf "// %d param(s) case: %d arguments\n", param_count, arg_count
+        printf "#define %s \\\n", macro_sig
+        printf "    %s\n", macro_body
+        print ""
+    }
+}
 }}
 
-{{#/bin/sh:
-# Generate _DAP_MOCK_MAP_IMPL_COND_N macros for count > 1
-PARAM_COUNTS="${PARAM_COUNTS_ARRAY:-0}"
-
-IFS=' ' read -ra PARAM_COUNTS_ARRAY <<< "$PARAM_COUNTS"
-
-MAP_IMPL_COND_N_MACROS=""
-for count in "${PARAM_COUNTS_ARRAY[@]}"; do
-    [ -z "$count" ] && continue
-    [ "$count" -le 1 ] && continue
+{{AWK:
+BEGIN {
+    param_counts_str = ENVIRON["PARAM_COUNTS_ARRAY"]
     
-    MAP_IMPL_COND_N_MACROS="${MAP_IMPL_COND_N_MACROS}// Conditional macro for $count parameters"$'\n'
-    MAP_IMPL_COND_N_MACROS="${MAP_IMPL_COND_N_MACROS}#define _DAP_MOCK_MAP_IMPL_COND_${count}(macro, ...) \\"$'\n'
-    MAP_IMPL_COND_N_MACROS="${MAP_IMPL_COND_N_MACROS}    _DAP_MOCK_MAP_${count}(macro, __VA_ARGS__)"$'\n'
-    MAP_IMPL_COND_N_MACROS="${MAP_IMPL_COND_N_MACROS}"$'\n'
-done
-
-echo -n "$MAP_IMPL_COND_N_MACROS"
+    # Parse PARAM_COUNTS_ARRAY (space-separated)
+    delete param_counts_array
+    param_count_idx = 0
+    if (param_counts_str != "") {
+        n = split(param_counts_str, parts, /[ \t]+/)
+        for (i = 1; i <= n; i++) {
+            count = int(parts[i])
+            if (count >= 0) {
+                param_counts_array[++param_count_idx] = count
+            }
+        }
+    }
+    
+    # Generate _DAP_MOCK_MAP_IMPL_COND_N macros for count > 1
+    for (i = 1; i <= param_count_idx; i++) {
+        count = param_counts_array[i]
+        if (count > 1) {
+            printf "// Conditional macro for %d parameters\n", count
+            printf "#define _DAP_MOCK_MAP_IMPL_COND_%d(macro, ...) \\\n", count
+            printf "    _DAP_MOCK_MAP_%d(macro, __VA_ARGS__)\n", count
+            print ""
+        }
+    }
+}
 }}
 
 {{postproc:{{AWK:
@@ -223,4 +263,3 @@ END {
     }
 }
 }}}}
-

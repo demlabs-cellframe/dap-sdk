@@ -2,12 +2,15 @@
 # - {{AWK:...}} - keep marker for content generation
 # - {{postproc:{{AWK:...}}}} - remove (post-processing happens later)
 # - {{#/bin/sh:...}} - keep marker for content generation
+# Also removes AWK code blocks that look like postproc content (without markers)
 # This is used to clean the template before processing placeholders
 
 BEGIN {
     in_section = 0
     brace_count = 0
     section_type = ""
+    in_postproc_content = 0
+    postproc_brace_count = 0
 }
 
 # Match start of any section
@@ -18,8 +21,17 @@ BEGIN {
     next
 }
 
+# Detect postproc content without markers (AWK code that looks like postproc)
+/^# Post-process:/ {
+    if (!in_section && !in_postproc_content) {
+        in_postproc_content = 1
+        postproc_brace_count = 0
+        next
+    }
+}
+
 /{{AWK:/ {
-    if (!in_section) {
+    if (!in_section && !in_postproc_content) {
         # Content generation section - keep marker, remove content
         print $0  # Print the marker line
         in_section = 1
@@ -30,7 +42,7 @@ BEGIN {
 }
 
 /{{#\/bin\/sh:/ {
-    if (!in_section) {
+    if (!in_section && !in_postproc_content) {
         # Content generation section - keep marker, remove content
         print $0  # Print the marker line
         in_section = 1
@@ -38,6 +50,26 @@ BEGIN {
         brace_count = 1  # {{#/bin/sh:
         next
     }
+}
+
+in_postproc_content {
+    # Count braces to find end of AWK code block
+    for (i = 1; i <= length($0); i++) {
+        char = substr($0, i, 1)
+        if (char == "{") {
+            postproc_brace_count++
+        } else if (char == "}") {
+            postproc_brace_count--
+            if (postproc_brace_count < 0) {
+                # End of AWK code block (closing braces like }}})
+                in_postproc_content = 0
+                postproc_brace_count = 0
+                next
+            }
+        }
+    }
+    # Skip lines inside postproc content
+    next
 }
 
 in_section {

@@ -4,31 +4,23 @@
 
 #include "{{BASENAME}}_mock_macros.h"
 
-{{#/bin/sh:
-# Generate custom mock includes
-# CUSTOM_MOCKS_LIST is passed as pipe-separated entries: return_type|func_name|param_list|macro_type
-CUSTOM_MOCKS_LIST="${CUSTOM_MOCKS_LIST}"
-WRAPPER_FUNCTIONS="${WRAPPER_FUNCTIONS}"
-
-CUSTOM_MOCK_INCLUDES=""
-if [ -n "$CUSTOM_MOCKS_LIST" ]; then
-    while IFS='|' read -r return_type func_name param_list macro_type || [ -n "$func_name" ]; do
-        [ -z "$func_name" ] && continue
-        
-        # Skip if function already has a wrapper defined
-        if echo "$WRAPPER_FUNCTIONS" | grep -q "^${func_name}$"; then
-            continue
-        fi
-        
-        if [ -n "$CUSTOM_MOCK_INCLUDES" ]; then
-            CUSTOM_MOCK_INCLUDES="${CUSTOM_MOCK_INCLUDES}"$'\n'
-        fi
-        CUSTOM_MOCK_INCLUDES="${CUSTOM_MOCK_INCLUDES}#include \"custom_mocks/${func_name}_mock.h\""
-    done <<EOF
-$CUSTOM_MOCKS_LIST
-EOF
-fi
-
-echo -n "$CUSTOM_MOCK_INCLUDES"
-}}
-
+{{#if CUSTOM_MOCKS_LIST}}
+    {{#for mock_entry in CUSTOM_MOCKS_LIST}}
+        {{mock_entry|split|pipe}}
+        {{#set func_name={{mock_entry|part|1}}}}
+        {{#if func_name}}
+            {{#if WRAPPER_FUNCTIONS}}
+                {{#if func_name|in_list|WRAPPER_FUNCTIONS}}
+                    {{#set should_include=0}}
+                {{else}}
+                    {{#set should_include=1}}
+                {{/if}}
+            {{else}}
+                {{#set should_include=1}}
+            {{/if}}
+            {{#if should_include|ne|0}}
+#include "custom_mocks/{{func_name}}_mock.h"
+            {{/if}}
+        {{/if}}
+    {{/for}}
+{{/if}}
