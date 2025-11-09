@@ -42,6 +42,7 @@ print_error() {
 # Load template processing functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/dap_tpl.sh"
+source "${SCRIPT_DIR}/dap_tpl_lib.sh"
 
 # Check arguments
 if [ $# -lt 3 ]; then
@@ -486,67 +487,15 @@ MAX_ARGS_COUNT=$((MAX_PARAM_COUNT * 2 + 2))
 # Ensure at least 0 for empty case
 [ "$MAX_ARGS_COUNT" -lt 0 ] && MAX_ARGS_COUNT=0
 
-# Prepare NARGS_SEQUENCE and NARGS_IMPL_PARAMS for template
-NARGS_SEQUENCE=""
-for i in $(seq $MAX_ARGS_COUNT -1 0); do
-    if [ -n "$NARGS_SEQUENCE" ]; then
-        NARGS_SEQUENCE="${NARGS_SEQUENCE}, $i"
-    else
-        NARGS_SEQUENCE=", $i"
-    fi
-done
-
-NARGS_IMPL_PARAMS=""
-for i in $(seq 1 $MAX_ARGS_COUNT); do
-    if [ -n "$NARGS_IMPL_PARAMS" ]; then
-        NARGS_IMPL_PARAMS="${NARGS_IMPL_PARAMS}, _$i"
-    else
-        NARGS_IMPL_PARAMS="_$i"
-    fi
-done
-
 print_info "Max parameter count: $MAX_PARAM_COUNT, generating helpers for 0-$MAX_ARGS_COUNT args"
 
-# Prepare MAP_MACROS_DATA for template (pipe-separated: count|macro_def)
-MAP_MACROS_DATA=""
-has_count_1=0
-for count in "${PARAM_COUNTS_ARRAY[@]}"; do
-    [ -z "$count" ] && continue
-    [ "$count" = "1" ] && has_count_1=1
-    
-    if [ "$count" -eq 0 ]; then
-        macro_def="// Macro for 0 parameter(s) (PARAM entries)"$'\n'"#define _DAP_MOCK_MAP_0(macro, ...) \\"$'\n'""
-    else
-        total_args=$((count * 2))
-        macro_def="// Macro for $count parameter(s) (PARAM entries)"$'\n'"#define _DAP_MOCK_MAP_${count}(macro"
-        for j in $(seq 1 $total_args); do
-            macro_def="${macro_def}, p${j}"
-        done
-        macro_def="${macro_def}, ...) \\"$'\n'"    macro(p1, p2)"
-        for j in $(seq 2 $count); do
-            type_idx=$((j * 2 - 1))
-            name_idx=$((j * 2))
-            macro_def="${macro_def}, macro(p${type_idx}, p${name_idx})"
-        done
-        macro_def="${macro_def}"$'\n'
-    fi
-    
-    if [ -n "$MAP_MACROS_DATA" ]; then
-        MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n'"${count}|${macro_def}"
-    else
-        MAP_MACROS_DATA="${count}|${macro_def}"
-    fi
-done
-
-# Always add _DAP_MOCK_MAP_1 if needed
-if [ "$has_count_1" -eq 0 ]; then
-    map_1_def="// Macro for 1 parameter(s) - needed for _DAP_MOCK_MAP_IMPL_COND_1_0"$'\n'"#define _DAP_MOCK_MAP_1(macro, p1, p2, ...) \\"$'\n'"    macro(p1, p2)"$'\n'
-    if [ -n "$MAP_MACROS_DATA" ]; then
-        MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n'"1|${map_1_def}"
-    else
-        MAP_MACROS_DATA="1|${map_1_def}"
-    fi
-fi
+# Prepare all template data using library functions
+prepare_nargs_data "$MAX_ARGS_COUNT"
+prepare_map_count_params_by_count_data "$MAX_ARGS_COUNT"
+prepare_map_count_params_helper_data "$MAX_ARGS_COUNT"
+prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}"
+prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}"
+prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}"
 
 # Step 6: Generate specialized macros header file
 print_info "Generating specialized macros header: $MACROS_FILE"
@@ -739,18 +688,26 @@ else
     > "$SIMPLE_WRAPPER_MACROS_FILE"
 fi
 
-# Generate mock_map_macros content with AWK sections that append return type and simple wrapper macros
+# Generate mock_map_macros content with template language constructs
 RETURN_TYPE_MACROS_FILE="$RETURN_TYPE_MACROS_FILE" \
 SIMPLE_WRAPPER_MACROS_FILE="$SIMPLE_WRAPPER_MACROS_FILE" \
 PARAM_COUNTS_ARRAY="${PARAM_COUNTS_ARRAY[*]}" \
 MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
+MAP_COUNT_PARAMS_BY_COUNT_DATA="$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
+MAP_COUNT_PARAMS_HELPER_DATA="$MAP_COUNT_PARAMS_HELPER_DATA" \
+MAP_IMPL_COND_1_DATA="$MAP_IMPL_COND_1_DATA" \
+MAP_IMPL_COND_DATA="$MAP_IMPL_COND_DATA" \
 replace_template_placeholders \
     "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
     "${MACROS_FILE}.map_content" \
     "RETURN_TYPE_MACROS_FILE=$RETURN_TYPE_MACROS_FILE" \
     "SIMPLE_WRAPPER_MACROS_FILE=$SIMPLE_WRAPPER_MACROS_FILE" \
     "PARAM_COUNTS_ARRAY=${PARAM_COUNTS_ARRAY[*]}" \
-    "MAX_ARGS_COUNT=$MAX_ARGS_COUNT"
+    "MAX_ARGS_COUNT=$MAX_ARGS_COUNT" \
+    "MAP_COUNT_PARAMS_BY_COUNT_DATA=$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
+    "MAP_COUNT_PARAMS_HELPER_DATA=$MAP_COUNT_PARAMS_HELPER_DATA" \
+    "MAP_IMPL_COND_1_DATA=$MAP_IMPL_COND_1_DATA" \
+    "MAP_IMPL_COND_DATA=$MAP_IMPL_COND_DATA"
 
 # Generate header using template with AWK section that appends mock_map_macros content
 MAP_MACROS_CONTENT_FILE="${MACROS_FILE}.map_content" \

@@ -67,6 +67,10 @@ replace_template_placeholders() {
     export MAP_MACROS_CONTENT_FILE="${MAP_MACROS_CONTENT_FILE:-}"
     export RETURN_TYPE_MACROS_FILE="${RETURN_TYPE_MACROS_FILE:-}"
     export SIMPLE_WRAPPER_MACROS_FILE="${SIMPLE_WRAPPER_MACROS_FILE:-}"
+    export MAP_COUNT_PARAMS_BY_COUNT_DATA="${MAP_COUNT_PARAMS_BY_COUNT_DATA:-}"
+    export MAP_COUNT_PARAMS_HELPER_DATA="${MAP_COUNT_PARAMS_HELPER_DATA:-}"
+    export MAP_IMPL_COND_1_DATA="${MAP_IMPL_COND_1_DATA:-}"
+    export MAP_IMPL_COND_DATA="${MAP_IMPL_COND_DATA:-}"
     # Export arrays for template constructs (set by shell scripts in templates)
     export POINTER_TYPES_ARRAY="${POINTER_TYPES_ARRAY:-}"
     export NON_POINTER_TYPES_ARRAY="${NON_POINTER_TYPES_ARRAY:-}"

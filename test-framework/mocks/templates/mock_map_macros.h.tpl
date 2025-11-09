@@ -63,18 +63,15 @@
 // For arg_count >= 2, use normal logic (arg_count / 2)
 // We need to recalculate arg_count from __VA_ARGS__ since we lost it in the chain
 // Generate macros for specific arg_count values to avoid DEFAULT fallback issues
-{{AWK:
-BEGIN {
-    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
-    if (max_args_count < 0) max_args_count = 0
-    
-    # Generate _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_N macros for arg_count >= 2
-    for (i = 2; i <= max_args_count; i++) {
-        printf "#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_%d(first_arg, original_first_arg, saved_first_arg, ...) \\\n", i
-        print "    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(first_arg, ##__VA_ARGS__)"
-    }
-}
-}}
+{{#if MAP_COUNT_PARAMS_BY_COUNT_DATA}}
+    {{#for entry in MAP_COUNT_PARAMS_BY_COUNT_DATA}}
+        {{#set arg_count={{entry}}}}
+        {{#if entry}}
+#define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_{{arg_count}}(first_arg, original_first_arg, saved_first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(first_arg, ##__VA_ARGS__)
+        {{/if}}
+    {{/for}}
+{{/if}}
 #define _DAP_MOCK_MAP_COUNT_PARAMS_CHECK_VOID_BY_COUNT_DEFAULT(first_arg, original_first_arg, saved_first_arg, ...) \
     _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(first_arg, ##__VA_ARGS__)
 #define _DAP_MOCK_MAP_COUNT_PARAMS_RECALC(...) \
@@ -90,18 +87,16 @@ BEGIN {
 
 // Generate mappings dynamically: 0 args -> 0 params, 2 args -> 1 param, 4 args -> 2 params, etc.
 // Each PARAM expands to 2 args (type, name), so N args = N/2 params (rounded down)
-{{AWK:
-BEGIN {
-    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
-    if (max_args_count < 0) max_args_count = 0
-    
-    # Generate _DAP_MOCK_MAP_COUNT_PARAMS_HELPER macros
-    for (i = 0; i <= max_args_count; i++) {
-        param_count = int(i / 2)
-        printf "#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_%d %d\n", i, param_count
-    }
-}
-}}
+{{#if MAP_COUNT_PARAMS_HELPER_DATA}}
+    {{#for entry in MAP_COUNT_PARAMS_HELPER_DATA}}
+        {{entry|split|pipe}}
+        {{#set arg_count={{entry|part|0}}}}
+        {{#set param_count={{entry|part|1}}}}
+        {{#if entry}}
+#define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_{{arg_count}} {{param_count}}
+        {{/if}}
+    {{/for}}
+{{/if}}
 
 // Default case for values beyond generated range (should never be reached)
 #define _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_DEFAULT 0
@@ -136,130 +131,39 @@ BEGIN {
 #define _DAP_MOCK_MAP_IMPL_COND_1_0(macro, ...) \
     _DAP_MOCK_MAP_0(macro)
 
-{{AWK:
-BEGIN {
-    param_counts_str = ENVIRON["PARAM_COUNTS_ARRAY"]
-    max_args_count = int(ENVIRON["MAX_ARGS_COUNT"])
-    if (max_args_count < 0) max_args_count = 0
-    
-    # Parse PARAM_COUNTS_ARRAY (space-separated)
-    delete param_counts_array
-    param_count_idx = 0
-    if (param_counts_str != "") {
-        n = split(param_counts_str, parts, /[ \t]+/)
-        for (i = 1; i <= n; i++) {
-            count = int(parts[i])
-            if (count >= 0) {
-                param_counts_array[++param_count_idx] = count
-            }
-        }
-    }
-    
-    # Track which counts we have
-    delete has_count
-    for (i = 1; i <= param_count_idx; i++) {
-        has_count[param_counts_array[i]] = 1
-    }
-    
-    # Generate _DAP_MOCK_MAP_IMPL_COND_1_N macros
-    for (arg_count = 1; arg_count <= max_args_count; arg_count++) {
-        param_count = int(arg_count / 2)
-        
-        # Build macro signature
-        macro_sig = "_DAP_MOCK_MAP_IMPL_COND_1_" arg_count "(macro"
-        for (i = 1; i <= arg_count; i++) {
-            macro_sig = macro_sig ", p" i
-        }
-        macro_sig = macro_sig ", ...)"
-        
-        # Determine macro body
-        if (has_count[param_count] || param_count == 0) {
-            macro_body = "_DAP_MOCK_MAP_" param_count "(macro"
-            for (i = 1; i <= arg_count; i++) {
-                macro_body = macro_body ", p" i
-            }
-            macro_body = macro_body ")"
-        } else {
-            # Find fallback count
-            fallback_count = 0
-            for (i = 1; i <= param_count_idx; i++) {
-                available_count = param_counts_array[i]
-                if (available_count <= param_count && available_count > fallback_count) {
-                    fallback_count = available_count
-                }
-            }
-            macro_body = "_DAP_MOCK_MAP_" fallback_count "(macro"
-            for (i = 1; i <= arg_count; i++) {
-                macro_body = macro_body ", p" i
-            }
-            macro_body = macro_body ")"
-        }
-        
-        printf "// %d param(s) case: %d arguments\n", param_count, arg_count
-        printf "#define %s \\\n", macro_sig
-        printf "    %s\n", macro_body
-        print ""
-    }
-}
-}}
+{{#if MAP_IMPL_COND_1_DATA}}
+    {{#for entry in MAP_IMPL_COND_1_DATA}}
+        {{entry|split|pipe}}
+        {{#set arg_count={{entry|part|0}}}}
+        {{#set param_count={{entry|part|1}}}}
+        {{#set has_count={{entry|part|2}}}}
+        {{#set fallback_count={{entry|part|3}}}}
+        {{#set macro_params={{entry|part|4}}}}
+        {{#if entry}}
+// {{param_count}} param(s) case: {{arg_count}} arguments
+#define _DAP_MOCK_MAP_IMPL_COND_1_{{arg_count}}({{macro_params}}, ...) \
+    _DAP_MOCK_MAP_{{fallback_count}}({{macro_params}})
 
-{{AWK:
-BEGIN {
-    param_counts_str = ENVIRON["PARAM_COUNTS_ARRAY"]
-    
-    # Parse PARAM_COUNTS_ARRAY (space-separated)
-    delete param_counts_array
-    param_count_idx = 0
-    if (param_counts_str != "") {
-        n = split(param_counts_str, parts, /[ \t]+/)
-        for (i = 1; i <= n; i++) {
-            count = int(parts[i])
-            if (count >= 0) {
-                param_counts_array[++param_count_idx] = count
-            }
-        }
-    }
-    
-    # Generate _DAP_MOCK_MAP_IMPL_COND_N macros for count > 1
-    for (i = 1; i <= param_count_idx; i++) {
-        count = param_counts_array[i]
-        if (count > 1) {
-            printf "// Conditional macro for %d parameters\n", count
-            printf "#define _DAP_MOCK_MAP_IMPL_COND_%d(macro, ...) \\\n", count
-            printf "    _DAP_MOCK_MAP_%d(macro, __VA_ARGS__)\n", count
-            print ""
-        }
-    }
-}
-}}
+        {{/if}}
+    {{/for}}
+{{/if}}
 
-{{postproc:{{AWK:
-# Post-process: append content from external files if provided
-# First, print all template content
-{
-    print
-}
+{{#if MAP_IMPL_COND_DATA}}
+    {{#for entry in MAP_IMPL_COND_DATA}}
+        {{#set param_count={{entry}}}}
+        {{#if entry}}
+// Conditional macro for {{param_count}} parameters
+#define _DAP_MOCK_MAP_IMPL_COND_{{param_count}}(macro, ...) \
+    _DAP_MOCK_MAP_{{param_count}}(macro, __VA_ARGS__)
 
-# Then append content from external files if provided
-END {
-    # Append return type macros if provided
-    return_type_macros_file = ENVIRON["RETURN_TYPE_MACROS_FILE"]
-    if (return_type_macros_file != "" && return_type_macros_file != "{{RETURN_TYPE_MACROS_FILE}}") {
-        # Read and append content from the file
-        while ((getline line < return_type_macros_file) > 0) {
-            print line
-        }
-        close(return_type_macros_file)
-    }
-    
-    # Append simple wrapper macros if provided
-    simple_wrapper_macros_file = ENVIRON["SIMPLE_WRAPPER_MACROS_FILE"]
-    if (simple_wrapper_macros_file != "" && simple_wrapper_macros_file != "{{SIMPLE_WRAPPER_MACROS_FILE}}") {
-        # Read and append content from the file
-        while ((getline line < simple_wrapper_macros_file) > 0) {
-            print line
-        }
-        close(simple_wrapper_macros_file)
-    }
-}
-}}}}
+        {{/if}}
+    {{/for}}
+{{/if}}
+
+{{#if RETURN_TYPE_MACROS_FILE}}
+{{#include RETURN_TYPE_MACROS_FILE}}
+{{/if}}
+
+{{#if SIMPLE_WRAPPER_MACROS_FILE}}
+{{#include SIMPLE_WRAPPER_MACROS_FILE}}
+{{/if}}
