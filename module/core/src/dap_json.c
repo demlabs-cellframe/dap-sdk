@@ -491,7 +491,7 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
     if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return NULL;
     }
-    
+        
     return _json_c_to_dap_json(l_obj);
 }
 
