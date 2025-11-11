@@ -24,6 +24,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 
 #include "dap_link_manager.h"
+#include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_driver.h"
 #include "dap_stream_cluster.h"
@@ -72,11 +73,14 @@ static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
     dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_net_id, NULL);
     dap_list_t *l_item = NULL;
-    pthread_rwlock_rdlock(&s_link_manager->nets_lock);
+    int err = pthread_rwlock_rdlock(&s_link_manager->nets_lock);
+    if (err)
+        log_it(L_ERROR, "Recursive rwlock locking try detected");
     DL_FOREACH(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
             break;
-    pthread_rwlock_unlock(&s_link_manager->nets_lock);
+    if (!err)
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
     if (!l_item) {
         debug_if(s_debug_more, L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not controlled by link manager", a_net_id);
         return NULL;
