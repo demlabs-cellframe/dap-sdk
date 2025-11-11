@@ -27,6 +27,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_driver.h"
+#include "dap_net_common.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
@@ -67,20 +68,22 @@ static void s_links_wake_up(dap_link_manager_t *a_link_manager);
 static void s_links_request(dap_link_manager_t *a_link_manager);
 static void s_update_states(void *a_arg);
 static void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager);
+static bool s_stream_add_callback(void *a_arg);
+static bool s_stream_replace_callback(void *a_arg);
+static bool s_stream_delete_callback(void *a_arg);
 
 static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 {
     dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_net_id, NULL);
     dap_list_t *l_item = NULL;
-    int err = pthread_rwlock_rdlock(&s_link_manager->nets_lock);
-    if (err)
-        log_it(L_ERROR, "Recursive rwlock locking try detected");
+    int lock = pthread_rwlock_rdlock(&s_link_manager->nets_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire nets lock recursively !"), NULL;
     DL_FOREACH(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
             break;
-    if (!err)
-        pthread_rwlock_unlock(&s_link_manager->nets_lock);
     if (!l_item) {
         debug_if(s_debug_more, L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not controlled by link manager", a_net_id);
         return NULL;
@@ -193,6 +196,43 @@ DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_lin
     dap_string_free(l_report, true);
 }
 
+struct link_moving_args {
+    dap_stream_node_addr_t addr;
+    bool uplink;
+};
+
+/**
+ * @brief add downlink to manager list
+ * @param a_node_addr - pointer to node addr
+ * @return if ok 0, other if ERROR
+ */
+ static void s_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink, void UNUSED_ARG *a_user_arg)
+ {
+     dap_return_if_fail(a_node_addr && s_link_manager->active);
+     struct link_moving_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_moving_args);
+     *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
+     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+ }
+
+ static void s_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_is_uplink, void UNUSED_ARG *a_user_arg)
+ {
+     dap_return_if_fail(a_addr && s_link_manager->active);
+     struct link_moving_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_moving_args);
+     *l_args = (struct link_moving_args) { .addr = *a_addr, .uplink = a_new_is_uplink };
+     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+ }
+
+ static void s_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr, void UNUSED_ARG *a_user_arg)
+ {
+     dap_return_if_fail(a_node_addr && s_link_manager->active);
+     dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
+     if (!l_args) {
+         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+         return;
+     }
+     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+ }
+
 // General functional
 
 /**
@@ -228,6 +268,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         dap_global_db_erase_table_sync((const char*)(l_item_cut->data));
     }
     dap_list_free_full(l_groups, NULL);
+    dap_stream_event_callbacks_register(s_link_manager_stream_add, s_link_manager_stream_replace, s_link_manager_stream_delete, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;
@@ -947,11 +988,6 @@ bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_
     return NULL;
 }
 
-struct link_moving_args {
-    dap_stream_node_addr_t addr;
-    bool uplink;
-};
-
 static bool s_stream_add_callback(void *a_arg)
 {
     assert(a_arg);
@@ -1003,19 +1039,6 @@ static bool s_stream_add_callback(void *a_arg)
     return false;
 }
 
-/**
- * @brief add downlink to manager list
- * @param a_node_addr - pointer to node addr
- * @return if ok 0, other if ERROR
- */
-int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink)
-{
-    dap_return_val_if_pass(!a_node_addr || !s_link_manager->active, -1);
-    struct link_moving_args *l_args = DAP_NEW_Z_RET_VAL_IF_FAIL(struct link_moving_args, -2);
-    *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
-    return dap_proc_thread_callback_add_pri(s_query_thread, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
-}
-
 static bool s_stream_replace_callback(void *a_arg)
 {
     assert(a_arg);
@@ -1045,14 +1068,6 @@ static bool s_stream_replace_callback(void *a_arg)
     return false;
 }
 
-void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_is_uplink)
-{
-    dap_return_if_fail(a_addr);
-    struct link_moving_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_moving_args);
-    *l_args = (struct link_moving_args) { .addr = *a_addr, .uplink = a_new_is_uplink };
-    dap_proc_thread_callback_add_pri(s_query_thread, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
-}
-
 static bool s_stream_delete_callback(void *a_arg)
 {
     assert(a_arg);
@@ -1079,17 +1094,6 @@ static bool s_stream_delete_callback(void *a_arg)
     DAP_DELETE(a_arg);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return false;
-}
-
-void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
-{
-    dap_return_if_fail(a_node_addr);
-    dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
-    if (!l_args) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
-    }
-    dap_proc_thread_callback_add_pri(s_query_thread, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 struct link_accounting_args {
