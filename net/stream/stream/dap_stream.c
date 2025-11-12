@@ -686,15 +686,46 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
-    // LOG 5: Confirm stream packet processing started
-    log_it(L_INFO, "[STREAM PROC READ] Processing buffer: size=%zu stream=%p",
-           a_stream->esocket->buf_in_size, a_stream);
+    
+    // LOG SIGNATURE: Show first 8 bytes of buffer for signature debugging (only for non-trivial packets)
+    if(a_stream->esocket->buf_in_size >= 100)
+    {
+        byte_t *buf = a_stream->esocket->buf_in;
+        log_it(L_INFO, "[SIG DEBUG] Buffer start (8 bytes): %02x %02x %02x %02x %02x %02x %02x %02x",
+               buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+        log_it(L_INFO, "[SIG DEBUG] Expected signature: a0 95 96 a9 9e 5c fb fa");
+    }
+    
     byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
     size_t l_shift = 0, l_processed_size = 0;
+    byte_t *l_sig_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos));
+    
+    // LOG SIGNATURE: Check if first byte was found
+    if(l_sig_pos)
+    {
+        log_it(L_INFO, "[SIG DEBUG] First byte 0xa0 found at offset %zu", (size_t)(l_sig_pos - l_pos));
+    }
+    else
+    {
+        log_it(L_WARNING, "[SIG DEBUG] First byte 0xa0 NOT FOUND in buffer!");
+        return 0;
+    }
+    
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
         if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
             break;
-        if ( !memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig)) ) {
+        
+        // LOG SIGNATURE: Check all 8 bytes
+        int sig_match = !memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig));
+        if(!sig_match)
+        {
+            log_it(L_WARNING, "[SIG DEBUG] Signature mismatch at offset %zu: %02x %02x %02x %02x %02x %02x %02x %02x",
+                   (size_t)(l_pos - a_stream->esocket->buf_in),
+                   l_pos[0], l_pos[1], l_pos[2], l_pos[3], l_pos[4], l_pos[5], l_pos[6], l_pos[7]);
+        }
+        
+        if ( sig_match ) {
+            log_it(L_INFO, "[SIG DEBUG] Signature MATCHED! Processing packet...");
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
