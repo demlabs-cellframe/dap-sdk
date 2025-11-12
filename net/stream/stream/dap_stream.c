@@ -727,14 +727,23 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         if ( sig_match ) {
             log_it(L_INFO, "[SIG DEBUG] Signature MATCHED! Processing packet...");
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
+            
+            // LOG: Packet size details
+            size_t buf_remaining = (size_t)(l_end - l_pos);
+            log_it(L_INFO, "[SIG DEBUG] Packet hdr.size=%u, total_needed=%zu, buf_remaining=%zu",
+                   l_pkt->hdr.size, sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size, buf_remaining);
+            
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
-                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
+                log_it(L_ERROR, "[SIG DEBUG] Packet size TOO LARGE: %u > %u", l_pkt->hdr.size, DAP_STREAM_PKT_SIZE_MAX);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
-                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                log_it(L_INFO, "[SIG DEBUG] Calling s_stream_proc_pkt_in() for packet size %zu", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
-            } else
+            } else {
+                log_it(L_WARNING, "[SIG DEBUG] Packet INCOMPLETE: need %zu bytes, have %zu bytes",
+                       l_shift, buf_remaining);
                 break;
+            }
             l_pos += l_shift;
             l_processed_size += l_shift;
         } else
