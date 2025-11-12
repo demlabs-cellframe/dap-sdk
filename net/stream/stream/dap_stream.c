@@ -502,6 +502,11 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
 #endif
+                    // LOG 1: Confirm stream created and switching to binary mode
+                    log_it(L_INFO, "[HTTP→STREAM] Stream created successfully, state=%d esocket=%p readable=%d",
+                           a_http_client->state_read, a_http_client->esocket,
+                           (a_http_client->esocket->flags & DAP_SOCK_READY_TO_READ) ? 1 : 0);
+                    log_it(L_INFO, "[HTTP→STREAM] Switching to binary stream mode (state=DATA)");
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code = Http_Status_NotFound;
@@ -652,6 +657,9 @@ static void s_udp_esocket_new(dap_events_socket_t* a_esocket, UNUSED_ARG void * 
  */
 static void s_http_client_data_read(dap_http_client_t * a_http_client, void * arg)
 {
+    // LOG 4: Confirm data_read_callback is called
+    log_it(L_INFO, "[STREAM DATA READ] Called: buf_in_size=%zu esocket=%p",
+           a_http_client->esocket->buf_in_size, a_http_client->esocket);
     s_esocket_data_read(a_http_client->esocket,arg);
 }
 
@@ -678,6 +686,9 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
+    // LOG 5: Confirm stream packet processing started
+    log_it(L_INFO, "[STREAM PROC READ] Processing buffer: size=%zu stream=%p",
+           a_stream->esocket->buf_in_size, a_stream);
     byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
     size_t l_shift = 0, l_processed_size = 0;
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
