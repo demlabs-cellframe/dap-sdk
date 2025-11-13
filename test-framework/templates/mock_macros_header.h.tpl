@@ -16,20 +16,11 @@
 // Since this file is included first, we need the base macros here
 #ifndef _DAP_MOCK_NARGS_DEFINED
 #define _DAP_MOCK_NARGS_DEFINED
-// Dynamically generated _DAP_MOCK_NARGS supporting up to {{MAX_ARGS_COUNT}} arguments
-{{#if NARGS_SEQUENCE}}
-#define _DAP_MOCK_NARGS(...) \
-    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__{{NARGS_SEQUENCE}})
-{{else}}
-#define _DAP_MOCK_NARGS(...) \
-    _DAP_MOCK_NARGS_IMPL(__VA_ARGS__, 0)
-{{/if}}
 
-{{#if NARGS_IMPL_PARAMS}}
+// Dynamically generated _DAP_MOCK_NARGS supporting up to {{MAX_ARGS_COUNT}} arguments
+// Full implementation - always uses parameter list (never simplified version)
 #define _DAP_MOCK_NARGS_IMPL({{NARGS_IMPL_PARAMS}}, N, ...) N
-{{else}}
-#define _DAP_MOCK_NARGS_IMPL(N, ...) N
-{{/if}}
+#define _DAP_MOCK_NARGS(...) _DAP_MOCK_NARGS_IMPL(__VA_ARGS__{{NARGS_SEQUENCE}})
 
 #define _DAP_MOCK_IS_EMPTY(...) \
     (_DAP_MOCK_NARGS(__VA_ARGS__) == 0)

@@ -29,35 +29,35 @@
         {{#set escaped_macro_key_for_escape={{entry|part|5}}}}
         
         {{#if macro_key|contains|*}}
-            // Pointer type: {{macro_key}}
-            // Base type: {{base_type}}
-            // Escaped pointer type: {{escaped_original_key}}
-            // Normalized key: {{normalized_key}}
-            
-            // Normalize base type: {{escaped_base_key}} -> {{normalized_key}} (from pointer type {{macro_key}})
-            #define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_base_key}} {{normalized_key}}
+// Pointer type: {{macro_key}}
+// Base type: {{base_type}}
+// Escaped pointer type: {{escaped_original_key}}
+// Normalized key: {{normalized_key}}
+
+// Normalize base type: {{escaped_base_key}} -> {{normalized_key}} (from pointer type {{macro_key}})
+#define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_base_key}} {{normalized_key}}
             
             {{#if escaped_original_key|ne|escaped_base_key}}
-                // Normalize escaped pointer type: {{escaped_original_key}} -> {{normalized_key}} (from {{macro_key}})
-                #define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_original_key}} {{normalized_key}}
+// Normalize escaped pointer type: {{escaped_original_key}} -> {{normalized_key}} (from {{macro_key}})
+#define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_original_key}} {{normalized_key}}
             {{/if}}
             
-            // Extract base type from pointer type: {{escaped_original_key}} -> {{escaped_base_key}}
-            #define _DAP_MOCK_GET_BASE_{{escaped_original_key}} {{escaped_base_key}}
-            // Extract base type from escaped pointer type: {{escaped_original_key}} -> {{escaped_base_key}}
-            #define _DAP_MOCK_BASE_{{escaped_original_key}} {{escaped_base_key}}
-            // Transform escaped type name to escaped type value: {{escaped_macro_key_for_escape}} -> {{escaped_original_key}}
-            #define _DAP_MOCK_TRANSFORM_TYPE_HELPER_{{escaped_macro_key_for_escape}} {{escaped_original_key}}
-            #define _DAP_MOCK_BASE_ESCAPE_{{escaped_macro_key_for_escape}} {{escaped_original_key}}
+// Extract base type from pointer type: {{escaped_original_key}} -> {{escaped_base_key}}
+#define _DAP_MOCK_GET_BASE_{{escaped_original_key}} {{escaped_base_key}}
+// Extract base type from escaped pointer type: {{escaped_original_key}} -> {{escaped_base_key}}
+#define _DAP_MOCK_BASE_{{escaped_original_key}} {{escaped_base_key}}
+// Transform escaped type name to escaped type value: {{escaped_macro_key_for_escape}} -> {{escaped_original_key}}
+#define _DAP_MOCK_TRANSFORM_TYPE_HELPER_{{escaped_macro_key_for_escape}} {{escaped_original_key}}
+#define _DAP_MOCK_BASE_ESCAPE_{{escaped_macro_key_for_escape}} {{escaped_original_key}}
             
         {{else}}
-            // Non-pointer type: {{macro_key}}
-            // Normalize type: {{escaped_base_key}} -> {{escaped_base_key}} (pass-through)
-            #define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_base_key}} {{escaped_base_key}}
-            // Transform non-pointer type name to escaped form: {{escaped_macro_key_for_escape}} -> {{escaped_base_key}} (pass-through)
-            #define _DAP_MOCK_TRANSFORM_TYPE_HELPER_{{escaped_macro_key_for_escape}} {{escaped_base_key}}
-            // Convert non-pointer type to escaped form: {{macro_key}} -> {{escaped_base_key}} (pass-through)
-            #define _DAP_MOCK_BASE_ESCAPE_{{escaped_base_key}} {{escaped_base_key}}
+// Non-pointer type: {{macro_key}}
+// Normalize type: {{escaped_base_key}} -> {{escaped_base_key}} (pass-through)
+#define _DAP_MOCK_NORMALIZE_TYPE_{{escaped_base_key}} {{escaped_base_key}}
+// Transform non-pointer type name to escaped form: {{escaped_macro_key_for_escape}} -> {{escaped_base_key}} (pass-through)
+#define _DAP_MOCK_TRANSFORM_TYPE_HELPER_{{escaped_macro_key_for_escape}} {{escaped_base_key}}
+// Convert non-pointer type to escaped form: {{macro_key}} -> {{escaped_base_key}} (pass-through)
+#define _DAP_MOCK_BASE_ESCAPE_{{escaped_base_key}} {{escaped_base_key}}
             
         {{/if}}
     {{/for}}

@@ -18,6 +18,23 @@
     _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_##param_count(first_arg, macro, __VA_ARGS__)
 #define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0(first_arg, macro, ...) \
     _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK(first_arg, macro, __VA_ARGS__)
+
+// Generate _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_N macros for all param_count values
+// PARAM_COUNTS_ARRAY is space-separated string like "1 2 3"
+{{#if PARAM_COUNTS_ARRAY}}
+    {{#for param_count in PARAM_COUNTS_ARRAY}}
+        {{#if param_count}}
+            {{#set test_val={{param_count}}}}
+            {{#if test_val}}
+                {{#if test_val|ne|0}}
+// Macro for {{param_count}} parameter(s)
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_{{param_count}}(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_IMPL_COND_{{param_count}}(macro, __VA_ARGS__)
+                {{/if}}
+            {{/if}}
+        {{/if}}
+    {{/for}}
+{{/if}}
 #define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK(first_arg, macro, ...) \
     _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_EXPAND(first_arg, macro, __VA_ARGS__)
 #define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_EXPAND(first_arg, macro, ...) \
@@ -33,7 +50,14 @@
 #define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_DEFAULT(macro, ...) \
     _DAP_MOCK_MAP_0(macro)
 #define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT(first_arg, macro, ...) \
-    _DAP_MOCK_MAP_IMPL(_DAP_MOCK_MAP_COUNT_PARAMS(__VA_ARGS__), macro, __VA_ARGS__)
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_IMPL(_DAP_MOCK_MAP_COUNT_PARAMS(__VA_ARGS__), first_arg, macro, __VA_ARGS__)
+// Handle case when param_count is not a number (fallback to recalculate)
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_IMPL(param_count, first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_CHECK(param_count, first_arg, macro, __VA_ARGS__)
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_CHECK(param_count, first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_EXPAND(param_count, first_arg, macro, __VA_ARGS__)
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_DEFAULT_EXPAND(param_count, first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_##param_count(first_arg, macro, __VA_ARGS__)
 
 // Count number of PARAM entries (each PARAM is 2 args)
 // Empty: 0 args -> 0 params
@@ -79,6 +103,11 @@
 #define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(arg_count) \
     _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL(arg_count)
 #define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL(arg_count) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL_CHECK(arg_count)
+// Two-stage expansion to handle non-numeric arg_count
+#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL_CHECK(arg_count) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL_EXPAND(arg_count)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND_IMPL_EXPAND(arg_count) \
     _DAP_MOCK_MAP_COUNT_PARAMS_HELPER_##arg_count
 
 // Helper to convert arg count to param count

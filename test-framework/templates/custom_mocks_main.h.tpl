@@ -18,7 +18,7 @@
             {{else}}
                 {{#set should_include=1}}
             {{/if}}
-            {{#if should_include|ne|0}}
+            {{#if should_include}}
 #include "custom_mocks/{{func_name}}_mock.h"
             {{/if}}
         {{/if}}
