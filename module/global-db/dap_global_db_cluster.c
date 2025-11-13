@@ -166,8 +166,9 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
             if (l_callbacks) {
                 a_cluster->role_cluster->members_add_callback = l_callbacks->add_callback;
                 a_cluster->role_cluster->members_delete_callback = l_callbacks->delete_callback;
-                a_cluster->role_cluster->callbacks_arg = l_callbacks->arg;
-            }
+                a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
+            } else
+                log_it(L_ERROR, "Callbacks for cluster members add/remove are not registered");
         }
         dap_cluster_members_register(a_cluster->role_cluster);
     }
