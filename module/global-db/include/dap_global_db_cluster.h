@@ -87,7 +87,6 @@ typedef struct dap_global_db_cluster {
     dap_global_db_instance_t *dbi;              // Pointer to database instance that contains the cluster
     struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
     dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
-    dap_link_manager_t *link_manager;  // Pointer to link manager
 } dap_global_db_cluster_t;
 
 int dap_global_db_cluster_init();

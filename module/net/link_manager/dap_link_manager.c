@@ -269,6 +269,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     }
     dap_list_free_full(l_groups, NULL);
     dap_stream_event_callbacks_register(s_link_manager_stream_add, s_link_manager_stream_replace, s_link_manager_stream_delete, NULL);
+    dap_cluster_callbacks_register(DAP_CLUSTER_TYPE_AUTONOMIC, dap_link_manager_add_static_links_cluster, dap_link_manager_remove_static_links_cluster, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;

@@ -144,8 +144,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
-    // link_manager reference removed - using callbacks instead (breaks direct dependency)
-    l_cluster->link_manager = NULL;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
