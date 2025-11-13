@@ -119,6 +119,43 @@ function(register_dap_test TEST_NAME TEST_CATEGORY)
     endif()
 endfunction()
 
+# Function to automatically discover and register all tests in a directory
+# Usage: add_dap_test_directory(RELATIVE_DIR TEST_CATEGORY)
+# Example: add_dap_test_directory("unit/crypto/sign" "unit;crypto;sign")
+function(add_dap_test_directory RELATIVE_DIR TEST_CATEGORY)
+    # Find all .c files in the specified directory
+    file(GLOB TEST_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${RELATIVE_DIR}/*.c")
+    
+    if(TEST_FILES)
+        message("[+] Auto-discovering tests in ${RELATIVE_DIR}: ${TEST_FILES}")
+        
+        foreach(TEST_FILE ${TEST_FILES})
+            # Get just the filename without path and extension
+            get_filename_component(TEST_BASENAME ${TEST_FILE} NAME_WE)
+            
+            # Generate test name from directory structure and filename
+            # Convert path separators to underscores and remove 'test_' prefix if present
+            string(REPLACE "/" "_" TEST_NAME_PART ${RELATIVE_DIR})
+            string(REPLACE "test_" "" TEST_BASENAME_CLEAN ${TEST_BASENAME})
+            
+            # Create test name: test_<category>_<basename>
+            # e.g., unit/crypto/sign/test_ed25519.c -> test_unit_crypto_sign_ed25519
+            set(TEST_NAME "test_${TEST_NAME_PART}_${TEST_BASENAME_CLEAN}")
+            
+            # Get relative path from tests directory
+            file(RELATIVE_PATH TEST_RELATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR} ${TEST_FILE})
+            
+            # Add and register the test
+            add_dap_test(${TEST_NAME} ${TEST_RELATIVE_PATH})
+            register_dap_test(${TEST_NAME} "${TEST_CATEGORY}")
+            
+            message("[+]   Registered: ${TEST_NAME} from ${TEST_RELATIVE_PATH}")
+        endforeach()
+    else()
+        message("[!] No test files found in ${RELATIVE_DIR}")
+    endif()
+endfunction()
+
 # Build Unit Tests
 message("[+] Configuring Unit Tests")
 
@@ -139,6 +176,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
+
+# Auto-discover all tests in crypto subdirectories
+# Add your new folder here, e.g.:
+ add_dap_test_directory("unit/crypto/signature" "unit;crypto;sign")
+# add_dap_test_directory("unit/crypto/enc" "unit;crypto;encryption")
 
 
 # test framework async unit tests
