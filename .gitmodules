@@ -1,0 +1,3 @@
+[submodule "test-framework/dap_tpl"]
+	path = test-framework/dap_tpl
+	url = git@gitlab.demlabs.net:dap/dap_tpl
