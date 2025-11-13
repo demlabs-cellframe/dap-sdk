@@ -152,7 +152,7 @@ BEGIN {
         print macro_key "|" base_type "|" normalized_key "|" escaped_base_key "|" escaped_original_key "|" escaped_macro_key_for_escape "|" escaped_macro_key_for_raw_type
     }
 }
-    }}}
+    }}}}
     
     {{#set TYPE_TO_SELECT_DATA={{AWK:
 BEGIN {
@@ -186,7 +186,7 @@ BEGIN {
         }
     }
 }
-    }}}
+    }}}}
     
     {{#set BASIC_TYPES_DATA={{AWK:
 BEGIN {
@@ -208,7 +208,7 @@ BEGIN {
         print basic_type "|" normalized_key "|" escaped_base_key "|" selector_name
     }
 }
-    }}}
+    }}}}
 {{/if}}
 
 // ============================================================================
