@@ -42,7 +42,6 @@ include(cmake/DapLibrary.cmake)
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
-option(BUILD_TESTS "Build tests" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
@@ -59,6 +58,13 @@ if(BUILD_SHARED)
 else()
     message("[+] DAP SDK: Building final library as STATIC (modules: static internally)")
     set(DAP_FINAL_LIB_TYPE STATIC)
+endif()
+
+# Apply ENABLE_TESTING define globally BEFORE adding subdirectories
+# This ensures all modules can use test-specific code when BUILD_DAP_SDK_TESTS is ON
+if(BUILD_DAP_SDK_TESTS)
+    add_definitions(-DENABLE_TESTING)
+    message("[+] ENABLE_TESTING define enabled globally for dap-sdk")
 endif()
 
 # Set default modules if none are specified
@@ -147,20 +153,15 @@ if (DAPSDK_MODULES MATCHES "global-db")
     endif()
 endif()
 
-if (BUILD_DAP_SDK_TESTS)
-    set(BUILD_TESTS ON)
-endif()
-
-
 # Test framework - UPDATED PATH
-if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_TESTS)
+if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_DAP_SDK_TESTS)
     enable_testing()
     add_subdirectory(module/test)
     message("[+] Testing framework")
 endif()
 
 # New tests structure - UPDATED PATHS
-if(BUILD_TESTS)
+if(BUILD_DAP_SDK_TESTS)
     add_subdirectory(tests)
     message("[+] Tests enabled with new structure")
 endif()

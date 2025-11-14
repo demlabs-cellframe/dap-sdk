@@ -153,6 +153,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_mock.c)
     register_dap_test(test_unit_dap_test_mock "unit;test")
 endif()
 
+# Net module unit tests (link_manager hot list)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/test_link_manager_hot_list.c)
+    add_dap_test(test_unit_net_link_manager_hot_list unit/net/test_link_manager_hot_list.c)
+    register_dap_test(test_unit_net_link_manager_hot_list "unit;net;link_manager")
+endif()
+
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 

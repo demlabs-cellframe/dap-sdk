@@ -25,8 +25,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_common.h"
-#include "dap_global_db.h"
-#include "dap_global_db_driver.h"
 #include "dap_net_common.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
@@ -39,8 +37,17 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
-static const char s_heated_group_local_prefix[] = "local.nodes.heated.0x";
 static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
+
+/**
+ * @brief Hot node entry for in-memory storage
+ * Hot nodes are nodes that recently failed connection attempts and are in cooling period
+ */
+typedef struct dap_hot_node {
+    dap_stream_node_addr_t addr;    // Node address
+    dap_nanotime_t timestamp;        // Time when added to hot list
+    UT_hash_handle hh;               // Hash handle for uthash
+} dap_hot_node_t;
 
 typedef struct dap_managed_net {
     bool active;
@@ -48,6 +55,8 @@ typedef struct dap_managed_net {
     uint32_t uplinks;
     uint32_t min_links_num;     // min links required in each net
     dap_list_t *link_clusters;
+    dap_hot_node_t *hot_nodes;  // Hash table of hot nodes in memory
+    pthread_rwlock_t hot_nodes_lock; // Lock for hot_nodes hash table
 } dap_managed_net_t;
 
 static bool s_debug_more = false;
@@ -84,6 +93,7 @@ static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
     DL_FOREACH(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
             break;
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
     if (!l_item) {
         debug_if(s_debug_more, L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not controlled by link manager", a_net_id);
         return NULL;
@@ -101,58 +111,84 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 }
 
 /**
- * @brief forming group name for each net
- * @return NULL if error other group name
- */
-DAP_STATIC_INLINE char *s_hot_group_forming(uint64_t a_net_id)
-{ 
-    return dap_strdup_printf("%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
-}
-
-/**
- * @brief update hot list
- * @return NOT 0 if list empty
+ * @brief Update hot list - remove expired entries from memory
+ * @param a_net_id - network ID
+ * @return NOT 0 if list empty, 0 if list has active entries
  */
 static int s_update_hot_list(uint64_t a_net_id)
 {
-    size_t l_node_count = 0;
-    char *l_hot_group = s_hot_group_forming(a_net_id);
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
-    if (!l_node_count || !l_objs) {
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, 1);
+    
+    pthread_rwlock_wrlock(&l_net->hot_nodes_lock);
+    if (!l_net->hot_nodes) {
+        pthread_rwlock_unlock(&l_net->hot_nodes_lock);
         log_it(L_DEBUG, "Hot list is empty");
-        DAP_DEL_Z(l_hot_group);
         return 1;
     }
+    
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
-    for(size_t i = 0; i < l_node_count; ++i) {
-        if(l_time_now > l_objs[i].timestamp + s_cooling_period) {
-            dap_global_db_del_sync(l_hot_group, l_objs[i].key);
+    size_t l_initial_count = HASH_COUNT(l_net->hot_nodes);
+    
+    dap_hot_node_t *l_hot_node, *l_tmp;
+    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
+        if (l_time_now > l_hot_node->timestamp + s_cooling_period) {
+            HASH_DEL(l_net->hot_nodes, l_hot_node);
+            DAP_DELETE(l_hot_node);
             ++l_deleted;
         }
     }
-    DAP_DEL_Z(l_hot_group);
-    dap_global_db_objs_delete(l_objs, l_node_count);
-    if (l_deleted == l_node_count) {
+    
+    bool l_is_empty = (l_net->hot_nodes == NULL);
+    pthread_rwlock_unlock(&l_net->hot_nodes_lock);
+    
+    if (l_deleted == l_initial_count) {
         log_it(L_DEBUG, "Hot list cleared");
         return 2;
     }
-    return 0;
+    return l_is_empty ? 1 : 0;
 }
 
 /**
- * @brief add node add in local GDB group
- * @param a_node_addr - node addr to adding
+ * @brief Add node address to hot list in memory
+ * @param a_node_addr - node addr to add
+ * @param a_associated_net_id - associated network ID
  */
 static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_associated_net_id)
 {
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
+    dap_managed_net_t *l_net = s_find_net_by_id(a_associated_net_id);
+    dap_return_if_pass(!l_net);
+    
 // func work
-    const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
-    char *l_hot_group = s_hot_group_forming(a_associated_net_id);
-    dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
-    DAP_DEL_Z(l_hot_group);
+    pthread_rwlock_wrlock(&l_net->hot_nodes_lock);
+    
+    // Check if already exists
+    dap_hot_node_t *l_existing = NULL;
+    HASH_FIND(hh, l_net->hot_nodes, &a_node_addr, sizeof(a_node_addr), l_existing);
+    
+    if (l_existing) {
+        // Update timestamp
+        l_existing->timestamp = dap_nanotime_now();
+    } else {
+        // Create new entry
+        dap_hot_node_t *l_hot_node = DAP_NEW_Z(dap_hot_node_t);
+        if (!l_hot_node) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            pthread_rwlock_unlock(&l_net->hot_nodes_lock);
+            return;
+        }
+        l_hot_node->addr = a_node_addr;
+        l_hot_node->timestamp = dap_nanotime_now();
+        HASH_ADD(hh, l_net->hot_nodes, addr, sizeof(l_hot_node->addr), l_hot_node);
+        
+        debug_if(s_debug_more, L_DEBUG, "Added node " NODE_ADDR_FP_STR " to hot list for net 0x%016" DAP_UINT64_FORMAT_x,
+                 NODE_ADDR_FP_ARGS_S(a_node_addr), a_associated_net_id);
+    }
+    
+    pthread_rwlock_unlock(&l_net->hot_nodes_lock);
 }
 
 // debug_more funcs
@@ -261,15 +297,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
-// clean ignore and connections group
-    dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(s_heated_group_local_prefix);
-    dap_list_t *l_item_cut = NULL;
-    DL_FOREACH(l_groups, l_item_cut) {
-        dap_global_db_erase_table_sync((const char*)(l_item_cut->data));
-    }
-    dap_list_free_full(l_groups, NULL);
     dap_stream_event_callbacks_register(s_link_manager_stream_add, s_link_manager_stream_replace, s_link_manager_stream_delete, NULL);
-    dap_cluster_callbacks_register(DAP_CLUSTER_TYPE_AUTONOMIC, dap_link_manager_add_static_links_cluster, dap_link_manager_remove_static_links_cluster, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;
@@ -387,13 +415,19 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
     DL_FOREACH(s_link_manager->nets, l_item) {
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
+            pthread_rwlock_unlock(&s_link_manager->nets_lock);
             return -3;
         }
     }
-    dap_managed_net_t *l_net = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_managed_net_t, -3);
+    dap_managed_net_t *l_net = DAP_NEW_Z(dap_managed_net_t);
+    if (!l_net) {
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
+        return -3;
+    }
     l_net->id = a_net_id;
     l_net->min_links_num = a_min_links_number;
     l_net->link_clusters = dap_list_append(l_net->link_clusters, a_link_cluster);
+    pthread_rwlock_init(&l_net->hot_nodes_lock, NULL); // Initialize lock for hot nodes
     s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
     pthread_rwlock_unlock(&s_link_manager->nets_lock);
     return 0;
@@ -430,6 +464,17 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
     dap_managed_net_t *l_net = l_net_item->data;
     dap_link_manager_set_net_condition(l_net->id, false);
     s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_net_item);
+    
+    // Clean up hot nodes hash table
+    pthread_rwlock_wrlock(&l_net->hot_nodes_lock);
+    dap_hot_node_t *l_hot_node, *l_tmp;
+    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
+        HASH_DEL(l_net->hot_nodes, l_hot_node);
+        DAP_DELETE(l_hot_node);
+    }
+    pthread_rwlock_unlock(&l_net->hot_nodes_lock);
+    pthread_rwlock_destroy(&l_net->hot_nodes_lock);
+    
     dap_list_free(l_net->link_clusters);
     DAP_DEL_MULTY(l_net, l_net_item);
 }
@@ -1303,34 +1348,61 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
 }
 
 /**
- * @brief forming list with ignored addrs
- * @param a_ignored_count output count of finded addrs
+ * @brief Get list of ignored (hot) node addresses from memory
+ * @param a_ignored_count output count of found addrs
+ * @param a_net_id network ID
  * @return pointer to dap_stream_node_addr_t array or NULL
  */
 dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count, uint64_t a_net_id)
 {
-    if(s_update_hot_list(a_net_id))
+    // Update hot list first to remove expired entries
+    if (s_update_hot_list(a_net_id))
         return NULL;
-    size_t l_node_count = 0;
-    char *l_hot_group = s_hot_group_forming(a_net_id);
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
-    DAP_DEL_Z(l_hot_group);
-    if (!l_node_count || !l_objs) {        
+    
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, NULL);
+    
+    pthread_rwlock_rdlock(&l_net->hot_nodes_lock);
+    
+    size_t l_node_count = HASH_COUNT(l_net->hot_nodes);
+    if (!l_node_count) {
+        pthread_rwlock_unlock(&l_net->hot_nodes_lock);
         log_it(L_DEBUG, "Hot list is empty");
         return NULL;
     }
-// memory alloc
+    
+    // Allocate memory for result array
     dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_node_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        dap_global_db_objs_delete(l_objs, l_node_count);
+        pthread_rwlock_unlock(&l_net->hot_nodes_lock);
         return NULL;
     }
-// func work
-    for (size_t i = 0; i < l_node_count; ++i)
-        dap_stream_node_addr_from_str(l_ret + i, l_objs[i].key);
-    dap_global_db_objs_delete(l_objs, l_node_count);
+    
+    // Copy addresses from hash table to array
+    size_t i = 0;
+    dap_hot_node_t *l_hot_node, *l_tmp;
+    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
+        l_ret[i++] = l_hot_node->addr;
+    }
+    
+    pthread_rwlock_unlock(&l_net->hot_nodes_lock);
+    
     if (a_ignored_count)
         *a_ignored_count = l_node_count;
+    
     return l_ret;
 }
+
+// Test helpers (only for builds with tests)
+#ifdef ENABLE_TESTING
+/**
+ * @brief Add node to hot list directly (for testing only)
+ * @param a_node_addr Node address to add
+ * @param a_net_id Network ID
+ */
+void dap_link_manager_test_add_to_hot_list(dap_stream_node_addr_t a_node_addr, uint64_t a_net_id)
+{
+    s_node_hot_list_add(a_node_addr, a_net_id);
+}
+#endif

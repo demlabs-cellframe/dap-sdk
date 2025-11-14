@@ -114,3 +114,8 @@ bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
 dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only);
 dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count, uint64_t a_net_id);
+
+// Test helpers (only for builds with tests)
+#ifdef ENABLE_TESTING
+void dap_link_manager_test_add_to_hot_list(dap_stream_node_addr_t a_node_addr, uint64_t a_net_id);
+#endif

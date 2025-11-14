@@ -477,14 +477,12 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
     if (!str_cmd)
         str_cmd = cmd_name;
     int res = -1;
-    char *str_reply = NULL;
     dap_json_t* l_json_arr_reply = dap_json_array_new();
     if (l_cmd && a_restricted) {
         log_it(L_WARNING,"Command \"%s\" is restricted", l_cmd->name);
         dap_json_rpc_error_add(l_json_arr_reply, -1, "Command \"%s\" is restricted", l_cmd->name);
     } else if (!l_cmd) {
         dap_json_rpc_error_add(l_json_arr_reply, -1, "can't recognize command=%s", str_cmd);
-        log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
     } else {
         if(l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);

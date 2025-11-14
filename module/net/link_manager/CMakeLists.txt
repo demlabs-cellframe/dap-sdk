@@ -11,7 +11,7 @@ dap_add_library(${PROJECT_NAME} ${DAP_LINK_MANAGER_SOURCES} HEADERS ${DAP_LINK_M
 # Link with required modules
 # Note: Most dependencies auto-propagate, but some needed explicitly for headers
 # TODO Phase 8.1: Remove client dependency via abstraction layer (client interface)
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_json_rpc dap_client dap_global_db)
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_json_rpc dap_client)
 
 # Ensure link_manager builds after crypto module (which includes XKCP)
 add_dependencies(${PROJECT_NAME} dap_crypto)

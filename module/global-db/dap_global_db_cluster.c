@@ -27,6 +27,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
+#include "dap_link_manager.h"
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
@@ -121,16 +122,11 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
-    // Get registered callbacks for this cluster type from registry (breaks direct dependency)
     if (l_cluster->links_cluster &&
             (l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC ||
             l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED)) {
-        dap_cluster_callbacks_t *l_callbacks = dap_cluster_callbacks_get(l_cluster->links_cluster->type);
-        if (l_callbacks) {
-            l_cluster->links_cluster->members_add_callback = l_callbacks->add_callback;
-            l_cluster->links_cluster->members_delete_callback = l_callbacks->delete_callback;
-            l_cluster->links_cluster->callbacks_arg = l_callbacks->arg;
-        }
+        l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
+        l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
@@ -159,16 +155,11 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
         log_it(L_ERROR, "Invalid argument with cluster member adding");
         return NULL;
     }
-    // Get registered callbacks for static role cluster (breaks direct dependency)
     if (a_node_addr->uint64 == g_node_addr.uint64) {
         if (a_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC) {
-            dap_cluster_callbacks_t *l_callbacks = dap_cluster_callbacks_get(DAP_CLUSTER_TYPE_AUTONOMIC);
-            if (l_callbacks) {
-                a_cluster->role_cluster->members_add_callback = l_callbacks->add_callback;
-                a_cluster->role_cluster->members_delete_callback = l_callbacks->delete_callback;
-                a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
-            } else
-                log_it(L_ERROR, "Callbacks for cluster members add/remove are not registered");
+            a_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
+            a_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
+            a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
         }
         dap_cluster_members_register(a_cluster->role_cluster);
     }

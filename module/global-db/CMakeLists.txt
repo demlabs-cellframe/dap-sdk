@@ -7,7 +7,7 @@ file(GLOB dap_global_db_HDR include/*.h)
 # Dependencies - removed link_manager (breaks cycle)
 # - Link to dap_stream for stream cluster functionality
 # - Link to dap_net_common for common types and callback registry
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json-c dap_net_common dap_enc_server dap_json_rpc dap_stream)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json-c dap_net_common dap_enc_server dap_json_rpc dap_stream dap_link_manager)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
