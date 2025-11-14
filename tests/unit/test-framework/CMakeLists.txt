@@ -56,8 +56,8 @@ add_test(NAME dap_mock_framework
 )
 
 set_tests_properties(dap_mock_framework PROPERTIES
-    TIMEOUT 60
-    LABELS "framework;unit"
+        TIMEOUT 60
+        LABELS "framework;unit"
 )
 
 message(STATUS "Configured DAP SDK Test Framework self-tests")

@@ -66,13 +66,12 @@ function(post_process_object_libraries)
     message(STATUS "[SDK] Processing ${TOTAL_LIBS} OBJECT libraries...")
     
     set(PROCESSED_COUNT 0)
+    set(VISITED_SET_COUNTER 0)
     foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
         if(TARGET ${OBJ_LIB})
-            # Create unique visited set ID for this library's traversal
-            # Use timestamp and random to ensure uniqueness
-            string(TIMESTAMP TIMESTAMP_VALUE "%Y%m%d%H%M%S")
-            string(RANDOM RANDOM_VALUE LENGTH 8)
-            set(VISITED_SET_ID "${OBJ_LIB}_${TIMESTAMP_VALUE}_${RANDOM_VALUE}")
+            # Create unique visited set ID using simple counter (much faster than timestamp+random)
+            math(EXPR VISITED_SET_COUNTER "${VISITED_SET_COUNTER} + 1")
+            set(VISITED_SET_ID "${VISITED_SET_COUNTER}")
             
             # Process includes with global cache-based cycle detection
             propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})

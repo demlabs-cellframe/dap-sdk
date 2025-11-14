@@ -42,7 +42,10 @@ init_mock_common() {
     SCRIPTS_DIR="${DAP_TPL_DIR}"
     
     # Mocking extensions for dap_tpl are in mocks/lib/dap_tpl
-    MOCKING_EXTENSIONS_DIR="$(cd "${script_dir}/dap_tpl" && pwd)"
+    MOCKING_EXTENSIONS_DIR="$(cd "${script_dir}/lib/dap_tpl" && pwd)"
+    
+    # AWK scripts directory for mock processing
+    MOCK_AWK_DIR="$(cd "${script_dir}/lib/awk" && pwd)"
     
     # Load template processing functions
     source "${DAP_TPL_DIR}/dap_tpl.sh"
@@ -53,6 +56,7 @@ init_mock_common() {
     export TEMPLATES_DIR
     export DAP_TPL_DIR
     export MOCKING_EXTENSIONS_DIR
+    export MOCK_AWK_DIR
 }
 
 # Wrapper for replace_template_placeholders that automatically includes mocking extensions

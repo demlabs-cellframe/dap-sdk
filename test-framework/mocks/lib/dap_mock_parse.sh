@@ -18,21 +18,31 @@ parse_mock_declarations() {
     > "$tmp_return_types"
     > "$tmp_all_types"
     
-    # Scan all source files for DAP_MOCK_WRAPPER_CUSTOM and variants
+    # Filter existing files
+    local existing_files=()
     for source_file in "${source_files[@]}"; do
-        [ ! -f "$source_file" ] && continue
-        
-        # Use awk to parse DAP_MOCK_WRAPPER_CUSTOM declarations (and variants)
-        # Extract return_type and count PARAM(...) entries between macro and opening brace {
-        # Handle multi-line declarations
-        gawk -f "${MOCK_AWK_DIR}/count_params.awk" "$source_file" >> "$tmp_param_counts"
-        
-        # Second pass: extract return types (both normalized and original)
-        gawk -f "${MOCK_AWK_DIR}/extract_return_types.awk" "$source_file" >> "$tmp_return_types"
-        
-        # Third pass: extract all types (return types + parameter types from PARAM(...))
-        gawk -f "${MOCK_AWK_DIR}/extract_all_types.awk" "$source_file" >> "$tmp_all_types"
+        [ -f "$source_file" ] && existing_files+=("$source_file")
     done
+    
+    if [ ${#existing_files[@]} -eq 0 ]; then
+        PARAM_COUNTS_ARRAY=()
+        RETURN_TYPES_PAIRS=""
+        ALL_TYPES_PAIRS=""
+        ORIGINAL_TYPES=""
+        return 0
+    fi
+    
+    # Optimized: single gawk invocation per script for all files (much faster than per-file)
+    # Use awk to parse DAP_MOCK_WRAPPER_CUSTOM declarations (and variants)
+    # Extract return_type and count PARAM(...) entries between macro and opening brace {
+    # Handle multi-line declarations
+    gawk -f "${MOCK_AWK_DIR}/count_params.awk" "${existing_files[@]}" > "$tmp_param_counts" 2>/dev/null || true
+    
+    # Second pass: extract return types (both normalized and original)
+    gawk -f "${MOCK_AWK_DIR}/extract_return_types.awk" "${existing_files[@]}" > "$tmp_return_types" 2>/dev/null || true
+    
+    # Third pass: extract all types (return types + parameter types from PARAM(...))
+    gawk -f "${MOCK_AWK_DIR}/extract_all_types.awk" "${existing_files[@]}" > "$tmp_all_types" 2>/dev/null || true
     
     # Collect unique parameter counts
     local param_counts=$(sort -u -n "$tmp_param_counts" 2>/dev/null | tr '\n' ' ')
