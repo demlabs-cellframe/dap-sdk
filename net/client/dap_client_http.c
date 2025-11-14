@@ -501,6 +501,11 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
     case HTTP_GET:
         ADD_HEADER("User-Agent: Mozilla\r\n");
         break;
+    case HTTP_HEAD:
+        log_it(L_DEBUG, "[HEAD_CHECK] DAP SDK: Processing HEAD request for path: %s", 
+               a_client_http->path ? a_client_http->path : "(null)");
+        ADD_HEADER("User-Agent: Mozilla\r\n");
+        break;
     case HTTP_POST:
         if (a_client_http->request_content_type)
             ADD_HEADER("Content-Type: %s\r\n", a_client_http->request_content_type);
@@ -609,11 +614,18 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         #undef CHECK_SNPRINTF
     } else {
         // Process text request (can use printf formatting)
+        if (a_client_http->method == HTTP_HEAD) {
+            log_it(L_DEBUG, "[HEAD_CHECK] DAP SDK: Sending HEAD request - Host: %s, Path: /%s%s%s",
+                   a_client_http->uplink_addr,
+                   a_client_http->path ? a_client_http->path : "",
+                   ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? "?" : "",
+                   ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "");
+        }
         dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
             dap_http_method_to_str(a_client_http->method), 
             a_client_http->path ? a_client_http->path : "",
-            (a_client_http->method == HTTP_GET && a_client_http->request && a_client_http->request_size > 0) ? "?" : "",
-            (a_client_http->method == HTTP_GET && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "",
+            ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? "?" : "",
+            ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "",
             a_client_http->uplink_addr,
             l_request_headers,
             (a_client_http->method == HTTP_POST && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "");
