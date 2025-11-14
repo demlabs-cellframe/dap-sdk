@@ -290,11 +290,16 @@ dap_store_obj_t *l_store_obj_cur;
                 l_ret = -9;
                 break;
             }
-            if ( DAP_GLOBAL_DB_RC_NOT_FOUND == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
-                log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key
-                                         ? l_store_obj_cur->key : dap_global_db_driver_hash_print(dap_global_db_driver_hash_get(l_store_obj_cur)));
-            else if (l_ret)
-                log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
+            if ( DAP_GLOBAL_DB_RC_NOT_FOUND == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) ) {
+                const char *l_item = l_store_obj_cur->key;
+                if (!l_item)
+                    l_item = l_store_obj_cur->crc ? dap_global_db_driver_hash_print(dap_global_db_driver_hash_get(l_store_obj_cur))
+                                                  : "";
+                const char *l_group = (*l_item) ? "Item" : "Group";
+                const char *l_break = (*l_item) ? "/" : "";           
+                log_it(L_INFO, "%s %s%s%s is missing (may be already deleted)", l_group, l_store_obj_cur->group, l_break, l_item);
+            } else if (l_ret)
+                log_it(L_ERROR, "Can't write item %s/%s (code %d)", l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
         }
     } else {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have apply_store_obj callback", s_used_driver);

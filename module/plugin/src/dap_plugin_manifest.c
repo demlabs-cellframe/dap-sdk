@@ -213,15 +213,6 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     DAP_DEL_MULTY(l_config_path, l_config_path_test);
     HASH_ADD_STR(s_manifests, name, l_manifest);
     
-    // Free all wrappers before returning success
-    dap_json_object_free(j_name);
-    dap_json_object_free(j_version);
-    dap_json_object_free(j_dependencies);
-    dap_json_object_free(j_author);
-    dap_json_object_free(j_description);
-    dap_json_object_free(j_path);
-    dap_json_object_free(j_params);
-    dap_json_object_free(j_type);
     dap_json_object_free(l_json);
     
     return l_manifest;

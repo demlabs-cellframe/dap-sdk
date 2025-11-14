@@ -1149,7 +1149,8 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
         }
         dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, l_txn);
         if (!l_db_ctx) {
-            return DAP_GLOBAL_DB_RC_NOT_FOUND;
+            rc = mdbx_txn_abort(l_txn);
+            return rc ? DAP_GLOBAL_DB_RC_ERROR : DAP_GLOBAL_DB_RC_NOT_FOUND;
         }
         rc = mdbx_drop(l_txn, l_db_ctx->dbi, false);
         if (rc != MDBX_SUCCESS) {
@@ -1348,6 +1349,7 @@ static int s_db_mdbx_txn_end(bool a_commit)
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
     } else if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) )
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
-    s_txn = NULL;
+    if (MDBX_SUCCESS == rc)
+        s_txn = NULL;
     return rc;
 }
