@@ -230,6 +230,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         // DIAGNOSTIC: plaintext data that will be sent back in JSON (before HTTP encoding)
         log_it(L_INFO, "[ENC_INIT RAW] response_encrypt_id_b64_len=%d, response_encrypt_msg_b64_len=%d, node_sign_b64_len=%d",
                l_enc_id_len, l_enc_msg_len, l_node_msg_len);
+        // DIAGNOSTIC: encrypt_id that client must use as KeyID for /stream_ctl
+        if(l_enc_id_len > 0){
+            log_it(L_INFO, "[ENC_INIT RAW] encrypt_id_b64=\"%.*s\"", l_enc_id_len, encrypt_id);
+        }
 
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
