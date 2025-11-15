@@ -207,7 +207,21 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->priv_key_data, // shared key
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
-        
+
+        // DIAGNOSTIC: session block key derived from key exchange (first bytes only)
+        if(l_enc_key_ks->key && l_enc_key_ks->key->priv_key_data && l_enc_key_ks->key->priv_key_data_size){
+            size_t l_sess_dump_len = l_enc_key_ks->key->priv_key_data_size < 32 ? l_enc_key_ks->key->priv_key_data_size : 32;
+            char l_sess_hex[32 * 2 + 1];
+            size_t l_sess_pos = 0;
+            for(size_t i = 0; i < l_sess_dump_len && l_sess_pos + 2 < sizeof(l_sess_hex); i++){
+                sprintf(l_sess_hex + l_sess_pos, "%02x", ((uint8_t *)l_enc_key_ks->key->priv_key_data)[i]);
+                l_sess_pos += 2;
+            }
+            l_sess_hex[l_sess_pos] = '\0';
+            log_it(L_INFO, "[ENC_INIT RAW] session_block_key_size=%zu, session_block_key_first_bytes_hex=%s",
+                   l_enc_key_ks->key->priv_key_data_size, l_sess_hex);
+        }
+
         dap_enc_ks_save_in_storage(l_enc_key_ks);
         int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),

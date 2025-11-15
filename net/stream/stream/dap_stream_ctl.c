@@ -203,6 +203,21 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
             }
+
+            // DIAGNOSTIC: derived stream session key (first bytes only)
+            if(l_stream_session->key && l_stream_session->key->priv_key_data && l_stream_session->key->priv_key_data_size){
+                size_t l_sess_dump_len = l_stream_session->key->priv_key_data_size < 32 ? l_stream_session->key->priv_key_data_size : 32;
+                char l_sess_hex[32 * 2 + 1];
+                size_t l_sess_pos = 0;
+                for(size_t i = 0; i < l_sess_dump_len && l_sess_pos + 2 < sizeof(l_sess_hex); i++){
+                    sprintf(l_sess_hex + l_sess_pos, "%02x", ((uint8_t *)l_stream_session->key->priv_key_data)[i]);
+                    l_sess_pos += 2;
+                }
+                l_sess_hex[l_sess_pos] = '\0';
+                log_it(L_INFO, "[STREAM_CTL RAW] session_key_type=%d(%s), session_key_size=%zu, session_key_first_bytes_hex=%s",
+                       l_enc_type, dap_enc_get_type_name(l_enc_type),
+                       l_stream_session->key->priv_key_data_size, l_sess_hex);
+            }
             if (l_is_legacy) {
                 // DIAGNOSTIC: plaintext response for legacy stream registration
                 log_it(L_INFO, "[STREAM_CTL RAW] response_legacy: session_id=%u, key_str=\"%s\"",
