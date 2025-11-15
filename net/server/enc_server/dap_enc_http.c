@@ -104,7 +104,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     http_status_code_t * return_code = (http_status_code_t*)arg;
 
     if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
-        dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
+        dap_enc_key_type_t l_pkey_exchange_type = DAP_ENC_KEY_TYPE_MSRLN;
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
         size_t l_pkey_exchange_size = MSRLN_PKA_BYTES;
         size_t l_block_key_size=32;
@@ -113,12 +113,32 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
                                       &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
 
+        // DIAGNOSTIC: raw HTTP request data from user for enc_init
+        log_it(L_INFO, "[ENC_INIT RAW] path='%s', query_string='%s'", cl_st->http_client->url_path,
+               cl_st->http_client->in_query_string ? cl_st->http_client->in_query_string : "");
+        log_it(L_INFO, "[ENC_INIT RAW] request_size=%zu, enc_block_type=%d(%s), pkey_exchange_type=%d(%s), pkey_exchange_size=%zu, block_key_size=%zu, protocol_version=%d, sign_count=%zu",
+               cl_st->request_size,
+               l_enc_block_type, dap_enc_get_type_name(l_enc_block_type),
+               l_pkey_exchange_type, dap_enc_get_type_name(l_pkey_exchange_type),
+               l_pkey_exchange_size, l_block_key_size, l_protocol_version, l_sign_count);
+
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
         size_t l_decode_len = DAP_ENC_BASE64_DECODE_SIZE(cl_st->request_size);
         uint8_t alice_msg[l_decode_len + 1];
         l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
         alice_msg[l_decode_len] = '\0';
+        // DIAGNOSTIC: decoded Alice message from user (only first bytes to avoid log spam)
+        size_t l_dump_len = l_decode_len < 64 ? l_decode_len : 64;
+        char l_alice_hex[64 * 2 + 1];
+        size_t l_hex_pos = 0;
+        for(size_t i = 0; i < l_dump_len && l_hex_pos + 2 < sizeof(l_alice_hex); i++) {
+            sprintf(l_alice_hex + l_hex_pos, "%02x", alice_msg[i]);
+            l_hex_pos += 2;
+        }
+        l_alice_hex[l_hex_pos] = '\0';
+        log_it(L_INFO, "[ENC_INIT RAW] decoded_alice_size=%zu, decoded_alice_first_bytes_hex=%s", l_decode_len, l_alice_hex);
+
         dap_chain_hash_fast_t l_sign_hash = {0};
         if (!l_protocol_version && !l_sign_count) {
             if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
@@ -192,6 +212,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
             l_node_msg_len = 0;
+
+        // DIAGNOSTIC: plaintext data that will be sent back in JSON (before HTTP encoding)
+        log_it(L_INFO, "[ENC_INIT RAW] response_encrypt_id_b64_len=%d, response_encrypt_msg_b64_len=%d, node_sign_b64_len=%d",
+               l_enc_id_len, l_enc_msg_len, l_node_msg_len);
 
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;

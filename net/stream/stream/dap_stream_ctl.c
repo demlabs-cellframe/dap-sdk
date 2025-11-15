@@ -117,6 +117,19 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
 
     if(l_dg){
+        // DIAGNOSTIC: decoded request data from user for stream registration
+        log_it(L_INFO, "[STREAM_CTL RAW] url_path_decoded=\"%s\"", l_dg->url_path ? l_dg->url_path : "");
+        log_it(L_INFO, "[STREAM_CTL RAW] in_query_decoded=\"%s\"", l_dg->in_query ? l_dg->in_query : "");
+        if(l_dg->request && l_dg->request_size) {
+            size_t l_dump_len = l_dg->request_size < 128 ? l_dg->request_size : 128;
+            char l_req_preview[128 + 1];
+            memcpy(l_req_preview, l_dg->request, l_dump_len);
+            l_req_preview[l_dump_len] = '\0';
+            log_it(L_INFO, "[STREAM_CTL RAW] request_size=%zu, request_preview=\"%s\"", l_dg->request_size, l_req_preview);
+        } else {
+            log_it(L_INFO, "[STREAM_CTL RAW] request_size=0 (no body)");
+        }
+
         size_t l_channels_str_size = sizeof(l_stream_session->active_channels);
         char l_channels_str[sizeof(l_stream_session->active_channels)];
         dap_enc_key_type_t l_enc_type = s_socket_forward_key.type;
@@ -169,6 +182,8 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 *return_code = Http_Status_BadRequest;
                 return;
             }
+            // DIAGNOSTIC: KeyID header received from user
+            log_it(L_INFO, "[STREAM_CTL RAW] header_KeyID=\"%s\"", l_hdr_key_id->value);
         }
         if(l_new_session){
             l_stream_session = dap_stream_session_pure_new();
@@ -188,11 +203,19 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
             }
-            if (l_is_legacy)
+            if (l_is_legacy) {
+                // DIAGNOSTIC: plaintext response for legacy stream registration
+                log_it(L_INFO, "[STREAM_CTL RAW] response_legacy: session_id=%u, key_str=\"%s\"",
+                       l_stream_session->id, l_key_str);
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
-            else
+            } else {
+                // DIAGNOSTIC: plaintext response for non-legacy stream registration
+                log_it(L_INFO, "[STREAM_CTL RAW] response: session_id=%u, key_str=\"%s\", protocol_version=%u, enc_type=%d(%s), enc_headers=%d",
+                       l_stream_session->id, l_key_str, DAP_PROTOCOL_VERSION, l_enc_type,
+                       dap_enc_get_type_name(l_enc_type), l_enc_headers);
                 enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
                                        DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
+            }
             *return_code = Http_Status_OK;
 
             log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
