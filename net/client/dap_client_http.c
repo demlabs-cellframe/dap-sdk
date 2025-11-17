@@ -2445,6 +2445,15 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
         a_client_http->response_size_max = 0;
     }
     
+    // HEAD method: NO body expected, allocate minimal buffer
+    if (a_client_http->method == HTTP_HEAD) {
+        log_it(L_DEBUG, "HEAD request: no body expected, minimal buffer allocated");
+        a_client_http->response = DAP_NEW_Z_SIZE(uint8_t, 1);
+        a_client_http->response_size_max = 0;
+        a_client_http->response_size = 0;
+        return true;
+    }
+    
     // Zero-copy streaming mode: NO buffer allocation at all!
     if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
         log_it(L_DEBUG, "Zero-copy streaming mode: no response buffer allocated");
