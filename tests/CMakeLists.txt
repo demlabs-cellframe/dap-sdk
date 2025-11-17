@@ -28,3 +28,91 @@ add_subdirectory(unit)
 # Add integration tests subdirectory
 add_subdirectory(integration)
 
+# ============================================================================
+# Test-Framework Tests (AWK/Shell tests)
+# ============================================================================
+# These tests are not C tests, so we add them as custom test commands
+
+# Find bash
+find_program(BASH_EXECUTABLE bash)
+if(NOT BASH_EXECUTABLE)
+    message(WARNING "bash not found, test-framework tests will be skipped")
+else()
+    # Get absolute path to run.sh
+    get_filename_component(TEST_RUNNER "${CMAKE_CURRENT_SOURCE_DIR}/run.sh" ABSOLUTE)
+    
+    # Test: test-framework unit tests
+    add_test(
+        NAME test_framework_unit
+        COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test-framework unit
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(test_framework_unit PROPERTIES
+        TIMEOUT 300
+        LABELS "test-framework;unit"
+    )
+    
+    # Test: test-framework integration tests
+    add_test(
+        NAME test_framework_integration
+        COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test-framework integration
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(test_framework_integration PROPERTIES
+        TIMEOUT 300
+        LABELS "test-framework;integration"
+    )
+    
+    # Individual test-framework unit tests
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/unit/test-framework/test_variable_functions.sh")
+        add_test(
+            NAME test_framework_variable_functions
+            COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test_variable_functions
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(test_framework_variable_functions PROPERTIES
+            TIMEOUT 60
+            LABELS "test-framework;unit"
+        )
+    endif()
+    
+    # Individual test-framework integration tests
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/test-framework/test_c_ifdef.sh")
+        add_test(
+            NAME test_framework_c_ifdef
+            COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test_c_ifdef
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(test_framework_c_ifdef PROPERTIES
+            TIMEOUT 60
+            LABELS "test-framework;integration"
+        )
+    endif()
+    
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/test-framework/test_return_type_macros.sh")
+        add_test(
+            NAME test_framework_return_type_macros
+            COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test_return_type_macros
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(test_framework_return_type_macros PROPERTIES
+            TIMEOUT 60
+            LABELS "test-framework;integration"
+        )
+    endif()
+    
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/test-framework/test_return_type_macros_dap_tpl.sh")
+        add_test(
+            NAME test_framework_return_type_macros_dap_tpl
+            COMMAND ${BASH_EXECUTABLE} ${TEST_RUNNER} test_return_type_macros_dap_tpl
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(test_framework_return_type_macros_dap_tpl PROPERTIES
+            TIMEOUT 60
+            LABELS "test-framework;integration"
+        )
+    endif()
+    
+    message(STATUS "[TESTS] Added test-framework tests (AWK/Shell)")
+endif()
+

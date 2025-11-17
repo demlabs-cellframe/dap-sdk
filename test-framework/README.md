@@ -247,14 +247,30 @@ Mock framework API is stable. New features added via:
 
 ### Testing the Framework
 
-The framework includes comprehensive self-tests:
+The framework includes comprehensive self-tests and dap_tpl tests:
 
+**C Tests (via CTest):**
 ```bash
-cd dap-sdk/test-framework/build
-make test
+cd dap-sdk/build
+ctest -L test-framework --output-on-failure
 # Runs test_async_framework and test_mock_framework
 # Total: 21 test functions validating framework reliability
 ```
+
+**dap_tpl Tests (AWK/Shell):**
+```bash
+cd dap-sdk/tests
+./run.sh test-framework     # Run all test-framework tests
+./run.sh unit               # Unit tests only
+./run.sh integration        # Integration tests only
+```
+
+**Test Structure:**
+- `tests/unit/test-framework/` - Unit tests for dap_tpl core
+- `tests/integration/test-framework/` - Integration tests for full pipeline
+- `tests/unit/test-framework/c/` - C tests for mock framework
+
+All tests are integrated into CTest and can be run via `ctest -L test-framework`.
 
 ## Contributing
 
@@ -269,7 +285,7 @@ When adding new testing utilities:
 ## See Also
 
 - `docs/` - Comprehensive documentation (guides, examples, API reference)
-- `docs/DAP_MOCK_ASYNC.md` - Async mock execution guide
+- `docs/internal/` - Internal documentation (mock framework architecture, dap_tpl extensions)
 - `../../core/README.md` - DAP Core library
 - `../../../cellframe-sdk/tests/` - Cellframe SDK tests using this framework
 - `../../../../cellframe-srv-vpn-client/tests/` - VPN client tests

@@ -24,6 +24,12 @@ docs/
 │   ├── 06_glossary.md          # Глоссарий
 │   └── 07_troubleshooting.md   # Решение проблем
 │
+├── internal/                    # Internal documentation
+│   ├── README.md               # Internal docs index
+│   ├── mock_tpl_extensions_en.md # dap_tpl extensions (EN)
+│   ├── mock_tpl_extensions_ru.md # dap_tpl extensions (RU)
+│   └── DAP_MOCK_ASYNC.md       # Async mock implementation
+│
 ├── build_guide.sh               # Build script (combines parts → PDF)
 ├── README.md                    # This file
 │
@@ -91,6 +97,10 @@ Each part is self-contained and focused:
 - **05_examples.md** - Real-world code examples
 - **06_glossary.md** - Terms and definitions
 - **07_troubleshooting.md** - Common issues and solutions
+
+**Internal Documentation (`internal/`):**
+- **mock_tpl_extensions_en.md** / **mock_tpl_extensions_ru.md** - dap_tpl extensions for mocking (internal)
+- **DAP_MOCK_ASYNC.md** - Async mock execution (internal implementation)
 
 ### Benefits
 
@@ -164,7 +174,8 @@ When updating documentation:
 - `../README.md` - Test framework main README
 - `../mocks/README.md` - Mock framework documentation
 - `../mocks/AUTOWRAP.md` - Auto-wrapper system
-- `../ASYNC_TESTING.md` - Async API detailed guide
+- `internal/` - Internal documentation (mock framework architecture, dap_tpl extensions)
+- `../dap_tpl/docs/DAP_TPL_GUIDE.md` - dap_tpl template system guide
 
 ---
 
