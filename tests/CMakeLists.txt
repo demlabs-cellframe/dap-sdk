@@ -93,7 +93,7 @@ endfunction()
 
 # Function to register test with CTest
 function(register_dap_test TEST_NAME TEST_CATEGORY)
-    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+    add_test(NAME ${TEST_NAME} COMMAND ${CMAKE_CURRENT_BINARY_DIR}/bin/${TEST_NAME})
     
     # Set test labels for filtering
     set_tests_properties(${TEST_NAME} PROPERTIES
@@ -175,6 +175,11 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/encoding/test_base58.c)
+    add_dap_test(test_unit_crypto_base58 unit/crypto/encoding/test_base58.c)
+    register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding")
 endif()
 
 # Auto-discover all tests in crypto subdirectories
@@ -276,6 +281,7 @@ add_custom_target(test_functional
 )
 
 add_custom_target(test_regression
+
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "regression"
     COMMENT "Running regression tests"
 )
