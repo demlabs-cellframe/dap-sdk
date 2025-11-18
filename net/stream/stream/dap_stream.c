@@ -769,14 +769,14 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
         }
 
-        if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
+        if(l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
             log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }
-        if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
+        if(l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
             log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr),
-                                                                                              l_dec_pkt_size);
+                                                                                             l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
@@ -786,13 +786,28 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             dap_stream_ch_t * l_ch = NULL;
             for(size_t i=0;i<a_stream->channel_count;i++){
                 if(a_stream->channel[i]->proc){
-                    if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
-                        l_ch=a_stream->channel[i];
+                    if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id){
+                        l_ch = a_stream->channel[i];
                         break;
                     }
                 }
             }
             if(l_ch) {
+                /* Debug: basic info about incoming channel packet */
+                log_it(L_INFO,
+                       "[STREAM CH DEBUG] id='%c'(0x%02X) type=0x%02X data_size=%u stream_id=%u",
+                       (char)l_ch_pkt->hdr.id,
+                       (unsigned char)l_ch_pkt->hdr.id,
+                       l_ch_pkt->hdr.type,
+                       l_ch_pkt->hdr.data_size,
+                       a_stream ? a_stream->id : 0);
+                if(l_ch_pkt->hdr.id == 'S'){
+                    log_it(L_INFO,
+                           "[STREAM CH DEBUG] Channel 'S' packet: type=0x%02X data_size=%u stream_id=%u",
+                           l_ch_pkt->hdr.type,
+                           l_ch_pkt->hdr.data_size,
+                           a_stream ? a_stream->id : 0);
+                }
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
