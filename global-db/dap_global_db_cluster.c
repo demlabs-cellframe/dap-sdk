@@ -198,6 +198,7 @@ void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_
         assert(l_notifier->callback_notify);
         dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
         dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
+        log_it(L_MSG, "added notify callback for cluster: %s, callback: %p, obj: %s", a_cluster->groups_mask, l_notifier->callback_notify, a_store_obj->key);
     }
 }
 
