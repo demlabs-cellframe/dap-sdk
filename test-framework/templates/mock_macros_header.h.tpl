@@ -28,7 +28,7 @@
 
 
 {{#if MAP_MACROS_DATA}}
-    {{#for map_entry in MAP_MACROS_DATA}}
+    {{#for map_entry in MAP_MACROS_DATA|newline_double}}
         {{map_entry|split|pipe}}
         {{#set map_count={{map_entry|part|0}}}}
         {{#set map_macro={{map_entry|part|1}}}}
