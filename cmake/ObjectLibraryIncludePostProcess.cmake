@@ -6,13 +6,28 @@
 set(DAP_SDK_OBJECT_LIBRARIES "" CACHE INTERNAL "List of all OBJECT libraries")
 
 # Function to register OBJECT library
-function(register_object_library TARGET_NAME)
-    get_target_property(TGT_TYPE ${TARGET_NAME} TYPE)
-    if(TGT_TYPE STREQUAL "OBJECT_LIBRARY")
-        list(APPEND DAP_SDK_OBJECT_LIBRARIES ${TARGET_NAME})
-        set(DAP_SDK_OBJECT_LIBRARIES ${DAP_SDK_OBJECT_LIBRARIES} CACHE INTERNAL "OBJECT libraries list")
+# IMPORTANT: This must be a macro, not a function, because CACHE variables
+# don't persist properly across function calls due to scope issues
+macro(register_object_library TARGET_NAME)
+    get_target_property(TGT_TYPE_FOR_REG ${TARGET_NAME} TYPE)
+    if(TGT_TYPE_FOR_REG STREQUAL "OBJECT_LIBRARY")
+        # IMPORTANT: For CACHE INTERNAL variables, we need to use set_property to accumulate values
+        # Regular set() with CACHE INTERNAL gets cached after first write in CMake configuration phase
+        # Read current value from CACHE
+        get_property(CURRENT_LIBS_FOR_REG CACHE DAP_SDK_OBJECT_LIBRARIES PROPERTY VALUE)
+        if(NOT CURRENT_LIBS_FOR_REG)
+            set(CURRENT_LIBS_FOR_REG "")
+        endif()
+        # Append new library if not already in list
+        list(FIND CURRENT_LIBS_FOR_REG ${TARGET_NAME} FOUND_IDX_FOR_REG)
+        if(FOUND_IDX_FOR_REG EQUAL -1)
+            # Append to list
+            list(APPEND CURRENT_LIBS_FOR_REG ${TARGET_NAME})
+            # Write back to CACHE using set_property (not set) to avoid caching issues
+            set_property(CACHE DAP_SDK_OBJECT_LIBRARIES PROPERTY VALUE "${CURRENT_LIBS_FOR_REG}")
+        endif()
     endif()
-endfunction()
+endmacro()
 
 # Function to propagate includes recursively with cycle detection
 # Uses global cache for cycle detection to handle recursive calls correctly

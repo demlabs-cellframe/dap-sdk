@@ -177,11 +177,40 @@ function(dap_link_libraries TARGET_NAME)
                 if(TARGET ${DEP})
                     get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
                     get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
+                    # Handle both list and string formats for INTERFACE_INCLUDE_DIRECTORIES
+                    # IMPORTANT: Check for empty string/list as well as NOTFOUND
+                    # Also handle case where property might be a generator expression or uninitialized
                     if(DEP_INTERFACE_INCLUDES)
-                        target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INTERFACE_INCLUDES})
+                        # Check if it's NOTFOUND (uninitialized property)
+                        if(NOT DEP_INTERFACE_INCLUDES STREQUAL "INTERFACE_INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INTERFACE_INCLUDES STREQUAL "NOTFOUND")
+                            # Convert to list if it's a string with semicolons
+                            if(DEP_INTERFACE_INCLUDES MATCHES ";")
+                                set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
+                            else()
+                                set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
+                            endif()
+                            # Only add if list is not empty (after removing empty strings)
+                            list(REMOVE_ITEM DEP_INTERFACE_INCLUDES_LIST "")
+                            if(DEP_INTERFACE_INCLUDES_LIST)
+                                target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INTERFACE_INCLUDES_LIST})
+                            endif()
+                        endif()
                     endif()
                     if(DEP_INCLUDES)
-                        target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INCLUDES})
+                        # Check if it's NOTFOUND (uninitialized property)
+                        if(NOT DEP_INCLUDES STREQUAL "INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INCLUDES STREQUAL "NOTFOUND")
+                            # Convert to list if it's a string with semicolons
+                            if(DEP_INCLUDES MATCHES ";")
+                                set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
+                            else()
+                                set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
+                            endif()
+                            # Only add if list is not empty (after removing empty strings)
+                            list(REMOVE_ITEM DEP_INCLUDES_LIST "")
+                            if(DEP_INCLUDES_LIST)
+                                target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INCLUDES_LIST})
+                            endif()
+                        endif()
                     endif()
                 endif()
             endforeach()
@@ -194,30 +223,38 @@ function(dap_link_libraries TARGET_NAME)
     
     # Process transitive dependencies AFTER target_link_libraries
     # This ensures INTERFACE_LINK_LIBRARIES is properly set
+    # IMPORTANT: For OBJECT libraries, CMake doesn't automatically propagate transitive dependencies
+    # in INTERFACE_LINK_LIBRARIES, so we need to process them recursively starting from direct dependencies
     if(TGT_TYPE STREQUAL "OBJECT_LIBRARY" AND LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
         # Create unique visited sets for transitive processing
         _dap_create_visited_set(${TARGET_NAME} VISITED_SET_INCLUDES_TRANS)
         _dap_create_visited_set(${TARGET_NAME} VISITED_SET_BUILD)
         
-        # Mark direct dependencies as visited to avoid reprocessing them
+        # Process transitive dependencies recursively starting from direct dependencies
+        # IMPORTANT: We need to process transitive dependencies of direct dependencies.
+        # The direct dependencies' includes were already added in lines 174-187,
+        # but we need to recursively process their INTERFACE_LINK_LIBRARIES to get
+        # transitive includes (like dap_http_common from dap_http_server).
+        # We mark direct dependencies as visited first to skip their own includes,
+        # but still process their transitive dependencies.
         foreach(DEP ${LIBS_TO_PROCESS})
             if(TARGET ${DEP})
                 _dap_mark_visited(${DEP} ${VISITED_SET_INCLUDES_TRANS})
                 _dap_add_to_visited_list(${DEP} ${VISITED_SET_INCLUDES_TRANS})
                 _dap_mark_visited(${DEP} ${VISITED_SET_BUILD})
                 _dap_add_to_visited_list(${DEP} ${VISITED_SET_BUILD})
+                
+                # Get transitive dependencies of this direct dependency
+                get_target_property(DEP_INTERFACE_DEPS ${DEP} INTERFACE_LINK_LIBRARIES)
+                if(DEP_INTERFACE_DEPS)
+                    # Process transitive includes from this dependency's dependencies
+                    propagate_includes_for_target(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_INCLUDES_TRANS})
+                    
+                    # Process transitive build dependencies
+                    propagate_build_dependencies(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_BUILD})
+                endif()
             endif()
         endforeach()
-        
-        # Get transitive dependencies from INTERFACE_LINK_LIBRARIES
-        get_target_property(TRANSITIVE_DEPS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-        if(TRANSITIVE_DEPS)
-            # Process transitive includes
-            propagate_includes_for_target(${TARGET_NAME} "${TRANSITIVE_DEPS}" ${VISITED_SET_INCLUDES_TRANS})
-            
-            # Process transitive build dependencies
-            propagate_build_dependencies(${TARGET_NAME} "${TRANSITIVE_DEPS}" ${VISITED_SET_BUILD})
-        endif()
     endif()
 endfunction()
 
@@ -252,11 +289,24 @@ function(_collect_transitive_includes TARGET_NAME DEPENDENCIES VISITED_SET_VAR R
             get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
             get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
             
-            if(DEP_INTERFACE_INCLUDES)
-                list(APPEND COLLECTED_INCLUDES ${DEP_INTERFACE_INCLUDES})
+            # Handle both list and string formats, and check for NOTFOUND
+            if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES STREQUAL "INTERFACE_INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INTERFACE_INCLUDES STREQUAL "NOTFOUND")
+                # Convert to list if it's a string with semicolons
+                if(DEP_INTERFACE_INCLUDES MATCHES ";")
+                    set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
+                else()
+                    set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
+                endif()
+                list(APPEND COLLECTED_INCLUDES ${DEP_INTERFACE_INCLUDES_LIST})
             endif()
-            if(DEP_INCLUDES)
-                list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES})
+            if(DEP_INCLUDES AND NOT DEP_INCLUDES STREQUAL "INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INCLUDES STREQUAL "NOTFOUND")
+                # Convert to list if it's a string with semicolons
+                if(DEP_INCLUDES MATCHES ";")
+                    set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
+                else()
+                    set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
+                endif()
+                list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES_LIST})
             endif()
             
             # Recursively collect transitive dependencies
@@ -479,14 +529,20 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     endif()
     
     # Track module in the provided list variable
-    if(NOT DEFINED ${MODULE_LIST_VAR})
-        set(${MODULE_LIST_VAR} "" CACHE INTERNAL "List of object modules for ${TARGET_NAME}")
+    # IMPORTANT: CACHE variables need explicit read/write inside macros
+    get_property(CURRENT_MODULE_LIST CACHE ${MODULE_LIST_VAR} PROPERTY VALUE)
+    if(NOT CURRENT_MODULE_LIST)
+        set(CURRENT_MODULE_LIST "")
     endif()
     # Check if module is already in list to avoid duplicates
-    list(FIND ${MODULE_LIST_VAR} ${TARGET_NAME} MODULE_INDEX)
+    list(FIND CURRENT_MODULE_LIST ${TARGET_NAME} MODULE_INDEX)
     if(MODULE_INDEX EQUAL -1)
-        list(APPEND ${MODULE_LIST_VAR} ${TARGET_NAME})
-        set(${MODULE_LIST_VAR} ${${MODULE_LIST_VAR}} CACHE INTERNAL "List of object modules")
+        if(CURRENT_MODULE_LIST)
+            set(NEW_MODULE_LIST "${CURRENT_MODULE_LIST};${TARGET_NAME}")
+        else()
+            set(NEW_MODULE_LIST "${TARGET_NAME}")
+        endif()
+        set(${MODULE_LIST_VAR} "${NEW_MODULE_LIST}" CACHE INTERNAL "List of object modules" FORCE)
     endif()
     
     # Register OBJECT library for post-processing
