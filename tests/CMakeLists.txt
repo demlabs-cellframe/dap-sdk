@@ -182,6 +182,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/encoding/test_base58.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/encoding/test_base32.c)
+    add_dap_test(test_unit_crypto_base32 unit/crypto/encoding/test_base32.c)
+    register_dap_test(test_unit_crypto_base32 "unit;crypto;encoding")
+endif()
+
+
 # Auto-discover all tests in crypto subdirectories
 # Add your new folder here, e.g.:
  add_dap_test_directory("unit/crypto/signature" "unit;crypto;sign")
