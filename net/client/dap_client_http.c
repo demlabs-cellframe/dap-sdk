@@ -1416,6 +1416,11 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 }
             }
             else {
+                if (l_client_http->method == HTTP_HEAD) {
+                    log_it(L_DEBUG, "[HEAD_CHECK] Processing HEAD response: content_length=%zu, response_size=%zu", 
+                           l_client_http->content_length, l_client_http->response_size);
+                }
+                
                 // Non-streaming accumulation mode: use response buffer
                 if (!l_client_http->response) {
                     m_http_error_exit(EFAULT, "Response buffer is NULL in non-streaming mode");
@@ -1453,13 +1458,22 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     }
                 }
                 
+                if (l_client_http->method == HTTP_HEAD) {
+                    log_it(L_DEBUG, "[HEAD_CHECK] Checking HEAD completion: method=HEAD, status=%d", 
+                           l_client_http->status_code);
+                }
+                
                 // Check completion conditions
-                if ((l_client_http->content_length > 0 && 
+                if ((l_client_http->method == HTTP_HEAD) ||
+                    (l_client_http->content_length > 0 && 
                      l_client_http->response_size >= l_client_http->content_length) ||
                     (l_client_http->status_code >= 400 && 
                      !l_client_http->is_chunked &&
                      a_es->buf_in_size == 0)) {
-                    // Complete if: content received OR HTTP error without data
+                    
+                    if (l_client_http->method == HTTP_HEAD) {
+                        log_it(L_DEBUG, "[HEAD_CHECK] HEAD request complete - calling finalize_response immediately (no body expected)");
+                    }
                     s_http_finalize_response(l_client_http, l_ctx);
                 }
             }
