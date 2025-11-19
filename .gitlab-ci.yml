@@ -70,7 +70,7 @@ build:any.android:
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
     script:
       - mkdir build
-      - cd build &&  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
+      - cd build &&  cmake -DANDROID_PLATFORM=29 -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
 
 # Performs an in-depth static code analysis with cppcheck, producing a detailed HTML report for manual inspection.
 cppcheck_full_analysis:
