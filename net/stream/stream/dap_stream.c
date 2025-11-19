@@ -494,7 +494,15 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
 
                     a_http_client->reply_status_code = Http_Status_OK;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
+                    log_it(L_INFO, "[HTTP→STREAM DEBUG] Switching to stream mode: session_id=%u, stream=%p, esocket=%p, channels=%s",
+                           l_id, l_stream, a_http_client->esocket, l_ss->active_channels);
+                    log_it(L_INFO, "[HTTP→STREAM DEBUG] esocket flags before: 0x%08x, ready_to_write=%s",
+                           a_http_client->esocket->flags,
+                           (a_http_client->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
                     s_stream_states_update(l_stream);
+                    log_it(L_INFO, "[HTTP→STREAM DEBUG] esocket flags after s_stream_states_update: 0x%08x, ready_to_write=%s",
+                           a_http_client->esocket->flags,
+                           (a_http_client->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
 #ifdef DAP_EVENTS_CAPS_IOCP
                     a_http_client->esocket->flags |= DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
@@ -625,12 +633,26 @@ static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
     bool l_ret = false;
     // TODO identify the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
+    dap_stream_t *l_stream = DAP_STREAM(l_http_client);
+    log_it(L_INFO, "[STREAM WRITE DEBUG] write_callback called, esocket=%p, buf_out_size=%zu, ready_to_write=%s, channels=%zu",
+           a_esocket, a_esocket->buf_out_size, 
+           (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false",
+           l_stream ? l_stream->channel_count : 0);
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
     for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
         dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
-        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
-            l_ret |= l_ch->proc->packet_out_callback(l_ch, a_arg);
+        log_it(L_INFO, "[STREAM WRITE DEBUG] channel[%zu]: id='%c', ready_to_write=%s, packet_out_callback=%p",
+               i, l_ch ? (char)l_ch->proc->id : '?',
+               l_ch && l_ch->ready_to_write ? "true" : "false",
+               l_ch && l_ch->proc ? l_ch->proc->packet_out_callback : NULL);
+        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback) {
+            bool l_callback_ret = l_ch->proc->packet_out_callback(l_ch, a_arg);
+            log_it(L_INFO, "[STREAM WRITE DEBUG] channel[%zu] packet_out_callback returned %s", i, l_callback_ret ? "true" : "false");
+            l_ret |= l_callback_ret;
+        }
     }
+    log_it(L_INFO, "[STREAM WRITE DEBUG] write_callback finished, return=%s, buf_out_size=%zu", 
+           l_ret ? "true" : "false", a_esocket->buf_out_size);
     return l_ret;
 }
 
