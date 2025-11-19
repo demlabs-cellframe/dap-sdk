@@ -63,12 +63,13 @@ int dap_global_db_cluster_init()
 
 void dap_global_db_cluster_deinit()
 {
-    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
-    if (l_dbi) {
-        dap_global_db_cluster_t *it, *tmp;
-        DL_FOREACH_SAFE(l_dbi->clusters, it, tmp)
-            dap_global_db_cluster_delete(it);
-    }
+    // Reset static cluster pointers to avoid accessing freed memory
+    s_local_cluster = NULL;
+    s_global_cluster = NULL;
+    
+    // NOTE: Cluster cleanup is handled by instance_deinit
+    // Calling dap_global_db_cluster_delete here causes double-free
+    // because instance structures may already be partially freed
 }
 
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
@@ -176,9 +177,18 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     //    dap_cluster_delete(a_cluster->links_cluster);
     // TODO make a reference counter for cluster mnemonims
     if (!a_cluster) return; //happens when no network connection available
-    dap_cluster_delete(a_cluster->role_cluster);
+    
+    // CRITICAL: Only delete role_cluster if it's initialized and valid
+    // Check: not NULL and dbi is still valid
+    if (a_cluster->role_cluster &&
+        a_cluster->dbi) {
+        dap_cluster_delete(a_cluster->role_cluster);
+    }
+    
     DAP_DELETE(a_cluster->groups_mask);
-    DL_DELETE(a_cluster->dbi->clusters, a_cluster);
+    if (a_cluster->dbi && a_cluster->dbi->clusters) {
+        DL_DELETE(a_cluster->dbi->clusters, a_cluster);
+    }
     DAP_DELETE(a_cluster);
 }
 

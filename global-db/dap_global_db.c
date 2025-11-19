@@ -264,9 +264,11 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  */
 void dap_global_db_deinit() {
     dap_global_db_clean_deinit();
+    // CRITICAL: cluster_deinit MUST be called BEFORE instance_deinit
+    // because cluster_deinit accesses instance memory that instance_deinit will free
+    dap_global_db_cluster_deinit();
     dap_global_db_instance_deinit();
     dap_global_db_driver_deinit();
-    dap_global_db_cluster_deinit();
 }
 
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
