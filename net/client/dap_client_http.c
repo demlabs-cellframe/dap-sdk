@@ -1521,6 +1521,18 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
         return;
     }
     
+    if (a_es->buf_in && a_es->buf_in_size > 0 && !l_client_http->were_callbacks_called) {
+        log_it(L_DEBUG, "[HEAD_CHECK] s_http_error: Socket closed but found %zu bytes in buf_in, processing data first",
+               a_es->buf_in_size);
+        s_http_read(a_es, NULL);
+        
+        if (l_client_http->were_callbacks_called) {
+            return;
+        }
+        
+        log_it(L_WARNING, "[HEAD_CHECK] s_http_error: buf_in data could not be processed, continuing error handling");
+    }
+    
     dap_client_http_async_context_t *l_ctx = NULL;
     if (l_client_http->error_callback == s_async_error_callback) {
         l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
