@@ -301,15 +301,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         return 0;
     }
 
-    log_it(L_INFO, "[PKT WRITE DEBUG] dap_stream_ch_pkt_write_unsafe called: ch_id='%c', type=0x%02X, data_size=%zu, stream=%p, esocket=%p",
-           (char)a_ch->proc->id, a_type, a_data_size, a_ch->stream, a_ch->stream ? a_ch->stream->esocket : NULL);
-    if (a_ch->stream && a_ch->stream->esocket) {
-        log_it(L_INFO, "[PKT WRITE DEBUG] esocket flags: 0x%08x, ready_to_write=%s, buf_out_size=%zu",
-               a_ch->stream->esocket->flags,
-               (a_ch->stream->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false",
-               a_ch->stream->esocket->buf_out_size);
-    }
-
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
     byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_max_size); /* a_ch->buf; */
@@ -330,18 +321,9 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     if (l_data_size > 0 && l_data_size <= l_max_fragm_size) {
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
-        log_it(L_INFO, "[PKT WRITE DEBUG] Calling dap_stream_pkt_write_unsafe: stream=%p, type=%d, size=%zu",
-               a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_data_size);
         l_ret = dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_buf, l_data_size);
-        log_it(L_INFO, "[PKT WRITE DEBUG] dap_stream_pkt_write_unsafe returned %zu bytes", l_ret);
 #ifndef DAP_EVENTS_CAPS_IOCP
-        log_it(L_INFO, "[PKT WRITE DEBUG] Setting channel ready_to_write=true");
         dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
-        if (a_ch->stream && a_ch->stream->esocket) {
-            log_it(L_INFO, "[PKT WRITE DEBUG] After set_ready_to_write: esocket flags=0x%08x, ready_to_write=%s",
-                   a_ch->stream->esocket->flags,
-                   (a_ch->stream->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
-        }
 #endif
     } else if (l_data_size > l_max_fragm_size) {
         /* The first fragment (has no memory shift) is the channel header
@@ -372,14 +354,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     // Statistics without header sizes
     a_ch->stat.bytes_write += a_data_size;
     DAP_DELETE(l_buf);
-    log_it(L_INFO, "[PKT WRITE DEBUG] dap_stream_ch_pkt_write_unsafe finished: returned %zu bytes, ch_id='%c'", 
-           l_ret, (char)a_ch->proc->id);
-    if (a_ch->stream && a_ch->stream->esocket) {
-        log_it(L_INFO, "[PKT WRITE DEBUG] Final esocket state: buf_out_size=%zu, flags=0x%08x, ready_to_write=%s",
-               a_ch->stream->esocket->buf_out_size,
-               a_ch->stream->esocket->flags,
-               (a_ch->stream->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
-    }
     for (dap_list_t *it = a_ch->packet_out_notifiers; !a_ch->closing && it; it = it->next) {
         dap_stream_ch_notifier_t *l_notifier = it->data;
         assert(l_notifier);

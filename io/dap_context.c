@@ -1206,14 +1206,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_bytes_sent = 0;
             bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING) && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
-                log_it(L_INFO, "[SEND DEBUG] Before write_callback: socket=%d, type=%d, buf_out_size=%zu, flags=0x%08x",
-                       l_cur->socket, l_cur->type, l_cur->buf_out_size, l_cur->flags);
                 if (l_cur->callbacks.write_callback)
                     l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
                 debug_if(g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send, repeat next time: %s",
                                                     l_cur->buf_out_size, l_write_repeat ? "true" : "false");
-                log_it(L_INFO, "[SEND DEBUG] After write_callback: buf_out_size=%zu, write_repeat=%s",
-                       l_cur->buf_out_size, l_write_repeat ? "true" : "false");
                 /*
                  * Socket is ready to write and not going to close
                  */
@@ -1221,10 +1217,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     switch (l_cur->type){
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
-                        log_it(L_INFO, "[SEND DEBUG] Calling send() for socket %d, buf_out_size=%zu", l_cur->socket, l_cur->buf_out_size);
                         l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
                                             l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-                        log_it(L_INFO, "[SEND DEBUG] send() returned %zd bytes, buf_out_size was %zu", l_bytes_sent, l_cur->buf_out_size);
                         if (l_bytes_sent == -1)
 #ifdef DAP_OS_WINDOWS
                             l_errno = WSAGetLastError();

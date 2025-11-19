@@ -1515,24 +1515,10 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
     if (!a_esocket || a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_WRITE))
         return;
 
-    // Log only for stream sockets to avoid log spam
-    bool l_is_stream = (a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || 
-                        a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) &&
-                       a_esocket->_inheritor != NULL;
-    if (l_is_stream) {
-        log_it(L_INFO, "[SET WRITABLE DEBUG] Setting ready_to_write=%s for esocket=%p, socket=%d, buf_out_size=%zu, flags before=0x%08x",
-               a_is_ready ? "true" : "false", a_esocket, a_esocket->socket, a_esocket->buf_out_size, a_esocket->flags);
-    }
-
     if ( a_is_ready )
         a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
     else
         a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
-
-    if (l_is_stream) {
-        log_it(L_INFO, "[SET WRITABLE DEBUG] Flags after=0x%08x, ready_to_write=%s",
-               a_esocket->flags, (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
-    }
 
 #ifdef DAP_EVENTS_CAPS_EVENT_KEVENT
     if( a_esocket->type != DESCRIPTOR_TYPE_EVENT &&

@@ -56,13 +56,6 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
 {
     if (a_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE)
         return log_it(L_ERROR, "Too big fragment size %zu", a_data_size), 0;
-    log_it(L_INFO, "[STREAM PKT WRITE DEBUG] dap_stream_pkt_write_unsafe called: stream=%p, type=0x%02X, data_size=%zu, esocket=%p",
-           a_stream, a_type, a_data_size, a_stream ? a_stream->esocket : NULL);
-    if (a_stream && a_stream->esocket) {
-        log_it(L_INFO, "[STREAM PKT WRITE DEBUG] esocket before write: buf_out_size=%zu, flags=0x%08x, ready_to_write=%s",
-               a_stream->esocket->buf_out_size, a_stream->esocket->flags,
-               (a_stream->esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false");
-    }
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
     a_stream->is_active = true;
     dap_enc_key_t *l_key = a_stream->session->key;
@@ -74,8 +67,6 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
                                           .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
     size_t l_ret = dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
-    log_it(L_INFO, "[STREAM PKT WRITE DEBUG] dap_events_socket_write_unsafe returned %zu bytes, esocket buf_out_size=%zu",
-           l_ret, a_stream && a_stream->esocket ? a_stream->esocket->buf_out_size : 0);
     return l_ret;
 }
 
