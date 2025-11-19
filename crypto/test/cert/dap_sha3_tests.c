@@ -157,7 +157,7 @@ void dap_sha3_tests_run(void)
   }
 
   t = (double)(gettime64( ) - start) / 1000000000.0;
-  benchmark_mgs_rate( "dap_hash_fast_sha3(monero_crypto)(2048)", 65536.0 / t );
+  benchmark_mgs_rate( "dap_hash_fast_sha3(2048)", 65536.0 / t );
   print_hash( hash0.raw );
 
 //  printf("Keccak_sha_256( ) of %u data x %u ...\n", DATA_SIZE,  65536 );

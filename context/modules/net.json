@@ -34,7 +34,7 @@
         "json_rpc": {
           "path": "net/server/json_rpc/",
           "description": "JSON-RPC server implementation",
-          "subcomponents": ["btc_rpc", "rpc_core"]
+          "subcomponents": ["rpc_core"]
         },
         "notify_server": {
           "path": "net/server/notify_server/",
