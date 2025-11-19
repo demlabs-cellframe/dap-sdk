@@ -48,7 +48,7 @@ tests:arm64.debian:
 
 build:amd64.windows:
     extends: .tests
-    image: demlabs/windows/amd64:qt5
+    image: demlabs/windows/amd64:qt6
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
     script:
       - mkdir build
@@ -57,16 +57,16 @@ build:amd64.windows:
 
 build:amd64.macos:
     extends: .tests
-    image: demlabs/macos/amd64:qt5
-    before_script: /opt/buildtools/prepare_environment.sh amd64-osx
+    tags:
+      - macos-native
     script:
       - mkdir build
-      - cd build && $(${OSXCROSS_ROOT}/bin/osxcross-conf) && export OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1 && export OSXCROSS_HOST=x86_64-apple-darwin20.4 && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${OSXCROSS_ROOT}/toolchain.cmake -DBoost_INCLUDE_DIR=$BOOST_INCLUDE_DIR .. && make -j$(nproc)
+      - cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
 
 
 build:any.android:
     extends: .tests
-    image: demlabs/android/any:qt5
+    image: demlabs/android/any:qt6
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
     script:
       - mkdir build
@@ -76,7 +76,7 @@ build:any.android:
 cppcheck_full_analysis:
   extends: .ci-polygon
   stage: cppchecks
-  image: demlabs/debian/amd64:cpp_check
+  image: demlabs/debian/amd64:qt6
   timeout: 1h
   script:
     - mkdir -p cpp_report && cd cpp_report
@@ -96,7 +96,7 @@ cppcheck_full_analysis:
 
 # Generates a code quality report in JSON format for merge requests, identifying potential issues in the codebase.
 cppcheck_code_quality:
-  image: demlabs/debian/amd64:cpp_check
+  image: demlabs/debian/amd64:qt6
   extends: .ci-polygon
   stage: cppchecks
   timeout: 1h
