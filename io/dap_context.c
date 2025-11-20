@@ -1025,6 +1025,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
 #endif
                         // Accept connection
+                        debug_if(g_debug_reactor, L_DEBUG, "Processing listening socket %"DAP_FORMAT_SOCKET" event: EPOLLIN=%d, EPOLLOUT=%d, flags=0x%x",
+                                l_cur->socket, !!(l_flag_read), !!(l_flag_write), l_cur->flags);
                         if (l_cur->callbacks.accept_callback) {
                             struct sockaddr_storage l_addr_storage = { };
                             socklen_t l_remote_addr_size = sizeof(l_addr_storage);

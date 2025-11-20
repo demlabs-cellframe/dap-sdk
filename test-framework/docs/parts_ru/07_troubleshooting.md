@@ -114,12 +114,6 @@ make VERBOSE=1 test_target 2>&1 | grep "Linking" -A 1 | grep "\.a"
 # Должно быть: libdap_core_static.a libdap_io_static.a (а не .o файлы)
 ```
 
-**Устаревший ручной подход (всё ещё работает):**
-```cmake
-dap_mock_autowrap(test_target)
-dap_mock_autowrap_with_static(test_target dap_http_server)  # Опциональное переопределение
-```
-
 **Критичные замечания:** 
 - **ОБЯЗАТЕЛЬНО использовать** `dap_test_link_libraries()` - автоматически создаёт статические библиотеки
 - **Объектные файлы (`.o`) НЕ работают** с `--wrap` - только статические библиотеки (`.a`)

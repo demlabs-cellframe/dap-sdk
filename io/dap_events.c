@@ -260,6 +260,9 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
 #endif // DAP_EVENTS_CAPS_IOCP
 #endif // DAP_OS_WINDOWS
     g_debug_reactor = dap_config_get_item_bool_default(g_config, "general", "debug_reactor", false);
+    log_it(L_NOTICE, "Reactor debug mode: %s (read from config: %s)", 
+           g_debug_reactor ? "enabled" : "disabled",
+           g_config ? "yes" : "no");
     uint32_t l_cpu_count = dap_get_cpu_count();
     if (a_threads_count > l_cpu_count)
         a_threads_count = l_cpu_count;

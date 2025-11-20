@@ -37,6 +37,7 @@
 #include "dap_events_socket.h"
 #include "dap_strfuncs.h"
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_test_helpers.h"
 #include "dap_client_test_fixtures.h"
 
@@ -71,6 +72,31 @@ static void s_test_handler(dap_http_simple_t *a_http_simple, void *a_arg) {
 
 static void s_setup_server_test(void) {
     TEST_INFO("Starting HTTP server on %s:%d...", TEST_SERVER_ADDR, TEST_SERVER_PORT);
+    
+    // Create config file with debug_reactor enabled
+    FILE *l_cfg = fopen("test_http_simple.cfg", "w");
+    if (l_cfg) {
+        fprintf(l_cfg,
+                "[resources]\n"
+                "ca_folders=[.]\n"
+                "[general]\n"
+                "debug_reactor=true\n");
+        fclose(l_cfg);
+    }
+    
+    // Initialize common DAP subsystems
+    dap_common_init(LOG_TAG, NULL);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    dap_log_level_set(L_DEBUG);
+    dap_config_init(".");
+    
+    // Open config and set as global (required for dap_events_init to read debug_reactor)
+    extern dap_config_t *g_config;
+    g_config = dap_config_open("test_http_simple");
+    if (!g_config) {
+        TEST_ERROR("Failed to open config test_http_simple.cfg");
+        return;
+    }
     
     // Initialize event system
     int l_ret = dap_events_init(1, 60000);

@@ -899,7 +899,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // Set done callback to advance to next stage when handshake completes
                     a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
-                    s_stage_status_after(a_client_pvt);
+                    // Don't call s_stage_status_after here - handshake is async, callback will handle completion
+                    // Calling s_stage_status_after here causes infinite recursion since status is still IN_PROGRESS
                 } break;
 
                 case STAGE_STREAM_CTL: {
@@ -950,7 +951,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .host = a_client_pvt->client->link_info.uplink_addr,
                         .port = a_client_pvt->client->link_info.uplink_port,
                         .callbacks = &s_handshake_callbacks,
-                        .client_context = a_client_pvt->client
+                        .client_context = a_client_pvt->client,
+                        .worker = l_worker  // Required for socket creation
                     };
 
                     dap_net_stage_prepare_result_t l_prepare_result;

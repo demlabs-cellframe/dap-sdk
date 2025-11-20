@@ -247,7 +247,9 @@ int main(void) {
     // Create minimal config file for tests
     // Note: ca_folders should point to test_ca directory where certificates will be stored
     const char *config_content = "[resources]\n"
-                                 "ca_folders=[./test_ca]\n";
+                                 "ca_folders=[./test_ca]\n"
+                                 "[general]\n"
+                                 "debug_reactor=true\n";
     FILE *f = fopen("test_stream.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);

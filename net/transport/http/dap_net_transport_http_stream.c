@@ -158,23 +158,60 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
         return;
     }
     
+    // Get encryption context from client_pvt (session_key is stored there after handshake)
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    dap_enc_key_t *l_session_key = NULL;
+    
+    // Try to get session_key from transport first (for main stream)
+    dap_net_transport_t *l_transport = s_http_session_ctx.stream->stream_transport;
+    if (l_transport && l_transport->session_key) {
+        l_session_key = l_transport->session_key;
+    } else if (l_client_pvt && l_client_pvt->session_key) {
+        // Fallback: get session_key from client_pvt (handshake completed, session_key available)
+        l_session_key = l_client_pvt->session_key;
+    }
+    
     // Parse session response to extract session_id
     uint32_t l_session_id = 0;
     char *l_response_data = NULL;
     size_t l_response_size = 0;
     
     if (a_data && a_data_size > 0) {
-        char *l_response_str = (char*)a_data;
-        // Parse response format: "session_id stream_key ..."
-        sscanf(l_response_str, "%u", &l_session_id);
-        
-        // Allocate and copy full response data for transport callback
-        // Caller will free it after use
-        l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-        if (l_response_data) {
-            memcpy(l_response_data, a_data, a_data_size);
-            l_response_data[a_data_size] = '\0';
-            l_response_size = a_data_size;
+        // Decrypt response if encrypted (handshake completed, session_key available)
+        if (l_session_key) {
+            size_t l_len = dap_enc_decode_out_size(l_session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
+            if (l_response) {
+                l_len = dap_enc_decode(l_session_key, a_data, a_data_size,
+                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
+                l_response[l_len] = '\0';
+                
+                // Parse response format: "session_id stream_key ..."
+                sscanf(l_response, "%u", &l_session_id);
+                
+                // Allocate and copy full response data for transport callback
+                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
+                if (l_response_data) {
+                    memcpy(l_response_data, l_response, l_len);
+                    l_response_data[l_len] = '\0';
+                    l_response_size = l_len;
+                }
+                
+                DAP_DELETE(l_response);
+            }
+        } else {
+            // Unencrypted response (shouldn't happen after handshake, but handle it)
+            char *l_response_str = (char*)a_data;
+            // Parse response format: "session_id stream_key ..."
+            sscanf(l_response_str, "%u", &l_session_id);
+            
+            // Allocate and copy full response data for transport callback
+            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+            if (l_response_data) {
+                memcpy(l_response_data, a_data, a_data_size);
+                l_response_data[a_data_size] = '\0';
+                l_response_size = a_data_size;
+            }
         }
     }
     

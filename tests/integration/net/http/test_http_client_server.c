@@ -263,6 +263,9 @@ static int s_setup_integration_test(void) {
             "[resources]\n"
             "ca_folders=[.]\n"
             "\n"
+            "[general]\n"
+            "debug_reactor=true\n"
+            "\n"
             "[test_http_client_server]\n"
             "listen-address=[%s:%d]\n"
             "enabled=true\n",
