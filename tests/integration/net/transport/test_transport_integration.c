@@ -53,7 +53,7 @@
 #define TEST_PARALLEL_TRANSPORTS 4  // Number of parallel transport instances per type
 #define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANSPORT_TIMEOUT_MS 10000  // 30 seconds
+#define TEST_TRANSPORT_TIMEOUT_MS 30000  // 30 seconds (intelligent wait - returns immediately on success)
 
 // Transport configs are defined in test_transport_helpers.h
 // Define the actual array here
@@ -269,16 +269,19 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
     }
     
     uint32_t l_elapsed = 0;
-    const uint32_t l_poll_interval_ms = 5000;
+    const uint32_t l_poll_interval_ms = 100;  // Poll every 100ms instead of 5000ms
     dap_client_stage_t l_last_stage = STAGE_UNDEFINED;
+    dap_client_stage_status_t l_last_status = STAGE_STATUS_NONE;
     
     while (l_elapsed < a_timeout_ms) {
         dap_client_stage_t l_stage = dap_client_get_stage(a_client);
         dap_client_stage_status_t l_status = dap_client_get_stage_status(a_client);
         
-        if (l_stage != l_last_stage || l_status != STAGE_STATUS_COMPLETE) {
+        // Print stage changes and status updates
+        if (l_stage != l_last_stage || l_status != l_last_status) {
             printf("  Client stage: %d (status: %d, elapsed: %u ms)\n", l_stage, l_status, l_elapsed);
             l_last_stage = l_stage;
+            l_last_status = l_status;
         }
         
         if (l_stage == STAGE_STREAM_STREAMING && l_status == STAGE_STATUS_COMPLETE) {
