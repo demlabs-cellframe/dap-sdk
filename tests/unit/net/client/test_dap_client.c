@@ -176,8 +176,8 @@ static void test_02_client_creation(void)
     
     TEST_INFO("Test 2: Client creation");
     
-    // Mock worker get
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    // Mock worker
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -195,6 +195,7 @@ static void test_02_client_creation(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 2 passed: Client creation works correctly");
     teardown_test();
@@ -211,7 +212,7 @@ static void test_03_client_deletion(void)
     TEST_INFO("Test 3: Client deletion");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -220,6 +221,7 @@ static void test_03_client_deletion(void)
     
     // Delete client
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 3 passed: Client deletion works correctly");
     teardown_test();
@@ -236,7 +238,7 @@ static void test_04_set_stage_target(void)
     TEST_INFO("Test 4: Setting stage target");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -254,6 +256,7 @@ static void test_04_set_stage_target(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 4 passed: Stage target setting works correctly");
     teardown_test();
@@ -270,7 +273,7 @@ static void test_05_set_uplink(void)
     TEST_INFO("Test 5: Setting uplink configuration");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -291,6 +294,7 @@ static void test_05_set_uplink(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 5 passed: Uplink configuration works correctly");
     teardown_test();
@@ -307,7 +311,7 @@ static void test_06_set_active_channels(void)
     TEST_INFO("Test 6: Setting active channels");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -331,6 +335,7 @@ static void test_06_set_active_channels(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 6 passed: Active channels configuration works correctly");
     teardown_test();
@@ -347,7 +352,7 @@ static void test_07_set_auth_cert(void)
     TEST_INFO("Test 7: Setting authentication certificate");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -369,6 +374,7 @@ static void test_07_set_auth_cert(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 7 passed: Auth certificate setting behavior verified");
     teardown_test();
@@ -385,7 +391,7 @@ static void test_08_transport_type(void)
     TEST_INFO("Test 8: Transport type set/get operations");
     
     // Mock worker
-    dap_worker_t *l_mock_worker = (dap_worker_t *)0x12345678;
+    dap_worker_t *l_mock_worker = DAP_NEW_Z(dap_worker_t);
     DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_mock_worker);
     
     // Create client
@@ -421,6 +427,7 @@ static void test_08_transport_type(void)
     
     // Cleanup
     dap_client_delete_unsafe(l_client);
+    DAP_DELETE(l_mock_worker);
     
     TEST_SUCCESS("Test 8 passed: Transport type set/get works correctly");
     teardown_test();

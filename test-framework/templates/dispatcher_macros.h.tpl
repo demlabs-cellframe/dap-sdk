@@ -74,32 +74,8 @@
                 {{#if original_type != normalized_type}}
                     // Mapping for {{original_type}} -> {{normalized_type}}
                     // Note: We cannot define a macro with * in the name in C preprocessor!
-                    // #define _DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_int* ... is INVALID.
                     // So we actually CANNOT generate mapping macros for pointer types.
                     // The dispatcher logic must use the NORMALIZED type name constructed via ##.
-                    
-                    // In dap_mock_linker_wrapper.h.tpl we use:
-                    // _DAP_MOCK_WRAPPER_CUSTOM_FOR_##func_name
-                    
-                    // Wait, dispatchers are not used anymore!
-                    // I switched to direct function wrappers!
-                    
-                    // DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)
-                    // calls _DAP_MOCK_WRAPPER_CUSTOM_FOR_##func_name
-                    
-                    // RETURN_TYPE is passed to the wrapper, but is it used for dispatch?
-                    // No! It is used only inside the wrapper code.
-                    
-                    // So... do we even NEED these dispatcher macros anymore?
-                    // dap_mock_linker_wrapper.h.tpl does NOT use them.
-                    // function_wrappers.h.tpl does NOT use them.
-                    
-                    // CHECK dap_mock_linker_wrapper.h.tpl content:
-                    // #define DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...) \
-                    //    _DAP_MOCK_WRAPPER_CUSTOM_FOR_##func_name(return_type, ##__VA_ARGS__)
-                    
-                    // So dispatcher_macros.h.tpl IS OBSOLETE?
-                    // Let's verify.
                 {{/if}}
             {{/if}}
         {{/if}}

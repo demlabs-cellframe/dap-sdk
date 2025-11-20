@@ -149,7 +149,7 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_http_server_new,
 }
 
 // Wrapper for dap_server_listen_addr_add - create mock listener to satisfy dap_net_server_listen_addr_add_with_callback
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_server_listen_addr_add,
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
     PARAM(dap_server_t*, a_server),
     PARAM(const char*, a_addr),
     PARAM(uint16_t, a_port),
@@ -215,7 +215,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, enc_http_add_proc,
 }
 
 // Wrapper for dap_stream_add_proc_http
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_url_proc_t*, dap_stream_add_proc_http,
+DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, dap_stream_add_proc_http,
     PARAM(dap_http_server_t*, a_server),
     PARAM(const char*, a_url_path)
 )
@@ -231,7 +231,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_url_proc_t*, dap_stream_add_proc_http,
 }
 
 // Wrapper for dap_http_client_new
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_client_t*, dap_http_client_new,
+DAP_MOCK_WRAPPER_CUSTOM(dap_http_client_t*, dap_http_client_new,
     PARAM(const char*, a_host),
     PARAM(uint16_t, a_port)
 )
@@ -251,7 +251,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_client_t*, dap_http_client_new,
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_client_delete, (dap_http_client_t *a_client), (a_client));
 
 // Wrapper for dap_http_client_write
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(ssize_t, dap_http_client_write,
+DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_http_client_write,
     PARAM(dap_http_client_t*, a_client),
     PARAM(const void*, a_data),
     PARAM(size_t, a_size)
@@ -268,7 +268,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(ssize_t, dap_http_client_write,
 }
 
 // Wrapper for dap_http_init
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_http_init, void)
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_http_init, void)
 {
     // Return mock value if set, otherwise return 0 (success)
     if (g_mock_dap_http_init && g_mock_dap_http_init->return_value.i != 0) {
@@ -281,7 +281,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_http_init, void)
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_deinit, (), ());
 
 // Wrapper for enc_http_init
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, enc_http_init, void)
+DAP_MOCK_WRAPPER_CUSTOM(int, enc_http_init, void)
 {
     // Return mock value if set, otherwise return 0 (success)
     if (g_mock_enc_http_init && g_mock_enc_http_init->return_value.i != 0) {
@@ -294,7 +294,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, enc_http_init, void)
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(enc_http_deinit, (), ());
 
 // Wrapper for dap_stream_ctl_add_proc
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_url_proc_t*, dap_stream_ctl_add_proc,
+DAP_MOCK_WRAPPER_CUSTOM(dap_http_url_proc_t*, dap_stream_ctl_add_proc,
     PARAM(dap_http_server_t*, a_server),
     PARAM(const char*, a_url_path)
 )
@@ -310,7 +310,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_http_url_proc_t*, dap_stream_ctl_add_proc,
 }
 
 // Wrapper for dap_enc_code_out_size - return size without encryption (for unit tests)
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(size_t, dap_enc_code_out_size,
+DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_enc_code_out_size,
     PARAM(dap_enc_key_t*, a_key),
     PARAM(size_t, a_buf_in_size),
     PARAM(dap_enc_data_type_t, type)
@@ -326,7 +326,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(size_t, dap_enc_code_out_size,
 }
 
 // Wrapper for dap_enc_code - return mock encoded data (for unit tests)
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(size_t, dap_enc_code,
+DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_enc_code,
     PARAM(dap_enc_key_t*, a_key),
     PARAM(const void*, a_buf_in),
     PARAM(size_t, a_buf_in_size),

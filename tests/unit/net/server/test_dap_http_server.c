@@ -69,6 +69,7 @@ DAP_MOCK_DECLARE(dap_http_client_error);
 // Mock dap_server functions
 DAP_MOCK_DECLARE(dap_server_new);
 DAP_MOCK_DECLARE(dap_server_delete);
+DAP_MOCK_DECLARE(dap_server_listen_addr_add);
 
 // Mock dap_config functions
 DAP_MOCK_DECLARE(dap_config_get_item_bool_default);
@@ -107,6 +108,19 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
     return (dap_server_t*)g_mock_dap_server_new->return_value.ptr;
 }
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_server_delete, (dap_server_t *a_server), (a_server));
+
+// Mock dap_server_listen_addr_add
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
+    PARAM(dap_server_t*, a_server),
+    PARAM(const char*, a_addr),
+    PARAM(uint16_t, a_port),
+    PARAM(dap_events_desc_type_t, a_type),
+    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
+)
+{
+    // Mock success
+    return 0;
+}
 
 // Mock dap_config functions
 DAP_MOCK_WRAPPER_CUSTOM(bool, dap_config_get_item_bool_default,
