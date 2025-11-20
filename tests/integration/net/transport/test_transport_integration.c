@@ -268,37 +268,49 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
         return false;
     }
     
-    uint32_t l_elapsed = 0;
-    const uint32_t l_poll_interval_ms = 100;  // Poll every 100ms instead of 5000ms
     dap_client_stage_t l_last_stage = STAGE_UNDEFINED;
     dap_client_stage_status_t l_last_status = STAGE_STATUS_NONE;
     
-    while (l_elapsed < a_timeout_ms) {
+    // Use intelligent wait - returns immediately when condition is met
+    uint64_t l_start = dap_test_get_time_ms();
+    bool l_success = false;
+    
+    while (dap_test_get_time_ms() - l_start < a_timeout_ms) {
         dap_client_stage_t l_stage = dap_client_get_stage(a_client);
         dap_client_stage_status_t l_status = dap_client_get_stage_status(a_client);
         
         // Print stage changes and status updates
         if (l_stage != l_last_stage || l_status != l_last_status) {
-            printf("  Client stage: %d (status: %d, elapsed: %u ms)\n", l_stage, l_status, l_elapsed);
+            uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
+            printf("  Client stage: %d (status: %d, elapsed: %llu ms)\n", 
+                   l_stage, l_status, (unsigned long long)l_elapsed);
             l_last_stage = l_stage;
             l_last_status = l_status;
         }
         
-        if (l_stage == STAGE_STREAM_STREAMING && l_status == STAGE_STATUS_COMPLETE) {
-            return true;
-        }
-        
+        // Check for error condition - fail fast
         if (l_status == STAGE_STATUS_ERROR) {
             printf("  Client stage error at stage %d\n", l_stage);
             return false;
         }
         
-        dap_test_sleep_ms(l_poll_interval_ms);
-        l_elapsed += l_poll_interval_ms;
+        // Success condition - handshake complete
+        if (l_stage == STAGE_STREAM_STREAMING && l_status == STAGE_STATUS_COMPLETE) {
+            l_success = true;
+            break;  // Exit immediately on success
+        }
+        
+        // Poll every 100ms (same as DAP_TEST_WAIT_UNTIL default)
+        dap_test_sleep_ms(100);
     }
     
-    printf("  Timeout reached at stage: %d, status: %d\n", l_last_stage, dap_client_get_stage_status(a_client));
-    return false;
+    if (!l_success) {
+        dap_client_stage_t l_final_stage = dap_client_get_stage(a_client);
+        dap_client_stage_status_t l_final_status = dap_client_get_stage_status(a_client);
+        printf("  Timeout reached at stage: %d, status: %d\n", l_final_stage, l_final_status);
+    }
+    
+    return l_success;
 }
 
 /**
