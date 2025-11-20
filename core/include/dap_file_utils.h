@@ -22,6 +22,8 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdbool.h>
+#include <sys/types.h>
+#include <time.h>
 #include "utlist.h"
 #include <dirent.h>
 
@@ -102,6 +104,25 @@ int dap_file_mv(const char* a_path_old, const char * a_path_new);
  * @return true, if the file is a directory
  */
 bool dap_dir_test(const char * a_dir_path);
+
+/**
+ * File information structure
+ */
+typedef struct {
+    time_t mtime;          /**< Last modification time (Unix timestamp) */
+    off_t size;            /**< File size in bytes */
+    bool is_file;          /**< True if it's a regular file */
+    bool is_dir;           /**< True if it's a directory */
+} dap_file_stat_t;
+
+/**
+ * Get file information (size, modification time)
+ *
+ * @a_file_path file pathname
+ * @a_stat pointer to structure to fill with file information
+ * @return 0 on success, -1 on error
+ */
+int dap_file_stat(const char *a_file_path, dap_file_stat_t *a_stat);
 
 /**
  * Create a new directory with intermediate sub-directories

@@ -603,10 +603,13 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 // LINKER WRAPPER MACROS (automatically included)
 // ===========================================================================
 
-// Include linker wrapper macros if not already included
-// This allows using DAP_MOCK_WRAPPER_CUSTOM without explicit include
-// Note: Generated macros header (if exists) is included via CMake's -include flag
-// before this file, so _DAP_MOCK_MAP macros are already available
+// Include generated linker wrapper header (contains DAP_MOCK_WRAPPER_CUSTOM macros)
+// This header is generated from templates/dap_mock_linker_wrapper.h.tpl by the mock generator
+// and placed in mock_gen directory. The mock_gen directory is added to include paths.
+// Use conditional include - file may not exist if mocks are not used
 #ifndef DAP_MOCK_LINKER_WRAPPER_H
-#include "dap_mock_linker_wrapper.h"
+    #if __has_include("dap_mock_linker_wrapper.h")
+        #include "dap_mock_linker_wrapper.h"
+        #define DAP_MOCK_LINKER_WRAPPER_H
+    #endif
 #endif

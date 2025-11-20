@@ -201,7 +201,7 @@ endif()
 
     # Post-process all OBJECT libraries to propagate include directories
     # This must be done AFTER all modules are created and configured
-# This ensures transitive dependencies (like XKCP via dap_crypto) are propagated
+    # This ensures transitive dependencies (like XKCP via dap_crypto) are propagated
     post_process_object_libraries()
     
 if(BUILD_DAP_SDK_TESTS OR BUILD_DAP_TESTS)

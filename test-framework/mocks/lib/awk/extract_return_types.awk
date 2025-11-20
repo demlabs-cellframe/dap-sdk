@@ -23,7 +23,7 @@ BEGIN {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)
                 return_type = return_type_original
-                gsub(/\*/, "_PTR", return_type)
+                gsub(/\*/, "_STAR", return_type)
                 gsub(/[ \t]+/, "_", return_type)
                 gsub(/_+$/, "", return_type)
                 # Output both normalized and original (for normalization macros)
@@ -34,7 +34,7 @@ BEGIN {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)
                 return_type = return_type_original
-                gsub(/\*/, "_PTR", return_type)
+                gsub(/\*/, "_STAR", return_type)
                 gsub(/[ \t]+/, "_", return_type)
                 gsub(/_+$/, "", return_type)
                 print return_type "|" return_type_original

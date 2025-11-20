@@ -99,7 +99,7 @@ DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_events_stop_all, (), ());
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_events_deinit, (), ());
 
 // Custom wrapper for dap_events_worker_get_auto - return mock value if enabled
-DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto)
+DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto, void)
 {
     // When mock is enabled, return configured mock value
     // dap_mock_prepare_call already executed delay and recorded the call
@@ -110,7 +110,7 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto)
 DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_http_client_init, (), ());
 
 // Custom wrapper for dap_http_client_deinit - record calls when enabled
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_http_client_deinit)
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_http_client_deinit, void)
 {
     // When mock is enabled, intercept the call and don't call original
     // dap_mock_prepare_call already executed delay and recorded the call

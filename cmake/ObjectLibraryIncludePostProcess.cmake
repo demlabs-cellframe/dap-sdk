@@ -11,10 +11,10 @@ set(DAP_SDK_OBJECT_LIBRARIES "" CACHE INTERNAL "List of all OBJECT libraries")
 macro(register_object_library TARGET_NAME)
     get_target_property(TGT_TYPE_FOR_REG ${TARGET_NAME} TYPE)
     if(TGT_TYPE_FOR_REG STREQUAL "OBJECT_LIBRARY")
-        # IMPORTANT: For CACHE INTERNAL variables, we need to use set_property to accumulate values
-        # Regular set() with CACHE INTERNAL gets cached after first write in CMake configuration phase
-        # Read current value from CACHE
-        get_property(CURRENT_LIBS_FOR_REG CACHE DAP_SDK_OBJECT_LIBRARIES PROPERTY VALUE)
+        # IMPORTANT: CMake CACHE variables are tricky in macros
+        # We use a global property instead of CACHE variable for accumulation
+        # Global properties work reliably across macro/function boundaries
+        get_property(CURRENT_LIBS_FOR_REG GLOBAL PROPERTY DAP_SDK_OBJECT_LIBRARIES_LIST)
         if(NOT CURRENT_LIBS_FOR_REG)
             set(CURRENT_LIBS_FOR_REG "")
         endif()
@@ -23,27 +23,31 @@ macro(register_object_library TARGET_NAME)
         if(FOUND_IDX_FOR_REG EQUAL -1)
             # Append to list
             list(APPEND CURRENT_LIBS_FOR_REG ${TARGET_NAME})
-            # Write back to CACHE using set_property (not set) to avoid caching issues
-            set_property(CACHE DAP_SDK_OBJECT_LIBRARIES PROPERTY VALUE "${CURRENT_LIBS_FOR_REG}")
+            # Write back to GLOBAL property (reliable across all contexts)
+            set_property(GLOBAL PROPERTY DAP_SDK_OBJECT_LIBRARIES_LIST "${CURRENT_LIBS_FOR_REG}")
+            # Also update CACHE for compatibility with post_process_object_libraries
+            set(DAP_SDK_OBJECT_LIBRARIES "${CURRENT_LIBS_FOR_REG}" CACHE INTERNAL "OBJECT libraries list" FORCE)
         endif()
     endif()
 endmacro()
 
 # Function to propagate includes recursively with cycle detection
-# Uses global cache for cycle detection to handle recursive calls correctly
+# Uses global property for cycle detection (much faster than CACHE)
 function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
-    # Check if already visited using global cache
-    set(CACHE_KEY "_DAP_POST_VISITED_${VISITED_SET_ID}_${TARGET_NAME}")
-    get_property(IS_VISITED_VALUE CACHE ${CACHE_KEY} PROPERTY VALUE)
+    # Check if already visited using global property (faster than CACHE)
+    set(PROPERTY_KEY "_DAP_POST_VISITED_${VISITED_SET_ID}_${TARGET_NAME}")
+    get_property(IS_VISITED_VALUE GLOBAL PROPERTY ${PROPERTY_KEY})
     if(IS_VISITED_VALUE STREQUAL "VISITED")
         # Cycle detected - stop processing this branch immediately
-        # Already added includes up to this point will be used
-        # Further includes should be specified directly by the modules
         return()
     endif()
     
-    # Mark as visited in global cache
-    set(${CACHE_KEY} "VISITED" CACHE INTERNAL "Cycle detection marker for post-processing")
+    # Mark as visited in global property (faster than CACHE)
+    set_property(GLOBAL PROPERTY ${PROPERTY_KEY} "VISITED")
+    
+    # Collect all includes first, then apply once (more efficient)
+    set(COLLECTED_INTERFACE_INCLUDES "")
+    set(COLLECTED_INCLUDES "")
     
     # Get dependencies
     get_target_property(DEPS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
@@ -51,24 +55,33 @@ function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
         foreach(DEP ${DEPS})
             if(TARGET ${DEP})
                 # Recursively process dependency's dependencies FIRST
-                # This ensures transitive dependencies are processed before adding includes
                 propagate_includes_recursive(${DEP} ${VISITED_SET_ID})
                 
                 # Get include directories from dependency
                 get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
                 get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
                 
-                # Add includes to the current target
-                # All transitive includes will be collected recursively
-                if(DEP_INTERFACE_INCLUDES)
-                    target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INTERFACE_INCLUDES})
+                # Collect includes (avoid duplicates)
+                if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES STREQUAL "DEP_INTERFACE_INCLUDES-NOTFOUND")
+                    list(APPEND COLLECTED_INTERFACE_INCLUDES ${DEP_INTERFACE_INCLUDES})
                 endif()
                 
-                if(DEP_INCLUDES)
-                    target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INCLUDES})
+                if(DEP_INCLUDES AND NOT DEP_INCLUDES STREQUAL "DEP_INCLUDES-NOTFOUND")
+                    list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES})
                 endif()
             endif()
         endforeach()
+    endif()
+    
+    # Apply collected includes once (more efficient than multiple calls)
+    if(COLLECTED_INTERFACE_INCLUDES)
+        list(REMOVE_DUPLICATES COLLECTED_INTERFACE_INCLUDES)
+        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INTERFACE_INCLUDES})
+    endif()
+    
+    if(COLLECTED_INCLUDES)
+        list(REMOVE_DUPLICATES COLLECTED_INCLUDES)
+        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INCLUDES})
     endif()
 endfunction()
 
@@ -88,12 +101,12 @@ function(post_process_object_libraries)
             math(EXPR VISITED_SET_COUNTER "${VISITED_SET_COUNTER} + 1")
             set(VISITED_SET_ID "${VISITED_SET_COUNTER}")
             
-            # Process includes with global cache-based cycle detection
+            # Process includes with global property-based cycle detection
             propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
             
-            # Note: Cache cleanup removed for performance
-            # Cache variables with unique VISITED_SET_ID won't conflict between traversals
-            # and get_cmake_property(CACHE_VARIABLES) is too slow with many cache variables
+            # Note: Property cleanup not needed - GLOBAL properties are faster than CACHE
+            # Properties with unique VISITED_SET_ID won't conflict between traversals
+            # and GLOBAL properties don't have the performance penalty of CACHE variables
             
             math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
             # Show progress for first 10, last, or every 10th library

@@ -1,10 +1,10 @@
 @include "core/variable_functions.awk"
 @include "variable_functions.awk"
 BEGIN {
-    # Test 1: Basic normalization (default * -> _PTR)
+    # Test 1: Basic normalization (default * -> _STAR)
     result = process_normalize_name("dap_list_t*", "")
-    if (result != "dap_list_t_PTR") {
-        print "FAIL: Test 1 - Expected 'dap_list_t_PTR', got '" result "'"
+    if (result != "dap_list_t_STAR") {
+        print "FAIL: Test 1 - Expected 'dap_list_t_STAR', got '" result "'"
         exit 1
     }
     
@@ -31,8 +31,8 @@ BEGIN {
     
     # Test 5: Multiple asterisks
     result = process_normalize_name("type**", "")
-    if (result != "type_PTR_PTR") {
-        print "FAIL: Test 5 - Expected 'type_PTR_PTR', got '" result "'"
+    if (result != "type_STAR_STAR") {
+        print "FAIL: Test 5 - Expected 'type_STAR_STAR', got '" result "'"
         exit 1
     }
     

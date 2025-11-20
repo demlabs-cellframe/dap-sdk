@@ -7,7 +7,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibraryHelpers.cmake)
 file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c dap_global_db_legacy.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_link_manager dap_json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_link_manager dap_json-c dap_enc_server)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})

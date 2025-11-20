@@ -49,14 +49,24 @@ EOF
 }
 
 # Generate macros header file
+# Usage: generate_macros_file <macros_file> [custom_mocks_file]
 generate_macros_file() {
     local macros_file="$1"
+    local custom_mocks_file="${2:-${TMP_CUSTOM_MOCKS}}"
     local return_type_macros_file="${macros_file}.return_types"
     local simple_wrapper_macros_file="${macros_file}.simple_wrappers"
+    local function_wrappers_file="${macros_file}.function_wrappers"
     
     # Generate return type macros using types module
     source "${LIB_DIR}/dap_mock_types.sh"
     generate_return_type_macros "$return_type_macros_file"
+    
+    # Generate function-specific wrapper macros (if custom_mocks_file is available)
+    if [ -n "$custom_mocks_file" ] && [ -f "$custom_mocks_file" ]; then
+        generate_function_wrappers "$function_wrappers_file" "$custom_mocks_file"
+    else
+        > "$function_wrappers_file"
+    fi
     
     # Generate simple wrapper macros (if needed)
     > "$simple_wrapper_macros_file"
@@ -97,6 +107,7 @@ generate_macros_file() {
     # Export file paths for template processing
     export RETURN_TYPE_MACROS_FILE="$return_type_macros_file"
     export SIMPLE_WRAPPER_MACROS_FILE="$simple_wrapper_macros_file"
+    export FUNCTION_WRAPPERS_FILE="$function_wrappers_file"
     export MAP_MACROS_CONTENT_FILE="${macros_file}.map_content"
     
     # Verify files exist before template processing
@@ -124,7 +135,8 @@ generate_macros_file() {
             "MAP_MACROS_DATA=$MAP_MACROS_DATA" \
             "MAP_MACROS_CONTENT_FILE=${MAP_MACROS_CONTENT_FILE}" \
             "RETURN_TYPE_MACROS_FILE=" \
-            "SIMPLE_WRAPPER_MACROS_FILE=$saved_simple_wrapper_macros_file"
+            "SIMPLE_WRAPPER_MACROS_FILE=$saved_simple_wrapper_macros_file" \
+            "FUNCTION_WRAPPERS_FILE=$function_wrappers_file"
         
         # Append return type macros directly
         cat "$saved_return_type_macros_file" >> "$macros_file"
@@ -148,7 +160,8 @@ generate_macros_file() {
             "MAP_MACROS_DATA=$MAP_MACROS_DATA" \
             "MAP_MACROS_CONTENT_FILE=${MAP_MACROS_CONTENT_FILE}" \
             "RETURN_TYPE_MACROS_FILE=$return_type_macros_file" \
-            "SIMPLE_WRAPPER_MACROS_FILE=$simple_wrapper_macros_file"
+            "SIMPLE_WRAPPER_MACROS_FILE=$simple_wrapper_macros_file" \
+            "FUNCTION_WRAPPERS_FILE=$function_wrappers_file"
     fi
     
     # Clean up temporary files AFTER template processing is complete
@@ -163,6 +176,28 @@ generate_macros_file() {
         local return_types_count=$(echo "$RETURN_TYPES" | wc -w)
         print_success "Generated specialized macros for $return_types_count return type(s): $RETURN_TYPES"
     fi
+}
+
+# Generate dap_mock_linker_wrapper.h from template
+generate_linker_wrapper_header() {
+    local linker_wrapper_file="$1"
+    
+    # Prepare ORIGINAL_TYPES_DATA as string for template (normalized|original pairs)
+    local ORIGINAL_TYPES_DATA=""
+    if [ -n "$RETURN_TYPES_PAIRS" ]; then
+        ORIGINAL_TYPES_DATA="$RETURN_TYPES_PAIRS"
+        # Debug: verify ORIGINAL_TYPES_DATA contains expected types
+        [ "$VERBOSE" = "1" ] && echo "DEBUG generate_linker_wrapper_header: RETURN_TYPES_PAIRS=[$RETURN_TYPES_PAIRS]" >&2
+        [ "$VERBOSE" = "1" ] && echo "DEBUG generate_linker_wrapper_header: ORIGINAL_TYPES_DATA=[$ORIGINAL_TYPES_DATA]" >&2
+    fi
+    
+    # Generate linker wrapper header from template
+    # The template contains only base macros - dispatcher macros are generated separately
+    replace_template_placeholders_with_mocking \
+        "${TEMPLATES_DIR}/dap_mock_linker_wrapper.h.tpl" \
+        "$linker_wrapper_file"
+    
+    print_success "Generated linker wrapper header"
 }
 
 # Generate wrapper template file
@@ -412,4 +447,174 @@ generate_custom_mock_headers() {
     fi
     
     print_success "Generated main custom mocks include: $main_custom_mocks_file"
+}
+
+# Prepare MAP_IMPL_COND_1_DATA for template generation
+# Format: arg_count|param_count|has_count|fallback_count|macro_params
+# macro_params should NOT include "macro" - it's already in the macro parameter list
+prepare_map_impl_cond_1_data() {
+    local max_args_count="$1"
+    shift
+    local param_counts_array=("$@")
+    
+    [ -z "$max_args_count" ] && max_args_count=0
+    [ "$max_args_count" -lt 0 ] && max_args_count=0
+    
+    declare -A HAS_PARAM_COUNT
+    for count in "${param_counts_array[@]}"; do
+        [ -z "$count" ] && continue
+        HAS_PARAM_COUNT["$count"]=1
+    done
+    
+    MAP_IMPL_COND_1_DATA=""
+    for arg_count in $(seq 1 "$max_args_count"); do
+        param_count=$((arg_count / 2))
+        
+        # Build macro_params starting with p1 (NOT macro - macro is already in parameter list)
+        macro_params="p1"
+        for j in $(seq 2 "$arg_count"); do
+            macro_params="${macro_params}, p${j}"
+        done
+        
+        has_count=0
+        if [ "${HAS_PARAM_COUNT[$param_count]:-0}" = "1" ] || [ "$param_count" -eq 0 ]; then
+            has_count=1
+            fallback_count="$param_count"
+        else
+            fallback_count=0
+            for count in "${param_counts_array[@]}"; do
+                [ -z "$count" ] && continue
+                if [ "$count" -le "$param_count" ] && [ "$count" -gt "$fallback_count" ]; then
+                    fallback_count="$count"
+                fi
+            done
+        fi
+        
+        if [ -n "$MAP_IMPL_COND_1_DATA" ]; then
+            MAP_IMPL_COND_1_DATA="${MAP_IMPL_COND_1_DATA}"$'\n'"${arg_count}|${param_count}|${has_count}|${fallback_count}|${macro_params}"
+        else
+            MAP_IMPL_COND_1_DATA="${arg_count}|${param_count}|${has_count}|${fallback_count}|${macro_params}"
+        fi
+    done
+}
+
+# Prepare MAP_IMPL_COND_DATA for template generation
+prepare_map_impl_cond_data() {
+    local param_counts_array=("$@")
+    MAP_IMPL_COND_DATA=""
+    for count in "${param_counts_array[@]}"; do
+        [ -z "$count" ] && continue
+        if [ -n "$MAP_IMPL_COND_DATA" ]; then
+            MAP_IMPL_COND_DATA="${MAP_IMPL_COND_DATA}"$'\n'"${count}"
+        else
+            MAP_IMPL_COND_DATA="${count}"
+        fi
+    done
+}
+
+# Prepare MAP_MACROS_DATA for template generation
+prepare_map_macros_data() {
+    local param_counts_array=("$@")
+    local counts_input=""
+    for count in "${param_counts_array[@]}"; do
+        [ -z "$count" ] && continue
+        if [ -n "$counts_input" ]; then
+            counts_input="${counts_input}"$'\n'"${count}"
+        else
+            counts_input="${count}"
+        fi
+    done
+    
+    # Generate macros using AWK script
+    local macros_content
+    macros_content=$(echo "$counts_input" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk")
+    
+    # Format for template (pipe separated: count|macro)
+    # Since the macro content is multi-line, we need to be careful
+    # But mock_macros_header.h.tpl expects: count|macro
+    # And it iterates over MAP_MACROS_DATA|newline_double
+    # So we need to construct MAP_MACROS_DATA where each entry is separated by \n\n
+    
+    MAP_MACROS_DATA=""
+    for count in "${param_counts_array[@]}"; do
+        [ -z "$count" ] && continue
+        local macro_def=$(echo "$count" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk")
+        if [ -n "$MAP_MACROS_DATA" ]; then
+            MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n\n'"${count}|${macro_def}"
+        else
+            MAP_MACROS_DATA="${count}|${macro_def}"
+        fi
+    done
+}
+
+# Prepare NARGS data for template generation
+# Generates data for _DAP_MOCK_NARGS macro generation
+# Usage: prepare_nargs_data MAX_ARGS_COUNT
+# Output: Sets NARGS_SEQUENCE and NARGS_IMPL_PARAMS variables
+# Always generates full implementation (never simplified version)
+prepare_nargs_data() {
+    local max_args_count="$1"
+    [ -z "$max_args_count" ] && max_args_count=0
+    [ "$max_args_count" -lt 0 ] && max_args_count=0
+    
+    # Always ensure minimum of 2 args for full implementation
+    # This ensures we always have a proper _DAP_MOCK_NARGS_IMPL definition
+    # Minimum needed: _1, _2 for proper macro expansion
+    local effective_max_args=$max_args_count
+    [ "$effective_max_args" -lt 2 ] && effective_max_args=2
+    
+    # Prepare NARGS_SEQUENCE (always includes at least 2, 1, 0)
+    NARGS_SEQUENCE=""
+    for i in $(seq $effective_max_args -1 0); do
+        if [ -n "$NARGS_SEQUENCE" ]; then
+            NARGS_SEQUENCE="${NARGS_SEQUENCE}, $i"
+        else
+            NARGS_SEQUENCE=", $i"
+        fi
+    done
+    
+    # Prepare NARGS_IMPL_PARAMS (always includes at least _1, _2)
+    # Format: single line with comma-separated parameters: _1, _2, _3, ...
+    NARGS_IMPL_PARAMS=""
+    for i in $(seq 1 $effective_max_args); do
+        if [ -n "$NARGS_IMPL_PARAMS" ]; then
+            NARGS_IMPL_PARAMS="${NARGS_IMPL_PARAMS}, _$i"
+        else
+            NARGS_IMPL_PARAMS="_$i"
+        fi
+    done
+}
+
+# Prepare MAP_COUNT_PARAMS_BY_COUNT_DATA for template generation
+prepare_map_count_params_by_count_data() {
+    local max_args_count="$1"
+    [ -z "$max_args_count" ] && max_args_count=2
+    [ "$max_args_count" -lt 2 ] && max_args_count=2
+    
+    MAP_COUNT_PARAMS_BY_COUNT_DATA=""
+    for arg_count in $(seq 0 "$max_args_count"); do
+        if [ -n "$MAP_COUNT_PARAMS_BY_COUNT_DATA" ]; then
+            MAP_COUNT_PARAMS_BY_COUNT_DATA="${MAP_COUNT_PARAMS_BY_COUNT_DATA}"$'\n'"${arg_count}"
+        else
+            MAP_COUNT_PARAMS_BY_COUNT_DATA="${arg_count}"
+        fi
+    done
+}
+
+# Prepare MAP_COUNT_PARAMS_HELPER_DATA for template generation
+# Format: arg_count|param_count
+prepare_map_count_params_helper_data() {
+    local max_args_count="$1"
+    [ -z "$max_args_count" ] && max_args_count=2
+    [ "$max_args_count" -lt 2 ] && max_args_count=2
+    
+    MAP_COUNT_PARAMS_HELPER_DATA=""
+    for arg_count in $(seq 0 "$max_args_count"); do
+        param_count=$((arg_count / 2))
+        if [ -n "$MAP_COUNT_PARAMS_HELPER_DATA" ]; then
+            MAP_COUNT_PARAMS_HELPER_DATA="${MAP_COUNT_PARAMS_HELPER_DATA}"$'\n'"${arg_count}|${param_count}"
+        else
+            MAP_COUNT_PARAMS_HELPER_DATA="${arg_count}|${param_count}"
+        fi
+    done
 }

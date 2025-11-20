@@ -32,7 +32,8 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_IO_SOURCES} HEA
 # Link dependencies as INTERFACE
 # XKCP include directories are automatically propagated from dap_crypto via INTERFACE_INCLUDE_DIRECTORIES
 # Use dap_link_libraries for automatic include propagation with cycle detection
-dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto)
+# dap_core_unix is needed for dap_cpu_monitor.h header (used in dap_server.h)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_core_unix dap_crypto)
 
 if(DAPSDK_MODULES MATCHES "ssl-support")
   target_link_libraries(${PROJECT_NAME} INTERFACE wolfssl)

@@ -23,6 +23,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     dap_stream_ch
     dap_session
     dap_http_server
+    dap_http_client
     dap_http_common
     dap_enc_server
     dap_link_manager

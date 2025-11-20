@@ -32,6 +32,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/http/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/udp/include
 )
+# Explicitly add stream_ch include directory (not propagated through dap_link_libraries)
+# All other include directories should be propagated automatically via dap_link_libraries
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ch/include
+)
 # All dependency include directories are automatically propagated via dap_link_libraries
 
 if(INSTALL_DAP_SDK)

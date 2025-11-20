@@ -8,9 +8,9 @@ BEGIN {
     TYPE_NORMALIZATION_TABLE["_Bool"] = "bool"
 }
 
-# Function to normalize type name (replace * with _PTR, remove invalid chars)
+# Function to normalize type name (replace * with _STAR, remove invalid chars)
 function normalize_type(type) {
-    gsub(/\*/, "_PTR", type)
+    gsub(/\*/, "_STAR", type)
     gsub(/[^a-zA-Z0-9_]/, "_", type)
     return type
 }

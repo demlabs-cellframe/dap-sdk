@@ -39,8 +39,18 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/in
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../stream/stream/include)
 # Add enc_server include directory
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../server/enc_server/include)
+# Add http_server include directory for dap_http_server.h
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../server/http_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../server/http_server/http_client/include
+)
 # Add net_transport_server include directory
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+# Add net_server_common include directory for dap_net_server_common.h
+get_filename_component(DAP_SDK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../ ABSOLUTE)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${DAP_SDK_ROOT}/net/common/server/include  # For dap_net_server_common.h
+)
 
 # Find OpenSSL for SHA-1
 find_package(OpenSSL REQUIRED)

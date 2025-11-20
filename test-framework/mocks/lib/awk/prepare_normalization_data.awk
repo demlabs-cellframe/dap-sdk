@@ -7,16 +7,16 @@ BEGIN {
     FS = "|"
 }
 
-# Function to escape type name (replace * with _PTR, remove invalid chars)
+# Function to escape type name (replace * with _STAR, remove invalid chars)
 function escape_type(type) {
-    gsub(/\*/, "_PTR", type)
+    gsub(/\*/, "_STAR", type)
     gsub(/[^a-zA-Z0-9_]/, "_", type)
     return type
 }
 
-# Function to normalize type name (replace * with _PTR, remove invalid chars)
+# Function to normalize type name (replace * with _STAR, remove invalid chars)
 function normalize_type(type) {
-    gsub(/\*/, "_PTR", type)
+    gsub(/\*/, "_STAR", type)
     gsub(/[^a-zA-Z0-9_]/, "_", type)
     return type
 }
@@ -24,7 +24,7 @@ function normalize_type(type) {
 # Function to get escaped macro key for escape (remove trailing spaces before escaping)
 function escape_macro_key_for_escape(type) {
     gsub(/[ \t]+$/, "", type)
-    gsub(/\*/, "_PTR", type)
+    gsub(/\*/, "_STAR", type)
     gsub(/[^a-zA-Z0-9_]/, "_", type)
     return type
 }

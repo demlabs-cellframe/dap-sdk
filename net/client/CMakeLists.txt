@@ -26,19 +26,13 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE .)
-# All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
-# Tests moved to ../../tests/unit/net/client/
-# if (${BUILD_DAP_TESTS} MATCHES ON)
-#     enable_testing()
-#     add_subdirectory(test)
-# endif()
 
 if(INSTALL_DAP_SDK)
-set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLIENT_HEADERS}")
-INSTALL(TARGETS ${PROJECT_NAME} 
-        LIBRARY DESTINATION lib/dap/net/client/
-        ARCHIVE DESTINATION lib/dap/net/client/
-        PUBLIC_HEADER DESTINATION include/dap/net/client/
-)
+    set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLIENT_HEADERS}")
+    INSTALL(TARGETS ${PROJECT_NAME} 
+            LIBRARY DESTINATION lib/dap/net/client/
+            ARCHIVE DESTINATION lib/dap/net/client/
+            PUBLIC_HEADER DESTINATION include/dap/net/client/
+    )
 endif()

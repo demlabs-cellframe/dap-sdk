@@ -59,6 +59,7 @@ WRAP_FILE="$OUTPUT_DIR/${BASENAME}_wrap.txt"
 CMAKE_FILE="$OUTPUT_DIR/${BASENAME}_mocks.cmake"
 TEMPLATE_FILE="$OUTPUT_DIR/${BASENAME}_wrappers_template.c"
 MACROS_FILE="$OUTPUT_DIR/${BASENAME}_mock_macros.h"
+LINKER_WRAPPER_FILE="$OUTPUT_DIR/dap_mock_linker_wrapper.h"
 
 # Check if verbose output is enabled (default: disabled for performance)
 VERBOSE="${DAP_MOCK_VERBOSE:-0}"
@@ -171,8 +172,15 @@ prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}" || {
 }
 
 # Step 7: Generate specialized macros header file
-generate_macros_file "$MACROS_FILE" || {
+generate_macros_file "$MACROS_FILE" "$TMP_CUSTOM_MOCKS" || {
     print_error "Failed to generate macros file"
+    exit 1
+}
+
+# Generate linker wrapper header from template
+[ "$VERBOSE" = "1" ] && print_info "Generating linker wrapper header: $LINKER_WRAPPER_FILE"
+generate_linker_wrapper_header "$LINKER_WRAPPER_FILE" || {
+    print_error "Failed to generate linker wrapper header"
     exit 1
 }
 

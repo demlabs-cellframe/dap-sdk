@@ -46,6 +46,7 @@
 #ifdef DAP_OS_WINDOWS
 #include <windows.h>
 #include <io.h>
+#include <time.h>
 #define realpath(abs_path, rel_path) _fullpath((rel_path), (abs_path), PATH_MAX)
 #endif
 
@@ -154,6 +155,86 @@ bool dap_dir_test(const char * a_dir_path)
     }
 #endif
     return false;
+}
+
+/**
+ * Convert Windows FILETIME to Unix time_t
+ */
+#ifdef DAP_OS_WINDOWS
+static time_t dap_filetime_to_unixtime(FILETIME ft)
+{
+    ULARGE_INTEGER ull;
+    ull.LowPart = ft.dwLowDateTime;
+    ull.HighPart = ft.dwHighDateTime;
+    return ull.QuadPart / 10000000ULL - 11644473600ULL;
+}
+#endif
+
+/**
+ * Get file information (size, modification time)
+ *
+ * @a_file_path file pathname
+ * @a_stat pointer to structure to fill with file information
+ * @return 0 on success, -1 on error
+ */
+int dap_file_stat(const char *a_file_path, dap_file_stat_t *a_stat)
+{
+    if(!a_file_path || !a_stat)
+        return -1;
+
+    memset(a_stat, 0, sizeof(dap_file_stat_t));
+
+#ifdef DAP_OS_WINDOWS
+    FILETIME CreationTime, LastAccessTime, LastWriteTime;
+    HANDLE fileh = CreateFileA(a_file_path,
+                               GENERIC_READ,
+                               FILE_SHARE_READ,
+                               NULL,
+                               OPEN_EXISTING,
+                               FILE_ATTRIBUTE_ARCHIVE,
+                               NULL);
+
+    if(fileh == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    if(!GetFileTime(fileh, &CreationTime, &LastAccessTime, &LastWriteTime)) {
+        CloseHandle(fileh);
+        return -1;
+    }
+
+    a_stat->mtime = dap_filetime_to_unixtime(LastWriteTime);
+    
+    // Get file size - use GetFileSizeEx for large files support
+    LARGE_INTEGER file_size;
+    if(GetFileSizeEx(fileh, &file_size)) {
+        a_stat->size = (off_t)file_size.QuadPart;
+    } else {
+        // Fallback to GetFileSize for compatibility
+        DWORD size_low = GetFileSize(fileh, NULL);
+        a_stat->size = (off_t)size_low;
+    }
+    
+    DWORD attr = GetFileAttributesA(a_file_path);
+    if(attr != INVALID_FILE_ATTRIBUTES) {
+        a_stat->is_file = (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+        a_stat->is_dir = (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    CloseHandle(fileh);
+#else
+    struct stat st;
+    if(stat(a_file_path, &st) != 0) {
+        return -1;
+    }
+
+    a_stat->mtime = st.st_mtime;
+    a_stat->size = st.st_size;
+    a_stat->is_file = S_ISREG(st.st_mode);
+    a_stat->is_dir = S_ISDIR(st.st_mode);
+#endif
+
+    return 0;
 }
 
 

@@ -1,10 +1,10 @@
 @include "core/variable_functions.awk"
 @include "variable_functions.awk"
 BEGIN {
-    # Test 1: Basic escape (default * -> _PTR)
+    # Test 1: Basic escape (default * -> _STAR)
     result = process_escape_name("dap_list_t*", "")
-    if (result != "dap_list_t_PTR") {
-        print "FAIL: Test 1 - Expected 'dap_list_t_PTR', got '" result "'"
+    if (result != "dap_list_t_STAR") {
+        print "FAIL: Test 1 - Expected 'dap_list_t_STAR', got '" result "'"
         exit 1
     }
     

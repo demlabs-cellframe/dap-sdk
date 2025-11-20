@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mock framework test: Test return_type_macros.h.tpl using pure dap_tpl constructs
+# Mock framework test: Test dispatcher_macros.h.tpl using pure dap_tpl constructs
 # This test verifies that the mock template works correctly with dap_tpl features
 
 set -e
@@ -11,8 +11,8 @@ MOCKS_DIR="${TEST_FRAMEWORK_DIR}/mocks"
 DAP_TPL_DIR="${TEST_FRAMEWORK_DIR}/dap_tpl"
 TEMPLATES_DIR="${TEST_FRAMEWORK_DIR}/templates"
 
-TEST_TEMPLATE="${TEMPLATES_DIR}/return_type_macros.h.tpl"
-TEST_OUTPUT="/tmp/test_return_type_macros_output.h"
+TEST_TEMPLATE="${TEMPLATES_DIR}/dispatcher_macros.h.tpl"
+TEST_OUTPUT="/tmp/test_dispatcher_macros_output.h"
 
 # Load dap_tpl functions
 cd "${DAP_TPL_DIR}"
@@ -31,33 +31,32 @@ fi
 echo "Using engine: $ENGINE_PATH"
 echo ""
 
-# Test 1: Simple RETURN_TYPES with void and int
+# Test 1: Simple ORIGINAL_TYPES_DATA with void and int
 echo "=========================================="
-echo "TEST 1: RETURN_TYPES=void int"
+echo "TEST 1: ORIGINAL_TYPES_DATA=void int"
 echo "=========================================="
-export RETURN_TYPES="void int"
-export ORIGINAL_TYPES_DATA=""
-export BASIC_TYPES_RAW_DATA=""
+export ORIGINAL_TYPES_DATA="void|void
+int|int"
 
 gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
 # Check that void macro is generated
-if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_SELECT_void" "${TEST_OUTPUT}"; then
+if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_void" "${TEST_OUTPUT}"; then
     echo "FAIL: void macro not generated"
     cat "${TEST_OUTPUT}"
     exit 1
 fi
 
 # Check that int macro is generated
-if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_SELECT_int" "${TEST_OUTPUT}"; then
+if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_int" "${TEST_OUTPUT}"; then
     echo "FAIL: int macro not generated"
     cat "${TEST_OUTPUT}"
     exit 1
 fi
 
-# Check that void macro calls VOID version
-if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_VOID" "${TEST_OUTPUT}"; then
-    echo "FAIL: void macro does not call VOID version"
+# Check that void macro calls VOID_HELPER
+if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_void_VOID_HELPER" "${TEST_OUTPUT}"; then
+    echo "FAIL: void macro does not call VOID_HELPER"
     cat "${TEST_OUTPUT}"
     exit 1
 fi
@@ -69,85 +68,47 @@ if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_NONVOID" "${TEST_OUTPUT}"; then
     exit 1
 fi
 
-echo "PASS: Basic RETURN_TYPES processing works"
+echo "PASS: Basic ORIGINAL_TYPES_DATA processing works"
 echo ""
 
-# Test 2: With ORIGINAL_TYPES_DATA
+# Test 2: Types with pointers (normalization)
 echo "=========================================="
-echo "TEST 2: RETURN_TYPES with ORIGINAL_TYPES_DATA"
+echo "TEST 2: Types with pointers (normalization)"
 echo "=========================================="
-export RETURN_TYPES="int char"
-export ORIGINAL_TYPES_DATA="int|int
-char|char"
-export BASIC_TYPES_RAW_DATA=""
+export ORIGINAL_TYPES_DATA="dap_list_t_STAR|dap_list_t*
+int|int"
 
 gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
-# Check that normalization macros are generated
-if ! grep -q "_DAP_MOCK_NORMALIZE_TYPE_int" "${TEST_OUTPUT}"; then
-    echo "FAIL: Normalization macro for int not generated"
+# Check that normalized macro is generated
+if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_dap_list_t_STAR" "${TEST_OUTPUT}"; then
+    echo "FAIL: Normalized macro for dap_list_t_STAR not generated"
     cat "${TEST_OUTPUT}"
     exit 1
 fi
 
-if ! grep -q "_DAP_MOCK_NORMALIZE_TYPE_char" "${TEST_OUTPUT}"; then
-    echo "FAIL: Normalization macro for char not generated"
-    cat "${TEST_OUTPUT}"
-    exit 1
-fi
-
-echo "PASS: ORIGINAL_TYPES_DATA processing works"
+echo "PASS: Normalization works"
 echo ""
 
-# Test 3: With BASIC_TYPES_RAW_DATA
+# Test 3: Without ORIGINAL_TYPES_DATA (should skip entire block)
 echo "=========================================="
-echo "TEST 3: RETURN_TYPES with BASIC_TYPES_RAW_DATA"
+echo "TEST 3: ORIGINAL_TYPES_DATA unset (should skip)"
 echo "=========================================="
-export RETURN_TYPES="void"
-export ORIGINAL_TYPES_DATA=""
-export BASIC_TYPES_RAW_DATA="int|int
-char|char"
-
-gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
-
-# Check that basic type macros are generated
-if ! grep -q "_DAP_MOCK_NORMALIZE_TYPE_int" "${TEST_OUTPUT}"; then
-    echo "FAIL: Basic type macro for int not generated"
-    cat "${TEST_OUTPUT}"
-    exit 1
-fi
-
-if ! grep -q "_DAP_MOCK_TYPE_TO_SELECT_NAME_int" "${TEST_OUTPUT}"; then
-    echo "FAIL: Type-to-selector macro for int not generated"
-    cat "${TEST_OUTPUT}"
-    exit 1
-fi
-
-echo "PASS: BASIC_TYPES_RAW_DATA processing works"
-echo ""
-
-# Test 4: Without RETURN_TYPES (should skip entire block)
-echo "=========================================="
-echo "TEST 4: RETURN_TYPES unset (should skip)"
-echo "=========================================="
-unset RETURN_TYPES
 unset ORIGINAL_TYPES_DATA
-unset BASIC_TYPES_RAW_DATA
 
 gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
-# Check that no macros are generated
-if grep -q "#define _DAP_MOCK" "${TEST_OUTPUT}"; then
-    echo "FAIL: Macros generated when RETURN_TYPES is unset"
+# Check that no macros are generated (file should be mostly empty comments)
+if grep -q "#define _DAP_MOCK_WRAPPER_CUSTOM_DISPATCH" "${TEST_OUTPUT}"; then
+    echo "FAIL: Macros generated when ORIGINAL_TYPES_DATA is unset"
     cat "${TEST_OUTPUT}"
     exit 1
 fi
 
-echo "PASS: Template correctly skips when RETURN_TYPES unset"
+echo "PASS: Template correctly skips when ORIGINAL_TYPES_DATA unset"
 echo ""
 
 rm -f "${TEST_OUTPUT}"
 echo "=========================================="
 echo "ALL TESTS PASSED"
 echo "=========================================="
-

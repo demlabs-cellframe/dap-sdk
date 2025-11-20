@@ -13,10 +13,11 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_LINK_MANAGER_SO
 
 # Link dependencies as INTERFACE
 # Use dap_link_libraries for automatic include propagation with cycle detection
+# dap_client is needed for dap_client.h header (used in dap_link_manager.h)
 if(DAPSDK_MODULES MATCHES "ssl-support")
-    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_json-c wolfssl)
+    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_client dap_json-c wolfssl)
 else()
-    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_json-c)
+    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_http_server dap_enc_server dap_stream dap_session dap_stream_ch dap_client dap_json-c)
 endif()
 # rt is a system library, will be linked at final stage
 if(UNIX AND NOT ANDROID AND NOT DARWIN)
@@ -26,6 +27,13 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE .)
+# Explicitly add dap_client include directory for dap_client.h
+# This is needed because dap_link_libraries may not propagate includes correctly in all cases
+# Use absolute paths resolved from source directory to ensure they work from build directory
+get_filename_component(DAP_SDK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../ ABSOLUTE)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${DAP_SDK_ROOT}/net/client/include
+)
 # All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
 if(INSTALL_DAP_SDK)

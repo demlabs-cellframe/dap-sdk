@@ -25,10 +25,10 @@ function process_c_escape(base_value, func_arg,    result, i, char) {
 }
 
 # Process normalize_name function: normalizes C identifier name (replaces special chars, removes invalid chars)
-# func_arg can specify replacement for *: "*|_PTR" or just "" (default: * -> _PTR)
+# func_arg can specify replacement for *: "*|_STAR" or just "" (default: * -> _STAR)
 function process_normalize_name(base_value, func_arg,    result, replacement, parts, n) {
     result = base_value
-    replacement = "_PTR"
+    replacement = "_STAR"
     if (func_arg != "") {
         if (index(func_arg, "|") > 0) {
             n = split(func_arg, parts, "|")
@@ -44,10 +44,10 @@ function process_normalize_name(base_value, func_arg,    result, replacement, pa
 }
 
 # Process escape_name function: escapes C identifier name (replaces special chars, removes invalid chars)
-# func_arg can specify replacement for *: "*|_PTR" or just "" (default: * -> _PTR)
+# func_arg can specify replacement for *: "*|_STAR" or just "" (default: * -> _STAR)
 function process_escape_name(base_value, func_arg,    result, replacement, parts, n) {
     result = base_value
-    replacement = "_PTR"
+    replacement = "_STAR"
     if (func_arg != "") {
         if (index(func_arg, "|") > 0) {
             n = split(func_arg, parts, "|")

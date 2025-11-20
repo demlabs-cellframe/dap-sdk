@@ -5,8 +5,10 @@
  * This file contains only the macros needed for this specific test target.
  * Do not modify manually - it will be regenerated.
  * 
- * This file is included via CMake's -include flag before dap_mock_linker_wrapper.h
+ * This file is included via CMake's -include flag before dap_mock.h
  * No include guards needed - file is included unconditionally via -include
+ * 
+ * Note: dap_mock_linker_wrapper.h is included via #include in dap_mock.h
  */
 
 // Include standard headers for size_t and other basic types
@@ -44,6 +46,10 @@
 
 {{#if SIMPLE_WRAPPER_MACROS_FILE}}
 {{#include SIMPLE_WRAPPER_MACROS_FILE}}
+{{/if}}
+
+{{#if FUNCTION_WRAPPERS_FILE}}
+{{#include FUNCTION_WRAPPERS_FILE}}
 {{/if}}
 
 {{#if MAP_MACROS_CONTENT_FILE}}

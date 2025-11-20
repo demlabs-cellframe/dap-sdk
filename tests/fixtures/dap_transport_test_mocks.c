@@ -97,7 +97,7 @@ DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_events_init, (uint32_t a_threads_count, si
 DAP_MOCK_WRAPPER_PASSTHROUGH(int32_t, dap_events_start, (), ());
 
 // Wrapper for dap_server_new
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_server_t*, dap_server_new,
+DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
     PARAM(const char*, a_cfg_section),
     PARAM(dap_events_socket_callbacks_t*, a_server_callbacks),
     PARAM(dap_events_socket_callbacks_t*, a_client_callbacks)
@@ -116,7 +116,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_server_t*, dap_server_new,
 }
 
 // Wrapper for dap_http_server_new
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(dap_server_t*, dap_http_server_new,
+DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_http_server_new,
     PARAM(const char*, a_cfg_section),
     PARAM(const char*, a_server_name)
 )
@@ -268,7 +268,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(ssize_t, dap_http_client_write,
 }
 
 // Wrapper for dap_http_init
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_http_init)
+_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_http_init, void)
 {
     // Return mock value if set, otherwise return 0 (success)
     if (g_mock_dap_http_init && g_mock_dap_http_init->return_value.i != 0) {
@@ -281,7 +281,7 @@ _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, dap_http_init)
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_deinit, (), ());
 
 // Wrapper for enc_http_init
-_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, enc_http_init)
+_DAP_MOCK_WRAPPER_CUSTOM_NONVOID(int, enc_http_init, void)
 {
     // Return mock value if set, otherwise return 0 (success)
     if (g_mock_enc_http_init && g_mock_enc_http_init->return_value.i != 0) {

@@ -27,14 +27,6 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#endif
-
 #include <pthread.h>
 #include <utlist.h>
 #include <ctype.h>

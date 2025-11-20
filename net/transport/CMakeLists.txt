@@ -27,8 +27,12 @@ file(GLOB TRANSPORT_CORE_HDRS
 # Create OBJECT library for transport core
 create_object_library(dap_net_transport DAP_INTERNAL_MODULES ${TRANSPORT_CORE_SRCS} HEADERS ${TRANSPORT_CORE_HDRS})
 
-# Include directories
-target_include_directories(dap_net_transport INTERFACE . ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# Include directories - use absolute paths for INTERFACE to ensure proper propagation from build directory
+get_filename_component(DAP_SDK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../ ABSOLUTE)
+target_include_directories(dap_net_transport INTERFACE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 target_include_directories(dap_net_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Include transport-specific headers
 target_include_directories(dap_net_transport PRIVATE 
