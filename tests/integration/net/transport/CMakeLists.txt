@@ -69,17 +69,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 dap_mock_autowrap(${PROJECT_NAME})
 
-# Add dap_global_db as a separate library link for mocking (using PRIVATE to match dap_test_link_libraries)
-# This is needed because --wrap doesn't work for symbols from object files
-# included via target_sources. We need to link the library separately
-# and use --whole-archive to ensure symbols are available for wrapping.
-target_link_libraries(${PROJECT_NAME} PRIVATE dap_global_db)
-
-# Use dap_mock_autowrap_with_static for dap_global_db to ensure --wrap works
-# This wraps dap_global_db with --whole-archive flags
-# Note: dap_mock_autowrap_with_static now uses PRIVATE keyword to match dap_test_link_libraries
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_global_db)
-
 add_test(
     NAME ${PROJECT_NAME}
     COMMAND ${PROJECT_NAME}

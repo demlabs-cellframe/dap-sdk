@@ -2,6 +2,41 @@
 
 Reusable testing infrastructure for DAP SDK and Cellframe SDK projects.
 
+### Fully Automatic Mocking 
+
+The mocking system is now **fully automatic** - no manual configuration needed!
+
+**Before:**
+```cmake
+dap_mock_autowrap(my_test)
+dap_mock_autowrap_with_static(my_test dap_http_server dap_io dap_stream)  # Manual!
+```
+
+**Now:**
+```cmake
+dap_mock_autowrap(my_test)  # Everything automatic!
+```
+
+**What happens automatically:**
+- 🔍 Scans sources for `DAP_MOCK_DECLARE` patterns
+- 🔗 Generates `--wrap` linker flags
+- 📦 Detects all `*_static.a` libraries  
+- 🎯 Wraps them with `--whole-archive` automatically
+- ✅ Enables mocking of internal function calls
+
+**Minimal test setup (3 lines):**
+```cmake
+dap_test_link_libraries(my_test)  # Links SDK modules as STATIC libraries
+dap_test_add_includes(my_test)    # Adds all includes
+dap_mock_autowrap(my_test)        # Automatic mocking!
+```
+
+**Critical bug fix (November 2025):**
+- **Fixed:** Pointer dereference bug in `function_wrappers.h.tpl` line 62
+- **Was:** `__wrap_result = *(return_type_full*)__wrap_override;` (dereferencing pointer!)
+- **Now:** `__wrap_result = (return_type_full)__wrap_override;` (direct cast)
+- **Impact:** All pointer-returning mocks now work correctly
+
 ## Overview
 
 This framework provides common testing utilities, mock implementations, and test fixtures that can be shared across all Cellframe ecosystem projects.

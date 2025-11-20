@@ -182,6 +182,38 @@ function(dap_mock_autowrap TARGET_NAME)
         # Empty file is created only for consistency and to avoid file-not-found errors
         #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (empty wrap file - no mocks)")
     endif()
+    
+    # AUTOMATIC --whole-archive wrapping for static libraries
+    # After generating --wrap flags, automatically wrap all *_static libraries
+    # with --whole-archive to ensure --wrap works correctly
+    # This eliminates the need for manual dap_mock_autowrap_with_static() calls
+    
+    # Get list of linked libraries
+    get_target_property(LINKED_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+    if(LINKED_LIBS)
+        # Collect all *_static libraries that need wrapping
+        set(STATIC_LIBS_TO_WRAP "")
+        foreach(LIB ${LINKED_LIBS})
+            if(LIB MATCHES "_static$" AND TARGET ${LIB})
+                # This is a static library - add it to wrap list
+                list(APPEND STATIC_LIBS_TO_WRAP ${LIB})
+            endif()
+        endforeach()
+        
+        # If we found static libraries, wrap them automatically
+        if(STATIC_LIBS_TO_WRAP)
+            # Remove _static suffix to get base names for dap_mock_autowrap_with_static
+            set(BASE_LIBS "")
+            foreach(LIB ${STATIC_LIBS_TO_WRAP})
+                string(REGEX REPLACE "_static$" "" BASE_LIB "${LIB}")
+                list(APPEND BASE_LIBS ${BASE_LIB})
+            endforeach()
+            
+            # Call dap_mock_autowrap_with_static automatically
+            dap_mock_autowrap_with_static(${TARGET_NAME} ${BASE_LIBS})
+            #message(STATUS "✅ Auto-wrapped ${BASE_LIBS} with --whole-archive for ${TARGET_NAME}")
+        endif()
+    endif()
 endfunction()
 
 #
@@ -210,25 +242,121 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
     # Get current link libraries
     get_target_property(CURRENT_LIBS ${TARGET_NAME} LINK_LIBRARIES)
     
-    if(NOT CURRENT_LIBS)
+    # Also check if libraries are added via target_sources (for OBJECT libraries)
+    # This handles the case when dap_test_link_libraries uses target_sources
+    # to add object files from dap_sdk_object or individual object libraries
+    get_target_property(SOURCES ${TARGET_NAME} SOURCES)
+    set(OBJECT_LIBS_TO_WRAP "")
+    set(OBJECT_SOURCES_TO_REMOVE "")
+    if(SOURCES)
+        foreach(SOURCE ${SOURCES})
+            # Check if source is a generator expression for object files: $<TARGET_OBJECTS:lib_name>
+            if(SOURCE MATCHES "\\$<TARGET_OBJECTS:([^>]+)>")
+                set(OBJ_LIB ${CMAKE_MATCH_1})
+                # Check if this object library should be wrapped
+                # Also check if it's dap_sdk_object which contains all modules
+                if(OBJ_LIB STREQUAL "dap_sdk_object")
+                    # dap_sdk_object contains all modules - check if any of the requested libs are in it
+                    # We need to extract individual object libraries from DAP_INTERNAL_MODULES
+                    # and link them separately to enable --wrap
+                    get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+                    if(DAP_MODULES)
+                        foreach(MODULE ${DAP_MODULES})
+                            list(FIND LIBS_TO_WRAP ${MODULE} MODULE_INDEX)
+                            if(MODULE_INDEX GREATER -1)
+                                list(APPEND OBJECT_LIBS_TO_WRAP ${MODULE})
+                            endif()
+                        endforeach()
+                        # Always remove dap_sdk_object source if we need to wrap any modules
+                        # We'll link individual modules via target_link_libraries instead
+                        if(OBJECT_LIBS_TO_WRAP)
+                            list(APPEND OBJECT_SOURCES_TO_REMOVE ${SOURCE})
+                            # Also need to add remaining modules that are NOT being wrapped
+                            # to maintain functionality
+                            foreach(MODULE ${DAP_MODULES})
+                                list(FIND OBJECT_LIBS_TO_WRAP ${MODULE} MODULE_WRAP_INDEX)
+                                if(MODULE_WRAP_INDEX LESS 0)
+                                    # This module is not being wrapped - add it to sources to keep it
+                                    # Actually, we'll link all modules via target_link_libraries
+                                    # to ensure --wrap works for all internal calls
+                                endif()
+                            endforeach()
+                        endif()
+                    endif()
+                else()
+                    # Individual object library
+                    list(FIND LIBS_TO_WRAP ${OBJ_LIB} OBJ_LIB_INDEX)
+                    if(OBJ_LIB_INDEX GREATER -1)
+                        list(APPEND OBJECT_LIBS_TO_WRAP ${OBJ_LIB})
+                        # Mark this source for removal - we'll link it via target_link_libraries instead
+                        list(APPEND OBJECT_SOURCES_TO_REMOVE ${SOURCE})
+                    endif()
+                endif()
+            endif()
+        endforeach()
+    endif()
+    
+    if(NOT CURRENT_LIBS AND NOT OBJECT_LIBS_TO_WRAP)
         message(WARNING "dap_mock_autowrap_with_static: No libraries linked to ${TARGET_NAME}")
         return()
     endif()
     
     # Remove duplicates first
-    list(REMOVE_DUPLICATES CURRENT_LIBS)
+    if(CURRENT_LIBS)
+        list(REMOVE_DUPLICATES CURRENT_LIBS)
+    else()
+        set(CURRENT_LIBS "")
+    endif()
     
     # Collect libraries that need wrapping and their dependencies
     set(WRAPPED_LIBS "")
     set(OTHER_LIBS "")
     
+    # Process libraries from LINK_LIBRARIES
+    # Automatically add _static suffix to library names for proper mocking
     foreach(LIB ${CURRENT_LIBS})
-        # Check if this lib should be wrapped
-        list(FIND LIBS_TO_WRAP ${LIB} LIB_INDEX)
+        # Check if this lib should be wrapped (try both with and without _static suffix)
+        set(LIB_BASE_NAME ${LIB})
+        # Remove _static suffix if present
+        string(REGEX REPLACE "_static$" "" LIB_BASE_NAME "${LIB}")
+        
+        list(FIND LIBS_TO_WRAP ${LIB_BASE_NAME} LIB_INDEX)
         if(LIB_INDEX GREATER -1)
-            list(APPEND WRAPPED_LIBS ${LIB})
+            # This library should be wrapped
+            # Use _static version if it exists in CURRENT_LIBS
+            if(LIB MATCHES "_static$")
+                list(APPEND WRAPPED_LIBS ${LIB})
+            elseif(TARGET ${LIB}_static)
+                # Static version exists, use it
+                list(APPEND WRAPPED_LIBS ${LIB}_static)
+            else()
+                # No static version, use as is
+                list(APPEND WRAPPED_LIBS ${LIB})
+            endif()
         else()
             list(APPEND OTHER_LIBS ${LIB})
+        endif()
+    endforeach()
+    
+    # Process object libraries from target_sources
+    # For object libraries, we need to link them explicitly to enable --wrap
+    foreach(OBJ_LIB ${OBJECT_LIBS_TO_WRAP})
+        # Remove _static suffix if present
+        string(REGEX REPLACE "_static$" "" OBJ_LIB_BASE "${OBJ_LIB}")
+        list(FIND LIBS_TO_WRAP ${OBJ_LIB_BASE} WRAP_BASE_INDEX)
+        if(WRAP_BASE_INDEX GREATER -1)
+            # Try to use static version first
+            if(TARGET ${OBJ_LIB}_static)
+                list(FIND WRAPPED_LIBS ${OBJ_LIB}_static WRAP_INDEX)
+                if(WRAP_INDEX LESS 0)
+                    list(APPEND WRAPPED_LIBS ${OBJ_LIB}_static)
+                endif()
+            else()
+                list(FIND WRAPPED_LIBS ${OBJ_LIB} WRAP_INDEX)
+                if(WRAP_INDEX LESS 0)
+                    list(APPEND WRAPPED_LIBS ${OBJ_LIB})
+                endif()
+            endif()
         endif()
     endforeach()
     
@@ -244,10 +372,24 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         list(APPEND NEW_LIBS "-Wl,--start-group")
         
         # Add wrapped libraries with --whole-archive
+        # For object libraries, DO NOT use --whole-archive (they are object files, not archives)
+        # Instead, collect them for linking at the end outside of --whole-archive
+        set(OBJECT_LIBS_TO_LINK "")
         foreach(LIB ${WRAPPED_LIBS})
-            list(APPEND NEW_LIBS "-Wl,--whole-archive")
-            list(APPEND NEW_LIBS ${LIB})
-            list(APPEND NEW_LIBS "-Wl,--no-whole-archive")
+            # Check if this is an object library that was found in target_sources
+            list(FIND OBJECT_LIBS_TO_WRAP ${LIB} IS_OBJECT_LIB)
+            if(IS_OBJECT_LIB GREATER -1)
+                # Object libraries: collect them for linking at the end
+                # NOTE: Object libraries CANNOT be wrapped with --whole-archive
+                # So --wrap won't work for internal calls between object files
+                # This is a known limitation of GNU ld --wrap
+                list(APPEND OBJECT_LIBS_TO_LINK ${LIB})
+            else()
+                # For static libraries, use --whole-archive
+                list(APPEND NEW_LIBS "-Wl,--whole-archive")
+                list(APPEND NEW_LIBS ${LIB})
+                list(APPEND NEW_LIBS "-Wl,--no-whole-archive")
+            endif()
         endforeach()
         
         # Add ALL other libraries inside the group (including dependencies)
@@ -267,11 +409,62 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         endforeach()
     endif()
     
+    # Check if we're removing dap_sdk_object before removing sources
+    set(HAD_DAP_SDK_OBJECT FALSE)
+    if(OBJECT_SOURCES_TO_REMOVE)
+        foreach(OBJ_SOURCE ${OBJECT_SOURCES_TO_REMOVE})
+            if(OBJ_SOURCE MATCHES "\\$<TARGET_OBJECTS:dap_sdk_object>")
+                set(HAD_DAP_SDK_OBJECT TRUE)
+                break()
+            endif()
+        endforeach()
+    endif()
+    
+    # Remove object libraries from target_sources if they need to be wrapped
+    # Object libraries must be linked via target_link_libraries (not target_sources)
+    # for --wrap to work correctly
+    if(OBJECT_SOURCES_TO_REMOVE)
+        foreach(OBJ_SOURCE ${OBJECT_SOURCES_TO_REMOVE})
+            get_target_property(CURRENT_SOURCES ${TARGET_NAME} SOURCES)
+            if(CURRENT_SOURCES)
+                list(REMOVE_ITEM CURRENT_SOURCES ${OBJ_SOURCE})
+                set_target_properties(${TARGET_NAME} PROPERTIES SOURCES "${CURRENT_SOURCES}")
+            endif()
+        endforeach()
+    endif()
+    
     # Clear and reset link libraries
     # Note: We always use PRIVATE keyword to match dap_test_link_libraries pattern
     # which uses PRIVATE in dap_link_all_sdk_modules
     set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
     target_link_libraries(${TARGET_NAME} PRIVATE ${NEW_LIBS})
+    
+    # Link object libraries explicitly to enable --wrap for internal calls
+    # Object libraries must be linked via target_link_libraries (not target_sources)
+    # for --wrap to work correctly
+    # IMPORTANT: When dap_sdk_object is removed, we need to link ALL modules from DAP_INTERNAL_MODULES
+    # to maintain functionality, but wrap only the requested ones
+    if(OBJECT_LIBS_TO_LINK OR HAD_DAP_SDK_OBJECT)
+        # If we had dap_sdk_object and removed it, link all modules from DAP_INTERNAL_MODULES
+        # Otherwise, just link the requested object libraries
+        if(HAD_DAP_SDK_OBJECT)
+            get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+            if(DAP_MODULES)
+                foreach(MODULE ${DAP_MODULES})
+                    if(TARGET ${MODULE})
+                        target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MODULE}>)
+                    endif()
+                endforeach()
+            endif()
+        else()
+            # Link only requested object libraries
+            foreach(OBJ_LIB ${OBJECT_LIBS_TO_LINK})
+                if(TARGET ${OBJ_LIB})
+                    target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${OBJ_LIB}>)
+                endif()
+            endforeach()
+        endif()
+    endif()
     
     # Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
     target_link_options(${TARGET_NAME} PRIVATE "-Wl,--allow-multiple-definition")

@@ -59,7 +59,7 @@
                             if (__wrap_mock_state) { \
                                 void *__wrap_override = __wrap_mock_state->return_value.ptr; \
                                 if (__wrap_override != NULL) { \
-                                    __wrap_result = *(return_type_full*)__wrap_override; \
+                                    __wrap_result = (return_type_full)__wrap_override; \
                                 } \
                             } \
                             dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, (void*)(intptr_t)__wrap_result); \

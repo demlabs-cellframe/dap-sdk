@@ -104,6 +104,9 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
     PARAM(dap_events_socket_callbacks_t*, a_client_callbacks)
 )
 {
+    if (!g_mock_dap_server_new || !g_mock_dap_server_new->enabled) {
+        return __real_dap_server_new(a_cfg_section, a_server_callbacks, a_client_callbacks);
+    }
     // Return mock value if set, otherwise return NULL
     return (dap_server_t*)g_mock_dap_server_new->return_value.ptr;
 }
@@ -118,6 +121,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
     PARAM(dap_events_socket_callbacks_t*, a_callbacks)
 )
 {
+    printf("DEBUG: Mock dap_server_listen_addr_add called\n");
     // Mock success
     return 0;
 }
@@ -130,6 +134,14 @@ DAP_MOCK_WRAPPER_CUSTOM(bool, dap_config_get_item_bool_default,
     PARAM(bool, a_default)
 )
 {
+    UNUSED(a_config);
+    UNUSED(a_section);
+    
+    // Always enable TCP listening for tests
+    if (a_item_name && strcmp(a_item_name, "listen_address_tcp") == 0) {
+        return true;
+    }
+
     if (g_mock_dap_config_get_item_bool_default->return_value.ptr) {
         return (bool)(intptr_t)g_mock_dap_config_get_item_bool_default->return_value.ptr;
     }
@@ -156,6 +168,7 @@ static void setup_test(void)
         DAP_MOCK_SET_RETURN(dap_http_header_server_init, 0);
         DAP_MOCK_SET_RETURN(dap_http_client_init, 0);
         DAP_MOCK_SET_RETURN(dap_config_get_item_bool_default, false);
+        DAP_MOCK_ENABLE(dap_server_listen_addr_add); // Enable listen mock
         
         // Initialize HTTP module
         l_ret = dap_http_init();
@@ -240,6 +253,7 @@ static void test_02_http_server_creation(void)
     static dap_server_t s_mock_server = {0};
     dap_server_t *l_mock_server = &s_mock_server;
     DAP_MOCK_SET_RETURN(dap_server_new, l_mock_server);
+    DAP_MOCK_ENABLE(dap_server_new);
     
     // Create HTTP server
     dap_server_t *l_server = dap_http_server_new("test_server", "Test HTTP Server");

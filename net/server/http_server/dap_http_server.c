@@ -27,21 +27,6 @@
 #include <errno.h>
 #include <dirent.h>
 
-#ifndef _WIN32
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <netdb.h>
-#else
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#include <time.h>
-#endif
 
 #include <pthread.h>
 
@@ -105,13 +90,22 @@ dap_server_t* dap_http_server_new(const char *a_cfg_section, const char *a_serve
     };
     dap_server_t *l_server = dap_server_new(a_cfg_section, NULL, &l_client_callbacks);
     if (!l_server) {
-        log_it(L_ERROR, "HTTP server was not created");
+        log_it(L_ERROR, "HTTP server was not created - dap_server_new returned NULL");
         return NULL;
     }
     dap_http_server_t *l_http_server = DAP_NEW_Z(dap_http_server_t);
+    if (!l_http_server) {
+        log_it(L_CRITICAL, "Cannot allocate memory for HTTP server structure");
+        dap_server_delete(l_server);
+        return NULL;
+    }
     l_server->_inheritor = l_http_server;
     l_http_server->server = l_server;
-    dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name) - 1);
+    if (a_server_name) {
+        dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name) - 1);
+    } else {
+        l_http_server->server_name[0] = '\0';
+    }
     return l_server;
 }
 

@@ -338,55 +338,65 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 
 **Проблема:** При линковке статических библиотек (`lib*.a`) функции могут быть исключены из финального исполняемого файла, если они не используются напрямую. Это приводит к тому, что `--wrap` флаги не работают для функций внутри статических библиотек.
 
-**Решение:** Используйте функцию `dap_mock_autowrap_with_static()` для оборачивания статических библиотек флагами `--whole-archive`, что заставляет линкер включить все символы из статической библиотеки.
+**Решение (АВТОМАТИЧЕСКОЕ):** Функция `dap_mock_autowrap()` теперь **автоматически** оборачивает все `*_static` библиотеки флагами `--whole-archive`. Ручная настройка больше не нужна!
 
 **Пример использования:**
 
 ```cmake
 include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_SOURCE_DIR}/dap-sdk/tests/cmake/dap_test_helpers.cmake)
 
 add_executable(test_http_client 
     test_http_client.c
-    test_http_client_mocks.c
 )
 
-# Обычная линковка
-target_link_libraries(test_http_client
-    dap_test           # Test framework
-    dap_core           # Core library
-    dap_http_server    # Статическая библиотека, которую нужно мокировать
-    pthread
-)
+# Линковка через helper-функцию (автоматически использует STATIC библиотеки)
+dap_test_link_libraries(test_http_client)
 
-# Автогенерация --wrap флагов из исходников теста
+# Добавление include директорий
+dap_test_add_includes(test_http_client)
+
+# Автогенерация --wrap флагов И автоматическое оборачивание всех *_static библиотек
+# Всё! Больше dap_mock_autowrap_with_static не нужен!
 dap_mock_autowrap(test_http_client)
-
-# Важно: обернуть статическую библиотеку --whole-archive ПОСЛЕ dap_mock_autowrap!
-# Это заставляет линкер включить все символы из dap_http_server,
-# включая те, которые используются только внутри библиотеки
-dap_mock_autowrap_with_static(test_http_client dap_http_server)
 ```
 
-**Что делает `dap_mock_autowrap_with_static`:**
-1. Перестраивает список линкуемых библиотек
-2. Оборачивает указанные статические библиотеки флагами:
-   - `-Wl,--whole-archive` (перед библиотекой)
-   - `<library_name>` (сама библиотека)
-   - `-Wl,--no-whole-archive` (после библиотеки)
-3. Добавляет `-Wl,--allow-multiple-definition` для обработки дублирующихся символов
+**Что происходит автоматически:**
+
+1. `dap_test_link_libraries()` линкует все SDK модули как **STATIC библиотеки** (`*_static.a`)
+2. `dap_mock_autowrap()` сканирует исходники на `DAP_MOCK_DECLARE` и генерирует `--wrap` флаги
+3. `dap_mock_autowrap()` **автоматически** обнаруживает все `*_static.a` библиотеки и оборачивает их:
+   ```
+   -Wl,--start-group
+   -Wl,--whole-archive libdap_io_static.a -Wl,--no-whole-archive
+   -Wl,--whole-archive libdap_http_server_static.a -Wl,--no-whole-archive
+   ...остальные библиотеки...
+   -Wl,--end-group
+   ```
+4. Добавляет `-Wl,--allow-multiple-definition` для обработки дублирующихся символов
 
 **Важные замечания:**
 
-1. **Порядок вызовов важен:**
+1. **Нужен только ОДИН вызов функции:**
    ```cmake
-   # Правильно:
-   dap_mock_autowrap(test_target)                    # Сначала автогенерация
-   dap_mock_autowrap_with_static(test_target lib)    # Потом --whole-archive
+   # Современный подход (РЕКОМЕНДУЕТСЯ):
+   dap_mock_autowrap(test_target)  # Всё автоматически!
    
-   # Неправильно:
-   dap_mock_autowrap_with_static(test_target lib)    # Это перезапишет предыдущие настройки
+   # Устаревший подход (работает, но не нужен):
    dap_mock_autowrap(test_target)
+   dap_mock_autowrap_with_static(test_target lib)  # Опциональное переопределение
    ```
+
+2. **Статические библиотеки создаются автоматически:**
+   - Все SDK модули имеют `*_static.a` версии (создаются из объектных библиотек)
+   - Создаются в главном `dap-sdk/CMakeLists.txt` при включении тестов
+   - Все зависимости правильно пробрасываются с суффиксом `_static`
+
+3. **Технические требования:**
+   - **Компилятор:** GCC, Clang или MinGW (MSVC не поддерживает `--wrap`)
+   - **Helper-функция:** Необходимо использовать `dap_test_link_libraries()` для линковки статических библиотек
+   - **Критично:** `--wrap` НЕ работает с объектными файлами (`.o`) - только со статическими библиотеками (`.a`)
+   - **Почему:** Объектные файлы, слинкованные напрямую, имеют разрешённые символы - нет косвенности для перехвата `--wrap`
 
 2. **Множественные библиотеки:**
    ```cmake

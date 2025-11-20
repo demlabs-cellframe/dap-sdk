@@ -334,74 +334,75 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 3. Adds `-Wl,--wrap=function_name` to linker flags
 4. Works with GCC, Clang, MinGW
 
-#### Mocking Functions in Static Libraries
+#### Mocking Functions in Static Libraries (FULLY AUTOMATIC)
 
-**Problem:** When linking static libraries (`lib*.a`), functions may be excluded from the final executable if they are not directly used. This causes `--wrap` flags to not work for functions inside static libraries.
+**Background:** The `--wrap` linker flag only works with static libraries (`.a`), not with object files (`.o`). When SDK modules are linked as object files, `--wrap` cannot intercept internal function calls between modules.
 
-**Solution:** Use the `dap_mock_autowrap_with_static()` function to wrap static libraries with `--whole-archive` flags, which forces the linker to include all symbols from the static library.
+**Problem:** Functions inside static libraries may be excluded from the final executable if not directly used, causing `--wrap` to fail.
+
+**Solution (FULLY AUTOMATIC):** The `dap_mock_autowrap()` function now **automatically** handles everything:
+1. ✅ Detects all `*_static.a` libraries in the project
+2. ✅ Wraps them with `--whole-archive` flags  
+3. ✅ Adds `--allow-multiple-definition` for duplicate symbols
+4. ✅ No manual configuration needed!
 
 **Usage Example:**
 
 ```cmake
 include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_SOURCE_DIR}/dap-sdk/tests/cmake/dap_test_helpers.cmake)
 
 add_executable(test_http_client 
     test_http_client.c
-    test_http_client_mocks.c
 )
 
-# Normal linking
-target_link_libraries(test_http_client
-    dap_test           # Test framework
-    dap_core           # Core library
-    dap_http_server   # Static library to mock
-    pthread
-)
+# Link using helper function (automatically uses STATIC libraries)
+dap_test_link_libraries(test_http_client)
 
-# Auto-generate --wrap flags from test sources
+# Include directories
+dap_test_add_includes(test_http_client)
+
+# Auto-generate --wrap flags AND automatically wrap all *_static libraries
+# That's it! One function call does everything!
 dap_mock_autowrap(test_http_client)
-
-# Important: wrap static library with --whole-archive AFTER dap_mock_autowrap!
-# This forces linker to include all symbols from dap_http_server,
-# including those only used internally
-dap_mock_autowrap_with_static(test_http_client dap_http_server)
 ```
 
-**What `dap_mock_autowrap_with_static` does:**
-1. Rebuilds the link libraries list
-2. Wraps specified static libraries with flags:
-   - `-Wl,--whole-archive` (before library)
-   - `<library_name>` (the library itself)
-   - `-Wl,--no-whole-archive` (after library)
-3. Adds `-Wl,--allow-multiple-definition` to handle duplicate symbols
+**What happens automatically:**
+
+1. `dap_test_link_libraries()` links all SDK modules as **STATIC libraries** (`*_static.a`)
+2. `dap_mock_autowrap()` scans sources for `DAP_MOCK_DECLARE` and generates `--wrap` flags
+3. `dap_mock_autowrap()` **automatically** detects all `*_static.a` libraries and wraps them:
+   ```
+   -Wl,--start-group
+   -Wl,--whole-archive libdap_io_static.a -Wl,--no-whole-archive
+   -Wl,--whole-archive libdap_http_server_static.a -Wl,--no-whole-archive
+   ...other libraries...
+   -Wl,--end-group
+   ```
+4. Adds `-Wl,--allow-multiple-definition` to handle duplicate symbols
 
 **Important Notes:**
 
-1. **Order of calls matters:**
+1. **Only ONE function call needed:**
    ```cmake
-   # Correct:
-   dap_mock_autowrap(test_target)                    # First auto-generation
-   dap_mock_autowrap_with_static(test_target lib)    # Then --whole-archive
+   # Modern approach (RECOMMENDED):
+   dap_mock_autowrap(test_target)  # Everything automatic!
    
-   # Incorrect:
-   dap_mock_autowrap_with_static(test_target lib)    # This overwrites previous setup
+   # Legacy approach (still works, but not needed):
    dap_mock_autowrap(test_target)
+   dap_mock_autowrap_with_static(test_target lib)  # Optional override
    ```
 
-2. **Multiple libraries:**
-   ```cmake
-   # Can wrap multiple static libraries at once
-   dap_mock_autowrap_with_static(test_target 
-       dap_http_server
-       dap_stream
-       dap_crypto
-   )
-   ```
+2. **Static libraries are created automatically:**
+   - All SDK modules have `*_static.a` versions (created from object libraries)
+   - Created in main `dap-sdk/CMakeLists.txt` when tests are enabled
+   - All dependencies properly propagated with `_static` suffix
 
-3. **Limitations:**
-   - Works only with GCC, Clang, and MinGW
-   - May increase executable size
-   - Do not use for shared libraries (`.so`, `.dll`)
+3. **Technical requirements:**
+   - **Compiler:** GCC, Clang, or MinGW (MSVC not supported for `--wrap`)
+   - **Helper function:** Must use `dap_test_link_libraries()` for static library linking
+   - **Critical:** `--wrap` does NOT work with object files (`.o`) - only static libraries (`.a`)
+   - **Why:** Object files linked directly have resolved symbols - no indirection for `--wrap` to intercept
 
 **Complete Configuration Example:**
 

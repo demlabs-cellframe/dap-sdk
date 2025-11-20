@@ -212,6 +212,43 @@ if(BUILD_DAP_SDK_TESTS OR BUILD_DAP_TESTS)
         MODULE_LIST_VAR DAP_INTERNAL_MODULES
     )
     
+    # Also create STATIC libraries for modules that need mocking support
+    # IMPORTANT: --wrap only works with STATIC libraries, NOT with OBJECT files
+    # Create static libraries for modules frequently used in mocking
+    if(DAP_INTERNAL_MODULES)
+        foreach(MODULE ${DAP_INTERNAL_MODULES})
+            if(TARGET ${MODULE})
+                # Create static library from object library
+                add_library(${MODULE}_static STATIC $<TARGET_OBJECTS:${MODULE}>)
+                
+                # Copy all properties from object library
+                get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+                if(MODULE_INCLUDES)
+                    target_include_directories(${MODULE}_static INTERFACE ${MODULE_INCLUDES})
+                endif()
+                
+                # Copy link libraries (dependencies)
+                get_target_property(MODULE_LINK_LIBS ${MODULE} INTERFACE_LINK_LIBRARIES)
+                if(MODULE_LINK_LIBS)
+                    # Replace object library references with static library references
+                    set(STATIC_LINK_LIBS "")
+                    foreach(DEP ${MODULE_LINK_LIBS})
+                        # Check if dependency is an object library that will have static version
+                        list(FIND DAP_INTERNAL_MODULES ${DEP} DEP_IN_MODULES)
+                        if(DEP_IN_MODULES GREATER -1)
+                            # Use static version of dependency
+                            list(APPEND STATIC_LINK_LIBS ${DEP}_static)
+                        else()
+                            # Keep non-module dependencies as is
+                            list(APPEND STATIC_LINK_LIBS ${DEP})
+                        endif()
+                    endforeach()
+                    target_link_libraries(${MODULE}_static INTERFACE ${STATIC_LINK_LIBS})
+                endif()
+            endif()
+        endforeach()
+    endif()
+    
     # Execute deferred include propagation for all OBJECT libraries
     # This ensures all dependencies are configured before propagation
     file(GLOB PROPAGATE_FILES "${CMAKE_BINARY_DIR}/**/propagate_*.cmake")

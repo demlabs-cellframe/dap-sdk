@@ -34,26 +34,16 @@ add_executable(${PROJECT_NAME}
 # Mark header file as header-only (not compiled)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_transport_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
-# Link dependencies
+# Link dependencies using helper function (now uses STATIC libraries)
 dap_test_link_libraries(${PROJECT_NAME})
-# Link with dap_http_client and other libs needed by dap_transport_test_mocks.c
-target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server)
 
 # Include directories
 dap_test_add_includes(${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
 
 # Enable automatic mock wrapping
+# Also automatically wraps all *_static libraries with --whole-archive
 dap_mock_autowrap(${PROJECT_NAME})
-
-# Use dap_mock_autowrap_with_static for static libraries to ensure --wrap works
-# This is needed because --wrap doesn't work for symbols inside static libraries
-# without --whole-archive flag
-# Note: dap_server functions are in dap_io, dap_net_server_listen_addr_add_with_callback is in dap_net_server_common
-# enc_http_add_proc is in dap_enc_server
-# dap_stream_add_proc_http and dap_stream_ctl_add_proc are in dap_stream
-# dap_http_client functions are in dap_http_client
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_transport_http dap_http_server dap_net_server_common dap_io dap_enc_server dap_stream dap_http_client)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
@@ -158,24 +148,16 @@ add_executable(${PROJECT_NAME}
 # Mark header file as header-only (not compiled)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_transport_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
-# Link dependencies
+# Link dependencies using helper function (now uses STATIC libraries)
 dap_test_link_libraries(${PROJECT_NAME})
-# Link with dap_http_client and other libs needed by dap_transport_test_mocks.c
-target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server)
 
 # Include directories
 dap_test_add_includes(${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
 
 # Enable automatic mock wrapping
+# Also automatically wraps all *_static libraries with --whole-archive
 dap_mock_autowrap(${PROJECT_NAME})
-
-# Use dap_mock_autowrap_with_static for static libraries to ensure --wrap works
-# This is needed because --wrap doesn't work for symbols inside static libraries
-# without --whole-archive flag
-# dap_server_listen_addr_add is in dap_io, dap_net_server_listen_addr_add_with_callback is in dap_net_server_common
-# Also wrap dap_http_server as it may call these functions
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_net_server_common dap_io dap_http_server dap_http_client)
 
 # Add to CTest
 add_test(
@@ -212,14 +194,8 @@ dap_test_add_includes(${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
 
 # Enable automatic mock wrapping
+# Also automatically wraps all *_static libraries with --whole-archive
 dap_mock_autowrap(${PROJECT_NAME})
-
-# Use dap_mock_autowrap_with_static for static libraries to ensure --wrap works
-# This is needed because --wrap doesn't work for symbols inside static libraries
-# without --whole-archive flag
-# dap_server_listen_addr_add is in dap_io, dap_net_server_listen_addr_add_with_callback is in dap_net_server_common
-# Also wrap dap_http_server as it may call these functions
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_net_server_common dap_io dap_http_server dap_http_client)
 
 # Add to CTest
 add_test(

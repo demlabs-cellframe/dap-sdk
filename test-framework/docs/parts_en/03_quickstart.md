@@ -131,61 +131,69 @@ int main() {
 }
 ```
 
-Update CMakeLists.txt:
+**Update CMakeLists.txt:**
+
 ```cmake
-include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
-# Option 1: Manual linking
-target_link_libraries(my_test dap_test dap_core pthread)
+add_executable(my_test my_test.c)
 
-# Option 2: Automatic linking of all SDK modules + test framework
-# (recommended for complex tests)
-dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES 
-    LINK_LIBRARIES dap_test)
+# Step 1: Link all SDK modules as STATIC libraries
+dap_test_link_libraries(my_test)
 
-# Auto-generate --wrap linker flags
+# Step 2: Add all necessary include directories  
+dap_test_add_includes(my_test)
+
+# Step 3: Enable automatic mocking (scans sources, wraps libraries, done!)
 dap_mock_autowrap(my_test)
-
-# If you need to mock functions in static libraries:
-# dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
 
-### 2.4 Universal Linking Function (RECOMMENDED)
+**What happens automatically:**
+1. ✅ All SDK modules linked as **STATIC libraries** (`*_static.a`) - required for `--wrap`
+2. ✅ `--wrap` flags generated for all `DAP_MOCK_DECLARE` functions
+3. ✅ Static libraries **automatically wrapped** with `--whole-archive`
+4. ✅ External dependencies (sqlite3, json-c, ssl) linked transitively
+5. ✅ All include directories added
 
-To simplify working with tests, use `dap_link_all_sdk_modules()`:
+**Why STATIC libraries?**
+- `--wrap` only works with static libraries (`.a`), NOT object files (`.o`)
+- Object files linked directly have resolved symbols - no way to intercept calls
 
-**Simple test (minimal setup):**
+### 2.4 Universal Test Setup (RECOMMENDED)
+
+**Complete minimal test (4 lines of CMake):**
 ```cmake
-add_executable(simple_test simple_test.c)
-dap_link_all_sdk_modules(simple_test DAP_INTERNAL_MODULES)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
+
+add_executable(my_test my_test.c)
+dap_test_link_libraries(my_test)  # Links all SDK as STATIC libraries
+dap_test_add_includes(my_test)    # Adds all includes  
+dap_mock_autowrap(my_test)        # Automatic mocking!
 ```
 
-**Test with mocks (includes test framework):**
-```cmake
-add_executable(mock_test mock_test.c mock_wrappers.c)
-dap_link_all_sdk_modules(mock_test DAP_INTERNAL_MODULES 
-    LINK_LIBRARIES dap_test)
-dap_mock_autowrap(mock_test)
-```
+**What does `dap_test_link_libraries()` do:**
+1. ✅ Links all SDK modules as **STATIC libraries** (`*_static.a`) - required for `--wrap`
+2. ✅ Automatically propagates dependencies between modules with `_static` suffix
+3. ✅ Finds and links external libraries (XKCP, Kyber, SQLite, PostgreSQL, MDBX, json-c)
+4. ✅ Links test framework library (`libdap_test.a`)
+5. ✅ All constructors are called automatically
 
-**Test with additional libraries:**
-```cmake
-add_executable(complex_test complex_test.c)
-dap_link_all_sdk_modules(complex_test DAP_INTERNAL_MODULES 
-    LINK_LIBRARIES dap_test my_custom_lib)
-```
-
-**What does `dap_link_all_sdk_modules()` do:**
-1. ✅ Links all object files from SDK modules
-2. ✅ Automatically finds external dependencies (XKCP, Kyber, SQLite, PostgreSQL, MDBX)
-3. ✅ Adds system libraries (pthread, rt, dl)
-4. ✅ Links additional libraries from `LINK_LIBRARIES` parameter
+**What does `dap_mock_autowrap()` do:**
+1. ✅ Scans test sources for `DAP_MOCK_DECLARE` patterns
+2. ✅ Generates `-Wl,--wrap=function_name` for each mocked function
+3. ✅ **Automatically detects** all `*_static.a` libraries
+4. ✅ **Automatically wraps** them with `--whole-archive` and `--start-group`
+5. ✅ Adds `--allow-multiple-definition` for duplicate symbols
 
 **Benefits:**
-- 🚀 One line instead of dozens of `target_link_libraries`
-- 🔄 Automatic updates when adding new SDK modules
-- ✅ Works with parallel builds (`make -j`)
-- 🎯 Correct handling of transitive dependencies
+- 🚀 **3-4 lines** instead of dozens of `target_link_libraries` and manual `--wrap` configuration
+- 🔄 **Automatic updates** when adding new SDK modules
+- ✅ **Proper `--wrap` support** for mocking internal calls between modules
+- 🎯 **Correct handling** of transitive dependencies
+- 🧪 **Automatic `--whole-archive`** wrapping - no manual configuration
+- 📦 **Static libraries** created automatically from object libraries
 
 \newpage
 

@@ -19,6 +19,7 @@ add_executable(${PROJECT_NAME}
 )
 
 # Link all DAP SDK libraries using helper function
+# This now uses STATIC libraries (not object files) to enable --wrap for mocking
 dap_test_link_libraries(${PROJECT_NAME})
 
 # Add all DAP SDK includes using helper function
@@ -31,10 +32,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
+# Also automatically wraps all *_static libraries with --whole-archive to enable proper mocking
 dap_mock_autowrap(${PROJECT_NAME})
-
-# Wrap static libraries for mocking internal functions
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_http_server dap_io dap_core)
 
 # Add to CTest
 add_test(

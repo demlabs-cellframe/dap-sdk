@@ -67,29 +67,37 @@ endfunction()
 # FUNCTION: Link all DAP SDK libraries for tests
 # =========================================
 # Links all necessary DAP SDK libraries for tests
-# Uses the combined object library dap_sdk_object if available
+# IMPORTANT: Uses STATIC libraries (not object files) to enable --wrap for mocking
+# --wrap only works with static libraries, NOT with object files added via target_sources
 # Usage: dap_test_link_libraries(TARGET_NAME)
 function(dap_test_link_libraries TARGET_NAME)
-    # Use combined object library - all functions in one place
-    # This allows --wrap to work for internal calls
-    # AND ensures constructors are called automatically
-    if(NOT TARGET dap_sdk_object)
-        message(FATAL_ERROR "dap_sdk_object target not found. Tests require combined object library for --wrap support.")
+    # Get list of SDK modules from DAP_INTERNAL_MODULES cache variable
+    get_property(SDK_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+    
+    if(NOT SDK_MODULES)
+        message(FATAL_ERROR "dap_test_link_libraries: No modules found in DAP_INTERNAL_MODULES")
     endif()
     
-    # Link dap_sdk_object directly - this ensures all constructors are included
-    # Constructors are automatically called when object files are linked into executable
-    # Use both dap_sdk_object AND dap_link_all_sdk_modules to ensure all dependencies are linked
-    target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:dap_sdk_object>)
-    
-    # Also use dap_link_all_sdk_modules to ensure all external libraries and dependencies are linked
-    # This handles external libraries (like sqlite3, json-c) and ensures proper linking order
-    dap_link_all_sdk_modules(${TARGET_NAME} DAP_INTERNAL_MODULES)
+    # Link all SDK modules as STATIC libraries ONLY
+    # This is REQUIRED for --wrap to work correctly with mocking
+    # Object files added via target_sources or target_link_libraries do NOT work with --wrap
+    # Use ${MODULE}_static which are created from object libraries in main CMakeLists.txt
+    foreach(MODULE ${SDK_MODULES})
+        # ONLY use static version - fail if it doesn't exist
+        if(TARGET ${MODULE}_static)
+            target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+        else()
+            message(WARNING "dap_test_link_libraries: Static library ${MODULE}_static not found, skipping ${MODULE}")
+        endif()
+    endforeach()
     
     # Link test framework if it exists
     if(TARGET dap_test)
         target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
     endif()
+    
+    # Note: External libraries (sqlite3, json-c, ssl, etc.) are linked transitively
+    # through INTERFACE_LINK_LIBRARIES of static library modules
 endfunction()
 
 # =========================================
