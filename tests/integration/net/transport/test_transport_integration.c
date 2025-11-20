@@ -178,9 +178,18 @@ static int test_init_all_transports(void)
     dap_stream_ch_proc_add('C', NULL, NULL, s_test_channel_echo_callback, NULL);
     log_it(L_DEBUG, "Registered channel processors for test channels A, B, C with echo callback");
     
-    // Modules are initialized automatically via constructors when libraries are loaded
-    // Constructors call init functions directly, which register transports
-    // Verify all transports are registered (constructors should have registered them)
+    // Initialize all registered modules
+    // Modules are registered via constructors in *_auto_register.c files
+    // If constructors are not called (e.g., with static libraries without --whole-archive),
+    // dap_module_init_all() will call their init functions
+    log_it(L_DEBUG, "Calling dap_module_init_all() to initialize transport modules");
+    l_ret = dap_module_init_all();
+    if (l_ret != 0) {
+        TEST_ERROR("Module initialization failed: %d", l_ret);
+        return -3;
+    }
+    
+    // Verify all transports are registered (should be registered now)
     bool l_all_transports_registered = true;
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
         dap_net_transport_t *l_transport = dap_net_transport_find(g_transport_configs[i].transport_type);
