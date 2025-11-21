@@ -61,7 +61,7 @@ tests:amd64.macos:
       - macos-native
     script:
       - mkdir build
-      - cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc) && ctest --verbose
+      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc) && ctest --verbose
 
 
 build:any.android:
