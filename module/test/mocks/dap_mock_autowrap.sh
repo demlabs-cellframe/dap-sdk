@@ -10,34 +10,30 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Track temporary files for cleanup
+declare -a TEMP_FILES=()
 
-print_header() {
-    echo "============================================================"
-    echo "$1"
-    echo "============================================================"
+# Cleanup function for temporary files
+cleanup_on_exit() {
+    cleanup_temp_files "${TEMP_FILES[@]}"
 }
 
-print_info() {
-    echo -e "${BLUE}📋 $1${NC}"
-}
+# Set trap for cleanup on exit or error
+trap cleanup_on_exit EXIT ERR
 
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
+# Load modules
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/lib"
 
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
+# Load common utilities and initialize
+source "${LIB_DIR}/dap_mock_common.sh"
+init_mock_common
 
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
+# Load module functions
+source "${LIB_DIR}/dap_mock_scan.sh"
+source "${LIB_DIR}/dap_mock_parse.sh"
+source "${LIB_DIR}/dap_mock_types.sh"
+source "${LIB_DIR}/dap_mock_generate.sh"
 
 # Check arguments
 if [ $# -lt 3 ]; then
@@ -50,6 +46,11 @@ BASENAME="$2"
 shift 2  # Remove first two arguments
 SOURCE_FILES=("$@")  # Remaining arguments are source files
 
+# Export SCRIPTS_DIR for template processing functions
+export SCRIPTS_DIR
+export TEMPLATES_DIR
+export MOCK_AWK_DIR
+
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
@@ -57,216 +58,149 @@ mkdir -p "$OUTPUT_DIR"
 WRAP_FILE="$OUTPUT_DIR/${BASENAME}_wrap.txt"
 CMAKE_FILE="$OUTPUT_DIR/${BASENAME}_mocks.cmake"
 TEMPLATE_FILE="$OUTPUT_DIR/${BASENAME}_wrappers_template.c"
+MACROS_FILE="$OUTPUT_DIR/${BASENAME}_mock_macros.h"
+LINKER_WRAPPER_FILE="$OUTPUT_DIR/dap_mock_linker_wrapper.h"
 
-print_header "DAP SDK Mock Auto-Wrapper Generator (Bash)"
-print_info "Scanning ${#SOURCE_FILES[@]} source files..."
+# Check if verbose output is enabled (default: disabled for performance)
+VERBOSE="${DAP_MOCK_VERBOSE:-0}"
 
-# List all files being scanned
-for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
-    if [ ! -f "$SOURCE_FILE" ]; then
-        print_warning "File not found: $SOURCE_FILE"
-        continue
-    fi
-    print_info "  - $(basename "$SOURCE_FILE")"
-done
-
-# Step 1: Scan all files for mock declarations
-print_info "Scanning for mock declarations..."
-
-# Temporary file for collecting functions
-TMP_MOCKS="/tmp/mock_funcs_$$.txt"
-> "$TMP_MOCKS"
-
-for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
-    [ ! -f "$SOURCE_FILE" ] && continue
-    # Find DAP_MOCK_DECLARE(func_name) or DAP_MOCK_DECLARE(func_name, ...)
-    grep -o 'DAP_MOCK_DECLARE\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
-        sed 's/DAP_MOCK_DECLARE\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_MOCKS" || true
-    # Find DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
-    grep -o 'DAP_MOCK_DECLARE_CUSTOM\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
-        sed 's/DAP_MOCK_DECLARE_CUSTOM\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_MOCKS" || true
-done
-
-MOCK_FUNCTIONS=$(sort -u "$TMP_MOCKS")
-rm -f "$TMP_MOCKS"
-
-if [ -z "$MOCK_FUNCTIONS" ]; then
-    print_info "No mock declarations found in any source files"
-    print_info "Creating empty wrap file: $WRAP_FILE"
-    # Create truly empty file - linker response files cannot contain comments
-    # Comments are interpreted as linker options and cause errors
-    > "$WRAP_FILE"
-    FUNC_COUNT=0
-else
-    FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
-    print_success "Found $FUNC_COUNT mock declarations:"
-    echo "$MOCK_FUNCTIONS" | while read func; do
-        echo "   - $func"
+if [ "$VERBOSE" = "1" ]; then
+    print_header "DAP SDK Mock Auto-Wrapper Generator (Bash)"
+    print_info "Scanning ${#SOURCE_FILES[@]} source files..."
+    
+    # List all files being scanned
+    for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
+        if [ ! -f "$SOURCE_FILE" ]; then
+            print_warning "File not found: $SOURCE_FILE"
+            continue
+        fi
+        print_info "  - $(basename "$SOURCE_FILE")"
     done
 fi
 
+# Step 1: Scan all files for mock declarations
+[ "$VERBOSE" = "1" ] && print_info "Scanning for mock declarations..."
+MOCK_FUNCTIONS=$(scan_mock_declarations "${SOURCE_FILES[@]}")
+
+if [ -z "$MOCK_FUNCTIONS" ]; then
+    [ "$VERBOSE" = "1" ] && print_info "No mock declarations found in any source files"
+    FUNC_COUNT=0
+else
+    FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
+    if [ "$VERBOSE" = "1" ]; then
+        print_success "Found $FUNC_COUNT mock declarations:"
+        echo "$MOCK_FUNCTIONS" | while read func; do
+            echo "   - $func"
+        done
+    fi
+fi
+
 # Step 2: Scan for existing wrapper definitions
-print_info "Scanning for wrapper definitions..."
+[ "$VERBOSE" = "1" ] && print_info "Scanning for wrapper definitions..."
+WRAPPER_FUNCTIONS=$(scan_wrapper_definitions "${SOURCE_FILES[@]}")
 
-TMP_WRAPPERS="/tmp/wrapper_funcs_$$.txt"
-> "$TMP_WRAPPERS"
-
-for SOURCE_FILE in "${SOURCE_FILES[@]}"; do
-    [ ! -f "$SOURCE_FILE" ] && continue
-    
-    # Find DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)
-    # Extract func_name which is the second argument after the return type
-    grep -o 'DAP_MOCK_WRAPPER_CUSTOM\s*([^)]*' "$SOURCE_FILE" | \
-        sed -n 's/.*,\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*,.*/\1/p' >> "$TMP_WRAPPERS" || true
-    
-    # Find DAP_MOCK_WRAPPER_PASSTHROUGH(return_type, func_name, ...) - v2.1
-    grep -o 'DAP_MOCK_WRAPPER_PASSTHROUGH\s*([^)]*' "$SOURCE_FILE" | \
-        sed -n 's/.*,\s*\([a-zA-Z_][a-zA-Z0-9_]*\)\s*,.*/\1/p' >> "$TMP_WRAPPERS" || true
-    
-    # Find DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, ...) - v2.1
-    grep -o 'DAP_MOCK_WRAPPER_PASSTHROUGH_VOID\s*(\s*[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
-        sed 's/DAP_MOCK_WRAPPER_PASSTHROUGH_VOID\s*(\s*\([a-zA-Z_][a-zA-Z0-9_]*\)/\1/' >> "$TMP_WRAPPERS" || true
-    
-    # Find explicit __wrap_ definitions
-    grep -o '__wrap_[a-zA-Z_][a-zA-Z0-9_]*' "$SOURCE_FILE" | \
-        sed 's/__wrap_//' >> "$TMP_WRAPPERS" || true
-done
-
-WRAPPER_FUNCTIONS=$(sort -u "$TMP_WRAPPERS")
-rm -f "$TMP_WRAPPERS"
-
-if [ -n "$WRAPPER_FUNCTIONS" ]; then
+if [ "$VERBOSE" = "1" ] && [ -n "$WRAPPER_FUNCTIONS" ]; then
     echo "$WRAPPER_FUNCTIONS" | while read func; do
         echo "   ✅ $func"
     done
 fi
 
 # Step 3: Generate linker response file
-print_info "Generating linker response file: $WRAP_FILE"
-
-> "$WRAP_FILE"  # Clear file
-if [ -n "$MOCK_FUNCTIONS" ]; then
-    echo "$MOCK_FUNCTIONS" | while read func; do
-        # Note: For -Wl,@file usage, we need just --wrap=func (without -Wl,)
-        echo "--wrap=$func" >> "$WRAP_FILE"
-    done
-    print_success "Generated $FUNC_COUNT --wrap options"
-else
-    # Create truly empty file - linker response files cannot contain comments
-    # Comments are interpreted as linker options and cause errors
-    > "$WRAP_FILE"
-    print_info "Created empty wrap file (no mocks to wrap)"
-fi
+[ "$VERBOSE" = "1" ] && print_info "Generating linker response file: $WRAP_FILE"
+generate_wrap_file "$WRAP_FILE" "$MOCK_FUNCTIONS"
 
 # Step 4: Generate CMake integration
-print_info "Generating CMake integration: $CMAKE_FILE"
+[ "$VERBOSE" = "1" ] && print_info "Generating CMake integration: $CMAKE_FILE"
+generate_cmake_file "$CMAKE_FILE" "$MOCK_FUNCTIONS"
 
-cat > "$CMAKE_FILE" << EOF
-# Auto-generated mock configuration
-# Generated by dap_mock_autowrap.sh
+# Step 5: Extract full information about custom mocks for direct function generation
+[ "$VERBOSE" = "1" ] && print_info "Extracting full custom mock declarations for direct function generation..."
 
-# Wrapped functions:
-EOF
+# Temporary file for collecting custom mock declarations
+# Use fixed name instead of PID to ensure file exists for later steps
+TMP_CUSTOM_MOCKS="${OUTPUT_DIR}/custom_mocks_list.txt"
+> "$TMP_CUSTOM_MOCKS"
+TEMP_FILES+=("$TMP_CUSTOM_MOCKS")
 
-if [ -n "$MOCK_FUNCTIONS" ]; then
-    echo "$MOCK_FUNCTIONS" | while read func; do
-        echo "#   - $func" >> "$CMAKE_FILE"
-    done
-else
-    echo "#   (none - no mocks declared)" >> "$CMAKE_FILE"
-fi
-
-print_success "Generated CMake integration"
-
-# Step 5: Find missing wrappers and generate template
-if [ -z "$MOCK_FUNCTIONS" ]; then
-    print_info "No mocks declared - skipping template generation"
-elif [ -n "$WRAPPER_FUNCTIONS" ]; then
-    MISSING_FUNCTIONS=$(comm -23 <(echo "$MOCK_FUNCTIONS" | sort) <(echo "$WRAPPER_FUNCTIONS" | sort))
-    
-    if [ -z "$MISSING_FUNCTIONS" ]; then
-        print_success "All wrappers are defined"
-    else
-        MISSING_COUNT=$(echo "$MISSING_FUNCTIONS" | wc -l)
-        print_warning "Missing wrappers for $MISSING_COUNT functions"
-        print_info "Generating template: $TEMPLATE_FILE"
-        
-        cat > "$TEMPLATE_FILE" << 'EOF'
-/**
- * Auto-generated wrapper template
- * Copy the needed wrappers to your test file and customize as needed
- */
-
-#include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
-
-EOF
-        
-        echo "$MISSING_FUNCTIONS" | while read func; do
-            cat >> "$TEMPLATE_FILE" << EOF
-// Wrapper for $func
-DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
-    (/* add parameters here */))
-{
-    if (g_mock_$func && g_mock_$func->enabled) {
-        // Add your mock logic here
-        return g_mock_$func->return_value.ptr;
+# Scan all source files for DAP_MOCK_WRAPPER_CUSTOM and extract full information
+[ "$VERBOSE" = "1" ] && print_info "Scanning ${#SOURCE_FILES[@]} source files for custom mocks..."
+extract_custom_mocks "$TMP_CUSTOM_MOCKS" "${SOURCE_FILES[@]}" || {
+    print_error "Failed to extract custom mocks"
+        exit 1
     }
-    return __real_$func(/* forward parameters */);
+
+# Step 5.5: Generate named headers for each custom mock
+generate_custom_mock_headers "$OUTPUT_DIR" "$BASENAME" "$TMP_CUSTOM_MOCKS" "$WRAPPER_FUNCTIONS"
+
+# Step 6: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect return types and parameter counts
+[ "$VERBOSE" = "1" ] && print_info "Analyzing DAP_MOCK_WRAPPER_CUSTOM usage for macro generation..."
+
+# Parse mock declarations to extract types and parameter counts
+parse_mock_declarations "${SOURCE_FILES[@]}" || {
+    print_error "Failed to parse mock declarations"
+    exit 1
 }
 
-EOF
-            echo "   ⚠️  $func"
-        done
-        
-        print_success "Template generated with $MISSING_COUNT function stubs"
+# Ensure variables are set even if no mocks found
+: "${MAX_ARGS_COUNT:=2}"
+: "${PARAM_COUNTS_ARRAY[0]:=0}"
+
+# Prepare all template data using library functions
+prepare_nargs_data "$MAX_ARGS_COUNT" || {
+    print_error "Failed to prepare NARGS data"
+    exit 1
+}
+prepare_map_count_params_by_count_data "$MAX_ARGS_COUNT" || {
+    print_error "Failed to prepare map count params by count data"
+    exit 1
+}
+prepare_map_count_params_helper_data "$MAX_ARGS_COUNT" || {
+    print_error "Failed to prepare map count params helper data"
+    exit 1
+}
+prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}" || {
+    print_error "Failed to prepare map impl cond 1 data"
+    exit 1
+}
+prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}" || {
+    print_error "Failed to prepare map impl cond data"
+    exit 1
+}
+prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}" || {
+    print_error "Failed to prepare map macros data"
+    exit 1
+}
+
+# Step 7: Generate specialized macros header file
+generate_macros_file "$MACROS_FILE" "$TMP_CUSTOM_MOCKS" || {
+    print_error "Failed to generate macros file"
+    exit 1
+}
+
+# Generate linker wrapper header from template
+[ "$VERBOSE" = "1" ] && print_info "Generating linker wrapper header: $LINKER_WRAPPER_FILE"
+generate_linker_wrapper_header "$LINKER_WRAPPER_FILE" || {
+    print_error "Failed to generate linker wrapper header"
+    exit 1
+}
+
+# Step 8: Generate wrapper template file
+generate_template_file "$TEMPLATE_FILE" "$MOCK_FUNCTIONS" "$WRAPPER_FUNCTIONS"
+
+# Final summary (only if verbose)
+if [ "$VERBOSE" = "1" ]; then
+    print_header "✅ Generation Complete!"
+    echo ""
+    echo "Generated files:"
+    echo "  📄 $WRAP_FILE"
+    echo "  📄 $CMAKE_FILE"
+    if [ -f "$MACROS_FILE" ]; then
+        echo "  📄 $MACROS_FILE"
     fi
-else
-    # No wrappers found but mocks exist - generate template for all
-    FUNC_COUNT=$(echo "$MOCK_FUNCTIONS" | wc -l)
-    print_warning "No wrappers found for $FUNC_COUNT functions"
-    print_info "Generating template: $TEMPLATE_FILE"
-    
-    cat > "$TEMPLATE_FILE" << 'EOF'
-/**
- * Auto-generated wrapper template
- * Copy the needed wrappers to your test file and customize as needed
- */
-
-#include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
-
-EOF
-    
-    echo "$MOCK_FUNCTIONS" | while read func; do
-        cat >> "$TEMPLATE_FILE" << EOF
-// Wrapper for $func
-DAP_MOCK_WRAPPER_CUSTOM(void*, $func,
-    (/* add parameters here */))
-{
-    if (g_mock_$func && g_mock_$func->enabled) {
-        // Add your mock logic here
-        return g_mock_$func->return_value.ptr;
-    }
-    return __real_$func(/* forward parameters */);
-}
-
-EOF
-        echo "   ⚠️  $func"
-    done
-    
-    print_success "Template generated with $FUNC_COUNT function stubs"
+    if [ -f "$TEMPLATE_FILE" ]; then
+        echo "  📄 $TEMPLATE_FILE"
+    fi
+    echo ""
+    echo "To use in CMakeLists.txt:"
+    echo "  dap_mock_autowrap(your_target)"
 fi
-
-# Final summary
-print_header "✅ Generation Complete!"
-echo ""
-echo "Generated files:"
-echo "  📄 $WRAP_FILE"
-echo "  📄 $CMAKE_FILE"
-if [ -f "$TEMPLATE_FILE" ]; then
-    echo "  📄 $TEMPLATE_FILE"
-fi
-echo ""
-echo "To use in CMakeLists.txt:"
-echo "  dap_mock_autowrap(your_target)"

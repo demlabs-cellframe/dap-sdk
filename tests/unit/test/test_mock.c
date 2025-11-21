@@ -1,5 +1,5 @@
 /**
- * @file test_mock.c
+ * @file test_mock_framework.c
  * @brief Unit tests for DAP SDK Mock Framework V4
  * @details Comprehensive tests for all mock framework features:
  *          - Mock declaration with structured config
@@ -484,10 +484,10 @@ int main(int argc, char **argv)
         return 1;
     }
     
-    // Initialize mock 
+    // Initialize mock framework
     dap_mock_init();
     
-    log_it(L_INFO, "=== DAP SDK Mock Framework V4 - Unit Tests ===");
+    log_it(L_INFO, "=== DAP SDK Mock Framework - Unit Tests ===");
     log_it(L_INFO, "Testing all mock features...\n");
     
     // Run tests

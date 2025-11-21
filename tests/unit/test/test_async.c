@@ -1,5 +1,5 @@
 /**
- * @file test_async.c
+ * @file test_async_framework.c
  * @brief Unit tests for DAP SDK Async Test Framework
  * @details Tests all async testing utilities:
  *          - Global timeout handling
@@ -11,7 +11,6 @@
  * @copyright (c) 2025 Demlabs
  */
 
-#include "../../fixtures/utilities/test_helpers.h"
 #include "dap_test.h"
 #include "dap_test_async.h"
 #include "dap_common.h"
@@ -345,8 +344,8 @@ int main(int argc, char **argv)
         return 1;
     }
     
-    log_it(L_INFO, "=== DAP SDK Async Test - Unit Tests ===");
-    log_it(L_INFO, "Testing all async utilities...\n");
+    log_it(L_INFO, "=== DAP SDK Async Mock Framework - Unit Tests ===");
+    log_it(L_INFO, "Testing all async mock utilities...\n");
     
     // Run tests
     test_time_utilities();
@@ -359,7 +358,7 @@ int main(int argc, char **argv)
     test_wait_until_macro();
     test_global_timeout_setup();
     
-    log_it(L_INFO, "\n=== All Async Tests PASSED! ===");
+    log_it(L_INFO, "\n=== All Async Mock Tests PASSED! ===");
     
     dap_common_deinit();
     return 0;

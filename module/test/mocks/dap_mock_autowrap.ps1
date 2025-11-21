@@ -82,10 +82,10 @@ if ($MockMatches.Count -eq 0) {
     Write-Info "No mock declarations found - will create empty wrap file"
     $MockFunctions = @()
 } else {
-    $MockFunctions = $MockMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
-    Write-Success "Found $($MockFunctions.Count) mock declarations:"
-    foreach ($func in $MockFunctions) {
-        Write-Host "   - $func"
+$MockFunctions = $MockMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+Write-Success "Found $($MockFunctions.Count) mock declarations:"
+foreach ($func in $MockFunctions) {
+    Write-Host "   - $func"
     }
 }
 
@@ -116,10 +116,10 @@ if ($WrapperMatches1.Count -gt 0 -or $WrapperMatches2.Count -gt 0) {
 Write-Info "Generating linker response file: $WrapFile"
 
 if ($MockFunctions.Count -gt 0) {
-    $WrapContent = $MockFunctions | ForEach-Object { "-Wl,--wrap=$_" }
-    $WrapContent -join "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
-    "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -Append -NoNewline
-    Write-Success "Generated $($MockFunctions.Count) --wrap options"
+$WrapContent = $MockFunctions | ForEach-Object { "-Wl,--wrap=$_" }
+$WrapContent -join "`n" | Out-File -FilePath $WrapFile -Encoding ASCII -NoNewline
+"`n" | Out-File -FilePath $WrapFile -Encoding ASCII -Append -NoNewline
+Write-Success "Generated $($MockFunctions.Count) --wrap options"
 } else {
     # Create truly empty file - linker response files cannot contain comments
     # Comments are interpreted as linker options and cause errors
@@ -155,8 +155,8 @@ target_link_options($BaseName PRIVATE
 "@
 
 if ($MockFunctions.Count -gt 0) {
-    foreach ($func in $MockFunctions) {
-        $CMakeContent += "`n#   - $func"
+foreach ($func in $MockFunctions) {
+    $CMakeContent += "`n#   - $func"
     }
 } else {
     $CMakeContent += "`n#   (none - no mocks declared)"
@@ -171,15 +171,15 @@ if ($MockFunctions.Count -eq 0) {
     Write-Info "No mocks declared - skipping template generation"
     $MissingFunctions = @()
 } else {
-    $MissingFunctions = $MockFunctions | Where-Object { $WrapperFunctions -notcontains $_ }
+$MissingFunctions = $MockFunctions | Where-Object { $WrapperFunctions -notcontains $_ }
+
+if ($MissingFunctions.Count -eq 0) {
+    Write-Success "All wrappers are defined, no template needed"
+} else {
+    Write-Warning2 "Missing wrappers for $($MissingFunctions.Count) functions"
+    Write-Info "Generating template: $TemplateFile"
     
-    if ($MissingFunctions.Count -eq 0) {
-        Write-Success "All wrappers are defined, no template needed"
-    } else {
-        Write-Warning2 "Missing wrappers for $($MissingFunctions.Count) functions"
-        Write-Info "Generating template: $TemplateFile"
-        
-        $TemplateContent = @"
+    $TemplateContent = @"
 // Auto-generated wrapper templates for $TestSource
 // Copy these to your test file and fill in parameter types
 
@@ -187,9 +187,9 @@ if ($MockFunctions.Count -eq 0) {
 #include "dap_mock_linker_wrapper.h"
 
 "@
-        
-        foreach ($func in $MissingFunctions) {
-            $TemplateContent += @"
+    
+    foreach ($func in $MissingFunctions) {
+        $TemplateContent += @"
 
 // TODO: Define wrapper for $func
 // Example for int return:
@@ -208,13 +208,13 @@ if ($MockFunctions.Count -eq 0) {
 //     (a_param1))
 
 "@
-        }
-        
-        $TemplateContent | Out-File -FilePath $TemplateFile -Encoding ASCII
-        
-        Write-Success "Template generated with $($MissingFunctions.Count) function stubs"
-        foreach ($func in $MissingFunctions) {
-            Write-Host "   ⚠️  $func"
+    }
+    
+    $TemplateContent | Out-File -FilePath $TemplateFile -Encoding ASCII
+    
+    Write-Success "Template generated with $($MissingFunctions.Count) function stubs"
+    foreach ($func in $MissingFunctions) {
+        Write-Host "   ⚠️  $func"
         }
     }
 }
