@@ -34,17 +34,17 @@ tests:arm32.debian:
     extends: .tests
     image: demlabs/debian/amd64:cross
     script:
-      - mkdir build_arm32
-      - cd build_arm32 && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
-      - cd build_arm32 && ctest --verbose
+      - mkdir build
+      - cd build && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - ctest --verbose
 
 tests:arm64.debian:
     extends: .tests
     image: demlabs/debian/amd64:cross
     script:
-      - mkdir build_arm64
-      - cd build_arm64 && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
-      - cd build_arm64 && ctest --verbose
+      - mkdir build
+      - cd build && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - ctest --verbose
 
 tests:amd64.windows:
     extends: .tests
