@@ -53,7 +53,7 @@ tests:amd64.windows:
     script:
       - mkdir build
       - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release  -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
-      - cd build && ctest --verbose
+      - ctest --verbose
 
 tests:amd64.macos:
     extends: .tests
