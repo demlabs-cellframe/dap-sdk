@@ -502,8 +502,6 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         ADD_HEADER("User-Agent: Mozilla\r\n");
         break;
     case HTTP_HEAD:
-        log_it(L_DEBUG, "[HEAD_CHECK] DAP SDK: Processing HEAD request for path: %s", 
-               a_client_http->path ? a_client_http->path : "(null)");
         ADD_HEADER("User-Agent: Mozilla\r\n");
         break;
     case HTTP_POST:
@@ -614,13 +612,6 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         #undef CHECK_SNPRINTF
     } else {
         // Process text request (can use printf formatting)
-        if (a_client_http->method == HTTP_HEAD) {
-            log_it(L_DEBUG, "[HEAD_CHECK] DAP SDK: Sending HEAD request - Host: %s, Path: /%s%s%s",
-                   a_client_http->uplink_addr,
-                   a_client_http->path ? a_client_http->path : "",
-                   ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? "?" : "",
-                   ((a_client_http->method == HTTP_GET || a_client_http->method == HTTP_HEAD) && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "");
-        }
         dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n%s",
             dap_http_method_to_str(a_client_http->method), 
             a_client_http->path ? a_client_http->path : "",
@@ -1416,11 +1407,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 }
             }
             else {
-                if (l_client_http->method == HTTP_HEAD) {
-                    log_it(L_DEBUG, "[HEAD_CHECK] Processing HEAD response: content_length=%zu, response_size=%zu", 
-                           l_client_http->content_length, l_client_http->response_size);
-                }
-                
                 // Non-streaming accumulation mode: use response buffer
                 if (!l_client_http->response) {
                     m_http_error_exit(EFAULT, "Response buffer is NULL in non-streaming mode");
@@ -1458,11 +1444,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     }
                 }
                 
-                if (l_client_http->method == HTTP_HEAD) {
-                    log_it(L_DEBUG, "[HEAD_CHECK] Checking HEAD completion: method=HEAD, status=%d", 
-                           l_client_http->status_code);
-                }
-                
                 // Check completion conditions
                 if ((l_client_http->method == HTTP_HEAD) ||
                     (l_client_http->content_length > 0 && 
@@ -1470,10 +1451,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     (l_client_http->status_code >= 400 && 
                      !l_client_http->is_chunked &&
                      a_es->buf_in_size == 0)) {
-                    
-                    if (l_client_http->method == HTTP_HEAD) {
-                        log_it(L_DEBUG, "[HEAD_CHECK] HEAD request complete - calling finalize_response immediately (no body expected)");
-                    }
                     s_http_finalize_response(l_client_http, l_ctx);
                 }
             }
@@ -1522,15 +1499,13 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
     }
     
     if (a_es->buf_in && a_es->buf_in_size > 0 && !l_client_http->were_callbacks_called) {
-        log_it(L_DEBUG, "[HEAD_CHECK] s_http_error: Socket closed but found %zu bytes in buf_in, processing data first",
-               a_es->buf_in_size);
         s_http_read(a_es, NULL);
         
         if (l_client_http->were_callbacks_called) {
             return;
         }
         
-        log_it(L_WARNING, "[HEAD_CHECK] s_http_error: buf_in data could not be processed, continuing error handling");
+        log_it(L_WARNING, "s_http_error: buf_in data could not be processed, continuing error handling");
     }
     
     dap_client_http_async_context_t *l_ctx = NULL;
