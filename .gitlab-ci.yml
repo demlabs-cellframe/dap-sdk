@@ -32,19 +32,19 @@ tests:amd64.debian:
 
 tests:arm32.debian:
     extends: .tests
-    image: demlabs/debian/arm32:qt5
-    before_script: /opt/buildtools/prepare_environment.sh arm32v7-linux
+    image: demlabs/debian/amd64:cross
     script:
-      - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
+      - mkdir build_arm32
+      - cd build_arm32 && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build_arm32 && ctest --verbose
 
 tests:arm64.debian:
     extends: .tests
-    image: demlabs/debian/arm64:qt5
-    before_script: /opt/buildtools/prepare_environment.sh arm64-linux
+    image: demlabs/debian/amd64:cross
     script:
-      - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
+      - mkdir build_arm64
+      - cd build_arm64 && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build_arm64 && ctest --verbose
 
 build:amd64.windows:
     extends: .tests
@@ -55,13 +55,13 @@ build:amd64.windows:
       - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
     
 
-build:amd64.macos:
+tests:amd64.macos:
     extends: .tests
     tags:
       - macos-native
     script:
       - mkdir build
-      - cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
+      - cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc) && ctest --verbose
 
 
 build:any.android:
