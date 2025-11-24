@@ -32,28 +32,28 @@ tests:amd64.debian:
 
 tests:arm32.debian:
     extends: .tests
-    image: demlabs/debian/arm32:qt5
-    before_script: /opt/buildtools/prepare_environment.sh arm32v7-linux
+    image: demlabs/debian/amd64:cross
     script:
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - ctest --verbose
 
 tests:arm64.debian:
     extends: .tests
-    image: demlabs/debian/arm64:qt5
-    before_script: /opt/buildtools/prepare_environment.sh arm64-linux
+    image: demlabs/debian/amd64:cross
     script:
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - ctest --verbose
 
-build:amd64.windows:
+tests:amd64.windows:
     extends: .tests
     image: demlabs/windows/amd64:qt6
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
     script:
       - mkdir build
-      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
-    
+      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release  -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
+      - ctest --verbose
 
 build:amd64.macos:
     extends: .tests
@@ -61,7 +61,7 @@ build:amd64.macos:
       - macos-native
     script:
       - mkdir build
-      - cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
+      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc) 
 
 
 build:any.android:
