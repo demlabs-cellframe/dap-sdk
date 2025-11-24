@@ -31,15 +31,15 @@
 
 #define LOG_TAG "test_base58"
 
-// Test cases based on base58_encode_decode.json structure, adapted for base32
-// Format: [hex_string, base32_string]
+// Test cases based on base58_encode_decode.json structure, adapted for base58
+// Format: [hex_string, base58_string]
 typedef struct {
     const char* hex_input;
-    const char* base32_expected;
+    const char* base58_expected;
 } base58_test_case_t;
 
 // Test cases 
-static const base32_test_case_t s_base32_test_cases[] = {
+static const base58_test_case_t s_base58_test_cases[] = {
     {"", ""},
     {"61", "MF"},
     {"626262", "MFRGG"},
@@ -57,7 +57,7 @@ static const base32_test_case_t s_base32_test_cases[] = {
 };
 
 
-#define BASE58_TEST_CASES_COUNT (sizeof(s_base32_test_cases) / sizeof(s_base32_test_cases[0]))
+#define BASE58_TEST_CASES_COUNT (sizeof(s_base58_test_cases) / sizeof(s_base58_test_cases[0]))
 
 
 
@@ -93,6 +93,104 @@ static size_t s_parse_hex(const char* hex_str, uint8_t* out, size_t out_size) {
 
 
 
+/**
+ * @brief Test Base58 encoding functionality
+ * Goal: test low-level base58 encoding functionality
+ */
+static bool s_test_base58_encode(void) {
+    log_it(L_DEBUG, "Testing Base58 encoding");
+    
+    for (size_t idx = 0; idx < BASE58_TEST_CASES_COUNT; idx++) {
+        const base58_test_case_t* test = &s_base58_test_cases[idx];
+        
+        // Parse hex input
+        size_t hex_len = strlen(test->hex_input);
+        size_t input_size = hex_len / 2;
+        uint8_t input_data[256] = {0}; // Max size for test cases
+        size_t parsed_size = 0;
+        
+        if (hex_len > 0) {
+            parsed_size = s_parse_hex(test->hex_input, input_data, sizeof(input_data));
+            if (parsed_size == 0 && hex_len > 0) {
+                log_it(L_ERROR, "Failed to parse hex input for test case %zu", idx);
+                return false;
+            }
+        }
+        
+        // Encode
+        size_t encode_size = DAP_ENC_BASE58_ENCODE_SIZE(parsed_size);
+        char encoded[encode_size + 1];
+        memset(encoded, 0, sizeof(encoded));
+        
+        size_t encoded_result = dap_enc_base58_encode(input_data, parsed_size, encoded);
+        
+        // Verify encoding
+        if (strlen(test->base58_expected) > 0) {
+            DAP_TEST_ASSERT(encoded_result > 0, "Base58 encoding should succeed");
+            DAP_TEST_ASSERT_STRING_EQUAL(test->base58_expected, encoded, 
+                "Encoded result should match expected");
+        } else {
+            // Empty input should produce empty output
+            DAP_TEST_ASSERT(encoded_result == 0 || strlen(encoded) == 0, 
+                "Empty input should produce empty or minimal output");
+        }
+    }
+    
+    log_it(L_DEBUG, "Base58 encoding test passed");
+    return true;
+}
+
+
+/**
+ * @brief Test Base58 decoding functionality
+ * Goal: test low-level base32 decoding functionality
+ */
+static bool s_test_base58_decode(void) {
+    log_it(L_DEBUG, "Testing Base32 decoding");
+    
+    for (size_t idx = 0; idx < BASE58_TEST_CASES_COUNT; idx++) {
+        const base58_test_case_t* test = &s_base58_test_cases[idx];
+        
+        // Skip empty test case for decoding (will test separately)
+        if (strlen(test->base58_expected) == 0) {
+            continue;
+        }
+        
+        // Decode
+        size_t decode_size = DAP_ENC_BASE58_DECODE_SIZE(strlen(test->base58_expected));
+        uint8_t decoded[256] = {0}; // Max size for test cases
+        size_t decoded_result = dap_enc_base58_decode(test->base58_expected, decoded);
+        
+        DAP_TEST_ASSERT(decoded_result > 0, "Base58 decoding should succeed");
+        
+        // Parse expected hex output
+        size_t hex_len = strlen(test->hex_input);
+        size_t expected_size = hex_len / 2;
+        uint8_t expected_data[256] = {0};
+        size_t expected_parsed = 0;
+        
+        if (hex_len > 0) {
+            expected_parsed = s_parse_hex(test->hex_input, expected_data, sizeof(expected_data));
+            if (expected_parsed == 0 && hex_len > 0) {
+                log_it(L_ERROR, "Failed to parse expected hex for test case %zu", idx);
+                return false;
+            }
+        }
+        
+        // Verify decoded size matches
+        DAP_TEST_ASSERT(decoded_result == expected_parsed, 
+            "Decoded size should match expected size");
+        
+        // Verify decoded data matches
+        if (expected_parsed > 0) {
+            int cmp = memcmp(decoded, expected_data, expected_parsed);
+            DAP_TEST_ASSERT(cmp == 0, "Decoded data should match expected");
+        }
+    }
+    
+    log_it(L_DEBUG, "Base58 decoding test passed");
+    return true;
+}
 
 
 
@@ -110,10 +208,12 @@ int main(void) {
     
     bool l_all_passed = true;
     
-    l_all_passed &= s_test_base58_basic();
-    l_all_passed &= s_test_base58_consistency();
-    l_all_passed &= s_test_base58_empty();
-    l_all_passed &= s_test_base58_performance();
+    // Test encoding functionality
+    l_all_passed &= s_test_base32_encode();
+    
+    // Test decoding functionality
+    l_all_passed &= s_test_base32_decode();
+    
     
     dap_test_sdk_cleanup();
     
