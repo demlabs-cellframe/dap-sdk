@@ -36,6 +36,7 @@ extern "C" {
 typedef enum dap_http_method {
     HTTP_GET,
     HTTP_POST,
+    HTTP_HEAD,
     // Add more
     HTTP_INVALID = 0xf
 } dap_http_method_t;
@@ -70,6 +71,8 @@ static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
         return HTTP_GET;
     else if ( !strcmp(a_method, "POST") )
         return HTTP_POST;
+    else if ( !strcmp(a_method, "HEAD") )
+        return HTTP_HEAD;
     else return HTTP_INVALID;
     // Add more
 }
@@ -77,7 +80,8 @@ static inline dap_http_method_t dap_http_method_from_str(const char *a_method) {
 static inline const char * dap_http_method_to_str(dap_http_method_t a_method) {
     static const char * l_methods[] = {
         [HTTP_GET] = "GET",
-        [HTTP_POST] = "POST"
+        [HTTP_POST] = "POST",
+        [HTTP_HEAD] = "HEAD"
     };
     return l_methods[a_method < HTTP_INVALID ? a_method : HTTP_INVALID];
     // Add more
