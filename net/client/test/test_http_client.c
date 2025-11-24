@@ -364,8 +364,14 @@ static void test7_response_callback(void *a_body, size_t a_body_size,
 
 static void test7_error_callback(int a_error_code, void *a_arg)
 {
-    TEST_INFO("Timeout error: code=%d (%s)", a_error_code, 
-              a_error_code == ETIMEDOUT ? "ETIMEDOUT" : "Other");
+    const char *error_name = 
+        a_error_code == ETIMEDOUT ? "ETIMEDOUT" :
+        a_error_code == 60 ? "ETIMEDOUT(60)" :
+        a_error_code == ECONNREFUSED ? "ECONNREFUSED" :
+        a_error_code == EHOSTUNREACH ? "EHOSTUNREACH" :
+        a_error_code < 0 ? "DAP_INTERNAL" : "Other";
+    
+    TEST_INFO("Connection error: code=%d (%s) - Expected for unreachable host", a_error_code, error_name);
     g_test7_timeout_occurred = true;
     g_test7_timeout_code = a_error_code;
     g_test7_completed = true;
