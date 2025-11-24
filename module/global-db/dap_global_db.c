@@ -289,7 +289,7 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
 {
     a_obj->timestamp = a_new_timestamp;
-    DAP_DELETE(a_obj->sign);
+    DAP_DEL_Z(a_obj->sign);
     a_obj->crc = 0;
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
