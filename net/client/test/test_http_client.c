@@ -1412,7 +1412,7 @@ void run_test_suite()
 
     // Test 15: HEAD method - 308 Permanent Redirect
     TEST_START("HEAD Method - 308 Permanent Redirect");
-    printf("Testing: pub.cellframe.net/linux/cellframe-node/master/cellframe-node-5.4-28-amd64.deb (HEAD)\n");
+    printf("Testing: pub.cellframe.net/linux/cellframe-node/master/latest-amd64 (HEAD)\n");
     printf("Expected: 308 redirect with Location header, zero body\n");
     
     g_test15_success = false;
@@ -1422,7 +1422,7 @@ void run_test_suite()
     
     dap_client_http_request_simple_async(
         NULL, "pub.cellframe.net", 80, "HEAD", NULL,
-        "/linux/cellframe-node/master/cellframe-node-5.4-28-amd64.deb", NULL, 0, NULL,
+        "/linux/cellframe-node/master/latest-amd64", NULL, 0, NULL,
         test15_response_callback, test15_error_callback,
         NULL, NULL, false  // Don't follow redirects automatically
     );
