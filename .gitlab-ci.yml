@@ -57,16 +57,16 @@ build:amd64.windows:
 
 build:amd64.macos:
     extends: .tests
-    image: demlabs/macos/amd64:qt5
-    before_script: /opt/buildtools/prepare_environment.sh amd64-osx
+    tags:
+      - macos-native
     script:
       - mkdir build
-      - cd build && $(${OSXCROSS_ROOT}/bin/osxcross-conf) && export OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1 && export OSXCROSS_HOST=x86_64-apple-darwin20.4 && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${OSXCROSS_ROOT}/toolchain.cmake -DBoost_INCLUDE_DIR=$BOOST_INCLUDE_DIR .. && make -j$(nproc)
+      - cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
 
 
 build:any.android:
     extends: .tests
-    image: demlabs/android/any:qt5
+    image: demlabs/android/any:qt6
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
     script:
       - mkdir build
