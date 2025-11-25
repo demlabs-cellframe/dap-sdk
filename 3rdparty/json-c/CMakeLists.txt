@@ -12,6 +12,11 @@ cmake_policy(SET CMP0048 NEW)
 # PROJECT_VERSION{,_MAJOR,_MINOR,_PATCH} set by project():
 project(dap_json-c LANGUAGES C VERSION 0.16.99)
 
+# Disable CPack completely - this is a submodule, not a standalone package
+# Packaging is handled by parent project (dap-sdk)
+set(CPACK_GENERATOR "" CACHE STRING "CPack generators disabled for submodule" FORCE)
+set(CPACK_INCLUDE_CPACK OFF CACHE BOOL "Disable CPack inclusion" FORCE)
+
 # Targets may not link directly to themselves.
 cmake_policy(SET CMP0038 NEW)
 
@@ -58,7 +63,8 @@ include(CheckIncludeFile)
 include(CheckIncludeFiles)
 include(CheckCSourceCompiles)
 include(CheckTypeSize)
-include(CPack)
+# CPack disabled - packaging is handled by parent project
+# include(CPack)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
