@@ -163,7 +163,6 @@ static bool s_test_error_handling_workflow(void) {
     
     // Test 2: Signature with NULL key
     dap_hash_fast_t l_test_hash = {0};
-    size_t l_sig_size = 0;
     dap_sign_t* l_signature = dap_sign_create(NULL, &l_test_hash, sizeof(l_test_hash));
     DAP_TEST_ASSERT_NULL(l_signature, "Signing with NULL key should fail");
     
