@@ -63,15 +63,20 @@ bool dap_test_wait_condition(
 }
 
 // =============================================================================
-// PTHREAD CONDITION VARIABLE HELPERS
+// CONDITION VARIABLE HELPERS (cross-platform)
 // =============================================================================
 
 void dap_test_cond_wait_init(dap_test_cond_wait_ctx_t *a_ctx)
 {
     if (!a_ctx) return;
     
+#ifdef DAP_OS_WINDOWS
+    InitializeCriticalSection(&a_ctx->mutex);
+    InitializeConditionVariable(&a_ctx->cond);
+#else
     pthread_mutex_init(&a_ctx->mutex, NULL);
     pthread_cond_init(&a_ctx->cond, NULL);
+#endif
     a_ctx->condition_met = false;
     a_ctx->user_data = NULL;
 }
@@ -80,24 +85,60 @@ void dap_test_cond_wait_deinit(dap_test_cond_wait_ctx_t *a_ctx)
 {
     if (!a_ctx) return;
     
+#ifdef DAP_OS_WINDOWS
+    DeleteCriticalSection(&a_ctx->mutex);
+    // Windows CONDITION_VARIABLE doesn't need explicit destruction
+#else
     pthread_mutex_destroy(&a_ctx->mutex);
     pthread_cond_destroy(&a_ctx->cond);
+#endif
 }
 
 void dap_test_cond_signal(dap_test_cond_wait_ctx_t *a_ctx)
 {
     if (!a_ctx) return;
     
+#ifdef DAP_OS_WINDOWS
+    EnterCriticalSection(&a_ctx->mutex);
+    a_ctx->condition_met = true;
+    WakeConditionVariable(&a_ctx->cond);
+    LeaveCriticalSection(&a_ctx->mutex);
+#else
     pthread_mutex_lock(&a_ctx->mutex);
     a_ctx->condition_met = true;
     pthread_cond_signal(&a_ctx->cond);
     pthread_mutex_unlock(&a_ctx->mutex);
+#endif
 }
 
 bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
 {
     if (!a_ctx) return false;
     
+#ifdef DAP_OS_WINDOWS
+    EnterCriticalSection(&a_ctx->mutex);
+    
+    if (a_ctx->condition_met) {
+        LeaveCriticalSection(&a_ctx->mutex);
+        return true;
+    }
+    
+    BOOL l_result = SleepConditionVariableCS(&a_ctx->cond, &a_ctx->mutex, a_timeout_ms);
+    bool l_success = a_ctx->condition_met;
+    
+    LeaveCriticalSection(&a_ctx->mutex);
+    
+    if (!l_result) {
+        if (GetLastError() == ERROR_TIMEOUT) {
+            log_it(L_WARNING, "Condition variable wait timeout after %u ms", a_timeout_ms);
+        } else {
+            log_it(L_ERROR, "SleepConditionVariableCS error: %lu", GetLastError());
+        }
+        return false;
+    }
+    
+    return l_success;
+#else
     pthread_mutex_lock(&a_ctx->mutex);
     
     if (a_ctx->condition_met) {
@@ -129,11 +170,107 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
     }
     
     return l_success;
+#endif
 }
 
 // =============================================================================
-// GLOBAL TEST TIMEOUT (ALARM-BASED)
+// GLOBAL TEST TIMEOUT (cross-platform)
 // =============================================================================
+
+#ifdef DAP_OS_WINDOWS
+
+static VOID CALLBACK s_global_timeout_handler_win(PVOID a_param, BOOLEAN a_timer_fired)
+{
+    UNUSED(a_param);
+    UNUSED(a_timer_fired);
+    
+    if (!s_global_timeout) return;
+    
+    s_global_timeout->timeout_triggered = 1;
+    
+    log_it(L_CRITICAL, "=== TEST TIMEOUT ===");
+    log_it(L_CRITICAL, "Test '%s' exceeded %u seconds",
+           s_global_timeout->test_name ? s_global_timeout->test_name : "unknown",
+           s_global_timeout->timeout_sec);
+    log_it(L_CRITICAL, "Aborting test execution...");
+    
+    longjmp(s_global_timeout->jump_buf, 1);
+}
+
+int dap_test_set_global_timeout(
+    dap_test_global_timeout_t *a_timeout,
+    uint32_t a_timeout_sec,
+    const char *a_test_name)
+{
+    if (!a_timeout) return -1;
+    
+    a_timeout->timeout_triggered = 0;
+    a_timeout->timeout_sec = a_timeout_sec;
+    a_timeout->test_name = a_test_name;
+    a_timeout->timer_queue = NULL;
+    a_timeout->timer = NULL;
+    
+    // Setup longjmp point
+    s_global_timeout = a_timeout;
+    
+    if (setjmp(a_timeout->jump_buf) != 0) {
+        // Returned from timeout longjmp
+        if (a_timeout->timer) {
+            DeleteTimerQueueTimer(a_timeout->timer_queue, a_timeout->timer, NULL);
+            a_timeout->timer = NULL;
+        }
+        if (a_timeout->timer_queue) {
+            DeleteTimerQueue(a_timeout->timer_queue);
+            a_timeout->timer_queue = NULL;
+        }
+        s_global_timeout = NULL;
+        return 1;
+    }
+    
+    // Create timer queue
+    a_timeout->timer_queue = CreateTimerQueue();
+    if (!a_timeout->timer_queue) {
+        log_it(L_ERROR, "Failed to create timer queue: %lu", GetLastError());
+        s_global_timeout = NULL;
+        return -1;
+    }
+    
+    // Create timer (timeout in milliseconds, one-shot)
+    if (!CreateTimerQueueTimer(&a_timeout->timer, a_timeout->timer_queue,
+                               s_global_timeout_handler_win, NULL,
+                               a_timeout_sec * 1000, 0, 0)) {
+        log_it(L_ERROR, "Failed to create timer: %lu", GetLastError());
+        DeleteTimerQueue(a_timeout->timer_queue);
+        a_timeout->timer_queue = NULL;
+        s_global_timeout = NULL;
+        return -1;
+    }
+    
+    log_it(L_INFO, "Global test timeout set: %u seconds for '%s'",
+           a_timeout_sec, a_test_name ? a_test_name : "test");
+    
+    return 0;
+}
+
+void dap_test_cancel_global_timeout(void)
+{
+    if (s_global_timeout) {
+        if (s_global_timeout->timer) {
+            DeleteTimerQueueTimer(s_global_timeout->timer_queue, 
+                                  s_global_timeout->timer, NULL);
+            s_global_timeout->timer = NULL;
+        }
+        if (s_global_timeout->timer_queue) {
+            DeleteTimerQueue(s_global_timeout->timer_queue);
+            s_global_timeout->timer_queue = NULL;
+        }
+    }
+    s_global_timeout = NULL;
+    
+    log_it(L_DEBUG, "Global test timeout cancelled");
+}
+
+#else // POSIX
 
 static void s_global_timeout_handler(int a_sig)
 {
@@ -149,7 +286,7 @@ static void s_global_timeout_handler(int a_sig)
            s_global_timeout->timeout_sec);
     log_it(L_CRITICAL, "Aborting test execution...");
     
-    siglongjmp(s_global_timeout->jump_buf, 1);
+    longjmp(s_global_timeout->jump_buf, 1);
 }
 
 int dap_test_set_global_timeout(
@@ -172,7 +309,7 @@ int dap_test_set_global_timeout(
     // Setup longjmp point
     s_global_timeout = a_timeout;
     
-    if (sigsetjmp(a_timeout->jump_buf, 1) != 0) {
+    if (setjmp(a_timeout->jump_buf) != 0) {
         // Returned from timeout longjmp
         s_global_timeout = NULL;
         return 1;
@@ -196,3 +333,4 @@ void dap_test_cancel_global_timeout(void)
     log_it(L_DEBUG, "Global test timeout cancelled");
 }
 
+#endif // DAP_OS_WINDOWS

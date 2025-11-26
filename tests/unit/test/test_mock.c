@@ -241,8 +241,9 @@ static void test_mock_delay_fixed(void)
     log_it(L_DEBUG, "Fixed delay elapsed: %llu ms (expected: ~100ms)",
            (unsigned long long)l_elapsed);
     
-    dap_assert_PIF(l_elapsed >= 90 && l_elapsed <= 150,
-                   "Delay should be ~100ms (+/- tolerance)");
+    // Wine/Windows timer has ~15% tolerance
+    dap_assert_PIF(l_elapsed >= 80 && l_elapsed <= 150,
+                   "Delay should be ~100ms (+/- 20% tolerance for Wine)");
     
     log_it(L_INFO, "✓ Test 6: Fixed Delay PASSED\n");
 }

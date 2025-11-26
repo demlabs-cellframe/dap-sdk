@@ -69,8 +69,9 @@ static void test_time_utilities(void)
            (unsigned long long)(l_time2 - l_time1));
     
     dap_assert_PIF(l_time2 > l_time1, "Time should increase");
-    dap_assert_PIF(l_time2 - l_time1 >= 90 && l_time2 - l_time1 <= 200,
-                   "Sleep should be accurate (+/- 10ms tolerance)");
+    // Wine/Windows timer tolerance ~20%
+    dap_assert_PIF(l_time2 - l_time1 >= 80 && l_time2 - l_time1 <= 200,
+                   "Sleep should be accurate (+/- 20% tolerance for Wine)");
     
     log_it(L_INFO, "✓ Test 1: Time Utilities PASSED\n");
 }
@@ -126,8 +127,9 @@ static void test_condition_polling_delayed_success(void)
     
     dap_assert_PIF(l_result == true, "Condition should eventually succeed");
     dap_assert_PIF(s_condition_check_count >= 3, "Should check at least 3 times");
-    dap_assert_PIF(l_elapsed >= 200 && l_elapsed < 1000,
-                   "Should take ~200-300ms (3 polls * 100ms)");
+    // Allow 10% timer tolerance for Wine/Windows timing differences
+    dap_assert_PIF(l_elapsed >= 180 && l_elapsed < 1000,
+                   "Should take ~200-300ms (3 polls * 100ms, with 10% tolerance)");
     
     log_it(L_INFO, "✓ Test 3: Delayed Success PASSED\n");
 }
@@ -152,8 +154,9 @@ static void test_condition_polling_timeout(void)
            (unsigned long long)l_elapsed, s_condition_check_count);
     
     dap_assert_PIF(l_result == false, "Condition should timeout");
-    dap_assert_PIF(l_elapsed >= 500 && l_elapsed < 700,
-                   "Should timeout at ~500ms");
+    // Wine/Windows timer tolerance
+    dap_assert_PIF(l_elapsed >= 450 && l_elapsed < 700,
+                   "Should timeout at ~500ms (+/- tolerance)");
     dap_assert_PIF(s_condition_check_count >= 5,
                    "Should poll multiple times before timeout");
     
@@ -232,8 +235,9 @@ static void test_cond_wait_delayed_signal(void)
     log_it(L_DEBUG, "Signal received after %llu ms", (unsigned long long)l_elapsed);
     
     dap_assert_PIF(l_result == true, "Should receive signal");
-    dap_assert_PIF(l_elapsed >= 190 && l_elapsed < 400,
-                   "Should take ~200ms for signal");
+    // Wine/Windows timer tolerance ~20%
+    dap_assert_PIF(l_elapsed >= 160 && l_elapsed < 400,
+                   "Should take ~200ms for signal (+/- 20% tolerance)");
     
     dap_test_cond_wait_deinit(&l_ctx);
     
@@ -255,8 +259,9 @@ static void test_cond_wait_timeout(void)
     log_it(L_DEBUG, "Timeout after %llu ms", (unsigned long long)l_elapsed);
     
     dap_assert_PIF(l_result == false, "Should timeout");
-    dap_assert_PIF(l_elapsed >= 500 && l_elapsed < 700,
-                   "Should timeout at ~500ms");
+    // Wine/Windows timer tolerance
+    dap_assert_PIF(l_elapsed >= 450 && l_elapsed < 700,
+                   "Should timeout at ~500ms (+/- tolerance)");
     
     dap_test_cond_wait_deinit(&l_ctx);
     
@@ -299,8 +304,9 @@ static void test_wait_until_macro(void)
     pthread_join(l_thread, NULL);
     
     log_it(L_DEBUG, "Macro wait completed in %llu ms", (unsigned long long)l_elapsed);
-    dap_assert_PIF(l_elapsed >= 290 && l_elapsed < 600,
-                   "Should wait ~300ms for condition");
+    // Wine/Windows timer tolerance ~20%
+    dap_assert_PIF(l_elapsed >= 250 && l_elapsed < 600,
+                   "Should wait ~300ms for condition (+/- 20% tolerance)");
     
     log_it(L_INFO, "✓ Test 8: Macro PASSED\n");
 }
