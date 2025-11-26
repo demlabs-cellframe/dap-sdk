@@ -119,7 +119,6 @@ static bool s_test_crypto_api_functionality(void) {
     DAP_TEST_ASSERT(l_hash_ret == true, "Document hashing");
     
     // Sign the hash
-    size_t l_signature_size = 0;
     dap_sign_t* l_signature = dap_sign_create(l_sign_key, &l_doc_hash, sizeof(l_doc_hash));
     DAP_TEST_ASSERT_NOT_NULL(l_signature, "Document signing");
     DAP_TEST_ASSERT(dap_sign_get_size(l_signature) > 0, "Signature size check");
@@ -142,7 +141,6 @@ static bool s_test_crypto_api_functionality(void) {
         dap_hash_fast_t l_hash = {0};
         dap_hash_fast(l_documents[i], strlen(l_documents[i]), &l_hash);
         
-        size_t l_sig_size = 0;
         dap_sign_t* l_sig = dap_sign_create(l_sign_key, &l_hash, sizeof(l_hash));
         DAP_TEST_ASSERT_NOT_NULL(l_sig, "Batch document signing");
         

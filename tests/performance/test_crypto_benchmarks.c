@@ -93,7 +93,6 @@ static bool s_benchmark_dilithium_sign_performance(void) {
     size_t l_total_sig_size = 0;
     
     for (size_t i = 0; i < SIGN_ITERATIONS; i++) {
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_test_data, l_data_size);
         
         if (!l_signature) {
@@ -138,7 +137,6 @@ static bool s_benchmark_dilithium_verify_performance(void) {
     const char* l_test_data = "Dilithium verification performance test message";
     size_t l_data_size = strlen(l_test_data);
     
-    size_t l_sig_size = 0;
     dap_sign_t* l_signature = dap_sign_create(l_key, l_test_data, l_data_size);
     DAP_TEST_ASSERT_NOT_NULL(l_signature, "Signature creation for verification test");
     
