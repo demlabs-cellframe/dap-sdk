@@ -132,7 +132,6 @@ static bool s_test_crypto_input_validation(void) {
     DAP_TEST_ASSERT_NULL(l_invalid_key, "Invalid key type should return NULL");
     
     // Test 4: Signing with NULL key
-    size_t l_sig_size = 0;
     dap_sign_t* l_signature = dap_sign_create(NULL, "test", 4);
     DAP_TEST_ASSERT_NULL(l_signature, "Signing with NULL key should fail");
     
@@ -169,7 +168,6 @@ static bool s_test_crypto_memory_leaks(void) {
         
         // Test signing and cleanup
         const char* l_data = "Memory leak test data";
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_data, strlen(l_data));
         
         if (l_signature) {
@@ -269,7 +267,6 @@ static bool s_test_sensitive_data_wiping(void) {
         
         // Use the key for operations
         const char* l_test_data = "Sensitive test data";
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_test_data, strlen(l_test_data));
         
         if (l_signature) {
