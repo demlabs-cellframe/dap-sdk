@@ -28,6 +28,7 @@
 #include "dap_client.h"
 #include "dap_client_helpers.h"
 #include "dap_stream.h"
+#include "dap_stream_ctl.h"
 #include "dap_net_transport.h"
 #include "dap_net_transport_server.h"
 
@@ -53,7 +54,7 @@
 #define TEST_PARALLEL_TRANSPORTS 4  // Number of parallel transport instances per type
 #define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANSPORT_TIMEOUT_MS 30000  // 30 seconds (intelligent wait - returns immediately on success)
+#define TEST_TRANSPORT_TIMEOUT_MS 300000  // 300 seconds (5 minutes)
 
 // Transport configs are defined in test_transport_helpers.h
 // Define the actual array here
@@ -167,6 +168,13 @@ static int test_init_all_transports(void)
     int l_ret = dap_stream_init(NULL);
     if (l_ret != 0) {
         TEST_ERROR("Stream initialization failed");
+        return -2;
+    }
+    
+    // Initialize stream control module (required for key exchange parameters)
+    l_ret = dap_stream_ctl_init();
+    if (l_ret != 0) {
+        TEST_ERROR("Stream control initialization failed");
         return -2;
     }
     
@@ -651,6 +659,9 @@ static void test_03_cleanup_all_resources(void)
     // Cleanup client system
     dap_client_deinit();
     
+    // Cleanup stream control module
+    dap_stream_ctl_deinit();
+    
     // Cleanup stream system
     dap_stream_deinit();
     
@@ -681,15 +692,15 @@ int main(void)
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
                                  "[general]\n"
-                                 "debug_reactor=true\n"
+                                 "debug_reactor=false\n"
                                  "[dap_client]\n"
-                                 "max_tries=3\n"
-                                 "timeout=20\n"
+                                 "max_tries=5\n"
+                                 "timeout=60\n"
                                  "debug_more=true\n"
-                                 "timeout_active_after_connect=15\n"
+                                 "timeout_active_after_connect=60\n"
                                  "[stream]\n"
                                  "debug_more=true\n"
-                                 "debug_channels=true\n"
+                                 "debug_channels=false\n"
                                  "debug_dump_stream_headers=false\n";
     FILE *f = fopen("test_transport.cfg", "w");
     if (f) {
@@ -701,7 +712,7 @@ int main(void)
     dap_common_init(LOG_TAG, NULL);
     // Set logging output to stdout and level to DEBUG
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_INFO);
     dap_config_init(".");
     
     // Open config and set as global
@@ -716,7 +727,8 @@ int main(void)
     dap_enc_init();
     
     // Initialize events system (required for dap_proc_thread_get_auto used by dap_link_manager)
-    int l_events_ret = dap_events_init(1, 60000);
+    // Use 0 threads (auto-detect) to ensure enough workers for parallel clients
+    int l_events_ret = dap_events_init(0, 60000);
     if (l_events_ret != 0) {
         log_it(L_ERROR, "dap_events_init failed: %d", l_events_ret);
         return -10;

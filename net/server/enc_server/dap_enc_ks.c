@@ -43,6 +43,7 @@
 #define LOG_TAG "dap_enc_ks"
 
 static dap_enc_ks_key_t * _ks = NULL;
+static pthread_mutex_t s_ks_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool s_memcache_enable = false;
 static time_t s_memcache_expiration_key = 0;
 
@@ -50,6 +51,7 @@ static void s_enc_key_free(dap_enc_ks_key_t **ptr);
 
 void dap_enc_ks_deinit()
 {
+    pthread_mutex_lock(&s_ks_mutex);
     if (_ks) {
         dap_enc_ks_key_t *cur_item, *tmp;
         HASH_ITER(hh, _ks, cur_item, tmp) {
@@ -58,6 +60,7 @@ void dap_enc_ks_deinit()
             s_enc_key_free(&cur_item);
         }
     }
+    pthread_mutex_unlock(&s_ks_mutex);
 }
 
 inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE])
@@ -78,7 +81,7 @@ inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE])
     }
 }
 
-void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
+static void s_save_key_in_storge_unsafe(dap_enc_ks_key_t *a_key)
 {
     HASH_ADD_STR(_ks,id,a_key);
     if(s_memcache_enable) {
@@ -88,8 +91,7 @@ void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
     }
 }
 
-
-dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
+static dap_enc_ks_key_t * s_enc_ks_find_unsafe(const char * v_id)
 {
     dap_enc_ks_key_t * ret = NULL;
     HASH_FIND_STR(_ks,v_id,ret);
@@ -113,6 +115,14 @@ dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
             }*/
         }
     }
+    return ret;
+}
+
+dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
+{
+    pthread_mutex_lock(&s_ks_mutex);
+    dap_enc_ks_key_t * ret = s_enc_ks_find_unsafe(v_id);
+    pthread_mutex_unlock(&s_ks_mutex);
     return ret;
 }
 
@@ -149,11 +159,14 @@ dap_enc_ks_key_t * dap_enc_ks_new()
 
 bool dap_enc_ks_save_in_storage(dap_enc_ks_key_t* key)
 {
-    if(dap_enc_ks_find(key->id) != NULL) {
+    pthread_mutex_lock(&s_ks_mutex);
+    if(s_enc_ks_find_unsafe(key->id) != NULL) {
+        pthread_mutex_unlock(&s_ks_mutex);
         log_it(L_WARNING, "key is already saved in storage");
         return false;
     }
-    s_save_key_in_storge(key);
+    s_save_key_in_storge_unsafe(key);
+    pthread_mutex_unlock(&s_ks_mutex);
     return true;
 }
 
@@ -173,13 +186,16 @@ dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key)
 
 void dap_enc_ks_delete(const char *id)
 {
-    dap_enc_ks_key_t *delItem = dap_enc_ks_find(id);
+    pthread_mutex_lock(&s_ks_mutex);
+    dap_enc_ks_key_t *delItem = s_enc_ks_find_unsafe(id);
     if (delItem) {
         HASH_DEL (_ks, delItem);
+        pthread_mutex_unlock(&s_ks_mutex);
         pthread_mutex_destroy(&delItem->mutex);
         s_enc_key_free(&delItem);
         return;
     }
+    pthread_mutex_unlock(&s_ks_mutex);
     log_it(L_WARNING, "Can't delete key by id: %s. Key not found", id);
 }
 

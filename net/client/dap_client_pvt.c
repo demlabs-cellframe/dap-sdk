@@ -263,7 +263,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         // For UDP/DNS transports, handshake callback may be called without data
         // Check if transport uses UDP socket type
         dap_net_transport_t *l_transport = l_client_pvt->stream ? l_client_pvt->stream->stream_transport : NULL;
-        if (l_transport && l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP) {
+        if (l_transport && !l_transport->has_session_control) {
             // UDP/DNS handshake callback called without data - this is normal
             // Handshake is handled by transport protocol, so we just mark stage as done
             log_it(L_DEBUG, "UDP/DNS handshake completed via transport protocol, marking stage as done");
@@ -357,7 +357,7 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     // Process session create response
     // Transport provides full response data if available (for TCP-based transports),
     // or only session_id (for UDP/DNS transports)
-    if (a_session_id != 0) {
+    if (a_session_id != 0 || (a_response_data && a_response_size > 0)) {
         if (a_response_data && a_response_size > 0) {
             // Use full response data provided by transport
             s_stream_ctl_response(l_client, (void*)a_response_data, a_response_size);
@@ -368,10 +368,13 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
             // Construct minimal response format: "session_id stream_key"
             // stream_key is required by s_stream_ctl_response parser, but for UDP/DNS
             // we don't have a real stream_key from server response
-            // Use a dummy stream_key (empty string) to satisfy parser requirements
+            // Use a dummy stream_key to satisfy parser requirements
             // The actual stream connection for UDP/DNS happens via transport protocol
             char l_response_str[4096];
-            snprintf(l_response_str, sizeof(l_response_str), "%u ", a_session_id);
+            // Provide full set of arguments to satisfy sscanf and avoid parsing errors
+            // Format: session_id stream_key protocol_version enc_type enc_headers
+            snprintf(l_response_str, sizeof(l_response_str), "%u dummy_key %d %d %d", 
+                     a_session_id, DAP_PROTOCOL_VERSION, 0, 0);
             s_stream_ctl_response(l_client, l_response_str, strlen(l_response_str));
         }
     } else {
@@ -511,7 +514,7 @@ static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
     // For UDP/DNS transports, handshake happens after connect
     // Check if this is UDP/DNS transport and handshake is needed
     dap_net_transport_t *l_transport = l_client_pvt->stream->stream_transport;
-    if (l_transport && l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP &&
+    if (l_transport && !l_transport->has_session_control &&
         l_transport->ops && l_transport->ops->handshake_init) {
         
         // Generate session key if not already generated (should be done in STAGE_ENC_INIT)
@@ -559,7 +562,8 @@ static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
             .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
             .auth_cert = l_client_pvt->client->auth_cert,
             .alice_pub_key = l_alice_pub_key,
-            .alice_pub_key_size = l_data_size
+            .alice_pub_key_size = l_data_size,
+            .sign_count = l_sign_count
         };
         
         // Initiate handshake via transport
@@ -791,9 +795,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // Check if transport uses UDP socket type (UDP/DNS)
                     // For UDP/DNS transports, handshake happens in STAGE_STREAM_SESSION via main stream
                     // Skip handshake in STAGE_ENC_INIT for UDP/DNS transports
-                    if (l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP) {
+                    log_it(L_DEBUG, "Checking transport %d for session control: has_session_control=%d", 
+                           l_transport_type, l_transport->has_session_control);
+                    if (!l_transport->has_session_control) {
                         log_it(L_DEBUG, "UDP/DNS transport detected, skipping handshake in STAGE_ENC_INIT (will happen in STAGE_STREAM_SESSION)");
                         a_client_pvt->stage_status = STAGE_STATUS_DONE;
+                        s_stage_status_after(a_client_pvt);
                         break;
                     }
                     
@@ -878,7 +885,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
                         .auth_cert = a_client_pvt->client->auth_cert,
                         .alice_pub_key = l_alice_pub_key,
-                        .alice_pub_key_size = l_data_size
+                        .alice_pub_key_size = l_data_size,
+                        .sign_count = l_sign_count
                     };
                     
                     // Call transport handshake_init
@@ -911,11 +919,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_net_transport_type_t l_transport_type = a_client_pvt->client->transport_type;
                     dap_net_transport_t *l_transport = dap_net_transport_find(l_transport_type);
                     
-                    if (l_transport && l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP) {
+                    if (l_transport && !l_transport->has_session_control) {
                         // UDP/DNS transports skip HTTP STREAM_CTL stage
                         // Handshake and session creation happen via transport protocol
                         log_it(L_DEBUG, "UDP/DNS transport detected, skipping HTTP STREAM_CTL stage");
                         a_client_pvt->stage_status = STAGE_STATUS_DONE;
+                        s_stage_status_after(a_client_pvt);
                         break;
                     }
 
@@ -976,6 +985,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
                         break;
                     }
+                    
+                    l_temp_stream->stream_transport = l_transport;
 
                     // Call transport session_create
                     int l_session_ret = l_transport->ops->session_create(l_temp_stream, &l_session_params, 
@@ -1077,7 +1088,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // Check if transport uses connectionless protocol (UDP/DNS)
                     // Use socket_type from transport instead of hardcoding transport type checks
                     bool l_is_udp_transport = (l_transport && 
-                                               l_transport->socket_type == DAP_NET_TRANSPORT_SOCKET_UDP);
+                                               !l_transport->has_session_control);
 
                     // For UDP/DNS transports, use transport-specific connect callback
                     if (l_is_udp_transport && l_transport && l_transport->ops && l_transport->ops->connect) {
@@ -1124,7 +1135,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 } break;
 
                 case STAGE_STREAM_CONNECTED: {
-                    log_it(L_INFO, "Go to stage STAGE_STREAM_CONNECTED");
+                    log_it(L_INFO, "Go to stage STAGE_STREAM_CONNECTED for client %p", a_client_pvt->client);
                     if(!a_client_pvt->stream){
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
@@ -1136,23 +1147,36 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     for(size_t i = 0; i < l_count_channels; i++)
                         dap_stream_ch_new(a_client_pvt->stream, (uint8_t)a_client_pvt->client->active_channels[i]);
 
-                    char l_full_path[2048];
-                    snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM,
-                                                dap_client_get_stream_id(a_client_pvt->client));
+                    // Use transport session start if available
+                    dap_net_transport_t *l_transport = a_client_pvt->stream->stream_transport;
+                    int l_start_ret = 0;
+                    
+                    if (l_transport && l_transport->ops && l_transport->ops->session_start) {
+                        uint32_t l_session_id = dap_client_get_stream_id(a_client_pvt->client);
+                        l_start_ret = l_transport->ops->session_start(a_client_pvt->stream, l_session_id, NULL);
+                    } else {
+                        // Other transports (UDP/DNS) might not need explicit session start packet
+                        log_it(L_DEBUG, "No session_start op, assuming connection established");
+                    }
 
-                    dap_events_socket_write_f_unsafe( a_client_pvt->stream_es, "GET /%s HTTP/1.1\r\n"
-                                                                        "Host: %s:%d\r\n"
-                                                                        "\r\n",
-                                               l_full_path, a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                    if (l_start_ret != 0) {
+                        log_it(L_ERROR, "Session start failed: %d", l_start_ret);
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                        s_stage_status_after(a_client_pvt);
+                        break;
+                    }
 
+                    log_it(L_INFO, "STAGE_STREAM_CONNECTED done for client %p, setting status DONE and calling after", a_client_pvt->client);
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
                 } break;
 
                 case STAGE_STREAM_STREAMING: {
-                    log_it(L_INFO, "Go to stage STAGE_STREAM_STREAMING");
+                    log_it(L_INFO, "Go to stage STAGE_STREAM_STREAMING for client %p", a_client_pvt->client);
                     a_client_pvt->reconnect_attempts = 0;
 
+                    log_it(L_INFO, "STAGE_STREAM_STREAMING done for client %p, setting status DONE and calling after", a_client_pvt->client);
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
 
@@ -1217,9 +1241,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
         } break;
 
         case STAGE_STATUS_DONE: {
-            log_it(L_INFO, "Stage status %s is done", dap_client_stage_str(a_client_pvt->stage));
+            log_it(L_INFO, "Stage status %s is done for client %p. Target: %s", 
+                   dap_client_stage_str(a_client_pvt->stage), 
+                   a_client_pvt->client,
+                   dap_client_stage_str(a_client_pvt->client->stage_target));
             bool l_is_last_stage = (a_client_pvt->stage == a_client_pvt->client->stage_target);
             if (l_is_last_stage) {
+                log_it(L_INFO, "Stage %s is last stage, setting COMPLETE for client %p", dap_client_stage_str(a_client_pvt->stage), a_client_pvt->client);
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
                 dap_stream_add_to_list(a_client_pvt->stream);
                 if (a_client_pvt->client->stage_target_done_callback) {
@@ -1394,7 +1422,9 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         size_t l_len = strlen(l_session_id_b64), l_decoded_len;
         l_client_pvt->session_key_id = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64);
         l_decoded_len = dap_enc_base64_decode(l_session_id_b64, l_len, l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64);
-        log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
+        debug_if(s_debug_more, L_DEBUG, "ENC: session Key ID %s, decoded_len=%zu (expected %d)", 
+               l_client_pvt->session_key_id, l_decoded_len, DAP_ENC_KS_KEY_ID_SIZE);
+        
         // decode bob message
         l_len = strlen(l_bob_message_b64);
         l_bob_message = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_client_pvt->session_key_id);
@@ -1412,7 +1442,12 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
             break;
         }
+        debug_if(s_debug_more, L_DEBUG, "ENC: Generated shared key, priv_key_data_size=%zu", l_client_pvt->session_key_open->priv_key_data_size);
+
         // generate session key
+        debug_if(s_debug_more, L_DEBUG, "ENC: Generating session key: type=%d, block_size=%zu, seed_size=%zu", 
+               l_client_pvt->session_key_type, l_client_pvt->session_key_block_size, l_decoded_len);
+               
         l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
                 l_client_pvt->session_key_open->priv_key_data, // shared key
                 l_client_pvt->session_key_open->priv_key_data_size,
@@ -1461,14 +1496,18 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         // Load encryption context into transport after successful handshake
         // Use the transport from the temporary stream if available (for HTTP/WebSocket)
         // or from the main stream (for UDP/DNS)
-        dap_net_transport_t *l_transport = NULL;
+        /* dap_net_transport_t *l_transport = NULL;
         if (l_client_pvt->stream && l_client_pvt->stream->stream_transport) {
             l_transport = l_client_pvt->stream->stream_transport;
         } else {
             // Fallback: find transport by client's transport type
             l_transport = dap_net_transport_find(l_client_pvt->client->transport_type);
-        }
+        } */
         
+        /*
+        // ERROR: Do NOT set session key in transport - transport instance is shared singleton!
+        // Setting it here creates race conditions for parallel clients.
+        // Session key should be accessed from client_pvt or stream.
         if (l_transport) {
             l_transport->session_key = l_client_pvt->session_key;
             if (l_client_pvt->session_key_id) {
@@ -1478,6 +1517,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             l_transport->remote_protocol_version = l_client_pvt->remote_protocol_version;
             l_transport->is_close_session = l_client_pvt->is_close_session;
         }
+        */
     } else {
         DAP_DEL_Z(l_client_pvt->session_key_id);
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -1517,9 +1557,11 @@ static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t 
 {
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
     if (!l_client_pvt) return;
-    if(s_debug_more)
-        log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
+    
     char *l_response_str = (char*)a_data; // The caller must ensure it's a null-terminated string
+    
+    if(s_debug_more)
+        log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved: '%s'", a_data_size, l_response_str);
     
     if(a_data_size < 4) {
         log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str);
@@ -1570,7 +1612,11 @@ static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t 
 
                 l_client_pvt->is_encrypted_headers = l_enc_headers;
 
-                if(l_client_pvt->stage == STAGE_STREAM_CTL) { // We are on the right stage
+                // Check transport type to allow STREAM_SESSION for non-TCP transports (UDP/DNS)
+                dap_net_transport_t *l_transport = dap_net_transport_find(l_client_pvt->client->transport_type);
+                
+                if(l_client_pvt->stage == STAGE_STREAM_CTL || 
+                   (l_client_pvt->stage == STAGE_STREAM_SESSION && l_transport && !l_transport->has_session_control)) { // Accept STREAM_SESSION for UDP/DNS
                     l_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(l_client_pvt);
                 } else {
@@ -1672,34 +1718,59 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
     l_client_pvt->ts_last_active = time(NULL);
+    
+    // Delegate reading to transport if available
+    dap_net_transport_t *l_transport = NULL;
+    if (l_client_pvt->stream)
+        l_transport = l_client_pvt->stream->stream_transport;
+        
+    size_t l_bytes_read = 0;
+    if (l_transport && l_transport->ops && l_transport->ops->read) {
+        // Transport-specific read (handles headers, etc.)
+        ssize_t l_ret = l_transport->ops->read(l_client_pvt->stream, NULL, 0);
+        if (l_ret > 0)
+            l_bytes_read = (size_t)l_ret;
+    } else if (l_client_pvt->stream) {
+        // Default stream read
+        l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
+    }
+    
+    if (l_bytes_read > 0) {
+        dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
+    }
+
     switch (l_client_pvt->stage) {
         case STAGE_STREAM_SESSION:
             dap_client_go_stage(l_client_pvt->client, STAGE_STREAM_STREAMING, s_stage_stream_streaming);
         break;
-        case STAGE_STREAM_CONNECTED: { // Collect HTTP headers before streaming
-            if(a_es->buf_in_size > 1) {
-                char * l_pos_endl;
-                l_pos_endl = (char*) memchr(a_es->buf_in, '\r', a_es->buf_in_size - 1);
-                if(l_pos_endl) {
-                    if(*(l_pos_endl + 1) == '\n') {
-                        dap_events_socket_shrink_buf_in(a_es, l_pos_endl - (char*)a_es->buf_in);
-                        log_it(L_DEBUG, "Header passed, go to streaming (%zu bytes already are in input buffer",
-                                a_es->buf_in_size);
-
-                        l_client_pvt->stage = STAGE_STREAM_STREAMING;
-                        l_client_pvt->stage_status = STAGE_STATUS_DONE;
-                        s_stage_status_after(l_client_pvt);
-
-                        size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
-                        dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
-                    }
+        case STAGE_STREAM_CONNECTED: { 
+            // If we processed data (e.g. skipped headers), we can transition to streaming
+            // For HTTP, if headers are consumed, buf_in should not start with "HTTP/"
+            // Or just check if we read something and buffer doesn't look like headers anymore
+            
+            bool l_headers_done = true;
+            if (l_transport && l_transport->type == DAP_NET_TRANSPORT_HTTP) {
+                if (a_es->buf_in_size >= 5 && memcmp(a_es->buf_in, "HTTP/", 5) == 0) {
+                    l_headers_done = false; // Still seeing headers
+                }
+            }
+            
+            if (l_headers_done) {
+                log_it(L_DEBUG, "Stream connected and headers consumed (if any), switching to STREAMING");
+                l_client_pvt->stage = STAGE_STREAM_STREAMING;
+                l_client_pvt->stage_status = STAGE_STATUS_DONE;
+                s_stage_status_after(l_client_pvt);
+                
+                // Process any remaining data immediately
+                if (l_client_pvt->stream) {
+                    // Recursive call to process packets that might have been revealed after header skip
+                    s_stream_es_callback_read(a_es, arg);
                 }
             }
         }
             break;
-        case STAGE_STREAM_STREAMING: { // if streaming - process data with stream processor
-            size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
-            dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
+        case STAGE_STREAM_STREAMING: { 
+            // Already processed by generic read above
         }
             break;
         default: {

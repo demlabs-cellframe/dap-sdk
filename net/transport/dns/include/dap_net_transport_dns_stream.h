@@ -122,6 +122,9 @@ typedef struct dap_stream_transport_dns_private {
     uint64_t session_id;                        ///< Session identifier
     uint32_t query_id;                          ///< DNS query ID counter
     uint32_t seq_num;                           ///< Sequence number for chunking
+    
+    struct sockaddr_storage remote_addr; ///< Remote peer address
+    socklen_t remote_addr_len;          ///< Remote address length
 } dap_stream_transport_dns_private_t;
 
 // ============================================================================

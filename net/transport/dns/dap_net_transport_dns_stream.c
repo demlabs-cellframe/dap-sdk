@@ -286,6 +286,9 @@ static int s_dns_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
     // Set as inheritor
     a_transport->_inheritor = l_priv;
 
+    // DNS transport doesn't support session control (connectionless)
+    a_transport->has_session_control = false;
+
     log_it(L_INFO, "DNS tunnel transport initialized");
     return 0;
 }
@@ -335,6 +338,26 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
 
     // DNS is connectionless like UDP, so we can store connection info
     // and call callback immediately
+    
+    // Parse address and store in remote_addr
+    struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_priv->remote_addr;
+    l_addr_in->sin_family = AF_INET;
+    l_addr_in->sin_port = htons(a_port);
+    
+    if (inet_pton(AF_INET, a_host, &l_addr_in->sin_addr) != 1) {
+        log_it(L_ERROR, "Invalid IPv4 address: %s", a_host);
+        return -1;
+    }
+
+    l_priv->remote_addr_len = sizeof(struct sockaddr_in);
+    l_priv->esocket = a_stream->esocket;  // Store esocket from stream
+    
+    // Update esocket address storage for sendto
+    if (l_priv->esocket) {
+        memcpy(&l_priv->esocket->addr_storage, &l_priv->remote_addr, l_priv->remote_addr_len);
+        l_priv->esocket->addr_size = l_priv->remote_addr_len;
+    }
+    
     log_it(L_INFO, "DNS tunnel transport connecting to %s:%u", a_host, a_port);
     
     // Call callback immediately (DNS is connectionless)
@@ -414,8 +437,8 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
         .block_key_size = a_params->block_key_size,
         .protocol_version = a_params->protocol_version,
         .sign_count = 0,
-        .alice_msg = NULL,
-        .alice_msg_size = 0,
+        .alice_msg = a_params->alice_pub_key,
+        .alice_msg_size = a_params->alice_pub_key_size,
         .sign_hashes = NULL,
         .sign_hashes_count = 0
     };

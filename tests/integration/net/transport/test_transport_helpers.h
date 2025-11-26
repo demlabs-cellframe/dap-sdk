@@ -191,9 +191,6 @@ static inline void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
         return;
     }
     
-    fprintf(stderr, "DEBUG: test_stream_ch_receive_callback called: ch=%p, type=%u, size=%zu\n",
-            (void*)a_ch, a_type, a_data_size);
-    
     pthread_mutex_lock(&l_ctx->mutex);
     
     // Allocate buffer for received data
@@ -206,7 +203,6 @@ static inline void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
         memcpy(l_ctx->received_data, a_data, a_data_size);
         l_ctx->received_data_size = a_data_size;
         l_ctx->data_received = true;
-        fprintf(stderr, "DEBUG: test_stream_ch_receive_callback: data received successfully, size=%zu\n", a_data_size);
     } else {
         fprintf(stderr, "ERROR: test_stream_ch_receive_callback: failed to allocate memory\n");
     }
@@ -276,18 +272,13 @@ static inline int test_stream_ch_send_and_wait(dap_client_t *a_client,
     pthread_mutex_unlock(&a_ctx->mutex);
     
     // Send data
-    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: sending %zu bytes on channel '%c'\n", 
-            a_ctx->sent_data_size, a_ctx->channel_id);
     int l_sent = dap_client_write_mt(a_client, a_ctx->channel_id, 
                                      a_ctx->packet_type,
                                      a_ctx->sent_data, a_ctx->sent_data_size);
-    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: dap_client_write_mt returned %d\n", l_sent);
     if (l_sent < 0) {
         fprintf(stderr, "ERROR: test_stream_ch_send_and_wait: failed to send data\n");
         return -1;
     }
-    
-    fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: waiting for response (timeout=%u ms)\n", a_timeout_ms);
     
     // Wait for response
     pthread_mutex_lock(&a_ctx->mutex);
@@ -308,10 +299,6 @@ static inline int test_stream_ch_send_and_wait(dap_client_t *a_client,
             l_ret = -1;
             break;
         }
-    }
-    
-    if (l_ret == 0) {
-        fprintf(stderr, "DEBUG: test_stream_ch_send_and_wait: response received successfully\n");
     }
     
     pthread_mutex_unlock(&a_ctx->mutex);
@@ -349,12 +336,10 @@ static inline int test_stream_ch_register_receiver(dap_client_t *a_client,
     // Try to get client address from certificate
     if (a_client->auth_cert) {
         l_node_addr = dap_stream_node_addr_from_cert(a_client->auth_cert);
-        fprintf(stderr, "DEBUG: Using client address from certificate: "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_node_addr));
     } else {
         // Fallback: try to get from stream->node if it's set (but it might be server address)
         if (l_stream->node.uint64 != 0) {
             l_node_addr = l_stream->node;
-            fprintf(stderr, "DEBUG: Using client address from stream->node: "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_node_addr));
         } else {
             // Both are zero - this is an error
             fprintf(stderr, "ERROR: Cannot register receiver: client address is unknown\n");
@@ -366,9 +351,6 @@ static inline int test_stream_ch_register_receiver(dap_client_t *a_client,
         fprintf(stderr, "ERROR: Cannot register receiver: client node address is zero\n");
         return -1;
     }
-    
-    fprintf(stderr, "DEBUG: Registering receiver for channel '%c' using node address "NODE_ADDR_FP_STR"\n", 
-            a_channel_id, NODE_ADDR_FP_ARGS_S(l_node_addr));
     
     // Register notifier for incoming packets
     // Use client's address to find server stream (server stream has client's address in stream->node)

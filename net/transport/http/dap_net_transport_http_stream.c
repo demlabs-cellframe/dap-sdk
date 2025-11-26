@@ -73,12 +73,25 @@ static int s_http_stage_prepare(dap_net_transport_t *a_transport,
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size);
 static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error);
 
+// Session callback wrappers (forward declarations)
+static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size);
+static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error);
+
+// Context for HTTP requests (to avoid race conditions in client_pvt)
+typedef struct {
+    dap_client_pvt_t *client_pvt;
+    dap_client_callback_data_size_t callback;
+    dap_client_callback_int_t error_callback;
+    void *callback_arg; // Context for the callback
+    bool is_encrypted;
+} s_http_transport_request_ctx_t;
+
 // HTTP request callbacks (forward declarations)
 static void s_http_request_error(int a_err_code, void * a_obj);
 static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
 static void s_http_request_enc(dap_client_pvt_t * a_client_internal, dap_net_transport_t *a_transport, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
-                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
+                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error, void *a_callbacks_arg);
 static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transport_t *a_transport, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error);
@@ -89,17 +102,22 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
 typedef struct {
     dap_stream_t *stream;
     dap_net_transport_handshake_cb_t callback;
+    dap_client_t *client;  // Store client to verify context matches
+    void *old_callback_arg;  // Store old callback_arg to restore after use
 } s_http_handshake_ctx_t;
 
-static s_http_handshake_ctx_t s_http_handshake_ctx = {NULL, NULL};
+// static s_http_handshake_ctx_t s_http_handshake_ctx = {NULL, NULL}; // REMOVED GLOBAL CONTEXT
 
-// Context for session create callbacks
+// Context for session create callbacks (per-request, allocated dynamically)
 typedef struct {
     dap_stream_t *stream;
     dap_net_transport_session_cb_t callback;
+    dap_client_t *client;  // Store client to verify context matches
+    void *old_callback_arg;  // Store old callback_arg to restore after use
 } s_http_session_ctx_t;
 
-static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL};
+// Global context for backward compatibility (will be replaced with per-request contexts)
+static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL, NULL};
 
 // Static HTTP transport instance (initialized once)
 static dap_net_transport_t *s_http_transport = NULL;
@@ -109,18 +127,34 @@ static dap_net_transport_t *s_http_transport = NULL;
  */
 static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
-    if (!a_client || !s_http_handshake_ctx.stream) {
+    if (!a_client) {
+        return;
+    }
+    
+    // Get per-request context from callback_arg
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt || !l_client_pvt->callback_arg) {
+        log_it(L_WARNING, "s_http_handshake_error_wrapper: no context in callback_arg");
+        return;
+    }
+    
+    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_client_pvt->callback_arg;
+    
+    // Verify that the context matches this client
+    if (l_ctx->client != a_client || !l_ctx->stream) {
+        log_it(L_WARNING, "s_http_handshake_error_wrapper: context invalid or mismatch");
         return;
     }
     
     // Call transport callback with error
-    if (s_http_handshake_ctx.callback) {
-        s_http_handshake_ctx.callback(s_http_handshake_ctx.stream, NULL, 0, a_error);
+    if (l_ctx->callback) {
+        l_ctx->callback(l_ctx->stream, NULL, 0, a_error);
     }
     
-    // Clear context
-    s_http_handshake_ctx.stream = NULL;
-    s_http_handshake_ctx.callback = NULL;
+    // Free context and restore old callback_arg
+    void *l_old_arg = l_ctx->old_callback_arg;
+    DAP_DELETE(l_ctx);
+    l_client_pvt->callback_arg = l_old_arg;
 }
 
 /**
@@ -128,25 +162,65 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
  */
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    log_it(L_INFO, "s_http_handshake_response_wrapper: CALLED! client=%p, data=%p, size=%zu, stream=%p, callback=%p", 
-           a_client, a_data, a_data_size, s_http_handshake_ctx.stream, (void*)s_http_handshake_ctx.callback);
+    // log_it(L_INFO, "s_http_handshake_response_wrapper: CALLED! client=%p, data=%p, size=%zu", a_client, a_data, a_data_size);
     
-    if (!a_client || !s_http_handshake_ctx.stream) {
-        log_it(L_WARNING, "s_http_handshake_response_wrapper: missing client or stream context");
+    if (!a_client) {
+        log_it(L_ERROR, "s_http_handshake_response_wrapper: client is NULL");
+        return;
+    }
+    
+    // Get per-request context from callback_arg
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt || !l_client_pvt->callback_arg) {
+        log_it(L_ERROR, "s_http_handshake_response_wrapper: no context in callback_arg");
+        return;
+    }
+    
+    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_client_pvt->callback_arg;
+    
+    if (l_ctx->client != a_client) {
+        log_it(L_WARNING, "s_http_handshake_response_wrapper: client mismatch");
+        return;
+    }
+    
+    if (!l_ctx->stream) {
+        log_it(L_WARNING, "s_http_handshake_response_wrapper: missing stream context");
         return;
     }
     
     // Call transport callback with response data
-    if (s_http_handshake_ctx.callback) {
-        log_it(L_INFO, "s_http_handshake_response_wrapper: calling transport callback");
-        s_http_handshake_ctx.callback(s_http_handshake_ctx.stream, a_data, a_data_size, 0);
+    if (l_ctx->callback) {
+        // log_it(L_INFO, "s_http_handshake_response_wrapper: calling transport callback");
+        l_ctx->callback(l_ctx->stream, a_data, a_data_size, 0);
     } else {
         log_it(L_WARNING, "s_http_handshake_response_wrapper: callback is NULL");
     }
     
-    // Clear context
-    s_http_handshake_ctx.stream = NULL;
-    s_http_handshake_ctx.callback = NULL;
+    // Free context and restore old callback_arg
+    void *l_old_arg = l_ctx->old_callback_arg;
+    DAP_DELETE(l_ctx);
+    l_client_pvt->callback_arg = l_old_arg;
+}
+
+/**
+ * @brief Wrapper callback that extracts context from callbacks_arg and calls s_http_session_response_wrapper
+ */
+static void s_http_session_response_wrapper_with_context(void *a_data, size_t a_data_size, void *a_callbacks_arg, UNUSED_ARG http_status_code_t a_status)
+{
+    if (!a_callbacks_arg) {
+        log_it(L_ERROR, "s_http_session_response_wrapper_with_context: callbacks_arg is NULL");
+        return;
+    }
+    
+    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)a_callbacks_arg;
+    
+    if (!l_session_ctx->client) {
+        log_it(L_ERROR, "s_http_session_response_wrapper_with_context: client is NULL in context");
+        return;
+    }
+    
+    // Call the actual wrapper with client and data
+    s_http_session_response_wrapper(l_session_ctx->client, a_data, a_data_size);
 }
 
 /**
@@ -154,21 +228,47 @@ static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_da
  */
 static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    if (!a_client || !s_http_session_ctx.stream) {
+    if (!a_client) {
+        log_it(L_ERROR, "s_http_session_response_wrapper: a_client is NULL");
         return;
     }
     
-    // Get encryption context from client_pvt (session_key is stored there after handshake)
+    // Get per-request context from callback_arg
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt || !l_client_pvt->callback_arg) {
+        log_it(L_ERROR, "s_http_session_response_wrapper: no context in callback_arg. Pvt: %p, Arg: %p", 
+               l_client_pvt, l_client_pvt ? l_client_pvt->callback_arg : NULL);
+        return;
+    }
+    
+    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_client_pvt->callback_arg;
+    
+    // Verify that the context matches this client (prevent race conditions)
+    if (l_session_ctx->client != a_client) {
+        log_it(L_WARNING, "s_http_session_response_wrapper: client mismatch (expected %p, got %p) - context overwritten by another request", 
+               l_session_ctx->client, a_client);
+        return;
+    }
+    
+    if (!l_session_ctx->stream || !l_session_ctx->callback) {
+        log_it(L_ERROR, "s_http_session_response_wrapper: invalid context (stream=%p, callback=%p)", 
+               l_session_ctx->stream, (void*)l_session_ctx->callback);
+        return;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: received response, data_size=%zu", a_data_size);
+    
+    // Get encryption context from client_pvt (session_key is stored there after handshake)
     dap_enc_key_t *l_session_key = NULL;
     
-    // Try to get session_key from transport first (for main stream)
-    dap_net_transport_t *l_transport = s_http_session_ctx.stream->stream_transport;
-    if (l_transport && l_transport->session_key) {
-        l_session_key = l_transport->session_key;
-    } else if (l_client_pvt && l_client_pvt->session_key) {
-        // Fallback: get session_key from client_pvt (handshake completed, session_key available)
+    // ALWAYS use session_key from client_pvt. Transport session_key is shared/global and unsafe for parallel clients.
+    if (l_client_pvt && l_client_pvt->session_key) {
         l_session_key = l_client_pvt->session_key;
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: using session_key from client_pvt");
+    } else {
+        dap_net_transport_t *l_transport = l_session_ctx->stream->stream_transport;
+        log_it(L_WARNING, "s_http_session_response_wrapper: no session_key found in client_pvt (transport=%p)", 
+               l_transport);
     }
     
     // Parse session response to extract session_id
@@ -177,52 +277,63 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
     size_t l_response_size = 0;
     
     if (a_data && a_data_size > 0) {
-        // Decrypt response if encrypted (handshake completed, session_key available)
-        if (l_session_key) {
-            size_t l_len = dap_enc_decode_out_size(l_session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
-            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
-            if (l_response) {
-                l_len = dap_enc_decode(l_session_key, a_data, a_data_size,
-                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
-                l_response[l_len] = '\0';
-                
-                // Parse response format: "session_id stream_key ..."
-                sscanf(l_response, "%u", &l_session_id);
-                
-                // Allocate and copy full response data for transport callback
-                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
-                if (l_response_data) {
-                    memcpy(l_response_data, l_response, l_len);
-                    l_response_data[l_len] = '\0';
-                    l_response_size = l_len;
-                }
-                
-                DAP_DELETE(l_response);
-            }
-        } else {
-            // Unencrypted response (shouldn't happen after handshake, but handle it)
-            char *l_response_str = (char*)a_data;
-            // Parse response format: "session_id stream_key ..."
-            sscanf(l_response_str, "%u", &l_session_id);
-            
-            // Allocate and copy full response data for transport callback
-            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-            if (l_response_data) {
-                memcpy(l_response_data, a_data, a_data_size);
-                l_response_data[a_data_size] = '\0';
-                l_response_size = a_data_size;
-            }
+        // Response is already decrypted by s_http_request_response if encryption was enabled
+        char *l_response_str = (char*)a_data;
+        
+        // Check if response starts with "ERROR" or looks invalid
+        // But generally we expect "session_id stream_key ..."
+        
+        // Parse response format: "session_id stream_key ..."
+        int l_parsed = sscanf(l_response_str, "%u", &l_session_id);
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: parsed session_id=%u (parsed_count=%d)", 
+               l_session_id, l_parsed);
+        
+        // Allocate and copy full response data for transport callback
+        // Ensure null-termination just in case
+        l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+        if (l_response_data) {
+            memcpy(l_response_data, a_data, a_data_size);
+            l_response_data[a_data_size] = '\0';
+            l_response_size = a_data_size;
         }
+        
+        if (l_parsed < 1) {
+             log_it(L_WARNING, "s_http_session_response_wrapper: failed to parse session_id from response (len=%zu): %.100s", 
+                   a_data_size, (char*)a_data);
+        }
+    } else {
+        log_it(L_WARNING, "s_http_session_response_wrapper: empty response data");
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: calling callback with session_id=%u, response_size=%zu", 
+           l_session_id, l_response_size);
+    
+    // Save context data before calling callback (callback might free context)
+    dap_stream_t *l_stream = l_session_ctx->stream;
+    dap_net_transport_session_cb_t l_callback = l_session_ctx->callback;
+    void *l_old_callback_arg = l_session_ctx->old_callback_arg;
     
     // Call transport callback with session_id and full response data
-    if (s_http_session_ctx.callback) {
-        s_http_session_ctx.callback(s_http_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
+    if (l_callback) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: calling callback stream=%p, session_id=%u", 
+               l_stream, l_session_id);
+        l_callback(l_stream, l_session_id, l_response_data, l_response_size, 0);
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: callback returned");
+    } else {
+        log_it(L_ERROR, "s_http_session_response_wrapper: callback is NULL!");
     }
     
-    // Clear context
-    s_http_session_ctx.stream = NULL;
-    s_http_session_ctx.callback = NULL;
+    // Free per-request context and restore old callback_arg AFTER callback completes
+    // Note: callback should not use context after this point
+    // Note: l_response_data is freed by callback (s_session_create_callback_wrapper), don't free it here
+    if (l_client_pvt && l_session_ctx) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing context and restoring callback_arg");
+        DAP_DELETE(l_session_ctx);
+        l_client_pvt->callback_arg = l_old_callback_arg;  // Restore old value
+    } else if (l_session_ctx) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing context (no client_pvt)");
+        DAP_DELETE(l_session_ctx);
+    }
 }
 
 /**
@@ -230,18 +341,39 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
  */
 static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
-    if (!a_client || !s_http_session_ctx.stream) {
+    if (!a_client) {
+        return;
+    }
+    
+    // Get per-request context from callback_arg
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_client_pvt || !l_client_pvt->callback_arg) {
+        log_it(L_WARNING, "s_http_session_error_wrapper: no context in callback_arg");
+        return;
+    }
+    
+    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_client_pvt->callback_arg;
+    
+    // Verify that the context matches this client
+    if (l_session_ctx->client != a_client || !l_session_ctx->stream || !l_session_ctx->callback) {
+        log_it(L_WARNING, "s_http_session_error_wrapper: context invalid or mismatch (stream=%p, callback=%p, client=%p vs %p)", 
+               l_session_ctx->stream, (void*)l_session_ctx->callback, l_session_ctx->client, a_client);
         return;
     }
     
     // Call transport callback with error
-    if (s_http_session_ctx.callback) {
-        s_http_session_ctx.callback(s_http_session_ctx.stream, 0, NULL, 0, a_error);
+    if (l_session_ctx->callback) {
+        l_session_ctx->callback(l_session_ctx->stream, 0, NULL, 0, a_error);
     }
     
-    // Clear context
-    s_http_session_ctx.stream = NULL;
-    s_http_session_ctx.callback = NULL;
+    // Free per-request context and restore old callback_arg
+    if (l_client_pvt && l_session_ctx) {
+        void *l_old_callback_arg = l_session_ctx->old_callback_arg;
+        DAP_DELETE(l_session_ctx);
+        l_client_pvt->callback_arg = l_old_callback_arg;  // Restore old value
+    } else if (l_session_ctx) {
+        DAP_DELETE(l_session_ctx);
+    }
 }
 
 // ============================================================================
@@ -339,7 +471,13 @@ static int s_http_transport_connect(dap_stream_t *a_stream,
     
     // Connection is established by HTTP layer
     // We mark it as connected when we get the first HTTP callback
-    UNUSED(a_callback);
+    // UNUSED(a_callback);
+    
+    // Notify client that we are "connected" (ready to send requests)
+    if (a_callback) {
+        a_callback(a_stream, 0);
+    }
+    
     return 0;
 }
 
@@ -465,15 +603,28 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     log_it(L_DEBUG, "HTTP handshake init: sending POST to %s:%u%s", 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, l_enc_init_url);
     
-    // Store callback context
-    s_http_handshake_ctx.stream = a_stream;
-    s_http_handshake_ctx.callback = a_callback;
+    // Store callback context dynamically
+    s_http_handshake_ctx_t *l_ctx = DAP_NEW_Z(s_http_handshake_ctx_t);
+    if (!l_ctx) {
+        log_it(L_ERROR, "Failed to allocate handshake context");
+        DAP_DELETE(l_data_str);
+        return -6;
+    }
+    l_ctx->stream = a_stream;
+    l_ctx->callback = a_callback;
+    l_ctx->client = l_client;
+    l_ctx->old_callback_arg = l_client_pvt->callback_arg;
+    
+    // Set context as callback arg
+    l_client_pvt->callback_arg = l_ctx;
     
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
     if (!l_transport) {
         log_it(L_ERROR, "HTTP transport not initialized");
         DAP_DELETE(l_data_str);
+        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+        DAP_DELETE(l_ctx);
         return -6;
     }
     
@@ -487,6 +638,8 @@ static int s_http_transport_handshake_init(dap_stream_t *a_stream,
     
     if (l_res < 0) {
         log_it(L_ERROR, "Failed to create HTTP request for enc_init (return code: %d)", l_res);
+        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+        DAP_DELETE(l_ctx);
         return -6;
     }
     
@@ -569,23 +722,42 @@ static int s_http_transport_session_create(dap_stream_t *a_stream,
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, 
            DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
     
-    // Store callback context
-    s_http_session_ctx.stream = a_stream;
-    s_http_session_ctx.callback = a_callback;
+    // Allocate per-request context dynamically
+    s_http_session_ctx_t *l_session_ctx = DAP_NEW_Z(s_http_session_ctx_t);
+    if (!l_session_ctx) {
+        log_it(L_ERROR, "Failed to allocate session context");
+        DAP_DELETE(l_suburl);
+        return -4;
+    }
+    
+    l_session_ctx->stream = a_stream;
+    l_session_ctx->callback = a_callback;
+    l_session_ctx->client = l_client;
     
     // Use static HTTP transport instance
     dap_net_transport_t *l_transport = s_http_transport;
     if (!l_transport) {
         log_it(L_ERROR, "HTTP transport not initialized");
         DAP_DELETE(l_suburl);
+        DAP_DELETE(l_session_ctx);
         return -6;
     }
     
+    // Store context in callback_arg temporarily for s_http_request_enc
+    // It will be passed to dap_client_http_request via callbacks_arg
+    void *l_old_callback_arg = l_client_pvt->callback_arg;
+    l_session_ctx->old_callback_arg = l_old_callback_arg; // Save old callback arg
+    l_client_pvt->callback_arg = l_session_ctx;
+    
     // Make HTTP request using legacy infrastructure
+    // Pass context through callbacks_arg parameter
+    // Note: callback_arg will be restored in s_http_session_response_wrapper or s_http_session_error_wrapper
     s_http_request_enc(l_client_pvt, l_transport, DAP_UPLINK_PATH_STREAM_CTL,
                                 l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,
                                 s_http_session_response_wrapper, 
-                                s_http_session_error_wrapper);
+                                s_http_session_error_wrapper, l_session_ctx);
+    
+    // Don't restore callback_arg here - it will be restored in callback after request completes
     
     DAP_DELETE(l_suburl);
     
@@ -600,18 +772,39 @@ static int s_http_transport_session_start(dap_stream_t *a_stream,
                                             uint32_t a_session_id,
                                             dap_net_transport_ready_cb_t a_callback)
 {
-    if (!a_stream) {
-        log_it(L_ERROR, "Invalid stream pointer");
+    if (!a_stream || !a_stream->esocket || !a_stream->esocket->_inheritor) {
+        log_it(L_ERROR, "Invalid stream or client context");
         return -1;
     }
     
+    dap_client_t *l_client = (dap_client_t*)a_stream->esocket->_inheritor;
+    
     log_it(L_DEBUG, "HTTP transport session start: session_id=%u", a_session_id);
     
-    // Store callback for later
-    UNUSED(a_callback);
+    // Construct HTTP GET request for streaming
+    char l_full_path[2048];
+    snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM, a_session_id);
+
+    // Write request to socket
+    // Note: stream->esocket is the raw TCP socket created in stage_prepare
+    size_t l_sent = dap_events_socket_write_f_unsafe(a_stream->esocket, 
+                                     "GET /%s HTTP/1.1\r\n"
+                                     "Host: %s:%d\r\n"
+                                     "\r\n",
+                                     l_full_path, 
+                                     l_client->link_info.uplink_addr, 
+                                     l_client->link_info.uplink_port);
+                                     
+    if (l_sent == 0) {
+        log_it(L_ERROR, "Failed to write HTTP GET request to stream socket");
+        return -1;
+    }
     
-    // Streaming starts via HTTP GET to /stream/[channels]?session_id=X
-    // This is handled by existing HTTP infrastructure
+    // Signal readiness (request sent)
+    if (a_callback) {
+        a_callback(a_stream, 0);
+    }
+    
     return 0;
 }
 
@@ -620,19 +813,46 @@ static int s_http_transport_session_start(dap_stream_t *a_stream,
  */
 static ssize_t s_http_transport_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_stream || !a_buffer || a_size == 0) {
+    UNUSED(a_buffer);
+    UNUSED(a_size);
+
+    if (!a_stream || !a_stream->esocket) {
         log_it(L_ERROR, "Invalid parameters");
         return -1;
     }
     
-    // HTTP transport reading is handled by HTTP layer callbacks
-    // Data arrives via dap_http_client callbacks and is processed by stream layer
-    // This function should read from stream's internal buffers
-    log_it(L_DEBUG, "HTTP transport read: %zu bytes requested", a_size);
+    dap_events_socket_t *l_es = a_stream->esocket;
     
-    // Reading from HTTP is event-driven via callbacks
-    // Return 0 to indicate no data available now (would block)
-    return 0;
+    // Check if we need to skip HTTP headers (only if buffer starts with "HTTP/")
+    if (l_es->buf_in_size >= 5 && memcmp(l_es->buf_in, "HTTP/", 5) == 0) {
+        // Search for double CRLF (end of headers)
+        char *l_headers_end = NULL;
+        size_t l_search_len = l_es->buf_in_size;
+        
+        // Find end of headers safely
+        for (size_t i = 0; i < l_search_len - 3; i++) {
+            if (l_es->buf_in[i] == '\r' && l_es->buf_in[i+1] == '\n' &&
+                l_es->buf_in[i+2] == '\r' && l_es->buf_in[i+3] == '\n') {
+                l_headers_end = (char*)l_es->buf_in + i;
+                break;
+            }
+        }
+        
+        if (l_headers_end) {
+            size_t l_headers_size = (l_headers_end - (char*)l_es->buf_in) + 4;
+            log_it(L_DEBUG, "Skipping HTTP headers (%zu bytes)", l_headers_size);
+            
+            // Return header size so caller (dap_client_pvt) can shrink buffer
+            // Next call will process data after headers
+            return (ssize_t)l_headers_size;
+        } else {
+            // Headers incomplete. Return 0 to wait for more data.
+            return 0;
+        }
+    }
+    
+    // No headers (or already skipped). Process stream packets.
+    return (ssize_t)dap_stream_data_proc_read(a_stream);
 }
 
 /**
@@ -711,7 +931,7 @@ void dap_net_transport_http_request_enc(dap_client_pvt_t * a_client_internal, co
         return;
     }
     
-    s_http_request_enc(a_client_internal, l_transport, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error);
+    s_http_request_enc(a_client_internal, l_transport, a_path, a_sub_url, a_query, a_request, a_request_size, a_response_proc, a_response_error, NULL);
 }
 
 /**
@@ -729,9 +949,13 @@ static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transpor
     debug_if(s_debug_more, L_DEBUG, "s_http_request: response_proc=%p, response_error=%p", 
              (void*)a_response_proc, (void*)a_response_error);
     
-    a_client_internal->request_response_callback = a_response_proc;
-    a_client_internal->request_error_callback = a_response_error;
-    a_client_internal->is_encrypted = false;
+    // Create per-request context
+    s_http_transport_request_ctx_t *l_ctx = DAP_NEW_Z(s_http_transport_request_ctx_t);
+    l_ctx->client_pvt = a_client_internal;
+    l_ctx->callback = a_response_proc;
+    l_ctx->error_callback = a_response_error;
+    l_ctx->callback_arg = a_client_internal->callback_arg; // Store current callback arg
+    l_ctx->is_encrypted = false;
     
     // Get HTTP transport private from transport parameter
     dap_stream_transport_http_private_t *l_priv = NULL;
@@ -745,10 +969,11 @@ static int s_http_request(dap_client_pvt_t * a_client_internal, dap_net_transpor
                                             a_client_internal->client->link_info.uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
                                             a_request_size, NULL, s_http_request_response_unencrypted, 
-                                            s_http_request_error_unencrypted, a_client_internal, NULL);
+                                            s_http_request_error_unencrypted, l_ctx, NULL);
     
     if (l_http_client == NULL) {
         log_it(L_ERROR, "s_http_request: dap_client_http_request returned NULL for path='%s'", a_path);
+        DAP_DELETE(l_ctx);
     } else {
         log_it(L_INFO, "s_http_request: dap_client_http_request succeeded for path='%s', http_client=%p", a_path, (void*)l_http_client);
         // Store HTTP client instance in transport private
@@ -769,10 +994,23 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
         log_it(L_ERROR,"Object is NULL for s_http_request_error_unencrypted");
         return;
     }
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    
+    s_http_transport_request_ctx_t *l_ctx = (s_http_transport_request_ctx_t *)a_obj;
+    dap_client_pvt_t * l_client_pvt = l_ctx->client_pvt;
     assert(l_client_pvt);
-    if (l_client_pvt && l_client_pvt->request_error_callback)
-          l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
+    
+    if (l_ctx->error_callback) {
+          // Temporarily set callback_arg for the callback execution
+          void *l_old_callback_arg = l_client_pvt->callback_arg;
+          l_client_pvt->callback_arg = l_ctx->callback_arg;
+          
+          l_ctx->error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
+          
+          // Restore callback_arg
+          l_client_pvt->callback_arg = l_old_callback_arg;
+    }
+          
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -780,20 +1018,37 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
  */
 static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
 {
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    s_http_transport_request_ctx_t *l_ctx = (s_http_transport_request_ctx_t *)a_obj;
+    assert(l_ctx);
+    dap_client_pvt_t * l_client_pvt = l_ctx->client_pvt;
     assert(l_client_pvt);
+    
     log_it(L_INFO, "s_http_request_response_unencrypted: CALLED! response_size=%zu, callback=%p, client=%p", 
-             a_response_size, (void*)l_client_pvt->request_response_callback, l_client_pvt->client);
-    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: is_encrypted=%d", l_client_pvt->is_encrypted);
-    if ( !l_client_pvt->request_response_callback )
-        return log_it(L_ERROR, "No request_response_callback in client!");
+             a_response_size, (void*)l_ctx->callback, l_client_pvt->client);
+    
+    debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: is_encrypted=%d", l_ctx->is_encrypted);
+    
+    if ( !l_ctx->callback ) {
+        log_it(L_ERROR, "No request_response_callback in client!");
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    
+    // Temporarily set callback_arg for the callback execution
+    void *l_old_callback_arg = l_client_pvt->callback_arg;
+    l_client_pvt->callback_arg = l_ctx->callback_arg;
     
     if (a_response && a_response_size) {
         log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
-        l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
+        l_ctx->callback(l_client_pvt->client, a_response, a_response_size);
     } else {
         log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
     }
+    
+    // Restore callback_arg
+    l_client_pvt->callback_arg = l_old_callback_arg;
+    
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -804,7 +1059,7 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
  */
 static void s_http_request_enc(dap_client_pvt_t * a_client_internal, dap_net_transport_t *a_transport, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
-                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
+                        dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error, void *a_callbacks_arg)
 {
     bool is_query_enc = true; // if true, then encode a_query string  [Why do we even need this?]
     debug_if(s_debug_more, L_DEBUG, "Encrypt request: sub_url '%s' query '%s'",
@@ -842,9 +1097,13 @@ static void s_http_request_enc(dap_client_pvt_t * a_client_internal, dap_net_tra
         a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL",
         a_client_internal->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
 
-    a_client_internal->request_response_callback    = a_response_proc;
-    a_client_internal->request_error_callback       = a_response_error;
-    a_client_internal->is_encrypted                 = true;
+    // Create per-request context to avoid race conditions
+    s_http_transport_request_ctx_t *l_ctx = DAP_NEW_Z(s_http_transport_request_ctx_t);
+    l_ctx->client_pvt = a_client_internal;
+    l_ctx->callback = a_response_proc;
+    l_ctx->error_callback = a_response_error;
+    l_ctx->callback_arg = a_callbacks_arg; // Store context for callback
+    l_ctx->is_encrypted = true;
     
     // Get HTTP transport private from transport parameter
     dap_stream_transport_http_private_t *l_priv = NULL;
@@ -855,10 +1114,16 @@ static void s_http_request_enc(dap_client_pvt_t * a_client_internal, dap_net_tra
     dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker,
         a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port,
         a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
-        s_http_request_response, s_http_request_error, a_client_internal, l_custom);
+        s_http_request_response, s_http_request_error, l_ctx, l_custom);
+    
+    // NOTE: a_callbacks_arg parameter is ignored here because we use l_ctx for callback context.
+    // The actual context needed by callback (like session_ctx) should be stored in client_pvt->callback_arg
+    // or added to s_http_transport_request_ctx_t if thread safety requires it.
+    UNUSED(a_callbacks_arg);
     
     if (!l_http_client) {
         log_it(L_ERROR, "Failed to create HTTP client for encrypted request");
+        DAP_DELETE(l_ctx);
     } else {
         // Store HTTP client instance in transport private
         if (l_priv) {
@@ -878,10 +1143,23 @@ static void s_http_request_error(int a_err_code, void * a_obj)
         log_it(L_ERROR,"Object is NULL for s_http_request_error");
         return;
     }
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    
+    s_http_transport_request_ctx_t *l_ctx = (s_http_transport_request_ctx_t *)a_obj;
+    dap_client_pvt_t * l_client_pvt = l_ctx->client_pvt;
     assert(l_client_pvt);
-    if (l_client_pvt && l_client_pvt->request_error_callback)
-          l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
+    
+    if (l_ctx->error_callback) {
+          // Temporarily set callback_arg for the callback execution
+          void *l_old_callback_arg = l_client_pvt->callback_arg;
+          l_client_pvt->callback_arg = l_ctx->callback_arg;
+          
+          l_ctx->error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
+          
+          // Restore callback_arg
+          l_client_pvt->callback_arg = l_old_callback_arg;
+    }
+          
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -889,31 +1167,55 @@ static void s_http_request_error(int a_err_code, void * a_obj)
  */
 static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
 {
-    dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
+    s_http_transport_request_ctx_t *l_ctx = (s_http_transport_request_ctx_t *)a_obj;
+    assert(l_ctx);
+    dap_client_pvt_t * l_client_pvt = l_ctx->client_pvt;
     assert(l_client_pvt);
+    
     debug_if(s_debug_more, L_DEBUG, "s_http_request_response: response_size=%zu, is_encrypted=%d, callback=%p", 
-             a_response_size, l_client_pvt->is_encrypted, (void*)l_client_pvt->request_response_callback);
-    if ( !l_client_pvt->request_response_callback )
-        return log_it(L_ERROR, "No request_response_callback in encrypted client!");
+             a_response_size, l_ctx->is_encrypted, (void*)l_ctx->callback);
+    
+    if (!l_ctx->callback) {
+        log_it(L_ERROR, "No request_response_callback in request context!");
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    
+    // Temporarily set callback_arg for the callback execution
+    void *l_old_callback_arg = l_client_pvt->callback_arg;
+    l_client_pvt->callback_arg = l_ctx->callback_arg;
     
     if (a_response && a_response_size) {
-        if (l_client_pvt->is_encrypted) {
-            if (!l_client_pvt->session_key)
-                return log_it(L_ERROR, "No session key in encrypted client!");
+        if (l_ctx->is_encrypted) {
+            if (!l_client_pvt->session_key) {
+                log_it(L_ERROR, "No session key in encrypted client!");
+                l_client_pvt->callback_arg = l_old_callback_arg; // Restore
+                DAP_DELETE(l_ctx);
+                return;
+            }
             size_t l_len = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, DAP_ENC_DATA_TYPE_RAW);
             char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
             l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
                                    l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
             l_response[l_len] = '\0';
-            l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
+            
+            debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling request_response_callback client=%p, callback=%p, len=%zu", 
+                   l_client_pvt->client, (void*)l_ctx->callback, l_len);
+            l_ctx->callback(l_client_pvt->client, l_response, l_len);
+            debug_if(s_debug_more, L_DEBUG, "s_http_request_response: request_response_callback returned");
             DAP_DELETE(l_response);
         } else {
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling callback with unencrypted response (size=%zu)", a_response_size);
-            l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
+            l_ctx->callback(l_client_pvt->client, a_response, a_response_size);
         }
     } else {
         log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
     }
+    
+    // Restore callback_arg
+    l_client_pvt->callback_arg = l_old_callback_arg;
+    
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -1161,12 +1463,13 @@ int dap_stream_transport_http_format_query_params(
     
     int l_written = snprintf(a_query_string_out, a_buf_size,
                              "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
-                             "block_key_size=%zu,protocol_version=%d,sign_count=0",
+                             "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
                              a_params->enc_type,
                              a_params->pkey_exchange_type,
                              a_params->pkey_exchange_size,
                              a_params->block_key_size,
-                             a_params->protocol_version);
+                             a_params->protocol_version,
+                             a_params->sign_count);
     
     if (l_written < 0 || (size_t)l_written >= a_buf_size) {
         log_it(L_ERROR, "Query string buffer too small");

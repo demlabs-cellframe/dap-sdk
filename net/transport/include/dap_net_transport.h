@@ -217,6 +217,7 @@ typedef struct dap_net_handshake_params {
     dap_cert_t *auth_cert;                ///< Optional authentication certificate
     uint8_t *alice_pub_key;               ///< Client public key (allocated by caller)
     size_t alice_pub_key_size;            ///< Public key size
+    size_t sign_count;                    ///< Number of signatures in alice_pub_key
 } dap_net_handshake_params_t;
 
 /**
@@ -428,6 +429,7 @@ struct dap_net_transport {
     uint32_t uplink_protocol_version;      ///< Uplink protocol version
     uint32_t remote_protocol_version;      ///< Remote protocol version
     bool is_close_session;                 ///< Close session flag
+    bool has_session_control;              ///< Transport supports session control
 };
 
 /**

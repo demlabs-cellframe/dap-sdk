@@ -293,7 +293,7 @@ endif()
 
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
-target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
+target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/ src/rand)
 # Add XKCP include directories for KeccakHash.h
 get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
 if(XKCP_INCLUDE_DIR)
@@ -340,3 +340,4 @@ INSTALL(DIRECTORY src/msrln/ DESTINATION include/dap/crypto/msrln/)
 INSTALL(DIRECTORY src/sig_dilithium/ DESTINATION include/dap/crypto/sig_dilithium/)
 INSTALL(DIRECTORY src/sha3/ DESTINATION include/dap/crypto/sha3/)
 endif()
+

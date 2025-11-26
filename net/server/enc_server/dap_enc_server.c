@@ -129,8 +129,12 @@ int dap_enc_server_process_request(
         return -2;
     }
     
+    log_it(L_DEBUG, "Processing handshake request: protocol_version=%d, sign_count=%zu, msg_size=%zu",
+           a_request->protocol_version, a_request->sign_count, a_request->alice_msg_size);
+    
     // Validate Alice message
     if (!a_request->alice_msg || a_request->alice_msg_size == 0) {
+        log_it(L_ERROR, "Missing Alice message: msg=%p, size=%zu", a_request->alice_msg, a_request->alice_msg_size);
         l_resp->success = false;
         l_resp->error_code = -3;
         l_resp->error_message = dap_strdup("Missing Alice message");
@@ -145,6 +149,7 @@ int dap_enc_server_process_request(
     if (!a_request->protocol_version && !l_sign_count) {
         if (a_request->alice_msg_size > l_pkey_size + sizeof(dap_sign_hdr_t)) {
             l_sign_count = 1;
+            log_it(L_DEBUG, "Auto-detected signature (legacy mode)");
         } else if (a_request->alice_msg_size != l_pkey_size) {
             l_resp->success = false;
             l_resp->error_code = -4;
@@ -180,6 +185,9 @@ int dap_enc_server_process_request(
         // Check ban list
         dap_stream_node_addr_t l_client_addr = dap_stream_node_addr_from_sign(l_sign);
         const char *l_addr_str = dap_stream_node_addr_to_str_static(l_client_addr);
+        
+        log_it(L_DEBUG, "Validated signature %zu from node "NODE_ADDR_FP_STR, l_sign_validated, NODE_ADDR_FP_ARGS_S(l_client_addr));
+        
         if (dap_http_ban_list_client_check(l_addr_str, NULL, NULL)) {
             log_it(L_ERROR, "Client %s is banned", l_addr_str);
             l_resp->success = false;

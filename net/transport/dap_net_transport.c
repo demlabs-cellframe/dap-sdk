@@ -141,6 +141,9 @@ int dap_net_transport_register(const char *a_name,
     l_transport->obfuscation = NULL;  // No obfuscation by default
     l_transport->socket_type = a_socket_type;  // Set socket type
     
+    // Default to true, specific transports can override in their init()
+    l_transport->has_session_control = true;
+    
     // Copy name (truncate if too long)
     strncpy(l_transport->name, a_name, sizeof(l_transport->name) - 1);
     l_transport->name[sizeof(l_transport->name) - 1] = '\0';

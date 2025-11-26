@@ -58,6 +58,7 @@
 #include "http_status_code.h"
 #include "dap_net_transport_http_stream.h"
 #include "dap_stream_ctl.h"
+#include "dap_enc_server.h"
 
 #define LOG_TAG "dap_net_transport_websocket_stream"
 
@@ -453,9 +454,51 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
 
     log_it(L_DEBUG, "WebSocket handshake init");
 
-    // WebSocket handshake happens after HTTP upgrade completes
-    // DAP-level handshake (encryption) happens over WebSocket frames
-    UNUSED(a_callback);
+    // Build handshake request using dap_enc_server API
+    dap_enc_server_request_t l_enc_request = {
+        .enc_type = a_params->enc_type,
+        .pkey_exchange_type = a_params->pkey_exchange_type,
+        .pkey_exchange_size = a_params->pkey_exchange_size,
+        .block_key_size = a_params->block_key_size,
+        .protocol_version = a_params->protocol_version,
+        .sign_count = a_params->sign_count,
+        .alice_msg = a_params->alice_pub_key,
+        .alice_msg_size = a_params->alice_pub_key_size,
+        .sign_hashes = NULL,
+        .sign_hashes_count = 0
+    };
+    
+    // Process handshake via transport-independent encryption server
+    dap_enc_server_response_t *l_enc_response = NULL;
+    int l_ret = dap_enc_server_process_request(&l_enc_request, &l_enc_response);
+    
+    if (l_ret != 0 || !l_enc_response || !l_enc_response->success) {
+        log_it(L_ERROR, "WebSocket handshake init failed: %s",
+               l_enc_response && l_enc_response->error_message ? 
+               l_enc_response->error_message : "unknown error");
+        if (l_enc_response)
+            dap_enc_server_response_free(l_enc_response);
+        return -1;
+    }
+    
+    // Construct JSON response to satisfy s_enc_init_response in dap_client_pvt.c
+    // Format: {"encrypt_id":"...", "encrypt_msg":"...", "node_sign":"..."}
+    char *l_json = dap_strdup_printf("{\"encrypt_id\":\"%s\",\"encrypt_msg\":\"%s\",\"node_sign\":\"%s\"}",
+                                     l_enc_response->encrypt_id,
+                                     l_enc_response->encrypt_msg,
+                                     l_enc_response->node_sign_msg ? l_enc_response->node_sign_msg : "");
+                                     
+    if (l_json) {
+        // Call callback with JSON string
+        if (a_callback) {
+            a_callback(a_stream, l_json, strlen(l_json), 0);
+        }
+        DAP_DELETE(l_json);
+    } else {
+        log_it(L_ERROR, "Failed to allocate JSON response string");
+    }
+    
+    dap_enc_server_response_free(l_enc_response);
 
     return 0;
 }
@@ -473,10 +516,12 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
 
     log_it(L_DEBUG, "WebSocket handshake process: %zu bytes", a_data_size);
 
-    // Process DAP handshake data received via WebSocket frames
+    // Processing handled by s_enc_init_response via callback
+    // We don't need to parse JSON here as dap_client_pvt handles it
     UNUSED(a_data);
-    UNUSED(a_response);
-    UNUSED(a_response_size);
+    
+    if (a_response) *a_response = NULL;
+    if (a_response_size) *a_response_size = 0;
 
     return 0;
 }
@@ -669,57 +714,56 @@ static void s_ws_session_error_wrapper(dap_client_t *a_client, void *a_arg, int 
 
 /**
  * @brief Send encrypted HTTP request using WebSocket's own HTTP client
- * 
- * This function is similar to s_http_request_enc but uses WebSocket's HTTP client
- * and encryption context from dap_net_transport.
  */
-static void s_ws_send_http_request_enc(dap_net_transport_t *a_transport, dap_http_client_t *a_http_client,
+static void s_ws_send_http_request_enc(dap_enc_key_t *a_session_key, const char *a_session_key_id,
+                                       dap_http_client_t *a_http_client,
                                        dap_worker_t *a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
                                        const char *a_path, const char *a_sub_url, const char *a_query,
                                        void *a_request, size_t a_request_size,
                                        dap_client_callback_data_size_t a_response_proc,
                                        dap_client_callback_int_t a_response_error)
 {
-    if (!a_transport || !a_http_client || !a_worker) {
-        log_it(L_ERROR, "Invalid parameters for s_ws_send_http_request_enc");
+    if (!a_session_key || !a_worker) {
+        log_it(L_ERROR, "Invalid parameters for s_ws_send_http_request_enc: key=%p, worker=%p", 
+               a_session_key, a_worker);
         return;
     }
     
-    dap_enc_data_type_t l_enc_type = a_transport->uplink_protocol_version >= 21
-        ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
+    // We don't strictly need a_http_client as we create a new one, so ignoring it if NULL
+    dap_enc_data_type_t l_enc_type = DAP_ENC_DATA_TYPE_B64_URLSAFE;
+    
     char *l_path = NULL, *l_request_enc = NULL;
     if (a_path && *a_path) {
         size_t l_suburl_len = a_sub_url && *a_sub_url ? dap_strlen(a_sub_url) : 0,
-               l_suburl_enc_size = dap_enc_code_out_size(a_transport->session_key, l_suburl_len, l_enc_type),
+               l_suburl_enc_size = dap_enc_code_out_size(a_session_key, l_suburl_len, l_enc_type),
                l_query_len = a_query && *a_query ? dap_strlen(a_query) : 0,
-               l_query_enc_size = dap_enc_code_out_size(a_transport->session_key, l_query_len, l_enc_type),
+               l_query_enc_size = dap_enc_code_out_size(a_session_key, l_query_len, l_enc_type),
                l_path_size = dap_strlen(a_path) + l_suburl_enc_size + l_query_enc_size + 3;
         l_path = DAP_NEW_Z_SIZE(char, l_path_size);
         char *l_offset = dap_strncpy(l_path, a_path, l_path_size);
         *l_offset++ = '/';
         if (l_suburl_enc_size) {
-            l_offset += dap_enc_code(a_transport->session_key, a_sub_url, l_suburl_len,
+            l_offset += dap_enc_code(a_session_key, a_sub_url, l_suburl_len,
                                      l_offset, l_suburl_enc_size, l_enc_type);
             if (l_query_enc_size) {
                 *l_offset++ = '?';
-                dap_enc_code(a_transport->session_key, a_query, l_query_len,
+                dap_enc_code(a_session_key, a_query, l_query_len,
                              l_offset, l_query_enc_size, l_enc_type);
             }
         }
     }
     size_t l_req_enc_size = 0;
     if (a_request && a_request_size) {
-        l_req_enc_size = dap_enc_code_out_size(a_transport->session_key, a_request_size, l_enc_type) + 1;
+        l_req_enc_size = dap_enc_code_out_size(a_session_key, a_request_size, l_enc_type) + 1;
         l_request_enc = DAP_NEW_Z_SIZE(char, l_req_enc_size);
-        dap_enc_code(a_transport->session_key, a_request, a_request_size,
+        dap_enc_code(a_session_key, a_request, a_request_size,
                      l_request_enc, l_req_enc_size, DAP_ENC_DATA_TYPE_RAW);
     }
     char *l_custom = dap_strdup_printf("KeyID: %s\r\n%s",
-        a_transport->session_key_id ? a_transport->session_key_id : "NULL",
-        a_transport->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
+        a_session_key_id ? a_session_key_id : "NULL",
+        "SessionCloseAfterRequest: true\r\n"); // Always close session stream for control requests
     
-    // Create new HTTP client for this request (WebSocket uses separate HTTP client)
-    // This allows parallel operation with legacy HTTP transport
+    // Create new HTTP client for this request
     dap_client_http_t *l_session_http_client = dap_client_http_request(a_worker,
         a_uplink_addr, a_uplink_port,
         a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
@@ -802,10 +846,10 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     s_ws_session_ctx.stream = a_stream;
     s_ws_session_ctx.callback = a_callback;
     
-    // Create new HTTP client for session creation (separate from legacy HTTP transport)
-    // Use WebSocket's HTTP client reference as template (though we create a new one for this request)
-    // This ensures WebSocket transport doesn't interfere with legacy HTTP transport's http_client
-    s_ws_send_http_request_enc(l_transport, l_priv->http_client, l_client_pvt->worker,
+    // Use client keys directly from client_pvt
+    // dap_client_pvt already populated session_key and session_key_id in STAGE_ENC_INIT
+    s_ws_send_http_request_enc(l_client_pvt->session_key, l_client_pvt->session_key_id,
+                               l_priv->http_client, l_client_pvt->worker,
                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
                                DAP_UPLINK_PATH_STREAM_CTL,
                                l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,

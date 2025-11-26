@@ -15,11 +15,11 @@ add_executable(${PROJECT_NAME}
 # Add all DAP SDK includes using helper function
 dap_test_add_includes(${PROJECT_NAME})
 
-# Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
-dap_mock_autowrap(${PROJECT_NAME})
-
 # Link all DAP SDK libraries using helper function
 dap_test_link_libraries(${PROJECT_NAME})
+
+# Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
+dap_mock_autowrap(${PROJECT_NAME})
 
 # Add database driver libraries based on build configuration (after dap_test_link_libraries)
 if(BUILD_WITH_GDB_DRIVER_MDBX)

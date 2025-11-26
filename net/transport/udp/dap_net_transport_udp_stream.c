@@ -410,6 +410,10 @@ static int s_udp_init(dap_net_transport_t *a_transport, dap_config_t *a_config)
     UNUSED(a_config); // Config can be used to override defaults
 
     a_transport->_inheritor = l_priv;
+    
+    // UDP transport doesn't support session control (connectionless)
+    a_transport->has_session_control = false;
+    
     log_it(L_DEBUG, "UDP transport initialized (uses dap_events_socket for I/O)");
     return 0;
 }
@@ -465,6 +469,10 @@ static int s_udp_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
 
     l_priv->remote_addr_len = sizeof(struct sockaddr_in);
     l_priv->esocket = a_stream->esocket;  // Store esocket from stream
+    
+    // Update esocket address storage for sendto
+    memcpy(&l_priv->esocket->addr_storage, &l_priv->remote_addr, l_priv->remote_addr_len);
+    l_priv->esocket->addr_size = l_priv->remote_addr_len;
     
     log_it(L_INFO, "UDP transport connected to %s:%u", a_host, a_port);
     
@@ -562,9 +570,9 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         .pkey_exchange_size = a_params->pkey_exchange_size,
         .block_key_size = a_params->block_key_size,
         .protocol_version = a_params->protocol_version,
-        .sign_count = 0,  // TODO: get from a_params when available
-        .alice_msg = NULL,  // TODO: get from a_params when available
-        .alice_msg_size = 0,
+        .sign_count = a_params->sign_count,
+        .alice_msg = a_params->alice_pub_key,
+        .alice_msg_size = a_params->alice_pub_key_size,
         .sign_hashes = NULL,
         .sign_hashes_count = 0
     };
