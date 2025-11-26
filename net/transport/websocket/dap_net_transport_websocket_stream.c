@@ -442,6 +442,58 @@ static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_
 }
 
 /**
+ * @brief WebSocket handshake context
+ */
+typedef struct {
+    dap_stream_t *stream;
+    dap_net_transport_handshake_cb_t callback;
+    dap_client_t *client;
+    void *old_callback_arg;
+} s_ws_handshake_ctx_t;
+
+/**
+ * @brief WebSocket handshake response wrapper
+ */
+static void s_ws_handshake_response_wrapper(void *a_data, size_t a_data_size, void *a_arg, http_status_code_t a_status)
+{
+    s_ws_handshake_ctx_t *l_ctx = (s_ws_handshake_ctx_t *)a_arg;
+    if (!l_ctx) return;
+    
+    if (l_ctx->callback) {
+        l_ctx->callback(l_ctx->stream, a_data, a_data_size, 0);
+    }
+    
+    // Restore callback arg
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_ctx->client);
+    if (l_client_pvt) {
+        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+    }
+    
+    DAP_DELETE(l_ctx);
+}
+
+/**
+ * @brief WebSocket handshake error wrapper
+ */
+static void s_ws_handshake_error_wrapper(int a_error, void *a_arg)
+{
+    s_ws_handshake_ctx_t *l_ctx = (s_ws_handshake_ctx_t *)a_arg;
+    if (!l_ctx) return;
+    
+    if (l_ctx->callback) {
+        l_ctx->callback(l_ctx->stream, NULL, 0, a_error);
+    }
+    
+    // Restore callback arg
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_ctx->client);
+    if (l_client_pvt) {
+        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+    }
+    
+    DAP_DELETE(l_ctx);
+}
+
+/**
  * @brief Initialize handshake (client-side)
  */
 static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_t *a_params,
@@ -452,53 +504,85 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket handshake init");
+    log_it(L_DEBUG, "WebSocket handshake init (via HTTP)");
+    
+    dap_client_t *l_client = (dap_client_t*)a_stream->esocket->_inheritor;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Invalid client_pvt");
+        return -2;
+    }
 
-    // Build handshake request using dap_enc_server API
-    dap_enc_server_request_t l_enc_request = {
-        .enc_type = a_params->enc_type,
-        .pkey_exchange_type = a_params->pkey_exchange_type,
-        .pkey_exchange_size = a_params->pkey_exchange_size,
-        .block_key_size = a_params->block_key_size,
-        .protocol_version = a_params->protocol_version,
-        .sign_count = a_params->sign_count,
-        .alice_msg = a_params->alice_pub_key,
-        .alice_msg_size = a_params->alice_pub_key_size,
-        .sign_hashes = NULL,
-        .sign_hashes_count = 0
-    };
-    
-    // Process handshake via transport-independent encryption server
-    dap_enc_server_response_t *l_enc_response = NULL;
-    int l_ret = dap_enc_server_process_request(&l_enc_request, &l_enc_response);
-    
-    if (l_ret != 0 || !l_enc_response || !l_enc_response->success) {
-        log_it(L_ERROR, "WebSocket handshake init failed: %s",
-               l_enc_response && l_enc_response->error_message ? 
-               l_enc_response->error_message : "unknown error");
-        if (l_enc_response)
-            dap_enc_server_response_free(l_enc_response);
-        return -1;
+    // Prepare handshake data (alice public key with signatures)
+    size_t l_data_size = a_params->alice_pub_key_size;
+    uint8_t *l_data = DAP_DUP_SIZE(a_params->alice_pub_key, l_data_size);
+    if (!l_data) {
+        log_it(L_ERROR, "Failed to allocate handshake data");
+        return -4;
     }
     
-    // Construct JSON response to satisfy s_enc_init_response in dap_client_pvt.c
-    // Format: {"encrypt_id":"...", "encrypt_msg":"...", "node_sign":"..."}
-    char *l_json = dap_strdup_printf("{\"encrypt_id\":\"%s\",\"encrypt_msg\":\"%s\",\"node_sign\":\"%s\"}",
-                                     l_enc_response->encrypt_id,
-                                     l_enc_response->encrypt_msg,
-                                     l_enc_response->node_sign_msg ? l_enc_response->node_sign_msg : "");
-                                     
-    if (l_json) {
-        // Call callback with JSON string
-        if (a_callback) {
-            a_callback(a_stream, l_json, strlen(l_json), 0);
-        }
-        DAP_DELETE(l_json);
-    } else {
-        log_it(L_ERROR, "Failed to allocate JSON response string");
+    // Add certificates signatures
+    size_t l_sign_count = 0;
+    dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+    
+    if (a_params->auth_cert) {
+        l_sign_count += dap_cert_add_sign_to_data(a_params->auth_cert, &l_data, &l_data_size,
+                                                   a_params->alice_pub_key, a_params->alice_pub_key_size);
     }
     
-    dap_enc_server_response_free(l_enc_response);
+    if (l_node_cert) {
+        l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_data, &l_data_size,
+                                                   a_params->alice_pub_key, a_params->alice_pub_key_size);
+    }
+    
+    // Encode to base64
+    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
+    char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
+    if (!l_data_str) {
+        DAP_DELETE(l_data);
+        log_it(L_ERROR, "Failed to allocate base64 buffer");
+        return -5;
+    }
+    
+    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
+    DAP_DELETE(l_data);
+    
+    // Build URL with query parameters
+    char l_enc_init_url[1024] = { '\0' };
+    snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
+                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                 a_params->enc_type, a_params->pkey_exchange_type, a_params->pkey_exchange_size,
+                 a_params->block_key_size, a_params->protocol_version, l_sign_count);
+    
+    log_it(L_DEBUG, "WebSocket handshake init: sending POST to %s:%u%s", 
+           l_client->link_info.uplink_addr, l_client->link_info.uplink_port, l_enc_init_url);
+           
+    // Create context
+    s_ws_handshake_ctx_t *l_ctx = DAP_NEW_Z(s_ws_handshake_ctx_t);
+    l_ctx->stream = a_stream;
+    l_ctx->callback = a_callback;
+    l_ctx->client = l_client;
+    l_ctx->old_callback_arg = l_client_pvt->callback_arg;
+    
+    l_client_pvt->callback_arg = l_ctx;
+    
+    // Send HTTP request using dap_client_http_request
+    // We use the client's worker and address
+    dap_client_http_t *l_http_client = dap_client_http_request(l_client_pvt->worker,
+                                            l_client->link_info.uplink_addr,
+                                            l_client->link_info.uplink_port,
+                                            "POST", "text/text", l_enc_init_url, l_data_str,
+                                            l_data_str_enc_size, NULL, s_ws_handshake_response_wrapper, 
+                                            s_ws_handshake_error_wrapper, l_ctx, NULL);
+                                            
+    DAP_DELETE(l_data_str);
+    
+    if (!l_http_client) {
+        log_it(L_ERROR, "Failed to create HTTP request for WebSocket handshake");
+        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+        DAP_DELETE(l_ctx);
+        return -6;
+    }
 
     return 0;
 }
@@ -532,23 +616,17 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
 typedef struct {
     dap_stream_t *stream;
     dap_net_transport_session_cb_t callback;
+    dap_enc_key_t *session_key;
 } s_ws_session_ctx_t;
-
-static s_ws_session_ctx_t s_ws_session_ctx = {NULL, NULL};
 
 /**
  * @brief WebSocket session create response callback wrapper (HTTP callback signature)
  */
 static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size, void *a_arg, http_status_code_t a_status)
 {
-    if (!a_data || !s_ws_session_ctx.stream) {
-        return;
-    }
-    
-    // Get encryption context from transport
-    dap_net_transport_t *l_transport = s_ws_session_ctx.stream->stream_transport;
-    if (!l_transport) {
-        log_it(L_ERROR, "Stream has no transport");
+    s_ws_session_ctx_t *l_ctx = (s_ws_session_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->stream) {
+        DAP_DEL_Z(l_ctx);
         return;
     }
     
@@ -559,11 +637,11 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
     
     if (a_data && a_data_size > 0) {
         // Decrypt response if encrypted
-        if (l_transport->session_key) {
-            size_t l_len = dap_enc_decode_out_size(l_transport->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+        if (l_ctx->session_key) {
+            size_t l_len = dap_enc_decode_out_size(l_ctx->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
             char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
             if (l_response) {
-                l_len = dap_enc_decode(l_transport->session_key, a_data, a_data_size,
+                l_len = dap_enc_decode(l_ctx->session_key, a_data, a_data_size,
                                        l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
                 l_response[l_len] = '\0';
                 
@@ -596,13 +674,11 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
     }
     
     // Call transport callback with session_id and full response data
-    if (s_ws_session_ctx.callback) {
-        s_ws_session_ctx.callback(s_ws_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
+    if (l_ctx->callback) {
+        l_ctx->callback(l_ctx->stream, l_session_id, l_response_data, l_response_size, 0);
     }
     
-    // Clear context
-    s_ws_session_ctx.stream = NULL;
-    s_ws_session_ctx.callback = NULL;
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -610,106 +686,14 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
  */
 static void s_ws_session_error_wrapper_http(int a_error, void *a_arg)
 {
-    if (!s_ws_session_ctx.stream) {
-        return;
-    }
-    
-    // Call transport callback with error
-    if (s_ws_session_ctx.callback) {
-        s_ws_session_ctx.callback(s_ws_session_ctx.stream, 0, NULL, 0, a_error);
-    }
-    
-    // Clear context
-    s_ws_session_ctx.stream = NULL;
-    s_ws_session_ctx.callback = NULL;
-}
+    s_ws_session_ctx_t *l_ctx = (s_ws_session_ctx_t *)a_arg;
+    if (!l_ctx) return;
 
-/**
- * @brief WebSocket session create response callback wrapper (legacy - kept for compatibility)
- */
-static void s_ws_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
-{
-    if (!a_client || !s_ws_session_ctx.stream) {
-        return;
+    if (l_ctx->stream && l_ctx->callback) {
+        l_ctx->callback(l_ctx->stream, 0, NULL, 0, a_error);
     }
     
-    // Get encryption context from transport
-    dap_net_transport_t *l_transport = s_ws_session_ctx.stream->stream_transport;
-    if (!l_transport) {
-        log_it(L_ERROR, "Stream has no transport");
-        return;
-    }
-    
-    // Parse session response to extract session_id
-    uint32_t l_session_id = 0;
-    char *l_response_data = NULL;
-    size_t l_response_size = 0;
-    
-    if (a_data && a_data_size > 0) {
-        // Decrypt response if encrypted
-        if (l_transport->session_key) {
-            size_t l_len = dap_enc_decode_out_size(l_transport->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
-            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
-            if (l_response) {
-                l_len = dap_enc_decode(l_transport->session_key, a_data, a_data_size,
-                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
-                l_response[l_len] = '\0';
-                
-                // Parse response format: "session_id stream_key ..."
-                sscanf(l_response, "%u", &l_session_id);
-                
-                // Allocate and copy full response data for transport callback
-                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
-                if (l_response_data) {
-                    memcpy(l_response_data, l_response, l_len);
-                    l_response_data[l_len] = '\0';
-                    l_response_size = l_len;
-                }
-                
-                DAP_DELETE(l_response);
-            }
-        } else {
-            // Unencrypted response
-            char *l_response_str = (char*)a_data;
-            sscanf(l_response_str, "%u", &l_session_id);
-            
-            // Allocate and copy full response data for transport callback
-            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-            if (l_response_data) {
-                memcpy(l_response_data, a_data, a_data_size);
-                l_response_data[a_data_size] = '\0';
-                l_response_size = a_data_size;
-            }
-        }
-    }
-    
-    // Call transport callback with session_id and full response data
-    if (s_ws_session_ctx.callback) {
-        s_ws_session_ctx.callback(s_ws_session_ctx.stream, l_session_id, l_response_data, l_response_size, 0);
-    }
-    
-    // Clear context
-    s_ws_session_ctx.stream = NULL;
-    s_ws_session_ctx.callback = NULL;
-}
-
-/**
- * @brief WebSocket session create error callback wrapper
- */
-static void s_ws_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
-{
-    if (!a_client || !s_ws_session_ctx.stream) {
-        return;
-    }
-    
-    // Call transport callback with error
-    if (s_ws_session_ctx.callback) {
-        s_ws_session_ctx.callback(s_ws_session_ctx.stream, 0, NULL, 0, a_error);
-    }
-    
-    // Clear context
-    s_ws_session_ctx.stream = NULL;
-    s_ws_session_ctx.callback = NULL;
+    DAP_DELETE(l_ctx);
 }
 
 /**
@@ -720,12 +704,15 @@ static void s_ws_send_http_request_enc(dap_enc_key_t *a_session_key, const char 
                                        dap_worker_t *a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
                                        const char *a_path, const char *a_sub_url, const char *a_query,
                                        void *a_request, size_t a_request_size,
-                                       dap_client_callback_data_size_t a_response_proc,
-                                       dap_client_callback_int_t a_response_error)
+                                       dap_client_http_callback_data_t a_response_proc,
+                                       dap_client_http_callback_error_t a_response_error,
+                                       void *a_callbacks_arg)
 {
     if (!a_session_key || !a_worker) {
         log_it(L_ERROR, "Invalid parameters for s_ws_send_http_request_enc: key=%p, worker=%p", 
                a_session_key, a_worker);
+        // Free context if provided, as callback won't be called
+        if (a_callbacks_arg) DAP_DELETE(a_callbacks_arg);
         return;
     }
     
@@ -767,12 +754,14 @@ static void s_ws_send_http_request_enc(dap_enc_key_t *a_session_key, const char 
     dap_client_http_t *l_session_http_client = dap_client_http_request(a_worker,
         a_uplink_addr, a_uplink_port,
         a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
-        s_ws_session_response_wrapper_http, s_ws_session_error_wrapper_http, NULL, l_custom);
+        a_response_proc, a_response_error, a_callbacks_arg, l_custom);
     
     if (!l_session_http_client) {
         log_it(L_ERROR, "Failed to create HTTP client for WebSocket session creation");
         if (a_response_error) {
-            a_response_error(NULL, NULL, -1);
+            a_response_error(-1, a_callbacks_arg);
+        } else {
+            if (a_callbacks_arg) DAP_DELETE(a_callbacks_arg);
         }
     }
     
@@ -842,9 +831,11 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, 
            DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
     
-    // Store callback context
-    s_ws_session_ctx.stream = a_stream;
-    s_ws_session_ctx.callback = a_callback;
+    // Allocate context
+    s_ws_session_ctx_t *l_ctx = DAP_NEW_Z(s_ws_session_ctx_t);
+    l_ctx->stream = a_stream;
+    l_ctx->callback = a_callback;
+    l_ctx->session_key = l_client_pvt->session_key; // Use key from client_pvt
     
     // Use client keys directly from client_pvt
     // dap_client_pvt already populated session_key and session_key_id in STAGE_ENC_INIT
@@ -853,8 +844,8 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
                                DAP_UPLINK_PATH_STREAM_CTL,
                                l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,
-                               s_ws_session_response_wrapper, 
-                               s_ws_session_error_wrapper);
+                               s_ws_session_response_wrapper_http, 
+                               s_ws_session_error_wrapper_http, l_ctx);
     
     DAP_DELETE(l_suburl);
     

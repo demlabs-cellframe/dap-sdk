@@ -323,12 +323,22 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error)
 {
     if (!a_stream || !a_stream->esocket || !a_stream->esocket->_inheritor) {
+        if (a_stream) {
+            // Detach esocket if it was a temporary stream before deleting
+            // This prevents double free of esocket if it was borrowed from client
+            // Note: We can't check l_client_pvt yet because we failed to get it
+            // Assume it's safe to just detach and delete
+            a_stream->esocket = NULL; 
+            dap_stream_delete_unsafe(a_stream);
+        }
         return;
     }
     
     dap_client_t *l_client = (dap_client_t*)a_stream->esocket->_inheritor;
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     if (!l_client_pvt) {
+        a_stream->esocket = NULL;
+        dap_stream_delete_unsafe(a_stream);
         return;
     }
     
@@ -337,8 +347,10 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     bool l_is_temporary_stream = (a_stream != l_client_pvt->stream);
     
     // Cleanup temporary stream only (for TCP-based transports session create)
+    // IMPORTANT: Detach esocket first because it might be the main client esocket!
     if (l_is_temporary_stream) {
         log_it(L_DEBUG, "Cleaning up temporary stream for session create");
+        a_stream->esocket = NULL; // Detach shared esocket
         dap_stream_delete_unsafe(a_stream);
     }
     
@@ -994,6 +1006,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     
                     if (l_session_ret != 0) {
                         log_it(L_ERROR, "Failed to initiate session create via transport: %d", l_session_ret);
+                        // DETACH esocket before deleting stream to prevent double free of esocket
+                        l_temp_stream->esocket = NULL;
                         dap_stream_delete_unsafe(l_temp_stream);
                         dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -1001,7 +1015,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
-                    // Session create is async, callback will handle response
+                    // Session create is async, callback will handle response and stream deletion
+                    // DO NOT delete l_temp_stream here, it's used in async callback context
                     // Set done callback to advance to next stage when session create completes
                     a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;

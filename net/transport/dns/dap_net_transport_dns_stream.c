@@ -429,47 +429,17 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
     // Full DNS query/response handshake can be implemented later
     // For now, use transport-independent encryption server
     
-    // Build handshake request using dap_enc_server API
-    dap_enc_server_request_t l_enc_request = {
-        .enc_type = a_params->enc_type,
-        .pkey_exchange_type = a_params->pkey_exchange_type,
-        .pkey_exchange_size = a_params->pkey_exchange_size,
-        .block_key_size = a_params->block_key_size,
-        .protocol_version = a_params->protocol_version,
-        .sign_count = 0,
-        .alice_msg = a_params->alice_pub_key,
-        .alice_msg_size = a_params->alice_pub_key_size,
-        .sign_hashes = NULL,
-        .sign_hashes_count = 0
-    };
-    
-    // Process handshake via transport-independent encryption server
-    dap_enc_server_response_t *l_enc_response = NULL;
-    int l_ret = dap_enc_server_process_request(&l_enc_request, &l_enc_response);
-    
-    if (l_ret != 0 || !l_enc_response || !l_enc_response->success) {
-        log_it(L_ERROR, "DNS handshake init failed: %s",
-               l_enc_response && l_enc_response->error_message ? 
-               l_enc_response->error_message : "unknown error");
-        if (l_enc_response)
-            dap_enc_server_response_free(l_enc_response);
-        return -1;
-    }
-    
     // Send handshake data via esocket (similar to UDP)
-    if (a_stream->esocket && l_enc_response->encrypt_msg_len > 0) {
+    if (a_stream->esocket && a_params->alice_pub_key_size > 0) {
         size_t l_sent = dap_events_socket_write_unsafe(a_stream->esocket, 
-                                                       l_enc_response->encrypt_msg,
-                                                       l_enc_response->encrypt_msg_len);
-        if (l_sent != l_enc_response->encrypt_msg_len) {
+                                                       a_params->alice_pub_key,
+                                                       a_params->alice_pub_key_size);
+        if (l_sent != a_params->alice_pub_key_size) {
             log_it(L_ERROR, "DNS handshake send incomplete: %zu of %zu bytes", 
-                   l_sent, l_enc_response->encrypt_msg_len);
-            dap_enc_server_response_free(l_enc_response);
+                   l_sent, a_params->alice_pub_key_size);
             return -1;
         }
     }
-    
-    dap_enc_server_response_free(l_enc_response);
     
     log_it(L_INFO, "DNS handshake init completed");
     

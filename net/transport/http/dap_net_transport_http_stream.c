@@ -1193,14 +1193,40 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
                 DAP_DELETE(l_ctx);
                 return;
             }
-            size_t l_len = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, DAP_ENC_DATA_TYPE_RAW);
-            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
-            l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
-                                   l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
-            l_response[l_len] = '\0';
+            // Use RAW by default as server response usually is RAW encrypted stream (or encoded inside)
+            // If we use B64 here, we might fail if server sends RAW.
+            dap_enc_data_type_t l_enc_type = DAP_ENC_DATA_TYPE_RAW;
+
+            // Calculate expected output size
+            size_t l_len_calc = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, l_enc_type);
+            // Allocate slightly more to be safe (some implementations might require alignment or check buffer > required)
+            // Using a_response_size as lower bound for allocation if it's larger than calc (unlikely for B64 but safe)
+            size_t l_len_buf = dap_max(l_len_calc, a_response_size) + 32; 
             
-            debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling request_response_callback client=%p, callback=%p, len=%zu", 
-                   l_client_pvt->client, (void*)l_ctx->callback, l_len);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len_buf);
+            
+            // Pass buffer size, not just expected size
+            size_t l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
+                                   l_response, l_len_buf, l_enc_type);
+            
+            // Ensure null-termination (dap_enc_decode might not do it)
+            if (l_len < l_len_buf) l_response[l_len] = '\0';
+            else l_response[l_len_buf - 1] = '\0'; // Should not happen if size matches
+            
+            debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling request_response_callback client=%p, callback=%p, len=%zu (buf=%zu)", 
+                   l_client_pvt->client, (void*)l_ctx->callback, l_len, l_len_buf);
+            // Log first few bytes of response to debug "garbage" issue
+            if (s_debug_more && l_len > 0) {
+                char l_preview[64] = {0};
+                size_t l_preview_len = l_len < 63 ? l_len : 63;
+                memcpy(l_preview, l_response, l_preview_len);
+                // Replace non-printable with '.'
+                for (size_t i = 0; i < l_preview_len; i++) {
+                    if (l_preview[i] < 32 || l_preview[i] > 126) l_preview[i] = '.';
+                }
+                log_it(L_DEBUG, "Decrypted response preview: '%s'", l_preview);
+            }
+
             l_ctx->callback(l_client_pvt->client, l_response, l_len);
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: request_response_callback returned");
             DAP_DELETE(l_response);

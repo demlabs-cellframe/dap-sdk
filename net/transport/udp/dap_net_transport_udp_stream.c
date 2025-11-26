@@ -563,58 +563,29 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     l_priv->seq_num = 0;
     
-    // Build handshake request using dap_enc_server API
-    dap_enc_server_request_t l_enc_request = {
-        .enc_type = a_params->enc_type,
-        .pkey_exchange_type = a_params->pkey_exchange_type,
-        .pkey_exchange_size = a_params->pkey_exchange_size,
-        .block_key_size = a_params->block_key_size,
-        .protocol_version = a_params->protocol_version,
-        .sign_count = a_params->sign_count,
-        .alice_msg = a_params->alice_pub_key,
-        .alice_msg_size = a_params->alice_pub_key_size,
-        .sign_hashes = NULL,
-        .sign_hashes_count = 0
-    };
-    
-    // Process handshake via transport-independent encryption server
-    dap_enc_server_response_t *l_enc_response = NULL;
-    int l_ret = dap_enc_server_process_request(&l_enc_request, &l_enc_response);
-    
-    if (l_ret != 0 || !l_enc_response || !l_enc_response->success) {
-        log_it(L_ERROR, "UDP handshake init failed: %s",
-               l_enc_response && l_enc_response->error_message ? 
-               l_enc_response->error_message : "unknown error");
-        if (l_enc_response)
-            dap_enc_server_response_free(l_enc_response);
-        return -1;
-    }
-    
     // Create UDP packet with HANDSHAKE type
     dap_stream_transport_udp_header_t l_header;
     s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                        (uint16_t)l_enc_response->encrypt_msg_len,
+                        (uint16_t)a_params->alice_pub_key_size,
                         l_priv->seq_num++, l_priv->session_id);
     
     // Allocate buffer for header + payload
-    size_t l_packet_size = sizeof(l_header) + l_enc_response->encrypt_msg_len;
+    size_t l_packet_size = sizeof(l_header) + a_params->alice_pub_key_size;
     uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_packet_size);
     if (!l_packet) {
         log_it(L_CRITICAL, "Memory allocation failed for UDP handshake packet");
-        dap_enc_server_response_free(l_enc_response);
         return -1;
     }
     
     // Copy header and payload
     memcpy(l_packet, &l_header, sizeof(l_header));
-    memcpy(l_packet + sizeof(l_header), l_enc_response->encrypt_msg, 
-           l_enc_response->encrypt_msg_len);
+    memcpy(l_packet + sizeof(l_header), a_params->alice_pub_key, 
+           a_params->alice_pub_key_size);
     
     // Send via dap_events_socket_write_unsafe
     size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_packet, l_packet_size);
     
     DAP_DELETE(l_packet);
-    dap_enc_server_response_free(l_enc_response);
     
     if (l_sent != l_packet_size) {
         log_it(L_ERROR, "UDP handshake send incomplete: %zu of %zu bytes", l_sent, l_packet_size);

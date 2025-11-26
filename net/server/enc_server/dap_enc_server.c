@@ -34,6 +34,7 @@ This file is part of DAP SDK the open source project
 
 #include "dap_enc_server.h"
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_sign.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
@@ -49,11 +50,13 @@ This file is part of DAP SDK the open source project
 extern dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
 
 static dap_enc_server_acl_callback_t s_acl_callback = NULL;
+static bool s_debug_more = false;
 
 /**
  * @brief Initialize encryption server
  */
 int dap_enc_server_init(void) {
+    s_debug_more = dap_config_get_item_bool_default(g_config, "enc_server", "debug_more", false);
     log_it(L_INFO, "Transport-independent encryption server initialized");
     return 0;
 }
@@ -129,7 +132,7 @@ int dap_enc_server_process_request(
         return -2;
     }
     
-    log_it(L_DEBUG, "Processing handshake request: protocol_version=%d, sign_count=%zu, msg_size=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Processing handshake request: protocol_version=%d, sign_count=%zu, msg_size=%zu",
            a_request->protocol_version, a_request->sign_count, a_request->alice_msg_size);
     
     // Validate Alice message
@@ -186,7 +189,7 @@ int dap_enc_server_process_request(
         dap_stream_node_addr_t l_client_addr = dap_stream_node_addr_from_sign(l_sign);
         const char *l_addr_str = dap_stream_node_addr_to_str_static(l_client_addr);
         
-        log_it(L_DEBUG, "Validated signature %zu from node "NODE_ADDR_FP_STR, l_sign_validated, NODE_ADDR_FP_ARGS_S(l_client_addr));
+        debug_if(s_debug_more, L_DEBUG, "Validated signature %zu from node "NODE_ADDR_FP_STR, l_sign_validated, NODE_ADDR_FP_ARGS_S(l_client_addr));
         
         if (dap_http_ban_list_client_check(l_addr_str, NULL, NULL)) {
             log_it(L_ERROR, "Client %s is banned", l_addr_str);
