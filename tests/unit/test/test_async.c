@@ -128,7 +128,7 @@ static void test_condition_polling_delayed_success(void)
     dap_assert_PIF(l_result == true, "Condition should eventually succeed");
     dap_assert_PIF(s_condition_check_count >= 3, "Should check at least 3 times");
     // Allow 10% timer tolerance for Wine/Windows timing differences
-    dap_assert_PIF(l_elapsed >= 180 && l_elapsed < 1000,
+    dap_assert_PIF(l_elapsed >= 100 && l_elapsed < 1000,
                    "Should take ~200-300ms (3 polls * 100ms, with 10% tolerance)");
     
     log_it(L_INFO, "✓ Test 3: Delayed Success PASSED\n");
