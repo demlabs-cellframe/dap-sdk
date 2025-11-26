@@ -28,7 +28,7 @@ tests:amd64.debian:
       - pwd
       - env
       - mkdir build
-      - cd build &&cdc
+      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
 
 tests:arm32.debian:
     extends: .tests
