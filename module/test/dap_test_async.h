@@ -16,12 +16,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
-#include <pthread.h>
-#include <signal.h>
 #include <setjmp.h>
-#include <unistd.h>
 #include "dap_common.h"
 #include "dap_test.h"
+
+#ifdef DAP_OS_WINDOWS
+#include <windows.h>
+#else
+#include <pthread.h>
+#include <unistd.h>
+#include <signal.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -93,15 +98,20 @@ bool dap_test_wait_condition(
 );
 
 // =============================================================================
-// PTHREAD CONDITION VARIABLE HELPERS
+// CONDITION VARIABLE HELPERS (cross-platform)
 // =============================================================================
 
 /**
- * @brief Context for waiting on pthread condition variable
+ * @brief Context for waiting on condition variable
  */
 typedef struct dap_test_cond_wait_ctx {
+#ifdef DAP_OS_WINDOWS
+    CRITICAL_SECTION mutex;
+    CONDITION_VARIABLE cond;
+#else
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+#endif
     bool condition_met;
     void *user_data;
 } dap_test_cond_wait_ctx_t;
@@ -148,23 +158,27 @@ void dap_test_cond_signal(dap_test_cond_wait_ctx_t *a_ctx);
 bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms);
 
 // =============================================================================
-// WHOLE TEST TIMEOUT (ALARM-BASED)
+// WHOLE TEST TIMEOUT (cross-platform)
 // =============================================================================
 
 /**
  * @brief Global timeout context for entire test suite
  */
 typedef struct dap_test_global_timeout {
-    sigjmp_buf jump_buf;
-    volatile sig_atomic_t timeout_triggered;
+    jmp_buf jump_buf;
+    volatile int timeout_triggered;
     uint32_t timeout_sec;
     const char *test_name;
+#ifdef DAP_OS_WINDOWS
+    HANDLE timer_queue;
+    HANDLE timer;
+#endif
 } dap_test_global_timeout_t;
 
 /**
  * @brief Set global timeout for entire test suite
- * @details Uses alarm() to limit test execution time.
- *          On timeout, siglongjmp is called to exit the test.
+ * @details Uses alarm() on POSIX or timer queue on Windows.
+ *          On timeout, longjmp is called to exit the test.
  * 
  * @param a_timeout Timeout context
  * @param a_timeout_sec Timeout in seconds
@@ -203,7 +217,7 @@ int dap_test_set_global_timeout(
 void dap_test_cancel_global_timeout(void);
 
 // =============================================================================
-// SIMPLE DELAY HELPERS
+// SIMPLE DELAY HELPERS (cross-platform)
 // =============================================================================
 
 /**
@@ -211,7 +225,11 @@ void dap_test_cancel_global_timeout(void);
  * @param a_delay_ms Delay in ms
  */
 static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
+#ifdef DAP_OS_WINDOWS
+    Sleep(a_delay_ms);
+#else
     usleep(a_delay_ms * 1000);
+#endif
 }
 
 /**
@@ -219,9 +237,13 @@ static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
  * @return Time in ms
  */
 static inline uint64_t dap_test_get_time_ms(void) {
+#ifdef DAP_OS_WINDOWS
+    return GetTickCount64();
+#else
     struct timespec l_ts;
     clock_gettime(CLOCK_MONOTONIC, &l_ts);
     return (uint64_t)l_ts.tv_sec * 1000 + (uint64_t)l_ts.tv_nsec / 1000000;
+#endif
 }
 
 // =============================================================================
