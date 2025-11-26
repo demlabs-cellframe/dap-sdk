@@ -25,6 +25,7 @@
 #include "dap_json.h"
 #include "dap_strfuncs.h"
 #include "json.h"
+#include "json_object.h"
 #include <string.h>
 
 #define LOG_TAG "dap_json"
@@ -148,13 +149,22 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
 }
 
-void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *))
+static _Thread_local dap_json_sort_fn_t s_sort_fn;
+
+static int s_sort_fn_wrapper(const void *a, const void *b)
+{
+    struct json_object *obj_a = *(struct json_object **)a;
+    struct json_object *obj_b = *(struct json_object **)b;
+    return s_sort_fn(_json_c_to_dap_json(obj_a), _json_c_to_dap_json(obj_b));
+}
+
+void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
 {
     if (!a_array || !a_sort_fn) {
         return;
     }
-    
-    json_object_array_sort(_dap_json_to_json_c(a_array), a_sort_fn);
+    s_sort_fn = a_sort_fn;
+    json_object_array_sort(_dap_json_to_json_c(a_array), s_sort_fn_wrapper);
 }
 
 // Object field manipulation

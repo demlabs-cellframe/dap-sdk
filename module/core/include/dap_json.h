@@ -40,6 +40,8 @@ extern "C" {
  */
 typedef struct dap_json dap_json_t;
 
+typedef int (*dap_json_sort_fn_t)(const dap_json_t *a, const dap_json_t *b);
+
 // Object creation and destruction
 dap_json_t* dap_json_object_new(void);
 dap_json_t* dap_json_parse_string(const char* a_json_string);
@@ -61,7 +63,7 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item);
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count);
 size_t dap_json_array_length(dap_json_t* a_array);
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
-void dap_json_array_sort(dap_json_t* a_array, int (*a_sort_fn)(const void *, const void *));
+void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn);
 
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
