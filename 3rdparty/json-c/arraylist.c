@@ -172,11 +172,43 @@ void array_list_sort(struct array_list *arr, int (*compar)(const void *, const v
 	qsort(arr->array, arr->length, sizeof(arr->array[0]), compar);
 }
 
+static void s_quicksort_r(void **a_arr, ssize_t a_left, ssize_t a_right,
+                          int (*a_compar)(const void *, const void *, void *),
+                          void *a_user_arg)
+{
+	if (a_left >= a_right)
+		return;
+
+	ssize_t l_pivot_idx = a_left + (a_right - a_left) / 2;
+	void *l_pivot = a_arr[l_pivot_idx];
+
+	a_arr[l_pivot_idx] = a_arr[a_right];
+	a_arr[a_right] = l_pivot;
+
+	ssize_t l_store_idx = a_left;
+	for (ssize_t i = a_left; i < a_right; i++) {
+		if (a_compar(&a_arr[i], &l_pivot, a_user_arg) < 0) {
+			void *l_tmp = a_arr[i];
+			a_arr[i] = a_arr[l_store_idx];
+			a_arr[l_store_idx] = l_tmp;
+			l_store_idx++;
+		}
+	}
+
+	a_arr[a_right] = a_arr[l_store_idx];
+	a_arr[l_store_idx] = l_pivot;
+
+	s_quicksort_r(a_arr, a_left, l_store_idx - 1, a_compar, a_user_arg);
+	s_quicksort_r(a_arr, l_store_idx + 1, a_right, a_compar, a_user_arg);
+}
+
 void array_list_sort_r(struct array_list *arr,
                        int (*compar)(const void *, const void *, void *),
                        void *user_arg)
 {
-	qsort_r(arr->array, arr->length, sizeof(arr->array[0]), compar, user_arg);
+	if (arr->length < 2)
+		return;
+	s_quicksort_r(arr->array, 0, (ssize_t)arr->length - 1, compar, user_arg);
 }
 
 void *array_list_bsearch(const void **key, struct array_list *arr,
