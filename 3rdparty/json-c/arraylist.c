@@ -12,6 +12,7 @@
 #include "config.h"
 
 #include <limits.h>
+#include <sys/types.h>
 
 #ifdef STDC_HEADERS
 #include <stdlib.h>
@@ -169,6 +170,13 @@ int array_list_add(struct array_list *arr, void *data)
 void array_list_sort(struct array_list *arr, int (*compar)(const void *, const void *))
 {
 	qsort(arr->array, arr->length, sizeof(arr->array[0]), compar);
+}
+
+void array_list_sort_r(struct array_list *arr,
+                       int (*compar)(const void *, const void *, void *),
+                       void *user_arg)
+{
+	qsort_r(arr->array, arr->length, sizeof(arr->array[0]), compar, user_arg);
 }
 
 void *array_list_bsearch(const void **key, struct array_list *arr,

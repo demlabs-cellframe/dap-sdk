@@ -566,6 +566,19 @@ JSON_EXPORT size_t json_object_array_length(const struct json_object *obj);
 JSON_EXPORT void json_object_array_sort(struct json_object *jso,
                                         int (*sort_fn)(const void *, const void *));
 
+/** Sorts the elements of jso of type json_type_array with user argument
+*
+* Similar to json_object_array_sort() but allows passing a user argument
+* to the comparison function.
+*
+* @param jso the json_object instance
+* @param sort_fn a sorting function that takes user argument
+* @param user_arg user argument passed to sort_fn
+*/
+JSON_EXPORT void json_object_array_sort_r(struct json_object *jso,
+                                          int (*sort_fn)(const void *, const void *, void *),
+                                          void *user_arg);
+
 /** Binary search a sorted array for a specified key object.
  *
  * It depends on your compare function what's sufficient as a key.
