@@ -5,11 +5,13 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/random.hpp>
-using namespace std;
 #include <iostream>
 
 #include "dap_math_ops.h"
 #include "dap_math_convert.h"
+
+// Note: Removed "using namespace std;" to avoid conflicts with Windows SDK 'byte' type
+// Use explicit std:: prefix where needed
 
 #include "gtest/gtest-spi.h"
 
@@ -134,7 +136,7 @@ void check_equality256(uint256_t a, uint64_t aa) {
     check_equality256(a, boost_a);
 }
 
-void check_equality256(uint256_t a, string aa) {
+void check_equality256(uint256_t a, std::string aa) {
     bmp::uint256_t boost_a = bmp::uint256_t(aa);
     check_equality256(a, boost_a);
 }
@@ -1983,8 +1985,8 @@ TEST(LegacyTests, Uint256) {
 TEST(MathTests, Sum256Zeroes) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "0";
+    std::string lhs = "0";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2001,8 +2003,8 @@ TEST(MathTests, Sum256Zeroes) {
 TEST(MathTests, Sum256OneZero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "0";
+    std::string lhs = "1";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2019,8 +2021,8 @@ TEST(MathTests, Sum256OneZero) {
 TEST(MathTests, Sum256OneOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "1";
+    std::string lhs = "1";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2037,8 +2039,8 @@ TEST(MathTests, Sum256OneOne) {
 TEST(MathTests, Sum256Min128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "0";
+    std::string lhs = MIN128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2055,8 +2057,8 @@ TEST(MathTests, Sum256Min128Zero) {
 TEST(MathTests, Sum256Min128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "1";
+    std::string lhs = MIN128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2073,8 +2075,8 @@ TEST(MathTests, Sum256Min128One) {
 TEST(MathTests, Sum256Min128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "2";
+    std::string lhs = MIN128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2091,8 +2093,8 @@ TEST(MathTests, Sum256Min128Two) {
 TEST(MathTests, Sum256Max128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "0";
+    std::string lhs = MAX128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2109,8 +2111,8 @@ TEST(MathTests, Sum256Max128Zero) {
 TEST(MathTests, Sum256Max128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "1";
+    std::string lhs = MAX128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2127,8 +2129,8 @@ TEST(MathTests, Sum256Max128One) {
 TEST(MathTests, Sum256Max128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "2";
+    std::string lhs = MAX128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2145,8 +2147,8 @@ TEST(MathTests, Sum256Max128Two) {
 TEST(MathTests, Sum256Min256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "0";
+    std::string lhs = MIN256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2163,8 +2165,8 @@ TEST(MathTests, Sum256Min256Zero) {
 TEST(MathTests, Sum256Min256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "1";
+    std::string lhs = MIN256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2181,8 +2183,8 @@ TEST(MathTests, Sum256Min256One) {
 TEST(MathTests, Sum256Min256Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "2";
+    std::string lhs = MIN256STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2199,8 +2201,8 @@ TEST(MathTests, Sum256Min256Two) {
 TEST(MathTests, Sum256Max256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "0";
+    std::string lhs = MAX256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2217,8 +2219,8 @@ TEST(MathTests, Sum256Max256Zero) {
 TEST(MathTests, Sum256Max256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "1";
+    std::string lhs = MAX256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2253,8 +2255,8 @@ TEST_F(RandomMathTests, Sum256) {
 TEST(MathTests, Sub256Zeroes) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "0";
+    std::string lhs = "0";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2271,8 +2273,8 @@ TEST(MathTests, Sub256Zeroes) {
 TEST(MathTests, Sub256OneZero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "0";
+    std::string lhs = "1";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2285,8 +2287,8 @@ TEST(MathTests, Sub256OneZero) {
 TEST(MathTests, Sub256ZeroOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "1";
+    std::string lhs = "0";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2299,8 +2301,8 @@ TEST(MathTests, Sub256ZeroOne) {
 TEST(MathTests, Sub256OneOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "1";
+    std::string lhs = "1";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2313,8 +2315,8 @@ TEST(MathTests, Sub256OneOne) {
 TEST(MathTests, Sub256Min128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "0";
+    std::string lhs = MIN128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2327,8 +2329,8 @@ TEST(MathTests, Sub256Min128Zero) {
 TEST(MathTests, Sub256ZeroMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MIN128STR;
+    std::string lhs = "0";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2341,8 +2343,8 @@ TEST(MathTests, Sub256ZeroMin128) {
 TEST(MathTests, Sub256Min128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "1";
+    std::string lhs = MIN128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2355,8 +2357,8 @@ TEST(MathTests, Sub256Min128One) {
 TEST(MathTests, Sub256OneMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MIN128STR;
+    std::string lhs = "1";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2369,8 +2371,8 @@ TEST(MathTests, Sub256OneMin128) {
 TEST(MathTests, Sub256Min128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "2";
+    std::string lhs = MIN128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2383,8 +2385,8 @@ TEST(MathTests, Sub256Min128Two) {
 TEST(MathTests, Sub256TwoMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MIN128STR;
+    std::string lhs = "2";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2397,8 +2399,8 @@ TEST(MathTests, Sub256TwoMin128) {
 TEST(MathTests, Sub256Max128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "0";
+    std::string lhs = MAX128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2411,8 +2413,8 @@ TEST(MathTests, Sub256Max128Zero) {
 TEST(MathTests, Sub256ZeroMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MAX128STR;
+    std::string lhs = "0";
+    std::string rhs = MAX128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2425,8 +2427,8 @@ TEST(MathTests, Sub256ZeroMax128) {
 TEST(MathTests, Sub256Max128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "1";
+    std::string lhs = MAX128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2439,8 +2441,8 @@ TEST(MathTests, Sub256Max128One) {
 TEST(MathTests, Sub256OneMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MAX128STR;
+    std::string lhs = "1";
+    std::string rhs = MAX128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2453,8 +2455,8 @@ TEST(MathTests, Sub256OneMax128) {
 TEST(MathTests, Sub256Max128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "2";
+    std::string lhs = MAX128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2467,8 +2469,8 @@ TEST(MathTests, Sub256Max128Two) {
 TEST(MathTests, Sub256TwoMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MAX128STR;
+    std::string lhs = "2";
+    std::string rhs = MAX128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2481,8 +2483,8 @@ TEST(MathTests, Sub256TwoMax128) {
 TEST(MathTests, Sub256Min256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "0";
+    std::string lhs = MIN256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2495,8 +2497,8 @@ TEST(MathTests, Sub256Min256Zero) {
 TEST(MathTests, Sub256ZeroMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MIN256STR;
+    std::string lhs = "0";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2509,8 +2511,8 @@ TEST(MathTests, Sub256ZeroMin256) {
 TEST(MathTests, Sub256Min256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "1";
+    std::string lhs = MIN256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2524,8 +2526,8 @@ TEST(MathTests, Sub256Min256One) {
 TEST(MathTests, Sub256OneMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MIN256STR;
+    std::string lhs = "1";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2538,8 +2540,8 @@ TEST(MathTests, Sub256OneMin256) {
 TEST(MathTests, Sub256Min256Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "2";
+    std::string lhs = MIN256STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2552,8 +2554,8 @@ TEST(MathTests, Sub256Min256Two) {
 TEST(MathTests, Sub256TwoMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MIN256STR;
+    std::string lhs = "2";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2566,8 +2568,8 @@ TEST(MathTests, Sub256TwoMin256) {
 TEST(MathTests, Sub256Max256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "0";
+    std::string lhs = MAX256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2580,8 +2582,8 @@ TEST(MathTests, Sub256Max256Zero) {
 TEST(MathTests, Sub256ZeroMax256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MAX256STR;
+    std::string lhs = "0";
+    std::string rhs = MAX256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2594,8 +2596,8 @@ TEST(MathTests, Sub256ZeroMax256) {
 TEST(MathTests, Sub256Max256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "1";
+    std::string lhs = MAX256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2608,8 +2610,8 @@ TEST(MathTests, Sub256Max256One) {
 TEST(MathTests, Sub256OneMax256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MAX256STR;
+    std::string lhs = "1";
+    std::string rhs = MAX256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2636,8 +2638,8 @@ TEST_F(RandomMathTests, Sub256) {
 TEST(MathTests, Prod256Zeroes) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "1";
+    std::string lhs = "0";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2654,8 +2656,8 @@ TEST(MathTests, Prod256Zeroes) {
 TEST(MathTests, Prod256OneZero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "1";
+    std::string lhs = "0";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2672,8 +2674,8 @@ TEST(MathTests, Prod256OneZero) {
 TEST(MathTests, Prod256OneOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "1";
+    std::string lhs = "1";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2690,8 +2692,8 @@ TEST(MathTests, Prod256OneOne) {
 TEST(MathTests, Prod256Min128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "0";
+    std::string lhs = MIN128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2708,8 +2710,8 @@ TEST(MathTests, Prod256Min128Zero) {
 TEST(MathTests, Prod256Min128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "1";
+    std::string lhs = MIN128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2726,8 +2728,8 @@ TEST(MathTests, Prod256Min128One) {
 TEST(MathTests, Prod256Min128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "2";
+    std::string lhs = MIN128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2744,8 +2746,8 @@ TEST(MathTests, Prod256Min128Two) {
 TEST(MathTests, Prod256Max128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "0";
+    std::string lhs = MAX128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2762,8 +2764,8 @@ TEST(MathTests, Prod256Max128Zero) {
 TEST(MathTests, Prod256Max128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "1";
+    std::string lhs = MAX128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2780,8 +2782,8 @@ TEST(MathTests, Prod256Max128One) {
 TEST(MathTests, Prod256Max128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "2";
+    std::string lhs = MAX128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2798,8 +2800,8 @@ TEST(MathTests, Prod256Max128Two) {
 TEST(MathTests, Prod256Min256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "0";
+    std::string lhs = MIN256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2816,8 +2818,8 @@ TEST(MathTests, Prod256Min256Zero) {
 TEST(MathTests, Prod256Min256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "1";
+    std::string lhs = MIN256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2834,8 +2836,8 @@ TEST(MathTests, Prod256Min256One) {
 TEST(MathTests, Prod256Min256Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "2";
+    std::string lhs = MIN256STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2852,8 +2854,8 @@ TEST(MathTests, Prod256Min256Two) {
 TEST(MathTests, Prod256Max256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "0";
+    std::string lhs = MAX256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2870,8 +2872,8 @@ TEST(MathTests, Prod256Max256Zero) {
 TEST(MathTests, Prod256Max256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "1";
+    std::string lhs = MAX256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2908,8 +2910,8 @@ TEST_F(RandomMathTests, Prod256) {
 TEST(MathTests, Div256Zeroes) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "0";
+    std::string lhs = "0";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2920,8 +2922,8 @@ TEST(MathTests, Div256Zeroes) {
 TEST(MathTests, Div256OneZero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "0";
+    std::string lhs = "1";
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2932,8 +2934,8 @@ TEST(MathTests, Div256OneZero) {
 TEST(MathTests, Div256ZeroOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = "1";
+    std::string lhs = "0";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2946,8 +2948,8 @@ TEST(MathTests, Div256ZeroOne) {
 TEST(MathTests, Div256OneOne) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = "1";
+    std::string lhs = "1";
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2960,8 +2962,8 @@ TEST(MathTests, Div256OneOne) {
 TEST(MathTests, Div256Min128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "0";
+    std::string lhs = MIN128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2972,8 +2974,8 @@ TEST(MathTests, Div256Min128Zero) {
 TEST(MathTests, Div256ZeroMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MIN128STR;
+    std::string lhs = "0";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -2986,8 +2988,8 @@ TEST(MathTests, Div256ZeroMin128) {
 TEST(MathTests, Div256Min128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "1";
+    std::string lhs = MIN128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3000,8 +3002,8 @@ TEST(MathTests, Div256Min128One) {
 TEST(MathTests, Div256OneMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MIN128STR;
+    std::string lhs = "1";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3014,8 +3016,8 @@ TEST(MathTests, Div256OneMin128) {
 TEST(MathTests, Div256Min128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN128STR;
-    string rhs = "2";
+    std::string lhs = MIN128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3028,8 +3030,8 @@ TEST(MathTests, Div256Min128Two) {
 TEST(MathTests, Div256TwoMin128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MIN128STR;
+    std::string lhs = "2";
+    std::string rhs = MIN128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3042,8 +3044,8 @@ TEST(MathTests, Div256TwoMin128) {
 TEST(MathTests, Div256Max128Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "0";
+    std::string lhs = MAX128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3054,8 +3056,8 @@ TEST(MathTests, Div256Max128Zero) {
 TEST(MathTests, Div256ZeroMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "0";
+    std::string lhs = MAX128STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3068,8 +3070,8 @@ TEST(MathTests, Div256ZeroMax128) {
 TEST(MathTests, Div256Max128One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "1";
+    std::string lhs = MAX128STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3082,8 +3084,8 @@ TEST(MathTests, Div256Max128One) {
 TEST(MathTests, Div256OneMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MAX128STR;
+    std::string lhs = "1";
+    std::string rhs = MAX128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3096,8 +3098,8 @@ TEST(MathTests, Div256OneMax128) {
 TEST(MathTests, Div256Max128Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX128STR;
-    string rhs = "2";
+    std::string lhs = MAX128STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3110,8 +3112,8 @@ TEST(MathTests, Div256Max128Two) {
 TEST(MathTests, Div256TwoMax128) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MAX128STR;
+    std::string lhs = "2";
+    std::string rhs = MAX128STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3124,8 +3126,8 @@ TEST(MathTests, Div256TwoMax128) {
 TEST(MathTests, Div256Min256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "0";
+    std::string lhs = MIN256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3136,8 +3138,8 @@ TEST(MathTests, Div256Min256Zero) {
 TEST(MathTests, Div256ZeroMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MIN256STR;
+    std::string lhs = "0";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3150,8 +3152,8 @@ TEST(MathTests, Div256ZeroMin256) {
 TEST(MathTests, Div256Min256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "1";
+    std::string lhs = MIN256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3165,8 +3167,8 @@ TEST(MathTests, Div256Min256One) {
 TEST(MathTests, Div256OneMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MIN256STR;
+    std::string lhs = "1";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3179,8 +3181,8 @@ TEST(MathTests, Div256OneMin256) {
 TEST(MathTests, Div256Min256Two) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MIN256STR;
-    string rhs = "2";
+    std::string lhs = MIN256STR;
+    std::string rhs = "2";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3193,8 +3195,8 @@ TEST(MathTests, Div256Min256Two) {
 TEST(MathTests, Div256TwoMin256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2";
-    string rhs = MIN256STR;
+    std::string lhs = "2";
+    std::string rhs = MIN256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3207,8 +3209,8 @@ TEST(MathTests, Div256TwoMin256) {
 TEST(MathTests, Div256Max256Zero) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "0";
+    std::string lhs = MAX256STR;
+    std::string rhs = "0";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3219,8 +3221,8 @@ TEST(MathTests, Div256Max256Zero) {
 TEST(MathTests, Div256ZeroMax256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "0";
-    string rhs = MAX256STR;
+    std::string lhs = "0";
+    std::string rhs = MAX256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3233,8 +3235,8 @@ TEST(MathTests, Div256ZeroMax256) {
 TEST(MathTests, Div256Max256One) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = MAX256STR;
-    string rhs = "1";
+    std::string lhs = MAX256STR;
+    std::string rhs = "1";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3247,8 +3249,8 @@ TEST(MathTests, Div256Max256One) {
 TEST(MathTests, Div256OneMax256) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1";
-    string rhs = MAX256STR;
+    std::string lhs = "1";
+    std::string rhs = MAX256STR;
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3262,7 +3264,7 @@ TEST(MathTests, Mult256ZeroZero){
     uint256_t a = uint256_0, b = uint256_0, c = uint256_0;
     int overflow = MULT_256_256(a,b, &c);
     ASSERT_FALSE(overflow);
-    string ret = "0";
+    std::string ret = "0";
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
 
@@ -3270,13 +3272,13 @@ TEST(MathTests, Mult256OneOne) {
     uint256_t a = uint256_1, b = uint256_1, c = uint256_0;
     int overflow = MULT_256_256(a, b, &c);
     ASSERT_FALSE(overflow);
-    string ret = "1";
+    std::string ret = "1";
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
  TEST(MathTests, Mult256ZeroOne) {
     uint256_t a = uint256_0, b = uint256_1, c;
     int overflow = MULT_256_256(a, b, &c);
-    string ret = "0";
+    std::string ret = "0";
     ASSERT_FALSE(overflow);
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
@@ -3284,7 +3286,7 @@ TEST(MathTests, Mult256OneOne) {
 TEST(MathTests, Mult256OneZero) {
     uint256_t a = uint256_1, b = uint256_0, c;
     int overflow = MULT_256_256(a,b, &c);
-    string ret = "0";
+    std::string ret = "0";
     ASSERT_FALSE(overflow);
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
@@ -3320,7 +3322,7 @@ TEST(MathTests, Mult256BigLow) {
     b = dap_uint256_scan_uninteger("2");
     int overflow = MULT_256_256(a, b, &c);
     ASSERT_FALSE(overflow);
-    string ret = "3213876088517980551083924184682325205044405987565585670602752";
+    std::string ret = "3213876088517980551083924184682325205044405987565585670602752";
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
 
@@ -3330,7 +3332,7 @@ TEST(MathTests, Mult256LowBig) {
     b = dap_uint256_scan_uninteger("1606938044258990275541962092341162602522202993782792835301376");
     int overflow = MULT_256_256(a, b, &c);
     ASSERT_FALSE(overflow);
-    string ret = "3213876088517980551083924184682325205044405987565585670602752";
+    std::string ret = "3213876088517980551083924184682325205044405987565585670602752";
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
 
@@ -3339,7 +3341,7 @@ TEST(MathTest, Mult256LowLow) {
     uint256_t b = dap_uint256_scan_uninteger("877744774747447754177");
     uint256_t c = uint256_0;
     int overflow = MULT_256_256(a, b, &c);
-    string ret = "614421342323213427923900000000000000000000";
+    std::string ret = "614421342323213427923900000000000000000000";
     ASSERT_FALSE(overflow);
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
@@ -3350,7 +3352,7 @@ TEST(MathTest, Mult256TwoThree) {
     uint256_t c = uint256_0;
     int overflow = MULT_256_256(a, b, &c);
     ASSERT_FALSE(overflow);
-    string ret = "6";
+    std::string ret = "6";
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
 }
 
@@ -3369,8 +3371,8 @@ TEST(DISABLE_MathTests, Mult256MaxMaxRet512) {
 TEST(MathTests, DivMoreToLess) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "25000";
-    string rhs = "10000";
+    std::string lhs = "25000";
+    std::string rhs = "10000";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3381,8 +3383,8 @@ TEST(MathTests, DivMoreToLess) {
 TEST(MathTests, DivMoreToLessPrimes) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "23";
-    string rhs = "13";
+    std::string lhs = "23";
+    std::string rhs = "13";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3393,8 +3395,8 @@ TEST(MathTests, DivMoreToLessPrimes) {
 TEST(MathTests, DivMoreToLessClassic) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "2500";
-    string rhs = "1000";
+    std::string lhs = "2500";
+    std::string rhs = "1000";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3405,8 +3407,8 @@ TEST(MathTests, DivMoreToLessClassic) {
 TEST(MathTests, DivMoreToLessSixFour) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "6";
-    string rhs = "4";
+    std::string lhs = "6";
+    std::string rhs = "4";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3417,8 +3419,8 @@ TEST(MathTests, DivMoreToLessSixFour) {
 TEST(MathTests, DivMoreToLessSixThree) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "6";
-    string rhs = "3";
+    std::string lhs = "6";
+    std::string rhs = "3";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3429,8 +3431,8 @@ TEST(MathTests, DivMoreToLessSixThree) {
 TEST(MathTests, DivLessToMoreFourThree) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "4";
-    string rhs = "3";
+    std::string lhs = "4";
+    std::string rhs = "3";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3441,8 +3443,8 @@ TEST(MathTests, DivLessToMoreFourThree) {
 TEST(MathTests, DivLessToMoreFiveThree) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "5";
-    string rhs = "3";
+    std::string lhs = "5";
+    std::string rhs = "3";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
@@ -3453,8 +3455,8 @@ TEST(MathTests, DivLessToMoreFiveThree) {
 TEST(MathTests, DivMoreToLessBigBig) {
     uint256_t a, b, c = uint256_0;
 
-    string lhs = "1.0e+57";
-    string rhs = "1.0e+23";
+    std::string lhs = "1.0e+57";
+    std::string rhs = "1.0e+23";
 
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
