@@ -36,6 +36,7 @@
 #include "dap_global_db_driver.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
+#include "dap_stream.h"
 
 #define LOG_TAG "dap_global_db"
 
@@ -187,10 +188,20 @@ int dap_global_db_init()
         s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "mdbx");
         
         dap_cert_t *l_signing_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-        if (l_signing_cert)
+        if (l_signing_cert) {
             s_dbi->signing_key = l_signing_cert->enc_key;
-        else
+
+            // Derive node address from the signing certificate so cluster roles resolve correctly
+            dap_stream_node_addr_t l_cert_addr = dap_stream_node_addr_from_cert(l_signing_cert);
+            if (l_cert_addr.uint64) {
+                if (g_node_addr.uint64 && g_node_addr.uint64 != l_cert_addr.uint64) {
+                    log_it(L_WARNING, "Overriding existing node address with signing certificate address");
+                }
+                g_node_addr = l_cert_addr;
+            }
+        } else {
             log_it(L_ERROR, "Can't find node addr cerificate, all new records will be usigned");
+        }
 
         uint16_t l_size_ban_list = 0, l_size_white_list = 0;
         const char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
@@ -289,7 +300,7 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
 {
     a_obj->timestamp = a_new_timestamp;
-    DAP_DEL_Z(a_obj->sign);
+    DAP_DELETE(a_obj->sign);
     a_obj->crc = 0;
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
