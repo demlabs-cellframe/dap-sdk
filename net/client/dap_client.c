@@ -507,7 +507,13 @@ const char * dap_client_stage_str(dap_client_stage_t a_stage)
  */
 dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client)
 {
-    return (a_client && DAP_CLIENT_PVT(a_client)) ? DAP_CLIENT_PVT(a_client)->stage_status : STAGE_STATUS_NONE;
+    if (!a_client || !DAP_CLIENT_PVT(a_client))
+        return STAGE_STATUS_NONE;
+    
+    // Memory barrier to ensure we see the latest value from other threads
+    __sync_synchronize();
+    
+    return DAP_CLIENT_PVT(a_client)->stage_status;
 }
 
 /**

@@ -1264,6 +1264,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
             if (l_is_last_stage) {
                 log_it(L_INFO, "Stage %s is last stage, setting COMPLETE for client %p", dap_client_stage_str(a_client_pvt->stage), a_client_pvt->client);
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
+                // Memory barrier to ensure status is visible to other threads
+                __sync_synchronize();
                 dap_stream_add_to_list(a_client_pvt->stream);
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));

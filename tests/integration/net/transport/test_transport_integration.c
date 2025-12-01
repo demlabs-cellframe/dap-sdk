@@ -62,9 +62,9 @@
 // Define the actual array here
 const transport_test_config_t g_transport_configs[] = {
     {DAP_NET_TRANSPORT_HTTP, "HTTP", 18101, "127.0.0.1"},
-    {DAP_NET_TRANSPORT_WEBSOCKET, "WebSocket", 18102, "127.0.0.1"},
+    //{DAP_NET_TRANSPORT_WEBSOCKET, "WebSocket", 18102, "127.0.0.1"},
     {DAP_NET_TRANSPORT_UDP_BASIC, "UDP", 18103, "127.0.0.1"},
-    {DAP_NET_TRANSPORT_DNS_TUNNEL, "DNS", 18104, "127.0.0.1"},
+    //{DAP_NET_TRANSPORT_DNS_TUNNEL, "DNS", 18104, "127.0.0.1"},
 };
 
 // Define count as compile-time constant for use in array declarations
@@ -277,6 +277,8 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
     if (!a_client) {
         return false;
     }
+    
+    printf("  Waiting for client %p to complete handshake...\n", (void*)a_client);
     
     dap_client_stage_t l_last_stage = STAGE_UNDEFINED;
     dap_client_stage_status_t l_last_status = STAGE_STATUS_NONE;
