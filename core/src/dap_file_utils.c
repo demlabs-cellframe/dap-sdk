@@ -95,9 +95,14 @@ bool dap_file_test(const char * a_file_path)
     if(!a_file_path)
         return false;
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(a_file_path);
-    if(attr != -1 && (attr & FILE_ATTRIBUTE_NORMAL))
-        return true;
+    DWORD attr = GetFileAttributesA(a_file_path);
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    if (attr & FILE_ATTRIBUTE_DIRECTORY) {
+        return false;
+    }
+    return true;
 #else
     struct stat st;
     if (!stat(a_file_path, &st)) {
