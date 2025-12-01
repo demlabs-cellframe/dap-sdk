@@ -1576,10 +1576,10 @@ static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t 
     char *l_response_str = (char*)a_data; // The caller must ensure it's a null-terminated string
     
     if(s_debug_more)
-        log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved: '%s'", a_data_size, l_response_str);
+        log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved: '%s'", a_data_size, l_response_str ? l_response_str : "(null)");
     
-    if(a_data_size < 4) {
-        log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str);
+    if (!l_response_str || a_data_size < 4) {
+        log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str ? l_response_str : "(null)");
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
         s_stage_status_after(l_client_pvt);

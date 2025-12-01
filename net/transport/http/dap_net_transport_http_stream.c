@@ -1224,7 +1224,7 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
                 for (size_t i = 0; i < l_preview_len; i++) {
                     if (l_preview[i] < 32 || l_preview[i] > 126) l_preview[i] = '.';
                 }
-                log_it(L_DEBUG, "Decrypted response preview: '%s'", l_preview);
+                debug_if(s_debug_more, L_DEBUG, "Decrypted response preview: '%s'", l_preview);
             }
 
             l_ctx->callback(l_client_pvt->client, l_response, l_len);

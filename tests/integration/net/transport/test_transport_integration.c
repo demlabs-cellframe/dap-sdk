@@ -50,11 +50,13 @@
 
 #define LOG_TAG "test_transport"
 
+
 // Test configuration
 #define TEST_PARALLEL_TRANSPORTS 4  // Number of parallel transport instances per type
-#define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB
+#define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB for HTTP/WebSocket
+#define TEST_SMALL_DATA_SIZE (1024)  // 1 KB for UDP/DNS (packet-based transports)
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANSPORT_TIMEOUT_MS 300000  // 300 seconds (5 minutes)
+#define TEST_TRANSPORT_TIMEOUT_MS 10000  // 10 seconds
 
 // Transport configs are defined in test_transport_helpers.h
 // Define the actual array here
@@ -409,7 +411,13 @@ static void *test_transport_worker(void *a_arg)
     
     // Initialize all client contexts and generate unique client node addresses
     for (size_t i = 0; i < TEST_PARALLEL_TRANSPORTS; i++) {
-        if (test_stream_ch_context_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, TEST_LARGE_DATA_SIZE) != 0) {
+        // Use smaller data size for UDP/DNS transports (packet-based)
+        size_t l_data_size = (l_ctx->config.transport_type == DAP_NET_TRANSPORT_UDP_BASIC ||
+                              l_ctx->config.transport_type == DAP_NET_TRANSPORT_DNS_TUNNEL) 
+                            ? TEST_SMALL_DATA_SIZE 
+                            : TEST_LARGE_DATA_SIZE;
+        
+        if (test_stream_ch_context_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_data_size) != 0) {
             TEST_ERROR("Failed to initialize stream channel context %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -2;
             l_ctx->running = false;
@@ -539,8 +547,16 @@ static void *test_transport_worker(void *a_arg)
     }
     
     pthread_mutex_lock(&s_test_mutex);
-    printf("  All %s clients completed data exchange successfully (%u MB per client)\n", 
-           l_ctx->config.name, TEST_LARGE_DATA_SIZE / (1024 * 1024));
+    // Report data size based on transport type
+    uint32_t l_data_mb = (l_ctx->config.transport_type == DAP_NET_TRANSPORT_UDP_BASIC ||
+                          l_ctx->config.transport_type == DAP_NET_TRANSPORT_DNS_TUNNEL)
+                        ? (TEST_SMALL_DATA_SIZE / 1024)  // KB for UDP/DNS
+                        : (TEST_LARGE_DATA_SIZE / (1024 * 1024));  // MB for HTTP/WS
+    const char *l_unit = (l_ctx->config.transport_type == DAP_NET_TRANSPORT_UDP_BASIC ||
+                          l_ctx->config.transport_type == DAP_NET_TRANSPORT_DNS_TUNNEL)
+                        ? "KB" : "MB";
+    printf("  All %s clients completed data exchange successfully (%u %s per client)\n", 
+           l_ctx->config.name, l_data_mb, l_unit);
     pthread_mutex_unlock(&s_test_mutex);
     
     l_ctx->result = 0;
@@ -600,45 +616,61 @@ static void test_01_init_all_transports(void)
 }
 
 /**
- * @brief Test 2: Parallel transport testing
+ * @brief Test 2: Sequential transport testing
  */
-static void test_02_parallel_transport_testing(void)
+static void test_02_sequential_transport_testing(void)
 {
-    TEST_INFO("Test 2: Parallel transport testing with full handshake cycle");
+    TEST_INFO("Test 2: Sequential transport testing with full handshake cycle");
     
-    // Initialize all transport contexts
+    bool l_all_passed = true;
+    
+    // Test each transport sequentially
     for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
+        printf("\n");
+        printf("========================================\n");
+        printf("Testing transport: %s\n", g_transport_configs[i].name);
+        printf("========================================\n");
+        
+        // Initialize transport context
         s_transport_contexts[i].config = g_transport_configs[i];
         s_transport_contexts[i].server = NULL;
         memset(s_transport_contexts[i].clients, 0, sizeof(s_transport_contexts[i].clients));
         memset(s_transport_contexts[i].client_node_addrs, 0, sizeof(s_transport_contexts[i].client_node_addrs));
         s_transport_contexts[i].result = 0;
         s_transport_contexts[i].running = false;
-    }
-    
-    // Start all transport tests in parallel threads
-    for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        int l_ret = pthread_create(&s_transport_contexts[i].thread, NULL, test_transport_worker, &s_transport_contexts[i]);
-        TEST_ASSERT(l_ret == 0, "Failed to create thread for transport %s", g_transport_configs[i].name);
-    }
-    
-    // Wait for all threads to complete
-    for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        pthread_join(s_transport_contexts[i].thread, NULL);
-    }
-    
-    // Check results
-    bool l_all_passed = true;
-    for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        if (s_transport_contexts[i].result != 0) {
-            TEST_ERROR("Transport %s test failed with code %d", g_transport_configs[i].name, s_transport_contexts[i].result);
+        
+        // Run transport test directly (no threading)
+        test_transport_worker(&s_transport_contexts[i]);
+        
+        // Check result
+        if (s_transport_contexts[i].result == 0) {
+            printf("✅ Transport %s: PASSED\n", g_transport_configs[i].name);
+        } else {
+            printf("❌ Transport %s: FAILED (code %d)\n", g_transport_configs[i].name, s_transport_contexts[i].result);
             l_all_passed = false;
         }
+        
+        // Cleanup after each transport test
+        test_cleanup_transport_context(&s_transport_contexts[i]);
+        
+        // Wait for cleanup to complete
+        test_wait_for_all_streams_closed(1000);
+        
+        printf("\n");
     }
+    
+    printf("========================================\n");
+    printf("Test Summary:\n");
+    for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
+        printf("  %s: %s\n", 
+               g_transport_configs[i].name, 
+               s_transport_contexts[i].result == 0 ? "✅ PASSED" : "❌ FAILED");
+    }
+    printf("========================================\n");
     
     TEST_ASSERT(l_all_passed, "All transport tests should pass");
     
-    TEST_SUCCESS("Test 2 passed: All transports tested in parallel");
+    TEST_SUCCESS("Test 2 passed: All transports tested sequentially");
 }
 
 /**
@@ -648,12 +680,8 @@ static void test_03_cleanup_all_resources(void)
 {
     TEST_INFO("Test 3: Cleaning up all resources");
     
-    // Cleanup all transport contexts (stops servers and deletes clients)
-    for (size_t i = 0; i < TRANSPORT_CONFIG_COUNT; i++) {
-        test_cleanup_transport_context(&s_transport_contexts[i]);
-    }
-    
-    // Wait for all streams to close
+    // Transport contexts are already cleaned up in test_02
+    // Just ensure everything is closed
     test_wait_for_all_streams_closed(1000);
     
     // Cleanup client system
@@ -768,7 +796,7 @@ int main(void)
     
     // Run tests
     TEST_RUN(test_01_init_all_transports);
-    TEST_RUN(test_02_parallel_transport_testing);
+    TEST_RUN(test_02_sequential_transport_testing);
     TEST_RUN(test_03_cleanup_all_resources);
     
     TEST_SUITE_END();

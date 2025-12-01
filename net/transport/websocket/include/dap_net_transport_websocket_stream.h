@@ -301,6 +301,17 @@ int dap_net_transport_websocket_send_ping(dap_stream_t *a_stream,
                                        size_t a_payload_size);
 
 /**
+ * @brief Send WebSocket pong frame
+ * @param a_stream Stream to send pong on
+ * @param a_payload Pong payload (optional, can be NULL)
+ * @param a_payload_size Pong payload size (max 125 bytes)
+ * @return 0 on success, negative error code on failure
+ */
+int dap_net_transport_websocket_send_pong(dap_stream_t *a_stream,
+                                       const void *a_payload,
+                                       size_t a_payload_size);
+
+/**
  * @brief Get WebSocket connection statistics
  * @param a_stream Stream instance
  * @param a_frames_sent Output: frames sent

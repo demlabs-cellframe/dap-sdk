@@ -675,7 +675,12 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
     
     // Call transport callback with session_id and full response data
     if (l_ctx->callback) {
-        l_ctx->callback(l_ctx->stream, l_session_id, l_response_data, l_response_size, 0);
+        if (l_response_data) {
+            l_ctx->callback(l_ctx->stream, l_session_id, l_response_data, l_response_size, 0);
+        } else {
+            // Failed to parse or decrypt response, or empty response
+            l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
+        }
     }
     
     DAP_DELETE(l_ctx);
@@ -913,16 +918,92 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     if (l_priv->state != DAP_WS_STATE_OPEN) {
-        log_it(L_DEBUG, "WebSocket not in OPEN state");
         return 0;  // No data available
     }
+    
+    if (!l_priv->esocket || l_priv->esocket->buf_in_size == 0) {
+        return 0;
+    }
 
-    // WebSocket reading is event-driven via frame callbacks
-    // This function reads from internal frame buffer
-    // For now, return 0 (would block)
-    log_it(L_DEBUG, "WebSocket read: %zu bytes requested", a_size);
+    // Process WebSocket frames from buf_in
+    size_t l_total_read = 0;
+    size_t l_consumed_total = 0;
+    
+    // We loop to consume as many frames as possible to fill a_buffer
+    while (l_total_read < a_size && l_priv->esocket->buf_in_size > l_consumed_total) {
+        dap_ws_opcode_t l_opcode = 0;
+        bool l_fin = false;
+        uint8_t *l_payload = NULL;
+        size_t l_payload_size = 0;
+        size_t l_frame_len = 0;
+        
+        uint8_t *l_ptr = l_priv->esocket->buf_in + l_consumed_total;
+        size_t l_remaining = l_priv->esocket->buf_in_size - l_consumed_total;
+        
+        int l_res = s_ws_parse_frame(l_ptr, l_remaining, &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_len);
+        
+        if (l_res == -2) {
+            // Incomplete frame
+            break;
+        }
+        
+        if (l_res != 0) {
+            log_it(L_ERROR, "WebSocket frame parse error");
+            // Consume 1 byte to try to recover (or close connection)
+            l_consumed_total++;
+            continue;
+        }
+        
+        // Handle control frames
+        if (l_opcode == DAP_WS_OPCODE_CLOSE) {
+            log_it(L_INFO, "WebSocket received CLOSE frame");
+            s_ws_close(a_stream);
+            l_consumed_total += l_frame_len;
+            DAP_DEL_Z(l_payload);
+            // If we read some data before close, return it.
+            // If we return -1 here, it signals error/close to dap_stream.
+            return l_total_read > 0 ? (ssize_t)l_total_read : -1;
+        }
+        
+        if (l_opcode == DAP_WS_OPCODE_PING) {
+            // Send Pong
+            dap_net_transport_websocket_send_pong(a_stream, l_payload, l_payload_size);
+            DAP_DEL_Z(l_payload);
+            l_consumed_total += l_frame_len;
+            continue;
+        }
+        
+        if (l_opcode == DAP_WS_OPCODE_PONG) {
+            l_priv->last_pong_time = time(NULL) * 1000;
+            DAP_DEL_Z(l_payload);
+            l_consumed_total += l_frame_len;
+            continue;
+        }
+        
+        // Data frames (Binary or Text)
+        if (l_payload && l_payload_size > 0) {
+            size_t l_to_copy = dap_min(l_payload_size, a_size - l_total_read);
+            memcpy((uint8_t*)a_buffer + l_total_read, l_payload, l_to_copy);
+            l_total_read += l_to_copy;
+            
+            // If we couldn't copy all payload, we have a problem.
+            // dap_stream assumes stream behavior. We just dropped data.
+            // Ideally we should buffer it.
+            if (l_to_copy < l_payload_size) {
+                log_it(L_WARNING, "WebSocket read buffer too small (%zu < %zu), dropping %zu bytes", 
+                       a_size - (l_total_read - l_to_copy), l_payload_size, l_payload_size - l_to_copy);
+            }
+        }
+        
+        DAP_DEL_Z(l_payload);
+        l_consumed_total += l_frame_len;
+    }
+    
+    if (l_consumed_total > 0) {
+        dap_events_socket_shrink_buf_in(l_priv->esocket, l_consumed_total);
+    }
 
-    return 0;
+    return (ssize_t)l_total_read;
 }
 
 /**
@@ -966,14 +1047,27 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
     }
 
     // Send frame via events socket
-    // For now, just simulate success
-    l_priv->frames_sent++;
-    l_priv->bytes_sent += a_size;
+    if (l_priv->esocket) {
+        size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame_buffer, l_actual_frame_size);
+        if (l_sent == l_actual_frame_size) {
+            l_priv->frames_sent++;
+            l_priv->bytes_sent += a_size;
+            log_it(L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
+        } else {
+            log_it(L_ERROR, "WebSocket write incomplete or failed");
+            // Return failure even if partial sent?
+            // dap_stream expects number of bytes written from a_data.
+            // If we failed to send full frame, we effectively failed.
+            l_ret = -6;
+        }
+    } else {
+        l_ret = -7;
+    }
 
     DAP_DELETE(l_frame_buffer);
-
-    log_it(L_DEBUG, "WebSocket write: %zu bytes", a_size);
-    return (ssize_t)a_size;
+    
+    if (l_ret == 0) return (ssize_t)a_size;
+    return -1;
 }
 
 /**
@@ -1423,11 +1517,69 @@ int dap_net_transport_websocket_send_ping(dap_stream_t *a_stream, const void *a_
                                    true, l_priv->config.client_mask_frames,
                                    a_payload, a_payload_size, &l_actual_size);
     
+    if (l_ret == 0) {
+        if (l_priv->esocket) {
+            size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame, l_actual_size);
+            if (l_sent == l_actual_size) {
+                log_it(L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
+                l_priv->frames_sent++;
+                l_priv->bytes_sent += l_actual_size;
+            } else {
+                log_it(L_ERROR, "WebSocket ping send failed or incomplete");
+                l_ret = -5;
+            }
+        }
+    }
+    
     DAP_DELETE(l_frame);
 
-    if (l_ret == 0) {
-        log_it(L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
+    return l_ret;
+}
+
+/**
+ * @brief Send WebSocket pong frame
+ */
+int dap_net_transport_websocket_send_pong(dap_stream_t *a_stream, const void *a_payload,
+                                       size_t a_payload_size)
+{
+    if (!a_stream) {
+        return -1;
     }
+
+    if (a_payload_size > 125) {
+        log_it(L_ERROR, "Pong payload too large (%zu > 125)", a_payload_size);
+        return -2;
+    }
+
+    dap_net_transport_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
+    if (!l_priv) {
+        return -3;
+    }
+
+    // Build and send pong frame
+    size_t l_frame_size = a_payload_size + 14;
+    uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
+    size_t l_actual_size;
+    
+    int l_ret = s_ws_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PONG,
+                                   true, l_priv->config.client_mask_frames,
+                                   a_payload, a_payload_size, &l_actual_size);
+    
+    if (l_ret == 0) {
+        if (l_priv->esocket) {
+            size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame, l_actual_size);
+            if (l_sent == l_actual_size) {
+                log_it(L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
+                l_priv->frames_sent++;
+                l_priv->bytes_sent += l_actual_size;
+            } else {
+                log_it(L_ERROR, "WebSocket pong send failed or incomplete");
+                l_ret = -5;
+            }
+        }
+    }
+    
+    DAP_DELETE(l_frame);
 
     return l_ret;
 }
