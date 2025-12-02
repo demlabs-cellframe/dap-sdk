@@ -1723,7 +1723,7 @@ static void s_clean_old_obj_gdb_callback() {
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         size_t l_ret_count = 0;
         dap_store_obj_t *l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
-        log_it(L_DEBUG, "Start clear gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
+        log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
         while (l_ret_count > 0 && l_ret && l_ret->group) {
             for(size_t i = 0; i < l_ret_count; i++) {
                 if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)) {

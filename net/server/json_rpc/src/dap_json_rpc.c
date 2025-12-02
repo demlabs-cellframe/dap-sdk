@@ -160,3 +160,31 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         *return_code = Http_Status_BadRequest;
     }
 }
+
+DAP_INLINE bool dap_json_rpc_get_int64(struct json_object *a_json, const char *a_key, int64_t *a_out)
+{
+    struct json_object *l_json = NULL;
+    dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
+    *a_out = json_object_get_int64(l_json);
+    return true;
+}
+
+DAP_INLINE bool dap_json_rpc_get_uint64(struct json_object *a_json, const char *a_key, uint64_t *a_out)
+{
+    struct json_object *l_json = NULL;
+    dap_return_val_if_pass(!a_json || !a_key || !a_out || !(l_json = json_object_object_get(a_json, a_key)), false);
+    *a_out = json_object_get_uint64(l_json);
+    return true;
+}
+
+const char* dap_json_rpc_get_text(struct json_object *a_json, const char *a_key)
+{
+    if(!a_json || !a_key)
+        return NULL;
+    struct json_object *l_json = json_object_object_get(a_json, a_key);
+    if(l_json && json_object_is_type(l_json, json_type_string)) {
+        // Read text
+        return json_object_get_string(l_json);
+    }
+    return NULL;
+}
