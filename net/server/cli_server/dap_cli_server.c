@@ -211,27 +211,72 @@ dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_ca
  * @param a_doc
  * @param a_doc_ex
  */
-static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc, 
-                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,                                            void *a_arg_func, const char *a_doc, const char *a_doc_ex)
 {
-    dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
+    dap_cli_cmd_t *l_cmd_item = NULL;
+    HASH_FIND_STR(cli_commands, a_name, l_cmd_item);
+    bool l_is_replace = l_cmd_item != NULL;
     if (!l_cmd_item) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
+        l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
+        if (!l_cmd_item) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return NULL;
+        }
+        snprintf(l_cmd_item->name, sizeof(l_cmd_item->name), "%s", a_name);
+        HASH_ADD_STR(cli_commands, name, l_cmd_item);
+    } else {
+        if (l_cmd_item->doc) {
+            DAP_DELETE(l_cmd_item->doc);
+            l_cmd_item->doc = NULL;
+        }
+        if (l_cmd_item->doc_ex) {
+            DAP_DELETE(l_cmd_item->doc_ex);
+            l_cmd_item->doc_ex = NULL;
+        }
     }
-    snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
-    l_cmd_item->doc = a_doc ? strdup( a_doc) : NULL;
-    l_cmd_item->doc_ex = a_doc_ex ? strdup( a_doc_ex) : NULL;
+    l_cmd_item->doc = a_doc ? strdup(a_doc) : NULL;
+    l_cmd_item->doc_ex = a_doc_ex ? strdup(a_doc_ex) : NULL;
+
     if (a_arg_func) {
         l_cmd_item->func_ex = a_func;
         l_cmd_item->arg_func = a_arg_func;
     } else {
-        l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
+        l_cmd_item->func = (dap_cli_server_cmd_callback_t)(void *)a_func;
+        l_cmd_item->arg_func = NULL;
     }
     l_cmd_item->func_rpc = a_func_rpc;
-    HASH_ADD_STR(cli_commands,name,l_cmd_item);
-    log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
+    l_cmd_item->arg_func_rpc = NULL;
+    log_it(L_DEBUG, "%s command %s", l_is_replace ? "Replaced" : "Added", l_cmd_item->name);
     return l_cmd_item;
+}
+
+bool dap_cli_server_cmd_remove(const char *a_name)
+{
+    if (!a_name)
+        return false;
+    dap_cli_cmd_t *l_cmd_item = NULL;
+    HASH_FIND_STR(cli_commands, a_name, l_cmd_item);
+    if (!l_cmd_item)
+        return false;
+    dap_cli_cmd_aliases_t *l_alias, *l_tmp;
+    HASH_ITER(hh, s_command_alias, l_alias, l_tmp) {
+        if (l_alias->standard_command == l_cmd_item) {
+            HASH_DEL(s_command_alias, l_alias);
+            DAP_DELETE(l_alias);
+        }
+    }
+    if (l_cmd_item->doc) {
+        DAP_DELETE(l_cmd_item->doc);
+        l_cmd_item->doc = NULL;
+    }
+    if (l_cmd_item->doc_ex) {
+        DAP_DELETE(l_cmd_item->doc_ex);
+        l_cmd_item->doc_ex = NULL;
+    }
+    HASH_DEL(cli_commands, l_cmd_item);
+    log_it(L_DEBUG, "Removed command %s", l_cmd_item->name);
+    DAP_DELETE(l_cmd_item);
+    return true;
 }
 
 int json_commands(const char * a_name) {

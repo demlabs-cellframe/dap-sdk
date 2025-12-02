@@ -717,32 +717,70 @@ extern "C" {
     })
 #else
     #ifdef DAP_CORE_TESTS
-        #define dap_add_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_add_overflow_p(_a,_b,_a)) {          \
-                (_a += b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
+        #if defined(__has_builtin)
+            #if __has_builtin(__builtin_add_overflow_p)
+                #define DAP_HAS_OVERFLOW_P_TEST 1
+            #endif
+        #endif
+        
+        #ifdef DAP_HAS_OVERFLOW_P_TEST
+            #define dap_add_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                if (!__builtin_add_overflow_p(_a,_b,_a)) {          \
+                    (_a += b);                                        \
+                }                                                   \
+                (_a);                                                 \
+            })
 
-        #define dap_sub_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_sub_overflow_p(_a,_b,_a)) {          \
-                (_a -= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
+            #define dap_sub_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                if (!__builtin_sub_overflow_p(_a,_b,_a)) {          \
+                    (_a -= b);                                        \
+                }                                                   \
+                (_a);                                                 \
+            })
 
-        #define dap_mul_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_mul_overflow_p(_a,_b,_a)) {          \
-                (_a *= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
+            #define dap_mul_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                if (!__builtin_mul_overflow_p(_a,_b,_a)) {          \
+                    (_a *= b);                                        \
+                }                                                   \
+                (_a);                                                 \
+            })
+        #else
+            #define dap_add_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                __typeof__(a) _result;                              \
+                if (!__builtin_add_overflow(_a, _b, &_result)) {    \
+                    _a = _result;                                   \
+                }                                                   \
+                (_a);                                                 \
+            })
+
+            #define dap_sub_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                __typeof__(a) _result;                              \
+                if (!__builtin_sub_overflow(_a, _b, &_result)) {    \
+                    _a = _result;                                   \
+                }                                                   \
+                (_a);                                                 \
+            })
+
+            #define dap_mul_builtin(a,b)                            \
+            ({                                                      \
+                __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+                __typeof__(a) _result;                              \
+                if (!__builtin_mul_overflow(_a, _b, &_result)) {    \
+                    _a = _result;                                   \
+                }                                                   \
+                (_a);                                                 \
+            })
+        #endif
     #endif
     
     #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )

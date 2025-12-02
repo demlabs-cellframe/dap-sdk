@@ -276,7 +276,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
 {
     dap_enc_key_t *l_key = a_cert->enc_key;
 
-    uint64_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
+    size_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
             l_pub_key_data_size = a_cert->enc_key->pub_key_data_size,
             l_metadata_size = l_key->_inheritor_size;
             
@@ -295,8 +295,8 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
         .ts_last_used = l_key->last_used_timestamp
     };
     uint8_t *l_data = DAP_VA_SERIALIZE_NEW(l_total_size, &l_hdr, (uint64_t)sizeof(l_hdr), a_cert->name, (uint64_t)sizeof(a_cert->name),
-                                           l_pub_key_data, l_pub_key_data_size, l_priv_key_data, l_priv_key_data_size,
-                                           l_metadata, l_metadata_size );
+                                           l_pub_key_data, (uint64_t)l_pub_key_data_size, l_priv_key_data, (uint64_t)l_priv_key_data_size,
+                                           l_metadata, (uint64_t)l_metadata_size );
     if (a_cert_size_out)
         *a_cert_size_out = l_data ? l_total_size : 0;
     DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata);
