@@ -152,7 +152,6 @@ static bool s_test_memory_management_regression(void) {
         
         // Create signature
         const char* l_data = "Memory management test data";
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_data, strlen(l_data));
         
         if (l_signature) {

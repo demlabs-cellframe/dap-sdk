@@ -8,7 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef DAP_OS_WINDOWS
 #include <unistd.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_mock.h"
@@ -244,13 +246,20 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     if (a_min >= a_max)
         return a_min;
     
-    // Use rand_r for thread safety
+    // Use thread-local seed for thread safety
     static __thread unsigned int l_seed = 0;
     if (l_seed == 0)
-        l_seed = (unsigned int)time(NULL) ^ (unsigned int)pthread_self();
+        l_seed = (unsigned int)time(NULL) ^ (unsigned int)(uintptr_t)pthread_self();
     
     uint64_t l_range = a_max - a_min;
+#ifdef DAP_OS_WINDOWS
+    // Windows doesn't have rand_r, use simple approach with thread-local seed
+    srand(l_seed);
+    l_seed = (unsigned int)rand();
+    return a_min + (l_seed % (l_range + 1));
+#else
     return a_min + (rand_r(&l_seed) % (l_range + 1));
+#endif
 }
 
 void dap_mock_set_delay_fixed(dap_mock_function_state_t *a_state, uint64_t a_delay_us)

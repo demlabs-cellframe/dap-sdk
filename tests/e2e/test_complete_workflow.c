@@ -163,14 +163,12 @@ static bool s_test_error_handling_workflow(void) {
     
     // Test 2: Signature with NULL key
     dap_hash_fast_t l_test_hash = {0};
-    size_t l_sig_size = 0;
     dap_sign_t* l_signature = dap_sign_create(NULL, &l_test_hash, sizeof(l_test_hash));
     DAP_TEST_ASSERT_NULL(l_signature, "Signing with NULL key should fail");
     
     // Test 3: Verification with wrong signature size
     dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
     if (l_key) {
-        uint8_t l_fake_sig[10] = {0}; // Too small signature
         dap_sign_t l_fake_sig_struct = {0};
         int l_verify = dap_sign_verify(&l_fake_sig_struct, &l_test_hash, sizeof(l_test_hash));
         DAP_TEST_ASSERT(l_verify != 1, "Verification with wrong signature size should fail");
