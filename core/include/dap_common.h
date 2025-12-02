@@ -332,12 +332,26 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
         bool __cond_results[] = { __VA_ARGS__ }, __do_action = false; \
         for (size_t __i = 0; __i < sizeof(__cond_results) / sizeof(bool); ++__i) { \
             if (__cond_results[__i]) { \
-                const char *__pos = #__VA_ARGS__; \
-                int __len = 0; \
-                for (size_t __j = __i; __pos && __j > 0; __pos = strchr(++__pos, ','), --__j); \
-                if (__pos) { \
-                    __pos += strspn(__pos, " \t"); \
-                    __len = strcspn(__pos, ","); \
+                const char *__s = #__VA_ARGS__, *__q = __s, *__pos = NULL, *__e = NULL; \
+                int __n = 0, __len = 0; \
+                size_t __m = 0; \
+                while (*__q && !__e) { \
+                    switch (*__q++) { \
+                        case '(': ++__n; break; \
+                        case ')': if (__n) --__n; break; \
+                        case ',': \
+                            if (__n) break; \
+                            if (__m == __i) { __e = __q - 1; break; } \
+                            __s = __q; ++__m; \
+                        default: break; \
+                    } \
+                } \
+                if (!__e && __m == __i) __e = __q; \
+                if (__e) { \
+                    while ( *__s == ' ' || *__s == '\t' ) ++__s; \
+                    while ( __e > __s && (__e[-1] == ' ' || __e[-1] == '\t') ) --__e; \
+                    __pos = __s; \
+                    __len = (int)(__e - __s); \
                 } \
                 _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, \
                     __len ? "Assertion #%zu triggered: \"%.*s\"" : "Assertion #%zu triggered", __i + 1, __len, __pos); \
@@ -1022,7 +1036,7 @@ char *dap_log_get_item(time_t a_start_time, int a_limit);
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
-#define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
+#define debug_if(flg, lvl, ...) do { if (flg) _log_it(NULL, 0, LOG_TAG, (lvl), ##__VA_ARGS__); } while(0)
 
 char *dap_dump_hex(byte_t *a_data, size_t a_size);
 
@@ -1032,7 +1046,7 @@ void    _dump_it    (const char *, unsigned, const char *a_var_name, const void 
 #undef  log_it
 #define log_it( _log_level, ...)        _log_it_ext( __func__, __LINE__, (_log_level), ##__VA_ARGS__)
 #undef  debug_if
-#define debug_if(flg, _log_level, ...)  _log_it_ext( __func__, __LINE__, (flg) ? (_log_level) : -1 , ##__VA_ARGS__)
+#define debug_if(flg, _log_level, ...)  do { if (flg) _log_it_ext( __func__, __LINE__, (_log_level), ##__VA_ARGS__); } while(0)
 
 #define dump_it(v,s,l)                  _dump_it( __func__, __LINE__, (v), (s), (l))
 
