@@ -290,6 +290,7 @@ int json_commands(const char * a_name) {
             "tx_cond_create",
             "tx_cond_remove",
             "tx_cond_unspent_find",
+            "tx_cond_refill",
             "chain_ca_copy",
             "dag",
             "block",
