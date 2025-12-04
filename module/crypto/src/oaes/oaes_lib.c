@@ -478,7 +478,7 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 	
 	ftime (&timer);
 	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
+        _test = (char *) calloc(timer.millitm, sizeof( char ));
 	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
 		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
 		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, timer.millitm,
@@ -511,7 +511,7 @@ static uint32_t oaes_get_seed(void)
 	
 	ftime (&timer);
 	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
+	_test = (char *) calloc( timer.millitm, sizeof( char ) );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
 			(uintptr_t) ( _test + timer.millitm ) + GETPID();
@@ -837,7 +837,7 @@ OAES_RET oaes_key_import_data( OAES_CTX * ctx,
 
 OAES_CTX * oaes_alloc(void)
 {
-	oaes_ctx * _ctx = (oaes_ctx *) calloc( sizeof( oaes_ctx ), 1 );
+        oaes_ctx * _ctx = (oaes_ctx *) calloc(1, sizeof( oaes_ctx ));
 	
 	if( NULL == _ctx )
 		return NULL;

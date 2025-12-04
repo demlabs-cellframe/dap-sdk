@@ -45,7 +45,7 @@ uint64_t dap_enc_sig_picnic_deser_sig_size(const void *a_key)
 void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_PICNIC;
-    key->_inheritor = calloc(sizeof(picnic_params_t), 1);
+    key->_inheritor = calloc(1, sizeof(picnic_params_t));
     key->_inheritor_size = sizeof(picnic_params_t);
     key->enc = NULL;
     key->enc = NULL;
@@ -196,4 +196,3 @@ uint8_t* dap_enc_sig_picnic_read_public_key(dap_enc_key_t *a_key, uint8_t a_buf,
     }
     return NULL;
 }*/
-

@@ -39,6 +39,179 @@
 
 #define LOG_TAG "dap_sign"
 
+// ===== Internal Chipmunk helpers (serialization to avoid dangling pointers) ===
+static size_t s_chipmunk_serialized_size(const chipmunk_multi_signature_t *multi_sig)
+{
+    if (!multi_sig || multi_sig->signer_count == 0) {
+        return 0;
+    }
+
+    size_t total = 0;
+    total += sizeof(uint32_t); // signer_count
+    total += sizeof(chipmunk_aggregated_hots_sig_t);
+    total += sizeof(chipmunk_hvc_poly_t);
+    total += sizeof(multi_sig->message_hash);
+    // leaf indices
+    total += multi_sig->signer_count * sizeof(uint32_t);
+    // public_key_roots array
+    total += multi_sig->signer_count * sizeof(chipmunk_hvc_poly_t);
+    // proofs (length + index + nodes)
+    for (size_t i = 0; i < multi_sig->signer_count; i++) {
+        const chipmunk_path_t *p = &multi_sig->proofs[i];
+        total += sizeof(uint32_t) * 2; // path_length, index
+        total += p->path_length * sizeof(chipmunk_path_node_t);
+    }
+    return total;
+}
+
+static uint8_t *s_chipmunk_serialize_multi_sig(const chipmunk_multi_signature_t *multi_sig, size_t *out_size)
+{
+    if (!multi_sig || !out_size) {
+        return NULL;
+    }
+    size_t total = s_chipmunk_serialized_size(multi_sig);
+    if (total == 0) {
+        return NULL;
+    }
+    uint8_t *buf = DAP_NEW_Z_SIZE(uint8_t, total);
+    if (!buf) {
+        return NULL;
+    }
+    uint8_t *ptr = buf;
+    // signer count
+    *(uint32_t*)ptr = (uint32_t)multi_sig->signer_count;
+    ptr += sizeof(uint32_t);
+    // aggregated HOTS
+    memcpy(ptr, &multi_sig->aggregated_hots, sizeof(chipmunk_aggregated_hots_sig_t));
+    ptr += sizeof(chipmunk_aggregated_hots_sig_t);
+    // tree root
+    memcpy(ptr, &multi_sig->tree_root, sizeof(chipmunk_hvc_poly_t));
+    ptr += sizeof(chipmunk_hvc_poly_t);
+    // message hash
+    memcpy(ptr, multi_sig->message_hash, sizeof(multi_sig->message_hash));
+    ptr += sizeof(multi_sig->message_hash);
+    // leaf indices
+    memcpy(ptr, multi_sig->leaf_indices, multi_sig->signer_count * sizeof(uint32_t));
+    ptr += multi_sig->signer_count * sizeof(uint32_t);
+    // public_key_roots
+    memcpy(ptr, multi_sig->public_key_roots, multi_sig->signer_count * sizeof(chipmunk_hvc_poly_t));
+    ptr += multi_sig->signer_count * sizeof(chipmunk_hvc_poly_t);
+    // proofs
+    for (size_t i = 0; i < multi_sig->signer_count; i++) {
+        const chipmunk_path_t *p = &multi_sig->proofs[i];
+        *(uint32_t*)ptr = (uint32_t)p->path_length;
+        ptr += sizeof(uint32_t);
+        *(uint32_t*)ptr = (uint32_t)p->index;
+        ptr += sizeof(uint32_t);
+        if (p->path_length) {
+            memcpy(ptr, p->nodes, p->path_length * sizeof(chipmunk_path_node_t));
+            ptr += p->path_length * sizeof(chipmunk_path_node_t);
+        }
+    }
+    *out_size = total;
+    return buf;
+}
+
+static void s_chipmunk_free_multi_sig_copy(chipmunk_multi_signature_t *multi_sig)
+{
+    if (!multi_sig) return;
+    if (multi_sig->proofs) {
+        for (size_t i = 0; i < multi_sig->signer_count; i++) {
+            DAP_DELETE(multi_sig->proofs[i].nodes);
+        }
+        DAP_DELETE(multi_sig->proofs);
+    }
+    DAP_DELETE(multi_sig->public_key_roots);
+    DAP_DELETE(multi_sig->leaf_indices);
+    DAP_DELETE(multi_sig);
+}
+
+static chipmunk_multi_signature_t *s_chipmunk_deserialize_multi_sig(const uint8_t *data, size_t data_size)
+{
+    if (!data || data_size < sizeof(uint32_t)) {
+        return NULL;
+    }
+    const uint8_t *ptr = data;
+    size_t remaining = data_size;
+
+    uint32_t signer_count = *(uint32_t*)ptr;
+    ptr += sizeof(uint32_t); remaining -= sizeof(uint32_t);
+    if (signer_count == 0) {
+        return NULL;
+    }
+
+    if (remaining < sizeof(chipmunk_aggregated_hots_sig_t) + sizeof(chipmunk_hvc_poly_t) + 32) {
+        return NULL;
+    }
+
+    chipmunk_multi_signature_t *ms = DAP_NEW_Z(chipmunk_multi_signature_t);
+    if (!ms) return NULL;
+    ms->signer_count = signer_count;
+
+    memcpy(&ms->aggregated_hots, ptr, sizeof(chipmunk_aggregated_hots_sig_t));
+    ptr += sizeof(chipmunk_aggregated_hots_sig_t); remaining -= sizeof(chipmunk_aggregated_hots_sig_t);
+
+    memcpy(&ms->tree_root, ptr, sizeof(chipmunk_hvc_poly_t));
+    ptr += sizeof(chipmunk_hvc_poly_t); remaining -= sizeof(chipmunk_hvc_poly_t);
+
+    memcpy(ms->message_hash, ptr, 32);
+    ptr += 32; remaining -= 32;
+
+    // leaf indices
+    size_t leaf_bytes = signer_count * sizeof(uint32_t);
+    if (remaining < leaf_bytes) {
+        s_chipmunk_free_multi_sig_copy(ms);
+        return NULL;
+    }
+    ms->leaf_indices = DAP_NEW_Z_SIZE(uint32_t, leaf_bytes);
+    ms->public_key_roots = DAP_NEW_Z_SIZE(chipmunk_hvc_poly_t, signer_count * sizeof(chipmunk_hvc_poly_t));
+    ms->proofs = DAP_NEW_Z_SIZE(chipmunk_path_t, signer_count * sizeof(chipmunk_path_t));
+    if (!ms->leaf_indices || !ms->public_key_roots || !ms->proofs) {
+        s_chipmunk_free_multi_sig_copy(ms);
+        return NULL;
+    }
+    memcpy(ms->leaf_indices, ptr, leaf_bytes);
+    ptr += leaf_bytes; remaining -= leaf_bytes;
+
+    size_t pk_bytes = signer_count * sizeof(chipmunk_hvc_poly_t);
+    if (remaining < pk_bytes) {
+        s_chipmunk_free_multi_sig_copy(ms);
+        return NULL;
+    }
+    memcpy(ms->public_key_roots, ptr, pk_bytes);
+    ptr += pk_bytes; remaining -= pk_bytes;
+
+    // proofs
+    for (size_t i = 0; i < signer_count; i++) {
+        if (remaining < sizeof(uint32_t) * 2) {
+            s_chipmunk_free_multi_sig_copy(ms);
+            return NULL;
+        }
+        uint32_t path_len = *(uint32_t*)ptr;
+        ptr += sizeof(uint32_t); remaining -= sizeof(uint32_t);
+        uint32_t idx = *(uint32_t*)ptr;
+        ptr += sizeof(uint32_t); remaining -= sizeof(uint32_t);
+        ms->proofs[i].path_length = path_len;
+        ms->proofs[i].index = idx;
+        if (path_len) {
+            size_t nodes_bytes = path_len * sizeof(chipmunk_path_node_t);
+            if (remaining < nodes_bytes) {
+                s_chipmunk_free_multi_sig_copy(ms);
+                return NULL;
+            }
+            ms->proofs[i].nodes = DAP_NEW_Z_SIZE(chipmunk_path_node_t, nodes_bytes);
+            if (!ms->proofs[i].nodes) {
+                s_chipmunk_free_multi_sig_copy(ms);
+                return NULL;
+            }
+            memcpy(ms->proofs[i].nodes, ptr, nodes_bytes);
+            ptr += nodes_bytes; remaining -= nodes_bytes;
+        } else {
+            ms->proofs[i].nodes = NULL;
+        }
+    }
+    return ms;
+}
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
@@ -830,11 +1003,14 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
         return NULL;
     }
     
-    // Calculate size for serialized aggregated signature
-    size_t serialized_size = sizeof(chipmunk_multi_signature_t) + 
-                           sizeof(uint32_t) + // metadata: signer count
-                           multi_sig->signer_count * sizeof(uint32_t); // leaf indices
-    
+    size_t serialized_size = s_chipmunk_serialized_size(multi_sig);
+    if (serialized_size == 0) {
+        log_it(L_ERROR, "Failed to compute serialized size for Chipmunk multi-signature");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
+
     // Allocate DAP signature structure
     dap_sign_t *l_aggregated = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + serialized_size);
     if (!l_aggregated) {
@@ -850,23 +1026,41 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     l_aggregated->header.hash_type = a_signatures[0]->header.hash_type;
     l_aggregated->header.sign_pkey_size = 0; // Aggregated signatures don't store individual pkeys
     
-    // Serialize multi-signature into DAP signature
-    uint8_t *sig_data = l_aggregated->pkey_n_sign;
-    
-    // Store signer count
-    *(uint32_t*)sig_data = multi_sig->signer_count;
-    sig_data += sizeof(uint32_t);
-    
-    // Store leaf indices
-    memcpy(sig_data, multi_sig->leaf_indices, multi_sig->signer_count * sizeof(uint32_t));
-    sig_data += multi_sig->signer_count * sizeof(uint32_t);
-    
-    // Store multi-signature data
-    memcpy(sig_data, multi_sig, sizeof(chipmunk_multi_signature_t));
-    
+    // Serialize multi_sig to self-contained blob
+    size_t actual_size = 0;
+    uint8_t *serialized = s_chipmunk_serialize_multi_sig(multi_sig, &actual_size);
+    if (!serialized || actual_size == 0) {
+        log_it(L_ERROR, "Failed to serialize Chipmunk multi-signature");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(individual_sigs);
+        DAP_DEL_Z(l_aggregated);
+        return NULL;
+    }
+
+    if (actual_size > serialized_size) {
+        // Should not happen, but guard
+        dap_sign_t *l_new = DAP_REALLOC(l_aggregated, sizeof(dap_sign_hdr_t) + actual_size);
+        if (!l_new) {
+            log_it(L_ERROR, "Failed to resize aggregated signature container");
+            DAP_DELETE(serialized);
+            chipmunk_multi_signature_free(multi_sig);
+            DAP_DELETE(individual_sigs);
+            return NULL;
+        }
+        l_aggregated = l_new;
+        serialized_size = actual_size;
+    } else {
+        serialized_size = actual_size;
+    }
+
+    memcpy(l_aggregated->pkey_n_sign, serialized, serialized_size);
+    l_aggregated->header.sign_size = (uint32_t)serialized_size;
+    l_aggregated->header.sign_pkey_size = 0; // aggregated form doesn't carry pubkey
+
     log_it(L_INFO, "Successfully aggregated %u Chipmunk signatures", a_signatures_count);
     
     // Cleanup
+    DAP_DELETE(serialized);
     chipmunk_multi_signature_free(multi_sig);
     DAP_DELETE(individual_sigs);
     
@@ -963,35 +1157,21 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     }
     
     // Extract metadata from aggregated signature
-    uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
-    uint32_t stored_signers_count = *(uint32_t*)sig_data;
-    
-    if (stored_signers_count != a_signers_count) {
-        log_it(L_ERROR, "Signer count mismatch: %u vs %u", stored_signers_count, a_signers_count);
+    chipmunk_multi_signature_t *multi_sig = s_chipmunk_deserialize_multi_sig(
+        a_aggregated_sign->pkey_n_sign,
+        a_aggregated_sign->header.sign_size);
+    if (!multi_sig) {
+        log_it(L_ERROR, "Failed to deserialize Chipmunk aggregated signature");
         return -1;
     }
-    
-    sig_data += sizeof(uint32_t);
-    
-    // Extract leaf indices
-    uint32_t *leaf_indices = (uint32_t*)sig_data;
-    sig_data += stored_signers_count * sizeof(uint32_t);
-    
-    // Extract multi-signature data
-    chipmunk_multi_signature_t *multi_sig = (chipmunk_multi_signature_t*)sig_data;
-    
-    log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
-    
-    // For now, verify each message separately as we would need to reconstruct 
-    // the original aggregated message. In a full implementation, we would:
-    // 1. Combine all messages according to the aggregation scheme
-    // 2. Use chipmunk_verify_multi_signature() function
-    
-    // Simplified verification - check if multi-signature structure is valid
-    if (!multi_sig || multi_sig->signer_count != stored_signers_count) {
-        log_it(L_ERROR, "Invalid multi-signature structure");
+
+    if (multi_sig->signer_count != a_signers_count) {
+        log_it(L_ERROR, "Signer count mismatch: %zu vs %u", multi_sig->signer_count, a_signers_count);
+        s_chipmunk_free_multi_sig_copy(multi_sig);
         return -2;
     }
+    
+    log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
     
     // Verify that aggregated HOTS signature has non-zero components
     bool has_nonzero = false;
@@ -1005,6 +1185,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     
     if (!has_nonzero) {
         log_it(L_ERROR, "Aggregated signature appears to be zero - invalid");
+        s_chipmunk_free_multi_sig_copy(multi_sig);
         return -3;
     }
     
@@ -1019,10 +1200,12 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     
     if (verification_result <= 0) {
         log_it(L_ERROR, "Chipmunk multi-signature verification failed with code %d", verification_result);
+        s_chipmunk_free_multi_sig_copy(multi_sig);
         return -4;
     }
     
     log_it(L_INFO, "Aggregated Chipmunk signature verification completed successfully");
+    s_chipmunk_free_multi_sig_copy(multi_sig);
     return 0;
 }
 
@@ -1526,4 +1709,3 @@ int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, co
     
     return 0;
 }
-

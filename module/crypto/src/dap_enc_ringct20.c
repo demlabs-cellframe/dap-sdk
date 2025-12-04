@@ -259,7 +259,7 @@ int CRUTCH_get_pbk_list(poly_ringct20 *aList, const ringct20_param_t *p, const i
 }
 int ringct20_crypto_sign( ringct20_signature_t *sig, const unsigned char *m, unsigned long long mlen, const ringct20_private_key_t *private_key)
 {
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if (! ringct20_params_init( p, private_key->kind)){
         ringct20_params_free(p);
         return -1;
@@ -352,7 +352,7 @@ int ringct20_crypto_sign_open_with_pbkList(const unsigned char * msg, const unsi
     {
         return -1;
     }
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if (! ringct20_params_init( p, sec_kind))
     {
         ringct20_params_free(p);
@@ -425,7 +425,7 @@ int ringct20_crypto_sign_open( const unsigned char * msg, const unsigned long lo
     DAP_RINGCT20_SIGN_SECURITY sec_kind = *(DAP_RINGCT20_SIGN_SECURITY*)sig->sig_data;
     if(sec_kind != public_key->kind)
         return -1;
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if (! ringct20_params_init( p, public_key->kind)){
         ringct20_params_free(p);
         return -1;
@@ -477,7 +477,7 @@ int ringct20_crypto_sign_open( const unsigned char * msg, const unsigned long lo
 int ringct20_crypto_sign_keypair(ringct20_public_key_t *pbk, ringct20_private_key_t *prk, DAP_RINGCT20_SIGN_SECURITY kind)
 {
     ringct20_param_t *p;
-    p = calloc(sizeof (ringct20_param_t),1);
+    p = calloc(1, sizeof (ringct20_param_t));
     ringct20_params_init(p, kind);
     if(ringct20_private_and_public_keys_init(prk,pbk,p) != 0)
     {
@@ -608,7 +608,7 @@ int ringct20_crypto_sign_with_pbk_list( ringct20_signature_t *sig, const unsigne
     unsigned long long mlen, const ringct20_private_key_t *private_key, const void *allpbk_buf, const int allpbk_size)
 {
 
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if (! ringct20_params_init( p, private_key->kind)){
         ringct20_params_free(p);
         return -1;
@@ -812,7 +812,7 @@ ringct20_signature_t* dap_enc_ringct20_read_signature(uint8_t *a_buf, size_t a_b
 /* Serialize a private key. */
 uint8_t* dap_enc_ringct20_write_private_key(const ringct20_private_key_t* a_private_key, size_t *a_buflen_out)
 {
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if(!ringct20_params_init(p, a_private_key->kind))
     {
         ringct20_params_free(p);
@@ -833,7 +833,7 @@ uint8_t* dap_enc_ringct20_write_private_key(const ringct20_private_key_t* a_priv
 /* Serialize a public key. */
 uint8_t* dap_enc_ringct20_write_public_key(const ringct20_public_key_t* a_public_key, size_t *a_buflen_out)
 {
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if(!ringct20_params_init(p, a_public_key->kind))
     {
         ringct20_params_free(p);
@@ -863,7 +863,7 @@ ringct20_private_key_t* dap_enc_ringct20_read_private_key(const uint8_t *a_buf, 
     memcpy(&kind, a_buf + sizeof(size_t), sizeof(DAP_RINGCT20_SIGN_SECURITY));
     if(l_buflen != a_buflen)
         return NULL;
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if(!ringct20_params_init(p, kind))
     {
         ringct20_params_free(p);
@@ -891,7 +891,7 @@ ringct20_public_key_t* dap_enc_ringct20_read_public_key(const uint8_t *a_buf, si
     memcpy(&kind, a_buf + sizeof(size_t), sizeof(DAP_RINGCT20_SIGN_SECURITY));
     if(l_buflen != a_buflen)
         return NULL;
-    ringct20_param_t *p = calloc(sizeof(ringct20_param_t),1);
+    ringct20_param_t *p = calloc(1, sizeof(ringct20_param_t));
     if(!ringct20_params_init(p, kind))
     {
         ringct20_params_free(p);
