@@ -118,8 +118,7 @@
 #define UNUSED_ARG __attribute__((__unused__))
 #define LAST_ERROR_MAX  256
 
-// TODO pipelines fix to enable this macros
-/*#ifndef likely
+#ifndef likely
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #       define likely(cond) __builtin_expect(!!(cond), 1)
 #   else
@@ -134,7 +133,7 @@
 #       define unlikely(x) (!!(x))
 #   endif
 #endif // unlikely
- */
+ 
 
 #ifndef ROUNDUP
   #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
