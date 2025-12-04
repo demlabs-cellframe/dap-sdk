@@ -287,6 +287,7 @@ int json_commands(const char * a_name) {
             "tx_create_json",
             "mempool_add",
             "tx_verify",
+            "tx_cond",
             "tx_cond_create",
             "tx_cond_remove",
             "tx_cond_unspent_find",
