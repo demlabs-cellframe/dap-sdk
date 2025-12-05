@@ -55,14 +55,14 @@ tests:amd64.windows:
       - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release  -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
       - ctest --verbose
 
-build:amd64.macos:
+tests:arm64.macos:
     extends: .tests
     tags:
       - macos-native
     script:
       - mkdir build
-      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc) 
-
+      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc)
+      - ctest --verbose
 
 build:any.android:
     extends: .tests
