@@ -628,15 +628,13 @@ void dap_cert_add_folder(const char *a_folder_path)
  */
 dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type_t a_type, void *a_value, size_t a_value_size)
 {
-    if (!a_key || a_type > DAP_CERT_META_CUSTOM || (!a_value && a_value_size)) {
-        log_it(L_WARNING, "Incorrect arguments for dap_cert_new_meta()");
-        return NULL;
-    }
-    size_t l_keylen = strlen(a_key), l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + l_keylen + 1;
+    dap_return_val_if_pass(!a_key || a_type > DAP_CERT_META_CUSTOM || (!a_value && a_value_size), NULL);
+    size_t l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + strlen(a_key) + 1;
     dap_cert_metadata_t *l_new_meta = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_cert_metadata_t, l_meta_item_size, NULL);
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
-    l_new_meta->key = dap_strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen );
+    l_new_meta->key = dap_strdup(a_key);
+    dap_mempcpy(l_new_meta->value, a_value, a_value_size);
     return l_new_meta;
 }
 
@@ -904,9 +902,11 @@ dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count
     size_t l_keys_count = 0;
     dap_enc_key_t *l_keys[a_count];
 // func work
+    // Fill l_keys array starting from index 0, not from a_key_start_index
+    // to avoid uninitialized memory at the beginning of the array
     for(size_t i = a_key_start_index; i < a_count; ++i) {
         if (a_certs[i]) {
-            l_keys[i] = dap_enc_key_dup(a_certs[i]->enc_key);
+            l_keys[l_keys_count] = dap_enc_key_dup(a_certs[i]->enc_key);
             l_keys_count++;
         } else {
             log_it(L_WARNING, "Certs with NULL value");

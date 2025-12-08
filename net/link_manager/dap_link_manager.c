@@ -314,7 +314,7 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_val_if_pass(!s_link_manager, 0);
+    dap_return_val_if_pass(!l_net, 0);
 // func work
     if (!l_net) {
         log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
@@ -601,7 +601,7 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
         if (l_link->is_uplink && l_link->link_manager->callbacks.link_count_changed){
             for(dap_list_t *it=l_link->uplink.associated_nets;it;it=it->next){
                 dap_managed_net_t *l_net = it->data;
-                l_link->link_manager->callbacks.link_count_changed(l_net->id);
+                l_link->link_manager->callbacks.link_count_changed();
             }
         } 
     }
@@ -764,7 +764,8 @@ void s_update_states(void *a_arg)
  */
 static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bool a_with_client, uint64_t a_associated_net_id)
 {
-    dap_link_t *l_link = s_link_manager_link_find(a_node_addr);;
+    dap_link_t *l_link = s_link_manager_link_find(a_node_addr);
+    bool l_link_created = false;
     if (!l_link) {
         l_link = DAP_NEW_Z(dap_link_t);
         if (!l_link) {
@@ -775,6 +776,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         l_link->addr.uint64 = a_node_addr->uint64;
         l_link->link_manager = s_link_manager;
         HASH_ADD(hh, s_link_manager->links, addr, sizeof(*a_node_addr), l_link);
+        l_link_created = true;
     }   
     if (s_debug_more)
         s_link_manager_print_links_info(s_link_manager);
@@ -788,12 +790,29 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         l_link->uplink.client->_inheritor = l_link;
         if (a_associated_net_id != DAP_NET_ID_INVALID) {
             dap_managed_net_t *l_net = s_find_net_by_id(a_associated_net_id);
-            if (!l_net)
+            if (!l_net) {
+                if (l_link_created) {
+                    // Clean up the newly created link if net not found
+                    HASH_DEL(s_link_manager->links, l_link);
+                    if (l_link->uplink.client) {
+                        dap_client_delete_mt(l_link->uplink.client);
+                    }
+                    DAP_DELETE(l_link);
+                }
                 return NULL;
+            }
             for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next)
                 if (((dap_managed_net_t *)it->data)->id == a_associated_net_id) {
                     debug_if(s_debug_more, L_ERROR, "Net ID 0x%" DAP_UINT64_FORMAT_x " already associated with link " NODE_ADDR_FP_STR,
                                                                 a_associated_net_id, NODE_ADDR_FP_ARGS(a_node_addr));
+                    if (l_link_created) {
+                        // Clean up the newly created link if net already associated
+                        HASH_DEL(s_link_manager->links, l_link);
+                        if (l_link->uplink.client) {
+                            dap_client_delete_mt(l_link->uplink.client);
+                        }
+                        DAP_DELETE(l_link);
+                    }
                     return NULL;
                 }
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);

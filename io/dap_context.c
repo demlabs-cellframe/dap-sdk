@@ -441,7 +441,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 else if (l_cur->pending_write)
                     --l_cur->pending_write; 
                 if ( !l_cur->pending_read && !l_cur->pending_write )
-                    dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));                    
+                    l_cur->context 
+                        ? dap_events_socket_remove_and_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags))
+                        : dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));                    
                 continue;
             }
             switch (l_cur->type) {
@@ -927,7 +929,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 case DESCRIPTOR_TYPE_SOCKET_LISTENING:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                    getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
+                    if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size) != 0) {
+                        l_sock_err = errno; // Use errno if getsockopt fails
+                    }
 #ifdef DAP_OS_WINDOWS
                     log_it(L_ERROR, "Winsock error: %d", l_sock_err);
 #else
@@ -1165,6 +1169,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         if (l_err != WOLFSSL_ERROR_WANT_READ && l_err != WOLFSSL_ERROR_WANT_WRITE) {
                             wolfSSL_ERR_error_string(l_err, l_err_str);
                             log_it(L_ERROR, "SSL handshake error \"%s\" with code %d", l_err_str, l_err);
+                            l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                             if ( l_cur->callbacks.error_callback )
                                 l_cur->callbacks.error_callback(l_cur, l_error);
                         }
@@ -1185,6 +1190,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }else if (l_errno){
                         log_it(L_ERROR,"Connecting with %s failed, error %d: \"%s\"", l_cur->remote_addr_str,
                                         l_errno, dap_strerror(l_errno));
+                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_errno);
                     }else{
@@ -1456,12 +1462,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #else
             int l_errno = errno;
 #endif
-            char l_errbuf[128];
-            l_errbuf[0]=0;
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_ERROR,"Can't update client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
-                   a_esocket->context->epoll_fd, l_errbuf, l_errno);
-            return l_errno;
+            return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
+                a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
         }
     }
 
@@ -1737,15 +1739,9 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
     // remove from epoll
-    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 ) {
-        int l_errno = errno;
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it( L_ERROR,"Can't remove event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE"  \"%s\" (%d)",
-                l_context->epoll_fd, l_errbuf, l_errno);
-        l_ret = l_errno;
-    } //else
-      //  log_it( L_DEBUG,"Removed epoll's event from context #%u", l_context->id );
+    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 )
+        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE" \"%s\" (%d)",
+                l_context->epoll_fd, dap_strerror(errno), errno), -1;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
@@ -1850,7 +1846,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 {
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
     if(!l_es){
-        log_it(L_CRITICAL,"Memory allocation error");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 

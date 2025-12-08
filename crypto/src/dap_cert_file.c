@@ -223,8 +223,9 @@ uint8_t *dap_cert_serialize_meta(dap_cert_t *a_cert, size_t *a_buflen_out)
                 return DAP_DELETE(l_buf), dap_list_free(l_meta_list), log_it(L_CRITICAL, "%s", "Insufficient memory"), NULL;
             l_buf = l_new_buf;
         }
-        strcpy((char *)&l_buf[l_mem_shift], l_meta_item->key);
-        l_mem_shift += strlen(l_meta_item->key) + 1;
+        char *l_dest = (char*)l_buf + l_mem_shift;
+        l_mem_shift += (size_t)(dap_stpcpy(l_dest, l_meta_item->key) - l_dest) + 1;
+        
         *(uint32_t *)&l_buf[l_mem_shift] = htole32(l_meta_item->length);
         l_mem_shift += sizeof(uint32_t);
         l_buf[l_mem_shift++] = l_meta_item->type;
@@ -275,7 +276,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
 {
     dap_enc_key_t *l_key = a_cert->enc_key;
 
-    uint64_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
+    size_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
             l_pub_key_data_size = a_cert->enc_key->pub_key_data_size,
             l_metadata_size = l_key->_inheritor_size;
             
@@ -294,8 +295,8 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
         .ts_last_used = l_key->last_used_timestamp
     };
     uint8_t *l_data = DAP_VA_SERIALIZE_NEW(l_total_size, &l_hdr, (uint64_t)sizeof(l_hdr), a_cert->name, (uint64_t)sizeof(a_cert->name),
-                                           l_pub_key_data, l_pub_key_data_size, l_priv_key_data, l_priv_key_data_size,
-                                           l_metadata, l_metadata_size );
+                                           l_pub_key_data, (uint64_t)l_pub_key_data_size, l_priv_key_data, (uint64_t)l_priv_key_data_size,
+                                           l_metadata, (uint64_t)l_metadata_size );
     if (a_cert_size_out)
         *a_cert_size_out = l_data ? l_total_size : 0;
     return DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata), l_data;
@@ -325,7 +326,7 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
     byte_t *l_data = DAP_NEW_Z_SIZE(byte_t, l_file_size);
     if ( fread(l_data, 1, l_file_size, l_file) != l_file_size ) {
         l_err = -1;
-        log_it(L_ERROR, "Can't read %"DAP_UINT64_FORMAT_U" bytes from the disk!", l_file_size);
+        log_it(L_ERROR, "Can't read %zu bytes from the disk!", l_file_size);
     } else if (!( l_ret = dap_cert_mem_load(l_data, l_file_size) )) {
         log_it(L_ERROR, "Can't load cert from file");
         l_err = -2;

@@ -550,6 +550,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
 
         .delete_callback =                  dap_enc_sig_multisign_key_delete,
+        .del_sign =                         dap_multi_sign_delete,
         .del_pub_key =                      NULL,
         .del_priv_key =                     NULL,
 
@@ -1032,6 +1033,11 @@ size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
+    // Check if key type is within valid range to prevent array out-of-bounds access
+    if (a_key->type < 0 || a_key->type >= DAP_ENC_KEY_TYPE_LAST) {
+        log_it(L_ERROR, "Invalid key type %d, out of range [0..%d]", a_key->type, DAP_ENC_KEY_TYPE_LAST);
+        return 0;
+    }
 // func work
     if(s_callbacks[a_key->type].ser_priv_key_size) {
         return s_callbacks[a_key->type].ser_priv_key_size(a_key->priv_key_data);
@@ -1049,6 +1055,11 @@ size_t dap_enc_ser_pub_key_size(dap_enc_key_t *a_key)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
+    // Check if key type is within valid range to prevent array out-of-bounds access
+    if (a_key->type < 0 || a_key->type >= DAP_ENC_KEY_TYPE_LAST) {
+        log_it(L_ERROR, "Invalid key type %d, out of range [0..%d]", a_key->type, DAP_ENC_KEY_TYPE_LAST);
+        return 0;
+    }
 // func work
     if(s_callbacks[a_key->type].ser_pub_key_size) {
         return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
@@ -1086,6 +1097,7 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key_type].del_sign) {
                 log_it(L_WARNING, "No callback for signature delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key_type));

@@ -35,9 +35,10 @@ extern "C"{
 typedef struct dap_json_rpc_request
 {
     char* method;
+    int version;
     dap_json_rpc_params_t *params;
     uint64_t id;
-}dap_json_rpc_request_t;
+} dap_json_rpc_request_t;
 
 typedef struct dap_json_rpc_http_request
 {
@@ -57,7 +58,7 @@ typedef struct dap_json_rpc_http_request
  * @return A pointer to the newly allocated dap_json_rpc_request_t instance,
  *         or NULL on memory allocation error.
  */
-dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id);
+dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id, int a_version);
 
 void dap_json_rpc_request_free(dap_json_rpc_request_t *request);
 
@@ -68,7 +69,7 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request);
  * @return A pointer to a dap_json_rpc_request_t structure,
  *         or NULL on failure
  */
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a_version_default);
 
 /**
  * Convert dap_json_rpc_request_t to JSON string representation.
@@ -81,12 +82,12 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size);
 char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size);
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size);
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size, const char *a_cert_path);
 
 char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
                                 char ** a_path, size_t * a_enc_request_size, char ** a_custom_header);
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response);
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path);
 
 #ifdef __cplusplus
 }

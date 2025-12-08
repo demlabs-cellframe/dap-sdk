@@ -47,15 +47,53 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 {
 // sanity check
     dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED || !a_kex_size);
-// memory alloc
+// memory alloc - use heap instead of VLA stack array
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
-    dap_enc_key_t *l_keys[a_kex_size];
+    
+    // Allocate array on heap, not stack (safer than VLA)
+    dap_enc_key_t **l_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_kex_size);
+    
+    // Generate keys and validate each one
     for (size_t i = 0; i < a_kex_size; i++) {
         l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
+        
+        // Critical: check if key generation succeeded
+        if (!l_keys[i]) {
+            log_it(L_ERROR, "Failed to generate key %zu of type %d for multisign", i, l_key_types[i]);
+            for (size_t j = 0; j < i; j++) {
+                dap_enc_key_delete(l_keys[j]);
+            }
+            DAP_DELETE(l_keys);
+            return;
+        }
     }
+    
+    log_it(L_DEBUG, "All %zu keys generated, creating params", a_kex_size);
+    
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
-    dap_enc_sig_multisign_forming_keys(a_key, l_params);
+    if (!l_params) {
+        log_it(L_ERROR, "Failed to create multisign params");
+        // Cleanup all generated keys
+        for (size_t i = 0; i < a_kex_size; i++) {
+            dap_enc_key_delete(l_keys[i]);
+        }
+        DAP_DELETE(l_keys);
+        return;
+    }
+    // l_keys array is now owned by l_params, will be freed by dap_multi_sign_params_delete
+    // But we still need to free our pointer array
+    DAP_DELETE(l_keys);
+    
+    log_it(L_DEBUG, "Forming multisign keys structure");
+    
+    int l_result = dap_enc_sig_multisign_forming_keys(a_key, l_params);
+    if (l_result) {
+        log_it(L_ERROR, "Failed to form multisign keys, error code: %d", l_result);
+        dap_multi_sign_params_delete(l_params);
+        return;
+    }
     a_key->_pvt = l_params;
+    log_it(L_DEBUG, "Multisign key generation completed successfully");
 }
 
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
@@ -99,12 +137,15 @@ static uint64_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint64_t 
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key || !a_params, -2);
+    dap_return_val_if_pass(!a_key || !a_params || !a_params->keys || !a_params->key_count, -2);
+
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
     dap_multisign_public_key_t *l_pkey = NULL;
     uint64_t l_skey_len = sizeof(uint64_t);
     uint64_t l_pkey_len = sizeof(uint64_t);
+    
+
     for(size_t i = 0; i < a_params->key_count; ++i) {
         l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
         l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
@@ -251,8 +292,7 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
  */
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
 {
-    if (!a_params)
-        return;
+    dap_return_if_pass(!a_params);
     for (size_t i = 0; i < a_params->key_count; ++i) {
         dap_enc_key_delete(a_params->keys[i]);
     }
@@ -415,8 +455,9 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
  * @param a_sign Pointer to multi-signature structure to destroy
  * @return None
  */
-void dap_multi_sign_delete(dap_multi_sign_t *a_sign)
+void dap_multi_sign_delete(void *a_sign)
 {
     dap_return_if_pass(!a_sign);
-    DAP_DEL_MULTY(a_sign->sign_data, a_sign->key_hashes, a_sign->meta, a_sign->key_seq, a_sign);
+    dap_multi_sign_t *l_sign = (dap_multi_sign_t*)a_sign;
+    DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq);
 }

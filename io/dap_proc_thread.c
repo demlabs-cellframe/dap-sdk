@@ -22,12 +22,14 @@
 */
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <utlist.h>
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "dap_proc_thread"
 
@@ -114,13 +116,16 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
-    uint32_t l_id_start = rand() % s_threads_count,
+    uint32_t l_random_val;
+    randombytes(&l_random_val, sizeof(l_random_val));
+    uint32_t l_id_start = l_random_val % s_threads_count,
              l_id_min = l_id_start,
              l_size_min = UINT32_MAX;
     for (uint32_t i = l_id_start; i < s_threads_count + l_id_start; i++) {
         uint32_t l_id_cur = i < s_threads_count ? i : i - s_threads_count;
-        if (s_threads[l_id_cur].proc_queue_size < l_size_min) {
-            l_size_min = s_threads[l_id_cur].proc_queue_size;
+        uint32_t l_current_size = atomic_load(&s_threads[l_id_cur].proc_queue_size);
+        if (l_current_size < l_size_min) {
+            l_size_min = l_current_size;
             l_id_min = l_id_cur;
             if (!l_size_min)
                 break;
@@ -133,7 +138,7 @@ size_t dap_proc_thread_get_avg_queue_size()
 {
     size_t l_ret = 0;
     for (uint32_t i = 0; i < s_threads_count; i++)
-        l_ret += s_threads[i].proc_queue_size;
+        l_ret += atomic_load(&s_threads[i].proc_queue_size);
     return l_ret / s_threads_count;
 }
 
@@ -152,30 +157,34 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     debug_if(g_debug_reactor, L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
     pthread_mutex_lock(&l_thread->queue_lock);
     DL_APPEND(l_thread->queue[a_priority], l_item);
-    l_thread->proc_queue_size++;
-    pthread_cond_signal(&l_thread->queue_event);
+    atomic_fetch_add(&l_thread->proc_queue_size, 1);
     pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_signal(&l_thread->queue_event);
     return 0;
 }
 
+/**
+ * @brief s_proc_queue_pull Extracts element from queue with highest priority
+ * @param a_thread Pointer to processor thread
+ * @param a_priority Returns priority of extracted element (can be NULL)
+ * @return Pointer to queue element or NULL if queue is empty
+ * @note MUST be called only under locked queue_lock mutex!
+ */
 static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority)
 {
-    if (!a_thread->proc_queue_size)
-        return NULL;
     dap_proc_queue_item_t *l_item = NULL;
     int i = DAP_QUEUE_MSG_PRIORITY_MAX;
-    for (; !l_item && i >= 0; i--)
-        if ((l_item = a_thread->queue[i]))
+    
+    for (; i >= DAP_QUEUE_MSG_PRIORITY_MIN; i--) {
+        if ((l_item = a_thread->queue[i])) {
+            DL_DELETE(a_thread->queue[i], l_item);
+            atomic_fetch_sub(&a_thread->proc_queue_size, 1);
+            if (a_priority)
+                *a_priority = i;
             break;
-    if (l_item) {
-        DL_DELETE(a_thread->queue[i], l_item);
-        a_thread->proc_queue_size--;
-        if (a_priority)
-            *a_priority = i;
-    } else
-        log_it(L_ERROR, "No item found in all piority levels of"
-                        " message queue with size %"DAP_UINT64_FORMAT_U,
-                                                 a_thread->proc_queue_size);
+        }
+    }
+    
     return l_item;
 }
 
@@ -186,17 +195,22 @@ int dap_proc_thread_loop(dap_context_t *a_context)
         pthread_mutex_lock(&l_thread->queue_lock);
         dap_proc_queue_item_t *l_item = NULL;
         int l_item_priority = 0;
+        
         while (!a_context->signal_exit &&
-               !(l_item = s_proc_queue_pull(l_thread, &l_item_priority)))
+               !(l_item = s_proc_queue_pull(l_thread, &l_item_priority))) {
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
+        }
         pthread_mutex_unlock(&l_thread->queue_lock);
-        if (l_item)
+        
+        if (l_item) {
             debug_if(g_debug_reactor, L_DEBUG, "Call callback %p with arg %p on thread %p",
                                             l_item->callback, l_item->callback_arg, l_thread);
-        if (!a_context->signal_exit &&
-                l_item->callback(l_item->callback_arg))
-            dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
-        DAP_DEL_Z(l_item);
+            
+            if (!a_context->signal_exit && l_item->callback(l_item->callback_arg)) {
+                dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
+            }
+            DAP_DEL_Z(l_item);
+        }
     } while (!a_context->signal_exit);
     return 0;
 }
@@ -231,11 +245,12 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     log_it(L_ATT, "Stop processing thread #%u", l_thread->context->cpu_id);
     // cleanup queue
     pthread_mutex_lock(&l_thread->queue_lock);
-    while (l_thread->proc_queue_size)
-        if (!s_proc_queue_pull(l_thread, NULL))
-            break;
-    pthread_cond_destroy(&l_thread->queue_event);
+    dap_proc_queue_item_t *l_item;
+    while ((l_item = s_proc_queue_pull(l_thread, NULL))) {
+        DAP_DELETE(l_item);
+    }
     pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_destroy(&l_thread->queue_lock);
     return 0;
 }

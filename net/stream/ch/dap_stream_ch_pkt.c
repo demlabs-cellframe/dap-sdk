@@ -354,7 +354,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     // Statistics without header sizes
     a_ch->stat.bytes_write += a_data_size;
     DAP_DELETE(l_buf);
-    for (dap_list_t *it = a_ch->packet_out_notifiers; it; it = it->next) {
+    for (dap_list_t *it = a_ch->packet_out_notifiers; !a_ch->closing && it; it = it->next) {
         dap_stream_ch_notifier_t *l_notifier = it->data;
         assert(l_notifier);
         l_notifier->callback(a_ch, a_type, a_data, a_data_size, l_notifier->arg);

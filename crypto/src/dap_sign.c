@@ -192,7 +192,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
  * @param a_sign_type
  * @return bool
  */
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
     if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
         return true;
     return false;
@@ -535,15 +535,29 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             }
             if (l_dup)
                 continue;
-        } else
+        } else {
             ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_sign_t*, l_signs_count, NULL);
+            if (!ret) {
+                log_it(L_ERROR, "Memory allocation failed for signatures array");
+                *a_signs_count = 0;
+                return NULL;
+            }
+        }
         ret[i++] = l_sign;
         if (*a_signs_count && i == *a_signs_count)
             break;
         if (i == l_signs_count) {
             l_signs_count += l_realloc_count;
             dap_sign_t **l_ret_new = DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(ret, l_signs_count, NULL, ret);
+            if (!l_ret_new) {
+                log_it(L_ERROR, "Memory reallocation failed for signatures array");
+                DAP_DELETE(ret);
+                *a_signs_count = 0;
+                return NULL;
+            }
             ret = l_ret_new;
+            // Zero the new allocated portion
+            memset(ret + i, 0, (l_signs_count - i) * sizeof(dap_sign_t*));
         }
     }
     *a_signs_count = i;
@@ -582,25 +596,24 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  * @param a_sign Signature can be NULL
  * @param a_json_out The output string pointer
  */
-void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
+void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type, int a_version)
 {
     if (!a_sign) {
         dap_json_rpc_error_add(a_json_arr_reply, -1, "Corrupted signature data");
         return;
     }
     dap_chain_hash_fast_t l_hash_pkey;
-    json_object_object_add(a_json_out,"Type",json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
+    json_object_object_add(a_json_out, a_version == 1 ? "Type" : "sig_type", json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
              : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
-             json_object_object_add(a_json_out,"Public key hash",json_object_new_string(l_hash_str));             
+             json_object_object_add(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", json_object_new_string(l_hash_str));             
     }
-    json_object_object_add(a_json_out,"Public key size",json_object_new_uint64(a_sign->header.sign_pkey_size));
-    json_object_object_add(a_json_out,"Signature size",json_object_new_uint64(a_sign->header.sign_size));
+    json_object_object_add(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", json_object_new_uint64(a_sign->header.sign_pkey_size));
+    json_object_object_add(a_json_out, a_version == 1 ? "Signature size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));
 
 }
-
 /**
  * @brief return string with recommended types
  * @return string with recommended types

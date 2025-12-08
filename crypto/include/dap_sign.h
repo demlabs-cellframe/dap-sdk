@@ -162,11 +162,11 @@ DAP_STATIC_INLINE dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
 
 const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type);
 dap_sign_type_t dap_sign_type_from_str(const char * a_type_str);
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type);
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type);
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count);
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
-void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
+void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type, int a_version);
 
 int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback);
 

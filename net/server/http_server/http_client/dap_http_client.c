@@ -43,9 +43,9 @@
 #include "dap_http_server.h"
 #include "http_status_code.h"
 
-#include "dap_http_header.h"
 #include "dap_http_client.h"
 #include "dap_http_ban_list_client.h"
+#include "dap_http_header_server.h"
 
 #define LOG_TAG "dap_http_client"
 

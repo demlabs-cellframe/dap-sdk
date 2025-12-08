@@ -32,8 +32,8 @@
 #include "uthash.h"
 #include "dap_common.h"
 
-#include "../http_server/http_client/include/dap_http_client.h"
-#include "../http_server/http_client/include/dap_http_header.h"
+#include "dap_http_client.h"
+#include "dap_http_header_server.h"
 
 #include "dap_enc.h"
 #include "include/dap_enc_ks.h"
