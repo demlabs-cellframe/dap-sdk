@@ -57,6 +57,7 @@ int dap_global_db_cluster_init()
                 0, false, DAP_GDB_MEMBER_ROLE_NOBODY, DAP_CLUSTER_TYPE_SYSTEM)))
         return -2;
 
+    log_it(L_NOTICE, "Adding node addr " NODE_ADDR_FP_STR " to local cluster", NODE_ADDR_FP_ARGS_S(g_node_addr));
     dap_global_db_cluster_member_add(s_local_cluster, &g_node_addr, DAP_GDB_MEMBER_ROLE_ROOT);
 
     return 0;
