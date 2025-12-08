@@ -138,21 +138,21 @@ function(configure_debian_packages)
     set(PKG_NAME "${CPACK_PKG_BASE_NAME}${CPACK_PKG_DEBUG_SUFFIX}")
     set(OS_SUFFIX "${CPACK_PKG_OS_SUFFIX}")
     
-    # Runtime package (library only) - follow Debian naming: libfoo
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
+    # Runtime package - use dap-sdk naming (not libdap-sdk)
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_SECTION "libs" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_RUNTIME_PACKAGE_DEPENDS "libc6 (>= 2.17)" PARENT_SCOPE)
     
-    # Development package - follow Debian naming: libfoo-dev
-    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev" PARENT_SCOPE)
+    # Development package - use dap-sdk-dev naming
+    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_SECTION "libdevel" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS 
-        "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX} (= \${binary:Version})" PARENT_SCOPE)
+        "dap-sdk${CPACK_PKG_DEBUG_SUFFIX} (= \${binary:Version})" PARENT_SCOPE)
     
-    # Documentation package - follow Debian naming: libfoo-doc
-    set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc" PARENT_SCOPE)
+    # Documentation package - use dap-sdk-doc naming
+    set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_SECTION "doc" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_PRIORITY "optional" PARENT_SCOPE)
     set(CPACK_DEBIAN_DOCUMENTATION_PACKAGE_ARCHITECTURE "all" PARENT_SCOPE)
@@ -161,14 +161,14 @@ function(configure_debian_packages)
     set(CPACK_DEB_COMPONENT_INSTALL ON PARENT_SCOPE)
     set(CPACK_DEBIAN_ENABLE_COMPONENT_DEPENDS ON PARENT_SCOPE)
     
-    # Set DEB package file names
-    set(CPACK_DEB_RUNTIME_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_DEB_DEVELOPMENT_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}" PARENT_SCOPE)
-    set(CPACK_DEB_DOCUMENTATION_FILE_NAME "libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}" PARENT_SCOPE)
+    # Set DEB package file names (matching package names: dap-sdk, dap-sdk-dev, dap-sdk-doc)
+    set(CPACK_DEB_RUNTIME_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DEVELOPMENT_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}" PARENT_SCOPE)
+    set(CPACK_DEB_DOCUMENTATION_FILE_NAME "dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}" PARENT_SCOPE)
     
-    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}.deb")
-    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}.deb")
-    message(STATUS "[CPack DEB] libdap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}.deb")
+    message(STATUS "[CPack DEB] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}_${OS_SUFFIX}.deb")
+    message(STATUS "[CPack DEB] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-dev_${OS_SUFFIX}.deb")
+    message(STATUS "[CPack DEB] dap-sdk${CPACK_PKG_DEBUG_SUFFIX}-doc_${OS_SUFFIX}.deb")
 endfunction()
 
 # =========================================
