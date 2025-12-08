@@ -12,8 +12,8 @@
 #     dap_register_module(
 #         MODULE_NAME "transport_http"
 #         VERSION 1
-#         INIT_FUNCTION "dap_net_transport_http_stream_register"
-#         DEINIT_FUNCTION "dap_net_transport_http_stream_unregister"
+#         INIT_FUNCTION "dap_net_trans.http_stream_register"
+#         DEINIT_FUNCTION "dap_net_trans.http_stream_unregister"
 #         DEPENDENCIES "dap_stream_transport"
 #     )
 #
@@ -110,7 +110,7 @@ static void s_${MODULE_ID}_deinit_wrapper(void)
         set(INCLUDE_HEADER_LINE "#include \"${DAP_MODULE_INCLUDE_HEADER}\"")
     else()
         # Try to auto-detect: look for header file matching the init function name
-        # For example, dap_net_transport_http_stream_register -> dap_net_transport_http_stream.h
+        # For example, dap_net_trans.http_stream_register -> dap_net_trans.http_stream.h
         string(REGEX REPLACE "_register$" "" FUNCTION_BASE "${DAP_MODULE_INIT_FUNCTION}")
         string(REGEX REPLACE "^dap_" "" HEADER_BASE "${FUNCTION_BASE}")
         

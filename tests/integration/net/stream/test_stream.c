@@ -80,7 +80,7 @@ static void test_01_stream_initialization(void) {
     
     TEST_ASSERT(result == 0, "Stream init should return 0");
     
-    // Deinitialize stream system (this should clean up all transport handlers)
+    // Deinitialize stream system (this should clean up all trans handlers)
     dap_stream_deinit();
     
     // Give time for cleanup to propagate
@@ -96,31 +96,31 @@ static void test_01_stream_initialization(void) {
 }
 
 /**
- * Test 2: Transport registration
+ * Test 2: Trans registration
  */
-static void test_02_transport_registration(void) {
-    TEST_INFO("Testing transport registration");
+static void test_02_trans_registration(void) {
+    TEST_INFO("Testing trans registration");
     
     dap_events_init(1, 60000);
     dap_events_start();
     
-    // Initialize transport layer first to ensure registry is ready
-    dap_net_transport_init();
+    // Initialize trans layer first to ensure registry is ready
+    dap_net_trans_init();
     
     // Give time for constructors to run (if they haven't already)
     dap_test_sleep_ms(100);
     
     dap_stream_init(NULL);
     
-    // After dap_stream_init, default transports should be registered
-    dap_net_transport_t *http_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
-    TEST_ASSERT_NOT_NULL(http_transport, "HTTP transport should be registered");
+    // After dap_stream_init, default transs should be registered
+    dap_net_trans_t *http_trans = dap_net_trans_find(DAP_NET_TRANS_HTTP);
+    TEST_ASSERT_NOT_NULL(http_trans, "HTTP trans should be registered");
     
-    dap_net_transport_t *udp_transport = dap_net_transport_find(DAP_NET_TRANSPORT_UDP_BASIC);
-    TEST_ASSERT_NOT_NULL(udp_transport, "UDP transport should be registered");
+    dap_net_trans_t *udp_trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
+    TEST_ASSERT_NOT_NULL(udp_trans, "UDP trans should be registered");
     
-    dap_net_transport_t *ws_transport = dap_net_transport_find(DAP_NET_TRANSPORT_WEBSOCKET);
-    TEST_ASSERT_NOT_NULL(ws_transport, "WebSocket transport should be registered");
+    dap_net_trans_t *ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
+    TEST_ASSERT_NOT_NULL(ws_trans, "WebSocket trans should be registered");
     
     dap_stream_deinit();
     
@@ -132,7 +132,7 @@ static void test_02_transport_registration(void) {
     dap_events_deinit();
     }
     
-    TEST_SUCCESS("Transport registration works");
+    TEST_SUCCESS("Trans registration works");
 }
 
 /**
@@ -292,7 +292,7 @@ int main(void) {
     
     // Run tests
     TEST_RUN(test_01_stream_initialization);
-    TEST_RUN(test_02_transport_registration);
+    TEST_RUN(test_02_trans_registration);
     TEST_RUN(test_03_client_creation);
     TEST_RUN(test_04_channel_configuration);
     

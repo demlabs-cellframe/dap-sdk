@@ -11,10 +11,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/dap_test_helpers.cmake)
 # ============================================================================
 # Test: Stream Transport Layer
 # ============================================================================
-project(test_stream_transport)
+project(test_stream_trans)
 
 add_executable(${PROJECT_NAME}
-    test_stream_transport.c
+    test_stream_trans.c
 )
 
 # Link all DAP SDK libraries using helper function
@@ -75,7 +75,7 @@ add_subdirectory(core)
 add_subdirectory(net/client)
 add_subdirectory(net/stream)
 add_subdirectory(net/server)
-add_subdirectory(net/transport)
+add_subdirectory(net/trans)
 
 # ============================================================================
 # Crypto Module Unit Tests

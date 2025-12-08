@@ -22,16 +22,16 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${STREAM_SRCS} HEADER
 dap_link_libraries(${PROJECT_NAME} INTERFACE 
     dap_core dap_io dap_crypto
     dap_http_server dap_http_common dap_enc_server dap_session dap_stream_ch dap_client dap_global_db dap_link_manager
-    dap_transport_websocket dap_transport_http dap_transport_udp)
+    dap_trans_websocket dap_trans_http dap_trans_udp)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 # Add transport include directories
-target_include_directories(${PROJECT_NAME} PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/websocket/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../transport/udp/include
-)
+# target_include_directories(${PROJECT_NAME} PRIVATE 
+#     ${CMAKE_CURRENT_SOURCE_DIR}/../../trans/websocket/include
+#     ${CMAKE_CURRENT_SOURCE_DIR}/../../trans/http/include
+#     ${CMAKE_CURRENT_SOURCE_DIR}/../../trans/udp/include
+# )
 # Explicitly add stream_ch include directory (not propagated through dap_link_libraries)
 # All other include directories should be propagated automatically via dap_link_libraries
 target_include_directories(${PROJECT_NAME} PRIVATE 

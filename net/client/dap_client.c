@@ -28,8 +28,8 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 #include "dap_config.h"
-#include "dap_net_transport.h"
-#include "dap_net_transport_http_stream.h"
+#include "dap_net_trans.h"
+#include "dap_net_trans_http_stream.h"
 
 #define LOG_TAG "dap_client"
 
@@ -70,23 +70,23 @@ void dap_client_deinit()
 
 /**
  * @brief Get default transport type from config
- * @return Default transport type from config, or DAP_NET_TRANSPORT_HTTP (legacy protocol) if not configured
+ * @return Default transport type from config, or DAP_NET_TRANS_HTTP (legacy protocol) if not configured
  */
-static dap_net_transport_type_t s_get_default_transport_from_config(void)
+static dap_net_trans_type_t s_get_default_transport_from_config(void)
 {
     // Try to get default transport from config
     const char *l_transport_str = dap_config_get_item_str_default(g_config, "dap_client", 
                                                                     "default_transport", NULL);
     
     if (l_transport_str && l_transport_str[0] != '\0') {
-        dap_net_transport_type_t l_transport_type = dap_net_transport_type_from_str(l_transport_str);
-        log_it(L_INFO, "Default transport loaded from config: %s (%d)", l_transport_str, l_transport_type);
-        return l_transport_type;
+        dap_net_trans_type_t l_trans_type = dap_net_trans_type_from_str(l_transport_str);
+        log_it(L_INFO, "Default transport loaded from config: %s (%d)", l_transport_str, l_trans_type);
+        return l_trans_type;
     }
     
     // Default to legacy HTTP protocol if not configured
     log_it(L_DEBUG, "No default transport in config, using legacy HTTP protocol");
-    return DAP_NET_TRANSPORT_HTTP;
+    return DAP_NET_TRANS_HTTP;
 }
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)
@@ -95,7 +95,7 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     l_client->_internal = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_pvt_t, NULL, l_client);
     l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
-    l_client->transport_type = s_get_default_transport_from_config(); // Load from config or default to legacy HTTP protocol
+    l_client->trans_type = s_get_default_transport_from_config(); // Load from config or default to legacy HTTP protocol
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
@@ -103,8 +103,8 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     
     // Initialize tried transports list (dynamic array)
     l_client_pvt->tried_transport_count = 0;
-    l_client_pvt->tried_transport_capacity = DAP_NET_TRANSPORT_MAX; // Start with capacity for MAX transports
-    l_client_pvt->tried_transports = DAP_NEW_Z_SIZE(dap_net_transport_type_t, 
+    l_client_pvt->tried_transport_capacity = DAP_NET_TRANS_MAX; // Start with capacity for MAX transports
+    l_client_pvt->tried_transports = DAP_NEW_Z_SIZE(dap_net_trans_type_t, 
                                                     l_client_pvt->tried_transport_capacity);
     if (!l_client_pvt->tried_transports) {
         log_it(L_ERROR, "Failed to allocate tried_transports array");
@@ -113,7 +113,7 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
         return NULL;
     }
     // Mark initial transport as tried (will be added via helper function in dap_client_pvt_new if needed)
-    l_client_pvt->tried_transports[l_client_pvt->tried_transport_count++] = l_client->transport_type;
+    l_client_pvt->tried_transports[l_client_pvt->tried_transport_count++] = l_client->trans_type;
     
     dap_client_pvt_new(l_client_pvt);
     return l_client;
@@ -436,7 +436,17 @@ dap_client_stage_t dap_client_get_stage(dap_client_t * a_client)
         log_it(L_ERROR,"Client is NULL for dap_client_get_stage");
         return -1;
     }
-    return DAP_CLIENT_PVT(a_client)->stage;
+    
+    dap_client_pvt_t *l_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_pvt)
+        return STAGE_UNDEFINED;
+    
+    // Use read lock for thread-safe stage reading
+    pthread_rwlock_rdlock(&l_pvt->stage_lock);
+    dap_client_stage_t l_stage = l_pvt->stage;
+    pthread_rwlock_unlock(&l_pvt->stage_lock);
+    
+    return l_stage;
 }
 
 /**
@@ -510,10 +520,14 @@ dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client)
     if (!a_client || !DAP_CLIENT_PVT(a_client))
         return STAGE_STATUS_NONE;
     
-    // Memory barrier to ensure we see the latest value from other threads
-    __sync_synchronize();
+    dap_client_pvt_t *l_pvt = DAP_CLIENT_PVT(a_client);
     
-    return DAP_CLIENT_PVT(a_client)->stage_status;
+    // Use read lock for thread-safe status reading
+    pthread_rwlock_rdlock(&l_pvt->stage_lock);
+    dap_client_stage_status_t l_status = l_pvt->stage_status;
+    pthread_rwlock_unlock(&l_pvt->stage_lock);
+    
+    return l_status;
 }
 
 /**
@@ -602,34 +616,34 @@ void dap_client_set_is_always_reconnect(dap_client_t * a_client, bool a_value)
 }
 
 /**
- * @brief dap_client_set_transport_type
+ * @brief dap_client_set_trans_type
  * Set the transport layer type for stream connection
  * @param a_client Client instance
- * @param a_transport_type Transport type (HTTP, UDP, WebSocket, TLS, etc.)
+ * @param a_trans_type Transport type (HTTP, UDP, WebSocket, TLS, etc.)
  */
-void dap_client_set_transport_type(dap_client_t *a_client, dap_net_transport_type_t a_transport_type)
+void dap_client_set_trans_type(dap_client_t *a_client, dap_net_trans_type_t a_trans_type)
 {
     if (!a_client) {
-        log_it(L_ERROR, "Client is NULL for dap_client_set_transport_type");
+        log_it(L_ERROR, "Client is NULL for dap_client_set_trans_type");
         return;
     }
-    a_client->transport_type = a_transport_type;
-    log_it(L_DEBUG, "Set transport type to %d for client %p", a_transport_type, a_client);
+    a_client->trans_type = a_trans_type;
+    log_it(L_DEBUG, "Set transport type to %d for client %p", a_trans_type, a_client);
 }
 
 /**
- * @brief dap_client_get_transport_type
+ * @brief dap_client_get_trans_type
  * Get the transport layer type for stream connection
  * @param a_client Client instance
  * @return Transport type
  */
-dap_net_transport_type_t dap_client_get_transport_type(dap_client_t *a_client)
+dap_net_trans_type_t dap_client_get_trans_type(dap_client_t *a_client)
 {
     if (!a_client) {
-        log_it(L_ERROR, "Client is NULL for dap_client_get_transport_type");
-        return DAP_NET_TRANSPORT_HTTP; // Default fallback
+        log_it(L_ERROR, "Client is NULL for dap_client_get_trans_type");
+        return DAP_NET_TRANS_HTTP; // Default fallback
     }
-    return a_client->transport_type;
+    return a_client->trans_type;
 }
 
 /**
@@ -698,13 +712,13 @@ static void s_client_request_on_worker(void *a_arg)
     l_client_pvt->callback_arg = l_args->callback_arg;
     
     // Check transport type and use appropriate function
-    if (l_args->client->transport_type == DAP_NET_TRANSPORT_HTTP) {
+    if (l_args->client->trans_type == DAP_NET_TRANS_HTTP) {
         // Use HTTP transport request function
-        l_args->result = dap_net_transport_http_request(l_client_pvt, l_args->path, 
+        l_args->result = dap_net_trans_http_request(l_client_pvt, l_args->path, 
                                                          l_args->request, l_args->request_size,
                                                          l_args->response_proc, l_args->response_error);
     } else {
-        log_it(L_ERROR, "Transport type %d doesn't support request() yet", l_args->client->transport_type);
+        log_it(L_ERROR, "Transport type %d doesn't support request() yet", l_args->client->trans_type);
         l_args->result = -1;
     }
     
@@ -753,15 +767,15 @@ static void s_client_request_enc_on_worker(void *a_arg)
     l_client_pvt->callback_arg = l_args->callback_arg;
     
     // Check transport type and use appropriate function
-    if (l_args->client->transport_type == DAP_NET_TRANSPORT_HTTP) {
+    if (l_args->client->trans_type == DAP_NET_TRANS_HTTP) {
         // Use HTTP transport encrypted request function
-        dap_net_transport_http_request_enc(l_client_pvt, l_args->path, 
+        dap_net_trans_http_request_enc(l_client_pvt, l_args->path, 
                                             l_args->sub_url, l_args->query,
                                             l_args->request, l_args->request_size,
                                             l_args->response_proc, l_args->response_error);
         l_args->result = 0; // Encrypted request doesn't return error code
     } else {
-        log_it(L_ERROR, "Transport type %d doesn't support request_enc() yet", l_args->client->transport_type);
+        log_it(L_ERROR, "Transport type %d doesn't support request_enc() yet", l_args->client->trans_type);
         l_args->result = -1;
     }
     

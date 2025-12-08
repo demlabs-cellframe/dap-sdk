@@ -18,7 +18,7 @@
 #include "dap_timerfd.h"  // For dap_timerfd_t type
 #include "dap_list.h"  // For dap_list_t type
 #include "dap_context.h"  // For dap_context_t type
-#include "dap_net_transport.h"  // For dap_net_transport_* types
+#include "dap_net_trans.h"  // For dap_net_trans_* types
 #include <string.h>  // For memcpy
 #include <stdio.h>   // For fprintf
 
@@ -50,8 +50,8 @@ DAP_MOCK_DECLARE(dap_timerfd_delete_unsafe);
 DAP_MOCK_DECLARE(dap_timerfd_start_on_worker);
 DAP_MOCK_DECLARE(dap_list_append);
 DAP_MOCK_DECLARE(dap_list_free_full);
-DAP_MOCK_DECLARE(dap_net_transport_list_all);
-DAP_MOCK_DECLARE(dap_net_transport_stage_prepare);
+DAP_MOCK_DECLARE(dap_net_trans_list_all);
+DAP_MOCK_DECLARE(dap_net_trans_stage_prepare);
 DAP_MOCK_DECLARE(dap_stream_new_es_client);
 DAP_MOCK_DECLARE(dap_events_socket_delete_unsafe);
 DAP_MOCK_DECLARE(dap_worker_add_events_socket);
@@ -67,11 +67,11 @@ DAP_MOCK_DECLARE(dap_stream_init);
 DAP_MOCK_DECLARE(dap_stream_deinit);
 DAP_MOCK_DECLARE(dap_stream_delete_unsafe);
 
-// Mock dap_stream_transport functions
-DAP_MOCK_DECLARE(dap_net_transport_init);
-DAP_MOCK_DECLARE(dap_net_transport_deinit);
-DAP_MOCK_DECLARE(dap_net_transport_find);
-DAP_MOCK_DECLARE(dap_net_transport_register);
+// Mock dap_stream_trans functions
+DAP_MOCK_DECLARE(dap_net_trans_init);
+DAP_MOCK_DECLARE(dap_net_trans_deinit);
+DAP_MOCK_DECLARE(dap_net_trans_find);
+DAP_MOCK_DECLARE(dap_net_trans_register);
 
 // Mock dap_stream_ch functions
 DAP_MOCK_DECLARE(dap_stream_ch_by_id_unsafe);
@@ -128,8 +128,8 @@ DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_timerfd_delete_unsafe, (dap_timerfd_t *a_t
 DAP_MOCK_WRAPPER_PASSTHROUGH(dap_timerfd_t*, dap_timerfd_start_on_worker, (dap_worker_t *a_worker, unsigned long a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_arg), (a_worker, a_timeout_ms, a_callback, a_arg));
 DAP_MOCK_WRAPPER_PASSTHROUGH(dap_list_t*, dap_list_append, (dap_list_t *a_list, void *a_data), (a_list, a_data));
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_list_free_full, (dap_list_t *a_list, void (*a_free_func)(void*)), (a_list, a_free_func));
-DAP_MOCK_WRAPPER_PASSTHROUGH(dap_list_t*, dap_net_transport_list_all, (), ());
-DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_transport_stage_prepare, (dap_net_transport_type_t a_transport_type, const dap_net_stage_prepare_params_t *a_params, dap_net_stage_prepare_result_t *a_result), (a_transport_type, a_params, a_result));
+DAP_MOCK_WRAPPER_PASSTHROUGH(dap_list_t*, dap_net_trans_list_all, (), ());
+DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_trans_stage_prepare, (dap_net_trans_type_t a_trans_type, const dap_net_stage_prepare_params_t *a_params, dap_net_stage_prepare_result_t *a_result), (a_trans_type, a_params, a_result));
 DAP_MOCK_WRAPPER_PASSTHROUGH(dap_stream_t*, dap_stream_new_es_client, (dap_events_socket_t *a_es, dap_stream_node_addr_t *a_node_addr, bool a_authorized), (a_es, a_node_addr, a_authorized));
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_events_socket_delete_unsafe, (dap_events_socket_t *a_es, bool a_now), (a_es, a_now));
 DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_worker_add_events_socket, (dap_worker_t *a_worker, dap_events_socket_t *a_es), (a_worker, a_es));
@@ -145,11 +145,11 @@ DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_stream_init, (), ());
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_stream_deinit, (), ());
 DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_stream_delete_unsafe, (dap_stream_t *a_stream), (a_stream));
 
-// Mock dap_net_transport functions
-DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_transport_init, (), ());
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_net_transport_deinit, (), ());
-DAP_MOCK_WRAPPER_PASSTHROUGH(dap_net_transport_t*, dap_net_transport_find, (dap_net_transport_type_t a_type), (a_type));
-DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_transport_register, (const char *a_name, dap_net_transport_type_t a_type, const dap_net_transport_ops_t *a_ops, void *a_inheritor), (a_name, a_type, a_ops, a_inheritor));
+// Mock dap_net_trans functions
+DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_trans_init, (), ());
+DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_net_trans_deinit, (), ());
+DAP_MOCK_WRAPPER_PASSTHROUGH(dap_net_trans_t*, dap_net_trans_find, (dap_net_trans_type_t a_type), (a_type));
+DAP_MOCK_WRAPPER_PASSTHROUGH(int, dap_net_trans_register, (const char *a_name, dap_net_trans_type_t a_type, const dap_net_trans_ops_t *a_ops, void *a_inheritor), (a_name, a_type, a_ops, a_inheritor));
 
 // Mock dap_stream_ch functions
 DAP_MOCK_WRAPPER_PASSTHROUGH(dap_stream_ch_t*, dap_stream_ch_by_id_unsafe, (dap_stream_t *a_stream, uint8_t a_ch_id), (a_stream, a_ch_id));

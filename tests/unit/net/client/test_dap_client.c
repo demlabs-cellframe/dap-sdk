@@ -45,7 +45,7 @@
 #include "dap_client.h"
 #include "dap_client_pvt.h"
 #include "dap_stream.h"
-#include "dap_net_transport.h"
+#include "dap_net_trans.h"
 #include "dap_stream_ch.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
@@ -186,7 +186,7 @@ static void test_02_client_creation(void)
     
     // Verify client structure
     TEST_ASSERT(l_client->_internal != NULL, "Client internal should not be NULL");
-    TEST_ASSERT(l_client->transport_type == DAP_NET_TRANSPORT_HTTP, 
+    TEST_ASSERT(l_client->trans_type == DAP_NET_TRANS_HTTP, 
                 "Default transport type should be HTTP");
     TEST_ASSERT(l_client->active_channels == NULL, 
                 "Active channels should be NULL initially");
@@ -384,7 +384,7 @@ static void test_07_set_auth_cert(void)
 // Test 8: Transport Type Set/Get
 // ============================================================================
 
-static void test_08_transport_type(void)
+static void test_08_trans_type(void)
 {
     setup_test();
     
@@ -399,30 +399,30 @@ static void test_08_transport_type(void)
     TEST_ASSERT(l_client != NULL, "Client creation should succeed");
     
     // Test: Default transport type should be HTTP
-    dap_net_transport_type_t l_default_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_default_type == DAP_NET_TRANSPORT_HTTP, 
+    dap_net_trans_type_t l_default_type = dap_client_get_trans_type(l_client);
+    TEST_ASSERT(l_default_type == DAP_NET_TRANS_HTTP, 
                 "Default transport type should be HTTP");
     
     // Test: Set transport to UDP_RELIABLE
-    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_UDP_RELIABLE);
-    dap_net_transport_type_t l_new_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_new_type == DAP_NET_TRANSPORT_UDP_RELIABLE, 
+    dap_client_set_trans_type(l_client, DAP_NET_TRANS_UDP_RELIABLE);
+    dap_net_trans_type_t l_new_type = dap_client_get_trans_type(l_client);
+    TEST_ASSERT(l_new_type == DAP_NET_TRANS_UDP_RELIABLE, 
                 "Transport type should be set to UDP_RELIABLE");
     
     // Test: Set transport to WEBSOCKET
-    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_WEBSOCKET);
-    l_new_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_new_type == DAP_NET_TRANSPORT_WEBSOCKET, 
+    dap_client_set_trans_type(l_client, DAP_NET_TRANS_WEBSOCKET);
+    l_new_type = dap_client_get_trans_type(l_client);
+    TEST_ASSERT(l_new_type == DAP_NET_TRANS_WEBSOCKET, 
                 "Transport type should be set to WEBSOCKET");
     
     // Test: Set transport to TLS_DIRECT
-    dap_client_set_transport_type(l_client, DAP_NET_TRANSPORT_TLS_DIRECT);
-    l_new_type = dap_client_get_transport_type(l_client);
-    TEST_ASSERT(l_new_type == DAP_NET_TRANSPORT_TLS_DIRECT, 
+    dap_client_set_trans_type(l_client, DAP_NET_TRANS_TLS_DIRECT);
+    l_new_type = dap_client_get_trans_type(l_client);
+    TEST_ASSERT(l_new_type == DAP_NET_TRANS_TLS_DIRECT, 
                 "Transport type should be set to TLS_DIRECT");
     
     // Test: Verify field is accessible directly
-    TEST_ASSERT(l_client->transport_type == DAP_NET_TRANSPORT_TLS_DIRECT, 
+    TEST_ASSERT(l_client->trans_type == DAP_NET_TRANS_TLS_DIRECT, 
                 "Direct field access should match getter result");
     
     // Cleanup
@@ -452,7 +452,7 @@ int main(void)
     test_05_set_uplink();
     test_06_set_active_channels();
     test_07_set_auth_cert();
-    test_08_transport_type();
+    test_08_trans_type();
     
     // Cleanup
     suite_cleanup();

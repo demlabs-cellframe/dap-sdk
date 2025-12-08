@@ -17,7 +17,7 @@ add_subdirectory(net/http)
 add_subdirectory(net/stream)
 
 # Transport Integration Tests (HTTP, WebSocket, UDP)
-add_subdirectory(net/transport)
+add_subdirectory(net/trans)
 
 # Global DB Integration Tests
 add_subdirectory(global-db)

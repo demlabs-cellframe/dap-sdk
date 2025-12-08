@@ -9,10 +9,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAuto
 # ============================================================================
 # Test: Stream Transport Full (with mocks)
 # ============================================================================
-project(test_stream_transport_full)
+project(test_stream_trans_full)
 
 add_executable(${PROJECT_NAME}
-    test_stream_transport_full.c
+    test_stream_trans_full.c
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -29,10 +29,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     dap_link_manager
     dap_client
     dap_global_db
-    dap_transport_websocket
-    dap_transport_http
-    dap_transport_udp
-    dap_net_transport
+    dap_trans_websocket
+    dap_trans_http
+    dap_trans_udp
+    dap_net_trans
     dap_net_server_common
     dap_test
 )
@@ -52,10 +52,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../../global-db/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/websocket/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/udp/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/transport/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/websocket/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/http/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/udp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/include
     )
 dap_mock_autowrap(${PROJECT_NAME})
 
@@ -63,7 +63,7 @@ dap_mock_autowrap(${PROJECT_NAME})
 # This is needed because --wrap doesn't work for symbols inside static libraries
 # without --whole-archive flag
 # Note: dap_server functions are in dap_io, so we need to wrap dap_io as well
-dap_mock_autowrap_with_static(${PROJECT_NAME} dap_transport_websocket dap_transport_http dap_transport_udp dap_http_server dap_io)
+dap_mock_autowrap_with_static(${PROJECT_NAME} dap_trans_websocket dap_trans_http dap_trans_udp dap_http_server dap_io)
 
 if(NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
@@ -78,6 +78,46 @@ add_test(
 # Set test properties
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 60
-    LABELS "unit;net;stream;transport"
+    LABELS "unit;net;stream;trans"
 )
 
+
+# ============================================================================
+# Test: Stream Packet (Encryption/RAW logic)
+# ============================================================================
+project(test_dap_stream_pkt)
+
+add_executable(${PROJECT_NAME}
+    test_dap_stream_pkt.c
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    dap_core
+    dap_crypto
+    dap_io
+    dap_stream
+    dap_session
+    dap_test
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/stream/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/stream/session/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
+)
+
+dap_mock_autowrap(${PROJECT_NAME})
+# We need to wrap dap_io for dap_events_socket functions
+dap_mock_autowrap_with_static(${PROJECT_NAME} dap_io dap_stream)
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)

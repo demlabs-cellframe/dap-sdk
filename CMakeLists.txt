@@ -144,7 +144,7 @@ endif()
 # Networking core
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(net/stream)
-    add_subdirectory(net/transport)
+    add_subdirectory(net/trans)
     message("[+] Module 'stream'")
     message("[+] Module 'transport'")
 endif()

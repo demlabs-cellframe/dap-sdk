@@ -9,17 +9,17 @@ DAP Client поддерживает различные транспортные 
 ### Установка типа транспорта
 
 ```c
-void dap_client_set_transport_type(dap_client_t *a_client, dap_stream_transport_type_t a_transport_type);
+void dap_client_set_trans_type(dap_client_t *a_client, dap_stream_trans_type_t a_trans_type);
 ```
 
 **Параметры:**
 - `a_client` - указатель на клиент
-- `a_transport_type` - тип транспорта (см. `dap_stream_transport_type_t`)
+- `a_trans_type` - тип транспорта (см. `dap_stream_trans_type_t`)
 
 ### Получение типа транспорта
 
 ```c
-dap_stream_transport_type_t dap_client_get_transport_type(dap_client_t *a_client);
+dap_stream_trans_type_t dap_client_get_trans_type(dap_client_t *a_client);
 ```
 
 **Возвращает:** текущий тип транспорта или `DAP_STREAM_TRANSPORT_HTTP` (по умолчанию) при ошибке.
@@ -27,7 +27,7 @@ dap_stream_transport_type_t dap_client_get_transport_type(dap_client_t *a_client
 ## Доступные транспорты
 
 ```c
-typedef enum dap_stream_transport_type {
+typedef enum dap_stream_trans_type {
     DAP_STREAM_TRANSPORT_HTTP           = 0x01,  // HTTP/HTTPS (по умолчанию)
     DAP_STREAM_TRANSPORT_UDP_BASIC      = 0x02,  // Базовый UDP (ненадежный)
     DAP_STREAM_TRANSPORT_UDP_RELIABLE   = 0x03,  // UDP с гарантией доставки (ARQ)
@@ -36,7 +36,7 @@ typedef enum dap_stream_transport_type {
     DAP_STREAM_TRANSPORT_TLS_DIRECT     = 0x06,  // Прямое TLS соединение
     DAP_STREAM_TRANSPORT_DNS_TUNNEL     = 0x07,  // Туннелирование через DNS
     DAP_STREAM_TRANSPORT_OBFS4          = 0x08   // Tor-style обфускация (obfs4)
-} dap_stream_transport_type_t;
+} dap_stream_trans_type_t;
 ```
 
 ## Примеры использования
@@ -46,7 +46,7 @@ typedef enum dap_stream_transport_type {
 ```c
 dap_client_t *l_client = dap_client_new(NULL, NULL);
 // По умолчанию используется HTTP
-// l_client->transport_type == DAP_STREAM_TRANSPORT_HTTP
+// l_client->trans_type == DAP_STREAM_TRANSPORT_HTTP
 ```
 
 ### Пример 2: Переключение на WebSocket
@@ -55,7 +55,7 @@ dap_client_t *l_client = dap_client_new(NULL, NULL);
 dap_client_t *l_client = dap_client_new(NULL, NULL);
 
 // Переключаемся на WebSocket
-dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_WEBSOCKET);
+dap_client_set_trans_type(l_client, DAP_STREAM_TRANSPORT_WEBSOCKET);
 
 // Настраиваем uplink
 dap_stream_node_addr_t l_node_addr = {0};
@@ -71,7 +71,7 @@ dap_client_go_stage(l_client, STAGE_STREAM_STREAMING, callback);
 dap_client_t *l_client = dap_client_new(NULL, NULL);
 
 // Используем надежный UDP
-dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_UDP_RELIABLE);
+dap_client_set_trans_type(l_client, DAP_STREAM_TRANSPORT_UDP_RELIABLE);
 
 // Настраиваем uplink
 dap_stream_node_addr_t l_node_addr = {0};
@@ -86,7 +86,7 @@ dap_client_go_stage(l_client, STAGE_STREAM_STREAMING, callback);
 ```c
 dap_client_t *l_client = dap_client_new(NULL, NULL);
 
-dap_stream_transport_type_t l_type = dap_client_get_transport_type(l_client);
+dap_stream_trans_type_t l_type = dap_client_get_trans_type(l_client);
 
 switch(l_type) {
     case DAP_STREAM_TRANSPORT_HTTP:
@@ -108,13 +108,13 @@ switch(l_type) {
 dap_client_t *l_client = dap_client_new(NULL, NULL);
 
 // Пробуем WebSocket
-dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_WEBSOCKET);
+dap_client_set_trans_type(l_client, DAP_STREAM_TRANSPORT_WEBSOCKET);
 int result = dap_client_go_stage(l_client, STAGE_STREAM_CONNECTED, NULL);
 
 if (result < 0) {
     // WebSocket не сработал, возвращаемся на HTTP
     log_it(L_WARNING, "WebSocket failed, falling back to HTTP");
-    dap_client_set_transport_type(l_client, DAP_STREAM_TRANSPORT_HTTP);
+    dap_client_set_trans_type(l_client, DAP_STREAM_TRANSPORT_HTTP);
     dap_client_go_stage(l_client, STAGE_STREAM_CONNECTED, NULL);
 }
 ```

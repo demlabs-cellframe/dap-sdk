@@ -42,6 +42,7 @@
 #include "dap_enc_key.h"
 
 #include "dap_events_socket.h"
+#include "dap_net_trans.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_pkt.h"
@@ -296,6 +297,10 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         log_it(L_WARNING, "Channel is NULL ptr");
         return 0;
     }
+    if (!a_ch->stream) {
+        log_it(L_ERROR, "Channel stream is NULL ptr");
+        return 0;
+    }
     if (!a_ch->proc) {
         log_it(L_WARNING, "Channel PROC is NULL ptr");
         return 0;
@@ -317,7 +322,12 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
              "Outgoing channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02hhX",
             (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
 
-    static const size_t l_max_fragm_size = DAP_STREAM_PKT_FRAGMENT_SIZE - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
+    size_t l_target_size = DAP_STREAM_PKT_FRAGMENT_SIZE;
+    if (a_ch->stream && a_ch->stream->trans && a_ch->stream->trans->mtu > 0)
+        l_target_size = a_ch->stream->trans->mtu;
+
+    size_t l_max_fragm_size = l_target_size - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
+
     if (l_data_size > 0 && l_data_size <= l_max_fragm_size) {
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);

@@ -36,6 +36,8 @@
 #include "dap_pkey.h"
 #include "dap_strfuncs.h"
 #include "dap_enc_ks.h"
+#include "dap_net_trans.h"
+#include "dap_net_trans_ctx.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
 
@@ -49,8 +51,6 @@ typedef struct dap_stream {
     bool primary;
     int id;
     dap_stream_session_t *session;
-    dap_events_socket_t *esocket; // Connection
-    dap_events_socket_uuid_t esocket_uuid;
     dap_stream_worker_t *stream_worker;
 
     dap_timerfd_t *keepalive_timer;
@@ -82,10 +82,11 @@ typedef struct dap_stream {
      * For HTTP transport, use dap_stream_transport_http_get_client()
      * to get the underlying http_client if needed.
      * 
-     * @see dap_stream_transport.h
-     * @see dap_stream_transport_http.h
+     * @see dap_stream_trans.h
+     * @see dap_stream_trans_http.h
      */
-    struct dap_net_transport *stream_transport;
+    struct dap_net_trans *trans;
+    dap_net_trans_ctx_t *trans_ctx;
 } dap_stream_t;
 
 typedef struct dap_stream_info {
@@ -175,3 +176,4 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
+

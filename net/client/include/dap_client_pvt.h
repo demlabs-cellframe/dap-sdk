@@ -24,6 +24,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <pthread.h>
 #include "dap_client.h"
 #include "dap_stream.h"
 #include "dap_events_socket.h"
@@ -56,6 +57,7 @@ typedef struct dap_client_pvt {
     dap_client_stage_t stage;
     dap_client_stage_status_t stage_status;
     dap_client_error_t last_error;
+    pthread_rwlock_t stage_lock; // Protects stage, stage_status, last_error from concurrent access
 
     dap_client_callback_t stage_status_done_callback;
 
@@ -77,7 +79,7 @@ typedef struct dap_client_pvt {
     dap_timerfd_t *reconnect_timer;
     
     // Transport fallback support - track tried transports
-    dap_net_transport_type_t *tried_transports; // Already tried transport types (dynamic array)
+    dap_net_trans_type_t *tried_transports; // Already tried transport types (dynamic array)
     size_t tried_transport_count; // Number of tried transports
     size_t tried_transport_capacity; // Capacity of tried_transports array
 } dap_client_pvt_t;

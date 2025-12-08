@@ -59,7 +59,8 @@
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
-#include "dap_net_transport.h"
+#include "dap_net_trans.h"
+#include "dap_net_trans_ctx.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -275,7 +276,7 @@ static void s_stream_states_update(dap_stream_t *a_stream)
         log_it(L_ERROR, "s_stream_states_update: stream is NULL");
         return;
     }
-    if (!a_stream->esocket) {
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
         log_it(L_ERROR, "s_stream_states_update: stream->esocket is NULL");
         return;
     }
@@ -289,7 +290,7 @@ static void s_stream_states_update(dap_stream_t *a_stream)
         }
         ready_to_write|=a_stream->channel[i]->ready_to_write;
     }
-    dap_events_socket_set_writable_unsafe(a_stream->esocket,ready_to_write);
+    dap_events_socket_set_writable_unsafe(a_stream->trans_ctx->esocket,ready_to_write);
     
     // Transport-specific state updates should be handled by transport callbacks
     // No direct transport-specific logic here - all through dap_stream_transport API
@@ -314,8 +315,10 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     s_memstat[MEMSTAT$K_STM].alloc_nr += 1;
 #endif
 
-    l_stm->esocket = a_esocket;
-    l_stm->esocket_uuid = a_esocket->uuid;
+    l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_stm->trans_ctx)
+        l_stm->trans_ctx->esocket = a_esocket;
+    
     a_esocket->_inheritor = l_stm;
     dap_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
@@ -406,9 +409,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
 
-    debug_if(s_debug, L_DEBUG, "s_stream_new: setting esocket and esocket_uuid");
-    l_ret->esocket = a_http_client->esocket;
-    l_ret->esocket_uuid = a_http_client->esocket->uuid;
+    debug_if(s_debug, L_DEBUG, "s_stream_new: setting esocket");
+    l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_ret->trans_ctx)
+        l_ret->trans_ctx->esocket = a_http_client->esocket;
     debug_if(s_debug, L_DEBUG, "s_stream_new: getting stream_worker");
     debug_if(s_debug, L_DEBUG, "s_stream_new: worker=%p, worker->_inheritor=%p", 
            (void*)a_http_client->esocket->worker,
@@ -425,10 +429,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     
     debug_if(s_debug, L_DEBUG, "s_stream_new: assigning HTTP transport");
     // Assign HTTP transport for this stream
-    dap_net_transport_t *l_transport = dap_net_transport_find(DAP_NET_TRANSPORT_HTTP);
+    dap_net_trans_t *l_transport = dap_net_trans_find(DAP_NET_TRANS_HTTP);
     debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
-        l_ret->stream_transport = l_transport;
+        l_ret->trans = l_transport;
         debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
@@ -449,16 +453,24 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         return NULL;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: copying esocket uuid");
-    *l_es_uuid = l_ret->esocket->uuid;
-    debug_if(s_debug, L_DEBUG, "s_stream_new: starting keepalive timer");
-    l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->worker,
-                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                          (dap_timerfd_callback_t)s_callback_server_keepalive,
-                                                          l_es_uuid);
-    debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
-    debug_if(s_debug, L_DEBUG, "s_stream_new: setting callbacks");
-    l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
-    l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    if (l_ret->trans_ctx && l_ret->trans_ctx->esocket) {
+        *l_es_uuid = l_ret->trans_ctx->esocket->uuid;
+        debug_if(s_debug, L_DEBUG, "s_stream_new: starting keepalive timer");
+        l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->trans_ctx->esocket->worker,
+                                                              STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                              (dap_timerfd_callback_t)s_callback_server_keepalive,
+                                                              l_es_uuid);
+        
+        if (!l_ret->keepalive_timer) {
+            log_it(L_ERROR, "Failed to start keepalive timer");
+            DAP_DELETE(l_es_uuid);
+        }
+        
+        debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
+        debug_if(s_debug, L_DEBUG, "s_stream_new: setting callbacks");
+        l_ret->trans_ctx->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
+        l_ret->trans_ctx->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    }
     debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
     debug_if(s_debug, L_DEBUG, "s_stream_new: setting http_client->_inheritor");
     a_http_client->_inheritor = l_ret;
@@ -491,11 +503,13 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
-    l_ret->esocket = a_esocket;
-    l_ret->esocket_uuid = a_esocket->uuid;
+    l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_ret->trans_ctx)
+        l_ret->trans_ctx->esocket = a_esocket;
+
     l_ret->is_client_to_uplink = true;
-    l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
-    l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    l_ret->trans_ctx->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
+    l_ret->trans_ctx->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     if (a_addr)
         l_ret->node = *a_addr;
     l_ret->authorized = a_authorized;
@@ -513,7 +527,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         return;
     }
     s_stream_delete_from_list(a_stream);
-    a_stream->esocket_uuid = 0;
+    // a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
@@ -529,14 +543,16 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id);
     }
 
-    if (a_stream->esocket) {
-        dap_events_socket_t *l_esocket = a_stream->esocket;
-        a_stream->esocket = NULL;  // Prevent recursive calls
+    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
+        dap_events_socket_t *l_esocket = a_stream->trans_ctx->esocket;
+        a_stream->trans_ctx->esocket = NULL;  // Prevent recursive calls
         
         l_esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
         l_esocket->_inheritor = NULL;
         dap_events_socket_remove_and_delete_unsafe(l_esocket, false);  // Immediate deletion for both platforms
     }
+    DAP_DELETE(a_stream->trans_ctx);
+    a_stream->trans_ctx = NULL;
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
@@ -558,7 +574,8 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     assert (a_esocket);
 
     dap_stream_t *l_stm = DAP_STREAM(a_esocket);
-    l_stm->esocket = NULL;
+    if (l_stm->trans_ctx)
+        l_stm->trans_ctx->esocket = NULL;
     dap_stream_delete_unsafe(l_stm);
     a_esocket->_inheritor = NULL; // To prevent double free
 }
@@ -603,7 +620,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                         return;
                     }
                     debug_if(s_debug, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)", 
-                           (void*)l_stream, (void*)l_stream->esocket, (void*)l_stream->stream_worker);
+                           (void*)l_stream, (void*)(l_stream->trans_ctx ? l_stream->trans_ctx->esocket : NULL), (void*)l_stream->stream_worker);
                     l_stream->session = l_ss;
                     debug_if(s_debug, L_DEBUG, "Session assigned to stream");
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
@@ -626,7 +643,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     a_http_client->reply_status_code = Http_Status_OK;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     debug_if(s_debug, L_DEBUG, "Calling s_stream_states_update for stream %p (esocket=%p, channel_count=%zu)", 
-                           (void*)l_stream, (void*)l_stream->esocket, l_stream->channel_count);
+                           (void*)l_stream, (void*)(l_stream->trans_ctx ? l_stream->trans_ctx->esocket : NULL), l_stream->channel_count);
                     s_stream_states_update(l_stream);
                     debug_if(s_debug, L_DEBUG, "s_stream_states_update completed successfully");
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
@@ -804,7 +821,8 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     dap_stream_t *l_stm = DAP_STREAM(a_http_client);
     if (!l_stm)
         return;
-    l_stm->esocket = NULL;
+    if (l_stm->trans_ctx)
+        l_stm->trans_ctx->esocket = NULL;
     dap_stream_delete_unsafe(l_stm);
     a_http_client->_inheritor = NULL; // To prevent double free
 }
@@ -816,8 +834,15 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
-    dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
-    byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
+    if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket)
+        return 0;
+        
+    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    
+    if (!l_es->buf_in)
+        return 0;
+        
+    byte_t *l_pos = l_es->buf_in, *l_end = l_pos + l_es->buf_in_size;
     size_t l_shift = 0, l_processed_size = 0;
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
         if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
@@ -838,7 +863,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
             ++l_pos;
     }
     debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
-              l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
+              l_processed_size, (size_t)(l_end - l_es->buf_in) );
     return l_processed_size;
 }
 
@@ -962,7 +987,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
         dap_stream_srv_pkt_t *l_srv_pkt = (dap_stream_srv_pkt_t *)a_pkt->data;
         uint32_t l_session_id = l_srv_pkt->session_id;
-        s_check_session(l_session_id, a_stream->esocket);
+        if (a_stream->trans_ctx)
+            s_check_session(l_session_id, a_stream->trans_ctx->esocket);
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
         debug_if(s_debug, L_DEBUG, "Keep alive check recieved");
@@ -970,7 +996,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             .type = STREAM_PKT_TYPE_ALIVE
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
-        dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
+        if (a_stream->trans_ctx)
+            dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
             dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
@@ -1182,7 +1209,8 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     if (l_auth_stream) {
         if (a_worker)
             *a_worker = l_auth_stream->stream_worker->worker;
-        l_ret = l_auth_stream->esocket_uuid;
+        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket)
+            l_ret = l_auth_stream->trans_ctx->esocket->uuid;
     } else if (a_worker)
         *a_worker = NULL;
     pthread_rwlock_unlock(&s_streams_lock);
@@ -1210,7 +1238,8 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
             return NULL;
         }
         l_ret_item->worker = l_stream->stream_worker->worker;
-        l_ret_item->uuid = l_stream->esocket_uuid;
+        if (l_stream->trans_ctx && l_stream->trans_ctx->esocket)
+            l_ret_item->uuid = l_stream->trans_ctx->esocket->uuid;
         l_ret = dap_list_append(l_ret, l_ret_item);
     }
     pthread_rwlock_unlock(&s_streams_lock);
@@ -1260,8 +1289,10 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
 static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_info)
 {
     a_out_info->node_addr = a_stream->node;
-    a_out_info->remote_addr_str = dap_strdup_printf("%-*s", INET_ADDRSTRLEN - 1, a_stream->esocket->remote_addr_str);
-    a_out_info->remote_port = a_stream->esocket->remote_port;
+    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
+        a_out_info->remote_addr_str = dap_strdup_printf("%-*s", INET_ADDRSTRLEN - 1, a_stream->trans_ctx->esocket->remote_addr_str);
+        a_out_info->remote_port = a_stream->trans_ctx->esocket->remote_port;
+    }
     a_out_info->channels = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, a_stream->channel_count + 1, a_out_info->remote_addr_str);
     for (size_t i = 0; i < a_stream->channel_count; i++)
         a_out_info->channels[i] = a_stream->channel[i]->proc->id;

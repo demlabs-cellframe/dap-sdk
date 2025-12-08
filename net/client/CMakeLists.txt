@@ -14,7 +14,7 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_CLIENT_SOURCES}
 # Link dependencies as INTERFACE (propagates includes, but doesn't link yet)
 # Use dap_link_libraries for automatic include propagation with cycle detection
 dap_link_libraries(${PROJECT_NAME} INTERFACE 
-    dap_core dap_crypto dap_io dap_enc_server dap_stream dap_session dap_json-c dap_http_common dap_net_transport)
+    dap_core dap_crypto dap_io dap_enc_server dap_stream dap_session dap_json-c dap_http_common dap_net_trans)
 if(DAPSDK_MODULES MATCHES "ssl-support")
     target_link_libraries(${PROJECT_NAME} INTERFACE wolfssl)
 endif()
