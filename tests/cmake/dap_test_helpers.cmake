@@ -78,16 +78,29 @@ function(dap_test_link_libraries TARGET_NAME)
         message(FATAL_ERROR "dap_test_link_libraries: No modules found in DAP_INTERNAL_MODULES")
     endif()
     
-    # Link all SDK modules as STATIC libraries ONLY
-    # This is REQUIRED for --wrap to work correctly with mocking
-    # Object files added via target_sources or target_link_libraries do NOT work with --wrap
-    # Use ${MODULE}_static which are created from object libraries in main CMakeLists.txt
+    # Remove duplicates from SDK_MODULES (it may contain duplicates)
+    list(REMOVE_DUPLICATES SDK_MODULES)
+    
+    # Link all SDK modules as OBJECT libraries
+    # OBJECT libraries work with --wrap for mocking
+    # We link them directly using $<TARGET_OBJECTS:module>
     foreach(MODULE ${SDK_MODULES})
-        # ONLY use static version - fail if it doesn't exist
-        if(TARGET ${MODULE}_static)
-            target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+        if(TARGET ${MODULE})
+            get_target_property(MODULE_TYPE ${MODULE} TYPE)
+            if(MODULE_TYPE STREQUAL "OBJECT_LIBRARY")
+                # Link OBJECT library directly - this works with --wrap
+                target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MODULE}>)
+                # Also link dependencies transitively
+                target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE})
+            elseif(TARGET ${MODULE}_static)
+                # Fallback: try static library if it exists
+                target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+            else
+                # Try regular library
+                target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE})
+            endif()
         else()
-            message(WARNING "dap_test_link_libraries: Static library ${MODULE}_static not found, skipping ${MODULE}")
+            message(WARNING "dap_test_link_libraries: Target ${MODULE} not found, skipping")
         endif()
     endforeach()
     
@@ -97,7 +110,7 @@ function(dap_test_link_libraries TARGET_NAME)
     endif()
     
     # Note: External libraries (sqlite3, json-c, ssl, etc.) are linked transitively
-    # through INTERFACE_LINK_LIBRARIES of static library modules
+    # through INTERFACE_LINK_LIBRARIES of library modules
 endfunction()
 
 # =========================================

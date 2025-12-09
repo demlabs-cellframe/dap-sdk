@@ -44,10 +44,12 @@ elseif (LINUX OR ANDROID)
     target_include_directories(${PROJECT_NAME} INTERFACE ./linux)
 endif()
 
-if (${BUILD_DAP_IO_TESTS} MATCHES ON)
-    enable_testing()
-    add_subdirectory(test)
-endif()
+# Tests moved to tests/integration/io/ and tests/unit/io/
+# Use BUILD_DAP_SDK_TESTS to build all tests
+# if (${BUILD_DAP_IO_TESTS} MATCHES ON)
+#     enable_testing()
+#     add_subdirectory(test)
+# endif()
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_IO_HEADERS}")

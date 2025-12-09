@@ -7,7 +7,7 @@ set -e
 # Initialize paths
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAP_SDK_DIR="$(cd "$TEST_DIR/../../.." && pwd)"
-TEST_FRAMEWORK_DIR="${DAP_SDK_DIR}/test-framework"
+TEST_FRAMEWORK_DIR="${DAP_SDK_DIR}/modules/tests"
 MOCKS_DIR="${TEST_FRAMEWORK_DIR}/mocks"
 DAP_TPL_DIR="${TEST_FRAMEWORK_DIR}/dap_tpl"
 

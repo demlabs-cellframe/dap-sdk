@@ -1,6 +1,6 @@
 # Prerequisites
 build*/*
-debug/*
+debug*/*
 crypto/XKCP/Makefile
 .devcontainer/*
 cmake-build-*/
@@ -14,7 +14,9 @@ test/build
 *.ko
 *.obj
 *.elf
-
+.context
+slc
+.cursorrules
 # Linker output
 *.ilk
 *.map

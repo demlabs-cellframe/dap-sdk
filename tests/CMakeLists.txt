@@ -153,6 +153,47 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_mock.c)
     register_dap_test(test_unit_dap_test_mock "unit;test")
 endif()
 
+# IO module unit tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_context.c)
+    add_dap_test(test_unit_io_dap_context unit/io/test_dap_context.c)
+    register_dap_test(test_unit_io_dap_context "unit;io;context")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_events.c)
+    add_dap_test(test_unit_io_dap_events unit/io/test_dap_events.c)
+    register_dap_test(test_unit_io_dap_events "unit;io;events")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_events_socket.c)
+    add_dap_test(test_unit_io_dap_events_socket unit/io/test_dap_events_socket.c)
+    register_dap_test(test_unit_io_dap_events_socket "unit;io;events_socket")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_net.c)
+    add_dap_test(test_unit_io_dap_net unit/io/test_dap_net.c)
+    register_dap_test(test_unit_io_dap_net "unit;io;net")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_proc_thread.c)
+    add_dap_test(test_unit_io_dap_proc_thread unit/io/test_dap_proc_thread.c)
+    register_dap_test(test_unit_io_dap_proc_thread "unit;io;proc_thread")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_server.c)
+    add_dap_test(test_unit_io_dap_server unit/io/test_dap_server.c)
+    register_dap_test(test_unit_io_dap_server "unit;io;server")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_worker.c)
+    add_dap_test(test_unit_io_dap_worker unit/io/test_dap_worker.c)
+    register_dap_test(test_unit_io_dap_worker "unit;io;worker")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/io/test_dap_timerfd.c)
+    add_dap_test(test_unit_io_dap_timerfd unit/io/test_dap_timerfd.c)
+    register_dap_test(test_unit_io_dap_timerfd "unit;io;timerfd")
+endif()
+
 # Net module unit tests (link_manager hot list)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/test_link_manager_hot_list.c)
     add_dap_test(test_unit_net_link_manager_hot_list unit/net/test_link_manager_hot_list.c)
@@ -166,6 +207,21 @@ message("[+] Configuring Integration Tests")
 #    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
 #    register_dap_test(test_integration_crypto_network "integration;crypto;network")
 #endif()
+
+# IO module integration tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/io/test_network_monitor.c)
+    add_dap_test(test_integration_io_network_monitor integration/io/test_network_monitor.c)
+    register_dap_test(test_integration_io_network_monitor "integration;io;network;linux")
+    # Network monitor requires root/sudo
+    set_tests_properties(test_integration_io_network_monitor PROPERTIES
+        SKIP_REGULAR_EXPRESSION "Permission denied|Operation not permitted"
+    )
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/io/test_traffic_track.c)
+    add_dap_test(test_integration_io_traffic_track integration/io/test_traffic_track.c)
+    register_dap_test(test_integration_io_traffic_track "integration;io;traffic")
+endif()
 
 # Build E2E Tests
 message("[+] Configuring E2E Tests")
