@@ -22,6 +22,11 @@ static void s_context_destructor(UNUSED_ARG void *a_context) {
 //{
 //    _ecdsa_type = type;
 //}
+// Public setter is required by python-dap wrappers; restore the symbol.
+void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
+{
+    _ecdsa_type = type;
+}
 
 static ecdsa_context_t *s_context_create() 
 {

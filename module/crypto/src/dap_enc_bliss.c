@@ -26,6 +26,12 @@ void dap_enc_sig_bliss_key_new(dap_enc_key_t *a_key) {
     a_key->sign_verify = dap_enc_sig_bliss_verify_sign;
 }
 
+size_t dap_enc_sig_bliss_key_pub_output_size(UNUSED_ARG dap_enc_key_t *l_key)
+{
+    (void)l_key;
+    return sizeof(bliss_public_key_t);
+}
+
 /**
  * @brief dap_enc_sig_bliss_key_pub_output
  * @param l_key

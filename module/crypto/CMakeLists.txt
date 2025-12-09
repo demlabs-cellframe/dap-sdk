@@ -147,6 +147,8 @@ if (BUILD_WITH_SHIPOVNIK)
         src/sig_shipovnik/*.c
         src/sig_shipovnik/streebog/*.c
     )
+    # Exclude shipovnik's bundled randombytes to avoid duplicate symbol with dap_rand.c
+    list (FILTER SHIPOVNIK_SRC EXCLUDE REGEX ".*/randombytes\\.c$")
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${SHIPOVNIK_SRC})
     add_definitions("-DDAP_SHIPOVNIK")
 else()

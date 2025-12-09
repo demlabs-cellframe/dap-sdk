@@ -21,6 +21,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "dap_common.h"
 
 #include "dap_enc_iaes.h"
@@ -1112,6 +1113,35 @@ dap_enc_key_t *dap_enc_key_dup(dap_enc_key_t *a_key)
 }
 
 /**
+ * @brief Generate public key object from a private key.
+ *        Utility stub for bindings: duplicates key and strips private part.
+ */
+dap_enc_key_t *dap_enc_gen_pub_key_from_priv(dap_enc_key_t *a_key, void **a_priv_key, size_t *a_alice_msg_len)
+{
+    dap_return_val_if_pass(!a_key, NULL);
+
+    if (a_priv_key && !*a_priv_key) {
+        *a_priv_key = a_key->priv_key_data;
+    }
+    if (a_alice_msg_len) {
+        *a_alice_msg_len = a_key->priv_key_data_size;
+    }
+
+    dap_enc_key_t *l_pub = dap_enc_key_dup(a_key);
+    if (!l_pub) {
+        return NULL;
+    }
+
+    // Strip private component to return public-only handle
+    if (l_pub->priv_key_data) {
+        DAP_DEL_Z(l_pub->priv_key_data);
+        l_pub->priv_key_data = NULL;
+        l_pub->priv_key_data_size = 0;
+    }
+    return l_pub;
+}
+
+/**
  * @brief creating new enc_key
  * @param a_key_type to creating key
  * @return pointer to new key or NULL
@@ -1300,15 +1330,28 @@ size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_bu
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
 {
-    return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST && *s_callbacks[a_key_type].name
-        ? s_callbacks[a_key_type].name
-        : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
+    if (a_key_type < DAP_ENC_KEY_TYPE_NULL || a_key_type > DAP_ENC_KEY_TYPE_LAST) {
+        log_it(L_WARNING, "Key type %d is out of range", a_key_type);
+        return "undefined";
+    }
+
+    const char *name = s_callbacks[a_key_type].name;
+    if (name && *name) {
+        return name;
+    }
+
+    log_it(L_WARNING, "Name was not set for key type %d", a_key_type);
+    return "undefined";
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){ // TODO: use uthash
+    if (!a_name) {
+        return DAP_ENC_KEY_TYPE_INVALID;
+    }
+
     for(dap_enc_key_type_t i = 0; i <= DAP_ENC_KEY_TYPE_LAST; i++){
-        const char * l_current_key_name = dap_enc_get_type_name(i);
-        if(l_current_key_name && !strcmp(a_name, l_current_key_name))
+        const char * l_current_key_name = s_callbacks[i].name;
+        if(l_current_key_name && *l_current_key_name && !strcasecmp(a_name, l_current_key_name))
             return i;
     }
     log_it(L_WARNING, "No key type with name %s", a_name);
