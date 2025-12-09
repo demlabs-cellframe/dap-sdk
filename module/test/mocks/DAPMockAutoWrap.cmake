@@ -14,7 +14,15 @@
 # For static libraries, use dap_mock_autowrap_with_static to wrap with --whole-archive
 
 # Save module directory for script paths
-get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+# Use CACHE INTERNAL to persist across multiple include() calls
+get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY CACHE)
+set(DAP_MOCK_AUTOWRAP_MODULE_DIR "${DAP_MOCK_AUTOWRAP_MODULE_DIR}" CACHE INTERNAL "Directory containing DAPMockAutoWrap.cmake")
+
+# Debug: print module directory
+if(NOT DAP_MOCK_AUTOWRAP_MODULE_DIR)
+    message(FATAL_ERROR "DAPMockAutoWrap: Failed to determine module directory from ${CMAKE_CURRENT_LIST_FILE}")
+endif()
+#message(STATUS "DAPMockAutoWrap module directory: ${DAP_MOCK_AUTOWRAP_MODULE_DIR}")
 
 # Detect script executor (bash on Unix, PowerShell on Windows)
 # Note: PowerShell version (ps1) is basic and may not support all features

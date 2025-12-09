@@ -41,7 +41,6 @@ include(cmake/DapLibrary.cmake)
 
 # Options
 option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
-option(BUILD_EXAMPLES "Build examples" OFF) # we don't need them by default
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
@@ -206,13 +205,11 @@ if(INSTALL_DAP_SDK)
         INCLUDE_PREFIX "dap-sdk"
         PKGCONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk.pc.in"
         README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-        EXAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/examples"
     )
 
     message(STATUS "[Install] Component-based installation configured")
     message(STATUS "[Install] - Runtime: libdap-sdk.so → ${CMAKE_INSTALL_PREFIX}/lib")
     message(STATUS "[Install] - Development: headers → ${CMAKE_INSTALL_PREFIX}/include/dap-sdk")
-    message(STATUS "[Install] - Documentation: examples → ${CMAKE_INSTALL_PREFIX}/share/doc/dap-sdk")
 
     # =========================================
     # CPACK CONFIGURATION (handled by PackageComponents.cmake)

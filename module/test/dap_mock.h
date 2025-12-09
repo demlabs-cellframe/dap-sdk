@@ -327,7 +327,7 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 
 // Variant 3: With config struct + custom callback
 #define DAP_MOCK_DECLARE_3(func_name, config, callback_body) \
-    static void* dap_mock_callback_##func_name(void **a_args, int a_arg_count, void *a_user_data) callback_body \
+    static void* dap_mock_callback_##func_name(void **a_args __attribute__((unused)), int a_arg_count __attribute__((unused)), void *a_user_data __attribute__((unused))) callback_body \
     static dap_mock_function_state_t *g_mock_##func_name = NULL; \
     static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
     static void dap_mock_auto_init_##func_name(void) { \

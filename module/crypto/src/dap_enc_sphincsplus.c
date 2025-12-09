@@ -401,11 +401,12 @@ inline uint64_t dap_enc_sig_sphincsplus_calc_signature_unserialized_size()
 
 
 #ifdef DAP_CRYPTO_TESTS
-inline void dap_enc_sig_sphincsplus_set_default_config(sphincsplus_config_t  a_new_config) 
+// Export these functions for testing (without inline to allow external linkage)
+void dap_enc_sig_sphincsplus_set_default_config(sphincsplus_config_t  a_new_config) 
 {
     s_default_config = a_new_config;
 }
-inline int dap_enc_sig_sphincsplus_get_configs_count() 
+int dap_enc_sig_sphincsplus_get_configs_count() 
 {
     return SPHINCSPLUS_CONFIG_MAX_ARG - 1;
 }

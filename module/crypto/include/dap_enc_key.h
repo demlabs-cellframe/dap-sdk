@@ -109,7 +109,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_SIG_DILITHIUM = 21,
 
-    DAP_ENC_KEY_TYPE_SIG_RINGCT20 = 22,//ring signature for confidentional transaction
+    // DAP_ENC_KEY_TYPE_SIG_RINGCT20 = 22, // REMOVED: ring signature for confidential transaction
 
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 

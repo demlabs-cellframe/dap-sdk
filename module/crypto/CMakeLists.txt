@@ -113,7 +113,6 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
-      src/ringct20/*.c
       src/falcon/codec.c
       src/falcon/common.c
       src/falcon/falcon.c
@@ -172,7 +171,6 @@ file( GLOB CRYPTO_HEADERS
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
-      src/ringct20/*.h
       src/falcon/*.h
       src/chipmunk/*.h
       src/hash/sha2-256/*.h
@@ -231,6 +229,12 @@ if ( DAP_PQLR)
     add_definitions("-DDAP_PQLR")
 endif()
 
+# Enable DAP_CRYPTO_TESTS define when BUILD_DAP_SDK_TESTS is ON
+# This must be BEFORE dap_add_library to affect compilation
+if(BUILD_DAP_SDK_TESTS)
+    add_definitions("-DDAP_CRYPTO_TESTS")
+    message(STATUS "[DAP Crypto] DAP_CRYPTO_TESTS enabled for testing")
+endif()
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
@@ -345,7 +349,7 @@ endif()
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
     add_subdirectory(test)
-    add_definitions("-DDAP_CRYPTO_TESTS")
+    # DAP_CRYPTO_TESTS already defined earlier (before dap_add_library)
 endif()
 
 if(INSTALL_DAP_SDK)

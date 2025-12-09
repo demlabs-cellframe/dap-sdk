@@ -33,6 +33,10 @@ endfunction()
 #   MODULE_LIST_VAR   - Variable name to append this module to (e.g., "DAP_INTERNAL_MODULES")
 #   sources...        - Source files
 #   HEADERS headers   - Header files (optional)
+#
+# IMPORTANT: When BUILD_DAP_SDK_TESTS is enabled, this also creates a STATIC library variant
+# named ${TARGET_NAME}_static which is required for linker --wrap mocking functionality.
+# The static library is created from the object library's object files.
 macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     cmake_parse_arguments(OBJ_LIB "" "" "HEADERS" ${ARGN})
     
@@ -58,6 +62,49 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     set(${MODULE_LIST_VAR} ${${MODULE_LIST_VAR}} CACHE INTERNAL "List of object modules")
     
     message(STATUS "[SDK] Module: ${TARGET_NAME} (OBJECT)")
+    
+    # =========================================
+    # CREATE STATIC LIBRARY FOR TESTING (UNIVERSAL)
+    # =========================================
+    # When tests are enabled, create a static library from the object library
+    # This is REQUIRED for linker --wrap to work correctly with mocking
+    # Object files alone do NOT work with --wrap, only static libraries do
+    #
+    # Universal approach: Check for any of these variables:
+    # - BUILD_TESTS (generic)
+    # - ENABLE_TESTING (CMake standard)
+    # - BUILD_DAP_SDK_TESTS (DAP SDK specific)
+    # - BUILD_<PROJECT>_TESTS (project-specific pattern)
+    if(BUILD_TESTS OR ENABLE_TESTING OR BUILD_DAP_SDK_TESTS OR BUILD_${PROJECT_NAME}_TESTS)
+        # Create static library from object files
+        add_library(${TARGET_NAME}_static STATIC $<TARGET_OBJECTS:${TARGET_NAME}>)
+        
+        # Copy all properties from object library to static library
+        get_target_property(OBJ_INCLUDES ${TARGET_NAME} INTERFACE_INCLUDE_DIRECTORIES)
+        if(OBJ_INCLUDES)
+            target_include_directories(${TARGET_NAME}_static INTERFACE ${OBJ_INCLUDES})
+        endif()
+        
+        # Copy link libraries (dependencies)
+        get_target_property(OBJ_LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+        if(OBJ_LINK_LIBS)
+            target_link_libraries(${TARGET_NAME}_static INTERFACE ${OBJ_LINK_LIBS})
+        endif()
+        
+        # Copy compile options
+        get_target_property(OBJ_COMPILE_OPTIONS ${TARGET_NAME} COMPILE_OPTIONS)
+        if(OBJ_COMPILE_OPTIONS)
+            target_compile_options(${TARGET_NAME}_static PRIVATE ${OBJ_COMPILE_OPTIONS})
+        endif()
+        
+        # Copy compile definitions
+        get_target_property(OBJ_COMPILE_DEFS ${TARGET_NAME} COMPILE_DEFINITIONS)
+        if(OBJ_COMPILE_DEFS)
+            target_compile_definitions(${TARGET_NAME}_static PRIVATE ${OBJ_COMPILE_DEFS})
+        endif()
+        
+        message(STATUS "[SDK] Module: ${TARGET_NAME}_static (STATIC for testing)")
+    endif()
 endmacro()
 
 # Helper macro to propagate include directories when linking OBJECT libraries

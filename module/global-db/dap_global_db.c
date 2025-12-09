@@ -36,6 +36,7 @@
 #include "dap_global_db_driver.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
+#include "dap_stream.h"
 
 #define LOG_TAG "dap_global_db"
 
@@ -172,6 +173,9 @@ int dap_global_db_init()
     // Debug config
     g_dap_global_db_debug_more = dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
 
+    if (s_dbi)
+        return 0;
+
     // Create and run its own context
     if (s_dbi == NULL) {
         s_dbi = DAP_NEW_Z(dap_global_db_instance_t);
@@ -252,7 +256,8 @@ void dap_global_db_instance_deinit()
     dap_return_if_fail(s_dbi)
     dap_list_free_full(s_dbi->blacklist, NULL);
     dap_list_free_full(s_dbi->whitelist, NULL);
-    DAP_DEL_MULTY(s_dbi->driver_name, s_dbi->storage_path, s_dbi);
+    DAP_DEL_MULTY(s_dbi->driver_name, s_dbi->storage_path);
+    DAP_DEL_Z(s_dbi);
 }
 
 inline dap_global_db_instance_t *dap_global_db_instance_get_default()
@@ -265,9 +270,9 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  */
 void dap_global_db_deinit() {
     dap_global_db_clean_deinit();
-    dap_global_db_instance_deinit();
-    dap_global_db_driver_deinit();
     dap_global_db_cluster_deinit();
+    dap_global_db_driver_deinit();
+    dap_global_db_instance_deinit();
 }
 
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
@@ -289,7 +294,7 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
 {
     a_obj->timestamp = a_new_timestamp;
-    DAP_DELETE(a_obj->sign);
+    DAP_DEL_Z(a_obj->sign);
     a_obj->crc = 0;
     a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
@@ -330,17 +335,19 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
 
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
+    dap_stream_node_addr_t l_signer_addr = {0};
     if (a_obj->sign) {
-        dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
+        l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
         l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
         l_signer_role = l_cluster->default_role;
     if (l_signer_role < DAP_GDB_MEMBER_ROLE_USER) {
+        char *l_signer_addr_str = dap_stream_node_addr_to_str_static(l_signer_addr);
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
-                                                        "with signer role %s with no write access to cluster",
+                                                        "with signer role %s with no write access to cluster. Signer addr: %s",
                                                             a_obj->group, a_obj->key,
-                                                            dap_global_db_cluster_role_str(l_signer_role));
+                                                            dap_global_db_cluster_role_str(l_signer_role), l_signer_addr_str);
         return -14;
     }
 

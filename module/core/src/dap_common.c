@@ -455,8 +455,10 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
  * @brief dap_common_deinit Deinitialise
  */
 void dap_common_deinit( ) {
-    if (s_log_file)
+    if (s_log_file) {
         fclose(s_log_file);
+        s_log_file = NULL;  // prevent double-close on repeated deinit or atexit
+    }
 }
 
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {

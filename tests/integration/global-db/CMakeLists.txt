@@ -3,8 +3,8 @@
 
 project(test_global_db)
 
-# Include DAP Mock Framework
-include(${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+# Include DAP Mock Framework (corrected path)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../module/test/mocks/DAPMockAutoWrap.cmake)
 # Include test helpers
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/dap_test_helpers.cmake)
 

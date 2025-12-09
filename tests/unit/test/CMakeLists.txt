@@ -2,8 +2,8 @@
 # Unit tests for the test framework itself
 cmake_minimum_required(VERSION 3.10)
 
-# Include DAP Mock AutoWrap helper
-include(${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+# Include DAP Mock AutoWrap helper (corrected path)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../module/test/mocks/DAPMockAutoWrap.cmake)
 
 # Include test helpers
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/dap_test_helpers.cmake)
