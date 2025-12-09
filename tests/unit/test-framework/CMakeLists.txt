@@ -11,10 +11,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/dap_test_helpers.cmake)
 # ============================================================================
 # Test 1: Async Framework Tests
 # ============================================================================
-project(test_async_framework)
+project(test_async)
 
 add_executable(${PROJECT_NAME}
-    test_async_framework.c
+    test_async.c
 )
 
 # Link all DAP SDK libraries using helper function
@@ -23,22 +23,22 @@ dap_test_link_libraries(${PROJECT_NAME})
 # Add all DAP SDK includes using helper function
 dap_test_add_includes(${PROJECT_NAME})
 
-add_test(NAME dap_async_framework
+add_test(NAME dap_async
     COMMAND ${PROJECT_NAME}
 )
 
-set_tests_properties(dap_async_framework PROPERTIES
+set_tests_properties(dap_async PROPERTIES
     TIMEOUT 60
-    LABELS "framework;unit"
+    LABELS "async;unit"
 )
 
 # ============================================================================
 # Test 2: Mock Framework Tests
 # ============================================================================
-project(test_mock_framework)
+project(test_mock)
 
 add_executable(${PROJECT_NAME}
-    test_mock_framework.c
+    test_mock.c
 )
 
 # Link all DAP SDK libraries using helper function
@@ -51,13 +51,13 @@ dap_test_add_includes(${PROJECT_NAME})
 # This generates linker --wrap flags for DAP_MOCK_DECLARE macros
 dap_mock_autowrap(${PROJECT_NAME})
 
-add_test(NAME dap_mock_framework
+add_test(NAME dap_mock
     COMMAND ${PROJECT_NAME}
 )
 
-set_tests_properties(dap_mock_framework PROPERTIES
+set_tests_properties(dap_mock PROPERTIES
         TIMEOUT 60
-        LABELS "framework;unit"
+        LABELS "mock;unit"
 )
 
 message(STATUS "Configured DAP SDK Test Framework self-tests")
