@@ -20,7 +20,12 @@
   "auto_load_files": [
     "code_templates.json",
     "coding_guidelines.json",
-    "project_standards.json"
+    "project_standards.json",
+    "modules/cf_ledger.json",
+    "modules/cf_chain.json",
+    "modules/cf_net.json",
+    "modules/cf_esbocs.json",
+    "modules/cf_dag.json"
   ],
   "technical_stack": {
     "languages": [
@@ -50,6 +55,6 @@
   "navigation_helpers": {
     "load_full_context": "./context/scripts/load_full_context.sh",
     "load_specific_module": "./context/scripts/load_module.sh <module_name>",
-    "available_modules": ["crypto", "core", "net", "other"]
+    "available_modules": ["crypto", "core", "net", "other", "cf_ledger", "cf_chain", "cf_net", "cf_esbocs", "cf_dag"]
   }
 }

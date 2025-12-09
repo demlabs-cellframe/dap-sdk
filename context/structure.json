@@ -12,7 +12,12 @@
     "crypto": "modules/crypto.json",
     "core": "modules/core.json", 
     "net": "modules/net.json",
-    "other": "modules/other.json"
+    "other": "modules/other.json",
+    "cf_ledger": "modules/cf_ledger.json",
+    "cf_chain": "modules/cf_chain.json",
+    "cf_net": "modules/cf_net.json",
+    "cf_esbocs": "modules/cf_esbocs.json",
+    "cf_dag": "modules/cf_dag.json"
   },
   "context_system": {
     "description": "Context management system for task tracking",
