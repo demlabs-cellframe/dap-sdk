@@ -107,6 +107,7 @@ DAP_MOCK_DECLARE(dap_enc_server_response_free);
 static dap_server_t s_mock_server = {0};
 static dap_net_trans_t s_mock_stream_trans = {0};
 static dap_stream_t s_mock_stream = {0};
+static dap_net_trans_ctx_t s_mock_trans_ctx;
 static dap_events_socket_t s_mock_events_socket = {0};
 
 // Wrapper for dap_server_new
@@ -720,6 +721,9 @@ static void test_11_stream_connect(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test connect operation
     l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
@@ -749,6 +753,9 @@ static void test_12_stream_read(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation
     char l_buffer[1024];
@@ -811,16 +818,11 @@ static void test_14_stream_handshake(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    dap_net_trans_ctx_t l_ctx = {.esocket = &s_mock_events_socket};
-    s_mock_stream.trans_ctx = &l_ctx;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for handshake
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
-    // Initialize trans private data and set esocket
-    // UDP handshake_init requires // l_priv->esocket (removed) to be set
-    dap_stream_trans_udp_private_t *l_priv = 
-        (dap_stream_trans_udp_private_t*)l_trans->_inheritor;
-    if (l_priv) {
-        // l_priv->esocket (removed) = &s_mock_events_socket;
-    }
+    // UDP handshake operations use trans_ctx->esocket
     
     // Test handshake_init operation
     dap_net_handshake_params_t l_params = {0};
@@ -860,6 +862,9 @@ static void test_15_stream_session(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};

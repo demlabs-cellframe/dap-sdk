@@ -105,6 +105,7 @@ DAP_MOCK_DECLARE(dap_enc_server_response_free);
 static dap_server_t s_mock_server = {0};
 static dap_net_trans_t s_mock_stream_trans = {0};
 static dap_stream_t s_mock_stream = {0};
+static dap_net_trans_ctx_t s_mock_trans_ctx;
 static dap_events_socket_t s_mock_events_socket = {0};
 
 // Wrapper for dap_server_new
@@ -658,6 +659,9 @@ static void test_10_stream_connect(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test connect operation
     l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 53, NULL);
@@ -687,6 +691,9 @@ static void test_11_stream_read(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation
     char l_buffer[1024];
@@ -788,6 +795,9 @@ static void test_14_stream_session(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};

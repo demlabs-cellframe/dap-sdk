@@ -105,6 +105,8 @@ static void s_session_callback(dap_stream_t *a_stream, uint32_t a_session_id, co
 // Mock instances for tests
 static dap_server_t s_mock_server = {0};
 static dap_stream_t s_mock_stream = {0};
+static dap_events_socket_t s_mock_events_socket = {0};
+static dap_net_trans_ctx_t s_mock_trans_ctx;
 
 // ============================================================================
 // Setup/Teardown Functions
@@ -449,6 +451,11 @@ static void test_10_stream_connect(void)
     
     // Setup mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+    // Set up mock esocket for read/write operations
+    // Check if we need esocket (read/write tests)
+    if (0) {} // Placeholder - will be replaced
     
     // Test connect operation
     l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
@@ -478,6 +485,9 @@ static void test_11_stream_read(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for read
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation (HTTP trans may return 0 for event-driven reading)
     char l_buffer[1024];
@@ -508,6 +518,9 @@ static void test_12_stream_write(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for write
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test write operation
     const char l_test_data[] = "test data";
@@ -540,7 +553,8 @@ static void test_13_stream_handshake(void)
     
     // Create mock stream with esocket and client ctx
     s_mock_stream.trans = l_trans;
-    dap_net_trans_ctx_t l_ctx = {.esocket = dap_trans_test_get_mock_esocket()}; s_mock_stream.trans_ctx = &l_ctx;
+    s_mock_trans_ctx.esocket = dap_trans_test_get_mock_esocket();
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();
     
     // Test handshake_init operation
@@ -587,7 +601,8 @@ static void test_14_stream_session(void)
     
     // Create mock stream with esocket and client ctx (required for session_create)
     s_mock_stream.trans = l_trans;
-    dap_net_trans_ctx_t l_ctx = {.esocket = dap_trans_test_get_mock_esocket()}; s_mock_stream.trans_ctx = &l_ctx;
+    s_mock_trans_ctx.esocket = dap_trans_test_get_mock_esocket();
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();
     
     // Test session_create operation
