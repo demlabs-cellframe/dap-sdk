@@ -52,9 +52,7 @@ extern "C" {
  * By default, passes through to real logging for visibility.
  * Can be customized in tests if needed.
  */
-DAP_MOCK_DECLARE_CUSTOM(log_it, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(void, log_it,
+DAP_MOCK_CUSTOM(void, log_it,
     PARAM(int, a_level),
     PARAM(const char *, a_tag),
     PARAM(const char *, a_fmt),
@@ -73,9 +71,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, log_it,
  * 
  * By default, passes through to real allocation.
  */
-DAP_MOCK_DECLARE_CUSTOM(DAP_NEW_Z_impl, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(void *, DAP_NEW_Z_impl,
+DAP_MOCK_CUSTOM(void *, DAP_NEW_Z_impl,
     PARAM(size_t, a_size)
 ) {
     return __real_DAP_NEW_Z_impl(a_size);
@@ -86,9 +82,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void *, DAP_NEW_Z_impl,
  * 
  * By default, passes through to real deallocation.
  */
-DAP_MOCK_DECLARE_CUSTOM(DAP_DELETE_impl, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(void, DAP_DELETE_impl,
+DAP_MOCK_CUSTOM(void, DAP_DELETE_impl,
     PARAM(void *, a_ptr)
 ) {
     __real_DAP_DELETE_impl(a_ptr);
@@ -103,9 +97,7 @@ DAP_MOCK_WRAPPER_CUSTOM(void, DAP_DELETE_impl,
  * 
  * By default, returns the default value (pass-through behavior).
  */
-DAP_MOCK_DECLARE_CUSTOM(dap_config_get_item_bool_default, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(bool, dap_config_get_item_bool_default,
+DAP_MOCK_CUSTOM(bool, dap_config_get_item_bool_default,
     PARAM(const dap_config_t *, a_config),
     PARAM(const char *, a_section),
     PARAM(const char *, a_key),
@@ -120,9 +112,7 @@ DAP_MOCK_WRAPPER_CUSTOM(bool, dap_config_get_item_bool_default,
  * 
  * By default, returns the default value.
  */
-DAP_MOCK_DECLARE_CUSTOM(dap_config_get_item_str_default, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(const char *, dap_config_get_item_str_default,
+DAP_MOCK_CUSTOM(const char *, dap_config_get_item_str_default,
     PARAM(const dap_config_t *, a_config),
     PARAM(const char *, a_section),
     PARAM(const char *, a_key),
@@ -136,9 +126,7 @@ DAP_MOCK_WRAPPER_CUSTOM(const char *, dap_config_get_item_str_default,
  * 
  * By default, returns the default value.
  */
-DAP_MOCK_DECLARE_CUSTOM(dap_config_get_item_int32_default, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(int32_t, dap_config_get_item_int32_default,
+DAP_MOCK_CUSTOM(int32_t, dap_config_get_item_int32_default,
     PARAM(const dap_config_t *, a_config),
     PARAM(const char *, a_section),
     PARAM(const char *, a_key),
@@ -152,9 +140,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int32_t, dap_config_get_item_int32_default,
  * 
  * By default, returns the default value.
  */
-DAP_MOCK_DECLARE_CUSTOM(dap_config_get_item_uint32_default, {.enabled = false});
-
-DAP_MOCK_WRAPPER_CUSTOM(uint32_t, dap_config_get_item_uint32_default,
+DAP_MOCK_CUSTOM(uint32_t, dap_config_get_item_uint32_default,
     PARAM(const dap_config_t *, a_config),
     PARAM(const char *, a_section),
     PARAM(const char *, a_key),
@@ -163,41 +149,6 @@ DAP_MOCK_WRAPPER_CUSTOM(uint32_t, dap_config_get_item_uint32_default,
     return a_default;
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * @brief Enable all common mocks
- * 
- * Call this at test suite setup if you want all common functions mocked.
- */
-static inline void dap_common_mocks_enable_all(void)
-{
-    DAP_MOCK_SET_ENABLED(log_it, true);
-    DAP_MOCK_SET_ENABLED(DAP_NEW_Z_impl, true);
-    DAP_MOCK_SET_ENABLED(DAP_DELETE_impl, true);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_bool_default, true);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_str_default, true);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_int32_default, true);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_uint32_default, true);
-}
-
-/**
- * @brief Disable all common mocks
- * 
- * Call this at test suite teardown to restore real implementations.
- */
-static inline void dap_common_mocks_disable_all(void)
-{
-    DAP_MOCK_SET_ENABLED(log_it, false);
-    DAP_MOCK_SET_ENABLED(DAP_NEW_Z_impl, false);
-    DAP_MOCK_SET_ENABLED(DAP_DELETE_impl, false);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_bool_default, false);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_str_default, false);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_int32_default, false);
-    DAP_MOCK_SET_ENABLED(dap_config_get_item_uint32_default, false);
-}
 
 #ifdef __cplusplus
 }

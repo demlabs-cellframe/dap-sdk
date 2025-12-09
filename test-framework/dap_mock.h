@@ -276,37 +276,57 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
 // MOCK DECLARATION MACROS
 // ===========================================================================
 
-// Macro overloading helper - counts arguments  
-#define DAP_MOCK_GET_MACRO(_1, _2, _3, NAME, ...) NAME
+// Macro overloading helper - counts arguments (supports up to 4 args)
+#define DAP_MOCK_GET_MACRO(_1, _2, _3, _4, NAME, ...) NAME
 
 /**
  * Universal mock declaration macro with structure-based configuration:
  * 
  * 1. DAP_MOCK_DECLARE(func_name)
  *    - Default: enabled=true, return=0, no delay
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
  * 
- * 2. DAP_MOCK_DECLARE(func_name, { .return_value.l = 0xDEAD })
+ * 2. DAP_MOCK_DECLARE(func_name, return_value)
+ *    - Simple return value (intptr_t cast) - convenience syntax
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
+ *    - Example: DAP_MOCK_DECLARE(dap_net_tun_create, 0xABCDEF00)
+ * 
+ * 3. DAP_MOCK_DECLARE(func_name, { .return_value.l = 0xDEAD })
  *    - Config struct with designated initializers
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
  * 
- * 3. DAP_MOCK_DECLARE(func_name, { .enabled = false }, callback_body)
+ * 4. DAP_MOCK_DECLARE(func_name, { .enabled = false }, callback_body)
  *    - Config struct + custom callback body
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
  * 
  * Examples:
  *   DAP_MOCK_DECLARE(dap_stream_write);
+ *   DAP_MOCK_DECLARE(dap_net_tun_create, 0xABCDEF00);
  *   DAP_MOCK_DECLARE(dap_net_tun_create, { .return_value.l = 0xABCDEF00 });
  *   DAP_MOCK_DECLARE(dap_hash, { .return_value.i = 0 }, { 
  *       // Custom callback code
  *       return (void*)(intptr_t)123;
  *   });
+ * 
+ * Note: For simple return values, use DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value)
+ *       if DAP_MOCK_DECLARE(func_name, return_value) doesn't work due to macro limitations
  */
 #define DAP_MOCK_DECLARE(...) \
-    DAP_MOCK_GET_MACRO(__VA_ARGS__, DAP_MOCK_DECLARE_3, DAP_MOCK_DECLARE_2, DAP_MOCK_DECLARE_1)(__VA_ARGS__)
+    DAP_MOCK_GET_MACRO(__VA_ARGS__, DAP_MOCK_DECLARE_4, DAP_MOCK_DECLARE_3, DAP_MOCK_DECLARE_2, DAP_MOCK_DECLARE_1)(__VA_ARGS__)
+
+/**
+ * Convenience macro for simple return value
+ * Equivalent to: DAP_MOCK_DECLARE(func_name, { .return_value.ptr = (void*)(intptr_t)(return_value) })
+ */
+#define DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value) \
+    DAP_MOCK_DECLARE_2(func_name, ((dap_mock_config_t){.enabled=true, .return_value={.ptr=(void*)(intptr_t)(return_value)}, .delay={.type=DAP_MOCK_DELAY_NONE}, .async=false, .call_original_before=false, .call_original_after=false}))
 
 // Variant 1: Simple stub (func_name only) - default config
 #define DAP_MOCK_DECLARE_1(func_name) \
     DAP_MOCK_DECLARE_2(func_name, DAP_MOCK_CONFIG_DEFAULT)
 
 // Variant 2: With config struct
+// Also generates auto-wrapper macro that will be expanded by generated code
 #define DAP_MOCK_DECLARE_2(func_name, config) \
     static dap_mock_function_state_t *g_mock_##func_name = NULL; \
     static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
@@ -387,9 +407,127 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
         } \
     }
 
+/**
+ * G_MOCK - Convenience macro to access mock state variable
+ * 
+ * Usage inside DAP_MOCK_CUSTOM wrapper:
+ *   DAP_MOCK_CUSTOM(return_type, func_name, ...) {
+ *       if (G_MOCK && G_MOCK->enabled) {
+ *           return (return_type)(intptr_t)G_MOCK->return_value.ptr;
+ *       }
+ *   }
+ * 
+ * This macro expands to the appropriate g_mock_##func_name variable.
+ * It's automatically defined as a local pointer variable at the start of the wrapper.
+ */
+#define G_MOCK(func_name) g_mock_##func_name
+
+/**
+ * DAP_MOCK_CUSTOM - Unified macro for custom mocks
+ * 
+ * Combines mock declaration and custom wrapper implementation in one macro.
+ * No need to write DAP_MOCK_DECLARE_CUSTOM separately!
+ * 
+ * Usage:
+ *   DAP_MOCK_CUSTOM(return_type, func_name, PARAM(type1, name1), PARAM(type2, name2), ...) {
+ *       // Local variable G_MOCK is automatically available, pointing to g_mock_func_name
+ *       // You can use G_MOCK directly without arguments inside the wrapper body
+ *       
+ *       // Custom mock logic here
+ *       if (G_MOCK && G_MOCK->enabled) {
+ *           // ... custom logic ...
+ *           return custom_value;
+ *       }
+ *       return __real_func_name(name1, name2, ...);
+ *   }
+ * 
+ * With optional config:
+ *   DAP_MOCK_CUSTOM(return_type, func_name, { .delay = {...} }, PARAM(type1, name1), ...) {
+ *       // Custom mock logic
+ *   }
+ * 
+ * Examples:
+ *   DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,
+ *       PARAM(dap_enc_key_t*, a_key),
+ *       PARAM(size_t, a_buf_in_size),
+ *       PARAM(dap_enc_data_type_t, type)
+ *   ) {
+ *       size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);
+ *       return (size_t)(intptr_t)(G_MOCK->return_value.ptr ?: (void*)(intptr_t)l_result);
+ *   }
+ */
+#define DAP_MOCK_CUSTOM(return_type, func_name, ...) \
+    DAP_MOCK_DECLARE_CUSTOM(func_name, DAP_MOCK_CONFIG_DEFAULT); \
+    DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ##__VA_ARGS__) \
+    { \
+        dap_mock_function_state_t *G_MOCK = g_mock_##func_name;
+
 // ===========================================================================
 // WRAPPER MACROS FOR LINKER (v2.1 - Universal Passthrough Wrappers)
 // ===========================================================================
+
+/**
+ * Simple mock declaration macro with optional return value
+ * 
+ * Usage:
+ *   DAP_MOCK(func_name)                    // Default: enabled=true, return=0
+ *   DAP_MOCK(func_name, return_value)      // Simple return value (intptr_t cast)
+ * 
+ * Examples:
+ *   DAP_MOCK(dap_stream_write);
+ *   DAP_MOCK(dap_net_tun_create, 0xABCDEF00);
+ * 
+ * Note: Wrappers are automatically generated by the mock framework.
+ *       No need to write DAP_MOCK_WRAPPER_DEFAULT manually!
+ */
+#define DAP_MOCK(...) \
+    DAP_MOCK_GET_MACRO(__VA_ARGS__, DAP_MOCK_2, DAP_MOCK_1, DAP_MOCK_1, DAP_MOCK_1)(__VA_ARGS__)
+
+// Variant 1: Simple stub (func_name only) - default config
+#define DAP_MOCK_1(func_name) \
+    DAP_MOCK_DECLARE_1(func_name)
+
+// Variant 2: With simple return value (intptr_t cast)
+#define DAP_MOCK_2(func_name, return_value) \
+    DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value)
+
+/**
+ * Default wrapper for pure mocks - UNIVERSAL, works with ANY types!
+ * 
+ * Automatically generated for DAP_MOCK_DECLARE functions.
+ * Returns mock value if mock is enabled, otherwise calls original.
+ * 
+ * Usage:
+ *   DAP_MOCK_DECLARE(my_func);
+ *   DAP_MOCK_WRAPPER_DEFAULT(return_type, my_func, (params_with_types), (params_names))
+ * 
+ * Note: For DAP_MOCK_DECLARE, wrappers are auto-generated - no need to write this manually!
+ */
+#define DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, params_with_types, params_names) \
+    extern return_type __real_##func_name params_with_types; \
+    return_type __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            return_type l_result = (return_type)(intptr_t)g_mock_##func_name->return_value.ptr; \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
+            return l_result; \
+        } \
+        return __real_##func_name params_names; \
+    }
+
+/**
+ * Default wrapper for void functions - UNIVERSAL
+ */
+#define DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, params_with_types, params_names) \
+    extern void __real_##func_name params_with_types; \
+    void __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
+            return; \
+        } \
+        __real_##func_name params_names; \
+    }
 
 /**
  * Passthrough wrapper for integration tests - UNIVERSAL, works with ANY types!

@@ -545,10 +545,14 @@ int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char
     }
 
     // Resolve host
-    if (dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL) < 0) {
+    int l_addrlen = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL);
+    if (l_addrlen < 0) {
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_host, a_port);
         return -1;
     }
+    
+    // Set the address size (crucial for connect/sendto calls)
+    a_es->addr_size = (socklen_t)l_addrlen;
     
     a_es->remote_port = a_port;
     dap_strncpy(a_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN);

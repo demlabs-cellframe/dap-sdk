@@ -995,7 +995,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for UDP trans");
+        log_it(L_ERROR, "Failed to resolve address for UDP trans: %s:%u", a_params->host, a_params->port);
         // Don't delete shared socket on resolve error, just fail?
         // Or delete if we just created it?
         // For now, assume it persists.
@@ -1003,10 +1003,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
 
+    log_it(L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
+
     // Explicitly connect UDP socket to set default destination address
     // This allows using send() or write() without specifying address every time
     if (connect(l_es->socket, (struct sockaddr *)&l_es->addr_storage, l_es->addr_size) < 0) {
-        log_it(L_ERROR, "Failed to connect UDP socket: %s", strerror(errno));
+        log_it(L_ERROR, "Failed to connect UDP socket: %s (socket=%d, family=%d, size=%zu)", 
+               strerror(errno), l_es->socket, l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
         // dap_events_socket_delete_unsafe(l_es, true); // Don't delete shared socket
         a_result->error_code = -1;
         return -1;

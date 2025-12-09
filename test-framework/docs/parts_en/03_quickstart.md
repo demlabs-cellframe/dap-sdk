@@ -105,8 +105,8 @@ target_link_libraries(my_test dap_test dap_core pthread)
 
 #define LOG_TAG "my_test"
 
-// Declare mock
-DAP_MOCK_DECLARE(external_api_call);
+// Declare mock (RECOMMENDED: simple and clean)
+DAP_MOCK(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);

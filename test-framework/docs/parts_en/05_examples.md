@@ -12,15 +12,17 @@ Example from `cellframe-srv-vpn-client/tests/unit/test_vpn_state_handlers.c`:
 
 #define LOG_TAG "test_vpn_state_handlers"
 
-// Declare mocks with simple configuration
-DAP_MOCK_DECLARE(dap_net_tun_deinit);
-DAP_MOCK_DECLARE(dap_chain_node_client_close_mt);
-DAP_MOCK_DECLARE(vpn_wallet_close);
+// Declare mocks with simple configuration (RECOMMENDED)
+DAP_MOCK(dap_net_tun_deinit);
+DAP_MOCK(dap_chain_node_client_close_mt);
+DAP_MOCK(vpn_wallet_close);
 
 // Mock with return value configuration
 DAP_MOCK_DECLARE(dap_chain_node_client_connect_mt, {
     .return_value.l = 0xDEADBEEF
 });
+// Note: For simple return values, you can also use:
+// DAP_MOCK(dap_chain_node_client_connect_mt, 0xDEADBEEF);
 
 static vpn_sm_t *s_test_sm = NULL;
 
@@ -121,54 +123,31 @@ Example from `dap-sdk/net/client/test/test_http_client_mocks.h`:
     } \
 })
 
-// Declare mock with simulated network latency
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_full, 
-                        HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
-
-// Mock without delay for cleanup operations (instant execution)
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_close_unsafe, {
-    .enabled = true,
-    .delay = {.type = DAP_MOCK_DELAY_NONE}
-});
-```
-
-### 4.4 Custom Linker Wrapper (Advanced)
-
-Example from `test_http_client_mocks.c` using `DAP_MOCK_WRAPPER_CUSTOM`:
-
-```c
-#include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
-#include "dap_client_http.h"
-
-// Declare mock (registers with framework)
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request_async, 
-                        HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY);
-
-// Custom wrapper implementation with full control
-// DAP_MOCK_WRAPPER_CUSTOM generates:
-// - __wrap_dap_client_http_request_async function signature
-// - void* args array for mock framework
-// - Automatic delay execution
-// - Call recording
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
+// Mock with simulated network latency (using DAP_MOCK_CUSTOM)
+// DAP_MOCK_CUSTOM combines declaration and wrapper implementation - no need to write DAP_MOCK_DECLARE_CUSTOM separately!
+DAP_MOCK_CUSTOM(dap_client_http_t*, dap_client_http_request_full,
     PARAM(dap_worker_t*, a_worker),
     PARAM(const char*, a_uplink_addr),
     PARAM(uint16_t, a_uplink_port),
     PARAM(const char*, a_method),
+    PARAM(const char*, a_request_content_type),
     PARAM(const char*, a_path),
+    PARAM(const void*, a_request),
+    PARAM(size_t, a_request_size),
+    PARAM(char*, a_cookie),
     PARAM(dap_client_http_callback_full_t, a_response_callback),
     PARAM(dap_client_http_callback_error_t, a_error_callback),
-    PARAM(void*, a_callbacks_arg)
+    PARAM(void*, a_callbacks_arg),
+    PARAM(char*, a_custom_headers),
+    PARAM(bool, a_follow_redirects)
 ) {
-    // Custom mock logic - simulate async HTTP behavior
-    // This directly invokes callbacks based on mock configuration
-    
+    // Mock logic - delay is automatically executed by framework
+    // Configure delay via control macros if needed:
+    // DAP_MOCK_SET_DELAY_VARIANCE_MS(dap_client_http_request_full, 100, 50);  // 100ms ± 50ms
+    // G_MOCK is automatically available inside wrapper and points to g_mock_dap_client_http_request_full
     if (g_mock_http_response.should_fail && a_error_callback) {
-        // Simulate error response
         a_error_callback(g_mock_http_response.error_code, a_callbacks_arg);
     } else if (a_response_callback) {
-        // Simulate successful response with configured data
         a_response_callback(
             g_mock_http_response.body,
             g_mock_http_response.body_size,
@@ -177,7 +156,75 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request_async,
             g_mock_http_response.status_code
         );
     }
-    // Note: Configured delay is executed automatically before this code
+    return (dap_client_http_t*)G_MOCK->return_value.ptr;
+}
+
+// Mock without delay for cleanup operations (instant execution)
+DAP_MOCK_CUSTOM(void, dap_client_http_close_unsafe,
+    PARAM(dap_client_http_t*, a_client_http)
+) {
+    // Mock close - just free the fake client object
+    if (a_client_http) {
+        free(a_client_http);
+    }
+}
+```
+
+### 4.4 Custom Mock with Full Control (Advanced)
+
+Example from `test_http_client_mocks.c` using `DAP_MOCK_CUSTOM`:
+
+```c
+#include "dap_mock.h"
+#include "dap_client_http.h"
+
+// DAP_MOCK_CUSTOM combines declaration and wrapper implementation
+// No need to write DAP_MOCK_DECLARE_CUSTOM separately!
+DAP_MOCK_CUSTOM(void, dap_client_http_request_async,
+    PARAM(dap_worker_t*, a_worker),
+    PARAM(const char*, a_uplink_addr),
+    PARAM(uint16_t, a_uplink_port),
+    PARAM(const char*, a_method),
+    PARAM(const char*, a_request_content_type),
+    PARAM(const char*, a_path),
+    PARAM(const void*, a_request),
+    PARAM(size_t, a_request_size),
+    PARAM(char*, a_cookie),
+    PARAM(dap_client_http_callback_full_t, a_response_callback),
+    PARAM(dap_client_http_callback_error_t, a_error_callback),
+    PARAM(dap_client_http_callback_started_t, a_started_callback),
+    PARAM(dap_client_http_callback_progress_t, a_progress_callback),
+    PARAM(void*, a_callbacks_arg),
+    PARAM(char*, a_custom_headers),
+    PARAM(bool, a_follow_redirects)
+) {
+    // Custom mock logic - simulate async HTTP behavior
+    // DAP_MOCK_CUSTOM automatically:
+    // - Registers mock with framework
+    // - Generates __wrap_dap_client_http_request_async function signature
+    // - Executes configured delay (HTTP_CLIENT_MOCK_CONFIG_WITH_DELAY)
+    // - Records call
+    
+    // Call started callback immediately
+    if (a_started_callback) {
+        a_started_callback(a_callbacks_arg);
+    }
+    
+    // Simulate async callback in separate thread
+    typedef struct {
+        dap_client_http_callback_full_t response_cb;
+        dap_client_http_callback_error_t error_cb;
+        void *cb_arg;
+    } mock_async_context_t;
+    
+    mock_async_context_t *l_ctx = malloc(sizeof(mock_async_context_t));
+    l_ctx->response_cb = a_response_callback;
+    l_ctx->error_cb = a_error_callback;
+    l_ctx->cb_arg = a_callbacks_arg;
+    
+    pthread_t l_thread;
+    pthread_create(&l_thread, NULL, mock_async_callback_thread, l_ctx);
+    pthread_detach(l_thread);
 }
 ```
 
@@ -278,24 +325,21 @@ dap_mock_autowrap_with_static(test_stream_mocks dap_stream)
 
 #define LOG_TAG "test_stream_mocks"
 
-// Mock function used inside dap_stream
-DAP_MOCK_DECLARE(dap_net_tun_write, {
-    .return_value.i = 0,  // Success
-    .delay = {
-        .type = DAP_MOCK_DELAY_FIXED,
-        .fixed_us = 10000  // 10ms delay
-    }
-});
-
-// Wrap function for mocking
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_net_tun_write,
+// Mock function used inside dap_stream (using DAP_MOCK_CUSTOM)
+// Combines declaration and wrapper - no need to write separately!
+DAP_MOCK_CUSTOM(int, dap_net_tun_write,
     PARAM(int, a_fd),
     PARAM(const void*, a_buf),
     PARAM(size_t, a_len)
 ) {
     // Mock logic - simulate successful write
     log_it(L_DEBUG, "Mock: dap_net_tun_write called (fd=%d, len=%zu)", a_fd, a_len);
-    return 0;
+    
+    // Configure delay and return value at runtime if needed:
+    // DAP_MOCK_SET_DELAY_MS(dap_net_tun_write, 10);
+    // DAP_MOCK_SET_RETURN(dap_net_tun_write, (void*)(intptr_t)0);
+    
+    return 0;  // Success
 }
 
 void test_stream_write_with_mock(void) {
@@ -341,26 +385,25 @@ Example demonstrating async mock callbacks with thread pool:
 #include "dap_test_async.h"
 
 // Async mock for HTTP request with 50ms delay
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+// For async mocks with custom logic, use DAP_MOCK_DECLARE with configuration
+// Wrapper is automatically generated - no need to write DAP_MOCK_CUSTOM!
+DAP_MOCK_DECLARE(dap_client_http_request, {
     .enabled = true,
     .async = true,  // Execute in worker thread
     .delay = {
         .type = DAP_MOCK_DELAY_FIXED,
         .fixed_us = 50000  // 50ms realistic network latency
     }
-});
-
-// Mock wrapper - executes asynchronously
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_client_http_request,
-    PARAM(const char*, a_url),
-    PARAM(http_callback_t, a_callback),
-    PARAM(void*, a_arg)
-) {
-    // This code runs in worker thread after 50ms delay
+}, {
+    // Custom callback logic - executes asynchronously in worker thread
+    // This code runs after 50ms delay
     const char *response = "{\"status\":\"ok\",\"data\":\"test\"}";
-    a_callback(response, 200, a_arg);
-    return 0;
-}
+    if (a_arg_count >= 2 && a_args[1]) {
+        http_callback_t callback = (http_callback_t)a_args[1];
+        callback(response, 200, a_args[2]);  // a_args[2] is user_data
+    }
+    return (void*)(intptr_t)0;  // Success
+});
 
 static volatile bool s_callback_executed = false;
 static volatile int s_http_status = 0;
