@@ -830,13 +830,22 @@ static void test_14_stream_handshake(void)
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
     
     // Test handshake_process operation (server-side)
-    uint8_t l_handshake_data[100] = {0};
+    // Generate valid Kyber512 public key for testing
+    dap_enc_key_t *l_alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    TEST_ASSERT_NOT_NULL(l_alice_key, "Alice key generation should succeed");
+    TEST_ASSERT_NOT_NULL(l_alice_key->pub_key_data, "Alice public key should exist");
+    TEST_ASSERT(l_alice_key->pub_key_data_size > 0, "Alice public key size should be positive");
+    
     void *l_response = NULL;
     size_t l_response_size = 0;
-    l_ret = l_trans->ops->handshake_process(&s_mock_stream, l_handshake_data, 
-                                                 sizeof(l_handshake_data),
+    l_ret = l_trans->ops->handshake_process(&s_mock_stream, 
+                                                 l_alice_key->pub_key_data,
+                                                 l_alice_key->pub_key_data_size,
                                                  &l_response, &l_response_size);
     TEST_ASSERT(l_ret == 0, "Handshake process should succeed");
+    
+    // Cleanup
+    dap_enc_key_delete(l_alice_key);
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);

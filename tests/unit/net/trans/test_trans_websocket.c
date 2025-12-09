@@ -558,6 +558,13 @@ static void test_11_stream_read(void)
     s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
+    // Set esocket in private data for WebSocket (it uses l_priv->esocket)
+    dap_net_trans_websocket_private_t *l_priv = 
+        (dap_net_trans_websocket_private_t*)l_trans->_inheritor;
+    if (l_priv) {
+        l_priv->esocket = &s_mock_events_socket;
+    }
+    
     // Test read operation
     char l_buffer[1024];
     ssize_t l_bytes_read = l_trans->ops->read(&s_mock_stream, l_buffer, sizeof(l_buffer));
@@ -597,6 +604,7 @@ static void test_12_stream_write(void)
         (dap_net_trans_websocket_private_t*)l_trans->_inheritor;
     if (l_priv) {
         l_priv->state = DAP_WS_STATE_OPEN;
+        l_priv->esocket = &s_mock_events_socket;  // WebSocket uses l_priv->esocket for I/O
     }
     
     // Test write operation
@@ -631,9 +639,21 @@ static void test_13_stream_handshake(void)
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
     s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+    s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();  // WebSocket handshake needs client_pvt
+    
+    // Set esocket in private data for WebSocket
+    dap_net_trans_websocket_private_t *l_priv = 
+        (dap_net_trans_websocket_private_t*)l_trans->_inheritor;
+    if (l_priv) {
+        l_priv->esocket = &s_mock_events_socket;
+    }
     
     // Test handshake_init operation
     dap_net_handshake_params_t l_params = {0};
+    // WebSocket handshake needs alice_pub_key
+    static uint8_t s_mock_alice_pub_key[32] = {0}; // Mock public key
+    l_params.alice_pub_key = s_mock_alice_pub_key;
+    l_params.alice_pub_key_size = sizeof(s_mock_alice_pub_key);
     l_ret = l_trans->ops->handshake_init(&s_mock_stream, &l_params, NULL);
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
     

@@ -592,6 +592,13 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_data, a_data_size, &l_bob_pub);
         l_shared_key = l_bob_key->priv_key_data;
         l_bob_pub_size = l_bob_key->pub_key_data_size;
+        
+        // Check if key generation succeeded
+        if (!l_bob_pub || l_shared_key_size == 0) {
+            log_it(L_ERROR, "Failed to generate shared key from client data (invalid public key?)");
+            dap_enc_key_delete(l_bob_key);
+            return -1;
+        }
     } else {
         log_it(L_ERROR, "Key type doesn't support KEM handshake");
         dap_enc_key_delete(l_bob_key);
