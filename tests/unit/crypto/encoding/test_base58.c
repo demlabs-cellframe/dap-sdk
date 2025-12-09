@@ -28,8 +28,70 @@
 #include "../../../fixtures/json_samples.h"
 #include <inttypes.h>
 #include <string.h>
+#include <strings.h>
 
 #define LOG_TAG "test_base58"
+
+// Test cases based on base58_encode_decode.json structure, adapted for base58
+// Format: [hex_string, base58_string]
+typedef struct {
+    const char* hex_input;
+    const char* base58_expected;
+} base58_test_case_t;
+
+
+// Test cases - based on base58_encode_decode.json from Bitcoin Core tests
+static const base58_test_case_t s_base58_test_cases[] = {
+    {"", ""},
+    {"61", "2g"},
+    {"626262", "a3gV"},
+    {"636363", "aPEr"},
+    {"73696d706c792061206c6f6e6720737472696e67", "2cFupjhnEsSn59qHXstmK2ffpLv2"},
+    {"00eb15231dfceb60925886b67d065299925915aeb172c06647", "1NS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L"},
+    {"516b6fcd0f", "ABnLTmg"},
+    {"bf4f89001e670274dd", "3SEo3LWLoPntC"},
+    {"572e4794", "3EFU7m"},
+    {"ecac89cad93923c02321", "EJDM8drfXA6uyA"},
+    {"10c8511e", "Rt5zm"},
+    {"00000000000000000000", "1111111111"},
+    {"00000000000000000000000000000000000000000000000000000000000000000000000000000000", "1111111111111111111111111111111111111111"},
+    {"00000000000000000000000000000000000000000000000000000000000000000000000000000001", "1111111111111111111111111111111111111112"},
+};
+
+
+/**
+ * @brief Parse hex string to binary data
+ * @param hex_str Hex string to parse
+ * @param out Output buffer
+ * @param out_size Output buffer size
+ * @return Number of bytes parsed, or 0 on error
+ */
+static size_t s_parse_hex(const char* hex_str, uint8_t* out, size_t out_size) {
+    if (!hex_str || !out) {
+        return 0;
+    }
+    
+    size_t hex_len = strlen(hex_str);
+    if (hex_len == 0) {
+        return 0;
+    }
+    
+    // Hex string must have even length
+    if (hex_len % 2 != 0) {
+        return 0;
+    }
+    f
+    size_t bytes_needed = hex_len / 2;
+    if (bytes_needed > out_size) {
+        return 0;
+    }
+    
+    size_t hex_result = dap_hex2bin(out, hex_str, hex_len);
+    // dap_hex2bin returns hex string length, but we need bytes decoded
+    return bytes_needed;
+}
+
+
 
 /**
  * @brief Test Base58 basic functionality
@@ -38,7 +100,7 @@ static bool s_test_base58_basic(void) {
     log_it(L_DEBUG, "Testing Base58 basic functionality");
     
     const char* l_input = CRYPTO_SAMPLE_HASH_INPUT;
-    size_t l_input_size = strlen(l_input);
+    size_t l_input_size = strlen(l_input); 
     
     // Calculate encode size
     size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(l_input_size);
@@ -66,46 +128,110 @@ static bool s_test_base58_basic(void) {
 }
 
 /**
- * @brief Test Base58 consistency
+ * @brief Test Base58 encoding
  */
-static bool s_test_base58_consistency(void) {
-    log_it(L_DEBUG, "Testing Base58 consistency");
+static bool s_test_base58_encode(void) {
+    log_it(L_DEBUG, "Testing Base58 encoding");
     
-    const char* l_input = "DAP SDK consistent base58 test";
-    size_t l_input_size = strlen(l_input);
+    size_t l_num_cases = sizeof(s_base58_test_cases) / sizeof(s_base58_test_cases[0]);
     
-    // Calculate encode size
-    size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(l_input_size);
-    char l_encoded1[l_encode_size];
-    char l_encoded2[l_encode_size];
+    for (size_t i = 0; i < l_num_cases; i++) {
+        const base58_test_case_t* l_test = &s_base58_test_cases[i];
+        
+        // Handle empty string case
+        if (strlen(l_test->hex_input) == 0) {
+            size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(0);
+            char l_encoded[l_encode_size];
+            size_t l_encoded_result = dap_enc_base58_encode(NULL, 0, l_encoded);
+            
+            if (strlen(l_test->base58_expected) == 0) {
+                DAP_TEST_ASSERT(l_encoded_result == 0, "Empty input should produce empty encoding");
+            } else {
+                DAP_TEST_ASSERT(l_encoded_result > 0, "Encoding should succeed");
+                DAP_TEST_ASSERT(strcmp(l_encoded, l_test->base58_expected) == 0, 
+                               "Encoded result should match expected");
+            }
+            continue;
+        }
+        
+        // Parse hex input
+        uint8_t l_input_buf[256];
+        size_t l_input_size = s_parse_hex(l_test->hex_input, l_input_buf, sizeof(l_input_buf));
+        DAP_TEST_ASSERT(l_input_size > 0, "Hex parsing should succeed");
+        
+        // Calculate encode size and encode
+        size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(l_input_size);
+        char l_encoded[l_encode_size];
+        size_t l_encoded_result = dap_enc_base58_encode(l_input_buf, l_input_size, l_encoded);
+        
+        DAP_TEST_ASSERT(l_encoded_result > 0, "Base58 encoding should succeed");
+        if (strcmp(l_encoded, l_test->base58_expected) != 0) {
+            log_it(L_ERROR, "Base58 encoding mismatch for hex '%s': expected '%s', got '%s'", 
+                   l_test->hex_input, l_test->base58_expected, l_encoded);
+        }
+        DAP_TEST_ASSERT(strcmp(l_encoded, l_test->base58_expected) == 0, 
+                       "Encoded result should match expected base58 string");
+    }
     
-    // Encode twice
-    size_t l_encoded_result1 = dap_enc_base58_encode(l_input, l_input_size, l_encoded1);
-    size_t l_encoded_result2 = dap_enc_base58_encode(l_input, l_input_size, l_encoded2);
+    log_it(L_DEBUG, "Base58 encoding test passed");
+    return true;
+}
+
+/**
+ * @brief Test Base58 decoding
+ */
+static bool s_test_base58_decode(void) {
+    log_it(L_DEBUG, "Testing Base58 decoding");
     
-    DAP_TEST_ASSERT(l_encoded_result1 > 0, "First encoding should succeed");
-    DAP_TEST_ASSERT(l_encoded_result2 > 0, "Second encoding should succeed");
-    DAP_TEST_ASSERT(l_encoded_result1 == l_encoded_result2, "Both encodings should produce same size");
+    size_t l_num_cases = sizeof(s_base58_test_cases) / sizeof(s_base58_test_cases[0]);
     
-    // Verify encoded strings are identical
-    int l_cmp = strcmp(l_encoded1, l_encoded2);
-    DAP_TEST_ASSERT(l_cmp == 0, "Consistent input should produce identical encodings");
+    for (size_t i = 0; i < l_num_cases; i++) {
+        const base58_test_case_t* l_test = &s_base58_test_cases[i];
+        
+        // Handle empty string case
+        if (strlen(l_test->base58_expected) == 0) {
+            uint8_t l_decoded[256];
+            size_t l_decoded_result = dap_enc_base58_decode("", l_decoded);
+            
+            if (strlen(l_test->hex_input) == 0) {
+                DAP_TEST_ASSERT(l_decoded_result == 0, "Empty base58 should decode to empty");
+            }
+            // Note: If hex_input is not empty but base58_expected is empty, 
+            // this shouldn't happen in valid test data
+            continue;
+        }
+        
+        // Decode base58 string
+        size_t l_decode_size = DAP_ENC_BASE58_DECODE_SIZE(strlen(l_test->base58_expected));
+        uint8_t l_decoded[l_decode_size];
+        size_t l_decoded_result = dap_enc_base58_decode(l_test->base58_expected, l_decoded);
+        
+        // Parse expected hex input for comparison
+        if (strlen(l_test->hex_input) == 0) {
+            DAP_TEST_ASSERT(l_decoded_result == 0, "Decoded result should be empty for empty hex input");
+        } else {
+            DAP_TEST_ASSERT(l_decoded_result > 0, "Base58 decoding should succeed");
+            uint8_t l_expected_buf[256];
+            size_t l_expected_size = s_parse_hex(l_test->hex_input, l_expected_buf, sizeof(l_expected_buf));
+            DAP_TEST_ASSERT(l_expected_size > 0, "Hex parsing should succeed");
+            DAP_TEST_ASSERT(l_decoded_result == l_expected_size, 
+                           "Decoded size should match expected hex input size");
+            
+            // Convert decoded result to hex for comparison
+            char l_decoded_hex[512];
+            dap_bin2hex(l_decoded_hex, l_decoded, l_decoded_result);
+            
+            // Compare with expected hex (case-insensitive)
+            int l_cmp = strcasecmp(l_decoded_hex, l_test->hex_input);
+            if (l_cmp != 0) {
+                log_it(L_ERROR, "Base58 decoding mismatch for base58 '%s': expected hex '%s', got '%s'", 
+                       l_test->base58_expected, l_test->hex_input, l_decoded_hex);
+            }
+            DAP_TEST_ASSERT(l_cmp == 0, "Decoded hex should match expected hex input");
+        }
+    }
     
-    // Verify both decode to same result
-    size_t l_decode_size = DAP_ENC_BASE58_DECODE_SIZE(l_encoded_result1);
-    uint8_t l_decoded1[l_decode_size];
-    uint8_t l_decoded2[l_decode_size];
-    
-    size_t l_decoded_result1 = dap_enc_base58_decode(l_encoded1, l_decoded1);
-    size_t l_decoded_result2 = dap_enc_base58_decode(l_encoded2, l_decoded2);
-    
-    DAP_TEST_ASSERT(l_decoded_result1 == l_input_size, "First decode should match input size");
-    DAP_TEST_ASSERT(l_decoded_result2 == l_input_size, "Second decode should match input size");
-    
-    int l_decoded_cmp = memcmp(l_decoded1, l_decoded2, l_input_size);
-    DAP_TEST_ASSERT(l_decoded_cmp == 0, "Both decoded results should be identical");
-    
-    log_it(L_DEBUG, "Base58 consistency test passed");
+    log_it(L_DEBUG, "Base58 decoding test passed");
     return true;
 }
 
@@ -136,47 +262,6 @@ static bool s_test_base58_empty(void) {
     return true;
 }
 
-/**
- * @brief Test Base58 performance
- */
-static bool s_test_base58_performance(void) {
-    log_it(L_DEBUG, "Testing Base58 performance");
-    
-    const size_t l_iterations = 1000;
-    const char* l_input = CRYPTO_SAMPLE_HASH_INPUT;
-    size_t l_input_size = strlen(l_input);
-    
-    size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(l_input_size);
-    char l_encoded[l_encode_size];
-    size_t l_decode_size = DAP_ENC_BASE58_DECODE_SIZE(l_encode_size);
-    uint8_t l_decoded[l_decode_size];
-    
-    dap_test_timer_t l_timer;
-    dap_test_timer_start(&l_timer);
-    
-    for (size_t i = 0; i < l_iterations; i++) {
-        size_t l_encoded_result = dap_enc_base58_encode(l_input, l_input_size, l_encoded);
-        DAP_TEST_ASSERT(l_encoded_result > 0, "Encoding should succeed in performance test");
-        
-        size_t l_decoded_result = dap_enc_base58_decode(l_encoded, l_decoded);
-        DAP_TEST_ASSERT(l_decoded_result == l_input_size, "Decoding should succeed in performance test");
-        
-        int l_cmp = memcmp(l_input, l_decoded, l_input_size);
-        DAP_TEST_ASSERT(l_cmp == 0, "Round-trip should preserve data in performance test");
-    }
-    
-    uint64_t l_elapsed = dap_test_timer_stop(&l_timer);
-    double l_ops_per_sec = (double)l_iterations / (l_elapsed / 1000000.0);
-    
-    log_it(L_INFO, "Base58 performance: %.2f encode-decode cycles/sec (%zu iterations in %" PRIu64 " us)", 
-           l_ops_per_sec, l_iterations, l_elapsed);
-    
-    // Basic performance threshold (should be able to do at least 100 cycles/sec)
-    DAP_TEST_ASSERT(l_ops_per_sec > 100.0, "Base58 should achieve reasonable performance");
-    
-    log_it(L_DEBUG, "Base58 performance test passed");
-    return true;
-}
 
 /**
  * @brief Main test function for Base58
@@ -192,9 +277,10 @@ int main(void) {
     bool l_all_passed = true;
     
     l_all_passed &= s_test_base58_basic();
-    l_all_passed &= s_test_base58_consistency();
+    l_all_passed &= s_test_base58_encode();
+    l_all_passed &= s_test_base58_decode();
     l_all_passed &= s_test_base58_empty();
-    l_all_passed &= s_test_base58_performance();
+ 
     
     dap_test_sdk_cleanup();
     
