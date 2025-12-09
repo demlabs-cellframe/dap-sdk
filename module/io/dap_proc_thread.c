@@ -84,9 +84,15 @@ int dap_proc_thread_init(uint32_t a_threads_count)
  */
 void dap_proc_thread_deinit()
 {
-    for (uint32_t i = s_threads_count; i--; )
-        dap_context_stop_n_kill(s_threads[i].context);
+    if (!s_threads || !s_threads_count)
+        return;
+
+    for (uint32_t i = s_threads_count; i--; ) {
+        if (s_threads[i].context)
+            dap_context_stop_n_kill(s_threads[i].context);
+    }
     DAP_DEL_Z(s_threads);
+    s_threads_count = 0;
 }
 
 /**

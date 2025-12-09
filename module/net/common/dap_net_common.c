@@ -148,7 +148,31 @@ int dap_net_common_parse_stream_addrs(void *a_cfg, const char *a_config, const c
                                    (void**)a_addrs, a_addrs_count);
 }
 
+// ========================================================================
+// Cluster callbacks registry
+// ========================================================================
+static dap_cluster_callbacks_t s_cluster_callbacks[DAP_CLUSTER_TYPE_VIRTUAL + 1] = { 0 };
+
+int dap_cluster_callbacks_register(dap_cluster_type_t a_cluster_type,
+                                   dap_cluster_member_add_callback_t a_add_cb,
+                                   dap_cluster_member_delete_callback_t a_del_cb,
+                                   void *a_arg)
+{
+    if (a_cluster_type <= DAP_CLUSTER_TYPE_INVALID || a_cluster_type > DAP_CLUSTER_TYPE_VIRTUAL)
+        return -1;
+    s_cluster_callbacks[a_cluster_type].add_callback = a_add_cb;
+    s_cluster_callbacks[a_cluster_type].delete_callback = a_del_cb;
+    s_cluster_callbacks[a_cluster_type].arg = a_arg;
+    return 0;
+}
+
+dap_cluster_callbacks_t* dap_cluster_callbacks_get(dap_cluster_type_t a_cluster_type)
+{
+    if (a_cluster_type <= DAP_CLUSTER_TYPE_INVALID || a_cluster_type > DAP_CLUSTER_TYPE_VIRTUAL)
+        return NULL;
+    return &s_cluster_callbacks[a_cluster_type];
+}
+
 #ifdef __cplusplus
 }
 #endif
-

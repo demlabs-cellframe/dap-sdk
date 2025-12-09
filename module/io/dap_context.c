@@ -469,6 +469,19 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         return -2;
     }
 
+    /* Prevent putting the same esocket into two context hash tables at once.
+     * If it is already registered on another context, detach it first.
+     * If it is already on the target context, skip re-adding. */
+    if (a_es->context) {
+        if (a_es->context == a_context) {
+            debug_if(g_debug_reactor, L_DEBUG, "Es %p already attached to context #%u, skip add", a_es, a_context->id);
+            return 0;
+        }
+        log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET ", moving from context %u to %u",
+               a_es, a_es->socket, a_es->context->id, a_context->id);
+        dap_context_remove(a_es);
+    }
+
 #ifdef DAP_EVENTS_CAPS_IOCP
     // TODO: reassignment requires some extra calls to WDK. Also there must be no pending I/O ops
     /*
@@ -588,9 +601,6 @@ lb_exit:
         return l_errno;
     }
 
-    if (a_es->context)
-        // TODO: should we remove the es from old context or just duplicate it?...
-        log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET, a_es, a_es->socket);
     a_es->context = a_context;
     a_es->worker = DAP_WORKER(a_context);
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {

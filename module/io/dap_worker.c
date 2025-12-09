@@ -282,8 +282,14 @@ static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg
 {
     assert(a_arg);
     dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
-    dap_events_socket_t * l_es;
-    if ( (l_es = dap_context_find(a_es->context, *l_es_uuid_ptr)) != NULL ){
+    dap_context_t *l_ctx = a_es ? a_es->context : NULL;
+    if (!l_ctx || l_ctx->signal_exit || !l_ctx->esockets) {
+        debug_if(g_debug_reactor, L_INFO, "Skip delete for es %"DAP_UINT64_FORMAT_U" because context is gone", *l_es_uuid_ptr);
+        DAP_DELETE(l_es_uuid_ptr);
+        return;
+    }
+    dap_events_socket_t * l_es = dap_context_find(l_ctx, *l_es_uuid_ptr);
+    if (l_es && l_es->context == l_ctx){
         //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
     }else
