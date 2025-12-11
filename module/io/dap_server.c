@@ -126,6 +126,17 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                                 dap_events_desc_type_t a_type, dap_events_socket_callbacks_t *a_callbacks )
 {
     dap_return_val_if_fail_err(a_server && a_addr, -1, "Invalid argument");
+    /* Allow callers to omit callbacks: fall back to the internal accept/new/error
+     * handlers so that listener sockets are still functional. */
+    dap_events_socket_callbacks_t l_default_cbs = {
+        .accept_callback = s_es_server_accept,
+        .new_callback = s_es_server_new,
+        .error_callback = s_es_server_error
+    };
+    if (!a_callbacks) {
+        a_callbacks = &l_default_cbs;
+    }
+
     struct sockaddr_storage l_saddr = { };
     int l_fam, l_len = 0;
     SOCKET l_socket = INVALID_SOCKET;

@@ -201,7 +201,12 @@ int dap_timerfd_init()
  */
 dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg)
 {
-    return dap_timerfd_start_on_worker(dap_events_worker_get_auto(), a_timeout_ms, a_callback, a_callback_arg);
+    dap_worker_t *worker = dap_events_worker_get_auto();
+    if (!worker) {
+        log_it(L_CRITICAL, "No available worker to start timerfd");
+        return NULL;
+    }
+    return dap_timerfd_start_on_worker(worker, a_timeout_ms, a_callback, a_callback_arg);
 }
 
 #ifdef DAP_OS_WINDOWS
