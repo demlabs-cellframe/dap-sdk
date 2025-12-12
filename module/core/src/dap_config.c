@@ -41,6 +41,11 @@ dap_config_t *g_config = NULL;
 
 static bool debug_config = false;
 
+void dap_config_set_global(dap_config_t *a_config)
+{
+    g_config = a_config;
+}
+
 int dap_config_init(const char *a_configs_path)
 {
     if (!a_configs_path || !a_configs_path[0]) {

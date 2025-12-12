@@ -69,6 +69,7 @@ extern "C" {
 extern dap_config_t *g_configs_table;
 #endif
 extern dap_config_t *g_config;
+void dap_config_set_global(dap_config_t *a_config);
 
 int dap_config_init(const char*);
 dap_config_t *dap_config_open(const char*);

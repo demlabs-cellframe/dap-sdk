@@ -33,6 +33,7 @@
 #include "dap_file_utils.h"
 #include "dap_config.h"
 #include "dap_crc64.h"
+#include "dap_net_common.h"
 
 // Conditional includes based on available modules
 // Core includes are always needed
@@ -153,11 +154,12 @@ static int s_init_io(const dap_sdk_config_t *a_config) {
  */
 static int s_init_network(const dap_sdk_config_t *a_config) {
     log_it(L_INFO, "Initializing DAP SDK Network subsystem");
-    
-    // Network initialization will be added when we have proper includes
-    // For now, network modules work without explicit init
-    
-    log_it(L_INFO, "DAP SDK Network initialized successfully");
+    (void)a_config;
+    int rc = dap_net_common_init();
+    if (rc != 0) {
+        log_it(L_ERROR, "dap_net_common_init failed with code %d", rc);
+        return rc;
+    }
     return 0;
 }
 
@@ -358,10 +360,9 @@ int dap_sdk_init_with_app_name(const char *a_app_name, uint32_t a_modules) {
  */
 static void s_deinit_network(void) {
     log_it(L_INFO, "Deinitializing DAP SDK Network subsystem");
-    
-    // Global DB doesn't have explicit deinit in current version
-    // But we log the cleanup for consistency
-    
+
+    dap_net_common_deinit();
+
     log_it(L_INFO, "DAP SDK Network deinitialized");
 }
 
