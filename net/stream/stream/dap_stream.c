@@ -316,10 +316,13 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
 #endif
 
     l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
-    if (l_stm->trans_ctx)
+    if (l_stm->trans_ctx) {
         l_stm->trans_ctx->esocket = a_esocket;
+        l_stm->trans_ctx->stream = l_stm;  // Back-reference
+    }
     
-    a_esocket->_inheritor = l_stm;
+    // _inheritor points to trans_ctx for unified access pattern
+    a_esocket->_inheritor = l_stm->trans_ctx;
     dap_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
@@ -411,8 +414,12 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
 
     debug_if(s_debug, L_DEBUG, "s_stream_new: setting esocket");
     l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
-    if (l_ret->trans_ctx)
+    if (l_ret->trans_ctx) {
         l_ret->trans_ctx->esocket = a_http_client->esocket;
+        l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        // Set esocket->_inheritor to trans_ctx for unified access
+        a_http_client->esocket->_inheritor = l_ret->trans_ctx;
+    }
     debug_if(s_debug, L_DEBUG, "s_stream_new: getting stream_worker");
     debug_if(s_debug, L_DEBUG, "s_stream_new: worker=%p, worker->_inheritor=%p", 
            (void*)a_http_client->esocket->worker,
@@ -755,13 +762,19 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
  */
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 {
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    dap_stream_t *l_stream = DAP_STREAM(l_http_client);
+    dap_stream_t *l_stream = NULL;
     int *l_ret = (int *)a_arg;
+    
+    // Unified: _inheritor is always trans_ctx with back-reference to stream
+        dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+        l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
 
     debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_read: ready_to_write=%s, client->buf_in_size=%zu",
                (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false", a_esocket->buf_in_size);
-    *l_ret = dap_stream_data_proc_read(l_stream);
+    if (l_ret)
+        *l_ret = dap_stream_data_proc_read(l_stream);
+    else
+        dap_stream_data_proc_read(l_stream);
 }
 
 
@@ -774,16 +787,24 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
     bool l_ret = false;
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
+    dap_stream_t *l_stream = NULL;
+    
+    // Unified: get stream from _inheritor
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+    l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
+    
+    if (!l_stream) {
+        return false;
+    }
     
     // Channel identification: iterate all channels and let each one process pending data
     // Each channel maintains its own write queue and will only write if it has pending data
     // This approach works for current use cases but could be optimized in future by:
     // - Maintaining a "dirty" flag for channels with pending writes
     // - Using a priority queue for channels with different QoS requirements
-    //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
-    for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
-        dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
+    //log_it(L_DEBUG,"Process channels data output (%u channels)", l_stream->channel_count );
+    for (size_t i = 0; i < l_stream->channel_count; i++) {
+        dap_stream_ch_t *l_ch = l_stream->channel[i];
         if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
             l_ret |= l_ch->proc->packet_out_callback(l_ch, a_arg);
     }

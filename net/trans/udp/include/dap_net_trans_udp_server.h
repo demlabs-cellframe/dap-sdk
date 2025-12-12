@@ -26,6 +26,9 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_server.h"
 #include "dap_net_trans.h"
 
+// Forward declaration for session table
+typedef struct udp_session_entry udp_session_entry_t;
+
 /**
  * @brief UDP server structure
  * 
@@ -38,7 +41,11 @@ See more details here <http://www.gnu.org/licenses/>.
 typedef struct dap_net_trans_udp_server {
     dap_server_t *server;               ///< Back pointer to parent dap_server instance
     char server_name[256];              ///< Server name for identification
-    dap_net_trans_t *trans;  ///< UDP trans instance
+    dap_net_trans_t *trans;             ///< UDP trans instance
+    
+    // Session management
+    udp_session_entry_t *sessions;      ///< Hash table of active UDP sessions (keyed by session_id)
+    pthread_rwlock_t sessions_lock;     ///< Lock for sessions hash table
 } dap_net_trans_udp_server_t;
 
 #define DAP_NET_TRANS_UDP_SERVER(a) ((dap_net_trans_udp_server_t *) (a)->_inheritor)

@@ -28,6 +28,7 @@
 #include "dap_string.h"
 #include "dap_list.h"
 #include "dap_file_utils.h"
+#include "dap_module.h"
 #include "utlist.h"
 #include "uthash.h"
 
@@ -395,6 +396,18 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
         if (a_log_file_path != s_log_file_path)
             dap_stpcpy(s_log_file_path, a_log_file_path);
     }
+    
+    // Initialize all registered DAP modules
+    // This must be called AFTER g_config is set (if needed)
+    // Modules were registered via constructors, but NOT initialized yet
+    log_it(L_NOTICE, "dap_common_init: Initializing all DAP modules...");
+    int l_module_ret = dap_module_init_all();
+    if (l_module_ret != 0) {
+        log_it(L_ERROR, "dap_common_init: Failed to initialize modules: %d", l_module_ret);
+        return -2;
+    }
+    log_it(L_INFO, "dap_common_init: All modules initialized successfully");
+    
     return 0;
 }
 

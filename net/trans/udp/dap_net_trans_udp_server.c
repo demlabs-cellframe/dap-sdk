@@ -22,6 +22,10 @@ See more details here <http://www.gnu.org/licenses/>.
 */
 
 #include <string.h>
+#include <arpa/inet.h>
+#include <time.h>
+#include <errno.h>
+#include <sys/socket.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -30,8 +34,423 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
+#include "dap_worker.h"
+#include "uthash.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_net_trans_udp_server"
+
+// Helper to generate unique UUID for virtual esockets
+static inline dap_events_socket_uuid_t dap_events_socket_uuid_generate(void) {
+    dap_events_socket_uuid_t l_uuid = 0;
+    randombytes((uint8_t*)&l_uuid, sizeof(l_uuid));
+    return l_uuid;
+}
+
+/**
+ * @brief Write callback for virtual UDP esockets
+ * 
+ * This callback handles write operations for virtual esockets by performing
+ * sendto() directly on the physical socket with the client's address.
+ * 
+ * @param a_es Virtual esocket
+ * @param a_arg Pointer to the physical listener socket
+ * @return true if data was sent successfully, false otherwise
+ */
+static bool s_virtual_esocket_write_callback(dap_events_socket_t *a_es, void *a_arg) {
+    if (!a_es || !a_es->buf_out_size) {
+        return true; // Nothing to write
+    }
+    
+    // Get physical listener socket from arg
+    dap_events_socket_t *l_listener = (dap_events_socket_t *)a_arg;
+    if (!l_listener) {
+        log_it(L_ERROR, "Virtual esocket write: no listener socket");
+        return false;
+    }
+    
+    // Send data using sendto with client's address from virtual esocket
+    ssize_t l_sent = sendto(l_listener->socket, 
+                           (const char *)a_es->buf_out, 
+                           a_es->buf_out_size, 
+                           0,
+                           (struct sockaddr *)&a_es->addr_storage, 
+                           a_es->addr_size);
+    
+    if (l_sent < 0) {
+        int l_errno = errno;
+        log_it(L_ERROR, "Virtual esocket sendto failed: %s (errno %d)", strerror(l_errno), l_errno);
+        return false;
+    }
+    
+    if ((size_t)l_sent < a_es->buf_out_size) {
+        log_it(L_WARNING, "Virtual esocket partial send: %zd of %zu bytes", l_sent, a_es->buf_out_size);
+        // Shift remaining data
+        memmove(a_es->buf_out, a_es->buf_out + l_sent, a_es->buf_out_size - l_sent);
+        a_es->buf_out_size -= l_sent;
+        return false; // Will retry
+    }
+    
+    log_it(L_DEBUG, "Virtual esocket sent %zd bytes via sendto", l_sent);
+    a_es->buf_out_size = 0;
+    return true;
+}
+
+// UDP session mapping structure for server-side demultiplexing
+typedef struct udp_session_entry {
+    uint64_t session_id;               // Session ID from UDP header (hash key)
+    dap_stream_t *stream;              // Associated dap_stream_t instance (owns virtual esocket via trans_ctx)
+    struct sockaddr_storage remote_addr; // Client address
+    socklen_t remote_addr_len;         // Address length
+    time_t last_activity;              // Last packet timestamp
+    UT_hash_handle hh;                 // uthash handle
+} udp_session_entry_t;
+
+/**
+ * @brief Create virtual UDP esocket for session
+ * 
+ * Creates a virtual esocket that shares the physical socket FD with the listener,
+ * but has its own buffers and remote address storage. This allows multiple UDP
+ * sessions to coexist on a single listener socket.
+ * 
+ * @param a_listener_es Listener socket to share FD with
+ * @param a_remote_addr Client address for this virtual socket
+ * @param a_remote_addr_len Client address length
+ * @return Virtual esocket or NULL on error
+ */
+static dap_events_socket_t *s_create_virtual_udp_esocket(
+    dap_events_socket_t *a_listener_es,
+    struct sockaddr_storage *a_remote_addr,
+    socklen_t a_remote_addr_len)
+{
+    if (!a_listener_es || !a_remote_addr) {
+        log_it(L_ERROR, "Invalid arguments for virtual esocket creation");
+        return NULL;
+    }
+    
+    // Allocate virtual esocket
+    dap_events_socket_t *l_virtual_es = DAP_NEW_Z(dap_events_socket_t);
+    if (!l_virtual_es) {
+        log_it(L_CRITICAL, "Failed to allocate virtual UDP esocket");
+        return NULL;
+    }
+    
+    // Share physical socket FD with listener
+    l_virtual_es->socket = a_listener_es->socket;
+    l_virtual_es->fd = a_listener_es->fd;
+    l_virtual_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    
+    // Allocate own buffers
+    l_virtual_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
+    l_virtual_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_virtual_es->buf_in_size_max);
+    l_virtual_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
+    l_virtual_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_virtual_es->buf_out_size_max);
+    
+    if (!l_virtual_es->buf_in || !l_virtual_es->buf_out) {
+        log_it(L_CRITICAL, "Failed to allocate buffers for virtual esocket");
+        DAP_DEL_Z(l_virtual_es->buf_in);
+        DAP_DEL_Z(l_virtual_es->buf_out);
+        DAP_DELETE(l_virtual_es);
+        return NULL;
+    }
+    
+    l_virtual_es->buf_in_size = 0;
+    l_virtual_es->buf_out_size = 0;
+    
+    // Store remote address
+    memcpy(&l_virtual_es->addr_storage, a_remote_addr, a_remote_addr_len);
+    l_virtual_es->addr_size = a_remote_addr_len;
+    
+    // Copy context and server references from listener
+    l_virtual_es->context = a_listener_es->context;
+    l_virtual_es->worker = a_listener_es->worker;
+    l_virtual_es->server = a_listener_es->server;
+    
+    // Set flags (ready to read/write, but don't close physical socket)
+    l_virtual_es->flags = DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
+    l_virtual_es->no_close = true; // CRITICAL: don't close shared socket
+    
+    // Initialize timestamps
+    l_virtual_es->last_time_active = time(NULL);
+    l_virtual_es->time_connection = l_virtual_es->last_time_active;
+    
+    // Initialize callbacks (will be set by stream)
+    memset(&l_virtual_es->callbacks, 0, sizeof(l_virtual_es->callbacks));
+    
+    // Set custom write callback to handle UDP sendto
+    l_virtual_es->callbacks.write_callback = s_virtual_esocket_write_callback;
+    l_virtual_es->callbacks.arg = a_listener_es; // Pass listener socket as arg
+    
+    // Generate unique UUID
+    l_virtual_es->uuid = dap_events_socket_uuid_generate();
+    
+    log_it(L_DEBUG, "Created virtual UDP esocket %p (uuid 0x%016" DAP_UINT64_FORMAT_X ") sharing socket %d",
+           l_virtual_es, l_virtual_es->uuid, l_virtual_es->socket);
+    
+    return l_virtual_es;
+}
+
+/**
+ * @brief UDP server read callback - demultiplexes incoming UDP packets
+ * 
+ * This callback processes incoming UDP datagrams on the server listener socket.
+ * It parses the UDP trans header, identifies or creates the corresponding stream,
+ * and dispatches the packet for processing.
+ * 
+ * Packet flow:
+ * 1. Parse UDP trans header (dap_stream_trans_udp_header_t)
+ * 2. Extract session_id and packet type
+ * 3. Lookup or create dap_stream_t for this session
+ * 4. Process based on packet type:
+ *    - HANDSHAKE: Handle encryption handshake
+ *    - SESSION_CREATE: Create new session
+ *    - DATA: Forward to dap_stream_data_proc_read
+ * 5. Update session activity timestamp
+ */
+static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
+    (void)a_arg;
+    if (!a_es || !a_es->buf_in_size || !a_es->server)
+        return;
+    
+    // Get UDP server instance from listener socket
+    dap_net_trans_udp_server_t *l_udp_srv = DAP_NET_TRANS_UDP_SERVER(a_es->server);
+    if (!l_udp_srv) {
+        log_it(L_ERROR, "No UDP server instance for listener socket");
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    log_it(L_DEBUG, "UDP server received %zu bytes on socket %d", a_es->buf_in_size, a_es->socket);
+    
+    // Check if we have at least a UDP header
+    if (a_es->buf_in_size < sizeof(dap_stream_trans_udp_header_t)) {
+        log_it(L_WARNING, "UDP packet too small (%zu bytes), dropping", a_es->buf_in_size);
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    // Parse UDP trans header
+    dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
+    
+    uint8_t l_version = l_header->version;
+    uint8_t l_type = l_header->type;
+    uint16_t l_payload_len = ntohs(l_header->length);
+    uint32_t l_seq_num = ntohl(l_header->seq_num);
+    uint64_t l_session_id = be64toh(l_header->session_id);
+    
+    log_it(L_DEBUG, "UDP packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
+           l_version, l_type, l_payload_len, l_seq_num, l_session_id);
+    
+    // Validate version
+    if (l_version != 1) {
+        log_it(L_WARNING, "Unsupported UDP protocol version %u, dropping", l_version);
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    // Check if we have full packet
+    size_t l_total_size = sizeof(dap_stream_trans_udp_header_t) + l_payload_len;
+    if (a_es->buf_in_size < l_total_size) {
+        log_it(L_WARNING, "Incomplete UDP packet (%zu < %zu), dropping", a_es->buf_in_size, l_total_size);
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    // Extract payload pointer
+    uint8_t *l_payload = a_es->buf_in + sizeof(dap_stream_trans_udp_header_t);
+    
+    // Lookup or create session
+    udp_session_entry_t *l_session = NULL;
+    pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
+    HASH_FIND(hh, l_udp_srv->sessions, &l_session_id, sizeof(l_session_id), l_session);
+    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+    
+    // For HANDSHAKE and SESSION_CREATE, we may need to create a new session
+    if (!l_session && (l_type == DAP_STREAM_UDP_PKT_HANDSHAKE || 
+                       l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE)) {
+        log_it(L_INFO, "Creating new UDP session 0x%lx", l_session_id);
+        
+        // Create new session entry
+        l_session = DAP_NEW_Z(udp_session_entry_t);
+        if (!l_session) {
+            log_it(L_CRITICAL, "Failed to allocate UDP session entry");
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        l_session->session_id = l_session_id;
+        l_session->last_activity = time(NULL);
+        
+        // Store client address (from recvfrom in dap_context.c)
+        // For UDP listener sockets, remote address is stored in addr_storage during recvfrom
+        if (a_es->addr_size > 0) {
+            memcpy(&l_session->remote_addr, &a_es->addr_storage, 
+                   a_es->addr_size < sizeof(l_session->remote_addr) ? 
+                   a_es->addr_size : sizeof(l_session->remote_addr));
+            l_session->remote_addr_len = a_es->addr_size;
+        }
+        
+        // Create virtual esocket for this session
+        dap_events_socket_t *l_virtual_es = s_create_virtual_udp_esocket(a_es, 
+            &l_session->remote_addr, l_session->remote_addr_len);
+        if (!l_virtual_es) {
+            log_it(L_ERROR, "Failed to create virtual esocket for UDP session");
+            DAP_DELETE(l_session);
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // Create dap_stream_t for this session with virtual esocket
+        l_session->stream = dap_stream_new_es_client(l_virtual_es, NULL, false);
+        if (!l_session->stream) {
+            log_it(L_ERROR, "Failed to create stream for UDP session");
+            // Cleanup virtual esocket
+            DAP_DEL_Z(l_virtual_es->buf_in);
+            DAP_DEL_Z(l_virtual_es->buf_out);
+            DAP_DELETE(l_virtual_es);
+            DAP_DELETE(l_session);
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // Virtual esocket is now owned by stream (via trans_ctx->esocket)
+        // No need to store separate reference
+        
+        // Set stream trans to UDP
+        if (l_udp_srv->trans) {
+            l_session->stream->trans = l_udp_srv->trans;
+        }
+        
+        // Add to server's session hash table
+        pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
+        HASH_ADD(hh, l_udp_srv->sessions, session_id, sizeof(l_session->session_id), l_session);
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        
+        log_it(L_INFO, "Created UDP session 0x%lx with stream %p", l_session_id, l_session->stream);
+    }
+    
+    if (!l_session) {
+        log_it(L_WARNING, "No session found for UDP packet (session_id=0x%lx, type=%u), dropping", 
+               l_session_id, l_type);
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    // Update activity timestamp
+    l_session->last_activity = time(NULL);
+    
+    // Process packet based on type
+    dap_stream_t *l_stream = l_session->stream;
+    dap_events_socket_t *l_stream_es = (l_stream && l_stream->trans_ctx) ? l_stream->trans_ctx->esocket : NULL;
+    
+    if (!l_stream || !l_stream_es) {
+        log_it(L_ERROR, "Session has invalid stream or esocket");
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    switch (l_type) {
+        case DAP_STREAM_UDP_PKT_HANDSHAKE:
+            log_it(L_DEBUG, "Processing UDP HANDSHAKE packet for session 0x%lx", l_session_id);
+            // Copy UDP packet (with header) to virtual esocket buffer
+            if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
+                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
+                       a_es->buf_in, l_total_size);
+                l_stream_es->buf_in_size += l_total_size;
+                
+                log_it(L_DEBUG, "Copied %zu bytes to virtual esocket buffer (now %zu bytes)", 
+                       l_total_size, l_stream_es->buf_in_size);
+                
+                // Call trans read function to process handshake
+                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                    log_it(L_DEBUG, "Calling trans->ops->read for handshake processing");
+                    ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+                    log_it(L_DEBUG, "trans->ops->read returned %zd", l_read);
+                    
+                    // If there is data to send (response in buf_out), send it now
+                    if (l_stream_es->buf_out_size > 0) {
+                        log_it(L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
+                               l_stream_es->buf_out_size);
+                        if (l_stream_es->callbacks.write_callback) {
+                            l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
+                        }
+                    }
+                } else {
+                    log_it(L_ERROR, "No trans read operation available for stream");
+                }
+            } else {
+                log_it(L_WARNING, "Virtual esocket buffer full, dropping HANDSHAKE packet");
+            }
+            break;
+            
+        case DAP_STREAM_UDP_PKT_SESSION_CREATE:
+            log_it(L_DEBUG, "Processing UDP SESSION_CREATE packet for session 0x%lx", l_session_id);
+            // Copy UDP packet to virtual esocket buffer
+            if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
+                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
+                       a_es->buf_in, l_total_size);
+                l_stream_es->buf_in_size += l_total_size;
+                
+                // Call trans read function to process session create
+                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                    l_stream->trans->ops->read(l_stream, NULL, 0);
+                    
+                    // If there is data to send, send it now
+                    if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
+                        l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
+                    }
+                }
+            } else {
+                log_it(L_WARNING, "Virtual esocket buffer full, dropping SESSION_CREATE packet");
+            }
+            break;
+            
+        case DAP_STREAM_UDP_PKT_DATA:
+            log_it(L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx", 
+                   l_payload_len, l_session_id);
+            // Copy only the payload (stream packets), not the UDP header
+            if (l_stream_es->buf_in_size + l_payload_len <= l_stream_es->buf_in_size_max) {
+                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
+                       l_payload, l_payload_len);
+                l_stream_es->buf_in_size += l_payload_len;
+                
+                // Process stream data
+                size_t l_processed = dap_stream_data_proc_read(l_stream);
+                log_it(L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
+                       l_processed, l_session_id);
+            } else {
+                log_it(L_WARNING, "Virtual esocket buffer full, dropping DATA packet");
+            }
+            break;
+            
+        case DAP_STREAM_UDP_PKT_KEEPALIVE:
+            log_it(L_DEBUG, "Processing UDP KEEPALIVE packet");
+            // Just update timestamp (already done above)
+            break;
+            
+        case DAP_STREAM_UDP_PKT_CLOSE:
+            log_it(L_INFO, "Processing UDP CLOSE packet for session 0x%lx", l_session_id);
+            // Remove session from hash table
+            pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
+            HASH_DEL(l_udp_srv->sessions, l_session);
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+            
+            // Cleanup stream (this will also cleanup trans_ctx->esocket which is the virtual esocket)
+            if (l_session->stream) {
+                dap_stream_delete_unsafe(l_session->stream);
+            }
+            
+            DAP_DELETE(l_session);
+            break;
+            
+        default:
+            log_it(L_WARNING, "Unknown UDP packet type %u, dropping", l_type);
+            break;
+    }
+    
+    // Clear listener socket buffer (we've processed the packet)
+    a_es->buf_in_size = 0;
+}
 
 // Trans server operations callbacks
 static void* s_udp_server_new(const char *a_server_name)
@@ -116,6 +535,10 @@ dap_net_trans_udp_server_t *dap_net_trans_udp_server_new(const char *a_server_na
 
     dap_strncpy(l_udp_server->server_name, a_server_name, sizeof(l_udp_server->server_name) - 1);
     
+    // Initialize session table and lock
+    l_udp_server->sessions = NULL;
+    pthread_rwlock_init(&l_udp_server->sessions_lock, NULL);
+    
     // Get UDP trans instance
     l_udp_server->trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
     if (!l_udp_server->trans) {
@@ -169,6 +592,9 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
     // Register UDP stream handlers
     // This sets up all necessary callbacks for UDP processing
     dap_stream_add_proc_udp(a_udp_server->server);
+    
+    // Override read callback for server listener
+    a_udp_server->server->client_callbacks.read_callback = s_udp_server_read_callback;
 
     log_it(L_DEBUG, "Registered UDP stream handlers");
 
@@ -202,6 +628,21 @@ void dap_net_trans_udp_server_stop(dap_net_trans_udp_server_t *a_udp_server)
         return;
     }
 
+    // Cleanup all active sessions
+    pthread_rwlock_wrlock(&a_udp_server->sessions_lock);
+    udp_session_entry_t *l_session, *l_tmp;
+    HASH_ITER(hh, a_udp_server->sessions, l_session, l_tmp) {
+        HASH_DEL(a_udp_server->sessions, l_session);
+        
+        // Cleanup stream (this will also cleanup trans_ctx->esocket which is the virtual esocket)
+        if (l_session->stream) {
+            dap_stream_delete_unsafe(l_session->stream);
+        }
+        
+        DAP_DELETE(l_session);
+    }
+    pthread_rwlock_unlock(&a_udp_server->sessions_lock);
+
     if (a_udp_server->server) {
         dap_server_delete(a_udp_server->server);
         a_udp_server->server = NULL;
@@ -221,6 +662,9 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_udp_server)
 
     // Ensure server is stopped before deletion
     dap_net_trans_udp_server_stop(a_udp_server);
+    
+    // Destroy sessions lock
+    pthread_rwlock_destroy(&a_udp_server->sessions_lock);
 
     log_it(L_INFO, "Deleted UDP server: %s", a_udp_server->server_name);
     DAP_DELETE(a_udp_server);

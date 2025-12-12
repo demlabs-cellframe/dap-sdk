@@ -40,6 +40,7 @@
 #include "dap_module.h"
 #include "dap_events_socket.h"
 #include "dap_net.h"
+#include "dap_config.h"
 
 
 
@@ -157,7 +158,11 @@ int dap_net_trans_register(const char *a_name,
     
     // Call init callback if provided
     if (a_ops->init) {
-        int l_ret = a_ops->init(l_trans, NULL);  // TODO: pass config
+        // Try to get global config if available
+        dap_config_t *l_cfg = g_config;
+        
+        log_it(L_DEBUG, "Calling trans '%s' init() with config=%p", a_name, l_cfg);
+        int l_ret = a_ops->init(l_trans, l_cfg);
         if (l_ret != 0) {
             log_it(L_ERROR, "Trans '%s' init() failed with code %d", a_name, l_ret);
             DAP_DELETE(l_trans);

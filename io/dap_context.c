@@ -1132,7 +1132,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     else if (!l_flag_rdhup && !l_flag_error && !(l_cur->flags & DAP_SOCK_CONNECTING )) {
-                        log_it(L_DEBUG, "EPOLLIN triggered but nothing to read");
+                        log_it(L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
+                               l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         //dap_events_socket_set_readable_unsafe(l_cur,false);
                     }
                 }

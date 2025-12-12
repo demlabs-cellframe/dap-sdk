@@ -405,6 +405,16 @@ typedef struct dap_net_trans_ops {
     int (*stage_prepare)(dap_net_trans_t *a_trans,
                          const dap_net_stage_prepare_params_t *a_params,
                          dap_net_stage_prepare_result_t *a_result);
+    
+    /**
+     * @brief Get client context from stream's esocket (optional)
+     * @param a_stream Stream to extract client context from
+     * @return Client context pointer (dap_client_t*) or NULL if not applicable
+     * @note Trans-specific method to extract client context from esocket->_inheritor
+     *       Allows trans to encapsulate its own data structures in _inheritor
+     *       while providing clean access to client context when needed
+     */
+    void* (*get_client_context)(dap_stream_t *a_stream);
 } dap_net_trans_ops_t;
 
 /**

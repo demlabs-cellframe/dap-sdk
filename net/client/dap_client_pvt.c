@@ -243,8 +243,17 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         return;
     }
     
-    dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    dap_client_t *l_client = NULL;
+    
+    // Use trans-specific method to get client context if available
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context) {
+        l_client = (dap_client_t*)a_stream->trans->ops->get_client_context(a_stream);
+    } else {
+        // Default: _inheritor directly points to dap_client_t
+        l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
+    }
+    
+    dap_client_pvt_t *l_client_pvt = l_client ? DAP_CLIENT_PVT(l_client) : NULL;
     if (!l_client_pvt) {
         return;
     }
@@ -576,6 +585,11 @@ static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
     // For UDP/DNS transports, handshake happens after connect
     // Check if this is UDP/DNS transport and handshake is needed
     dap_net_trans_t *l_transport = l_client_pvt->stream->trans;
+    debug_if(s_debug_more, L_DEBUG, "Transport connect callback: transport=%p, has_session_control=%d, ops=%p, handshake_init=%p",
+             l_transport, l_transport ? l_transport->has_session_control : -1,
+             l_transport ? l_transport->ops : NULL,
+             (l_transport && l_transport->ops) ? l_transport->ops->handshake_init : NULL);
+    
     if (l_transport && !l_transport->has_session_control &&
         l_transport->ops && l_transport->ops->handshake_init) {
         

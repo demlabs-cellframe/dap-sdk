@@ -189,22 +189,7 @@ static void s_${MODULE_ID}_auto_register(void)
     );
     
     if (l_ret == 0) {
-        log_it(L_DEBUG, \"Auto-registered module '${DAP_MODULE_MODULE_NAME}' (version ${DAP_MODULE_VERSION})\");
-        
-        // Call init function immediately via constructor (priority initialization)
-        // This ensures modules are initialized as soon as libraries are loaded
-        int l_init_ret = ${DAP_MODULE_INIT_FUNCTION}();
-        if (l_init_ret == 0) {
-            // Mark module as initialized to prevent duplicate initialization via dap_module_init_all()
-            dap_module_mark_initialized(\"${DAP_MODULE_MODULE_NAME}\");
-            log_it(L_DEBUG, \"Module '${DAP_MODULE_MODULE_NAME}' initialized via constructor\");
-        } else if (l_init_ret == -2) {
-            // -2 means already registered (idempotent), treat as success
-            dap_module_mark_initialized(\"${DAP_MODULE_MODULE_NAME}\");
-            log_it(L_DEBUG, \"Module '${DAP_MODULE_MODULE_NAME}' already registered (idempotent), marked as initialized\");
-        } else {
-            log_it(L_WARNING, \"Module '${DAP_MODULE_MODULE_NAME}' init function returned error: %d (will be retried via dap_module_init_all())\", l_init_ret);
-        }
+        log_it(L_DEBUG, \"Auto-registered module '${DAP_MODULE_MODULE_NAME}' (version ${DAP_MODULE_VERSION}) - init deferred to dap_module_init_all()\");
     } else {
         log_it(L_WARNING, \"Failed to auto-register module '${DAP_MODULE_MODULE_NAME}': %d\", l_ret);
     }

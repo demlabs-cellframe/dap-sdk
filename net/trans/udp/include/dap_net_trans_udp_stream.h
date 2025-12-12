@@ -161,6 +161,8 @@ typedef struct dap_stream_trans_udp_private {
     struct sockaddr_storage remote_addr; ///< Remote peer address
     socklen_t remote_addr_len;          ///< Remote address length
     
+    dap_enc_key_t *alice_key;           ///< Client-side: Alice's KEM key for handshake
+    
     void *user_data;                    ///< User-defined data
 } dap_stream_trans_udp_private_t;
 

@@ -714,7 +714,7 @@ int main(void)
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
                                  "[general]\n"
-                                 "debug_reactor=false\n"
+                                 "debug_reactor=true\n"
                                  "[dap_client]\n"
                                  "max_tries=5\n"
                                  "timeout=60\n"
@@ -723,27 +723,33 @@ int main(void)
                                  "[stream]\n"
                                  "debug_more=true\n"
                                  "debug_channels=false\n"
-                                 "debug_dump_stream_headers=false\n";
+                                 "debug_dump_stream_headers=false\n"
+                                 "[stream_udp]\n"
+                                 "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Initialize common DAP subsystems
-    dap_common_init(LOG_TAG, NULL);
-    // Set logging output to stdout and level to DEBUG
+    // Set logging output to stdout and level to DEBUG (before dap_common_init)
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     dap_log_level_set(L_DEBUG);
+    
+    // Initialize config system first
     dap_config_init(".");
     
-    // Open config and set as global
+    // Open config and set as global BEFORE dap_common_init
     extern dap_config_t *g_config;
     g_config = dap_config_open("test_trans");
     if (!g_config) {
         printf("Failed to open config\n");
         return -1;
     }
+    
+    // Initialize common DAP subsystems
+    // This will call dap_module_init_all() which initializes all transports with proper config
+    dap_common_init(LOG_TAG, NULL);
     
     // Initialize encryption system
     dap_enc_init();
