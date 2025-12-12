@@ -158,6 +158,7 @@ static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
+
 static void print_it_stdout (unsigned a_off, const char *a_fmt, va_list va);
 static void print_it_stderr (unsigned a_off, const char *a_fmt, va_list va);
 static void print_it_fd (unsigned a_off, const char *a_fmt, va_list va);
@@ -447,16 +448,13 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
     s_print_callback(a_off, a_fmt, va);
-    if (!s_log_file) {
-        if ( dap_common_init(dap_get_appname(), s_log_file_path ) || !s_log_file) {
-            va_end(va_file);
-            return;
-        }
-    }
-    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    // Write to log file only if it's been opened by dap_common_init
+    if (s_log_file) {
+        vfprintf(s_log_file, a_fmt + a_off, va_file);
 #ifdef DAP_OS_WINDOWS
-    fflush(s_log_file);
+        fflush(s_log_file);
 #endif
+    }
     va_end(va_file);
 }
 
