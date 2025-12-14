@@ -102,7 +102,7 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     
     foreach(ARCH ${CMAKE_OSX_ARCHITECTURES})
 
-        set(ARCH_BUILD_DIR "/tmp/xkcp_build_${ARCH}")
+        set(ARCH_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_${ARCH}")
         message("[*] XKCP: Creating build directory for ${ARCH}: ${ARCH_BUILD_DIR}")
         
         copy_source_files(${ARCH_BUILD_DIR})
@@ -123,7 +123,7 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     endforeach()
     
     SET(XKCP_TARGET libdap-XKCP-plainc-fat${TARGET_POSTFIX}.a)
-    SET(XKCP_BUILD_DIR "/tmp/xkcp_build_fat")
+    SET(XKCP_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_fat")
     file(MAKE_DIRECTORY ${XKCP_BUILD_DIR}/bin)
     SET(XKCP_BUILD_LIB ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET})
     SET(XKCP_BUILD_INCLUDES ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET}.headers/)
@@ -139,7 +139,7 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     
     # headers are same, use first 
     list(GET CMAKE_OSX_ARCHITECTURES 0 FIRST_ARCH)
-    set(FIRST_ARCH_BUILD_DIR "/tmp/xkcp_build_${FIRST_ARCH}")
+    set(FIRST_ARCH_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_${FIRST_ARCH}")
     set(FIRST_ARCH_HEADERS "${FIRST_ARCH_BUILD_DIR}/bin/libdap-XKCP-plainc${TARGET_POSTFIX}.a.headers")
     
     add_custom_command(
