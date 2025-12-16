@@ -28,6 +28,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_config.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_net_trans_udp_stream.h"
@@ -39,6 +40,9 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_net_trans_udp_server"
+
+// Debug flags
+static bool s_debug_more = false;  // Extra verbose debugging
 
 // Helper to generate unique UUID for virtual esockets
 static inline dap_events_socket_uuid_t dap_events_socket_uuid_generate(void) {
@@ -91,7 +95,7 @@ static bool s_virtual_esocket_write_callback(dap_events_socket_t *a_es, void *a_
         return false; // Will retry
     }
     
-    log_it(L_DEBUG, "Virtual esocket sent %zd bytes via sendto", l_sent);
+    debug_if(s_debug_more, L_DEBUG, "Virtual esocket sent %zd bytes via sendto", l_sent);
     a_es->buf_out_size = 0;
     return true;
 }
@@ -184,7 +188,7 @@ static dap_events_socket_t *s_create_virtual_udp_esocket(
     // Generate unique UUID
     l_virtual_es->uuid = dap_events_socket_uuid_generate();
     
-    log_it(L_DEBUG, "Created virtual UDP esocket %p (uuid 0x%016" DAP_UINT64_FORMAT_X ") sharing socket %d",
+    debug_if(s_debug_more, L_DEBUG, "Created virtual UDP esocket %p (uuid 0x%016" DAP_UINT64_FORMAT_X ") sharing socket %d",
            l_virtual_es, l_virtual_es->uuid, l_virtual_es->socket);
     
     return l_virtual_es;
@@ -220,7 +224,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    log_it(L_DEBUG, "UDP server received %zu bytes on socket %d", a_es->buf_in_size, a_es->socket);
+    debug_if(s_debug_more, L_DEBUG, "UDP server received %zu bytes on socket %d", a_es->buf_in_size, a_es->socket);
     
     // Check if we have at least a UDP header
     if (a_es->buf_in_size < sizeof(dap_stream_trans_udp_header_t)) {
@@ -238,7 +242,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     uint32_t l_seq_num = ntohl(l_header->seq_num);
     uint64_t l_session_id = be64toh(l_header->session_id);
     
-    log_it(L_DEBUG, "UDP packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
+    debug_if(s_debug_more, L_DEBUG, "UDP packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
            l_version, l_type, l_payload_len, l_seq_num, l_session_id);
     
     // Validate version
@@ -351,25 +355,25 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_HANDSHAKE:
-            log_it(L_DEBUG, "Processing UDP HANDSHAKE packet for session 0x%lx", l_session_id);
+            debug_if(s_debug_more, L_DEBUG, "Processing UDP HANDSHAKE packet for session 0x%lx", l_session_id);
             // Copy UDP packet (with header) to virtual esocket buffer
             if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
                 memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
                        a_es->buf_in, l_total_size);
                 l_stream_es->buf_in_size += l_total_size;
                 
-                log_it(L_DEBUG, "Copied %zu bytes to virtual esocket buffer (now %zu bytes)", 
+                debug_if(s_debug_more, L_DEBUG, "Copied %zu bytes to virtual esocket buffer (now %zu bytes)", 
                        l_total_size, l_stream_es->buf_in_size);
                 
                 // Call trans read function to process handshake
                 if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                    log_it(L_DEBUG, "Calling trans->ops->read for handshake processing");
+                    debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read for handshake processing");
                     ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
-                    log_it(L_DEBUG, "trans->ops->read returned %zd", l_read);
+                    debug_if(s_debug_more, L_DEBUG, "trans->ops->read returned %zd", l_read);
                     
                     // If there is data to send (response in buf_out), send it now
                     if (l_stream_es->buf_out_size > 0) {
-                        log_it(L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
+                        debug_if(s_debug_more, L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
                                l_stream_es->buf_out_size);
                         if (l_stream_es->callbacks.write_callback) {
                             l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
@@ -384,7 +388,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
             
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
-            log_it(L_DEBUG, "Processing UDP SESSION_CREATE packet for session 0x%lx", l_session_id);
+            debug_if(s_debug_more, L_DEBUG, "Processing UDP SESSION_CREATE packet for session 0x%lx", l_session_id);
             // Copy UDP packet to virtual esocket buffer
             if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
                 memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
@@ -393,11 +397,17 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                 
                 // Call trans read function to process session create
                 if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                    debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read to process SESSION_CREATE");
                     l_stream->trans->ops->read(l_stream, NULL, 0);
+                    
+                    debug_if(s_debug_more, L_DEBUG, "After trans->ops->read: buf_out_size=%zu", l_stream_es->buf_out_size);
                     
                     // If there is data to send, send it now
                     if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
+                        debug_if(s_debug_more, L_DEBUG, "Calling write_callback to send SESSION_CREATE response");
                         l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
+                    } else if (l_stream_es->buf_out_size == 0) {
+                        log_it(L_WARNING, "No data to send after processing SESSION_CREATE!");
                     }
                 }
             } else {
@@ -406,7 +416,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
             
         case DAP_STREAM_UDP_PKT_DATA:
-            log_it(L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx", 
+            debug_if(s_debug_more, L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx", 
                    l_payload_len, l_session_id);
             // Copy only the payload (stream packets), not the UDP header
             if (l_stream_es->buf_in_size + l_payload_len <= l_stream_es->buf_in_size_max) {
@@ -416,7 +426,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                 
                 // Process stream data
                 size_t l_processed = dap_stream_data_proc_read(l_stream);
-                log_it(L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
+                debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
                        l_processed, l_session_id);
             } else {
                 log_it(L_WARNING, "Virtual esocket buffer full, dropping DATA packet");
@@ -424,7 +434,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
             
         case DAP_STREAM_UDP_PKT_KEEPALIVE:
-            log_it(L_DEBUG, "Processing UDP KEEPALIVE packet");
+            debug_if(s_debug_more, L_DEBUG, "Processing UDP KEEPALIVE packet");
             // Just update timestamp (already done above)
             break;
             
@@ -489,6 +499,14 @@ static const dap_net_trans_server_ops_t s_udp_server_ops = {
  */
 int dap_net_trans_udp_server_init(void)
 {
+    // Read debug configuration
+    if (g_config) {
+        s_debug_more = dap_config_get_item_bool_default(g_config, "stream_udp", "debug_more", false);
+        if (s_debug_more) {
+            log_it(L_NOTICE, "UDP server: verbose debugging ENABLED");
+        }
+    }
+    
     // Register trans server operations for all UDP variants
     int l_ret = dap_net_trans_server_register_ops(DAP_NET_TRANS_UDP_BASIC, &s_udp_server_ops);
     if (l_ret != 0) {
@@ -596,7 +614,7 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
     // Override read callback for server listener
     a_udp_server->server->client_callbacks.read_callback = s_udp_server_read_callback;
 
-    log_it(L_DEBUG, "Registered UDP stream handlers");
+    debug_if(s_debug_more, L_DEBUG, "Registered UDP stream handlers");
 
     // Start listening on all specified address:port pairs
     for (size_t i = 0; i < a_count; i++) {

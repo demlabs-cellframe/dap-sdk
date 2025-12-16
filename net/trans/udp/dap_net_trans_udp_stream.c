@@ -192,8 +192,31 @@ static void s_udp_client_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Process data through trans read (no buffer needed - data is in esocket->buf_in)
-    l_stream->trans->ops->read(l_stream, NULL, 0);
+    // Process ALL packets in buffer (multiple packets may arrive before callback is called)
+    int l_iterations = 0;
+    const int l_max_iterations = 100; // Safety limit to prevent infinite loops
+    
+    while (a_es->buf_in_size > 0 && l_iterations < l_max_iterations) {
+        size_t l_buf_in_size_before = a_es->buf_in_size;
+        
+        debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read for UDP client, buf_in_size=%zu (iteration %d)", 
+                 a_es->buf_in_size, l_iterations);
+        ssize_t l_read_result = l_stream->trans->ops->read(l_stream, NULL, 0);
+        debug_if(s_debug_more, L_DEBUG, "trans->ops->read returned %zd, buf_in_size now=%zu", 
+                 l_read_result, a_es->buf_in_size);
+        
+        // If buf_in_size didn't change, break to prevent infinite loop
+        if (a_es->buf_in_size == l_buf_in_size_before) {
+            debug_if(s_debug_more, L_DEBUG, "UDP read: buf_in_size unchanged, breaking loop");
+            break;
+        }
+        
+        l_iterations++;
+    }
+    
+    if (l_iterations >= l_max_iterations) {
+        log_it(L_WARNING, "UDP client read callback: max iterations reached, %zu bytes remaining", a_es->buf_in_size);
+    }
 }
 
 /**
@@ -977,8 +1000,12 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     if (!l_es || !l_es->buf_in) {
+        debug_if(s_debug_more, L_DEBUG, "UDP read: no esocket or buf_in (l_es=%p, l_ctx=%p)", l_es, l_ctx);
         return 0;  // No data available
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "UDP read: esocket %p (fd=%d), buf_in_size=%zu", 
+             l_es, l_es->fd, l_es->buf_in_size);
 
     // Check if we have enough data for UDP trans header
     if (l_es->buf_in_size < sizeof(dap_stream_trans_udp_header_t)) {
@@ -992,7 +1019,11 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_payload_size = ntohs(l_header->length);
         size_t l_total_size = sizeof(*l_header) + l_payload_size;
         
+        debug_if(s_debug_more, L_DEBUG, "UDP read: version OK, payload_size=%zu, total_size=%zu, buf_in_size=%zu", 
+                 l_payload_size, l_total_size, l_es->buf_in_size);
+        
         if (l_es->buf_in_size < l_total_size) {
+            debug_if(s_debug_more, L_DEBUG, "UDP read: waiting for full packet");
             return 0; // Wait for full packet
         }
         
@@ -1073,7 +1104,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
 
         if (l_payload) DAP_DELETE(l_payload);
+        debug_if(s_debug_more, L_DEBUG, "UDP read: calling pop_from_buf_in(%zu bytes), buf_in_size=%zu", 
+                 l_total_size, l_es->buf_in_size);
         dap_events_socket_pop_from_buf_in(l_es, NULL, l_total_size);
+        debug_if(s_debug_more, L_DEBUG, "UDP read: after pop, buf_in_size=%zu", l_es->buf_in_size);
         return 0;
     }
     
@@ -1284,7 +1318,16 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_stream->trans = a_trans;
     l_udp_ctx->stream = l_stream;
     
-    log_it(L_DEBUG, "UDP trans created stream %p early (will be reused for all operations)", l_stream);
+    // Initialize trans_ctx and link esocket
+    dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(l_stream);
+    l_ctx->esocket = l_es;
+    l_ctx->stream = l_stream;
+    l_ctx->_inheritor = l_udp_ctx;
+    
+    // CRITICAL: Link esocket->_inheritor to trans_ctx so read callback can find stream
+    l_es->_inheritor = l_ctx;
+    
+    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (will be reused for all operations)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
