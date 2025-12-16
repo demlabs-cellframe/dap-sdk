@@ -1329,7 +1329,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // For UDP: create stream early and return it (stream will be reused for all operations)
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, a_params->node_addr, a_params->authorized);
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for UDP trans");
         DAP_DELETE(l_udp_ctx);

@@ -1171,7 +1171,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     dap_worker_add_events_socket(a_params->worker, l_es);
     
     // Create stream for this connection
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, a_params->node_addr, a_params->authorized);
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for WebSocket trans");
         dap_events_socket_delete_unsafe(l_es, true);
