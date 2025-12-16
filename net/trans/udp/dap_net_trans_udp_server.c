@@ -269,10 +269,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     HASH_FIND(hh, l_udp_srv->sessions, &l_session_id, sizeof(l_session_id), l_session);
     pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     
-    // For HANDSHAKE and SESSION_CREATE, we may need to create a new session
-    if (!l_session && (l_type == DAP_STREAM_UDP_PKT_HANDSHAKE || 
-                       l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE)) {
-        log_it(L_INFO, "Creating new UDP session 0x%lx", l_session_id);
+    // For HANDSHAKE, we need to create a new session
+    // SESSION_CREATE must use existing session created by HANDSHAKE
+    if (!l_session && l_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
+        log_it(L_INFO, "Creating new UDP session 0x%lx for HANDSHAKE", l_session_id);
         
         // Create new session entry
         l_session = DAP_NEW_Z(udp_session_entry_t);

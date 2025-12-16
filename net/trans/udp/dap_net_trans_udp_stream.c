@@ -126,6 +126,8 @@ typedef struct dap_udp_client_esocket_ctx {
 
 // Helper functions
 static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans);
+static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
+static dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
 static int s_udp_handshake_response(dap_stream_t *a_stream, const void *a_data, size_t a_data_size);
 static int s_create_udp_header(dap_stream_trans_udp_header_t *a_header,
                                 uint8_t a_type, uint16_t a_length,
@@ -456,13 +458,12 @@ static int s_udp_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
         return -1;
     }
 
+    // Initialize per-transport (shared) data only
     l_priv->config = dap_stream_trans_udp_config_default();
-    l_priv->session_id = 0;
-    l_priv->seq_num = 0;
     l_priv->server = NULL;
-    l_priv->remote_addr_len = 0;
-    l_priv->alice_key = NULL;
     l_priv->user_data = NULL;
+    
+    // Per-stream data (session_id, seq_num, alice_key, remote_addr) is now in dap_net_trans_udp_ctx_t
     
     // Read debug configuration
     log_it(L_NOTICE, "UDP transport init called: a_config=%p", a_config);
@@ -944,10 +945,11 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     l_ctx->session_create_cb = a_callback;
 
     // Create UDP packet with SESSION_CREATE type
+    // Use session_id established during handshake
     dap_stream_trans_udp_header_t l_header;
     s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_SESSION_CREATE,
                         0, 
-                        l_priv->seq_num++, 0); // Session ID 0 indicates request for new session
+                        l_priv->seq_num++, l_priv->session_id); // Use handshake session_id
     
     size_t l_packet_size = sizeof(l_header);
     
@@ -1414,6 +1416,40 @@ static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans)
     if (!a_trans)
         return NULL;
     return (dap_stream_trans_udp_private_t*)a_trans->_inheritor;
+}
+
+/**
+ * @brief Get UDP per-stream context
+ */
+static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx)
+        return NULL;
+    return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->_inheritor;
+}
+
+/**
+ * @brief Get or create UDP per-stream context
+ */
+static dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx)
+        return NULL;
+    
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
+    
+    if (!l_trans_ctx->_inheritor) {
+        // Create new UDP context
+        dap_net_trans_udp_ctx_t *l_udp_ctx = DAP_NEW_Z(dap_net_trans_udp_ctx_t);
+        if (!l_udp_ctx) {
+            log_it(L_CRITICAL, "Failed to allocate UDP stream context");
+            return NULL;
+        }
+        l_trans_ctx->_inheritor = l_udp_ctx;
+        debug_if(s_debug_more, L_DEBUG, "Created UDP context %p for stream %p", l_udp_ctx, a_stream);
+    }
+    
+    return (dap_net_trans_udp_ctx_t*)l_trans_ctx->_inheritor;
 }
 
 /**

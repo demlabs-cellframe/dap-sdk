@@ -150,21 +150,29 @@ typedef struct dap_stream_trans_udp_config {
 } dap_stream_trans_udp_config_t;
 
 /**
- * @brief UDP trans private data
+ * @brief UDP trans private data (per-transport, shared)
  */
 typedef struct dap_stream_trans_udp_private {
     dap_server_t *server;               ///< UDP server instance
-    uint64_t session_id;                ///< Current session ID
-    uint32_t seq_num;                   ///< Current sequence number
     dap_stream_trans_udp_config_t config;  ///< Configuration
-    
-    struct sockaddr_storage remote_addr; ///< Remote peer address
-    socklen_t remote_addr_len;          ///< Remote address length
-    
-    dap_enc_key_t *alice_key;           ///< Client-side: Alice's KEM key for handshake
-    
     void *user_data;                    ///< User-defined data
 } dap_stream_trans_udp_private_t;
+
+/**
+ * @brief UDP stream context (per-stream, stored in trans_ctx->_inheritor)
+ * 
+ * Each stream has its own UDP context with unique session_id, seq_num, etc.
+ * This allows multiple concurrent UDP connections to share one transport.
+ */
+typedef struct dap_net_trans_udp_ctx {
+    uint64_t session_id;                ///< Session ID for this stream
+    uint32_t seq_num;                   ///< Sequence number for this stream
+    struct sockaddr_storage remote_addr; ///< Remote peer address
+    socklen_t remote_addr_len;          ///< Remote address length
+    dap_enc_key_t *alice_key;           ///< Client: Alice's KEM key for handshake
+    void *client_ctx;                   ///< dap_client_t* from stage_prepare (if any)
+    dap_stream_t *stream;               ///< Associated stream (back-reference)
+} dap_net_trans_udp_ctx_t;
 
 /**
  * @brief Register UDP trans adapter
