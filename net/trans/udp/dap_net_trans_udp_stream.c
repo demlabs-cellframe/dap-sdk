@@ -135,12 +135,16 @@ static int s_parse_udp_header(const dap_stream_trans_udp_header_t *a_header,
                                uint32_t *a_seq_num, uint64_t *a_session_id);
 
 /**
- * @brief UDP client read callback
+ * @brief UDP read callback for processing incoming packets
  * 
- * This callback is invoked when data arrives on a client UDP socket.
+ * This callback is invoked when data arrives on a UDP socket (client or server virtual).
  * The trans_ctx is stored in esocket->_inheritor (always dap_net_trans_ctx_t).
+ * 
+ * Used by both:
+ * - UDP client esockets (direct physical socket)
+ * - UDP server virtual esockets (demultiplexed sessions)
  */
-static void s_udp_client_read_callback(dap_events_socket_t *a_es, void *a_arg) {
+void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     (void)a_arg;
 
     if (!a_es || !a_es->buf_in_size) {
@@ -193,17 +197,22 @@ static void s_udp_client_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     }
     
     // Process ALL packets in buffer (multiple packets may arrive before callback is called)
+    // Don't manually call trans->ops->read - reactor fills buf_in automatically
+    // Just process what's already in buffer
     int l_iterations = 0;
     const int l_max_iterations = 100; // Safety limit to prevent infinite loops
     
     while (a_es->buf_in_size > 0 && l_iterations < l_max_iterations) {
         size_t l_buf_in_size_before = a_es->buf_in_size;
         
-        debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read for UDP client, buf_in_size=%zu (iteration %d)", 
+        debug_if(s_debug_more, L_DEBUG, "Processing UDP packet from buf_in, buf_in_size=%zu (iteration %d)", 
                  a_es->buf_in_size, l_iterations);
-        ssize_t l_read_result = l_stream->trans->ops->read(l_stream, NULL, 0);
-        debug_if(s_debug_more, L_DEBUG, "trans->ops->read returned %zd, buf_in_size now=%zu", 
-                 l_read_result, a_es->buf_in_size);
+        
+        // Process one packet from buffer (s_udp_read will shrink buf_in)
+        ssize_t l_result = s_udp_read(l_stream, NULL, 0);
+        
+        debug_if(s_debug_more, L_DEBUG, "s_udp_read returned %zd, buf_in_size now=%zu", 
+                 l_result, a_es->buf_in_size);
         
         // If buf_in_size didn't change, break to prevent infinite loop
         if (a_es->buf_in_size == l_buf_in_size_before) {
@@ -660,7 +669,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         
         // Set read callback
         if (!l_ctx->esocket->callbacks.read_callback) {
-            l_ctx->esocket->callbacks.read_callback = s_udp_client_read_callback;
+            l_ctx->esocket->callbacks.read_callback = dap_stream_trans_udp_read_callback;
             debug_if(s_debug_more, L_DEBUG, "Set UDP client read callback for esocket %p", l_ctx->esocket);
         }
     }

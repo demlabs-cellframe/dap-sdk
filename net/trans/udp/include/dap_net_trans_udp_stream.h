@@ -312,6 +312,18 @@ int dap_stream_trans_udp_get_remote_addr(dap_net_trans_t *a_trans,
                                               struct sockaddr *a_addr,
                                               socklen_t *a_addr_len);
 
+/**
+ * @brief UDP read callback for processing incoming packets
+ * 
+ * This callback processes UDP packets from buf_in buffer. It is used by both:
+ * - UDP client esockets (direct physical socket)
+ * - UDP server virtual esockets (demultiplexed sessions)
+ * 
+ * @param a_es Event socket with data in buf_in
+ * @param a_arg Callback argument (unused)
+ */
+void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg);
+
 
 #ifdef __cplusplus
 }

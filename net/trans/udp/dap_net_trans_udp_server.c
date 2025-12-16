@@ -325,6 +325,19 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             l_session->stream->trans = l_udp_srv->trans;
         }
         
+        // Set read callback for virtual esocket to process incoming UDP packets
+        if (l_session->stream->trans_ctx && l_session->stream->trans_ctx->esocket) {
+            dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_session->stream->trans_ctx;
+            dap_events_socket_t *l_v_es = l_trans_ctx->esocket;
+            
+            // CRITICAL: Set stream in trans_ctx so UDP read callback can find it
+            l_trans_ctx->stream = l_session->stream;
+            l_v_es->_inheritor = l_trans_ctx;  // Point to trans_ctx
+            l_v_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
+            debug_if(s_debug_more, L_DEBUG, "Set UDP read callback for virtual esocket %p (trans_ctx->stream=%p)", 
+                     l_v_es, l_trans_ctx->stream);
+        }
+        
         // Add to server's session hash table
         pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
         HASH_ADD(hh, l_udp_srv->sessions, session_id, sizeof(l_session->session_id), l_session);
@@ -365,11 +378,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                 debug_if(s_debug_more, L_DEBUG, "Copied %zu bytes to virtual esocket buffer (now %zu bytes)", 
                        l_total_size, l_stream_es->buf_in_size);
                 
-                // Call trans read function to process handshake
-                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                    debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read for handshake processing");
-                    ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
-                    debug_if(s_debug_more, L_DEBUG, "trans->ops->read returned %zd", l_read);
+                // Trigger read callback to process data from buf_in (don't manually call trans->ops->read)
+                if (l_stream_es->callbacks.read_callback) {
+                    debug_if(s_debug_more, L_DEBUG, "Calling read_callback for handshake processing");
+                    l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
                     
                     // If there is data to send (response in buf_out), send it now
                     if (l_stream_es->buf_out_size > 0) {
@@ -380,7 +392,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                         }
                     }
                 } else {
-                    log_it(L_ERROR, "No trans read operation available for stream");
+                    log_it(L_ERROR, "No read_callback set for virtual esocket");
                 }
             } else {
                 log_it(L_WARNING, "Virtual esocket buffer full, dropping HANDSHAKE packet");
@@ -395,12 +407,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                        a_es->buf_in, l_total_size);
                 l_stream_es->buf_in_size += l_total_size;
                 
-                // Call trans read function to process session create
-                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                    debug_if(s_debug_more, L_DEBUG, "Calling trans->ops->read to process SESSION_CREATE");
-                    l_stream->trans->ops->read(l_stream, NULL, 0);
+                // Trigger read callback to process data from buf_in (don't manually call trans->ops->read)
+                if (l_stream_es->callbacks.read_callback) {
+                    debug_if(s_debug_more, L_DEBUG, "Calling read_callback to process SESSION_CREATE");
+                    l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
                     
-                    debug_if(s_debug_more, L_DEBUG, "After trans->ops->read: buf_out_size=%zu", l_stream_es->buf_out_size);
+                    debug_if(s_debug_more, L_DEBUG, "After read_callback: buf_out_size=%zu", l_stream_es->buf_out_size);
                     
                     // If there is data to send, send it now
                     if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
