@@ -1096,23 +1096,27 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
                  }
                  l_ctx->session_create_cb = NULL;
-             } else if (l_header->session_id == 0) {
-                 // Server: Received Session Request (session_id == 0 means request)
-                 debug_if(s_debug_more, L_DEBUG, "Server: processing SESSION_CREATE request");
+             } else if (!l_ctx->session_create_cb) {
+                 // Server: Received Session Request from client
+                 // session_id is already set from HANDSHAKE (not 0!)
+                 uint64_t l_sess_id = be64toh(l_header->session_id);
+                 debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for existing session 0x%lx", l_sess_id);
+                 
+                 // Session was already created during HANDSHAKE, just confirm it
                  if (!a_stream->session) {
                      a_stream->session = dap_stream_session_pure_new();
+                     if (a_stream->session) {
+                         a_stream->session->id = l_sess_id;
+                     }
                  }
                  
-                 uint64_t l_srv_sess_id = (uint64_t)time(NULL) | ((uint64_t)m_dap_random_u32() << 32);
-                 l_udp_ctx->session_id = l_srv_sess_id;
-                 if (a_stream->session) a_stream->session->id = l_srv_sess_id;
-                 
-                 // Send response (use per-stream seq_num)
+                 // Send confirmation response with same session_id
                  dap_stream_trans_udp_header_t l_resp_hdr;
                  s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                     0, l_udp_ctx->seq_num++, l_srv_sess_id);
+                                     0, l_udp_ctx->seq_num++, l_sess_id);
                                      
                  dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
+                 debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response for session 0x%lx", l_sess_id);
              } else {
                  // Client: Duplicate SESSION_CREATE response (callback already called)
                  debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
