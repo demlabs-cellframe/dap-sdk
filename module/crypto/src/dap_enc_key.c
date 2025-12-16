@@ -1300,9 +1300,10 @@ size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_bu
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
 {
-    return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST && *s_callbacks[a_key_type].name
-        ? s_callbacks[a_key_type].name
-        : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
+    return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST &&
+           s_callbacks[a_key_type].name && *s_callbacks[a_key_type].name
+               ? s_callbacks[a_key_type].name
+               : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){ // TODO: use uthash
