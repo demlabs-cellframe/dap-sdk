@@ -1082,7 +1082,19 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  // Client: Received Session Response
                  uint64_t l_sess_id = be64toh(l_header->session_id);
                  
-                 l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
+                 // Validate stream before calling callback
+                 if (!a_stream) {
+                     log_it(L_ERROR, "Cannot call session_create_cb: stream is NULL");
+                 } else if (!a_stream->trans) {
+                     log_it(L_ERROR, "Cannot call session_create_cb: stream->trans is NULL");
+                 } else if (!a_stream->trans_ctx) {
+                     log_it(L_ERROR, "Cannot call session_create_cb: stream->trans_ctx is NULL");
+                 } else {
+                     debug_if(s_debug_more, L_DEBUG, "Calling session_create_cb: stream=%p, session_id=%u, cb=%p", 
+                              a_stream, (uint32_t)l_sess_id, l_ctx->session_create_cb);
+                     l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
+                     debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
+                 }
                  l_ctx->session_create_cb = NULL;
              } else {
                  // Server: Received Session Request
