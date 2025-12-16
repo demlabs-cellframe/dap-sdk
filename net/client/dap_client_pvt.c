@@ -258,18 +258,8 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         return;
     }
     
-    // Check if this is a temporary stream (for HTTP/WebSocket handshake) or main stream (for UDP/DNS)
-    // Temporary stream is not the main stream, main stream is stored in l_client_pvt->stream
-    bool l_is_temporary_stream = (a_stream != l_client_pvt->stream);
-    
     if (a_error != 0) {
         log_it(L_WARNING, "Handshake failed with error: %d, trying fallback transport", a_error);
-        
-        // Cleanup temporary stream before error handling
-        if (l_is_temporary_stream) {
-            log_it(L_DEBUG, "Cleaning up temporary stream for handshake (error case)");
-            dap_stream_delete_unsafe(a_stream);
-        }
         
         // Try next fallback transport if available
         if (s_retry_handshake_with_fallback(l_client_pvt) == 0) {
@@ -289,80 +279,14 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         return;
     }
     
-    // Process handshake response BEFORE deleting temporary stream
-    // This ensures that s_enc_init_response can access stream if needed
+    // Process handshake response
     if (a_data && a_data_size > 0) {
-        // For HTTP/WebSocket, we need to pass the temporary stream to s_enc_init_response
-        // so it can load encryption context into the transport
-        // Temporarily store the stream pointer if it's a temporary stream
-        dap_stream_t *l_original_stream = l_client_pvt->stream;
-        if (l_is_temporary_stream && a_stream) {
-            // For temporary stream, use it to access transport for encryption context loading
-            // The transport is stored in the temporary stream's stream_transport
-            l_client_pvt->stream = a_stream;
-        }
-        
         s_enc_init_response(l_client, a_data, a_data_size);
-        
-        // Restore original stream (may be NULL for HTTP/WebSocket during handshake)
-        l_client_pvt->stream = l_original_stream;
     } else {
-        // For UDP/DNS transports, handshake callback may be called without data
-        // Check if transport uses UDP socket type
-        dap_net_trans_t *l_transport = l_client_pvt->stream ? l_client_pvt->stream->trans : NULL;
-        if (l_transport && !l_transport->has_session_control) {
-            // UDP/DNS handshake callback called without data - this is normal
-            // Handshake is handled by transport protocol, so we just mark stage as done
-            log_it(L_DEBUG, "UDP/DNS handshake completed via transport protocol, marking stage as done");
-            
-            // For UDP/DNS, if we're in STAGE_STREAM_SESSION, we need to create session after handshake
-            // (for HTTP/WebSocket, session_create happens in STAGE_STREAM_CTL)
-            if (l_client_pvt->stage == STAGE_STREAM_SESSION && l_transport->ops && l_transport->ops->session_create) {
-                log_it(L_DEBUG, "UDP/DNS handshake completed, creating session");
-                
-                // Prepare session parameters
-                dap_net_session_params_t l_session_params = {
-                    .channels = l_client_pvt->client->active_channels,
-                    .enc_type = l_client_pvt->session_key_type,
-                    .enc_key_size = l_client_pvt->session_key_block_size,
-                    .enc_headers = false,
-                    .protocol_version = DAP_CLIENT_PROTOCOL_VERSION
-                };
-                
-                // Call transport session_create
-                int l_session_ret = l_transport->ops->session_create(l_client_pvt->stream, &l_session_params, 
-                                                                     s_session_create_callback_wrapper);
-                
-                if (l_session_ret != 0) {
-                    log_it(L_ERROR, "Failed to initiate session create via transport for UDP/DNS: %d", l_session_ret);
-                    l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                    l_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                    s_stage_status_after(l_client_pvt);
-                    return;
-                }
-                
-                // Session create is async, callback will handle response
-                // Set done callback to advance to next stage when session create completes
-                l_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
-                s_set_stage_status(l_client_pvt, STAGE_STATUS_IN_PROGRESS);
-            } else {
-                // For STAGE_ENC_INIT, just mark as done
-                s_set_stage_status(l_client_pvt, STAGE_STATUS_DONE);
-                s_stage_status_after(l_client_pvt);
-            }
-        } else {
-            log_it(L_ERROR, "Handshake completed but no response data for non-UDP transport");
-            s_set_stage_status(l_client_pvt, STAGE_STATUS_ERROR);
-            l_client_pvt->last_error = ERROR_ENC_NO_KEY;
-            s_stage_status_after(l_client_pvt);
-        }
-    }
-    
-    // Cleanup temporary stream AFTER processing response (for HTTP/WebSocket handshake)
-    // For UDP/DNS, handshake uses main stream, so don't delete it
-    if (l_is_temporary_stream) {
-        log_it(L_DEBUG, "Cleaning up temporary stream for handshake");
-        dap_stream_delete_unsafe(a_stream);
+        // Handshake completed without data to process - transport handled everything
+        log_it(L_DEBUG, "Handshake completed via transport protocol, marking stage as done");
+        s_set_stage_status(l_client_pvt, STAGE_STATUS_DONE);
+        s_stage_status_after(l_client_pvt);
     }
 }
 
@@ -370,38 +294,13 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error)
 {
     if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket || !a_stream->trans_ctx->esocket->_inheritor) {
-        if (a_stream) {
-            // Detach esocket if it was a temporary stream before deleting
-            // This prevents double free of esocket if it was borrowed from client
-            // Note: We can't check l_client_pvt yet because we failed to get it
-            // Assume it's safe to just detach and delete
-            if (a_stream->trans_ctx)
-                a_stream->trans_ctx->esocket = NULL; 
-            dap_stream_delete_unsafe(a_stream);
-        }
         return;
     }
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     if (!l_client_pvt) {
-        if (a_stream->trans_ctx)
-            a_stream->trans_ctx->esocket = NULL;
-        dap_stream_delete_unsafe(a_stream);
         return;
-    }
-    
-    // Check if this is a temporary stream (for TCP-based transports session create) or main stream
-    // Temporary stream is not the main stream, main stream is stored in l_client_pvt->stream
-    bool l_is_temporary_stream = (a_stream != l_client_pvt->stream);
-    
-    // Cleanup temporary stream only (for TCP-based transports session create)
-    // IMPORTANT: Detach esocket first because it might be the main client esocket!
-    if (l_is_temporary_stream) {
-        log_it(L_DEBUG, "Cleaning up temporary stream for session create");
-        if (a_stream->trans_ctx)
-            a_stream->trans_ctx->esocket = NULL; // Detach shared esocket
-        dap_stream_delete_unsafe(a_stream);
     }
     
     if (a_error != 0) {
@@ -417,8 +316,7 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     }
     
     // Process session create response
-    // Transport provides full response data if available (for TCP-based transports),
-    // or only session_id (for UDP/DNS transports)
+    // Transport provides either full response data or only session_id
     if (a_session_id != 0 || (a_response_data && a_response_size > 0)) {
         if (a_response_data && a_response_size > 0) {
             // Use full response data provided by transport
@@ -426,7 +324,7 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
             // Free response data (transport allocated it for us)
             DAP_DELETE(a_response_data);
         } else {
-            // Transport provided only session_id (UDP/DNS transports)
+            // Transport provided only session_id
             
             // If we already have stream_key (from Handshake), just set ID and finish
             if (l_client_pvt->stream_key) {
@@ -497,7 +395,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
         a_client_pvt->reconnect_timer = NULL;
     }
-    // http_client is now managed by transport layer, no need to clean it up here
+    // Transport-specific resources are managed by transport layer
     if (a_client_pvt->stream_es) {
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
@@ -551,9 +449,8 @@ void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
 
 /**
  * @brief s_stream_transport_connect_callback
- * Callback wrapper for transport connect operations (UDP/DNS)
- * Converts transport connect callback signature to client callback
- * For UDP/DNS transports, also initiates handshake after successful connect
+ * Callback for transport connect operations
+ * Called when transport completes connection establishment
  */
 static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code)
 {
@@ -582,86 +479,7 @@ static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
         return;
     }
     
-    // For UDP/DNS transports, handshake happens after connect
-    // Check if this is UDP/DNS transport and handshake is needed
-    dap_net_trans_t *l_transport = l_client_pvt->stream->trans;
-    debug_if(s_debug_more, L_DEBUG, "Transport connect callback: transport=%p, has_session_control=%d, ops=%p, handshake_init=%p",
-             l_transport, l_transport ? l_transport->has_session_control : -1,
-             l_transport ? l_transport->ops : NULL,
-             (l_transport && l_transport->ops) ? l_transport->ops->handshake_init : NULL);
-    
-    if (l_transport && !l_transport->has_session_control &&
-        l_transport->ops && l_transport->ops->handshake_init) {
-        
-        // Generate session key if not already generated (should be done in STAGE_ENC_INIT)
-        if (!l_client_pvt->session_key_open) {
-            l_client_pvt->session_key_open = dap_enc_key_new_generate(
-                l_client_pvt->session_key_open_type, NULL, 0, NULL, 0,
-                l_client_pvt->session_key_block_size);
-            if (!l_client_pvt->session_key_open) {
-                log_it(L_ERROR, "Failed to generate session key for UDP/DNS handshake");
-                l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                l_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
-                s_stage_status_after(l_client_pvt);
-                return;
-            }
-        }
-        
-        // Prepare handshake parameters
-        size_t l_data_size = l_client_pvt->session_key_open->pub_key_data_size;
-        uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t*)l_client_pvt->session_key_open->pub_key_data, l_data_size);
-        if (!l_alice_pub_key) {
-            log_it(L_ERROR, "Failed to allocate alice public key");
-            l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-            l_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
-            s_stage_status_after(l_client_pvt);
-            return;
-        }
-        
-        // Add certificates signatures
-        dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-        size_t l_sign_count = 0;
-        if (l_client_pvt->client->auth_cert)
-            l_sign_count += dap_cert_add_sign_to_data(l_client_pvt->client->auth_cert, &l_alice_pub_key, &l_data_size,
-                                                       l_client_pvt->session_key_open->pub_key_data,
-                                                       l_client_pvt->session_key_open->pub_key_data_size);
-        if (l_node_cert)
-            l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
-                                                      l_client_pvt->session_key_open->pub_key_data,
-                                                      l_client_pvt->session_key_open->pub_key_data_size);
-        
-        dap_net_handshake_params_t l_handshake_params = {
-            .enc_type = l_client_pvt->session_key_type,
-            .pkey_exchange_type = l_client_pvt->session_key_open_type,
-            .pkey_exchange_size = l_client_pvt->session_key_open->pub_key_data_size,
-            .block_key_size = l_client_pvt->session_key_block_size,
-            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
-            .auth_cert = l_client_pvt->client->auth_cert,
-            .alice_pub_key = l_alice_pub_key,
-            .alice_pub_key_size = l_data_size,
-            .sign_count = l_sign_count
-        };
-        
-        // Initiate handshake via transport
-        log_it(L_INFO, "Initiating UDP/DNS handshake after connect");
-        int l_handshake_ret = l_transport->ops->handshake_init(a_stream, &l_handshake_params, 
-                                                               s_handshake_callback_wrapper);
-        
-        if (l_handshake_ret != 0) {
-            log_it(L_ERROR, "Failed to initiate UDP/DNS handshake: %d", l_handshake_ret);
-            DAP_DELETE(l_alice_pub_key);
-            l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-            l_client_pvt->last_error = ERROR_STREAM_ABORTED;
-            s_stage_status_after(l_client_pvt);
-            return;
-        }
-        
-        // Handshake is async, callback will handle response and transition to next stage
-        log_it(L_DEBUG, "UDP/DNS handshake initiated, waiting for response");
-        return; // Don't call s_stream_connected yet - wait for handshake callback
-    }
-    
-    // For TCP transports (HTTP/WebSocket), connection successful, proceed with normal flow
+    // Transport connected successfully
     log_it(L_INFO, "Transport connect succeeded, calling stream connected callback");
     s_stream_connected(l_client_pvt);
 }
@@ -725,7 +543,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
         if (l_es->flags & DAP_SOCK_CONNECTING ){
             dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
             dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-            log_it(L_WARNING,"Connecting timeout for stream uplink request http://%s:%u/, possible network problems or host is down",
+            log_it(L_WARNING,"Connecting timeout for stream uplink request %s:%u, possible network problems or host is down",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
@@ -764,7 +582,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
         if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
-            log_it(L_WARNING, "Activity timeout for streaming uplink http://%s:%u/, possible network problems or host is down",
+            log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u, possible network problems or host is down",
                                 l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             if(l_es->callbacks.error_callback)
@@ -869,21 +687,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
-                    // Check if transport uses UDP socket type (UDP/DNS)
-                    // We enable handshake for UDP/DNS to ensure encryption
-                    log_it(L_DEBUG, "Checking transport %d for session control: has_session_control=%d", 
-                           l_trans_type, l_transport->has_session_control);
-                    /* 
-                    if (!l_transport->has_session_control) {
-                        log_it(L_DEBUG, "UDP/DNS transport detected, skipping handshake in STAGE_ENC_INIT (will happen in STAGE_STREAM_SESSION)");
-                        a_client_pvt->stage_status = STAGE_STATUS_DONE;
-                        s_stage_status_after(a_client_pvt);
-                        break;
-                    }
-                    */
+                    // Prepare handshake for transport
                     
-                    // For HTTP/WebSocket transports, handshake happens before stream creation
-                    // Create temporary stream for handshake via transport's stage_prepare
+                    // Create stream for handshake via transport's stage_prepare
                     if (!l_transport->ops->handshake_init) {
                         log_it(L_ERROR, "Transport type %d doesn't support handshake_init", l_trans_type);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -902,7 +708,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_net_stage_prepare_params_t l_prepare_params = {
                         .host = a_client_pvt->client->link_info.uplink_addr,
                         .port = a_client_pvt->client->link_info.uplink_port,
-                        .callbacks = &s_handshake_callbacks, // Required for socket creation, but not used for handshake
+                        .node_addr = &a_client_pvt->client->link_info.node_addr,
+                        .authorized = false,  // Not authorized yet at handshake stage
+                        .callbacks = &s_handshake_callbacks,
                         .client_ctx = a_client_pvt->client,
                         .worker = l_worker
                     };
@@ -918,26 +726,23 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
-                    // Esocket is fully prepared by transport (created, callbacks set, connected, added to worker)
-                    // Create temporary stream for handshake using esocket from transport
-                    dap_stream_t *l_temp_stream = dap_stream_new_es_client(l_prepare_result.esocket, 
-                                                                           &a_client_pvt->client->link_info.node_addr,
-                                                                           false);
-                    if (!l_temp_stream) {
-                        log_it(L_CRITICAL, "Failed to create temporary stream for handshake");
+                    // Transport creates stream - save it as the client's stream
+                    if (!l_prepare_result.stream) {
+                        log_it(L_CRITICAL, "Trans failed to create stream for handshake");
                         dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
                         break;
                     }
                     
-                    l_temp_stream->trans = l_transport;
+                    a_client_pvt->stream = l_prepare_result.stream;
+                    a_client_pvt->stream_es = l_prepare_result.esocket;
+                    log_it(L_DEBUG, "Using trans-created stream %p for handshake", a_client_pvt->stream);
                     
                     // Prepare handshake parameters
                     size_t l_data_size = a_client_pvt->session_key_open->pub_key_data_size;
                     uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t*)a_client_pvt->session_key_open->pub_key_data, l_data_size);
                     if (!l_alice_pub_key) {
-                        dap_stream_delete_unsafe(l_temp_stream);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
                         break;
@@ -968,13 +773,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     };
                     
                     // Call transport handshake_init
-                    int l_handshake_ret = l_transport->ops->handshake_init(l_temp_stream, &l_handshake_params, 
+                    int l_handshake_ret = l_transport->ops->handshake_init(a_client_pvt->stream, &l_handshake_params, 
                                                                           s_handshake_callback_wrapper);
                     
                     // Cleanup alice_pub_key will be done by handshake_init or callback
                     if (l_handshake_ret != 0) {
                         log_it(L_ERROR, "Failed to initiate handshake via transport: %d", l_handshake_ret);
-                        dap_stream_delete_unsafe(l_temp_stream);
                         DAP_DELETE(l_alice_pub_key);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
@@ -992,26 +796,14 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_STREAM_CTL: {
                     log_it(L_INFO, "Go to stage STREAM_CTL: prepare the request");
 
-                    // Check if transport supports transport-specific handshake (UDP/DNS)
-                    // For UDP/DNS transports, STREAM_CTL is not needed - handshake happens via transport protocol
                     dap_net_trans_type_t l_trans_type = a_client_pvt->client->trans_type;
                     dap_net_trans_t *l_transport = dap_net_trans_find(l_trans_type);
                     
-                    if (l_transport && !l_transport->has_session_control) {
-                        // UDP/DNS transports skip HTTP STREAM_CTL stage
-                        // Handshake and session creation happen via transport protocol
-                        log_it(L_DEBUG, "UDP/DNS transport detected, skipping HTTP STREAM_CTL stage");
+                    // Check if transport supports session_create
+                    if (!l_transport || !l_transport->ops || !l_transport->ops->session_create) {
+                        log_it(L_DEBUG, "Transport doesn't support session_create, skipping STREAM_CTL");
                         s_set_stage_status(a_client_pvt, STAGE_STATUS_DONE);
                         s_stage_status_after(a_client_pvt);
-                        break;
-                    }
-
-                    // For HTTP/WebSocket transports, session creation is performed via transport abstraction
-                    // Create temporary stream for session creation to use transport abstraction fully
-                    if (!l_transport || !l_transport->ops || !l_transport->ops->session_create) {
-                        log_it(L_ERROR, "Transport type %d doesn't support session_create", l_trans_type);
-                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         break;
                     }
 
@@ -1024,66 +816,28 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .protocol_version = DAP_CLIENT_PROTOCOL_VERSION
                     };
 
-                    // For HTTP/WebSocket transports, we need a temporary stream for session creation
-                    // Create temporary esocket for session creation
-                    static dap_events_socket_callbacks_t s_handshake_callbacks = {
-                        .read_callback = NULL,  // Not used for session create-only stream
-                        .write_callback = NULL, // Not used for session create-only stream
-                        .error_callback = NULL, // Not used for session create-only stream
-                        .delete_callback = NULL, // Not used for session create-only stream
-                        .connected_callback = NULL // Not used for session create-only stream
-                    };
-
-                    dap_net_stage_prepare_params_t l_prepare_params = {
-                        .host = a_client_pvt->client->link_info.uplink_addr,
-                        .port = a_client_pvt->client->link_info.uplink_port,
-                        .callbacks = &s_handshake_callbacks,
-                        .client_ctx = a_client_pvt->client,
-                        .worker = l_worker  // Required for socket creation
-                    };
-
-                    dap_net_stage_prepare_result_t l_prepare_result;
-                    int l_prepare_ret = dap_net_trans_stage_prepare(l_trans_type, &l_prepare_params, &l_prepare_result);
-                    
-                    if (l_prepare_ret != 0 || !l_prepare_result.esocket) {
-                        log_it(L_ERROR, "Stage prepare failed for session create: %d", l_prepare_result.error_code);
+                    // Use existing stream created by transport in STAGE_ENC_INIT
+                    if (!a_client_pvt->stream) {
+                        log_it(L_ERROR, "No stream available for session_create (should be created in STAGE_ENC_INIT)");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         break;
                     }
-
-                    // Create temporary stream for session creation
-                    dap_stream_t *l_temp_stream = dap_stream_new_es_client(l_prepare_result.esocket, 
-                                                                           &a_client_pvt->client->link_info.node_addr,
-                                                                           false);
-                    if (!l_temp_stream) {
-                        log_it(L_CRITICAL, "Failed to create temporary stream for session create");
-                        dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
-                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
-                        break;
-                    }
                     
-                    l_temp_stream->trans = l_transport;
+                    log_it(L_DEBUG, "Using trans-created stream %p for session_create", a_client_pvt->stream);
 
                     // Call transport session_create
-                    int l_session_ret = l_transport->ops->session_create(l_temp_stream, &l_session_params, 
+                    int l_session_ret = l_transport->ops->session_create(a_client_pvt->stream, &l_session_params, 
                                                                          s_session_create_callback_wrapper);
                     
                     if (l_session_ret != 0) {
                         log_it(L_ERROR, "Failed to initiate session create via transport: %d", l_session_ret);
-                        // DETACH esocket before deleting stream to prevent double free of esocket
-                        if (l_temp_stream->trans_ctx)
-                            l_temp_stream->trans_ctx->esocket = NULL;
-                        dap_stream_delete_unsafe(l_temp_stream);
-                        dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         break;
                     }
                     
-                    // Session create is async, callback will handle response and stream deletion
-                    // DO NOT delete l_temp_stream here, it's used in async callback context
+                    // Session create is async, callback will handle response
                     // Set done callback to advance to next stage when session create completes
                     a_client_pvt->stage_status_done_callback = dap_client_pvt_stage_fsm_advance;
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
@@ -1092,53 +846,28 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_STREAM_SESSION: {
                     log_it(L_INFO, "Go to stage STREAM_SESSION: process the state ops");
 
-                    // Prepare socket via transport layer (SOLID principle)
-                    // Transport layer handles socket type (TCP/UDP) and creation
-                    dap_net_trans_type_t l_trans_type = a_client_pvt->client->trans_type;
-                    
-                    // Setup callbacks
-                    static dap_events_socket_callbacks_t l_s_callbacks = {
-                        .read_callback = s_stream_es_callback_read,
-                        .write_callback = s_stream_es_callback_write,
-                        .error_callback = s_stream_es_callback_error,
-                        .delete_callback = s_stream_es_callback_delete,
-                        .connected_callback = s_stream_es_callback_connected
-                    };
-                    
-                    // Prepare stage parameters
-                    dap_net_stage_prepare_params_t l_prepare_params = {
-                        .host = a_client_pvt->client->link_info.uplink_addr,
-                        .port = a_client_pvt->client->link_info.uplink_port,
-                        .callbacks = &l_s_callbacks,
-                        .client_ctx = a_client_pvt->client,
-                        .worker = l_worker
-                    };
-                    
-                    dap_net_stage_prepare_result_t l_prepare_result;
-                    int l_prepare_ret = dap_net_trans_stage_prepare(l_trans_type, &l_prepare_params, &l_prepare_result);
-                    
-                    if (l_prepare_ret != 0 || !l_prepare_result.esocket) {
-                        log_it(L_ERROR, "Stage prepare failed for transport type %d: %d", l_trans_type, l_prepare_result.error_code);
-                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                        s_stage_status_after(a_client_pvt);
-                        break;
-                    }
-                    
-                    // Esocket is fully prepared by transport (created, callbacks set, connected, added to worker)
-                    dap_events_socket_t *l_es = l_prepare_result.esocket;
-                    a_client_pvt->stream_es = l_es;
-
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->client->link_info.node_addr,
-                                                                    a_client_pvt->authorized);
-                    if (!a_client_pvt->stream) {
-                        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                    // Use stream created by transport in STAGE_ENC_INIT
+                    if (!a_client_pvt->stream || !a_client_pvt->stream_es) {
+                        log_it(L_ERROR, "No stream available for STAGE_STREAM_SESSION (should be created in STAGE_ENC_INIT)");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
-                    a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
+                    
+                    log_it(L_DEBUG, "Using trans-created stream %p for STAGE_STREAM_SESSION", a_client_pvt->stream);
+                    
+                    // Create session if not already created 
+                    if (!a_client_pvt->stream->session) {
+                        a_client_pvt->stream->session = dap_stream_session_pure_new();
+                        if (!a_client_pvt->stream->session) {
+                            log_it(L_CRITICAL, "Failed to create stream session");
+                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                            a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
+                            s_stage_status_after(a_client_pvt);
+                            return;
+                        }
+                    }
 
                     // new added, whether it is necessary?
                     a_client_pvt->stream->session->key = a_client_pvt->stream_key;
@@ -1151,34 +880,20 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->stream->stream_worker = NULL;
                     }
 
-                    // Initialize transport layer based on client's transport type
-                    log_it(L_INFO, "Initializing transport type: %d", l_trans_type);
-                    
-                    dap_net_trans_t *l_transport = dap_net_trans_find(l_trans_type);
-                    if (l_transport) {
-                        a_client_pvt->stream->trans = l_transport;
-                        log_it(L_INFO, "Stream transport set to %d", l_trans_type);
-                    } else {
-                        // Fail-fast: configured transport type not available
-                        log_it(L_ERROR, "Transport type %d not available, aborting connection", l_trans_type);
+                    // Transport is already set by stage_prepare
+                    dap_net_trans_t *l_transport = a_client_pvt->stream->trans;
+                    if (!l_transport) {
+                        log_it(L_ERROR, "Stream has no transport set");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
 
-                    // Check if transport uses connectionless protocol (UDP/DNS)
-                    // Use socket_type from transport instead of hardcoding transport type checks
-                    bool l_is_udp_transport = (l_transport && 
-                                               !l_transport->has_session_control);
-
-                    // For UDP/DNS transports, use transport-specific connect callback
-                    if (l_is_udp_transport && l_transport && l_transport->ops && l_transport->ops->connect) {
-                        // Use transport-specific connect for UDP/DNS (connectionless)
-                        log_it(L_DEBUG, "Using transport connect for UDP/DNS transport type: %d", l_trans_type);
+                    // Use transport connect if available, otherwise assume already connected
+                    if (l_transport->ops && l_transport->ops->connect) {
+                        log_it(L_DEBUG, "Using transport connect for transport type: %d", l_transport->type);
                         
-                        // Esocket is already added to worker by transport stage_prepare
-                        // Use transport connect callback
                         int l_connect_ret = l_transport->ops->connect(
                             a_client_pvt->stream,
                             a_client_pvt->client->link_info.uplink_addr,
@@ -1186,19 +901,15 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             s_stream_transport_connect_callback);
                         
                         if (l_connect_ret != 0) {
-                            log_it(L_ERROR, "Transport connect failed for transport type %d: %d", l_trans_type, l_connect_ret);
+                            log_it(L_ERROR, "Transport connect failed: %d", l_connect_ret);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                             a_client_pvt->last_error = ERROR_STREAM_CONNECT;
                             s_stage_status_after(a_client_pvt);
                             break;
                         }
-                        
-                        // UDP/DNS connect callback is called immediately (connectionless)
-                        // So we don't need to wait for connection
                     } else {
-                        // For TCP transports (HTTP/WebSocket), esocket is already connected and added to worker by transport
-                        // Just set up timeout timer for connection check
-                        log_it(L_DEBUG, "Stream esocket prepared by transport, setting up timeout timer");
+                        // Transport doesn't provide explicit connect - stream already connected
+                        log_it(L_DEBUG, "Stream already prepared by transport, setting up timeout timer");
                         dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_DUP(&a_client_pvt->stream_es->uuid);
                         if (!dap_timerfd_start_on_worker(a_client_pvt->worker,
                                                          (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
@@ -1237,7 +948,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         uint32_t l_session_id = dap_client_get_stream_id(a_client_pvt->client);
                         l_start_ret = l_transport->ops->session_start(a_client_pvt->stream, l_session_id, NULL);
                     } else {
-                        // Other transports (UDP/DNS) might not need explicit session start packet
+                        // Transport doesn't need explicit session start packet
                         log_it(L_DEBUG, "No session_start op, assuming connection established");
                     }
 
@@ -1587,8 +1298,6 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                l_client_pvt->stage_status, (void*)l_client_pvt->stage_status_done_callback);
         
         // Load encryption context into transport after successful handshake
-        // Use the transport from the temporary stream if available (for HTTP/WebSocket)
-        // or from the main stream (for UDP/DNS)
         /* dap_net_trans_t *l_transport = NULL;
         if (l_client_pvt->stream && l_client_pvt->stream->trans) {
             l_transport = l_client_pvt->stream->trans;
@@ -1705,17 +1414,13 @@ static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t 
 
                 l_client_pvt->is_encrypted_headers = l_enc_headers;
 
-                // Check transport type to allow STREAM_SESSION for non-TCP transports (UDP/DNS)
-                dap_net_trans_t *l_transport = dap_net_trans_find(l_client_pvt->client->trans_type);
-                
-                if(l_client_pvt->stage == STAGE_STREAM_CTL || 
-                   (l_client_pvt->stage == STAGE_STREAM_SESSION && l_transport && !l_transport->has_session_control)) { // Accept STREAM_SESSION for UDP/DNS
+                // Accept session response at either STREAM_CTL or STREAM_SESSION stage
+                if(l_client_pvt->stage == STAGE_STREAM_CTL || l_client_pvt->stage == STAGE_STREAM_SESSION) {
                     l_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(l_client_pvt);
                 } else {
-                    log_it(L_WARNING, "Expected to be stage STREAM_CTL but current stage is %s (%s)",
+                    log_it(L_WARNING, "Expected to be stage STREAM_CTL or STREAM_SESSION but current stage is %s (%s)",
                             dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
-
                 }
             } else {
                 log_it(L_WARNING, "Wrong stream id response");
@@ -1852,37 +1557,21 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
 
     switch (l_client_pvt->stage) {
         case STAGE_STREAM_SESSION:
-            // For UDP/DNS, session creation is handled via transport ops callbacks, not by receiving data here
-            // Only switch to STREAMING if transport has session control (like HTTP)
-            if (l_transport && !l_transport->has_session_control) {
-                log_it(L_DEBUG, "UDP/DNS read in STAGE_STREAM_SESSION, ignoring stage switch (handled by transport)");
-                break;
-            }
+            // Received data in STAGE_STREAM_SESSION, advance to STREAMING
             dap_client_go_stage(l_client_pvt->client, STAGE_STREAM_STREAMING, s_stage_stream_streaming);
         break;
         case STAGE_STREAM_CONNECTED: { 
-            // If we processed data (e.g. skipped headers), we can transition to streaming
-            // For HTTP, if headers are consumed, buf_in should not start with "HTTP/"
-            // Or just check if we read something and buffer doesn't look like headers anymore
-            
-            bool l_headers_done = true;
-            if (l_transport && l_transport->type == DAP_NET_TRANS_HTTP) {
-                if (a_es->buf_in_size >= 5 && memcmp(a_es->buf_in, "HTTP/", 5) == 0) {
-                    l_headers_done = false; // Still seeing headers
-                }
-            }
-            
-            if (l_headers_done) {
-                log_it(L_DEBUG, "Stream connected and headers consumed (if any), switching to STREAMING");
-                        l_client_pvt->stage = STAGE_STREAM_STREAMING;
-                        l_client_pvt->stage_status = STAGE_STATUS_DONE;
-                        s_stage_status_after(l_client_pvt);
+            // Received data after connection, transition to streaming
+            // Transport has already processed any protocol-specific headers via its read callback
+            log_it(L_DEBUG, "Stream connected and data received, switching to STREAMING");
+            l_client_pvt->stage = STAGE_STREAM_STREAMING;
+            l_client_pvt->stage_status = STAGE_STATUS_DONE;
+            s_stage_status_after(l_client_pvt);
 
-                // Process any remaining data immediately
-                if (l_client_pvt->stream) {
-                    // Recursive call to process packets that might have been revealed after header skip
-                    s_stream_es_callback_read(a_es, arg);
-                }
+            // Process any remaining data immediately
+            if (l_client_pvt->stream) {
+                // Recursive call to process packets
+                s_stream_es_callback_read(a_es, arg);
             }
         }
             break;

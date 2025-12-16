@@ -748,8 +748,11 @@ int main(void)
     }
     
     // Initialize common DAP subsystems
-    // This will call dap_module_init_all() which initializes all transports with proper config
+    // This will call dap_module_init_all() which initializes all transports automatically
     dap_common_init(LOG_TAG, NULL);
+    
+    // Module system now works correctly - transs are registered automatically
+    log_it(L_INFO, "Trans registration via module system complete");
     
     // Initialize encryption system
     dap_enc_init();

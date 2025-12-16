@@ -142,8 +142,8 @@ static int s_parse_dependencies(const char *a_dependencies, char ***a_dep_names,
         l_ptr++;
     }
     
-    // Allocate array
-    char **l_names = DAP_NEW_SIZE(char *, l_count);
+    // Allocate array of pointers
+    char **l_names = DAP_NEW_Z_COUNT(char *, l_count);
     if (!l_names) {
         log_it(L_ERROR, "s_parse_dependencies: Failed to allocate memory");
         return -1;

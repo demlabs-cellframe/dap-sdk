@@ -187,6 +187,8 @@ typedef void (*dap_net_trans_ready_cb_t)(dap_stream_t *a_stream, int a_error_cod
 typedef struct dap_net_stage_prepare_params {
     const char *host;                      ///< Remote hostname or IP address
     uint16_t port;                         ///< Remote port number
+    const dap_stream_node_addr_t *node_addr; ///< Node address for stream creation (NULL if not needed)
+    bool authorized;                       ///< Stream authorization flag (for STAGE_STREAM_SESSION)
     dap_events_socket_callbacks_t *callbacks; ///< Socket callbacks to use
     void *client_ctx;                  ///< Client ctx (dap_client_pvt_t*)
     dap_worker_t *worker;                  ///< Worker thread to add esocket to (required for connection)
@@ -199,6 +201,7 @@ typedef struct dap_net_stage_prepare_params {
  */
 typedef struct dap_net_stage_prepare_result {
     dap_events_socket_t *esocket;          ///< Prepared event socket (or NULL on error)
+    dap_stream_t *stream;                  ///< Optional stream (if trans creates it early, NULL otherwise)
     int error_code;                        ///< 0 on success, negative error code on failure
 } dap_net_stage_prepare_result_t;
 
@@ -395,11 +398,14 @@ typedef struct dap_net_trans_ops {
      * @brief Prepare trans-specific resources for client stage
      * @param a_trans Trans instance
      * @param a_params Stage preparation parameters (host, port, callbacks, ctx)
-     * @param a_result Output parameter for preparation result (socket and error code)
+     * @param a_result Output parameter for preparation result (esocket, optional stream, error code)
      * @return 0 on success, negative error code on failure
-     * @note Called before STAGE_STREAM_SESSION to create and configure socket
+     * @note Called before handshake/session operations to create and configure socket
      *       Trans should create appropriate socket type (TCP/UDP) and wrap it
      *       in dap_events_socket_t with provided callbacks
+     *       Trans MAY also create a stream and return it in a_result->stream if it needs
+     *       the stream to persist across multiple client stages (e.g., UDP creates stream early)
+     *       If a_result->stream is NULL, client will create a temporary stream for the operation
      *       If NULL, default behavior is used (TCP socket creation)
      */
     int (*stage_prepare)(dap_net_trans_t *a_trans,

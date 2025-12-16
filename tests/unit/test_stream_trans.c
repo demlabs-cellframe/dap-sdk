@@ -66,6 +66,23 @@ static void setup_test(void)
         // Initialize DAP mock framework
         dap_mock_init();
         
+        // Register HTTP trans (includes HTTP server init)
+        int l_ret = dap_net_trans_http_stream_register();
+        if (l_ret != 0) {
+            TEST_ERROR("Failed to register HTTP stream trans: %d", l_ret);
+        }
+        
+        // Register UDP trans
+        l_ret = dap_net_trans_udp_stream_register();
+        if (l_ret != 0) {
+            TEST_ERROR("Failed to register UDP stream trans: %d", l_ret);
+        }
+        
+        // Register WebSocket trans
+        l_ret = dap_net_trans_websocket_stream_register();
+        if (l_ret != 0) {
+            TEST_ERROR("Failed to register WebSocket stream trans: %d", l_ret);
+        }
         
         s_test_initialized = true;
         TEST_INFO("Trans test suite initialized");
@@ -86,6 +103,11 @@ static void teardown_test(void)
 static void suite_cleanup(void)
 {
     if (s_test_initialized) {
+        // Unregister transs (in reverse order)
+        dap_net_trans_websocket_stream_unregister();
+        dap_net_trans_udp_stream_unregister();
+        dap_net_trans_http_stream_unregister();
+        
         // Deinitialize trans layer
         dap_net_trans_deinit();
         

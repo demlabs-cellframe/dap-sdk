@@ -1129,6 +1129,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     
     // Initialize result
     a_result->esocket = NULL;
+    a_result->stream = NULL;
     a_result->error_code = 0;
     
     // Create TCP socket using platform-independent function
@@ -1169,9 +1170,22 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     // Add socket to worker - connection will complete asynchronously
     dap_worker_add_events_socket(a_params->worker, l_es);
     
+    // Create stream for this connection
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, a_params->node_addr, a_params->authorized);
+    if (!l_stream) {
+        log_it(L_CRITICAL, "Failed to create stream for WebSocket trans");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    // Set transport reference
+    l_stream->trans = a_trans;
+    
     a_result->esocket = l_es;
+    a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "WebSocket TCP socket prepared and connected for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "WebSocket TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

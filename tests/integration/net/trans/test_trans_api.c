@@ -25,6 +25,9 @@
 #include "dap_client.h"
 #include "dap_stream.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_http_stream.h"
+#include "dap_net_trans_udp_stream.h"
+#include "dap_net_trans_websocket_stream.h"
 
 // Test framework headers
 #include "dap_test.h"
@@ -49,6 +52,10 @@ static void test_01_init_trans_system(void) {
     TEST_ASSERT(l_ret == 0, "Events initialization should succeed");
     
     dap_events_start();
+    
+    // Initialize common DAP (automatically registers transs via module system)
+    l_ret = dap_common_init("test_trans_api", NULL);
+    TEST_ASSERT(l_ret == 0, "DAP common initialization should succeed");
     
     // Initialize stream system
     l_ret = dap_stream_init(NULL);
@@ -201,6 +208,9 @@ static void test_05_cleanup(void) {
     
     // Cleanup stream system
     dap_stream_deinit();
+    
+    // Module system handles unregister automatically via dap_common_deinit()
+    dap_common_deinit();
     
     // Give time for cleanup to propagate
     dap_test_sleep_ms(200);

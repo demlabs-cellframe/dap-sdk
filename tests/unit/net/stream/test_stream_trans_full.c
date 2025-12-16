@@ -266,12 +266,11 @@ static bool s_test_initialized = false;
 static void setup_test(void)
 {
     if (!s_test_initialized) {
-        // Initialize DAP common
+        // Initialize DAP common (automatically initializes transs via module system)
         int l_ret = dap_common_init("test_stream_trans", NULL);
         TEST_ASSERT(l_ret == 0, "DAP common initialization failed");
         
-        // Trans layer is initialized automatically via dap_module system
-        // No need to call dap_net_trans_init() manually
+        // Module system now works - transs registered automatically
         
         s_test_initialized = true;
         TEST_INFO("Trans test suite initialized");
@@ -293,8 +292,7 @@ static void teardown_test(void)
 static void suite_cleanup(void)
 {
     if (s_test_initialized) {
-        // Trans layer is deinitialized automatically via dap_module system
-        // No need to call dap_net_trans_deinit() manually
+        // Module system handles unregister automatically via dap_common_deinit()
         
         // Deinitialize DAP common
         dap_common_deinit();

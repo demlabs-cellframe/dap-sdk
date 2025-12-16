@@ -28,6 +28,10 @@
 #include "dap_test_helpers.h"
 #include "dap_test_async.h"
 #include "dap_client_test_fixtures.h"
+#include "dap_net_trans.h"
+#include "dap_net_trans_http_stream.h"
+#include "dap_net_trans_udp_stream.h"
+#include "dap_net_trans_websocket_stream.h"
 
 #define LOG_TAG "test_stream"
 
@@ -104,15 +108,12 @@ static void test_02_trans_registration(void) {
     dap_events_init(1, 60000);
     dap_events_start();
     
-    // Initialize trans layer first to ensure registry is ready
-    dap_net_trans_init();
-    
-    // Give time for constructors to run (if they haven't already)
-    dap_test_sleep_ms(100);
+    // Initialize common DAP (automatically registers transs via module system)
+    dap_common_init("test_stream", NULL);
     
     dap_stream_init(NULL);
     
-    // After dap_stream_init, default transs should be registered
+    // After dap_common_init, transs should be registered automatically
     dap_net_trans_t *http_trans = dap_net_trans_find(DAP_NET_TRANS_HTTP);
     TEST_ASSERT_NOT_NULL(http_trans, "HTTP trans should be registered");
     
@@ -123,6 +124,9 @@ static void test_02_trans_registration(void) {
     TEST_ASSERT_NOT_NULL(ws_trans, "WebSocket trans should be registered");
     
     dap_stream_deinit();
+    
+    // Module system handles unregister automatically
+    dap_common_deinit();
     
     // Give time for cleanup to propagate
     dap_test_sleep_ms(200);

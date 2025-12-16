@@ -135,10 +135,16 @@ static void setup_test(void)
         // Initialize mock framework
         dap_mock_init();
         
-        // Check if already registered (might be auto-registered via module constructor)
+        // Initialize HTTP server module (registers server operations)
+        l_ret = dap_net_trans_http_server_init();
+        TEST_ASSERT(l_ret == 0, "HTTP server module initialization failed");
+        
+        // Check if HTTP stream trans is registered (might be auto-registered via module constructor)
         dap_net_trans_t *l_existing = dap_net_trans_find(DAP_NET_TRANS_HTTP);
-        if (! l_existing) {
-            TEST_ASSERT(l_ret == 0, "HTTP stream trans not registred");
+        if (!l_existing) {
+            // Register HTTP stream trans if not auto-registered
+            l_ret = dap_net_trans_http_stream_register();
+            TEST_ASSERT(l_ret == 0, "HTTP stream trans registration failed");
         }
         
         s_test_initialized = true;
@@ -164,6 +170,9 @@ static void teardown_test(void)
 static void suite_cleanup(void)
 {
     if (s_test_initialized) {
+        
+        // Deinitialize HTTP server module
+        dap_net_trans_http_server_deinit();
         
         // Deinitialize mock framework
         dap_mock_deinit();

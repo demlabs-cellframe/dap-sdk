@@ -153,8 +153,15 @@ static void s_udp_client_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     // Get trans_ctx from esocket->_inheritor (ALWAYS dap_net_trans_ctx_t)
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
 
-    if (!l_trans_ctx || !l_trans_ctx->stream) {
-        log_it(L_WARNING, "UDP client esocket has no trans_ctx or stream, dropping %zu bytes", a_es->buf_in_size);
+    if (!l_trans_ctx) {
+        log_it(L_WARNING, "UDP client esocket has no trans_ctx (_inheritor is NULL), dropping %zu bytes", a_es->buf_in_size);
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    if (!l_trans_ctx->stream) {
+        log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
+               l_trans_ctx, a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -214,7 +221,7 @@ int dap_net_trans_udp_stream_register(void)
         dap_net_trans_udp_server_deinit();
         return l_ret_trans;
     }
-
+    
     log_it(L_NOTICE, "UDP trans registered successfully");
     return 0;
 }
@@ -617,8 +624,9 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         // Store UDP context in trans_ctx->_inheritor
         l_ctx->_inheritor = l_udp_ctx;
         
-        // Store stream pointer
-        l_udp_ctx->stream = a_stream;
+        // Store stream pointer in BOTH structures
+        l_udp_ctx->stream = a_stream;  // For UDP-specific logic
+        l_ctx->stream = a_stream;       // For trans_ctx callback
         
         // Set esocket->_inheritor to trans_ctx (clean architecture!)
         l_ctx->esocket->_inheritor = l_ctx;
@@ -1199,6 +1207,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Initialize result
     a_result->esocket = NULL;
+    a_result->stream = NULL;
     a_result->error_code = 0;
     
     // Create or reuse UDP socket
@@ -1233,22 +1242,18 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Store client context (dap_client_t*) for later retrieval
     l_udp_ctx->client_ctx = a_params->client_ctx;
-    l_udp_ctx->stream = NULL; // Will be set in handshake_init
+    l_udp_ctx->stream = NULL; // Will be set below when stream is created
     
     // Store UDP context temporarily in esocket->callbacks.arg until trans_ctx is created
     // When trans_ctx is created, it should be moved to trans_ctx->_inheritor
     // and esocket->_inheritor should point to trans_ctx
     l_es->callbacks.arg = l_udp_ctx;
     
-    // We should probably set esocket in trans_ctx here?
-    // But a_result->esocket will be used by the caller (dap_stream or client) to populate trans_ctx->esocket
-    
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
         log_it(L_ERROR, "Failed to resolve address for UDP trans: %s:%u", a_params->host, a_params->port);
-        // Don't delete shared socket on resolve error, just fail?
-        // Or delete if we just created it?
-        // For now, assume it persists.
+        DAP_DELETE(l_udp_ctx);
+        dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
     }
@@ -1260,14 +1265,31 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     if (connect(l_es->socket, (struct sockaddr *)&l_es->addr_storage, l_es->addr_size) < 0) {
         log_it(L_ERROR, "Failed to connect UDP socket: %s (socket=%d, family=%d, size=%zu)", 
                strerror(errno), l_es->socket, l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
-        // dap_events_socket_delete_unsafe(l_es, true); // Don't delete shared socket
+        DAP_DELETE(l_udp_ctx);
+        dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
     }
     
+    // For UDP: create stream early and return it (stream will be reused for all operations)
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, a_params->node_addr, a_params->authorized);
+    if (!l_stream) {
+        log_it(L_CRITICAL, "Failed to create stream for UDP trans");
+        DAP_DELETE(l_udp_ctx);
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    l_stream->trans = a_trans;
+    l_udp_ctx->stream = l_stream;
+    
+    log_it(L_DEBUG, "UDP trans created stream %p early (will be reused for all operations)", l_stream);
+    
     a_result->esocket = l_es;
+    a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "UDP socket prepared and added to worker for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
