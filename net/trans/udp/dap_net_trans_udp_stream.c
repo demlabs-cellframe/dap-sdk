@@ -1042,6 +1042,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             (dap_stream_trans_udp_private_t*)a_stream->trans->_inheritor;
 
         dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
+        
+        debug_if(s_debug_more, L_DEBUG, "UDP packet processing: type=%u, a_stream=%p, trans_ctx=%p, l_ctx=%p", 
+                 l_header->type, a_stream, a_stream->trans_ctx, l_ctx);
 
         if (l_header->type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
              if (l_ctx && l_ctx->handshake_cb) {
@@ -1078,8 +1081,11 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  }
              }
         } else if (l_header->type == DAP_STREAM_UDP_PKT_SESSION_CREATE) {
+             debug_if(s_debug_more, L_DEBUG, "Processing SESSION_CREATE packet: l_ctx=%p, session_create_cb=%p", 
+                      l_ctx, l_ctx ? l_ctx->session_create_cb : NULL);
              if (l_ctx && l_ctx->session_create_cb) {
                  // Client: Received Session Response
+                 debug_if(s_debug_more, L_DEBUG, "Client: parsing SESSION_CREATE response");
                  uint64_t l_sess_id = be64toh(l_header->session_id);
                  
                  // Validate stream before calling callback
@@ -1096,8 +1102,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
                  }
                  l_ctx->session_create_cb = NULL;
-             } else {
-                 // Server: Received Session Request
+             } else if (l_header->session_id == 0) {
+                 // Server: Received Session Request (session_id == 0 means request)
+                 debug_if(s_debug_more, L_DEBUG, "Server: processing SESSION_CREATE request");
                  if (!a_stream->session) {
                      a_stream->session = dap_stream_session_pure_new();
                  }
@@ -1112,6 +1119,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                      0, l_priv->seq_num++, l_srv_sess_id);
                                      
                  dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
+             } else {
+                 // Client: Duplicate SESSION_CREATE response (callback already called)
+                 debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
+                          be64toh(l_header->session_id));
              }
         }
 
