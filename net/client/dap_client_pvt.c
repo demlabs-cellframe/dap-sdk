@@ -328,14 +328,19 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     
     // Process session create response
     // Transport provides either full response data or only session_id
+    log_it(L_DEBUG, "session_create_callback: session_id=%u, response_data=%p, response_size=%zu", 
+           a_session_id, a_response_data, a_response_size);
+    
     if (a_session_id != 0 || (a_response_data && a_response_size > 0)) {
         if (a_response_data && a_response_size > 0) {
             // Use full response data provided by transport
+            log_it(L_DEBUG, "Processing full response data");
             s_stream_ctl_response(l_client, (void*)a_response_data, a_response_size);
             // Free response data (transport allocated it for us)
             DAP_DELETE(a_response_data);
         } else {
             // Transport provided only session_id
+            log_it(L_DEBUG, "Processing session_id only, stream_key=%p", l_client_pvt->stream_key);
             
             // If we already have stream_key (from Handshake), just set ID and finish
             if (l_client_pvt->stream_key) {
@@ -632,7 +637,10 @@ int dap_client_pvt_queue_clear(dap_client_pvt_t *a_client_pvt)
 
 static bool s_timer_reconnect_callback(void *a_arg)
 {
-    assert(a_arg);
+    if (!a_arg) {
+        log_it(L_ERROR, "reconnect_timer callback called with NULL argument");
+        return false;
+    }
     ((dap_client_pvt_t *)a_arg)->reconnect_timer = NULL;
     s_stage_status_after(a_arg);
     return false;
