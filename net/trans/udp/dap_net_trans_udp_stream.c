@@ -1104,10 +1104,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
 
         if (l_payload) DAP_DELETE(l_payload);
-        debug_if(s_debug_more, L_DEBUG, "UDP read: calling pop_from_buf_in(%zu bytes), buf_in_size=%zu", 
+        debug_if(s_debug_more, L_DEBUG, "UDP read: calling shrink_buf_in(%zu bytes), buf_in_size=%zu", 
                  l_total_size, l_es->buf_in_size);
-        dap_events_socket_pop_from_buf_in(l_es, NULL, l_total_size);
-        debug_if(s_debug_more, L_DEBUG, "UDP read: after pop, buf_in_size=%zu", l_es->buf_in_size);
+        dap_events_socket_shrink_buf_in(l_es, l_total_size);
+        debug_if(s_debug_more, L_DEBUG, "UDP read: after shrink, buf_in_size=%zu", l_es->buf_in_size);
         return 0;
     }
     
