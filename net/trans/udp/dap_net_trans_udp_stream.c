@@ -116,13 +116,8 @@ static const dap_net_trans_ops_t s_udp_ops = {
     .get_client_context = s_udp_get_client_context
 };
 
-// UDP client esocket context (stored in esocket->_inheritor)
-// This wrapper allows both dap_client (via client_ctx) and dap_stream (via stream)
-// to access their respective contexts without conflicts
-typedef struct dap_udp_client_esocket_ctx {
-    void *client_ctx;              // Original client context (dap_client_t*) from stage_prepare
-    dap_stream_t *stream;          // Associated stream (set in handshake_init)
-} dap_udp_client_esocket_ctx_t;
+// UDP per-stream context is now dap_net_trans_udp_ctx_t (defined in header)
+// No need for separate client esocket context - everything is in UDP ctx
 
 // Helper functions
 static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans);
@@ -1297,28 +1292,9 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     log_it(L_DEBUG, "Created UDP socket %p", l_es);
     
-    // Create UDP client context to store in trans_ctx->_inheritor (will be set later)
-    dap_udp_client_esocket_ctx_t *l_udp_ctx = DAP_NEW_Z(dap_udp_client_esocket_ctx_t);
-    if (!l_udp_ctx) {
-        log_it(L_CRITICAL, "Failed to allocate UDP client context");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-    
-    // Store client context (dap_client_t*) for later retrieval
-    l_udp_ctx->client_ctx = a_params->client_ctx;
-    l_udp_ctx->stream = NULL; // Will be set below when stream is created
-    
-    // Store UDP context temporarily in esocket->callbacks.arg until trans_ctx is created
-    // When trans_ctx is created, it should be moved to trans_ctx->_inheritor
-    // and esocket->_inheritor should point to trans_ctx
-    l_es->callbacks.arg = l_udp_ctx;
-    
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
         log_it(L_ERROR, "Failed to resolve address for UDP trans: %s:%u", a_params->host, a_params->port);
-        DAP_DELETE(l_udp_ctx);
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
@@ -1331,7 +1307,6 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     if (connect(l_es->socket, (struct sockaddr *)&l_es->addr_storage, l_es->addr_size) < 0) {
         log_it(L_ERROR, "Failed to connect UDP socket: %s (socket=%d, family=%d, size=%zu)", 
                strerror(errno), l_es->socket, l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
-        DAP_DELETE(l_udp_ctx);
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
@@ -1341,20 +1316,38 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for UDP trans");
-        DAP_DELETE(l_udp_ctx);
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
     }
     
     l_stream->trans = a_trans;
-    l_udp_ctx->stream = l_stream;
     
     // Initialize trans_ctx and link esocket
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(l_stream);
+    if (!l_ctx) {
+        log_it(L_CRITICAL, "Failed to create trans_ctx for UDP stream");
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_stream);
+        a_result->error_code = -1;
+        return -1;
+    }
     l_ctx->esocket = l_es;
     l_ctx->stream = l_stream;
-    l_ctx->_inheritor = l_udp_ctx;
+    
+    // Create UDP per-stream context and store client_ctx
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
+    if (!l_udp_ctx) {
+        log_it(L_CRITICAL, "Failed to create UDP context for stream");
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_stream);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    // Store client context for later retrieval in get_client_context
+    l_udp_ctx->client_ctx = a_params->client_ctx;
+    l_udp_ctx->stream = l_stream;
     
     // CRITICAL: Link esocket->_inheritor to trans_ctx so read callback can find stream
     l_es->_inheritor = l_ctx;
@@ -1386,18 +1379,15 @@ static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans)
  */
 static void* s_udp_get_client_context(dap_stream_t *a_stream)
 {
-    if (!a_stream || !a_stream->trans_ctx) {
+    if (!a_stream) {
         return NULL;
     }
     
-    dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (!l_ctx->_inheritor) {
+    // For UDP, trans_ctx->_inheritor is dap_net_trans_udp_ctx_t
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+    if (!l_udp_ctx) {
         return NULL;
     }
-    
-    // For UDP, trans_ctx->_inheritor is dap_udp_client_esocket_ctx_t
-    dap_udp_client_esocket_ctx_t *l_udp_ctx = 
-        (dap_udp_client_esocket_ctx_t*)l_ctx->_inheritor;
     
     return l_udp_ctx->client_ctx;  // Return dap_client_t*
 }
