@@ -132,6 +132,54 @@ static int s_parse_udp_header(const dap_stream_trans_udp_header_t *a_header,
                                uint32_t *a_seq_num, uint64_t *a_session_id);
 
 /**
+ * @brief UDP write callback for client esockets
+ * 
+ * Sends data from buf_out via send() on the connected UDP socket.
+ * For UDP clients, the socket is already connected (via connect()) to the server.
+ * 
+ * UDP has MTU limitation (~1500 bytes), so we send data in chunks.
+ */
+static bool s_udp_client_write_callback(dap_events_socket_t *a_es, void *a_arg) {
+    (void)a_arg;
+    
+    if (!a_es || !a_es->buf_out_size) {
+        return true; // Nothing to write
+    }
+    
+    // UDP MTU limit - send max 1400 bytes per packet (safe for most networks)
+    // Leave room for UDP header (8 bytes) + IP header (20-60 bytes) + Ethernet (18 bytes)
+    const size_t UDP_MAX_CHUNK = 1400;
+    
+    // Send data in chunks to respect MTU
+    size_t l_chunk_size = (a_es->buf_out_size > UDP_MAX_CHUNK) ? UDP_MAX_CHUNK : a_es->buf_out_size;
+    
+    ssize_t l_sent = send(a_es->socket, 
+                         (const char *)a_es->buf_out, 
+                         l_chunk_size, 
+                         0);
+    
+    if (l_sent < 0) {
+        int l_errno = errno;
+        if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+            // Non-blocking socket, would block - retry later
+            return false;
+        }
+        log_it(L_ERROR, "UDP client send failed: %s (errno %d, chunk_size=%zu)", 
+               strerror(l_errno), l_errno, l_chunk_size);
+        return false;
+    }
+    
+    // Shift sent data out of buffer
+    if ((size_t)l_sent < a_es->buf_out_size) {
+        memmove(a_es->buf_out, a_es->buf_out + l_sent, a_es->buf_out_size - l_sent);
+    }
+    a_es->buf_out_size -= l_sent;
+    
+    // Return false if more data remains (will call again)
+    return (a_es->buf_out_size == 0);
+}
+
+/**
  * @brief UDP read callback for processing incoming packets
  * 
  * This callback is invoked when data arrives on a UDP socket (client or server virtual).
@@ -1290,6 +1338,10 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    
+    // Set UDP-specific callbacks for client esocket
+    l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
+    l_es->callbacks.write_callback = s_udp_client_write_callback;
     
     // UDP is connectionless - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
