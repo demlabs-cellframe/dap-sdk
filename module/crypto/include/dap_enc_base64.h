@@ -41,6 +41,7 @@ size_t dap_enc_base64_decode(const char * in, size_t in_size, void * out, dap_en
 size_t dap_enc_base64_encode(const void * in, size_t in_size, char * out, dap_enc_data_type_t standard);
 char * dap_enc_strdup_to_base64(const char * a_string);
 char * dap_enc_strdup_from_base64(const char * a_string_base64);
+size_t dap_encode_char_by_char(const char * a_in, size_t a_in_size, uint8_t a_base_size, const char * a_table, char * a_out);
 
 #ifdef __cplusplus
 }

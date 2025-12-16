@@ -80,7 +80,7 @@ static size_t s_parse_hex(const char* hex_str, uint8_t* out, size_t out_size) {
     if (hex_len % 2 != 0) {
         return 0;
     }
-    f
+    
     size_t bytes_needed = hex_len / 2;
     if (bytes_needed > out_size) {
         return 0;
@@ -160,7 +160,7 @@ static bool s_test_base58_encode(void) {
         DAP_TEST_ASSERT(l_input_size > 0, "Hex parsing should succeed");
         
         // Calculate encode size and encode
-        size_t l_encode_size = DAP_ENC_BASE58_ENCODE_SIZE(l_input_size);
+        size_t l_encode_size = (l_input_size);
         char l_encoded[l_encode_size];
         size_t l_encoded_result = dap_enc_base58_encode(l_input_buf, l_input_size, l_encoded);
         

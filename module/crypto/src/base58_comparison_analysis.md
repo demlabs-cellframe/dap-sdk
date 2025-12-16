@@ -119,6 +119,103 @@ Both implementations skip leading zeros in the base58 result, but:
 
 Both should be equivalent.
 
+### 6. **Large Number Arithmetic: How DAP Avoids BigInt Libraries**
+
+This is a crucial architectural difference. Bitcoin uses variable-length byte arrays (essentially a simple bigint), while DAP uses fixed-size arithmetic with careful overflow management.
+
+#### Bitcoin's Approach (Variable-Length BigInt)
+- Uses `std::vector<unsigned char>` to represent numbers in base256
+- Each byte holds 0-255
+- When decoding: `carry += 58 * (*it)`, then `carry /= 256`
+- The `carry` can grow large and propagates through multiple bytes
+- This is essentially a variable-length big integer stored byte-by-byte
+
+#### DAP's Approach (Fixed-Size Arithmetic)
+
+**For Decoding (base58 → binary):**
+```c
+uint32_t l_outi[l_outi_size];  // Array of 32-bit integers
+uint64_t t;                     // 64-bit intermediate
+uint32_t c;                     // Carry
+
+// For each base58 digit:
+for (j = l_outi_size; j--; ) {
+    t = ((uint64_t)l_outi[j]) * 58 + c;
+    c = (t & 0x3f00000000) >> 32;  // Extract high 6 bits as carry
+    l_outi[j] = t & 0xffffffff;    // Store low 32 bits
+}
+```
+
+**Key insight:**
+- Maximum value in `uint32_t`: 2³² - 1 = 4,294,967,295
+- Maximum intermediate calculation: 4,294,967,295 × 58 + 57 = 249,108,233,427
+- This fits comfortably in `uint64_t` (max 2⁶⁴ - 1 ≈ 18 quintillion)
+- The carry extraction `(t & 0x3f00000000) >> 32` extracts bits 32-37 (6 bits)
+- Why 6 bits? Maximum carry = floor(249,108,233,427 / 2³²) = 58
+- Since 58 < 64 = 2⁶, it fits in 6 bits
+- The mask `0x3f00000000` = `0b0011111100000000000000000000000000000000` extracts exactly 6 bits (bits 32-37)
+- **Note**: This is a clever optimization. A simpler approach would be `c = t >> 32`, but that would extract all 32 bits. The mask limits it to 6 bits, which is sufficient and potentially faster.
+
+**Mathematical proof of carry bound:**
+- In each iteration: `t = l_outi[j] × 58 + c` where `0 ≤ l_outi[j] < 2³²` and `0 ≤ c ≤ 57`
+- Maximum `t` = (2³² - 1) × 58 + 57 = 249,108,233,427
+- Maximum carry = `t >> 32` = floor(249,108,233,427 / 2³²) = 58
+- Therefore, the carry is always ≤ 58, fitting in 6 bits
+
+**For Encoding (binary → base58):**
+```c
+uint8_t buf[size];  // Byte array (like Bitcoin)
+int carry;          // Regular int for carry
+
+for (carry = l_in_u8[i], j = size - 1; (j > high) || carry; --j) {
+    carry += 256 * buf[j];
+    buf[j] = carry % 58;
+    carry /= 58;
+}
+```
+
+**Key insight:**
+- Uses byte-by-byte processing similar to Bitcoin
+- But uses a regular `int` for carry instead of a variable-length structure
+- The carry can grow, but in practice it's bounded by the algorithm
+- Maximum carry: when processing a byte value 255, `carry = 255 + 256 * buf[j]`
+- Since `buf[j] < 58`, maximum carry ≈ 255 + 256 × 57 ≈ 14,847, which fits in `int`
+
+#### Why This Works
+
+1. **Decoding**: The 32-bit chunks with 64-bit intermediates provide enough precision:
+   - Each chunk can represent up to 2³² values
+   - Multiplying by 58 and adding a base58 digit (0-57) fits in 64 bits
+   - The carry between chunks is at most 58, fitting in 6 bits
+
+2. **Encoding**: Byte-by-byte processing with bounded carry:
+   - Each step processes one input byte
+   - The carry is bounded by the base conversion math
+   - No need for arbitrary-precision arithmetic
+
+3. **Memory Efficiency**: 
+   - DAP uses fixed-size arrays (`uint32_t` or `uint8_t`)
+   - Bitcoin uses dynamic vectors that grow
+   - DAP's approach is more memory-efficient for known-size inputs
+
+#### Trade-offs
+
+**Advantages of DAP's approach:**
+- No dependency on bigint libraries
+- More memory-efficient (fixed-size arrays)
+- Faster for small-to-medium inputs (no vector resizing)
+- Simpler implementation (standard integer types)
+
+**Advantages of Bitcoin's approach:**
+- More flexible (handles arbitrary-length inputs naturally)
+- Easier to understand (straightforward byte-by-byte bigint)
+- No risk of overflow (carry can grow arbitrarily)
+
+**Potential Issues with DAP's approach:**
+- The 6-bit carry extraction in decoding is a clever optimization but requires careful verification
+- The `high` optimization in encoding could have edge cases
+- Fixed-size arrays require upfront size calculation (which DAP does correctly)
+
 ## Conclusion
 
 The main algorithmic difference is:
