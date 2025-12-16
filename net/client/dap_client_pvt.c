@@ -285,6 +285,26 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
     } else {
         // Handshake completed without data to process - transport handled everything
         log_it(L_DEBUG, "Handshake completed via transport protocol, marking stage as done");
+        
+        // Copy session encryption key from stream to client_pvt
+        // (For HTTP/WS this is done in s_stream_ctl_response, but for UDP we do it here)
+        if (a_stream->session && a_stream->session->key) {
+            // Delete old key if present
+            if (l_client_pvt->stream_key) {
+                dap_enc_key_delete(l_client_pvt->stream_key);
+            }
+            // Clone the key to client_pvt (don't steal the pointer)
+            l_client_pvt->stream_key = dap_enc_key_dup(a_stream->session->key);
+            if (l_client_pvt->stream_key) {
+                log_it(L_DEBUG, "Copied session encryption key to client_pvt (type=%d)", 
+                       l_client_pvt->stream_key->type);
+            } else {
+                log_it(L_WARNING, "Failed to clone session encryption key");
+            }
+        } else {
+            log_it(L_WARNING, "Handshake completed but no session key in stream");
+        }
+        
         s_set_stage_status(l_client_pvt, STAGE_STATUS_DONE);
         s_stage_status_after(l_client_pvt);
     }
@@ -475,7 +495,16 @@ static void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
         return;
     }
     
-    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_stream->trans_ctx->esocket);
+    dap_client_t *l_client = NULL;
+    
+    // Use trans-specific method to get client context if available
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context) {
+        l_client = (dap_client_t*)a_stream->trans->ops->get_client_context(a_stream);
+    } else {
+        // Default: _inheritor directly points to dap_client_t
+        l_client = DAP_ESOCKET_CLIENT(a_stream->trans_ctx->esocket);
+    }
+    
     if (!l_client) {
         log_it(L_ERROR, "Invalid client in transport connect callback");
         return;
