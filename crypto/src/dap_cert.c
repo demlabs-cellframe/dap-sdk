@@ -66,6 +66,7 @@ typedef struct dap_cert_pvt
 
 static dap_cert_item_t * s_certs = NULL;
 static UT_array *s_cert_folders = NULL;
+static bool s_debug_more = false;
 
 /**
  * @brief dap_cert_init empty stub for certificate init
@@ -73,6 +74,8 @@ static UT_array *s_cert_folders = NULL;
  */
 int dap_cert_init() // TODO deinit too
 {
+    s_debug_more = dap_config_get_item_bool_default(g_config, "cert", "debug_more", false);
+    debug_if(s_debug_more, L_DEBUG, "dap_cert_init: debug_more=%d", s_debug_more);
     uint16_t l_ca_folders_size = 0;
     char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
     utarray_new(s_cert_folders, &ut_str_icd);
@@ -306,6 +309,9 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
 {
     if (!a_cert_name)
         return NULL;
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: CALLED with cert_name='%s'", a_cert_name);
+    
     dap_cert_item_t *l_cert_item = NULL;
     dap_cert_t *l_ret = NULL;
 
@@ -323,22 +329,29 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
             l_cert_path = dap_strjoin("", l_cert_name, ".dcert", (char *)NULL);
         else
             l_cert_path = dap_strjoin("", l_cert_name, (char *)NULL);
+        debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: loading external cert from path '%s'", l_cert_path);
         l_ret = dap_cert_file_load(l_cert_path);
         DAP_DELETE(l_cert_path);
     } else {
         HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
         if (l_cert_item ) {
             l_ret = l_cert_item->cert ;
+            debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: '%s' FOUND in memory (enc_key=%p)", a_cert_name, l_ret->enc_key);
         } else {
+            debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: '%s' NOT in memory, loading from ca_folders", a_cert_name);
             uint16_t l_ca_folders_size = 0;
             char *l_cert_path = NULL;
             char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
+            debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: ca_folders_size=%u", l_ca_folders_size);
             for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
                 l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
+                debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: trying path '%s'", l_cert_path);
                 l_ret = dap_cert_file_load(l_cert_path);
                 DAP_DELETE(l_cert_path);
-                if (l_ret)
+                if (l_ret) {
+                    debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: '%s' loaded from file (enc_key=%p)", a_cert_name, l_ret->enc_key);
                     break;
+                }
             }
             dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_size);
         }
