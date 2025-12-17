@@ -74,16 +74,12 @@ DAP_STATIC_INLINE bool dap_hash_fast( const void *a_data_in, size_t a_data_in_si
     // Check alignment for ARM compatibility (Keccak requires 8-byte alignment)
     if ( ((uintptr_t)a_data_in & 7) != 0 ) {
         // Data is not 8-byte aligned, copy to aligned buffer
-        bool l_heap_alloc = a_data_in_size >= (1 << 15);
-        uint8_t *l_aligned_buf = l_heap_alloc 
-            ? DAP_NEW_SIZE(uint8_t, a_data_in_size) 
-            : DAP_NEW_STACK_SIZE(uint8_t, a_data_in_size);
+        uint8_t *l_aligned_buf = DAP_ALMALLOC(8, a_data_in_size);
         if (!l_aligned_buf)
             return false;
         memcpy(l_aligned_buf, a_data_in, a_data_in_size);
         SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)l_aligned_buf, a_data_in_size );
-        if (l_heap_alloc)
-            DAP_DELETE(l_aligned_buf);
+        DAP_ALFREE(l_aligned_buf);
     } else {
         SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
     }
