@@ -31,6 +31,46 @@
 
 #define LOG_TAG "test_encode"
 
+
+
+const char c_b58digits_ordered[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const int8_t c_b58digits_map[] = {
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8,-1,-1,-1,-1,-1,-1,
+    -1, 9,10,11,12,13,14,15,16,-1,17,18,19,20,21,-1,
+    22,23,24,25,26,27,28,29,30,31,32,-1,-1,-1,-1,-1,
+    -1,33,34,35,36,37,38,39,40,41,42,43,-1,44,45,46,
+    47,48,49,50,51,52,53,54,55,56,57,-1,-1,-1,-1,-1,
+};
+
+
+static const char b64_standart_table[] = {
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+    'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+    'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+    'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+    'w', 'x', 'y', 'z', '0', '1', '2', '3',
+    '4', '5', '6', '7', '8', '9', '+', '/'
+};
+
+/**
+ * @breif Base64 url safe index table.
+ */
+static const char b64_table_url_safe[] = {
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+    'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+    'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+    'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+    'w', 'x', 'y', 'z', '0', '1', '2', '3',
+    '4', '5', '6', '7', '8', '9', '-', '_'
+};
+
 /**
  * @brief Test dap_encode_char_by_char with NULL inputs
  */
@@ -285,6 +325,184 @@ static bool s_test_encode_custom_table(void) {
 }
 
 /**
+ * @brief Create a 256-element base58 table from the base58 character mapping
+ * The function uses byte values (0-255) as indices, so we need a 256-element table.
+ * For indices 0-57, we map to base58 characters. For indices 58-255, we wrap around.
+ */
+static void s_create_base58_table(char *a_table) {
+    const size_t l_b58_len = strlen(c_b58digits_ordered);
+    for (int i = 0; i < 256; i++) {
+        a_table[i] = c_b58digits_ordered[i % l_b58_len];
+    }
+}
+
+/**
+ * @brief Create a 256-element base64 table from the base64 character mapping
+ * The function uses byte values (0-255) as indices, so we need a 256-element table.
+ * For indices 0-63, we map to base64 characters. For indices 64-255, we wrap around.
+ */
+static void s_create_base64_table(char *a_table, const char *a_b64_chars) {
+    const size_t l_b64_len = 64;
+    for (int i = 0; i < 256; i++) {
+        a_table[i] = a_b64_chars[i % l_b64_len];
+    }
+}
+
+/**
+ * @brief Test dap_encode_char_by_char with base58 mapping
+ * Base58 uses base_size=6 (since 2^6=64 > 58, we extract 6 bits at a time)
+ */
+static bool s_test_encode_base58(void) {
+    log_it(L_DEBUG, "Testing dap_encode_char_by_char with base58 mapping");
+    
+    // Create base58 table (256 elements)
+    char l_b58_table[256];
+    s_create_base58_table(l_b58_table);
+    
+    // Test with base_size=6 (extracts 6 bits, giving values 0-63)
+    const char l_input[] = "Hello";
+    size_t l_input_size = strlen(l_input);
+    size_t l_expected_output_size = (l_input_size * 8) / 6; // 5 bytes * 8 bits / 6 = 6 (with integer division)
+    
+    char l_output[256];
+    memset(l_output, 0, sizeof(l_output));
+    
+    size_t l_result = dap_encode_char_by_char(l_input, l_input_size, 6, l_b58_table, l_output);
+    
+    DAP_TEST_ASSERT(l_result == l_expected_output_size, 
+                   "Base58 output size should match expected (5 bytes -> 6 chars)");
+    DAP_TEST_ASSERT(l_result == 6, "5 bytes with base-6 should produce 6 output chars");
+    
+    // Verify all output characters are valid base58 characters
+    for (size_t i = 0; i < l_result; i++) {
+        bool l_is_valid = false;
+        for (size_t j = 0; j < strlen(c_b58digits_ordered); j++) {
+            if (l_output[i] == c_b58digits_ordered[j]) {
+                l_is_valid = true;
+                break;
+            }
+        }
+        DAP_TEST_ASSERT(l_is_valid, "Output character should be a valid base58 character");
+    }
+    
+    // Test with different input sizes
+    const char l_input1[] = "A";  // 1 byte = 8 bits -> 1 char (8/6 = 1)
+    char l_output1[256];
+    size_t l_result1 = dap_encode_char_by_char(l_input1, 1, 6, l_b58_table, l_output1);
+    DAP_TEST_ASSERT(l_result1 == 1, "1 byte with base-6 should produce 1 output char");
+    DAP_TEST_ASSERT(l_output1[0] != 0, "Output should be non-empty");
+    
+    const char l_input3[] = "ABC";  // 3 bytes = 24 bits -> 4 chars (24/6 = 4)
+    char l_output3[256];
+    size_t l_result3 = dap_encode_char_by_char(l_input3, 3, 6, l_b58_table, l_output3);
+    DAP_TEST_ASSERT(l_result3 == 4, "3 bytes with base-6 should produce 4 output chars");
+    
+    log_it(L_DEBUG, "Base58 test passed");
+    return true;
+}
+
+/**
+ * @brief Test dap_encode_char_by_char with base64 standard mapping
+ * Base64 uses base_size=6 (2^6=64, extracts 6 bits at a time)
+ */
+static bool s_test_encode_base64_standard(void) {
+    log_it(L_DEBUG, "Testing dap_encode_char_by_char with base64 standard mapping");
+    
+    // Create base64 standard table (256 elements)
+    char l_b64_table[256];
+    s_create_base64_table(l_b64_table, b64_standart_table);
+    
+    // Test with base_size=6 (extracts 6 bits, giving values 0-63)
+    const char l_input[] = "Hello";
+    size_t l_input_size = strlen(l_input);
+    size_t l_expected_output_size = (l_input_size * 8) / 6; // 5 bytes * 8 bits / 6 = 6
+    
+    char l_output[256];
+    memset(l_output, 0, sizeof(l_output));
+    
+    size_t l_result = dap_encode_char_by_char(l_input, l_input_size, 6, l_b64_table, l_output);
+    
+    DAP_TEST_ASSERT(l_result == l_expected_output_size, 
+                   "Base64 output size should match expected (5 bytes -> 6 chars)");
+    DAP_TEST_ASSERT(l_result == 6, "5 bytes with base-6 should produce 6 output chars");
+    
+    // Verify all output characters are valid base64 standard characters
+    for (size_t i = 0; i < l_result; i++) {
+        bool l_is_valid = false;
+        for (size_t j = 0; j < 64; j++) {
+            if (l_output[i] == b64_standart_table[j]) {
+                l_is_valid = true;
+                break;
+            }
+        }
+        DAP_TEST_ASSERT(l_is_valid, "Output character should be a valid base64 standard character");
+    }
+    
+    // Test with 3 bytes (typical base64 input size)
+    const char l_input3[] = "Man";  // 3 bytes = 24 bits -> 4 chars (24/6 = 4)
+    char l_output3[256];
+    size_t l_result3 = dap_encode_char_by_char(l_input3, 3, 6, l_b64_table, l_output3);
+    DAP_TEST_ASSERT(l_result3 == 4, "3 bytes with base-6 should produce 4 output chars");
+    
+    // Test with 1 byte
+    const char l_input1[] = "A";  // 1 byte = 8 bits -> 1 char (8/6 = 1)
+    char l_output1[256];
+    size_t l_result1 = dap_encode_char_by_char(l_input1, 1, 6, l_b64_table, l_output1);
+    DAP_TEST_ASSERT(l_result1 == 1, "1 byte with base-6 should produce 1 output char");
+    DAP_TEST_ASSERT(l_output1[0] != 0, "Output should be non-empty");
+    
+    log_it(L_DEBUG, "Base64 standard test passed");
+    return true;
+}
+
+/**
+ * @brief Test dap_encode_char_by_char with base64 URL-safe mapping
+ * Base64 URL-safe uses base_size=6 (2^6=64, extracts 6 bits at a time)
+ */
+static bool s_test_encode_base64_url_safe(void) {
+    log_it(L_DEBUG, "Testing dap_encode_char_by_char with base64 URL-safe mapping");
+    
+    // Create base64 URL-safe table (256 elements)
+    char l_b64_table[256];
+    s_create_base64_table(l_b64_table, b64_table_url_safe);
+    
+    // Test with base_size=6 (extracts 6 bits, giving values 0-63)
+    const char l_input[] = "Hello";
+    size_t l_input_size = strlen(l_input);
+    size_t l_expected_output_size = (l_input_size * 8) / 6; // 5 bytes * 8 bits / 6 = 6
+    
+    char l_output[256];
+    memset(l_output, 0, sizeof(l_output));
+    
+    size_t l_result = dap_encode_char_by_char(l_input, l_input_size, 6, l_b64_table, l_output);
+    
+    DAP_TEST_ASSERT(l_result == l_expected_output_size, 
+                   "Base64 URL-safe output size should match expected (5 bytes -> 6 chars)");
+    DAP_TEST_ASSERT(l_result == 6, "5 bytes with base-6 should produce 6 output chars");
+    
+    // Verify all output characters are valid base64 URL-safe characters
+    for (size_t i = 0; i < l_result; i++) {
+        bool l_is_valid = false;
+        for (size_t j = 0; j < 64; j++) {
+            if (l_output[i] == b64_table_url_safe[j]) {
+                l_is_valid = true;
+                break;
+            }
+        }
+        DAP_TEST_ASSERT(l_is_valid, "Output character should be a valid base64 URL-safe character");
+    }
+    
+    // Test with different input sizes
+    const char l_input3[] = "Test";  // 4 bytes = 32 bits -> 5 chars (32/6 = 5)
+    char l_output3[256];
+    size_t l_result3 = dap_encode_char_by_char(l_input3, 4, 6, l_b64_table, l_output3);
+    DAP_TEST_ASSERT(l_result3 == 5, "4 bytes with base-6 should produce 5 output chars");
+    
+    log_it(L_DEBUG, "Base64 URL-safe test passed");
+    return true;
+}
+
+/**
  * @brief Main test function for dap_encode_char_by_char
  */
 int main(void) {
@@ -320,6 +538,15 @@ int main(void) {
     
     // Test custom table
     l_all_passed &= s_test_encode_custom_table();
+    
+    // Test base58 mapping
+    l_all_passed &= s_test_encode_base58();
+    
+    // Test base64 standard mapping
+    l_all_passed &= s_test_encode_base64_standard();
+    
+    // Test base64 URL-safe mapping
+    l_all_passed &= s_test_encode_base64_url_safe();
     
     dap_test_sdk_cleanup();
     
