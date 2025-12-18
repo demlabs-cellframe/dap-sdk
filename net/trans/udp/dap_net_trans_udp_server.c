@@ -200,6 +200,47 @@ static dap_events_socket_t *s_create_virtual_udp_esocket(
 }
 
 /**
+ * @brief Listener esocket creation callback - initializes shared buffer
+ * 
+ * Called when physical UDP listener socket is created and added to worker.
+ * Sets up shared buffer infrastructure to allow zero-copy reads from multiple 
+ * virtual esockets.
+ * 
+ * @param a_es Listener esocket (physical UDP socket)
+ * @param a_arg Unused (always NULL from dap_worker)
+ */
+static void s_listener_new_callback(dap_events_socket_t *a_es, void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    if (!a_es || !a_es->server) {
+        log_it(L_ERROR, "Invalid esocket or server in listener new callback");
+        return;
+    }
+    
+    dap_net_trans_udp_server_t *l_udp_srv = DAP_NET_TRANS_UDP_SERVER(a_es->server);
+    if (!l_udp_srv) {
+        log_it(L_ERROR, "No UDP server in server->_inheritor");
+        return;
+    }
+    
+    // Initialize shared buffer using listener's buf_in
+    pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
+    
+    if (!l_udp_srv->listener_es) {
+        l_udp_srv->listener_es = a_es;
+        l_udp_srv->shared_buf = a_es->buf_in;
+        l_udp_srv->shared_buf_capacity = a_es->buf_in_size_max;
+        
+        debug_if(s_debug_more, L_DEBUG, 
+               "Listener new callback: initialized shared buffer (listener_es=%p, capacity=%zu)", 
+               a_es, l_udp_srv->shared_buf_capacity);
+    }
+    
+    pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+}
+
+/**
  * @brief UDP server read callback - demultiplexes incoming UDP packets
  * 
  * This callback processes incoming UDP datagrams on the server listener socket.
@@ -229,17 +270,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Check if we need to initialize shared buffer (first packet)
-    if (!l_udp_srv->listener_es) {
-        pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
-        if (!l_udp_srv->listener_es) { // Double-check after acquiring lock
-            l_udp_srv->listener_es = a_es;
-            l_udp_srv->shared_buf = a_es->buf_in;
-            l_udp_srv->shared_buf_capacity = a_es->buf_in_size_max;
-            debug_if(s_debug_more, L_DEBUG, "Initialized shared buffer: capacity=%zu", 
-                   l_udp_srv->shared_buf_capacity);
-        }
-        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+    // Shared buffer should already be initialized by s_listener_new_callback
+    if (!l_udp_srv->listener_es || !l_udp_srv->shared_buf) {
+        log_it(L_ERROR, "Shared buffer not initialized (listener_es=%p, shared_buf=%p)",
+               l_udp_srv->listener_es, l_udp_srv->shared_buf);
+        a_es->buf_in_size = 0;
+        return;
     }
     
     // Lock shared buffer for reading
@@ -717,7 +753,16 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
     }
 
     // Create underlying dap_server_t
-    // UDP callbacks will be set by dap_stream_add_proc_udp()
+    // Set up server callbacks for listener esocket initialization
+    dap_events_socket_callbacks_t l_server_callbacks = {
+        .new_callback = s_listener_new_callback,   // Initialize shared buffer on listener creation
+        .delete_callback = NULL,
+        .read_callback = NULL,
+        .write_callback = NULL,
+        .error_callback = NULL
+    };
+    
+    // UDP client callbacks will be set by dap_stream_add_proc_udp()
     dap_events_socket_callbacks_t l_udp_callbacks = {
         .new_callback = NULL,      // Will be set by dap_stream_add_proc_udp
         .delete_callback = NULL,   // Will be set by dap_stream_add_proc_udp
@@ -726,13 +771,13 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
         .error_callback = NULL
     };
 
-    a_udp_server->server = dap_server_new(a_cfg_section, NULL, &l_udp_callbacks);
+    a_udp_server->server = dap_server_new(a_cfg_section, &l_server_callbacks, &l_udp_callbacks);
     if (!a_udp_server->server) {
         log_it(L_ERROR, "Failed to create dap_server for UDP");
         return -3;
     }
 
-    // Set UDP server as inheritor
+    // Set UDP server as inheritor (used by s_listener_new_callback)
     a_udp_server->server->_inheritor = a_udp_server;
 
     // Register UDP stream handlers
@@ -745,13 +790,14 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
     debug_if(s_debug_more, L_DEBUG, "Registered UDP stream handlers");
 
     // Start listening on all specified address:port pairs
+    // Use l_server_callbacks (with new_callback for shared buffer init) for listeners
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
         uint16_t l_port = a_ports[i];
 
         int l_ret = dap_server_listen_addr_add(a_udp_server->server, l_addr, l_port,
                                                 DESCRIPTOR_TYPE_SOCKET_UDP,
-                                                &a_udp_server->server->client_callbacks);
+                                                &l_server_callbacks);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start UDP server on %s:%u", l_addr, l_port);
             dap_net_trans_udp_server_stop(a_udp_server);
