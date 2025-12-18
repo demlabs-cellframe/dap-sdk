@@ -233,42 +233,38 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Try to parse as UDP control packet first
+    // First, try to find existing session by address
+    // If session exists with encryption key AND packet is not a valid control packet,
+    // this is encrypted stream data
+    udp_session_entry_t *l_session = NULL, *l_tmp = NULL;
+    bool l_session_found = false;
+    
+    pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
+    HASH_ITER(hh, l_udp_srv->sessions, l_session, l_tmp) {
+        // Match by remote address
+        if (l_session->remote_addr_len == a_es->addr_size &&
+            memcmp(&l_session->remote_addr, &a_es->addr_storage, a_es->addr_size) == 0) {
+            l_session_found = true;
+            break;
+        }
+    }
+    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+    
+    // Check if this could be a control packet (version byte = 1)
     dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
     uint8_t l_version = l_header->version;
+    bool l_looks_like_control = (l_version == 1);
     
-    // Check if this is a control packet (version 1) or stream data (encrypted, no header)
-    // Stream data will have random first byte (from encryption)
-    // Control packets always start with version=1
-    bool l_is_control_packet = (l_version == 1);
-    
-    if (!l_is_control_packet) {
-        // This is encrypted stream data, not a control packet
-        // Find session by trying all sessions (expensive but rare after handshake)
-        debug_if(s_debug_more, L_DEBUG, "Received encrypted stream data (%zu bytes), looking up session by address", 
+    // If we have active session with encryption key AND packet doesn't look like control packet,
+    // treat as encrypted stream data
+    if (l_session_found && l_session && l_session->stream && 
+        l_session->stream->session && l_session->stream->session->key &&
+        !l_looks_like_control) {
+        
+        debug_if(s_debug_more, L_DEBUG, "Found active session with encryption key and non-control packet, treating as encrypted stream data (%zu bytes)", 
                a_es->buf_in_size);
         
-        udp_session_entry_t *l_session = NULL, *l_tmp = NULL;
-        bool l_found = false;
-        
-        pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
-        HASH_ITER(hh, l_udp_srv->sessions, l_session, l_tmp) {
-            // Match by remote address
-            if (l_session->remote_addr_len == a_es->addr_size &&
-                memcmp(&l_session->remote_addr, &a_es->addr_storage, a_es->addr_size) == 0) {
-                l_found = true;
-                break;
-            }
-        }
-        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-        
-        if (!l_found || !l_session || !l_session->stream) {
-            log_it(L_WARNING, "Received stream data but no active session for this address, dropping");
-            a_es->buf_in_size = 0;
-            return;
-        }
-        
-        // Forward encrypted data to virtual esocket for stream processing
+        // This is encrypted stream data - forward to virtual esocket for processing
         dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx->esocket;
         if (!l_stream_es) {
             log_it(L_ERROR, "Session stream has no esocket");
@@ -300,7 +296,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // This is a control packet - parse UDP header normally
+    // No active session with key OR packet looks like control - parse as control packet
     uint8_t l_type = l_header->type;
     uint16_t l_payload_len = ntohs(l_header->length);
     uint32_t l_seq_num = ntohl(l_header->seq_num);
@@ -308,6 +304,13 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     
     debug_if(s_debug_more, L_DEBUG, "UDP control packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
            l_version, l_type, l_payload_len, l_seq_num, l_session_id);
+    
+    // Validate version
+    if (l_version != 1) {
+        log_it(L_WARNING, "Invalid UDP control packet version %u (expected 1), dropping", l_version);
+        a_es->buf_in_size = 0;
+        return;
+    }
     
     // Check if we have full packet
     size_t l_total_size = sizeof(dap_stream_trans_udp_header_t) + l_payload_len;
@@ -320,8 +323,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     // Extract payload pointer
     uint8_t *l_payload = a_es->buf_in + sizeof(dap_stream_trans_udp_header_t);
     
-    // Lookup or create session
-    udp_session_entry_t *l_session = NULL;
+    // Lookup or create session for control packets
+    // (We already checked for existing session with key above)
+    l_session = NULL;
     pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
     HASH_FIND(hh, l_udp_srv->sessions, &l_session_id, sizeof(l_session_id), l_session);
     pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
