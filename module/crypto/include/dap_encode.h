@@ -23,24 +23,20 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef _DAP_ENC_BASE64_H_
-#define _DAP_ENC_BASE64_H_
+#ifndef _DAP_ENCODE_H_
+#define _DAP_ENCODE_H_
 #include <stddef.h>
+#include <stdint.h>
 #include "dap_enc_key.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Calculates encode size from input size
- */
-#define DAP_ENC_BASE64_ENCODE_SIZE(in_size) (size_t)(((4 * (in_size) / 3) + 3) & ~3)
-#define DAP_ENC_BASE64_DECODE_SIZE(in_size) (size_t)((in_size) * 3 / 4 + (in_size) % 4)
 
-size_t dap_enc_base64_decode(const char * in, size_t in_size, void * out, dap_enc_data_type_t standard);
-size_t dap_enc_base64_encode(const void * in, size_t in_size, char * out, dap_enc_data_type_t standard);
-char * dap_enc_strdup_to_base64(const char * a_string);
-char * dap_enc_strdup_from_base64(const char * a_string_base64);
+size_t dap_encode_char_by_char(const char * a_in, size_t a_in_size, uint8_t a_base_size, const char * a_table, char * a_out);
+
+
+
 
 #ifdef __cplusplus
 }
