@@ -46,6 +46,13 @@ typedef struct dap_net_trans_udp_server {
     // Session management
     udp_session_entry_t *sessions;      ///< Hash table of active UDP sessions (keyed by session_id)
     pthread_rwlock_t sessions_lock;     ///< Lock for sessions hash table
+    
+    // Shared buffer architecture for multi-worker support
+    pthread_rwlock_t shared_buf_lock;   ///< RW lock for shared buffer access
+    byte_t *shared_buf;                 ///< Shared buffer pointer (points to listener esocket buf_in)
+    size_t shared_buf_size;             ///< Current size of data in shared buffer
+    size_t shared_buf_capacity;         ///< Maximum capacity of shared buffer
+    dap_events_socket_t *listener_es;   ///< Physical listener esocket (owns shared buffer)
 } dap_net_trans_udp_server_t;
 
 #define DAP_NET_TRANS_UDP_SERVER(a) ((dap_net_trans_udp_server_t *) (a)->_inheritor)

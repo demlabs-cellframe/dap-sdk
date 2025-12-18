@@ -109,10 +109,10 @@ typedef struct udp_session_entry {
     time_t last_activity;              // Last packet timestamp
     UT_hash_handle hh;                 // uthash handle
     
-    // TODO: For shared buffer architecture (multi-worker support):
-    // size_t consumed_offset;         // Last consumed position in shared buffer
-    // size_t consumed_size;           // Total bytes consumed
-    // bool is_tail_reader;            // True if this session is last in sequence
+    // Shared buffer architecture: offset tracking for multi-worker support
+    size_t last_read_offset;           // Last position read from shared buffer
+    size_t last_read_size;             // Size of last read
+    bool processing_in_progress;       // True if currently processing packet
 } udp_session_entry_t;
 
 /**
@@ -229,7 +229,25 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "UDP server received %zu bytes on socket %d", a_es->buf_in_size, a_es->socket);
+    // Check if we need to initialize shared buffer (first packet)
+    if (!l_udp_srv->listener_es) {
+        pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
+        if (!l_udp_srv->listener_es) { // Double-check after acquiring lock
+            l_udp_srv->listener_es = a_es;
+            l_udp_srv->shared_buf = a_es->buf_in;
+            l_udp_srv->shared_buf_capacity = a_es->buf_in_size_max;
+            debug_if(s_debug_more, L_DEBUG, "Initialized shared buffer: capacity=%zu", 
+                   l_udp_srv->shared_buf_capacity);
+        }
+        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+    }
+    
+    // Lock shared buffer for reading
+    pthread_rwlock_rdlock(&l_udp_srv->shared_buf_lock);
+    l_udp_srv->shared_buf_size = a_es->buf_in_size;
+    
+    debug_if(s_debug_more, L_DEBUG, "UDP server received %zu bytes on socket %d (shared buffer)", 
+           l_udp_srv->shared_buf_size, a_es->socket);
     
     // Check if we have at least a UDP header
     if (a_es->buf_in_size < sizeof(dap_stream_trans_udp_header_t)) {
@@ -267,58 +285,64 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         !l_looks_like_control) {
         
         debug_if(s_debug_more, L_DEBUG, "Found active session with encryption key and non-control packet, treating as encrypted stream data (%zu bytes)", 
-               a_es->buf_in_size);
+               l_udp_srv->shared_buf_size);
         
-        // This is encrypted stream data - forward to virtual esocket for processing
+        // This is encrypted stream data - process directly from shared buffer
         dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx->esocket;
         if (!l_stream_es) {
             log_it(L_ERROR, "Session stream has no esocket");
+            pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
             a_es->buf_in_size = 0;
             return;
         }
         
-        // FIXME: Current approach (copying to virtual esocket buf_in) works ONLY 
-        // if virtual esockets are on the SAME worker as physical listener!
-        // 
-        // For multi-worker support, need shared buffer architecture:
-        // 1. Keep data in physical listener buffer (shared read-only)
-        // 2. Virtual esockets lock RW lock and mark their packet offsets
-        // 3. Each session tracks consumed ranges (offset + size)
-        // 4. Last reader (in "tail") performs shrink
-        // 
-        // This would enable:
-        // - Multi-worker safety
-        // - Parallel packet processing
-        // - Zero-copy reads
-        // - Better performance
-        //
-        // Current limitation: All UDP sessions must be on same worker.
+        // Shared buffer architecture: Read directly from shared buffer
+        // Virtual esocket's buf_in now points to shared buffer data
+        // This is multi-worker safe because we hold read lock
         
-        // Copy data to virtual esocket buf_in
-        if (l_stream_es->buf_in_size + a_es->buf_in_size <= l_stream_es->buf_in_size_max) {
-            memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
-                   a_es->buf_in, a_es->buf_in_size);
-            l_stream_es->buf_in_size += a_es->buf_in_size;
-            
-            debug_if(s_debug_more, L_DEBUG, "Copied %zu bytes to virtual esocket, calling stream processing", 
-                   a_es->buf_in_size);
-            
-            // Process stream data (encrypted channel packets)
-            dap_stream_data_proc_read(l_session->stream);
-            
-            // If there is response data, send it
-            if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
-                l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-            }
-        } else {
-            log_it(L_WARNING, "Virtual esocket buffer full, dropping stream data");
+        // Mark session as processing
+        l_session->processing_in_progress = true;
+        size_t l_packet_offset = 0;  // Offset within this packet
+        size_t l_packet_size = l_udp_srv->shared_buf_size;
+        
+        // Temporarily redirect virtual esocket buf_in to shared buffer region
+        byte_t *l_orig_buf_in = l_stream_es->buf_in;
+        size_t l_orig_buf_in_size = l_stream_es->buf_in_size;
+        
+        l_stream_es->buf_in = l_udp_srv->shared_buf + l_packet_offset;
+        l_stream_es->buf_in_size = l_packet_size;
+        
+        debug_if(s_debug_more, L_DEBUG, "Processing stream data directly from shared buffer (offset=%zu, size=%zu)", 
+               l_packet_offset, l_packet_size);
+        
+        // Process stream data (encrypted channel packets)
+        dap_stream_data_proc_read(l_session->stream);
+        
+        // Restore original buf_in pointer
+        l_stream_es->buf_in = l_orig_buf_in;
+        l_stream_es->buf_in_size = l_orig_buf_in_size;
+        
+        // Update session tracking
+        l_session->last_read_offset = l_packet_offset;
+        l_session->last_read_size = l_packet_size;
+        l_session->processing_in_progress = false;
+        
+        // Release shared buffer read lock
+        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+        
+        // If there is response data, send it
+        if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
+            l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
         }
         
+        // Clear listener socket buffer
         a_es->buf_in_size = 0;
         return;
     }
     
     // No active session with key OR packet looks like control - parse as control packet
+    // Release read lock first as control packet processing doesn't need shared buffer
+    pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
     uint8_t l_type = l_header->type;
     uint16_t l_payload_len = ntohs(l_header->length);
     uint32_t l_seq_num = ntohl(l_header->seq_num);
@@ -652,10 +676,19 @@ dap_net_trans_udp_server_t *dap_net_trans_udp_server_new(const char *a_server_na
     l_udp_server->sessions = NULL;
     pthread_rwlock_init(&l_udp_server->sessions_lock, NULL);
     
+    // Initialize shared buffer infrastructure
+    pthread_rwlock_init(&l_udp_server->shared_buf_lock, NULL);
+    l_udp_server->shared_buf = NULL;
+    l_udp_server->shared_buf_size = 0;
+    l_udp_server->shared_buf_capacity = 0;
+    l_udp_server->listener_es = NULL;
+    
     // Get UDP trans instance
     l_udp_server->trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
     if (!l_udp_server->trans) {
         log_it(L_ERROR, "UDP trans not registered");
+        pthread_rwlock_destroy(&l_udp_server->sessions_lock);
+        pthread_rwlock_destroy(&l_udp_server->shared_buf_lock);
         DAP_DELETE(l_udp_server);
         return NULL;
     }
@@ -776,8 +809,11 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_udp_server)
     // Ensure server is stopped before deletion
     dap_net_trans_udp_server_stop(a_udp_server);
     
-    // Destroy sessions lock
+    // Destroy locks
     pthread_rwlock_destroy(&a_udp_server->sessions_lock);
+    pthread_rwlock_destroy(&a_udp_server->shared_buf_lock);
+    
+    // Note: shared_buf points to listener esocket buf_in, don't free it
 
     log_it(L_INFO, "Deleted UDP server: %s", a_udp_server->server_name);
     DAP_DELETE(a_udp_server);
