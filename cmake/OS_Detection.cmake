@@ -256,6 +256,12 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv8")
     message("[*] Platform armv8")
 endif ()
 
+# ARM32 requires NO_MISALIGNED_ACCESSES for safe memory access (Keccak uses 64-bit loads)
+if(PLATFORM_ARM AND VERSION MATCHES "7")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNO_MISALIGNED_ACCESSES")
+    message("[*] Adding -DNO_MISALIGNED_ACCESSES for ARM32")
+endif()
+
 if ( CELLFRAME_NO_OPTIMIZATION)
     if (PLATFORM_X86_64)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=core2")
