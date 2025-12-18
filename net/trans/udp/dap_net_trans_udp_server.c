@@ -233,24 +233,81 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Parse UDP trans header
+    // Try to parse as UDP control packet first
     dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
-    
     uint8_t l_version = l_header->version;
+    
+    // Check if this is a control packet (version 1) or stream data (encrypted, no header)
+    // Stream data will have random first byte (from encryption)
+    // Control packets always start with version=1
+    bool l_is_control_packet = (l_version == 1);
+    
+    if (!l_is_control_packet) {
+        // This is encrypted stream data, not a control packet
+        // Find session by trying all sessions (expensive but rare after handshake)
+        debug_if(s_debug_more, L_DEBUG, "Received encrypted stream data (%zu bytes), looking up session by address", 
+               a_es->buf_in_size);
+        
+        udp_session_entry_t *l_session = NULL, *l_tmp = NULL;
+        bool l_found = false;
+        
+        pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
+        HASH_ITER(hh, l_udp_srv->sessions, l_session, l_tmp) {
+            // Match by remote address
+            if (l_session->remote_addr_len == a_es->addr_size &&
+                memcmp(&l_session->remote_addr, &a_es->addr_storage, a_es->addr_size) == 0) {
+                l_found = true;
+                break;
+            }
+        }
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        
+        if (!l_found || !l_session || !l_session->stream) {
+            log_it(L_WARNING, "Received stream data but no active session for this address, dropping");
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // Forward encrypted data to virtual esocket for stream processing
+        dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx->esocket;
+        if (!l_stream_es) {
+            log_it(L_ERROR, "Session stream has no esocket");
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // Copy data to virtual esocket buf_in
+        if (l_stream_es->buf_in_size + a_es->buf_in_size <= l_stream_es->buf_in_size_max) {
+            memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
+                   a_es->buf_in, a_es->buf_in_size);
+            l_stream_es->buf_in_size += a_es->buf_in_size;
+            
+            debug_if(s_debug_more, L_DEBUG, "Copied %zu bytes to virtual esocket, calling stream processing", 
+                   a_es->buf_in_size);
+            
+            // Process stream data (encrypted channel packets)
+            dap_stream_data_proc_read(l_session->stream);
+            
+            // If there is response data, send it
+            if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
+                l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
+            }
+        } else {
+            log_it(L_WARNING, "Virtual esocket buffer full, dropping stream data");
+        }
+        
+        a_es->buf_in_size = 0;
+        return;
+    }
+    
+    // This is a control packet - parse UDP header normally
     uint8_t l_type = l_header->type;
     uint16_t l_payload_len = ntohs(l_header->length);
     uint32_t l_seq_num = ntohl(l_header->seq_num);
     uint64_t l_session_id = be64toh(l_header->session_id);
     
-    debug_if(s_debug_more, L_DEBUG, "UDP packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
+    debug_if(s_debug_more, L_DEBUG, "UDP control packet: ver=%u type=%u len=%u seq=%u session=0x%lx", 
            l_version, l_type, l_payload_len, l_seq_num, l_session_id);
-    
-    // Validate version
-    if (l_version != 1) {
-        log_it(L_WARNING, "Unsupported UDP protocol version %u, dropping", l_version);
-        a_es->buf_in_size = 0;
-        return;
-    }
     
     // Check if we have full packet
     size_t l_total_size = sizeof(dap_stream_trans_udp_header_t) + l_payload_len;
