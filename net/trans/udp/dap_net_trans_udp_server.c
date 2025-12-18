@@ -108,6 +108,11 @@ typedef struct udp_session_entry {
     socklen_t remote_addr_len;         // Address length
     time_t last_activity;              // Last packet timestamp
     UT_hash_handle hh;                 // uthash handle
+    
+    // TODO: For shared buffer architecture (multi-worker support):
+    // size_t consumed_offset;         // Last consumed position in shared buffer
+    // size_t consumed_size;           // Total bytes consumed
+    // bool is_tail_reader;            // True if this session is last in sequence
 } udp_session_entry_t;
 
 /**
@@ -271,6 +276,23 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             a_es->buf_in_size = 0;
             return;
         }
+        
+        // FIXME: Current approach (copying to virtual esocket buf_in) works ONLY 
+        // if virtual esockets are on the SAME worker as physical listener!
+        // 
+        // For multi-worker support, need shared buffer architecture:
+        // 1. Keep data in physical listener buffer (shared read-only)
+        // 2. Virtual esockets lock RW lock and mark their packet offsets
+        // 3. Each session tracks consumed ranges (offset + size)
+        // 4. Last reader (in "tail") performs shrink
+        // 
+        // This would enable:
+        // - Multi-worker safety
+        // - Parallel packet processing
+        // - Zero-copy reads
+        // - Better performance
+        //
+        // Current limitation: All UDP sessions must be on same worker.
         
         // Copy data to virtual esocket buf_in
         if (l_stream_es->buf_in_size + a_es->buf_in_size <= l_stream_es->buf_in_size_max) {
