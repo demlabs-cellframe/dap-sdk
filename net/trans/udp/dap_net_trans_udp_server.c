@@ -862,18 +862,22 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
     
     // Override read callback for server listener
     a_udp_server->server->client_callbacks.read_callback = s_udp_server_read_callback;
+    
+    // Add new_callback for listener initialization (shared buffer setup)
+    dap_events_socket_callbacks_t l_listener_callbacks = a_udp_server->server->client_callbacks;
+    l_listener_callbacks.new_callback = s_listener_new_callback;
 
     debug_if(s_debug_more, L_DEBUG, "Registered UDP stream handlers");
 
     // Start listening on all specified address:port pairs
-    // Use l_server_callbacks (with new_callback for shared buffer init) for listeners
+    // Use l_listener_callbacks (client_callbacks + new_callback for shared buffer init)
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
         uint16_t l_port = a_ports[i];
 
         int l_ret = dap_server_listen_addr_add(a_udp_server->server, l_addr, l_port,
                                                 DESCRIPTOR_TYPE_SOCKET_UDP,
-                                                &l_server_callbacks);
+                                                &l_listener_callbacks);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start UDP server on %s:%u", l_addr, l_port);
             dap_net_trans_udp_server_stop(a_udp_server);
