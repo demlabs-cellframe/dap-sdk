@@ -602,6 +602,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                     debug_if(s_debug_more, L_DEBUG, "Calling read_callback for handshake processing");
                     l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
                     
+                    // Clear buf_in after processing (prevent overflow)
+                    l_stream_es->buf_in_size = 0;
+                    
                     // If there is data to send (response in buf_out), send it now
                     if (l_stream_es->buf_out_size > 0) {
                         debug_if(s_debug_more, L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
@@ -630,6 +633,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                 if (l_stream_es->callbacks.read_callback) {
                     debug_if(s_debug_more, L_DEBUG, "Calling read_callback to process SESSION_CREATE");
                     l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
+                    
+                    // Clear buf_in after processing (prevent overflow)
+                    l_stream_es->buf_in_size = 0;
                     
                     debug_if(s_debug_more, L_DEBUG, "After read_callback: buf_out_size=%zu", l_stream_es->buf_out_size);
                     
