@@ -20,7 +20,7 @@ endif()
 # Override with auto-propagating version
 macro(target_link_libraries TARGET_NAME)
     # Call original
-    _target_link_libraries(${TARGET_NAME} ${ARGN})
+    _original_tll(${TARGET_NAME} ${ARGN})
     
     # For OBJECT libraries, copy include directories from dependencies
     get_target_property(TGT_TYPE ${TARGET_NAME} TYPE)
