@@ -682,7 +682,18 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             HASH_DEL(l_udp_srv->sessions, l_session);
             pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
             
-            // Cleanup stream (this will also cleanup trans_ctx->esocket which is the virtual esocket)
+            // Cleanup: For virtual esockets, clear buf_in BEFORE stream delete
+            if (l_session->stream && l_session->stream->trans_ctx && l_session->stream->trans_ctx->esocket) {
+                dap_events_socket_t *l_es = l_session->stream->trans_ctx->esocket;
+                // Clear buf_in for virtual esockets (shared buffer, not owned)
+                if (l_es->no_close) {
+                    l_es->buf_in = NULL;
+                    l_es->buf_in_size = 0;
+                    l_es->buf_in_size_max = 0;
+                }
+            }
+            
+            // Delete stream (will also delete trans_ctx->esocket)
             if (l_session->stream) {
                 dap_stream_delete_unsafe(l_session->stream);
             }
@@ -912,7 +923,18 @@ void dap_net_trans_udp_server_stop(dap_net_trans_udp_server_t *a_udp_server)
     HASH_ITER(hh, a_udp_server->sessions, l_session, l_tmp) {
         HASH_DEL(a_udp_server->sessions, l_session);
         
-        // Cleanup stream (this will also cleanup trans_ctx->esocket which is the virtual esocket)
+        // Cleanup: For virtual esockets, clear buf_in BEFORE stream delete
+        if (l_session->stream && l_session->stream->trans_ctx && l_session->stream->trans_ctx->esocket) {
+            dap_events_socket_t *l_es = l_session->stream->trans_ctx->esocket;
+            // Clear buf_in for virtual esockets (shared buffer, not owned)
+            if (l_es->no_close) {
+                l_es->buf_in = NULL;
+                l_es->buf_in_size = 0;
+                l_es->buf_in_size_max = 0;
+            }
+        }
+        
+        // Delete stream (will also delete trans_ctx->esocket)
         if (l_session->stream) {
             dap_stream_delete_unsafe(l_session->stream);
         }
