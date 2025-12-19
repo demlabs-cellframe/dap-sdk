@@ -1288,6 +1288,10 @@ static void s_udp_close(dap_stream_t *a_stream)
     if (l_ctx) {
         l_ctx->stream = NULL;
         
+        // CRITICAL: Set esocket to NULL to prevent race condition
+        // If cleanup happens from different thread, corrupted pointer may cause segfault
+        l_ctx->esocket = NULL;
+        
         // Free UDP context
         if (l_ctx->_inheritor) {
             DAP_DELETE(l_ctx->_inheritor);
