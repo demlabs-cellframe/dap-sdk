@@ -1288,6 +1288,17 @@ static void s_udp_close(dap_stream_t *a_stream)
     if (l_ctx) {
         l_ctx->stream = NULL;
         
+        // For server-side virtual esockets with shared buffer:
+        // Clear buf_in pointer to prevent double-free (buf_in points to shared buffer, not owned)
+        // Virtual esockets are identified by no_close=true flag
+        if (l_ctx->esocket && l_ctx->esocket->no_close) {
+            debug_if(s_debug_more, L_DEBUG, "Clearing buf_in for virtual esocket %p (shared buffer architecture)", 
+                   l_ctx->esocket);
+            l_ctx->esocket->buf_in = NULL;
+            l_ctx->esocket->buf_in_size = 0;
+            l_ctx->esocket->buf_in_size_max = 0;
+        }
+        
         // Free UDP context
         if (l_ctx->_inheritor) {
             DAP_DELETE(l_ctx->_inheritor);
