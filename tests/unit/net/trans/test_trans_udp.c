@@ -865,11 +865,17 @@ static void test_15_stream_session(void)
     
     // Trans is already initialized, no need to call init() again
     
-    // Create mock stream
+    // Create mock stream with UDP context
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
     s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+    
+    // Create mock UDP context (required by session_create)
+    dap_net_trans_udp_ctx_t l_mock_udp_ctx = {0};
+    l_mock_udp_ctx.session_id = 0x1234567890ABCDEF; // Mock session ID from handshake
+    l_mock_udp_ctx.seq_num = 1;
+    s_mock_trans_ctx._inheritor = &l_mock_udp_ctx;
     
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};
