@@ -318,6 +318,8 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
     if (l_stm->trans_ctx) {
         l_stm->trans_ctx->esocket = a_esocket;
+        l_stm->trans_ctx->esocket_uuid = a_esocket->uuid;
+        l_stm->trans_ctx->esocket_worker = a_esocket->worker;
         l_stm->trans_ctx->stream = l_stm;  // Back-reference
     }
     
@@ -416,6 +418,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
     if (l_ret->trans_ctx) {
         l_ret->trans_ctx->esocket = a_http_client->esocket;
+        l_ret->trans_ctx->esocket_uuid = a_http_client->esocket->uuid;
+        l_ret->trans_ctx->esocket_worker = a_http_client->esocket->worker;
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
         // Set esocket->_inheritor to trans_ctx for unified access
         a_http_client->esocket->_inheritor = l_ret->trans_ctx;
@@ -511,8 +515,11 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
     l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
-    if (l_ret->trans_ctx)
+    if (l_ret->trans_ctx) {
         l_ret->trans_ctx->esocket = a_esocket;
+        l_ret->trans_ctx->esocket_uuid = a_esocket->uuid;
+        l_ret->trans_ctx->esocket_worker = a_esocket->worker;
+    }
 
     l_ret->is_client_to_uplink = true;
     l_ret->trans_ctx->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
@@ -559,13 +566,20 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     // After close(), trans_ctx->esocket may be NULL (managed by transport)
     // Only delete esocket if trans didn't handle it
-    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
-        dap_events_socket_t *l_esocket = a_stream->trans_ctx->esocket;
-        a_stream->trans_ctx->esocket = NULL;  // Prevent recursive calls
+    // ALWAYS use _mt method for 100% thread safety
+    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket_uuid && a_stream->trans_ctx->esocket_worker) {
+        debug_if(g_debug_reactor, L_DEBUG, 
+               "Stream delete: queueing esocket deletion (UUID 0x%016lx) on its worker",
+               a_stream->trans_ctx->esocket_uuid);
         
-        l_esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
-        l_esocket->_inheritor = NULL;
-        dap_events_socket_remove_and_delete_unsafe(l_esocket, false);  // Immediate deletion for both platforms
+        // ALWAYS use _mt method - 100% safe from any thread
+        dap_events_socket_remove_and_delete_mt(a_stream->trans_ctx->esocket_worker, 
+                                               a_stream->trans_ctx->esocket_uuid);
+        
+        // Clear esocket references
+        a_stream->trans_ctx->esocket = NULL;
+        a_stream->trans_ctx->esocket_uuid = 0;
+        a_stream->trans_ctx->esocket_worker = NULL;
     }
     DAP_DELETE(a_stream->trans_ctx);
     a_stream->trans_ctx = NULL;

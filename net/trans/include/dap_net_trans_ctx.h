@@ -8,7 +8,13 @@
 typedef struct dap_stream dap_stream_t;
 
 typedef struct dap_net_trans_ctx {
-    dap_events_socket_t *esocket; // Socket specific to this connection (e.g. TCP) or reference to shared (UDP)
+    // Esocket reference - CRITICAL ARCHITECTURE:
+    // For thread-safe access, ALWAYS check if dap_worker_get_current() == esocket_worker
+    // If different worker, use UUID-based access (_mt methods)
+    dap_events_socket_t *esocket; // UNSAFE: Only access in esocket's worker context!
+    dap_events_socket_uuid_t esocket_uuid; // SAFE: UUID for cross-thread references
+    dap_worker_t *esocket_worker; // Worker that owns the esocket
+    
     struct dap_net_trans *trans; // Pointer to shared trans configuration
     dap_stream_t *stream;        // Back-reference to owning stream
     

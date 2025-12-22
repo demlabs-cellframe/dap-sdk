@@ -1287,34 +1287,27 @@ static void s_udp_close(dap_stream_t *a_stream)
         l_udp_ctx->seq_num = 0;
     }
     
-    // CRITICAL ARCHITECTURE:
+    // CORRECT ARCHITECTURE - 100% THREAD SAFE:
     //
-    // Problem: Virtual esockets (SERVER-side) may be on DIFFERENT worker than cleanup thread
-    // - CLIENT cleanup runs on CLIENT worker (correct for CLIENT esocket)
-    // - SERVER cleanup may run on main thread or different worker
-    // - Virtual esocket belongs to LISTENER worker
-    //
-    // Race Condition: Cannot safely access esocket pointer from trans_ctx
-    // - If we access esocket->no_close, may segfault if esocket already deleted
-    // - If we try to delete esocket, may be wrong worker context
-    //
-    // SOLUTION: Set trans_ctx->esocket = NULL immediately
-    // - dap_stream_delete_unsafe will skip esocket cleanup (sees NULL)
-    // - Virtual esockets will be cleaned up by UDP server stop (in listener worker)
-    // - CLIENT esockets will be... LEAKED? No, they should be on correct worker
-    //
-    // TODO: Better solution - check if current_worker == esocket->worker
-    //       If yes: safe to delete esocket here
-    //       If no: set NULL and let server cleanup handle it
+    // ALWAYS use _mt method for esocket deletion - works from ANY thread context
+    // No need to check worker - _mt handles it correctly
     
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (l_ctx) {
-        // IMMEDIATELY set esocket to NULL to prevent race condition
-        // This prevents dap_stream_delete_unsafe from accessing potentially invalid pointer
+    if (l_ctx && l_ctx->esocket_uuid && l_ctx->esocket_worker) {
+        debug_if(s_debug_more, L_DEBUG, 
+               "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
+               l_ctx->esocket_uuid);
+        
+        // ALWAYS use _mt method - 100% safe from any thread
+        dap_events_socket_remove_and_delete_mt(l_ctx->esocket_worker, l_ctx->esocket_uuid);
+        
+        // Clear pointer (esocket will be deleted asynchronously on its worker)
         l_ctx->esocket = NULL;
-        
-        debug_if(s_debug_more, L_DEBUG, "UDP close: set trans_ctx->esocket = NULL (prevents race condition)");
-        
+        l_ctx->esocket_uuid = 0;
+        l_ctx->esocket_worker = NULL;
+    }
+    
+    if (l_ctx) {
         // Clear stream pointer in trans_ctx to prevent use-after-free
         l_ctx->stream = NULL;
         
@@ -1418,7 +1411,10 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+    // Set esocket reference with UUID and worker for thread-safe access
     l_ctx->esocket = l_es;
+    l_ctx->esocket_uuid = l_es->uuid;
+    l_ctx->esocket_worker = l_es->worker;
     l_ctx->stream = l_stream;
     
     // Create UDP per-stream context and store client_ctx
