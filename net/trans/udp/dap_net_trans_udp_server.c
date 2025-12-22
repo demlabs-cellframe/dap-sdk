@@ -101,19 +101,72 @@ static bool s_virtual_esocket_write_callback(dap_events_socket_t *a_es, void *a_
 }
 
 // UDP session mapping structure for server-side demultiplexing
+// NEW ARCHITECTURE: No virtual esockets! One physical esocket dispatches to multiple streams.
 typedef struct udp_session_entry {
-    uint64_t session_id;               // Session ID from UDP header (hash key)
-    dap_stream_t *stream;              // Associated dap_stream_t instance (owns virtual esocket via trans_ctx)
-    struct sockaddr_storage remote_addr; // Client address
+    // Hash key: remote address (IP:port) - uniquely identifies client
+    struct sockaddr_storage remote_addr; // Client address (HASH KEY)
     socklen_t remote_addr_len;         // Address length
-    time_t last_activity;              // Last packet timestamp
-    UT_hash_handle hh;                 // uthash handle
     
-    // Shared buffer architecture: offset tracking for multi-worker support
-    size_t last_read_offset;           // Last position read from shared buffer
-    size_t last_read_size;             // Size of last read
-    bool processing_in_progress;       // True if currently processing packet
+    // Stream associated with this client
+    dap_stream_t *stream;              // Associated dap_stream_t instance (NO virtual esocket!)
+    uint64_t session_id;               // Session ID from handshake
+    
+    // Activity tracking
+    time_t last_activity;              // Last packet timestamp
+    
+    // uthash handle (hash by remote_addr)
+    UT_hash_handle hh;                 
 } udp_session_entry_t;
+
+/**
+ * @brief Compare two sockaddr_storage structures for hash table lookup
+ * 
+ * Compares IP address and port, supporting both IPv4 and IPv6.
+ * Used by uthash to find sessions by remote address.
+ * 
+ * @param a First address
+ * @param b Second address
+ * @return true if addresses match, false otherwise
+ */
+static inline bool s_sockaddr_equal(const struct sockaddr_storage *a, const struct sockaddr_storage *b)
+{
+    if (a->ss_family != b->ss_family)
+        return false;
+    
+    if (a->ss_family == AF_INET) {
+        struct sockaddr_in *a4 = (struct sockaddr_in*)a;
+        struct sockaddr_in *b4 = (struct sockaddr_in*)b;
+        return (a4->sin_port == b4->sin_port) && 
+               (a4->sin_addr.s_addr == b4->sin_addr.s_addr);
+    } else if (a->ss_family == AF_INET6) {
+        struct sockaddr_in6 *a6 = (struct sockaddr_in6*)a;
+        struct sockaddr_in6 *b6 = (struct sockaddr_in6*)b;
+        return (a6->sin6_port == b6->sin6_port) &&
+               (memcmp(&a6->sin6_addr, &b6->sin6_addr, sizeof(struct in6_addr)) == 0);
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Find session by remote address in hash table
+ * 
+ * @param a_server UDP server instance
+ * @param a_remote_addr Client address to lookup
+ * @return Session entry or NULL if not found
+ */
+static udp_session_entry_t* s_find_session_by_addr(dap_net_trans_udp_server_t *a_server, 
+                                                     const struct sockaddr_storage *a_remote_addr)
+{
+    udp_session_entry_t *l_session, *l_tmp;
+    HASH_ITER(hh, a_server->sessions, l_session, l_tmp) {
+        if (s_sockaddr_equal(&l_session->remote_addr, a_remote_addr)) {
+            return l_session;
+        }
+    }
+    return NULL;
+}
+
 
 /**
  * @brief Create virtual UDP esocket for session
@@ -315,105 +368,52 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     uint8_t l_version = l_header->version;
     bool l_looks_like_control = (l_version == 1);
     
-    // If we have active session with encryption key AND packet doesn't look like control packet,
-    // treat as encrypted stream data
+    // NEW ARCHITECTURE: If we have active session with encryption key AND packet doesn't look like control packet,
+    // treat as encrypted stream data and dispatch to stream
     if (l_session_found && l_session && l_session->stream && 
         l_session->stream->session && l_session->stream->session->key &&
         !l_looks_like_control) {
         
-        debug_if(s_debug_more, L_DEBUG, "Found active session with encryption key and non-control packet, treating as encrypted stream data (%zu bytes)", 
-               l_udp_srv->shared_buf_size);
+        debug_if(s_debug_more, L_DEBUG, "Dispatching encrypted stream data (%zu bytes) to stream %p", 
+               l_udp_srv->shared_buf_size, l_session->stream);
         
         // CRITICAL: Keep sessions_lock as READ lock during stream access
-        // This prevents cleanup from deleting stream while we work with it
-        // Virtual esocket belongs to listener worker (THIS thread), so access is safe
+        dap_stream_t *l_stream = l_session->stream;
         
-        dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx ? l_session->stream->trans_ctx->esocket : NULL;
-        if (!l_stream_es) {
-            log_it(L_ERROR, "Session stream has no esocket or trans_ctx");
-            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-            pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
-            a_es->buf_in_size = 0;
-            return;
-        }
-        
-        // Shared buffer architecture: Read directly from shared buffer
-        // Virtual esocket's buf_in now points to shared buffer data
-        // This is multi-worker safe because we hold read lock
-        
-        // Mark session as processing
-        l_session->processing_in_progress = true;
-        size_t l_packet_offset = 0;  // Offset within this packet
-        size_t l_packet_size = l_udp_srv->shared_buf_size;
-        
-        // Temporarily redirect virtual esocket buf_in to shared buffer region
-        byte_t *l_orig_buf_in = l_stream_es->buf_in;
-        size_t l_orig_buf_in_size = l_stream_es->buf_in_size;
-        
-        l_stream_es->buf_in = l_udp_srv->shared_buf + l_packet_offset;
-        l_stream_es->buf_in_size = l_packet_size;
-        
-        debug_if(s_debug_more, L_DEBUG, "Processing stream data directly from shared buffer (offset=%zu, size=%zu)", 
-               l_packet_offset, l_packet_size);
-        
-        // Process stream data (encrypted channel packets)
-        size_t l_processed = dap_stream_data_proc_read(l_session->stream);
-        
-        debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data from shared buffer", l_processed);
-        
-        // Restore original buf_in pointer
-        l_stream_es->buf_in = l_orig_buf_in;
-        l_stream_es->buf_in_size = l_orig_buf_in_size;
-        
-        // Update session tracking
-        l_session->last_read_offset = l_packet_offset;
-        l_session->last_read_size = l_packet_size;
-        l_session->processing_in_progress = false;
-        
-        // If there is response data, send it (before releasing locks)
-        if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
-            l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-        }
-        
-        // SIMPLIFIED: Shrink immediately after processing THIS session's packet
-        // Multi-session tail detection deferred - causes reactor starvation
-        // Each encrypted packet is independent, shrink right away
-        size_t l_consumed = l_packet_offset + l_packet_size;
-        
-        // Upgrade to write lock for shrinking
-        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
-        pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
-        
-        // Shrink shared buffer immediately
-        if (l_consumed < l_udp_srv->shared_buf_size) {
-            size_t l_remaining = l_udp_srv->shared_buf_size - l_consumed;
-            memmove(l_udp_srv->shared_buf, 
-                   l_udp_srv->shared_buf + l_consumed, 
-                   l_remaining);
-            l_udp_srv->shared_buf_size = l_remaining;
-            a_es->buf_in_size = l_remaining;
+        // Dispatch encrypted data to stream for processing
+        // Stream will decrypt and process channel packets internally
+        if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+            // Temporarily set trans_ctx->esocket to listener for address info and buf_in access
+            dap_events_socket_t *l_saved_es = NULL;
+            if (l_stream->trans_ctx) {
+                l_saved_es = l_stream->trans_ctx->esocket;
+                l_stream->trans_ctx->esocket = a_es;
+            }
             
-            debug_if(s_debug_more, L_DEBUG, 
-                   "Shared buffer shrinked immediately: consumed %zu bytes, %zu bytes remaining", 
-                   l_consumed, l_remaining);
+            // Stream read will consume from a_es->buf_in (shared buffer)
+            ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+            
+            // Restore original esocket
+            if (l_stream->trans_ctx) {
+                l_stream->trans_ctx->esocket = l_saved_es;
+            }
+            
+            debug_if(s_debug_more, L_DEBUG, "Stream processed %zd bytes of encrypted data", l_read);
         } else {
-            // All data consumed, clear buffer
-            l_udp_srv->shared_buf_size = 0;
-            a_es->buf_in_size = 0;
-            
-            debug_if(s_debug_more, L_DEBUG, "Shared buffer fully consumed, cleared");
+            log_it(L_ERROR, "Stream has no trans read method for encrypted data");
         }
         
+        // Release locks
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
         
-        // Release sessions lock (held during stream access for safety)
-        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-        
-        // NOTE: Do NOT set buf_in_size = 0 here!
-        // Shrink logic already set buf_in_size = remaining_bytes
-        // This allows reactor to process next packets immediately
+        // Clear listener buffer
+        a_es->buf_in_size = 0;
         return;
     }
+    
+    // Release shared buffer lock (control packets don't use shared buffer)
+    pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
     
     // No active session with key OR packet looks like control - parse as control packet
     // Release read locks first as control packet processing doesn't need them
@@ -446,12 +446,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     uint8_t *l_payload = a_es->buf_in + sizeof(dap_stream_trans_udp_header_t);
     
     // Lookup or create session for control packets
-    // (We already checked for existing session with key above)
+    // NEW ARCHITECTURE: Hash by remote_addr, not session_id!
     // CRITICAL: Keep sessions_lock as READ lock during entire packet processing
     // This prevents cleanup from deleting session->stream while we access it
     l_session = NULL;
     pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
-    HASH_FIND(hh, l_udp_srv->sessions, &l_session_id, sizeof(l_session_id), l_session);
+    l_session = s_find_session_by_addr(l_udp_srv, &a_es->addr_storage);
     
     // For HANDSHAKE, we need to create a new session
     // SESSION_CREATE must use existing session created by HANDSHAKE
@@ -460,12 +460,13 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         // Upgrade to write lock for session creation
         pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
-        log_it(L_INFO, "Creating new UDP session 0x%lx for HANDSHAKE", l_session_id);
+        log_it(L_INFO, "Creating new UDP session 0x%lx for HANDSHAKE from remote addr", l_session_id);
         
         // Create new session entry
         l_session = DAP_NEW_Z(udp_session_entry_t);
         if (!l_session) {
             log_it(L_CRITICAL, "Failed to allocate UDP session entry");
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
             a_es->buf_in_size = 0;
             return;
         }
@@ -482,55 +483,45 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             l_session->remote_addr_len = a_es->addr_size;
         }
         
-        // Create virtual esocket for this session
-        dap_events_socket_t *l_virtual_es = s_create_virtual_udp_esocket(a_es, 
-            &l_session->remote_addr, l_session->remote_addr_len);
-        if (!l_virtual_es) {
-            log_it(L_ERROR, "Failed to create virtual esocket for UDP session");
-            DAP_DELETE(l_session);
-            a_es->buf_in_size = 0;
-            return;
-        }
-        
-        // Create dap_stream_t for this session with virtual esocket
-        l_session->stream = dap_stream_new_es_client(l_virtual_es, NULL, false);
+        // NEW ARCHITECTURE: No virtual esocket! Create stream WITHOUT esocket.
+        // Stream will use listener's physical esocket for I/O, dispatching by remote_addr.
+        l_session->stream = DAP_NEW_Z(dap_stream_t);
         if (!l_session->stream) {
             log_it(L_ERROR, "Failed to create stream for UDP session");
-            // Cleanup virtual esocket
-            DAP_DEL_Z(l_virtual_es->buf_in);
-            DAP_DEL_Z(l_virtual_es->buf_out);
-            DAP_DELETE(l_virtual_es);
             DAP_DELETE(l_session);
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
             a_es->buf_in_size = 0;
             return;
         }
         
-        // Virtual esocket is now owned by stream (via trans_ctx->esocket)
-        // No need to store separate reference
+        // Initialize trans_ctx WITHOUT esocket (dispatcher will handle I/O)
+        l_session->stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+        if (!l_session->stream->trans_ctx) {
+            log_it(L_ERROR, "Failed to create trans_ctx for UDP session");
+            DAP_DELETE(l_session->stream);
+            DAP_DELETE(l_session);
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // trans_ctx points back to stream, but NO esocket! Dispatcher handles I/O.
+        l_session->stream->trans_ctx->stream = l_session->stream;
+        l_session->stream->trans_ctx->esocket = NULL;  // No virtual esocket!
+        l_session->stream->trans_ctx->esocket_uuid = 0;
+        l_session->stream->trans_ctx->esocket_worker = a_es->worker;
         
         // Set stream trans to UDP
         if (l_udp_srv->trans) {
             l_session->stream->trans = l_udp_srv->trans;
         }
         
-        // Set read callback for virtual esocket to process incoming UDP packets
-        if (l_session->stream->trans_ctx && l_session->stream->trans_ctx->esocket) {
-            dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_session->stream->trans_ctx;
-            dap_events_socket_t *l_v_es = l_trans_ctx->esocket;
-            
-            // CRITICAL: Store trans_ctx in callbacks.arg (NOT _inheritor!)
-            // _inheritor should not be used for trans_ctx to avoid double-free issues
-            l_trans_ctx->stream = l_session->stream;
-            l_v_es->callbacks.arg = l_trans_ctx;  // Store trans_ctx in callbacks.arg
-            l_v_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
-            debug_if(s_debug_more, L_DEBUG, "Set UDP read callback for virtual esocket %p (trans_ctx->stream=%p, stored in callbacks.arg)", 
-                     l_v_es, l_trans_ctx->stream);
-        }
+        // Add to server's session hash table by remote_addr (already under write lock)
+        // NOTE: uthash will use full remote_addr as key via s_find_session_by_addr iteration
+        HASH_ADD(hh, l_udp_srv->sessions, remote_addr, sizeof(l_session->remote_addr), l_session);
         
-        // Add to server's session hash table (already under write lock)
-        HASH_ADD(hh, l_udp_srv->sessions, session_id, sizeof(l_session->session_id), l_session);
-        
-        log_it(L_INFO, "Created UDP session 0x%lx with stream %p", l_session_id, l_session->stream);
+        log_it(L_INFO, "Created UDP session 0x%lx with stream %p (NO virtual esocket - dispatcher architecture)", 
+               l_session_id, l_session->stream);
         
         // Downgrade from write to read lock (keep lock for stream access safety)
         pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
@@ -551,97 +542,101 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     // Update activity timestamp (under sessions_lock)
     l_session->last_activity = time(NULL);
     
-    // Access stream and esocket UNDER sessions_lock for thread safety
+    // Access stream UNDER sessions_lock for thread safety
     dap_stream_t *l_stream = l_session->stream;
-    dap_events_socket_t *l_stream_es = (l_stream && l_stream->trans_ctx) ? l_stream->trans_ctx->esocket : NULL;
     
-    if (!l_stream || !l_stream_es) {
-        log_it(L_ERROR, "Session has invalid stream or esocket");
+    if (!l_stream) {
+        log_it(L_ERROR, "Session has invalid stream");
         pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         a_es->buf_in_size = 0;
         return;
     }
     
+    // NEW ARCHITECTURE: No virtual esocket! Stream reads directly from listener's buf_in.
+    // Dispatcher calls stream's read method with data from physical esocket.
+    
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_HANDSHAKE:
-            debug_if(s_debug_more, L_DEBUG, "Processing UDP HANDSHAKE packet for session 0x%lx", l_session_id);
+            debug_if(s_debug_more, L_DEBUG, "Dispatching UDP HANDSHAKE packet to stream %p (session 0x%lx)", 
+                     l_stream, l_session_id);
             
-            // SHARED BUFFER: Point virtual esocket buf_in to listener's shared buffer temporarily
-            // Virtual esocket has buf_in=NULL normally (shared buffer architecture)
-            l_stream_es->buf_in = a_es->buf_in;
-            l_stream_es->buf_in_size = l_total_size;
-            
-            debug_if(s_debug_more, L_DEBUG, "Set virtual esocket buf_in to shared buffer (%zu bytes)", l_total_size);
-            
-            // Trigger read callback to process data from shared buffer
-            if (l_stream_es->callbacks.read_callback) {
-                debug_if(s_debug_more, L_DEBUG, "Calling read_callback for handshake processing");
-                l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
+            // Call stream's trans read method directly with data from listener's buf_in
+            // Stream will process handshake internally via s_udp_read()
+            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                // Temporarily set trans_ctx->esocket to listener (for address info)
+                dap_events_socket_t *l_saved_es = NULL;
+                if (l_stream->trans_ctx) {
+                    l_saved_es = l_stream->trans_ctx->esocket;
+                    l_stream->trans_ctx->esocket = a_es;  // Temporarily use listener esocket
+                }
                 
-                // If there is data to send (response in buf_out), send it now
-                if (l_stream_es->buf_out_size > 0) {
-                    debug_if(s_debug_more, L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
-                           l_stream_es->buf_out_size);
-                    if (l_stream_es->callbacks.write_callback) {
-                        l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-                    }
+                // Read method will consume data from a_es->buf_in
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+                
+                // Restore original esocket (NULL in new architecture)
+                if (l_stream->trans_ctx) {
+                    l_stream->trans_ctx->esocket = l_saved_es;
+                }
+                
+                debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
+                
+                // If stream has response data, send it via sendto with remote_addr
+                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->write) {
+                    // Write method will use sendto with l_session->remote_addr
+                    // TODO: Implement dispatcher write logic
                 }
             } else {
-                log_it(L_ERROR, "No read_callback set for virtual esocket");
+                log_it(L_ERROR, "Stream has no trans read method");
             }
-            
-            // Restore buf_in to NULL (virtual esocket doesn't own it)
-            l_stream_es->buf_in = NULL;
-            l_stream_es->buf_in_size = 0;
             break;
             
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
-            debug_if(s_debug_more, L_DEBUG, "Processing UDP SESSION_CREATE packet for session 0x%lx", l_session_id);
+            debug_if(s_debug_more, L_DEBUG, "Dispatching UDP SESSION_CREATE packet to stream %p (session 0x%lx)", 
+                     l_stream, l_session_id);
             
-            // SHARED BUFFER: Point virtual esocket buf_in to listener's buf_in temporarily
-            l_stream_es->buf_in = a_es->buf_in;
-            l_stream_es->buf_in_size = l_total_size;
-            
-            // Trigger read callback to process data from shared buffer
-            if (l_stream_es->callbacks.read_callback) {
-                debug_if(s_debug_more, L_DEBUG, "Calling read_callback to process SESSION_CREATE");
-                l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
-                
-                debug_if(s_debug_more, L_DEBUG, "After read_callback: buf_out_size=%zu", l_stream_es->buf_out_size);
-                
-                // If there is data to send, send it now
-                if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
-                    debug_if(s_debug_more, L_DEBUG, "Calling write_callback to send SESSION_CREATE response");
-                    l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-                } else if (l_stream_es->buf_out_size == 0) {
-                    log_it(L_WARNING, "No data to send after processing SESSION_CREATE!");
+            // Same dispatch logic as HANDSHAKE
+            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                dap_events_socket_t *l_saved_es = NULL;
+                if (l_stream->trans_ctx) {
+                    l_saved_es = l_stream->trans_ctx->esocket;
+                    l_stream->trans_ctx->esocket = a_es;
                 }
+                
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+                
+                if (l_stream->trans_ctx) {
+                    l_stream->trans_ctx->esocket = l_saved_es;
+                }
+                
+                debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
+            } else {
+                log_it(L_ERROR, "Stream has no trans read method");
             }
-            
-            // Restore buf_in to NULL (virtual esocket doesn't own it)
-            l_stream_es->buf_in = NULL;
-            l_stream_es->buf_in_size = 0;
             break;
             
         case DAP_STREAM_UDP_PKT_DATA:
-            // NOTE: This case is legacy - encrypted stream data now handled by
-            // "Found active session with encryption key" path above
-            // Kept for compatibility but should not be reached in normal flow
-            debug_if(s_debug_more, L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx (legacy path)", 
-                   l_payload_len, l_session_id);
+            // NOTE: This is for encrypted stream data packets
+            debug_if(s_debug_more, L_DEBUG, "Dispatching UDP DATA packet (%u bytes) to stream %p (session 0x%lx)", 
+                   l_payload_len, l_stream, l_session_id);
             
-            // SHARED BUFFER: Point to payload region temporarily
-            l_stream_es->buf_in = l_payload;
-            l_stream_es->buf_in_size = l_payload_len;
-            
-            // Process stream data
-            size_t l_processed = dap_stream_data_proc_read(l_stream);
-            debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
-                   l_processed, l_session_id);
-            
-            // Restore buf_in to NULL
-            l_stream_es->buf_in = NULL;
-            l_stream_es->buf_in_size = 0;
+            // Dispatch to stream for processing
+            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
+                dap_events_socket_t *l_saved_es = NULL;
+                if (l_stream->trans_ctx) {
+                    l_saved_es = l_stream->trans_ctx->esocket;
+                    l_stream->trans_ctx->esocket = a_es;
+                }
+                
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+                
+                if (l_stream->trans_ctx) {
+                    l_stream->trans_ctx->esocket = l_saved_es;
+                }
+                
+                debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
+            } else {
+                log_it(L_ERROR, "Stream has no trans read method for DATA packet");
+            }
             break;
             
         case DAP_STREAM_UDP_PKT_KEEPALIVE:

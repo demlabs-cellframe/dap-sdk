@@ -1307,9 +1307,15 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
                      memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
                      
+                     debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes) via esocket %p (fd=%d)", 
+                              l_resp_total, l_es, l_es->fd);
                      dap_events_socket_write_unsafe(l_es, l_resp_pkt, l_resp_total);
+                     debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully");
                      DAP_DELETE(l_resp_pkt);
                      DAP_DELETE(l_response);
+                 } else {
+                     debug_if(s_debug_more, L_DEBUG, "SERVER: handshake process returned no response (l_response=%p, l_response_size=%zu)", 
+                              l_response, l_response_size);
                  }
              }
         } else if (l_header->type == DAP_STREAM_UDP_PKT_SESSION_CREATE) {
