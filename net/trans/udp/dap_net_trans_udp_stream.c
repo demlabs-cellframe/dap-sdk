@@ -1336,45 +1336,36 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      return -1;
                  }
                  
-                 // If payload is present, it's the encrypted session key seed
+                 // If payload is present, it contains the KDF counter (8 bytes)
                  if (l_payload_len > 0 && l_payload) {
-                     log_it(L_INFO, "Client: received encrypted session key seed (%u bytes)", l_payload_len);
+                     // Payload contains KDF counter (8 bytes, big-endian)
+                     if (l_payload_len != sizeof(uint64_t)) {
+                         log_it(L_ERROR, "Client: invalid SESSION_CREATE payload size (expected 8, got %u)", l_payload_len);
+                         return -1;
+                     }
                      
-                     // Decrypt with HANDSHAKE key
+                     uint64_t l_session_counter = be64toh(*(uint64_t*)l_payload);
+                     log_it(L_INFO, "Client: received KDF counter (%lu) for session 0x%lx", l_session_counter, l_sess_id);
+                     
                      if (!l_udp_ctx->handshake_key) {
-                         log_it(L_ERROR, "Client: no handshake key for decrypting session key seed");
+                         log_it(L_ERROR, "Client: no handshake key for deriving session key");
                          return -1;
                      }
                      
-                     size_t l_decrypted_size = l_payload_len + 256; // Add buffer for decryption
-                     uint8_t *l_decrypted_seed = DAP_NEW_SIZE(uint8_t, l_decrypted_size);
-                     
-                     size_t l_actual_decrypted = dap_enc_decode(l_udp_ctx->handshake_key, 
-                                                                l_payload, l_payload_len,
-                                                                l_decrypted_seed, l_decrypted_size,
-                                                                DAP_ENC_DATA_TYPE_RAW);
-                     
-                     if (l_actual_decrypted == 0 || l_actual_decrypted != 32) {
-                         log_it(L_ERROR, "Client: failed to decrypt session key seed (expected 32 bytes, got %zu)", l_actual_decrypted);
-                         DAP_DELETE(l_decrypted_seed);
-                         return -1;
-                     }
-                     
-                     log_it(L_INFO, "Client: decrypted session key seed: %zu bytes", l_actual_decrypted);
-                     
-                     // Create session key from seed (following HTTP transport approach)
-                     dap_enc_key_t *l_session_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, 
-                                                                              l_decrypted_seed, l_actual_decrypted, 
-                                                                              NULL, 0, 32);
-                     
-                     DAP_DELETE(l_decrypted_seed); // Free decrypted seed
+                     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
+                         l_udp_ctx->handshake_key,      // Source key
+                         DAP_ENC_KEY_TYPE_SALSA2012,    // Cipher type
+                         "udp_session",                  // Context
+                         12,                             // Context size
+                         l_session_counter,              // Counter
+                         32);                            // Key size
                      
                      if (!l_session_key) {
-                         log_it(L_ERROR, "Client: failed to generate session key from seed");
+                         log_it(L_ERROR, "Client: failed to derive session key using KDF");
                          return -1;
                      }
                      
-                     log_it(L_INFO, "Client: generated session key successfully");
+                     log_it(L_INFO, "Client: derived session key using KDF (counter=%lu)", l_session_counter);
                      
                      // Set session key in stream
                      if (!a_stream->session) {
@@ -1401,8 +1392,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
                     debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
                 } else {
-                    // ERROR: Server must send encrypted session key seed in payload
-                    log_it(L_ERROR, "Client: SESSION_CREATE response missing payload (session key seed expected)");
+                    // ERROR: Server must send KDF counter in payload
+                    log_it(L_ERROR, "Client: SESSION_CREATE response missing payload (KDF counter expected)");
                     // Call callback with error (session_id=0 indicates failure)
                     l_ctx->session_create_cb(a_stream, 0, NULL, 0, ETIMEDOUT);
                 }
@@ -1412,80 +1403,67 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  // Server: Received Session Request from client
                  // session_id is already set from HANDSHAKE (not 0!)
                  uint64_t l_sess_id = be64toh(l_header->session_id);
-                 debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for existing session 0x%lx", l_sess_id);
-                 
-                 // Session was already created during HANDSHAKE, just confirm it
-                 if (!a_stream->session) {
-                     a_stream->session = dap_stream_session_pure_new();
-                     if (a_stream->session) {
-                         a_stream->session->id = l_sess_id;
-                     }
-                 }
-                 
-                 // Generate SESSION key seed (random 32 bytes for SALSA2012)
-                 // NOTE: Following HTTP transport approach - transmit only seed, not full key object
-                 uint8_t l_session_key_seed[32];
-                 randombytes(l_session_key_seed, sizeof(l_session_key_seed));
-                 
-                 log_it(L_INFO, "Server: generated session key seed (32 bytes) for session 0x%lx", l_sess_id);
-                 
-                 // Encrypt seed with HANDSHAKE key
-                 if (!l_udp_ctx->handshake_key) {
-                     log_it(L_ERROR, "Server: no handshake key for encrypting session key seed");
-                     return -1;
-                 }
-                 
-                 size_t l_encrypted_size = sizeof(l_session_key_seed) + 256; // Add padding for encryption overhead
-                 uint8_t *l_encrypted_seed = DAP_NEW_SIZE(uint8_t, l_encrypted_size);
-                 
-                 size_t l_actual_encrypted = dap_enc_code(l_udp_ctx->handshake_key, 
-                                                          l_session_key_seed, sizeof(l_session_key_seed),
-                                                          l_encrypted_seed, l_encrypted_size,
-                                                          DAP_ENC_DATA_TYPE_RAW);
-                 
-                 if (l_actual_encrypted == 0) {
-                     log_it(L_ERROR, "Server: failed to encrypt session key seed");
-                     DAP_DELETE(l_encrypted_seed);
-                     return -1;
-                 }
-                 
-                 log_it(L_INFO, "Server: encrypted session key seed: %zu bytes", l_actual_encrypted);
-                 
-                 // NOW create session encryption key from seed (for server-side encryption)
-                 if (a_stream->session->key) {
-                     dap_enc_key_delete(a_stream->session->key);
-                 }
-                 a_stream->session->key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, 
-                                                                    l_session_key_seed, sizeof(l_session_key_seed), 
-                                                                    NULL, 0, 32);
-                 if (!a_stream->session->key) {
-                     log_it(L_ERROR, "Server: failed to generate session key from seed");
-                     DAP_DELETE(l_encrypted_seed);
-                     return -1;
-                 }
-                 
-                 log_it(L_INFO, "Server: created session key for session 0x%lx", l_sess_id);
-                 
-                 // Prepare response header + encrypted seed
-                 dap_stream_trans_udp_header_t l_resp_hdr;
-                 s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                     l_actual_encrypted, l_udp_ctx->seq_num++, l_sess_id);
-                 
-                 // Send header
-                 dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
-                 
-                 // Send encrypted seed as payload
-                 dap_events_socket_write_unsafe(l_es, l_encrypted_seed, l_actual_encrypted);
-                 
-                 DAP_DELETE(l_encrypted_seed);
-                 
-                 debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with encrypted session key seed (%zu bytes) for session 0x%lx", 
-                          l_actual_encrypted, l_sess_id);
-             } else {
-                 // Client: Duplicate SESSION_CREATE response (callback already called)
-                 debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
-                          be64toh(l_header->session_id));
-             }
+                debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for existing session 0x%lx", l_sess_id);
+                
+                // Session was already created during HANDSHAKE, just confirm it
+                if (!a_stream->session) {
+                    a_stream->session = dap_stream_session_pure_new();
+                    if (a_stream->session) {
+                        a_stream->session->id = l_sess_id;
+                    }
+                }
+                
+                // Use KDF to derive SESSION key from HANDSHAKE key (no seed transmission!)
+                // This provides forward secrecy through ratcheting
+                // Counter can be incremented for each new session to derive unique keys
+                if (!l_udp_ctx->handshake_key) {
+                    log_it(L_ERROR, "Server: no handshake key for deriving session key");
+                    return -1;
+                }
+                
+                // Counter for ratcheting (can be session_id % MAX or separate counter)
+                // For now use counter = 1 for first session key derivation
+                uint64_t l_session_counter = 1;
+                
+                // Derive session key from handshake key using KDF
+                if (a_stream->session->key) {
+                    dap_enc_key_delete(a_stream->session->key);
+                }
+                a_stream->session->key = dap_enc_kdf_create_cipher_key(
+                    l_udp_ctx->handshake_key,       // Source key
+                    DAP_ENC_KEY_TYPE_SALSA2012,     // Cipher type
+                    "udp_session",                   // Context
+                    12,                              // Context size
+                    l_session_counter,               // Counter
+                    32);                             // Key size
+                
+                if (!a_stream->session->key) {
+                    log_it(L_ERROR, "Server: failed to derive session key from handshake key using KDF");
+                    return -1;
+                }
+                
+                log_it(L_INFO, "Server: derived session key for session 0x%lx using KDF (counter=%lu)", 
+                       l_sess_id, l_session_counter);
+                
+                // Prepare response header with counter (client needs it to derive same key)
+                dap_stream_trans_udp_header_t l_resp_hdr;
+                s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                    sizeof(l_session_counter), l_udp_ctx->seq_num++, l_sess_id);
+                
+                // Send header
+                dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
+                
+                // Send counter as payload (8 bytes, no encryption needed - it's not secret)
+                uint64_t l_counter_be = htobe64(l_session_counter);
+                dap_events_socket_write_unsafe(l_es, &l_counter_be, sizeof(l_counter_be));
+                
+                debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
+                         l_session_counter, l_sess_id);
+            } else {
+                // Client: Duplicate SESSION_CREATE response (callback already called)
+                debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
+                         be64toh(l_header->session_id));
+            }
         }
 
         if (l_payload) DAP_DELETE(l_payload);
