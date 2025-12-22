@@ -324,7 +324,11 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 // Session create callback wrapper
 static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error)
 {
+    log_it(L_DEBUG, "Session create callback wrapper called: stream=%p, session_id=%u, data=%p, size=%zu, error=%d",
+           a_stream, a_session_id, a_response_data, a_response_size, a_error);
+    
     if (!a_stream || !a_stream->trans_ctx) {
+        log_it(L_ERROR, "Session create callback: invalid stream or trans_ctx");
         return;
     }
     
