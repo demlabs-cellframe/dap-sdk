@@ -228,15 +228,17 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     dap_stream_t *l_stream = l_trans_ctx->stream;
     
-    log_it(L_DEBUG, ">>> UDP READ CALLBACK: l_stream=%p, trans=%p", l_stream, l_stream ? l_stream->trans : NULL);
+    log_it(L_INFO, ">>> UDP READ CALLBACK: l_stream=%p, trans=%p", l_stream, l_stream ? l_stream->trans : NULL);
     
     // Validate stream pointer first
+    log_it(L_INFO, ">>> UDP READ CALLBACK: Checking l_stream...");
     if (!l_stream) {
         log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
     
+    log_it(L_INFO, ">>> UDP READ CALLBACK: l_stream OK, checking trans...");
     // Validate stream->trans before accessing it
     // Check if stream has been deleted (trans would be NULL or invalid)
     if (!l_stream->trans) {
@@ -246,6 +248,8 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         a_es->buf_in_size = 0;
         return;
     }
+    
+    log_it(L_INFO, ">>> UDP READ CALLBACK: trans OK, checking ops...");
     
     // Validate trans operations
     log_it(L_INFO, ">>> UDP READ CALLBACK: Checking trans->ops: trans->ops=%p, read=%p", 
@@ -1333,23 +1337,39 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  size_t l_response_size = 0;
                  s_udp_handshake_process(a_stream, l_payload, l_payload_size, &l_response, &l_response_size);
                  
-                 if (l_response && l_response_size > 0) {
-                     // Send response (use per-stream seq_num)
-                     dap_stream_trans_udp_header_t l_resp_hdr;
-                     s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                         (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_header->session_id);
-                     
-                     size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
-                     uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
-                     memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
-                     memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
-                     
-                     debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes) via esocket %p (fd=%d)", 
-                              l_resp_total, l_es, l_es->fd);
-                     dap_events_socket_write_unsafe(l_es, l_resp_pkt, l_resp_total);
-                     debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully");
-                     DAP_DELETE(l_resp_pkt);
-                     DAP_DELETE(l_response);
+                if (l_response && l_response_size > 0) {
+                    // Send response (use per-stream seq_num)
+                    dap_stream_trans_udp_header_t l_resp_hdr;
+                    s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                        (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_header->session_id);
+                    
+                    size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
+                    uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
+                    memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
+                    memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
+                    
+                    debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
+                    
+                    // NEW ARCHITECTURE: Use trans->ops->write (dispatcher)
+                    log_it(L_INFO, ">>> HANDSHAKE: Calling trans->ops->write (trans=%p, ops=%p, write=%p)",
+                           a_stream->trans, a_stream->trans ? a_stream->trans->ops : NULL,
+                           (a_stream->trans && a_stream->trans->ops) ? a_stream->trans->ops->write : NULL);
+                    
+                    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+                        ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
+                        log_it(L_INFO, ">>> HANDSHAKE: trans->ops->write returned %zd", l_sent);
+                        if (l_sent != (ssize_t)l_resp_total) {
+                            log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
+                                   l_sent, l_resp_total);
+                        } else {
+                            debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
+                        }
+                    } else {
+                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL, cannot send handshake response");
+                    }
+                    
+                    DAP_DELETE(l_resp_pkt);
+                    DAP_DELETE(l_response);
                  } else {
                      debug_if(s_debug_more, L_DEBUG, "SERVER: handshake process returned no response (l_response=%p, l_response_size=%zu)", 
                               l_response, l_response_size);
@@ -1539,6 +1559,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  */
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
+    log_it(L_INFO, ">>> s_udp_write ENTRY: a_stream=%p, a_data=%p, a_size=%zu", 
+           a_stream, a_data, a_size);
+    
     if (!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP write");
         return -1;
@@ -1568,6 +1591,8 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         log_it(L_ERROR, "No trans ctx for write");
         return -1;
     }
+    
+    log_it(L_INFO, ">>> s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
     // NEW ARCHITECTURE: Check if we have esocket (client) or need dispatcher (server)
     if (l_ctx->esocket) {
