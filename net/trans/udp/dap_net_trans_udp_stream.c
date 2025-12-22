@@ -1287,19 +1287,33 @@ static void s_udp_close(dap_stream_t *a_stream)
         l_udp_ctx->seq_num = 0;
     }
     
-    // CRITICAL: Handle esocket cleanup HERE, not in dap_stream_delete_unsafe
-    // BUT: esocket may be invalid if we're called from different worker!
-    // Race condition: cannot safely access esocket pointer from trans_ctx
+    // CRITICAL ARCHITECTURE:
     //
-    // SAFE SOLUTION: Just set esocket to NULL, don't access it
-    // Let dap_stream_delete_unsafe skip esocket cleanup (already NULL)
-    // Esocket will be cleaned up by its own worker or server cleanup
+    // Problem: Virtual esockets (SERVER-side) may be on DIFFERENT worker than cleanup thread
+    // - CLIENT cleanup runs on CLIENT worker (correct for CLIENT esocket)
+    // - SERVER cleanup may run on main thread or different worker
+    // - Virtual esocket belongs to LISTENER worker
+    //
+    // Race Condition: Cannot safely access esocket pointer from trans_ctx
+    // - If we access esocket->no_close, may segfault if esocket already deleted
+    // - If we try to delete esocket, may be wrong worker context
+    //
+    // SOLUTION: Set trans_ctx->esocket = NULL immediately
+    // - dap_stream_delete_unsafe will skip esocket cleanup (sees NULL)
+    // - Virtual esockets will be cleaned up by UDP server stop (in listener worker)
+    // - CLIENT esockets will be... LEAKED? No, they should be on correct worker
+    //
+    // TODO: Better solution - check if current_worker == esocket->worker
+    //       If yes: safe to delete esocket here
+    //       If no: set NULL and let server cleanup handle it
+    
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     if (l_ctx) {
-        // IMMEDIATELY set to NULL without reading esocket
-        // Reading esocket->worker or esocket->no_close may segfault if esocket already deleted
+        // IMMEDIATELY set esocket to NULL to prevent race condition
+        // This prevents dap_stream_delete_unsafe from accessing potentially invalid pointer
         l_ctx->esocket = NULL;
-        debug_if(s_debug_more, L_DEBUG, "Set trans_ctx->esocket = NULL (esocket cleanup delegated)");
+        
+        debug_if(s_debug_more, L_DEBUG, "UDP close: set trans_ctx->esocket = NULL (prevents race condition)");
         
         // Clear stream pointer in trans_ctx to prevent use-after-free
         l_ctx->stream = NULL;

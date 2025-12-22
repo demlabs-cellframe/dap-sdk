@@ -149,21 +149,24 @@ static dap_events_socket_t *s_create_virtual_udp_esocket(
     l_virtual_es->fd = a_listener_es->fd;
     l_virtual_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
     
-    // Allocate own buffers
-    l_virtual_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
-    l_virtual_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_virtual_es->buf_in_size_max);
+    // SHARED BUFFER ARCHITECTURE:
+    // Virtual esockets for encrypted stream data read directly from shared buffer
+    // Do NOT allocate buf_in - it will be temporarily pointed to shared buffer regions
+    // This prevents double-free and enables zero-copy multi-worker architecture
+    l_virtual_es->buf_in = NULL;  // Will be set temporarily during packet processing
+    l_virtual_es->buf_in_size = 0;
+    l_virtual_es->buf_in_size_max = 0;  // Flag: buf_in not owned by this esocket
+    
+    // Allocate buf_out for responses (owned by virtual esocket)
     l_virtual_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_virtual_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_virtual_es->buf_out_size_max);
     
-    if (!l_virtual_es->buf_in || !l_virtual_es->buf_out) {
-        log_it(L_CRITICAL, "Failed to allocate buffers for virtual esocket");
-        DAP_DEL_Z(l_virtual_es->buf_in);
-        DAP_DEL_Z(l_virtual_es->buf_out);
+    if (!l_virtual_es->buf_out) {
+        log_it(L_CRITICAL, "Failed to allocate buf_out for virtual esocket");
         DAP_DELETE(l_virtual_es);
         return NULL;
     }
     
-    l_virtual_es->buf_in_size = 0;
     l_virtual_es->buf_out_size = 0;
     
     // Store remote address
@@ -307,8 +310,6 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
         }
     }
-    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-    
     // Check if this could be a control packet (version byte = 1)
     dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
     uint8_t l_version = l_header->version;
@@ -323,10 +324,14 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         debug_if(s_debug_more, L_DEBUG, "Found active session with encryption key and non-control packet, treating as encrypted stream data (%zu bytes)", 
                l_udp_srv->shared_buf_size);
         
-        // This is encrypted stream data - process directly from shared buffer
-        dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx->esocket;
+        // CRITICAL: Keep sessions_lock as READ lock during stream access
+        // This prevents cleanup from deleting stream while we work with it
+        // Virtual esocket belongs to listener worker (THIS thread), so access is safe
+        
+        dap_events_socket_t *l_stream_es = l_session->stream->trans_ctx ? l_session->stream->trans_ctx->esocket : NULL;
         if (!l_stream_es) {
-            log_it(L_ERROR, "Session stream has no esocket");
+            log_it(L_ERROR, "Session stream has no esocket or trans_ctx");
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
             pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
             a_es->buf_in_size = 0;
             return;
@@ -399,6 +404,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         
         pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
         
+        // Release sessions lock (held during stream access for safety)
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        
         // NOTE: Do NOT set buf_in_size = 0 here!
         // Shrink logic already set buf_in_size = remaining_bytes
         // This allows reactor to process next packets immediately
@@ -406,7 +414,8 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     }
     
     // No active session with key OR packet looks like control - parse as control packet
-    // Release read lock first as control packet processing doesn't need shared buffer
+    // Release read locks first as control packet processing doesn't need them
+    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
     uint8_t l_type = l_header->type;
     uint16_t l_payload_len = ntohs(l_header->length);
@@ -436,14 +445,19 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     
     // Lookup or create session for control packets
     // (We already checked for existing session with key above)
+    // CRITICAL: Keep sessions_lock as READ lock during entire packet processing
+    // This prevents cleanup from deleting session->stream while we access it
     l_session = NULL;
     pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
     HASH_FIND(hh, l_udp_srv->sessions, &l_session_id, sizeof(l_session_id), l_session);
-    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     
     // For HANDSHAKE, we need to create a new session
     // SESSION_CREATE must use existing session created by HANDSHAKE
+    // Note: Creating new session requires write lock
     if (!l_session && l_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
+        // Upgrade to write lock for session creation
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
         log_it(L_INFO, "Creating new UDP session 0x%lx for HANDSHAKE", l_session_id);
         
         // Create new session entry
@@ -510,30 +524,37 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                      l_v_es, l_trans_ctx->stream);
         }
         
-        // Add to server's session hash table
-        pthread_rwlock_wrlock(&l_udp_srv->sessions_lock);
+        // Add to server's session hash table (already under write lock)
         HASH_ADD(hh, l_udp_srv->sessions, session_id, sizeof(l_session->session_id), l_session);
-        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         
         log_it(L_INFO, "Created UDP session 0x%lx with stream %p", l_session_id, l_session->stream);
+        
+        // Downgrade from write to read lock (keep lock for stream access safety)
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
     }
+    
+    // NOTE: sessions_lock is held as READ lock at this point for ALL paths
+    // This protects session->stream from being deleted by cleanup in another thread
     
     if (!l_session) {
         log_it(L_WARNING, "No session found for UDP packet (session_id=0x%lx, type=%u), dropping", 
                l_session_id, l_type);
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         a_es->buf_in_size = 0;
         return;
     }
     
-    // Update activity timestamp
+    // Update activity timestamp (under sessions_lock)
     l_session->last_activity = time(NULL);
     
-    // Process packet based on type
+    // Access stream and esocket UNDER sessions_lock for thread safety
     dap_stream_t *l_stream = l_session->stream;
     dap_events_socket_t *l_stream_es = (l_stream && l_stream->trans_ctx) ? l_stream->trans_ctx->esocket : NULL;
     
     if (!l_stream || !l_stream_es) {
         log_it(L_ERROR, "Session has invalid stream or esocket");
+        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
         a_es->buf_in_size = 0;
         return;
     }
@@ -541,86 +562,83 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_HANDSHAKE:
             debug_if(s_debug_more, L_DEBUG, "Processing UDP HANDSHAKE packet for session 0x%lx", l_session_id);
-            // Copy UDP packet (with header) to virtual esocket buffer
-            if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
-                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
-                       a_es->buf_in, l_total_size);
-                l_stream_es->buf_in_size += l_total_size;
+            
+            // SHARED BUFFER: Point virtual esocket buf_in to listener's shared buffer temporarily
+            // Virtual esocket has buf_in=NULL normally (shared buffer architecture)
+            l_stream_es->buf_in = a_es->buf_in;
+            l_stream_es->buf_in_size = l_total_size;
+            
+            debug_if(s_debug_more, L_DEBUG, "Set virtual esocket buf_in to shared buffer (%zu bytes)", l_total_size);
+            
+            // Trigger read callback to process data from shared buffer
+            if (l_stream_es->callbacks.read_callback) {
+                debug_if(s_debug_more, L_DEBUG, "Calling read_callback for handshake processing");
+                l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
                 
-                debug_if(s_debug_more, L_DEBUG, "Copied %zu bytes to virtual esocket buffer (now %zu bytes)", 
-                       l_total_size, l_stream_es->buf_in_size);
-                
-                // Trigger read callback to process data from buf_in (don't manually call trans->ops->read)
-                if (l_stream_es->callbacks.read_callback) {
-                    debug_if(s_debug_more, L_DEBUG, "Calling read_callback for handshake processing");
-                    l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
-                    
-                    // Clear buf_in after processing (prevent overflow)
-                    l_stream_es->buf_in_size = 0;
-                    
-                    // If there is data to send (response in buf_out), send it now
-                    if (l_stream_es->buf_out_size > 0) {
-                        debug_if(s_debug_more, L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
-                               l_stream_es->buf_out_size);
-                        if (l_stream_es->callbacks.write_callback) {
-                            l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-                        }
+                // If there is data to send (response in buf_out), send it now
+                if (l_stream_es->buf_out_size > 0) {
+                    debug_if(s_debug_more, L_DEBUG, "Virtual esocket has %zu bytes to send, calling write_callback", 
+                           l_stream_es->buf_out_size);
+                    if (l_stream_es->callbacks.write_callback) {
+                        l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
                     }
-                } else {
-                    log_it(L_ERROR, "No read_callback set for virtual esocket");
                 }
             } else {
-                log_it(L_WARNING, "Virtual esocket buffer full, dropping HANDSHAKE packet");
+                log_it(L_ERROR, "No read_callback set for virtual esocket");
             }
+            
+            // Restore buf_in to NULL (virtual esocket doesn't own it)
+            l_stream_es->buf_in = NULL;
+            l_stream_es->buf_in_size = 0;
             break;
             
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
             debug_if(s_debug_more, L_DEBUG, "Processing UDP SESSION_CREATE packet for session 0x%lx", l_session_id);
-            // Copy UDP packet to virtual esocket buffer
-            if (l_stream_es->buf_in_size + l_total_size <= l_stream_es->buf_in_size_max) {
-                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
-                       a_es->buf_in, l_total_size);
-                l_stream_es->buf_in_size += l_total_size;
+            
+            // SHARED BUFFER: Point virtual esocket buf_in to listener's buf_in temporarily
+            l_stream_es->buf_in = a_es->buf_in;
+            l_stream_es->buf_in_size = l_total_size;
+            
+            // Trigger read callback to process data from shared buffer
+            if (l_stream_es->callbacks.read_callback) {
+                debug_if(s_debug_more, L_DEBUG, "Calling read_callback to process SESSION_CREATE");
+                l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
                 
-                // Trigger read callback to process data from buf_in (don't manually call trans->ops->read)
-                if (l_stream_es->callbacks.read_callback) {
-                    debug_if(s_debug_more, L_DEBUG, "Calling read_callback to process SESSION_CREATE");
-                    l_stream_es->callbacks.read_callback(l_stream_es, l_stream_es->callbacks.arg);
-                    
-                    // Clear buf_in after processing (prevent overflow)
-                    l_stream_es->buf_in_size = 0;
-                    
-                    debug_if(s_debug_more, L_DEBUG, "After read_callback: buf_out_size=%zu", l_stream_es->buf_out_size);
-                    
-                    // If there is data to send, send it now
-                    if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
-                        debug_if(s_debug_more, L_DEBUG, "Calling write_callback to send SESSION_CREATE response");
-                        l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
-                    } else if (l_stream_es->buf_out_size == 0) {
-                        log_it(L_WARNING, "No data to send after processing SESSION_CREATE!");
-                    }
+                debug_if(s_debug_more, L_DEBUG, "After read_callback: buf_out_size=%zu", l_stream_es->buf_out_size);
+                
+                // If there is data to send, send it now
+                if (l_stream_es->buf_out_size > 0 && l_stream_es->callbacks.write_callback) {
+                    debug_if(s_debug_more, L_DEBUG, "Calling write_callback to send SESSION_CREATE response");
+                    l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
+                } else if (l_stream_es->buf_out_size == 0) {
+                    log_it(L_WARNING, "No data to send after processing SESSION_CREATE!");
                 }
-            } else {
-                log_it(L_WARNING, "Virtual esocket buffer full, dropping SESSION_CREATE packet");
             }
+            
+            // Restore buf_in to NULL (virtual esocket doesn't own it)
+            l_stream_es->buf_in = NULL;
+            l_stream_es->buf_in_size = 0;
             break;
             
         case DAP_STREAM_UDP_PKT_DATA:
-            debug_if(s_debug_more, L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx", 
+            // NOTE: This case is legacy - encrypted stream data now handled by
+            // "Found active session with encryption key" path above
+            // Kept for compatibility but should not be reached in normal flow
+            debug_if(s_debug_more, L_DEBUG, "Processing UDP DATA packet (%u bytes payload) for session 0x%lx (legacy path)", 
                    l_payload_len, l_session_id);
-            // Copy only the payload (stream packets), not the UDP header
-            if (l_stream_es->buf_in_size + l_payload_len <= l_stream_es->buf_in_size_max) {
-                memcpy(l_stream_es->buf_in + l_stream_es->buf_in_size, 
-                       l_payload, l_payload_len);
-                l_stream_es->buf_in_size += l_payload_len;
-                
-                // Process stream data
-                size_t l_processed = dap_stream_data_proc_read(l_stream);
-                debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
-                       l_processed, l_session_id);
-            } else {
-                log_it(L_WARNING, "Virtual esocket buffer full, dropping DATA packet");
-            }
+            
+            // SHARED BUFFER: Point to payload region temporarily
+            l_stream_es->buf_in = l_payload;
+            l_stream_es->buf_in_size = l_payload_len;
+            
+            // Process stream data
+            size_t l_processed = dap_stream_data_proc_read(l_stream);
+            debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data for session 0x%lx", 
+                   l_processed, l_session_id);
+            
+            // Restore buf_in to NULL
+            l_stream_es->buf_in = NULL;
+            l_stream_es->buf_in_size = 0;
             break;
             
         case DAP_STREAM_UDP_PKT_KEEPALIVE:
@@ -651,6 +669,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             log_it(L_WARNING, "Unknown UDP packet type %u, dropping", l_type);
             break;
     }
+    
+    // Release sessions lock (held during control packet processing for thread safety)
+    pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     
     // Clear listener socket buffer (we've processed the packet)
     a_es->buf_in_size = 0;
