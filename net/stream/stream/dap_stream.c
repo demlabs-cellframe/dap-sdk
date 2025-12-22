@@ -550,6 +550,15 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id);
     }
 
+    // CRITICAL: Call trans->ops->close() FIRST to let transport manage esocket
+    // This allows transport to extract esocket, set trans_ctx->esocket=NULL, and handle cleanup
+    // Must be called BEFORE accessing trans_ctx->esocket directly
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->close) {
+        a_stream->trans->ops->close(a_stream);
+    }
+
+    // After close(), trans_ctx->esocket may be NULL (managed by transport)
+    // Only delete esocket if trans didn't handle it
     if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
         dap_events_socket_t *l_esocket = a_stream->trans_ctx->esocket;
         a_stream->trans_ctx->esocket = NULL;  // Prevent recursive calls

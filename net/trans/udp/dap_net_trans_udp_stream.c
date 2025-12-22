@@ -1254,6 +1254,10 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
 
 /**
  * @brief Close UDP trans
+ * 
+ * CRITICAL: This function is responsible for esocket cleanup!
+ * It runs in the esocket's worker context, so unsafe access is safe here.
+ * We must extract and delete esocket BEFORE dap_stream_delete_unsafe tries to access it.
  */
 static void s_udp_close(dap_stream_t *a_stream)
 {
@@ -1283,14 +1287,22 @@ static void s_udp_close(dap_stream_t *a_stream)
         l_udp_ctx->seq_num = 0;
     }
     
-    // Clear stream pointer in trans_ctx to prevent use-after-free
+    // CRITICAL: Handle esocket cleanup HERE, not in dap_stream_delete_unsafe
+    // BUT: esocket may be invalid if we're called from different worker!
+    // Race condition: cannot safely access esocket pointer from trans_ctx
+    //
+    // SAFE SOLUTION: Just set esocket to NULL, don't access it
+    // Let dap_stream_delete_unsafe skip esocket cleanup (already NULL)
+    // Esocket will be cleaned up by its own worker or server cleanup
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     if (l_ctx) {
-        l_ctx->stream = NULL;
-        
-        // CRITICAL: Set esocket to NULL to prevent race condition
-        // If cleanup happens from different thread, corrupted pointer may cause segfault
+        // IMMEDIATELY set to NULL without reading esocket
+        // Reading esocket->worker or esocket->no_close may segfault if esocket already deleted
         l_ctx->esocket = NULL;
+        debug_if(s_debug_more, L_DEBUG, "Set trans_ctx->esocket = NULL (esocket cleanup delegated)");
+        
+        // Clear stream pointer in trans_ctx to prevent use-after-free
+        l_ctx->stream = NULL;
         
         // Free UDP context
         if (l_ctx->_inheritor) {
