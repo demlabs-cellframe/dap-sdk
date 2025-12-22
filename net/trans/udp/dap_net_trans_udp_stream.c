@@ -1360,6 +1360,14 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                       l_ctx, l_ctx ? l_ctx->handshake_cb : NULL);
              if (l_ctx && l_ctx->handshake_cb) {
                  // Client: Received Handshake Response (Bob Key + Ciphertext)
+                 
+                 // DUPLICATE PROTECTION: Check if handshake already completed
+                 dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+                 if (l_udp_ctx && l_udp_ctx->handshake_key) {
+                     debug_if(s_debug_more, L_DEBUG, "Client: ignoring duplicate HANDSHAKE response (handshake_key already established)");
+                     return a_size;  // Ignore duplicate
+                 }
+                 
                  // Process it here to establish encryption, then call callback
                  debug_if(s_debug_more, L_DEBUG, "Client: processing handshake response, calling s_udp_handshake_response");
                  int l_result = s_udp_handshake_response(a_stream, l_payload, l_payload_size);
@@ -1368,7 +1376,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 // Call handshake callback with result (no data, just status)
                 log_it(L_INFO, "UDP: About to call handshake_cb=%p with result=%d", l_ctx->handshake_cb, l_result);
                 l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
-                l_ctx->handshake_cb = NULL;
+                // DO NOT clear callback - duplicate protection will handle subsequent responses
+                // l_ctx->handshake_cb = NULL;  // REMOVED - duplicate protection now checks handshake_key existence
                 debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
              } else {
                  // Server: Received Handshake Request (Alice Key)
@@ -1415,8 +1424,15 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                       l_ctx, l_ctx ? l_ctx->session_create_cb : NULL);
              if (l_ctx && l_ctx->session_create_cb) {
                  // Client: Received Session Response
-                 debug_if(s_debug_more, L_DEBUG, "Client: parsing SESSION_CREATE response");
+                 
+                 // DUPLICATE PROTECTION: Check if session already created
                  uint64_t l_sess_id = be64toh(l_header->session_id);
+                 if (a_stream->session && a_stream->session->id == l_sess_id && a_stream->session->key) {
+                     debug_if(s_debug_more, L_DEBUG, "Client: ignoring duplicate SESSION_CREATE response for session 0x%lx (already established)", l_sess_id);
+                     return a_size;  // Ignore duplicate
+                 }
+                 
+                 debug_if(s_debug_more, L_DEBUG, "Client: parsing SESSION_CREATE response");
                  uint16_t l_payload_len = be16toh(l_header->length);
                  
                  debug_if(s_debug_more, L_DEBUG, "Client: SESSION_CREATE response session_id=0x%lx, payload_len=%u", 
@@ -1496,7 +1512,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     l_ctx->session_create_cb(a_stream, 0, NULL, 0, ETIMEDOUT);
                 }
                 
-                l_ctx->session_create_cb = NULL;
+                // DO NOT clear callback - duplicate protection will handle subsequent responses
+                // l_ctx->session_create_cb = NULL;  // REMOVED - causes duplicate responses to be ignored silently
              } else if (!l_ctx->session_create_cb) {
                  // Server: Received Session Request from client
                  // session_id is already set from HANDSHAKE (not 0!)
@@ -1803,10 +1820,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
     
     // Set UDP-specific callbacks for client esocket
-    log_it(L_INFO, "s_udp_stage_prepare: Setting read_callback for esocket %p (fd=%d)", l_es, l_es->fd);
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     l_es->callbacks.write_callback = s_udp_client_write_callback;
-    log_it(L_INFO, "s_udp_stage_prepare: Callbacks set, read_callback=%p", l_es->callbacks.read_callback);
     
     // UDP is connectionless - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
