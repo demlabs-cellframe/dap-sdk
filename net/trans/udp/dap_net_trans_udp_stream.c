@@ -1279,6 +1279,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  l_header->type, a_stream, a_stream->trans_ctx, l_ctx, l_udp_ctx);
 
         if (l_header->type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
+             debug_if(s_debug_more, L_DEBUG, "HANDSHAKE packet: l_ctx=%p, handshake_cb=%p", 
+                      l_ctx, l_ctx ? l_ctx->handshake_cb : NULL);
              if (l_ctx && l_ctx->handshake_cb) {
                  // Client: Received Handshake Response (Bob Key + Ciphertext)
                  // Process it here to establish encryption, then call callback
@@ -1292,6 +1294,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
              } else {
                  // Server: Received Handshake Request (Alice Key)
+                 debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request");
                  void *l_response = NULL;
                  size_t l_response_size = 0;
                  s_udp_handshake_process(a_stream, l_payload, l_payload_size, &l_response, &l_response_size);
