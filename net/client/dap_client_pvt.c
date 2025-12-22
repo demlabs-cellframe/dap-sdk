@@ -723,6 +723,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
+                    log_it(L_INFO, "ENC: Checking uplink addr/port");
                     if (!*a_client_pvt->client->link_info.uplink_addr || !a_client_pvt->client->link_info.uplink_port) {
                         log_it(L_ERROR, "Client remote address is empty");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -730,6 +731,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
 
+                    log_it(L_INFO, "ENC: Creating session_key_open");
                     if (a_client_pvt->session_key_open)
                         dap_enc_key_delete(a_client_pvt->session_key_open);
                     a_client_pvt->session_key_open = dap_enc_key_new_generate(a_client_pvt->session_key_open_type, NULL, 0, NULL, 0,
@@ -741,6 +743,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
+                    log_it(L_INFO, "ENC: Getting transport type %d", a_client_pvt->client->trans_type);
                     // Get transport
                     dap_net_trans_type_t l_trans_type = a_client_pvt->client->trans_type;
                     dap_net_trans_t *l_transport = dap_net_trans_find(l_trans_type);
@@ -751,15 +754,19 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     
+                    log_it(L_INFO, "ENC: Transport found, preparing handshake");
                     // Prepare handshake for transport
                     
                     // Create stream for handshake via transport's stage_prepare
+                    log_it(L_INFO, "ENC: About to call dap_net_trans_stage_prepare for transport type %d", l_trans_type);
                     if (!l_transport->ops->handshake_init) {
                         log_it(L_ERROR, "Transport type %d doesn't support handshake_init", l_trans_type);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         break;
                     }
+                    
+                    log_it(L_INFO, "ENC: Transport has handshake_init, preparing stage_prepare params");
                     
                     static dap_events_socket_callbacks_t s_handshake_callbacks = {
                         .read_callback = NULL,  // Not used for handshake-only stream

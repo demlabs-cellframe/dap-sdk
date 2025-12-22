@@ -41,6 +41,10 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_trans_udp_server"
 
+// Forward declaration from dap_net_trans_udp_stream.c
+// This function is made non-static to allow server-side stream initialization
+dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
+
 // Debug flags
 static bool s_debug_more = false;  // Extra verbose debugging
 
@@ -524,6 +528,27 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         if (l_udp_srv->trans) {
             l_session->stream->trans = l_udp_srv->trans;
         }
+        
+        // CRITICAL: Create UDP per-stream context for server-side stream!
+        // This is required for handshake processing and write operations.
+        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_session->stream);
+        if (!l_udp_ctx) {
+            log_it(L_ERROR, "Failed to create UDP context for server-side stream");
+            DAP_DELETE(l_session->stream->trans_ctx);
+            DAP_DELETE(l_session->stream);
+            DAP_DELETE(l_session);
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+            a_es->buf_in_size = 0;
+            return;
+        }
+        
+        // Store remote address in UDP context for server-side writes (sendto)
+        memcpy(&l_udp_ctx->remote_addr, &a_es->addr_storage, a_es->addr_size);
+        l_udp_ctx->remote_addr_len = a_es->addr_size;
+        l_udp_ctx->session_id = l_session_id;
+        
+        log_it(L_DEBUG, "Initialized UDP context for server-side stream %p (session 0x%lx)", 
+               l_session->stream, l_session_id);
         
         // Add to server's session hash table by remote_addr (already under write lock)
         // NOTE: uthash will use full remote_addr as key via s_find_session_by_addr iteration

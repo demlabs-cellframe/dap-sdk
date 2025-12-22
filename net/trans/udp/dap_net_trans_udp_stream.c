@@ -125,7 +125,8 @@ static const dap_net_trans_ops_t s_udp_ops = {
 // Helper functions
 static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
-static dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
+// Made non-static for server.c to create UDP context for server-side streams
+dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
 static int s_udp_handshake_response(dap_stream_t *a_stream, const void *a_data, size_t a_data_size);
 static int s_create_udp_header(dap_stream_trans_udp_header_t *a_header,
                                 uint8_t a_type, uint16_t a_length,
@@ -642,15 +643,15 @@ static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
 }
 
 static dap_net_trans_ctx_t *s_udp_get_or_create_ctx(dap_stream_t *a_stream) {
-    log_it(L_INFO, "s_udp_get_or_create_ctx: stream=%p, trans_ctx=%p", a_stream, a_stream ? a_stream->trans_ctx : NULL);
+    debug_if(s_debug_more, L_INFO, "s_udp_get_or_create_ctx: stream=%p, trans_ctx=%p", a_stream, a_stream ? a_stream->trans_ctx : NULL);
     if (!a_stream->trans_ctx) {
-        log_it(L_INFO, "s_udp_get_or_create_ctx: Creating NEW trans_ctx");
+        debug_if(s_debug_more,L_INFO, "s_udp_get_or_create_ctx: Creating NEW trans_ctx");
         a_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
         if (a_stream->trans) {
             a_stream->trans_ctx->trans = a_stream->trans;
         }
     }
-    log_it(L_INFO, "s_udp_get_or_create_ctx: Returning trans_ctx=%p", a_stream->trans_ctx);
+    debug_if(s_debug_more, L_INFO, "s_udp_get_or_create_ctx: Returning trans_ctx=%p", a_stream->trans_ctx);
     return a_stream->trans_ctx;
 }
 
@@ -681,9 +682,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "UDP handshake_init: Setting callback %p for stream %p", a_callback, a_stream);
     l_ctx->handshake_cb = a_callback;
-    log_it(L_INFO, "UDP handshake_init: Callback set, l_ctx->handshake_cb=%p", l_ctx->handshake_cb);
     
     // Get or create UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
@@ -1244,8 +1243,12 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     // 1. CLIENT (l_es != NULL): Read from l_es->buf_in (reactor managed)
     // 2. SERVER (l_es == NULL): Read from a_buffer (dispatcher passed)
     
+    debug_if(s_debug_more, L_INFO, "s_udp_read: l_es=%p, a_buffer=%p, a_size=%zu - MODE: %s",
+           l_es, a_buffer, a_size, l_es ? "CLIENT" : "SERVER");
+    
     if (!l_es) {
         // SERVER MODE: Use a_buffer passed by dispatcher
+        debug_if(s_debug_more, L_INFO, "s_udp_read: SERVER MODE activated");
         if (!a_buffer || a_size == 0) {
             debug_if(s_debug_more, L_DEBUG, "UDP server read: no data passed by dispatcher");
             return 0;
@@ -1800,8 +1803,10 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
     
     // Set UDP-specific callbacks for client esocket
+    log_it(L_INFO, "s_udp_stage_prepare: Setting read_callback for esocket %p (fd=%d)", l_es, l_es->fd);
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     l_es->callbacks.write_callback = s_udp_client_write_callback;
+    log_it(L_INFO, "s_udp_stage_prepare: Callbacks set, read_callback=%p", l_es->callbacks.read_callback);
     
     // UDP is connectionless - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
@@ -1853,6 +1858,10 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_ctx->esocket_uuid = l_es->uuid;
     l_ctx->esocket_worker = l_es->worker;
     l_ctx->stream = l_stream;
+    
+    // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
+    l_es->callbacks.arg = l_ctx;
+    log_it(L_INFO, "s_udp_stage_prepare: Set callbacks.arg=%p (trans_ctx) for esocket %p", l_ctx, l_es);
     
     // Create UDP per-stream context and store client_ctx
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
@@ -1939,7 +1948,11 @@ static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream)
 /**
  * @brief Get or create UDP per-stream context
  */
-static dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
+/**
+ * @brief Get or create UDP per-stream context
+ * Made non-static for server.c to initialize UDP context for server-side streams
+ */
+dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->trans_ctx)
         return NULL;
