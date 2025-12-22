@@ -165,12 +165,17 @@ static bool s_udp_client_write_callback(dap_events_socket_t *a_es, void *a_arg) 
     if (l_sent < 0) {
         int l_errno = errno;
         if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
-            // Non-blocking socket, would block - retry later
-            return false;
+            // Non-blocking socket, would block - for UDP we don't retry, just drop the packet
+            log_it(L_WARNING, "UDP send would block, dropping packet (%zu bytes)", l_chunk_size);
+            // Clear buffer to prevent infinite retry loop
+            a_es->buf_out_size = 0;
+            return true;  // Don't retry for UDP!
         }
         log_it(L_ERROR, "UDP client send failed: %s (errno %d, chunk_size=%zu)", 
                strerror(l_errno), l_errno, l_chunk_size);
-        return false;
+        // Clear buffer on error
+        a_es->buf_out_size = 0;
+        return true;  // Don't retry on error
     }
     
     // Shift sent data out of buffer
@@ -179,8 +184,13 @@ static bool s_udp_client_write_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
     a_es->buf_out_size -= l_sent;
     
-    // Return false if more data remains (will call again)
-    return (a_es->buf_out_size == 0);
+    // CRITICAL: For UDP, ALWAYS return true to prevent automatic retry
+    // UDP is unreliable protocol - if packet can't be sent, it should be dropped, not retried indefinitely
+    if (a_es->buf_out_size > 0) {
+        log_it(L_WARNING, "UDP: %zu bytes remain in buf_out after send, clearing to prevent retry loop", a_es->buf_out_size);
+        a_es->buf_out_size = 0;
+    }
+    return true;  // Always return true for UDP - no automatic retry!
 }
 
 /**
@@ -1182,6 +1192,11 @@ static int s_udp_session_create(dap_stream_t *a_stream,
         return -1;
     }
     dap_events_socket_t *l_es = l_ctx->esocket;
+    
+    static __thread uint64_t s_session_create_write_counter = 0;
+    s_session_create_write_counter++;
+    log_it(L_INFO, "SESSION_CREATE write #%lu for esocket %p (total calls to s_udp_session_create)", 
+           s_session_create_write_counter, l_es);
     
     size_t l_sent = dap_events_socket_write_unsafe(l_es, &l_header, l_packet_size);
     
