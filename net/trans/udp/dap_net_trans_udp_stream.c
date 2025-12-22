@@ -1500,6 +1500,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 
 /**
  * @brief Write data to UDP trans
+ * 
+ * NEW ARCHITECTURE:
+ * - Client: Uses own physical UDP esocket (trans_ctx->esocket)
+ * - Server: Uses listener's physical esocket + sendto with remote_addr from UDP context
  */
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
@@ -1527,29 +1531,67 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         a_size = l_priv->config.max_packet_size;
     }
 
-    // UDP write is done via dap_events_socket_write_unsafe
-    // This is called from worker ctx
-    // dap_events_socket_t *l_es = l_priv->esocket; // NO! Use trans_ctx
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-    if (!l_ctx || !l_ctx->esocket) {
-        log_it(L_ERROR, "No esocket in trans ctx for write");
+    if (!l_ctx) {
+        log_it(L_ERROR, "No trans ctx for write");
         return -1;
     }
-    dap_events_socket_t *l_es = l_ctx->esocket;
     
-    if (!l_es) {
-        log_it(L_ERROR, "Trans has no esocket");
-        return -1;
+    // NEW ARCHITECTURE: Check if we have esocket (client) or need dispatcher (server)
+    if (l_ctx->esocket) {
+        // CLIENT: Has own physical esocket, use it directly
+        debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
+                 a_size, l_ctx->esocket, l_ctx->esocket->fd);
+        
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, a_data, a_size);
+        if (l_sent < 0) {
+            log_it(L_ERROR, "UDP client send failed");
+            return -1;
+        }
+        return l_sent;
+    } else {
+        // SERVER: No esocket (dispatcher architecture)
+        // Use listener's physical esocket + sendto with remote_addr
+        
+        // Get UDP per-stream context for remote_addr
+        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+        if (!l_udp_ctx) {
+            log_it(L_ERROR, "Server stream has no UDP context for write");
+            return -1;
+        }
+        
+        if (l_udp_ctx->remote_addr.ss_family == 0) {
+            log_it(L_ERROR, "Server stream has no remote address for write");
+            return -1;
+        }
+        
+        // Get listener esocket from trans
+        if (!l_priv->listener_esocket) {
+            log_it(L_ERROR, "Server trans has no listener esocket for write dispatcher");
+            return -1;
+        }
+        
+        int l_fd = l_priv->listener_esocket->fd;
+        if (l_fd < 0) {
+            log_it(L_ERROR, "Listener esocket has invalid fd");
+            return -1;
+        }
+        
+        // Send via sendto with remote address
+        ssize_t l_sent = sendto(l_fd, a_data, a_size, 0,
+                                (struct sockaddr*)&l_udp_ctx->remote_addr,
+                                l_udp_ctx->remote_addr_len);
+        
+        if (l_sent < 0) {
+            log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d)", strerror(errno), l_fd);
+            return -1;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "UDP write (server): sent %zd bytes via sendto (fd=%d)", 
+                 l_sent, l_fd);
+        
+        return l_sent;
     }
-
-    // Write directly using dap_events_socket_write_unsafe
-    ssize_t l_sent = dap_events_socket_write_unsafe(l_es, a_data, a_size);
-    if (l_sent < 0) {
-        log_it(L_ERROR, "UDP send failed via dap_events_socket");
-        return -1;
-    }
-
-    return l_sent;
 }
 
 /**

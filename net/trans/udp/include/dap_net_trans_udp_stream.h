@@ -156,6 +156,7 @@ typedef struct dap_stream_trans_udp_private {
     dap_server_t *server;               ///< UDP server instance
     dap_stream_trans_udp_config_t config;  ///< Configuration
     void *user_data;                    ///< User-defined data
+    dap_events_socket_t *listener_esocket; ///< Listener physical esocket (for server sendto in dispatcher architecture)
 } dap_stream_trans_udp_private_t;
 
 /**

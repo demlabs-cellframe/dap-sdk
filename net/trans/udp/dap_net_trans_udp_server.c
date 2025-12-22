@@ -291,6 +291,15 @@ static void s_listener_new_callback(dap_events_socket_t *a_es, void *a_arg)
         debug_if(s_debug_more, L_DEBUG, 
                "Listener new callback: initialized shared buffer (listener_es=%p, capacity=%zu)", 
                a_es, l_udp_srv->shared_buf_capacity);
+        
+        // NEW ARCHITECTURE: Store listener esocket in trans for write dispatcher
+        if (l_udp_srv->trans && l_udp_srv->trans->_inheritor) {
+            dap_stream_trans_udp_private_t *l_priv = 
+                (dap_stream_trans_udp_private_t*)l_udp_srv->trans->_inheritor;
+            l_priv->listener_esocket = a_es;
+            debug_if(s_debug_more, L_DEBUG, 
+                   "Stored listener esocket in trans for write dispatcher");
+        }
     }
     
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
