@@ -51,6 +51,8 @@
 #include "dap_client.h"
 #include "rand/dap_rand.h"
 #include "dap_enc_key.h"
+#include "dap_enc.h"
+#include "dap_enc_kdf.h"
 #include "dap_enc_ks.h"
 #include "dap_enc_base64.h"
 #include "dap_string.h"
@@ -197,14 +199,15 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, _inheritor=%p",
-             a_es, a_es->fd, a_es->buf_in_size, a_es->_inheritor);
+    debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
+             a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
-    // Get trans_ctx from esocket->_inheritor (ALWAYS dap_net_trans_ctx_t)
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
+    // Get trans_ctx from callbacks.arg (NOT _inheritor!)
+    // _inheritor may point to client (dap_client_t), not trans_ctx!
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
 
     if (!l_trans_ctx) {
-        log_it(L_WARNING, "UDP client esocket has no trans_ctx (_inheritor is NULL), dropping %zu bytes", a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -690,12 +693,13 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         l_udp_ctx->stream = a_stream;
         l_ctx->stream = a_stream;
         
-        // Set esocket->_inheritor to trans_ctx
-        l_ctx->esocket->_inheritor = l_ctx;
-        l_ctx->esocket->callbacks.arg = NULL; // Clear temporary storage
+        // IMPORTANT: Store trans_ctx in callbacks.arg (NOT _inheritor!)
+        // _inheritor is owned by client infrastructure (may be dap_client_t or NULL)
+        // We use callbacks.arg to pass trans_ctx to read callback
+        l_ctx->esocket->callbacks.arg = l_ctx;
         
-        debug_if(s_debug_more, L_DEBUG, "Set esocket->_inheritor = trans_ctx %p, trans_ctx->stream = %p", 
-                 l_ctx, a_stream);
+        debug_if(s_debug_more, L_DEBUG, "trans_ctx %p stored in callbacks.arg, trans_ctx->stream = %p, esocket->_inheritor=%p (client)", 
+                 l_ctx, a_stream, l_ctx->esocket->_inheritor);
         
         // Set read callback
         if (!l_ctx->esocket->callbacks.read_callback) {
@@ -796,21 +800,21 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     }
     
     // DEBUG: Log Alice's public key that we sent (first 16 bytes)
-    if (l_udp_ctx->alice_key->pub_key_data && l_udp_ctx->alice_key->pub_key_data_size >= 16) {
+    if (s_debug_more && l_udp_ctx->alice_key->pub_key_data && l_udp_ctx->alice_key->pub_key_data_size >= 16) {
         char l_hex[49] = {0};
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_udp_ctx->alice_key->pub_key_data)[i]);
         }
-        log_it(L_INFO, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
+        log_it(L_DEBUG, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
     }
     
     // DEBUG: Log received ciphertext (first 16 bytes)
-    if (a_data && a_data_size >= 16) {
+    if (s_debug_more && a_data && a_data_size >= 16) {
         char l_hex[49] = {0};
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)a_data)[i]);
         }
-        log_it(L_INFO, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
+        log_it(L_DEBUG, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
     }
     
     dap_enc_key_t *l_alice_key = l_udp_ctx->alice_key;
@@ -886,12 +890,12 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     l_ciphertext_size = l_decoded_size;
     
     log_it(L_INFO, "Decoded bob_message: %zu bytes", l_ciphertext_size);
-    if (l_ciphertext_size >= 16) {
+    if (s_debug_more && l_ciphertext_size >= 16) {
         char l_hex[49] = {0};
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_ciphertext)[i]);
         }
-        log_it(L_INFO, "CLIENT decoded ciphertext (first 16 bytes): %s", l_hex);
+        log_it(L_DEBUG, "CLIENT decoded ciphertext (first 16 bytes): %s", l_hex);
     }
     
     // Use Alice's key to decrypt and derive shared secret from Bob's ciphertext
@@ -927,12 +931,12 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     log_it(L_DEBUG, "UDP handshake: derived shared secret (%zu bytes)", l_shared_key_size);
     
     // DEBUG: Log first 16 bytes of shared secret
-    if (l_shared_key && l_shared_key_size >= 16) {
+    if (s_debug_more && l_shared_key && l_shared_key_size >= 16) {
         char l_hex[49] = {0};
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
         }
-        log_it(L_INFO, "CLIENT shared secret (first 16 bytes): %s", l_hex);
+        log_it(L_DEBUG, "CLIENT shared secret (first 16 bytes): %s", l_hex);
     }
     
     // Create session and set encryption key
@@ -948,16 +952,38 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         dap_enc_key_delete(a_stream->session->key);
     }
     
-    // Create session encryption key from shared secret (SALSA2012)
-    a_stream->session->key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, 
-                                                        l_shared_key, l_shared_key_size, 
-                                                        NULL, 0, 32);
-    if (!a_stream->session->key) {
-        log_it(L_ERROR, "Failed to create session encryption key");
-        return -1;
+    // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
+    // This key will be used to decrypt the session key seed from server
+    // Using KDF with context "handshake" and counter 0 (same as server)
+    // l_udp_ctx is already retrieved above (line 788)
+    if (l_udp_ctx) {
+        if (l_udp_ctx->handshake_key) {
+            dap_enc_key_delete(l_udp_ctx->handshake_key);
+        }
+        
+        // Use NEW KDF API: derive handshake key from Alice's KEM key
+        l_udp_ctx->handshake_key = dap_enc_kdf_create_cipher_key(
+            l_alice_key,                    // KEM key with shared secret
+            DAP_ENC_KEY_TYPE_SALSA2012,     // Cipher type for handshake encryption
+            "udp_handshake",                // Context string (MUST match server!)
+            14,                             // Context size (strlen("udp_handshake"))
+            0,                              // Counter = 0 (same as server)
+            32                              // Key size (32 bytes for SALSA2012)
+        );
+        
+        if (!l_udp_ctx->handshake_key) {
+            log_it(L_ERROR, "CLIENT: failed to derive handshake key using KDF");
+            return -1;
+        }
+        
+        log_it(L_INFO, "CLIENT: handshake encryption key created using KDF (stream=%p, key=%p)", 
+               a_stream, l_udp_ctx->handshake_key);
     }
     
-    log_it(L_INFO, "UDP handshake complete: CLIENT session encryption established");
+    // DO NOT create session key here! It will be received and decrypted during SESSION_CREATE
+    a_stream->session->key = NULL;
+    
+    log_it(L_INFO, "UDP handshake complete: CLIENT handshake key established, waiting for session key from server");
     return 0;
 }
 
@@ -1021,28 +1047,56 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         if (a_stream->session->key) dap_enc_key_delete(a_stream->session->key);
         
         // DEBUG: Log Bob's ciphertext (first 16 bytes)
-        if (l_bob_pub && l_bob_pub_size >= 16) {
+        debug_if(s_debug_more, L_DEBUG, "SERVER: Bob's ciphertext size=%zu", l_bob_pub_size);
+        if (s_debug_more && l_bob_pub && l_bob_pub_size >= 16) {
             char l_hex[49] = {0};
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_bob_pub)[i]);
             }
-            log_it(L_INFO, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
+            log_it(L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
         }
         
         // DEBUG: Log first 16 bytes of shared secret
-        if (l_shared_key && l_shared_key_size >= 16) {
+        debug_if(s_debug_more, L_DEBUG, "SERVER: shared secret size=%zu", l_shared_key_size);
+        if (s_debug_more && l_shared_key && l_shared_key_size >= 16) {
             char l_hex[49] = {0};
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
             }
-            log_it(L_INFO, "SERVER shared secret (first 16 bytes): %s", l_hex);
+            log_it(L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
         }
         
-        // Create session key from shared secret
-        // Using SALSA2012 for session encryption
-        a_stream->session->key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, l_shared_key, l_shared_key_size, NULL, 0, 32);
+        // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
+        // This key will be used to encrypt/decrypt the session key seed
+        // Using KDF with context "handshake" and counter 0 (no ratcheting for handshake)
+        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+        if (l_udp_ctx) {
+            if (l_udp_ctx->handshake_key) {
+                dap_enc_key_delete(l_udp_ctx->handshake_key);
+            }
+            
+            // Use NEW KDF API: derive handshake key from Bob's KEM key
+            l_udp_ctx->handshake_key = dap_enc_kdf_create_cipher_key(
+                l_bob_key,                      // KEM key with shared secret
+                DAP_ENC_KEY_TYPE_SALSA2012,     // Cipher type for handshake encryption
+                "udp_handshake",                // Context string
+                14,                             // Context size (strlen("udp_handshake"))
+                0,                              // Counter = 0 (no ratcheting for handshake)
+                32                              // Key size (32 bytes for SALSA2012)
+            );
+            
+            if (!l_udp_ctx->handshake_key) {
+                log_it(L_ERROR, "SERVER: failed to derive handshake key using KDF");
+                dap_enc_key_delete(l_bob_key);
+                return -1;
+            }
+            
+            log_it(L_INFO, "SERVER: handshake encryption key created using KDF (stream=%p, key=%p)", 
+                   a_stream, l_udp_ctx->handshake_key);
+        }
         
-        log_it(L_INFO, "SERVER session encryption key created (stream=%p, key=%p)", a_stream, a_stream->session->key);
+        // DO NOT create session key here! It will be created during SESSION_CREATE
+        a_stream->session->key = NULL;
     }
     
     // Prepare JSON response for client's s_enc_init_response
@@ -1067,8 +1121,9 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         dap_string_free(l_json_resp, true);
     }
     
-    // l_bob_pub was allocated by gen_bob_shared_key
-    DAP_DELETE(l_bob_pub);
+    // l_bob_pub points to l_bob_key->pub_key_data (NOT separately allocated!)
+    // It will be freed automatically when we delete l_bob_key below
+    // DO NOT delete l_bob_pub separately - it causes double-free!
     
     // l_shared_key points to internal buffer of l_bob_key, so it is freed when l_bob_key is deleted
     // But we should zero it out if possible before delete (dap_enc_key_delete might do it)
@@ -1264,21 +1319,95 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  // Client: Received Session Response
                  debug_if(s_debug_more, L_DEBUG, "Client: parsing SESSION_CREATE response");
                  uint64_t l_sess_id = be64toh(l_header->session_id);
+                 uint16_t l_payload_len = be16toh(l_header->length);
                  
-                 // Validate stream before calling callback
+                 debug_if(s_debug_more, L_DEBUG, "Client: SESSION_CREATE response session_id=0x%lx, payload_len=%u", 
+                          l_sess_id, l_payload_len);
+                 
+                 // Validate stream before processing
                  if (!a_stream) {
-                     log_it(L_ERROR, "Cannot call session_create_cb: stream is NULL");
+                     log_it(L_ERROR, "Cannot process SESSION_CREATE: stream is NULL");
+                     return -1;
                  } else if (!a_stream->trans) {
-                     log_it(L_ERROR, "Cannot call session_create_cb: stream->trans is NULL");
+                     log_it(L_ERROR, "Cannot process SESSION_CREATE: stream->trans is NULL");
+                     return -1;
                  } else if (!a_stream->trans_ctx) {
-                     log_it(L_ERROR, "Cannot call session_create_cb: stream->trans_ctx is NULL");
-                 } else {
-                     debug_if(s_debug_more, L_DEBUG, "Calling session_create_cb: stream=%p, session_id=%u, cb=%p", 
-                              a_stream, (uint32_t)l_sess_id, l_ctx->session_create_cb);
-                     l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
-                     debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
+                     log_it(L_ERROR, "Cannot process SESSION_CREATE: stream->trans_ctx is NULL");
+                     return -1;
                  }
-                 l_ctx->session_create_cb = NULL;
+                 
+                 // If payload is present, it's the encrypted session key seed
+                 if (l_payload_len > 0 && l_payload) {
+                     log_it(L_INFO, "Client: received encrypted session key seed (%u bytes)", l_payload_len);
+                     
+                     // Decrypt with HANDSHAKE key
+                     if (!l_udp_ctx->handshake_key) {
+                         log_it(L_ERROR, "Client: no handshake key for decrypting session key seed");
+                         return -1;
+                     }
+                     
+                     size_t l_decrypted_size = l_payload_len + 256; // Add buffer for decryption
+                     uint8_t *l_decrypted_seed = DAP_NEW_SIZE(uint8_t, l_decrypted_size);
+                     
+                     size_t l_actual_decrypted = dap_enc_decode(l_udp_ctx->handshake_key, 
+                                                                l_payload, l_payload_len,
+                                                                l_decrypted_seed, l_decrypted_size,
+                                                                DAP_ENC_DATA_TYPE_RAW);
+                     
+                     if (l_actual_decrypted == 0 || l_actual_decrypted != 32) {
+                         log_it(L_ERROR, "Client: failed to decrypt session key seed (expected 32 bytes, got %zu)", l_actual_decrypted);
+                         DAP_DELETE(l_decrypted_seed);
+                         return -1;
+                     }
+                     
+                     log_it(L_INFO, "Client: decrypted session key seed: %zu bytes", l_actual_decrypted);
+                     
+                     // Create session key from seed (following HTTP transport approach)
+                     dap_enc_key_t *l_session_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, 
+                                                                              l_decrypted_seed, l_actual_decrypted, 
+                                                                              NULL, 0, 32);
+                     
+                     DAP_DELETE(l_decrypted_seed); // Free decrypted seed
+                     
+                     if (!l_session_key) {
+                         log_it(L_ERROR, "Client: failed to generate session key from seed");
+                         return -1;
+                     }
+                     
+                     log_it(L_INFO, "Client: generated session key successfully");
+                     
+                     // Set session key in stream
+                     if (!a_stream->session) {
+                         a_stream->session = dap_stream_session_pure_new();
+                         if (!a_stream->session) {
+                             log_it(L_ERROR, "Client: failed to create session");
+                             dap_enc_key_delete(l_session_key);
+                             return -1;
+                         }
+                     }
+                     
+                     if (a_stream->session->key) {
+                         dap_enc_key_delete(a_stream->session->key);
+                     }
+                     
+                    a_stream->session->key = l_session_key;
+                    a_stream->session->id = l_sess_id;
+                    
+                    log_it(L_INFO, "Client: session key installed for session 0x%lx", l_sess_id);
+                    
+                    // Call callback with session_id (key is already in stream->session->key)
+                    debug_if(s_debug_more, L_DEBUG, "Calling session_create_cb: stream=%p, session_id=%u, cb=%p", 
+                             a_stream, (uint32_t)l_sess_id, l_ctx->session_create_cb);
+                    l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
+                    debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
+                } else {
+                    // ERROR: Server must send encrypted session key seed in payload
+                    log_it(L_ERROR, "Client: SESSION_CREATE response missing payload (session key seed expected)");
+                    // Call callback with error (session_id=0 indicates failure)
+                    l_ctx->session_create_cb(a_stream, 0, NULL, 0, ETIMEDOUT);
+                }
+                
+                l_ctx->session_create_cb = NULL;
              } else if (!l_ctx->session_create_cb) {
                  // Server: Received Session Request from client
                  // session_id is already set from HANDSHAKE (not 0!)
@@ -1293,13 +1422,65 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      }
                  }
                  
-                 // Send confirmation response with same session_id
+                 // Generate SESSION key seed (random 32 bytes for SALSA2012)
+                 // NOTE: Following HTTP transport approach - transmit only seed, not full key object
+                 uint8_t l_session_key_seed[32];
+                 randombytes(l_session_key_seed, sizeof(l_session_key_seed));
+                 
+                 log_it(L_INFO, "Server: generated session key seed (32 bytes) for session 0x%lx", l_sess_id);
+                 
+                 // Encrypt seed with HANDSHAKE key
+                 if (!l_udp_ctx->handshake_key) {
+                     log_it(L_ERROR, "Server: no handshake key for encrypting session key seed");
+                     return -1;
+                 }
+                 
+                 size_t l_encrypted_size = sizeof(l_session_key_seed) + 256; // Add padding for encryption overhead
+                 uint8_t *l_encrypted_seed = DAP_NEW_SIZE(uint8_t, l_encrypted_size);
+                 
+                 size_t l_actual_encrypted = dap_enc_code(l_udp_ctx->handshake_key, 
+                                                          l_session_key_seed, sizeof(l_session_key_seed),
+                                                          l_encrypted_seed, l_encrypted_size,
+                                                          DAP_ENC_DATA_TYPE_RAW);
+                 
+                 if (l_actual_encrypted == 0) {
+                     log_it(L_ERROR, "Server: failed to encrypt session key seed");
+                     DAP_DELETE(l_encrypted_seed);
+                     return -1;
+                 }
+                 
+                 log_it(L_INFO, "Server: encrypted session key seed: %zu bytes", l_actual_encrypted);
+                 
+                 // NOW create session encryption key from seed (for server-side encryption)
+                 if (a_stream->session->key) {
+                     dap_enc_key_delete(a_stream->session->key);
+                 }
+                 a_stream->session->key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, 
+                                                                    l_session_key_seed, sizeof(l_session_key_seed), 
+                                                                    NULL, 0, 32);
+                 if (!a_stream->session->key) {
+                     log_it(L_ERROR, "Server: failed to generate session key from seed");
+                     DAP_DELETE(l_encrypted_seed);
+                     return -1;
+                 }
+                 
+                 log_it(L_INFO, "Server: created session key for session 0x%lx", l_sess_id);
+                 
+                 // Prepare response header + encrypted seed
                  dap_stream_trans_udp_header_t l_resp_hdr;
                  s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                     0, l_udp_ctx->seq_num++, l_sess_id);
-                                     
+                                     l_actual_encrypted, l_udp_ctx->seq_num++, l_sess_id);
+                 
+                 // Send header
                  dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
-                 debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response for session 0x%lx", l_sess_id);
+                 
+                 // Send encrypted seed as payload
+                 dap_events_socket_write_unsafe(l_es, l_encrypted_seed, l_actual_encrypted);
+                 
+                 DAP_DELETE(l_encrypted_seed);
+                 
+                 debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with encrypted session key seed (%zu bytes) for session 0x%lx", 
+                          l_actual_encrypted, l_sess_id);
              } else {
                  // Client: Duplicate SESSION_CREATE response (callback already called)
                  debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
@@ -1416,6 +1597,12 @@ static void s_udp_close(dap_stream_t *a_stream)
             l_udp_ctx->alice_key = NULL;
         }
         
+        // Clean up handshake_key if present
+        if (l_udp_ctx->handshake_key) {
+            dap_enc_key_delete(l_udp_ctx->handshake_key);
+            l_udp_ctx->handshake_key = NULL;
+        }
+        
         // Clear stream pointer to prevent use-after-free
         l_udp_ctx->stream = NULL;
         l_udp_ctx->session_id = 0;
@@ -1436,7 +1623,7 @@ static void s_udp_close(dap_stream_t *a_stream)
         // ALWAYS use _mt method - 100% safe from any thread
         dap_events_socket_remove_and_delete_mt(l_ctx->esocket_worker, l_ctx->esocket_uuid);
         
-        // Clear pointer (esocket will be deleted asynchronously on its worker)
+        // Clear pointers (esocket will be deleted asynchronously on its worker)
         l_ctx->esocket = NULL;
         l_ctx->esocket_uuid = 0;
         l_ctx->esocket_worker = NULL;
@@ -1446,7 +1633,7 @@ static void s_udp_close(dap_stream_t *a_stream)
         // Clear stream pointer in trans_ctx to prevent use-after-free
         l_ctx->stream = NULL;
         
-        // Free UDP context
+        // Free UDP context (owned by trans_ctx, not esocket)
         if (l_ctx->_inheritor) {
             DAP_DELETE(l_ctx->_inheritor);
             l_ctx->_inheritor = NULL;
@@ -1566,10 +1753,11 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_udp_ctx->client_ctx = a_params->client_ctx;
     l_udp_ctx->stream = l_stream;
     
-    // CRITICAL: Link esocket->_inheritor to trans_ctx so read callback can find stream
-    l_es->_inheritor = l_ctx;
+    // CRITICAL: Store trans_ctx in callbacks.arg (NOT _inheritor!)
+    // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
+    l_es->callbacks.arg = l_ctx;
     
-    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (will be reused for all operations)", l_stream, l_ctx);
+    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;

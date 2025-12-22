@@ -518,11 +518,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_session->stream->trans_ctx;
             dap_events_socket_t *l_v_es = l_trans_ctx->esocket;
             
-            // CRITICAL: Set stream in trans_ctx so UDP read callback can find it
+            // CRITICAL: Store trans_ctx in callbacks.arg (NOT _inheritor!)
+            // _inheritor should not be used for trans_ctx to avoid double-free issues
             l_trans_ctx->stream = l_session->stream;
-            l_v_es->_inheritor = l_trans_ctx;  // Point to trans_ctx
+            l_v_es->callbacks.arg = l_trans_ctx;  // Store trans_ctx in callbacks.arg
             l_v_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
-            debug_if(s_debug_more, L_DEBUG, "Set UDP read callback for virtual esocket %p (trans_ctx->stream=%p)", 
+            debug_if(s_debug_more, L_DEBUG, "Set UDP read callback for virtual esocket %p (trans_ctx->stream=%p, stored in callbacks.arg)", 
                      l_v_es, l_trans_ctx->stream);
         }
         

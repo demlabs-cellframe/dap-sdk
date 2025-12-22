@@ -170,6 +170,7 @@ typedef struct dap_net_trans_udp_ctx {
     struct sockaddr_storage remote_addr; ///< Remote peer address
     socklen_t remote_addr_len;          ///< Remote address length
     dap_enc_key_t *alice_key;           ///< Client: Alice's KEM key for handshake
+    dap_enc_key_t *handshake_key;       ///< HANDSHAKE key (from Kyber512 shared secret) - used to encrypt/decrypt session key
     void *client_ctx;                   ///< dap_client_t* from stage_prepare (if any)
     dap_stream_t *stream;               ///< Associated stream (back-reference)
 } dap_net_trans_udp_ctx_t;

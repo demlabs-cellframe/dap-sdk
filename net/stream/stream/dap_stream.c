@@ -323,8 +323,10 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
         l_stm->trans_ctx->stream = l_stm;  // Back-reference
     }
     
-    // _inheritor points to trans_ctx for unified access pattern
-    a_esocket->_inheritor = l_stm->trans_ctx;
+    // CRITICAL: _inheritor points to STREAM (not trans_ctx)!
+    // This allows DAP_STREAM() macro to work correctly.
+    // trans_ctx is owned by stream and will be deleted by stream, not by esocket.
+    a_esocket->_inheritor = l_stm;
     dap_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
@@ -604,10 +606,16 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     assert (a_esocket);
 
     dap_stream_t *l_stm = DAP_STREAM(a_esocket);
-    if (l_stm->trans_ctx)
+    
+    // CRITICAL: Clear _inheritor FIRST to prevent use-after-free
+    // Stream will be deleted by dap_stream_delete_unsafe below,
+    // but esocket might still try to access it during cleanup
+    a_esocket->_inheritor = NULL;
+    
+    if (l_stm && l_stm->trans_ctx)
         l_stm->trans_ctx->esocket = NULL;
-    dap_stream_delete_unsafe(l_stm);
-    a_esocket->_inheritor = NULL; // To prevent double free
+    if (l_stm)
+        dap_stream_delete_unsafe(l_stm);
 }
 
 /**

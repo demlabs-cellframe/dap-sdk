@@ -362,8 +362,13 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
             // Transport provided only session_id
             log_it(L_DEBUG, "Processing session_id only, stream_key=%p", l_client_pvt->stream_key);
             
-            // If we already have stream_key (from Handshake), just set ID and finish
-            if (l_client_pvt->stream_key) {
+            // For transports that set stream->session->key directly (e.g. UDP with KDF),
+            // check if we have key in stream (don't copy SALSA2012, it doesn't serialize well)
+            bool l_have_stream_key = l_client_pvt->stream_key != NULL ||
+                                     (a_stream && a_stream->session && a_stream->session->key != NULL);
+            
+            // If we already have stream_key (from Handshake or in stream->session), just set ID and finish
+            if (l_have_stream_key) {
                 log_it(L_INFO, "Stream session established with existing key, ID=%u", a_session_id);
                 l_client_pvt->stream_id = a_session_id;
                 l_client_pvt->stage_status = STAGE_STATUS_DONE;
