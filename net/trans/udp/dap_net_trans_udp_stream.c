@@ -195,10 +195,7 @@ static bool s_udp_client_write_callback(dap_events_socket_t *a_es, void *a_arg) 
 void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     (void)a_arg;
 
-    log_it(L_INFO, ">>> UDP READ CALLBACK ENTRY: a_es=%p, buf_in_size=%zu", a_es, a_es ? a_es->buf_in_size : 0);
-
     if (!a_es || !a_es->buf_in_size) {
-        log_it(L_INFO, ">>> UDP READ CALLBACK: Early exit (no esocket or no data)");
         return;
     }
 
@@ -209,15 +206,13 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // _inheritor may point to client (dap_client_t), not trans_ctx!
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
 
-    log_it(L_INFO, ">>> UDP READ CALLBACK: l_trans_ctx=%p", l_trans_ctx);
-
     if (!l_trans_ctx) {
         log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
     
-    log_it(L_DEBUG, ">>> UDP READ CALLBACK: l_trans_ctx->stream=%p", l_trans_ctx->stream);
+    debug_if(s_debug_more,L_DEBUG, ">>> UDP READ CALLBACK: l_trans_ctx->stream=%p", l_trans_ctx->stream);
     
     if (!l_trans_ctx->stream) {
         log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
@@ -228,17 +223,13 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     dap_stream_t *l_stream = l_trans_ctx->stream;
     
-    log_it(L_INFO, ">>> UDP READ CALLBACK: l_stream=%p, trans=%p", l_stream, l_stream ? l_stream->trans : NULL);
-    
     // Validate stream pointer first
-    log_it(L_INFO, ">>> UDP READ CALLBACK: Checking l_stream...");
     if (!l_stream) {
         log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
     
-    log_it(L_INFO, ">>> UDP READ CALLBACK: l_stream OK, checking trans...");
     // Validate stream->trans before accessing it
     // Check if stream has been deleted (trans would be NULL or invalid)
     if (!l_stream->trans) {
@@ -249,18 +240,12 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
     
-    log_it(L_INFO, ">>> UDP READ CALLBACK: trans OK, checking ops...");
-    
     // Validate trans operations
-    log_it(L_INFO, ">>> UDP READ CALLBACK: Checking trans->ops: trans->ops=%p, read=%p", 
-           l_stream->trans->ops, l_stream->trans->ops ? l_stream->trans->ops->read : NULL);
     if (!l_stream->trans->ops || !l_stream->trans->ops->read) {
         log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
-    
-    log_it(L_INFO, ">>> UDP READ CALLBACK: About to process packets, buf_in_size=%zu", a_es->buf_in_size);
     
     // Process ALL packets in buffer (multiple packets may arrive before callback is called)
     // Don't manually call trans->ops->read - reactor fills buf_in automatically
@@ -274,14 +259,8 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         debug_if(s_debug_more, L_DEBUG, "Processing UDP packet from buf_in, buf_in_size=%zu (iteration %d)", 
                  a_es->buf_in_size, l_iterations);
         
-        // CRITICAL: Log BEFORE calling s_udp_read
-        log_it(L_DEBUG, ">>> CALLBACK: About to call s_udp_read, l_stream=%p, trans=%p", 
-               l_stream, l_stream ? l_stream->trans : NULL);
-        
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
-        
-        log_it(L_DEBUG, ">>> CALLBACK: s_udp_read returned %zd", l_result);
         
         debug_if(s_debug_more, L_DEBUG, "s_udp_read returned %zd, buf_in_size now=%zu", 
                  l_result, a_es->buf_in_size);
@@ -1237,15 +1216,6 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
  */
 static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    // CRITICAL DEBUG: Log BEFORE any checks
-    if (s_debug_more) {
-        log_it(L_DEBUG, ">>> s_udp_read ENTRY: a_stream=%p, a_buffer=%p, a_size=%zu", 
-               a_stream, a_buffer, a_size);
-        if (a_stream) {
-            log_it(L_DEBUG, ">>> s_udp_read: a_stream->trans=%p", a_stream->trans);
-        }
-    }
-    
     if (!a_stream || !a_stream->trans) {
         log_it(L_ERROR, "Invalid arguments for UDP read: stream or trans is NULL");
         return -1;
@@ -1411,13 +1381,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
                     
                     // NEW ARCHITECTURE: Use trans->ops->write (dispatcher)
-                    log_it(L_INFO, ">>> HANDSHAKE: Calling trans->ops->write (trans=%p, ops=%p, write=%p)",
-                           a_stream->trans, a_stream->trans ? a_stream->trans->ops : NULL,
-                           (a_stream->trans && a_stream->trans->ops) ? a_stream->trans->ops->write : NULL);
-                    
                     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
                         ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
-                        log_it(L_INFO, ">>> HANDSHAKE: trans->ops->write returned %zd", l_sent);
                         if (l_sent != (ssize_t)l_resp_total) {
                             log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
                                    l_sent, l_resp_total);
@@ -1425,7 +1390,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                             debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
                         }
                     } else {
-                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL, cannot send handshake response");
+                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
                     }
                     
                     DAP_DELETE(l_resp_pkt);
@@ -1619,8 +1584,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  */
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    log_it(L_INFO, ">>> s_udp_write ENTRY: a_stream=%p, a_data=%p, a_size=%zu", 
-           a_stream, a_data, a_size);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write: a_stream=%p, a_data=%p, a_size=%zu", 
+             a_stream, a_data, a_size);
     
     if (!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP write");
@@ -1652,7 +1617,7 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
     
-    log_it(L_INFO, ">>> s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
     // NEW ARCHITECTURE: Check if we have esocket (client) or need dispatcher (server)
     if (l_ctx->esocket) {

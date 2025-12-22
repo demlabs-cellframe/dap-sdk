@@ -286,8 +286,9 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         // Handshake completed without data to process - transport handled everything
         log_it(L_DEBUG, "Handshake completed via transport protocol, marking stage as done");
         
-        // Copy session encryption key from stream to client_pvt
-        // (For HTTP/WS this is done in s_stream_ctl_response, but for UDP we do it here)
+        // Copy session encryption key from stream to client_pvt (if available)
+        // For UDP: handshake key is established, but session key comes later during SESSION_CREATE
+        // For HTTP/WS: session key is established during handshake
         if (a_stream->session && a_stream->session->key) {
             // Delete old key if present
             if (l_client_pvt->stream_key) {
@@ -302,7 +303,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
                 log_it(L_WARNING, "Failed to clone session encryption key");
             }
         } else {
-            log_it(L_WARNING, "Handshake completed but no session key in stream");
+            log_it(L_DEBUG, "Handshake completed, session key will be established later (UDP multi-stage)");
         }
         
         s_set_stage_status(l_client_pvt, STAGE_STATUS_DONE);
