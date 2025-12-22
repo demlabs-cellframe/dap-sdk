@@ -195,7 +195,10 @@ static bool s_udp_client_write_callback(dap_events_socket_t *a_es, void *a_arg) 
 void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     (void)a_arg;
 
+    log_it(L_INFO, ">>> UDP READ CALLBACK ENTRY: a_es=%p, buf_in_size=%zu", a_es, a_es ? a_es->buf_in_size : 0);
+
     if (!a_es || !a_es->buf_in_size) {
+        log_it(L_INFO, ">>> UDP READ CALLBACK: Early exit (no esocket or no data)");
         return;
     }
 
@@ -206,11 +209,15 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // _inheritor may point to client (dap_client_t), not trans_ctx!
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
 
+    log_it(L_INFO, ">>> UDP READ CALLBACK: l_trans_ctx=%p", l_trans_ctx);
+
     if (!l_trans_ctx) {
         log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
+    
+    log_it(L_DEBUG, ">>> UDP READ CALLBACK: l_trans_ctx->stream=%p", l_trans_ctx->stream);
     
     if (!l_trans_ctx->stream) {
         log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
@@ -220,6 +227,8 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
     
     dap_stream_t *l_stream = l_trans_ctx->stream;
+    
+    log_it(L_DEBUG, ">>> UDP READ CALLBACK: l_stream=%p, trans=%p", l_stream, l_stream ? l_stream->trans : NULL);
     
     // Validate stream pointer first
     if (!l_stream) {
@@ -239,11 +248,15 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
     
     // Validate trans operations
+    log_it(L_INFO, ">>> UDP READ CALLBACK: Checking trans->ops: trans->ops=%p, read=%p", 
+           l_stream->trans->ops, l_stream->trans->ops ? l_stream->trans->ops->read : NULL);
     if (!l_stream->trans->ops || !l_stream->trans->ops->read) {
         log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
+    
+    log_it(L_INFO, ">>> UDP READ CALLBACK: About to process packets, buf_in_size=%zu", a_es->buf_in_size);
     
     // Process ALL packets in buffer (multiple packets may arrive before callback is called)
     // Don't manually call trans->ops->read - reactor fills buf_in automatically
@@ -257,8 +270,14 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         debug_if(s_debug_more, L_DEBUG, "Processing UDP packet from buf_in, buf_in_size=%zu (iteration %d)", 
                  a_es->buf_in_size, l_iterations);
         
+        // CRITICAL: Log BEFORE calling s_udp_read
+        log_it(L_DEBUG, ">>> CALLBACK: About to call s_udp_read, l_stream=%p, trans=%p", 
+               l_stream, l_stream ? l_stream->trans : NULL);
+        
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
+        
+        log_it(L_DEBUG, ">>> CALLBACK: s_udp_read returned %zd", l_result);
         
         debug_if(s_debug_more, L_DEBUG, "s_udp_read returned %zd, buf_in_size now=%zu", 
                  l_result, a_es->buf_in_size);
@@ -1214,10 +1233,22 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
  */
 static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
+    // CRITICAL DEBUG: Log BEFORE any checks
+    if (s_debug_more) {
+        log_it(L_DEBUG, ">>> s_udp_read ENTRY: a_stream=%p, a_buffer=%p, a_size=%zu", 
+               a_stream, a_buffer, a_size);
+        if (a_stream) {
+            log_it(L_DEBUG, ">>> s_udp_read: a_stream->trans=%p", a_stream->trans);
+        }
+    }
+    
     if (!a_stream || !a_stream->trans) {
         log_it(L_ERROR, "Invalid arguments for UDP read: stream or trans is NULL");
         return -1;
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "s_udp_read called: a_stream=%p, a_buffer=%p, a_size=%zu", 
+             a_stream, a_buffer, a_size);
     
     // Get esocket from trans_ctx
     dap_events_socket_t *l_es = NULL;
@@ -1226,8 +1257,11 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         l_es = l_ctx->esocket;
     }
 
+    debug_if(s_debug_more, L_DEBUG, "s_udp_read: l_ctx=%p, l_es=%p, l_es->buf_in=%p, buf_in_size=%zu", 
+             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
+
     if (!l_es || !l_es->buf_in) {
-        debug_if(s_debug_more, L_DEBUG, "UDP read: no esocket or buf_in (l_es=%p, l_ctx=%p)", l_es, l_ctx);
+        debug_if(s_debug_more, L_DEBUG, "UDP read: no esocket or buf_in (l_es=%p, l_ctx=%p) - returning 0", l_es, l_ctx);
         return 0;  // No data available
     }
     
