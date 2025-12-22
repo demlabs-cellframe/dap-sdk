@@ -57,7 +57,7 @@ static inline bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr)
 
 #define DAP_NODE_ADDR_LEN 23
 typedef union dap_node_addr_str {
-    const char s[DAP_NODE_ADDR_LEN];
+    char s[DAP_NODE_ADDR_LEN];
 } dap_node_addr_str_t;
 
 dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address);
