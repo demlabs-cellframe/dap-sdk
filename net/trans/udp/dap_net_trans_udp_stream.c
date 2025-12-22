@@ -1261,11 +1261,71 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         l_es = l_ctx->esocket;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "s_udp_read: l_ctx=%p, l_es=%p, l_es->buf_in=%p, buf_in_size=%zu", 
-             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_read: l_ctx=%p, l_es=%p, l_es->buf_in=%p, buf_in_size=%zu, a_buffer=%p, a_size=%zu", 
+             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0, a_buffer, a_size);
 
-    if (!l_es || !l_es->buf_in) {
-        debug_if(s_debug_more, L_DEBUG, "UDP read: no esocket or buf_in (l_es=%p, l_ctx=%p) - returning 0", l_es, l_ctx);
+    // NEW ARCHITECTURE: Two modes:
+    // 1. CLIENT (l_es != NULL): Read from l_es->buf_in (reactor managed)
+    // 2. SERVER (l_es == NULL): Read from a_buffer (dispatcher passed)
+    
+    if (!l_es) {
+        // SERVER MODE: Use a_buffer passed by dispatcher
+        if (!a_buffer || a_size == 0) {
+            debug_if(s_debug_more, L_DEBUG, "UDP server read: no data passed by dispatcher");
+            return 0;
+        }
+        
+        // Process packet from a_buffer (dispatcher already extracted payload)
+        // For handshake, a_buffer contains the handshake request data
+        // Process it directly - this is server-side handshake processing
+        
+        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+        if (!l_udp_ctx) {
+            log_it(L_ERROR, "Server stream has no UDP context");
+            return -1;
+        }
+        
+        // Server: Process handshake request
+        debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request (%zu bytes)", a_size);
+        void *l_response = NULL;
+        size_t l_response_size = 0;
+        int l_result = s_udp_handshake_process(a_stream, a_buffer, a_size, &l_response, &l_response_size);
+        
+        if (l_result == 0 && l_response && l_response_size > 0) {
+            // Send response via trans->ops->write (dispatcher will use sendto)
+            dap_stream_trans_udp_header_t l_resp_hdr;
+            s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+            
+            size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
+            uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
+            memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
+            memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
+            
+            debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
+            
+            if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+                ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
+                if (l_sent != (ssize_t)l_resp_total) {
+                    log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
+                           l_sent, l_resp_total);
+                } else {
+                    debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
+                }
+            } else {
+                log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
+            }
+            
+            DAP_DELETE(l_resp_pkt);
+            DAP_DELETE(l_response);
+        }
+        
+        return a_size;  // Consumed all dispatcher data
+    }
+    
+    // CLIENT MODE: Use l_es->buf_in (existing logic)
+    if (!l_es->buf_in) {
+        debug_if(s_debug_more, L_DEBUG, "UDP read: no buf_in (l_es=%p, l_ctx=%p) - returning 0", l_es, l_ctx);
         return 0;  // No data available
     }
     
