@@ -1456,15 +1456,25 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
                                     sizeof(l_session_counter), l_udp_ctx->seq_num++, l_sess_id);
                 
-                // Send header
-                dap_events_socket_write_unsafe(l_es, &l_resp_hdr, sizeof(l_resp_hdr));
-                
-                // Send counter as payload (8 bytes, no encryption needed - it's not secret)
+                // Prepare response packet (header + counter)
+                uint8_t l_session_resp[sizeof(l_resp_hdr) + sizeof(uint64_t)];
+                memcpy(l_session_resp, &l_resp_hdr, sizeof(l_resp_hdr));
                 uint64_t l_counter_be = htobe64(l_session_counter);
-                dap_events_socket_write_unsafe(l_es, &l_counter_be, sizeof(l_counter_be));
+                memcpy(l_session_resp + sizeof(l_resp_hdr), &l_counter_be, sizeof(l_counter_be));
                 
-                debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
-                         l_session_counter, l_sess_id);
+                // NEW ARCHITECTURE: Use trans->ops->write (dispatcher)
+                if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+                    ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_session_resp, sizeof(l_session_resp));
+                    if (l_sent != (ssize_t)sizeof(l_session_resp)) {
+                        log_it(L_ERROR, "Server: failed to send SESSION_CREATE response (%zd of %zu bytes)", 
+                               l_sent, sizeof(l_session_resp));
+                    } else {
+                        debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
+                                 l_session_counter, l_sess_id);
+                    }
+                } else {
+                    log_it(L_ERROR, "Server: no write method in trans for SESSION_CREATE response");
+                }
             } else {
                 // Client: Duplicate SESSION_CREATE response (callback already called)
                 debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
@@ -1480,22 +1490,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return 0;
     }
     
-    // Fallback for RAW Stream Packets (Data)
-    size_t l_available = l_es->buf_in_size;
-    size_t l_copy_size = (l_available < a_size) ? l_available : a_size;
-    
-    if (l_copy_size > 0) {
-        memcpy(a_buffer, l_es->buf_in, l_copy_size);
-        // Shift remaining data
-        if (l_copy_size < l_available) {
-            memmove(l_es->buf_in, 
-                    l_es->buf_in + l_copy_size,
-                    l_available - l_copy_size);
-        }
-        l_es->buf_in_size -= l_copy_size;
-    }
-    
-    return (ssize_t)l_copy_size;
+    return 0;
 }
 
 /**
