@@ -239,7 +239,11 @@ static int s_retry_handshake_with_fallback(dap_client_pvt_t *a_client_pvt)
 
 static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, size_t a_data_size, int a_error)
 {
+    log_it(L_DEBUG, "Handshake callback wrapper called: stream=%p, data=%p, size=%zu, error=%d",
+           a_stream, a_data, a_data_size, a_error);
+    
     if (!a_stream) {
+        log_it(L_WARNING, "Handshake callback: stream is NULL");
         return;
     }
     
@@ -248,9 +252,11 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
     // Use trans-specific method to get client context if available
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context) {
         l_client = (dap_client_t*)a_stream->trans->ops->get_client_context(a_stream);
+        log_it(L_DEBUG, "Handshake callback: got client via get_client_context: %p", l_client);
     } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket->_inheritor) {
         // Default: _inheritor directly points to dap_client_t
         l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
+        log_it(L_DEBUG, "Handshake callback: got client via esocket->_inheritor: %p", l_client);
     }
     
     if (!l_client) {

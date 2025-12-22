@@ -642,12 +642,15 @@ static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
 }
 
 static dap_net_trans_ctx_t *s_udp_get_or_create_ctx(dap_stream_t *a_stream) {
+    log_it(L_INFO, "s_udp_get_or_create_ctx: stream=%p, trans_ctx=%p", a_stream, a_stream ? a_stream->trans_ctx : NULL);
     if (!a_stream->trans_ctx) {
+        log_it(L_INFO, "s_udp_get_or_create_ctx: Creating NEW trans_ctx");
         a_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
         if (a_stream->trans) {
             a_stream->trans_ctx->trans = a_stream->trans;
         }
     }
+    log_it(L_INFO, "s_udp_get_or_create_ctx: Returning trans_ctx=%p", a_stream->trans_ctx);
     return a_stream->trans_ctx;
 }
 
@@ -677,7 +680,10 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "Failed to get trans_ctx");
         return -1;
     }
+    
+    log_it(L_INFO, "UDP handshake_init: Setting callback %p for stream %p", a_callback, a_stream);
     l_ctx->handshake_cb = a_callback;
+    log_it(L_INFO, "UDP handshake_init: Callback set, l_ctx->handshake_cb=%p", l_ctx->handshake_cb);
     
     // Get or create UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
@@ -1355,11 +1361,12 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  debug_if(s_debug_more, L_DEBUG, "Client: processing handshake response, calling s_udp_handshake_response");
                  int l_result = s_udp_handshake_response(a_stream, l_payload, l_payload_size);
                  
-                 debug_if(s_debug_more, L_DEBUG, "Handshake response processed, result=%d, calling callback", l_result);
-                 // Call handshake callback with result (no data, just status)
-                 l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
-                 l_ctx->handshake_cb = NULL;
-                 debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
+                debug_if(s_debug_more, L_DEBUG, "Handshake response processed, result=%d, calling callback", l_result);
+                // Call handshake callback with result (no data, just status)
+                log_it(L_INFO, "UDP: About to call handshake_cb=%p with result=%d", l_ctx->handshake_cb, l_result);
+                l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
+                l_ctx->handshake_cb = NULL;
+                debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
              } else {
                  // Server: Received Handshake Request (Alice Key)
                  debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request");
