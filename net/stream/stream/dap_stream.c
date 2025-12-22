@@ -908,21 +908,6 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     }
     debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
               l_processed_size, (size_t)(l_end - l_es->buf_in) );
-    
-    // TEMPORARY DEBUG: always log if no packets processed but data was present
-    if (!l_processed_size && l_es->buf_in_size > 0) {
-        log_it(L_WARNING, "dap_stream_data_proc_read: %zu bytes in buf_in but 0 processed (no stream signature found?)", 
-               l_es->buf_in_size);
-        // Dump first 32 bytes for analysis
-        if (l_es->buf_in_size >= 32) {
-            char l_hex[97] = {0};
-            for (int i = 0; i < 32; i++) {
-                sprintf(l_hex + i*3, "%02x ", l_es->buf_in[i]);
-            }
-            log_it(L_WARNING, "First 32 bytes: %s", l_hex);
-        }
-    }
-    
     return l_processed_size;
 }
 
@@ -936,13 +921,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    log_it(L_INFO, "s_stream_proc_pkt_in: packet type=0x%02X size=%u", 
+    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: packet type=0x%02X size=%u", 
            a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
 
-        log_it(L_INFO, "Processing FRAGMENT_PACKET, size=%u", a_pkt->hdr.size);
+        debug_if(s_dump_packet_headers, L_INFO, "Processing FRAGMENT_PACKET, size=%u", a_pkt->hdr.size);
 
         size_t l_fragm_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
@@ -952,20 +937,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         if(l_dec_pkt_size == 0) {
             debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu", a_pkt_size);
-            log_it(L_WARNING, "Fragment decode failed: size=0");
             l_is_clean_fragments = true;
             break;
         }
         if(l_dec_pkt_size != l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t)) {
             debug_if(s_dump_packet_headers, L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu",
                      l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t), l_dec_pkt_size);
-            log_it(L_WARNING, "Fragment size mismatch: expected=%zu actual=%zu",
-                   l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t), l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
 
-        log_it(L_INFO, "Fragment decoded: size=%zu mem_shift=%u filled=%zu", 
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%zu mem_shift=%u filled=%zu", 
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
@@ -1019,7 +1001,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         if (!s_detect_loose_packet(a_stream)) {
             dap_stream_ch_t * l_ch = NULL;
             
-            log_it(L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)", 
+            debug_if(s_dump_packet_headers, L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)", 
                    (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.id, a_stream->channel_count);
             
             for(size_t i=0;i<a_stream->channel_count;i++){
@@ -1033,7 +1015,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(l_ch) {
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
-                    log_it(L_INFO, "Calling channel '%c' packet_in_callback: data_size=%u type=0x%02X",
+                    debug_if(s_dump_packet_headers, L_INFO, "Calling channel '%c' packet_in_callback: data_size=%u type=0x%02X",
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);

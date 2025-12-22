@@ -794,6 +794,24 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
+    // DEBUG: Log Alice's public key that we sent (first 16 bytes)
+    if (l_udp_ctx->alice_key->pub_key_data && l_udp_ctx->alice_key->pub_key_data_size >= 16) {
+        char l_hex[49] = {0};
+        for (int i = 0; i < 16; i++) {
+            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_udp_ctx->alice_key->pub_key_data)[i]);
+        }
+        log_it(L_INFO, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
+    }
+    
+    // DEBUG: Log received ciphertext (first 16 bytes)
+    if (a_data && a_data_size >= 16) {
+        char l_hex[49] = {0};
+        for (int i = 0; i < 16; i++) {
+            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)a_data)[i]);
+        }
+        log_it(L_INFO, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
+    }
+    
     dap_enc_key_t *l_alice_key = l_udp_ctx->alice_key;
     log_it(L_DEBUG, "UDP handshake response: alice_key=%p, dec_na=%p", 
            l_alice_key, l_alice_key->dec_na);
@@ -807,19 +825,17 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     if (l_alice_key->type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
         log_it(L_DEBUG, "Calling gen_alice_shared_key with %zu byte ciphertext", a_data_size);
         
-        // The function signature expects:
-        // dap_enc_kyber512_gen_alice_shared_key(key, priv_data, cypher_size, cypher_msg)
-        // But looking at server side, it just passes the key object, not priv_data separately
-        // Let's pass the key's priv_key_data directly (it should contain the secret key)
+        // CRITICAL: gen_alice_shared_key stores shared secret in alice_key->shared_key, NOT priv_key_data!
+        // Second parameter is unused (UNUSED_ARG in implementation), pass NULL
         l_shared_key_size = dap_enc_kyber512_gen_alice_shared_key(l_alice_key, 
-                                                                    l_alice_key->priv_key_data,
+                                                                    NULL,  // unused
                                                                     a_data_size,
                                                                     (uint8_t*)a_data);
-        l_shared_key = l_alice_key->priv_key_data; // Shared key is stored here after call
+        l_shared_key = l_alice_key->shared_key;  // CORRECT: shared_key, not priv_key_data!
         
         log_it(L_DEBUG, "gen_alice_shared_key returned: shared_key_size=%zu", l_shared_key_size);
         
-        if (l_shared_key_size == 0) {
+        if (l_shared_key_size == 0 || !l_shared_key) {
             log_it(L_ERROR, "Failed to derive shared key from Bob's response");
             return -1;
         }
@@ -829,6 +845,15 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     }
     
     log_it(L_DEBUG, "UDP handshake: derived shared secret (%zu bytes)", l_shared_key_size);
+    
+    // DEBUG: Log first 16 bytes of shared secret
+    if (l_shared_key && l_shared_key_size >= 16) {
+        char l_hex[49] = {0};
+        for (int i = 0; i < 16; i++) {
+            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
+        }
+        log_it(L_INFO, "CLIENT shared secret (first 16 bytes): %s", l_hex);
+    }
     
     // Create session and set encryption key
     if (!a_stream->session) {
@@ -852,7 +877,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "UDP handshake complete: session encryption established");
+    log_it(L_INFO, "UDP handshake complete: CLIENT session encryption established");
     return 0;
 }
 
@@ -870,6 +895,15 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
 
     log_it(L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
     
+    // DEBUG: Log Alice's public key (first 16 bytes)
+    if (a_data && a_data_size >= 16) {
+        char l_hex[49] = {0};
+        for (int i = 0; i < 16; i++) {
+            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)a_data)[i]);
+        }
+        log_it(L_INFO, "SERVER received Alice public key (first 16 bytes): %s", l_hex);
+    }
+    
     // Generate ephemeral Bob key (Kyber512)
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     if (!l_bob_key) {
@@ -884,11 +918,11 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
     
     if (l_bob_key->gen_bob_shared_key) {
         l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_data, a_data_size, &l_bob_pub);
-        l_shared_key = l_bob_key->priv_key_data;
+        l_shared_key = l_bob_key->shared_key;  // CORRECT: shared_key, not priv_key_data!
         l_bob_pub_size = l_bob_key->pub_key_data_size;
         
         // Check if key generation succeeded
-        if (!l_bob_pub || l_shared_key_size == 0) {
+        if (!l_bob_pub || l_shared_key_size == 0 || !l_shared_key) {
             log_it(L_ERROR, "Failed to generate shared key from client data (invalid public key?)");
             dap_enc_key_delete(l_bob_key);
             return -1;
@@ -905,9 +939,30 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
     }
     if (a_stream->session) {
         if (a_stream->session->key) dap_enc_key_delete(a_stream->session->key);
+        
+        // DEBUG: Log Bob's ciphertext (first 16 bytes)
+        if (l_bob_pub && l_bob_pub_size >= 16) {
+            char l_hex[49] = {0};
+            for (int i = 0; i < 16; i++) {
+                sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_bob_pub)[i]);
+            }
+            log_it(L_INFO, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
+        }
+        
+        // DEBUG: Log first 16 bytes of shared secret
+        if (l_shared_key && l_shared_key_size >= 16) {
+            char l_hex[49] = {0};
+            for (int i = 0; i < 16; i++) {
+                sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
+            }
+            log_it(L_INFO, "SERVER shared secret (first 16 bytes): %s", l_hex);
+        }
+        
         // Create session key from shared secret
         // Using SALSA2012 for session encryption
         a_stream->session->key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, l_shared_key, l_shared_key_size, NULL, 0, 32);
+        
+        log_it(L_INFO, "SERVER session encryption key created (stream=%p, key=%p)", a_stream, a_stream->session->key);
     }
     
     // Prepare JSON response for client's s_enc_init_response

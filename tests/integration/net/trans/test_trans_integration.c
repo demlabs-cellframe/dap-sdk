@@ -723,7 +723,7 @@ int main(void)
                                  "[stream]\n"
                                  "debug_more=true\n"
                                  "debug_channels=false\n"
-                                 "debug_dump_stream_headers=false\n"
+                                 "debug_dump_stream_headers=true\n"
                                  "[stream_udp]\n"
                                  "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
