@@ -357,7 +357,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                l_packet_offset, l_packet_size);
         
         // Process stream data (encrypted channel packets)
-        dap_stream_data_proc_read(l_session->stream);
+        size_t l_processed = dap_stream_data_proc_read(l_session->stream);
+        
+        debug_if(s_debug_more, L_DEBUG, "Processed %zu bytes of stream data from shared buffer", l_processed);
         
         // Restore original buf_in pointer
         l_stream_es->buf_in = l_orig_buf_in;
