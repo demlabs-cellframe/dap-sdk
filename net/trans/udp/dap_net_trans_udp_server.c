@@ -368,87 +368,40 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             l_stream_es->callbacks.write_callback(l_stream_es, l_stream_es->callbacks.arg);
         }
         
-        // Tail detection and shrink logic for shared buffer
-        // Check if this session is the last one to consume data (tail reader)
-        bool l_is_tail = true;
-        size_t l_min_consumed_offset = l_packet_offset + l_packet_size;
+        // SIMPLIFIED: Shrink immediately after processing THIS session's packet
+        // Multi-session tail detection deferred - causes reactor starvation
+        // Each encrypted packet is independent, shrink right away
+        size_t l_consumed = l_packet_offset + l_packet_size;
         
-        // Scan all sessions to find minimum consumed offset
-        pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
-        udp_session_entry_t *l_check_session, *l_check_tmp;
-        HASH_ITER(hh, l_udp_srv->sessions, l_check_session, l_check_tmp) {
-            // Skip current session
-            if (l_check_session == l_session) {
-                continue;
-            }
-            
-            // Skip sessions that are still processing
-            if (l_check_session->processing_in_progress) {
-                l_is_tail = false;
-                break;
-            }
-            
-            // Find minimum consumed position across all sessions
-            size_t l_session_consumed_end = l_check_session->last_read_offset + l_check_session->last_read_size;
-            if (l_session_consumed_end < l_min_consumed_offset) {
-                l_min_consumed_offset = l_session_consumed_end;
-                l_is_tail = false;  // Another session hasn't consumed as much
-            }
-        }
-        pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+        // Upgrade to write lock for shrinking
+        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+        pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
         
-        // If this is tail reader, perform shared buffer shrink
-        if (l_is_tail && l_min_consumed_offset > 0) {
+        // Shrink shared buffer immediately
+        if (l_consumed < l_udp_srv->shared_buf_size) {
+            size_t l_remaining = l_udp_srv->shared_buf_size - l_consumed;
+            memmove(l_udp_srv->shared_buf, 
+                   l_udp_srv->shared_buf + l_consumed, 
+                   l_remaining);
+            l_udp_srv->shared_buf_size = l_remaining;
+            a_es->buf_in_size = l_remaining;
+            
             debug_if(s_debug_more, L_DEBUG, 
-                   "Tail reader detected: shrinking shared buffer by %zu bytes (consumed up to offset %zu)", 
-                   l_min_consumed_offset, l_min_consumed_offset);
-            
-            // Upgrade to write lock for shrinking
-            pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
-            pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
-            
-            // Shrink shared buffer by moving unconsumed data to beginning
-            if (l_min_consumed_offset < l_udp_srv->shared_buf_size) {
-                size_t l_remaining = l_udp_srv->shared_buf_size - l_min_consumed_offset;
-                memmove(l_udp_srv->shared_buf, 
-                       l_udp_srv->shared_buf + l_min_consumed_offset, 
-                       l_remaining);
-                l_udp_srv->shared_buf_size = l_remaining;
-                a_es->buf_in_size = l_remaining;
-                
-                debug_if(s_debug_more, L_DEBUG, 
-                       "Shared buffer shrinked: %zu bytes remaining", l_remaining);
-                
-                // Update all session offsets (subtract consumed amount)
-                pthread_rwlock_rdlock(&l_udp_srv->sessions_lock);
-                HASH_ITER(hh, l_udp_srv->sessions, l_check_session, l_check_tmp) {
-                    if (l_check_session->last_read_offset >= l_min_consumed_offset) {
-                        l_check_session->last_read_offset -= l_min_consumed_offset;
-                    } else {
-                        l_check_session->last_read_offset = 0;
-                    }
-                }
-                pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-            } else {
-                // All data consumed, clear buffer
-                l_udp_srv->shared_buf_size = 0;
-                a_es->buf_in_size = 0;
-                
-                debug_if(s_debug_more, L_DEBUG, "Shared buffer fully consumed, cleared");
-            }
-            
-            pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+                   "Shared buffer shrinked immediately: consumed %zu bytes, %zu bytes remaining", 
+                   l_consumed, l_remaining);
         } else {
-            // Not tail reader, just release read lock
-            pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+            // All data consumed, clear buffer
+            l_udp_srv->shared_buf_size = 0;
+            a_es->buf_in_size = 0;
             
-            debug_if(s_debug_more, L_DEBUG, 
-                   "Not tail reader (is_tail=%d, min_consumed=%zu), keeping shared buffer intact", 
-                   l_is_tail, l_min_consumed_offset);
+            debug_if(s_debug_more, L_DEBUG, "Shared buffer fully consumed, cleared");
         }
         
-        // Clear listener socket buffer marker (data processed or queued)
-        a_es->buf_in_size = 0;
+        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
+        
+        // NOTE: Do NOT set buf_in_size = 0 here!
+        // Shrink logic already set buf_in_size = remaining_bytes
+        // This allows reactor to process next packets immediately
         return;
     }
     
