@@ -569,23 +569,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             debug_if(s_debug_more, L_DEBUG, "Dispatching UDP HANDSHAKE packet to stream %p (session 0x%lx)", 
                      l_stream, l_session_id);
             
-            // Call stream's trans read method directly with data from listener's buf_in
+            // Call stream's trans read method directly with payload from listener's buf_in
             // Stream will process handshake internally via s_udp_read()
             if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                // Temporarily set trans_ctx->esocket to listener (for address info)
-                dap_events_socket_t *l_saved_es = NULL;
-                if (l_stream->trans_ctx) {
-                    l_saved_es = l_stream->trans_ctx->esocket;
-                    l_stream->trans_ctx->esocket = a_es;  // Temporarily use listener esocket
-                }
-                
-                // Read method will consume data from a_es->buf_in
-                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
-                
-                // Restore original esocket (NULL in new architecture)
-                if (l_stream->trans_ctx) {
-                    l_stream->trans_ctx->esocket = l_saved_es;
-                }
+                // Pass payload directly to stream's read method
+                // Server streams have l_ctx->esocket == NULL, so they will use a_buffer instead
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, l_payload, l_payload_len);
                 
                 debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
                 
