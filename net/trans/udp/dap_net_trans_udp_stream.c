@@ -210,6 +210,17 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
 
+    // Get local port for this socket
+    struct sockaddr_in l_local_addr;
+    socklen_t l_local_addr_len = sizeof(l_local_addr);
+    uint16_t l_local_port = 0;
+    if (getsockname(a_es->fd, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
+        l_local_port = ntohs(l_local_addr.sin_port);
+    }
+    
+    log_it(L_INFO, "UDP read callback: fd=%d (local_port=%u), buf_in_size=%zu", 
+           a_es->fd, l_local_port, a_es->buf_in_size);
+
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
@@ -1654,10 +1665,17 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
     
+    log_it(L_INFO, "s_udp_write: stream=%p, l_ctx=%p, l_ctx->esocket=%p (fd=%d)", 
+           a_stream, l_ctx, l_ctx->esocket, l_ctx->esocket ? l_ctx->esocket->fd : -1);
+    
     debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
-    // NEW ARCHITECTURE: Check if we have esocket (client) or need dispatcher (server)
-    if (l_ctx->esocket) {
+    // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER by presence of remote_addr in UDP context
+    // Server-side streams have remote_addr set (for sendto), client streams don't
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+    bool l_is_server = (l_udp_ctx && l_udp_ctx->remote_addr.ss_family != 0);
+    
+    if (!l_is_server && l_ctx->esocket) {
         // CLIENT: Has own physical esocket, use it directly
         debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
                  a_size, l_ctx->esocket, l_ctx->esocket->fd);
@@ -1669,11 +1687,9 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         }
         return l_sent;
     } else {
-        // SERVER: No esocket (dispatcher architecture)
-        // Use listener's physical esocket + sendto with remote_addr
+        // SERVER: Use listener's physical esocket + sendto with remote_addr
         
         // Get UDP per-stream context for remote_addr
-        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
         if (!l_udp_ctx) {
             log_it(L_ERROR, "Server stream has no UDP context for write");
             return -1;
@@ -1684,30 +1700,34 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
             return -1;
         }
         
-        // Get listener esocket from trans
-        if (!l_priv->listener_esocket) {
+        // Get listener esocket - may be in l_ctx->esocket (temporarily) or in trans
+        dap_events_socket_t *l_listener_es = l_ctx->esocket ? l_ctx->esocket : l_priv->listener_esocket;
+        if (!l_listener_es) {
             log_it(L_ERROR, "Server trans has no listener esocket for write dispatcher");
             return -1;
         }
         
-        int l_fd = l_priv->listener_esocket->fd;
+        int l_fd = l_listener_es->fd;
         if (l_fd < 0) {
             log_it(L_ERROR, "Listener esocket has invalid fd");
             return -1;
         }
         
         // Send via sendto with remote address
+        struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
+        uint16_t l_remote_port = ntohs(l_addr_in->sin_port);
+        
         ssize_t l_sent = sendto(l_fd, a_data, a_size, 0,
                                 (struct sockaddr*)&l_udp_ctx->remote_addr,
                                 l_udp_ctx->remote_addr_len);
         
         if (l_sent < 0) {
-            log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d)", strerror(errno), l_fd);
+            log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d, remote_port=%u)", 
+                   strerror(errno), l_fd, l_remote_port);
             return -1;
         }
         
-        debug_if(s_debug_more, L_DEBUG, "UDP write (server): sent %zd bytes via sendto (fd=%d)", 
-                 l_sent, l_fd);
+        log_it(L_INFO, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
         
         return l_sent;
     }
@@ -1856,6 +1876,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
+    }
+    
+    // Get local port assigned by OS
+    struct sockaddr_in l_local_addr;
+    socklen_t l_local_addr_len = sizeof(l_local_addr);
+    if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
+        log_it(L_INFO, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
     }
     
     // For UDP: create stream early and return it (stream will be reused for all operations)
