@@ -362,6 +362,45 @@ void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, cons
     l_item->val.val_str = dap_strdup(a_value);
 }
 
+void dap_config_set_item_str_array(dap_config_t *a_config, const char *a_section, const char *a_item_name,
+                                   const char **a_values, uint16_t a_count)
+{
+    if (!a_config || !a_section || !a_item_name)
+        return;
+
+    // Use same format as dap_config_get_item: "section:item_name"
+    char *l_name = dap_strdup_printf("%s:%s", a_section, a_item_name);
+    // Replace dashes with underscores (same as dap_config_get_item)
+    for (char *c = l_name; *c; ++c) {
+        if (*c == '-')
+            *c = '_';
+    }
+
+    dap_config_item_t *l_item = NULL;
+    HASH_FIND_STR(a_config->items, l_name, l_item);
+
+    if (l_item) {
+        dap_config_item_del(l_item, false);
+    } else {
+        l_item = DAP_NEW_Z(dap_config_item_t);
+        l_item->name = l_name;
+        HASH_ADD_KEYPTR(hh, a_config->items, l_item->name, strlen(l_item->name), l_item);
+    }
+
+    l_item->type = DAP_CONFIG_ITEM_ARRAY;
+    if (!a_values || a_count == 0) {
+        l_item->val.val_arr = DAP_NEW_Z_COUNT(char*, 1);
+        return;
+    }
+
+    char **l_vals = DAP_NEW_Z_COUNT(char*, a_count + 1);
+    for (uint16_t i = 0; i < a_count; ++i) {
+        l_vals[i] = dap_strdup(a_values[i] ? a_values[i] : "");
+    }
+    l_vals[a_count] = NULL;
+    l_item->val.val_arr = l_vals;
+}
+
 dap_config_t *dap_config_open(const char* a_file_path) {
     if (!a_file_path || !a_file_path[0]) {
         log_it(L_ERROR, "Empty config name!");
@@ -689,4 +728,3 @@ void dap_config_deinit() {
     }
     s_parser_registry = NULL;
 }
-
