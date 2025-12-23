@@ -90,8 +90,14 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     }
     
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
+    
+    // NEW ARCHITECTURE: Use trans->ops->write if available (for UDP dispatcher)
+    // Fall back to direct esocket write for compatibility
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+        return a_stream->trans->ops->write(a_stream, s_pkt_buf, l_full_size);
+    } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
         return dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, s_pkt_buf, l_full_size);
+    }
     return 0;
 }
 

@@ -210,17 +210,6 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
 
-    // Get local port for this socket
-    struct sockaddr_in l_local_addr;
-    socklen_t l_local_addr_len = sizeof(l_local_addr);
-    uint16_t l_local_port = 0;
-    if (getsockname(a_es->fd, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        l_local_port = ntohs(l_local_addr.sin_port);
-    }
-    
-    log_it(L_INFO, "UDP read callback: fd=%d (local_port=%u), buf_in_size=%zu", 
-           a_es->fd, l_local_port, a_es->buf_in_size);
-
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
@@ -1665,9 +1654,6 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
     
-    log_it(L_INFO, "s_udp_write: stream=%p, l_ctx=%p, l_ctx->esocket=%p (fd=%d)", 
-           a_stream, l_ctx, l_ctx->esocket, l_ctx->esocket ? l_ctx->esocket->fd : -1);
-    
     debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
     // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER by presence of remote_addr in UDP context
@@ -1727,7 +1713,7 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
             return -1;
         }
         
-        log_it(L_INFO, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
+        debug_if(s_debug_more, L_DEBUG, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
         
         return l_sent;
     }
