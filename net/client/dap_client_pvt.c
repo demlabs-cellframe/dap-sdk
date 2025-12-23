@@ -324,8 +324,10 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 // Session create callback wrapper
 static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error)
 {
-    log_it(L_DEBUG, "Session create callback wrapper called: stream=%p, session_id=%u, data=%p, size=%zu, error=%d",
-           a_stream, a_session_id, a_response_data, a_response_size, a_error);
+    dap_events_socket_t *l_es = a_stream->trans_ctx ? a_stream->trans_ctx->esocket : NULL;
+    int l_fd = l_es ? l_es->socket : -1;
+    log_it(L_INFO, "Session create callback: stream=%p, session_id=%u, esocket=%p (fd=%d), data=%p, size=%zu, error=%d",
+           a_stream, a_session_id, l_es, l_fd, a_response_data, a_response_size, a_error);
     
     if (!a_stream || !a_stream->trans_ctx) {
         log_it(L_ERROR, "Session create callback: invalid stream or trans_ctx");
@@ -346,8 +348,12 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
     
     dap_client_pvt_t *l_client_pvt = l_client ? DAP_CLIENT_PVT(l_client) : NULL;
     if (!l_client_pvt) {
+        log_it(L_WARNING, "Session create callback: no client_pvt found for stream %p", a_stream);
         return;
     }
+    
+    log_it(L_INFO, "Session create callback: found client=%p for stream=%p with session_id=%u", 
+           l_client, a_stream, a_session_id);
     
     if (a_error != 0) {
         log_it(L_ERROR, "Session create failed with error: %d", a_error);

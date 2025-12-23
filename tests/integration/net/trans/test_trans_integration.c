@@ -278,7 +278,7 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
         return false;
     }
     
-    log_it(L_DEBUG, "  Waiting for client %p to complete handshake...\n", (void*)a_client);
+    log_it(L_INFO, "  Waiting for client %p to complete handshake...", (void*)a_client);
     
     dap_client_stage_t l_last_stage = STAGE_UNDEFINED;
     dap_client_stage_status_t l_last_status = STAGE_STATUS_NONE;
@@ -294,15 +294,15 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
         // Print stage changes and status updates
         if (l_stage != l_last_stage || l_status != l_last_status) {
             uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
-            printf("  Client stage: %d (status: %d, elapsed: %llu ms)\n", 
-                   l_stage, l_status, (unsigned long long)l_elapsed);
+            printf("  Client %p stage: %d (status: %d, elapsed: %llu ms)\n", 
+                   (void*)a_client, l_stage, l_status, (unsigned long long)l_elapsed);
             l_last_stage = l_stage;
             l_last_status = l_status;
         }
         
         // Check for error condition - fail fast
         if (l_status == STAGE_STATUS_ERROR) {
-            printf("  Client stage error at stage %d\n", l_stage);
+            printf("  Client %p stage error at stage %d\n", (void*)a_client, l_stage);
             return false;
         }
         
@@ -310,6 +310,8 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
         if (l_stage == STAGE_STREAM_STREAMING && 
             (l_status == STAGE_STATUS_COMPLETE || 
              (l_status == STAGE_STATUS_IN_PROGRESS && dap_client_get_trans_type(a_client) == DAP_NET_TRANS_UDP_BASIC))) {
+            log_it(L_INFO, "Client %p reached STREAM_STREAMING with status %d - SUCCESS!", 
+                   (void*)a_client, l_status);
             l_success = true;
             break;  // Exit immediately on success
         }

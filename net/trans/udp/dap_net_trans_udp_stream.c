@@ -1193,11 +1193,6 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     }
     dap_events_socket_t *l_es = l_ctx->esocket;
     
-    static __thread uint64_t s_session_create_write_counter = 0;
-    s_session_create_write_counter++;
-    log_it(L_INFO, "SESSION_CREATE write #%lu for esocket %p (total calls to s_udp_session_create)", 
-           s_session_create_write_counter, l_es);
-    
     size_t l_sent = dap_events_socket_write_unsafe(l_es, &l_header, l_packet_size);
     
     if (l_sent != l_packet_size) {
@@ -1891,7 +1886,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    log_it(L_INFO, "s_udp_stage_prepare: Set callbacks.arg=%p (trans_ctx) for esocket %p", l_ctx, l_es);
+    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p", 
+           l_es, l_es->socket, l_stream, l_ctx);
     
     // Create UDP per-stream context and store client_ctx
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
