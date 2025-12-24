@@ -69,11 +69,14 @@ extern "C" {
 extern dap_config_t *g_configs_table;
 #endif
 extern dap_config_t *g_config;
+void dap_config_set_global(dap_config_t *a_config);
 
 int dap_config_init(const char*);
 dap_config_t *dap_config_open(const char*);
 dap_config_t *dap_config_create_empty(void);
 void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_value);
+void dap_config_set_item_str_array(dap_config_t *a_config, const char *a_section, const char *a_item_name,
+                                   const char **a_values, uint16_t a_count);
 
 void dap_config_close(dap_config_t*);
 void dap_config_deinit();

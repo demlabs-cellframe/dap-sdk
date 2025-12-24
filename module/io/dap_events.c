@@ -400,10 +400,19 @@ pthread_t       l_tid;
         return 0;
     }
 
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        pthread_join(s_threads_id[i] , NULL );
+    if (!s_threads_id) {
+        log_it(L_WARNING, "dap_events_wait(): Worker threads have not been started; nothing to join");
+    } else {
+        for( uint32_t i = 0; i < s_threads_count; i++ ) {
+            pthread_join(s_threads_id[i] , NULL );
+        }
+        DAP_DEL_Z(s_threads_id);
+        s_threads_id = NULL;
     }
-    DAP_DEL_Z(s_threads_id);
+    // Mark as stopped and free workers after threads are joined
+    s_workers_init = 0;
+    DAP_DEL_Z(s_workers);
+    s_workers = NULL;
     return 0;
 }
 
@@ -418,11 +427,16 @@ void dap_events_stop_all( )
         return;
     }
 
-    s_workers_init = 0;
+    if (!s_workers) {
+        log_it(L_WARNING, "dap_events_stop_all(): workers array is NULL");
+        return;
+    }
+
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        if (!s_workers[i] || !s_workers[i]->context || !s_workers[i]->context->event_exit)
+            continue;
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
-    DAP_DEL_Z(s_workers);
 }
 
 
