@@ -452,7 +452,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
  */
 dap_events_socket_t * dap_events_socket_create_type_pipe(dap_worker_t *a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags)
 {
-    dap_events_socket_t *l_es = dap_context_create_pipe(NULL, a_callback, a_flags);
+    dap_events_socket_t *l_es = dap_context_create_pipe(a_w ? a_w->context : NULL, a_callback, a_flags);
     // If no worker - don't assign
     if (a_w)
         dap_events_socket_assign_on_worker(l_es, a_w);
@@ -545,7 +545,7 @@ static void s_socket_type_queue_ptr_input_callback_delete(dap_events_socket_t * 
  */
 dap_events_socket_t * dap_events_socket_create_type_queue_ptr(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback)
 {
-    dap_events_socket_t * l_es = dap_context_create_queue(NULL, a_callback);
+    dap_events_socket_t * l_es = dap_context_create_queue(a_w ? a_w->context : NULL, a_callback);
     assert(l_es);
     // If no worker - don't assign
     if ( a_w)
@@ -679,7 +679,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
  */
 dap_events_socket_t * dap_events_socket_create_type_event(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback)
 {
-    dap_events_socket_t * l_es = dap_context_create_event(NULL, a_callback);
+    dap_events_socket_t * l_es = dap_context_create_event(a_w ? a_w->context : NULL, a_callback);
     // If no worker - don't assign
     if ( a_w)
         dap_events_socket_assign_on_worker(l_es,a_w);

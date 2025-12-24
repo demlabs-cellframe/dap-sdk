@@ -84,6 +84,7 @@ target_include_directories(dap_sdk_interface PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/module/crypto/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/net/common/include
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src
 )
 
