@@ -1074,6 +1074,16 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         }
     } else {
         log_it(L_DEBUG, "MDBX: Group '%s' found via s_get_db_ctx_for_group (existing DBI)", a_store_obj->group);
+        /* Check if group is registered in master DBI, if not - register it (fix for orphaned DBIs) */
+        MDBX_val l_master_key = { .iov_base = (void*)a_store_obj->group, .iov_len = strlen(a_store_obj->group) + 1 };
+        MDBX_val l_master_data = l_master_key;
+        int l_master_rc = mdbx_put(a_txn, s_db_master_dbi, &l_master_key, &l_master_data, MDBX_NOOVERWRITE);
+        if (l_master_rc == MDBX_SUCCESS) {
+            log_it(L_WARNING, "MDBX: Orphaned DBI detected! Registered group '%s' in master DBI", a_store_obj->group);
+        } else if (l_master_rc != MDBX_KEYEXIST) {
+            log_it(L_ERROR, "MDBX: Failed to check/register group '%s' in master DBI: (%d) %s", 
+                   a_store_obj->group, l_master_rc, mdbx_strerror(l_master_rc));
+        }
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
