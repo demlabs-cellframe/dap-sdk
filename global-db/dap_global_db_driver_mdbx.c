@@ -449,10 +449,13 @@ static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_t
     if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi)) ) {
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc));
+        else
+            log_it(L_DEBUG, "MDBX: s_get_db_ctx_for_group('%s') -> MDBX_NOTFOUND", a_group);
         DAP_DEL_Z(l_db_ctx);
         return NULL;
     }
 
+    log_it(L_DEBUG, "MDBX: s_get_db_ctx_for_group('%s') -> SUCCESS (dbi=%u)", a_group, l_db_ctx->dbi);
     return l_db_ctx;
 }
 
@@ -1028,7 +1031,7 @@ static dap_list_t  *s_db_mdbx_get_groups_by_mask(const char *a_group_mask)
         if (dap_global_db_group_match_mask(l_group_name, a_group_mask))
             l_ret_list = dap_list_append(l_ret_list, dap_strdup(l_group_name));
     }
-    log_it(L_DEBUG, "MDBX get_groups_by_mask('%s'): total %zu groups in master DBI, %u matched", 
+    log_it(L_DEBUG, "MDBX get_groups_by_mask('%s'): total %zu groups in master DBI, %zu matched", 
            a_group_mask, l_total_groups, dap_list_length(l_ret_list));
 
     mdbx_cursor_close(l_cursor);
@@ -1061,6 +1064,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 
     dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, a_txn)) ) {
+        log_it(L_DEBUG, "MDBX: Group '%s' not found via s_get_db_ctx_for_group, creating...", a_store_obj->group);
         if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
@@ -1068,6 +1072,8 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             DAP_DELETE(l_db_ctx);
             return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
         }
+    } else {
+        log_it(L_DEBUG, "MDBX: Group '%s' found via s_get_db_ctx_for_group (existing DBI)", a_store_obj->group);
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
