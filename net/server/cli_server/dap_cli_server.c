@@ -486,13 +486,13 @@ static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
-                                            "Processing-Time: %zu\r\n"
+                                            "Content-Length: %zu\r\n"
+                                            "Processing-Time: %"DAP_UINT64_FORMAT_U"\r\n"
                                             "Node-Type: %s\r\n"
                                             "Node-Version: %s\r\n\r\n"
                                             "%s", 
                                             dap_strlen(l_ret), 
-                                            dap_nanotime_now() - l_arg->time_start, 
+                                            (uint64_t)(dap_nanotime_now() - l_arg->time_start), 
                                             dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false)
                                                 ? "Public" : "Private", 
                                             "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 
