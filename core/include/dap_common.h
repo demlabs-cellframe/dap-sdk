@@ -503,7 +503,13 @@ typedef int dap_errnum_t;
 #else /* __GNUC__ */
 #define DAP_PRINTF_ATTR(format_index, args_index)
 #endif /* __GNUC__ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
+#ifdef __cplusplus
+}
+#endif
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define debug_if(flg, lvl, ...) do { if (flg) _log_it(NULL, 0, LOG_TAG, (lvl), ##__VA_ARGS__); } while(0)
