@@ -329,7 +329,10 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
         return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
-    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE | MDBX_SAFE_NOSYNC, 0664)) )
+    /* Use MDBX_NOMETASYNC instead of MDBX_SAFE_NOSYNC for better durability on macOS.
+     * MDBX_SAFE_NOSYNC skips fsync on commit, which can cause data loss on macOS/APFS.
+     * MDBX_NOMETASYNC syncs data pages but defers meta-page sync for better performance. */
+    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE | MDBX_NOMETASYNC, 0664)) )
         return  log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
     /*
@@ -1057,7 +1060,9 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             DAP_DELETE(l_db_ctx);
             return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
         }
-    } else {
+    }
+#if 0  /* Temporarily disabled - testing if MDBX_NOMETASYNC fixes orphaned DBI issue */
+    else {
         /* Check if group is registered in master DBI, if not - register it (fix for orphaned DBIs) */
         MDBX_val l_master_key = { .iov_base = (void*)a_store_obj->group, .iov_len = strlen(a_store_obj->group) + 1 };
         MDBX_val l_master_data = l_master_key;
@@ -1069,6 +1074,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
                    a_store_obj->group, l_master_rc, mdbx_strerror(l_master_rc));
         }
     }
+#endif
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
     /* At this point we have got the DB Context for the table/group so we are can performs a main work */
