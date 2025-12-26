@@ -236,9 +236,13 @@ MDBX_val    l_key_iov, l_data_iov;
     l_data_iov.iov_base =  l_key_iov.iov_base = l_db_ctx->name;
     l_data_iov.iov_len = l_key_iov.iov_len = l_db_ctx->namelen + 1;
 
-    if (MDBX_SUCCESS != (rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
-         && (rc != MDBX_KEYEXIST)) {
-        log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
+    rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE);
+    if (rc == MDBX_SUCCESS) {
+        log_it(L_NOTICE, "MDBX: Registered NEW group '%s' in master DBI", a_group);
+    } else if (rc == MDBX_KEYEXIST) {
+        log_it(L_DEBUG, "MDBX: Group '%s' already exists in master DBI", a_group);
+    } else {
+        log_it (L_ERROR, "mdbx_put master DBI: (%d) %s for group '%s'", rc, mdbx_strerror(rc), a_group);
         if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
@@ -1014,11 +1018,18 @@ static dap_list_t  *s_db_mdbx_get_groups_by_mask(const char *a_group_mask)
         return NULL;
     }
 
+    size_t l_total_groups = 0;
     for ( int i = 0; !(rc = mdbx_cursor_get (l_cursor, &l_key_iov, &l_data_iov, MDBX_NEXT )); i++ ) {
         const char *l_group_name = l_data_iov.iov_base;
+        l_total_groups++;
+        log_it(L_DEBUG, "MDBX master DBI group[%d]: '%s' (mask: %s, match: %s)", 
+               i, l_group_name, a_group_mask, 
+               dap_global_db_group_match_mask(l_group_name, a_group_mask) ? "YES" : "NO");
         if (dap_global_db_group_match_mask(l_group_name, a_group_mask))
             l_ret_list = dap_list_append(l_ret_list, dap_strdup(l_group_name));
     }
+    log_it(L_DEBUG, "MDBX get_groups_by_mask('%s'): total %zu groups in master DBI, %u matched", 
+           a_group_mask, l_total_groups, dap_list_length(l_ret_list));
 
     mdbx_cursor_close(l_cursor);
     mdbx_txn_commit(l_txn);
