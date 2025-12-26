@@ -50,8 +50,8 @@ const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac);
 static inline dap_uint256_str_t dap_uint256_to_char_ex(uint256_t a_uint256) {
     dap_uint256_str_t l_res = { };
     const char *l_frac;
-    stpcpy(l_res.str, dap_uint256_to_char(a_uint256, &l_frac));
-    stpcpy(l_res.frac, l_frac);
+    dap_stpcpy(l_res.str, dap_uint256_to_char(a_uint256, &l_frac));
+    dap_stpcpy(l_res.frac, l_frac);
     return l_res;
 }
 
