@@ -806,7 +806,7 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         }
     }
 
-    long l_read_size = l_end_pos - l_n_line_pos - 1;
+    long l_read_size = l_end_pos - l_n_line_pos;
     char * l_res = DAP_NEW_Z_SIZE(char, l_read_size + 1);
     fseek(file, l_n_line_pos, SEEK_SET);
     fread(l_res, l_read_size, 1, file);
