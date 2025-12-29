@@ -68,6 +68,7 @@
 #include "dap_config.h"
 #include "dap_server.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_events.h"
 #include "dap_net.h"
 #include "dap_strfuncs.h"
@@ -308,11 +309,19 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                 continue;
             }
             
+            // Verify worker CPU affinity
+            int l_cpu_id = l_worker->context ? l_worker->context->cpu_id : -1;
+            
             if (dap_worker_add_events_socket_unsafe(l_worker, l_es_sharded) != 0) {
-                log_it(L_ERROR, "Failed to add sharded socket %u to worker %u", i, i);
+                log_it(L_ERROR, "Failed to add sharded socket %u to worker %u (cpu_id=%d)", i, i, l_cpu_id);
             } else {
-                log_it(L_INFO, "Created sharded UDP listener socket #%u (fd=%d) on worker %u for %s:%u", 
-                       i, l_sharded_socket, i, a_addr, a_port);
+                log_it(L_INFO, "Created sharded UDP listener socket #%u (fd=%d) on worker %u (cpu_id=%d) for %s:%u", 
+                       i, l_sharded_socket, i, l_cpu_id, a_addr, a_port);
+#ifdef SO_INCOMING_CPU
+                log_it(L_INFO, "  ✅ SO_INCOMING_CPU hint will be set to cpu_id=%d by dap_worker_add_events_socket_unsafe", l_cpu_id);
+#else
+                log_it(L_WARNING, "  ⚠️ SO_INCOMING_CPU not available on this platform");
+#endif
             }
         }
         
