@@ -1179,30 +1179,45 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     }
     l_ctx->session_create_cb = a_callback;
 
-    // Create UDP packet with SESSION_CREATE type
-    // Use session_id established during handshake
+    // Serialize session parameters (channels, encryption, etc) to send to server
+    // Server needs to know which channels to activate
+    const char *l_channels = a_params->channels ? a_params->channels : "";
+    size_t l_channels_len = strlen(l_channels);
+    
+    // Create UDP packet with SESSION_CREATE type and channels as payload
+    // Format: UDP_HEADER + channels_string (null-terminated)
     dap_stream_trans_udp_header_t l_header;
     s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                        0, 
-                        l_udp_ctx->seq_num++, l_udp_ctx->session_id); // Use handshake session_id
+                        (uint16_t)(l_channels_len + 1),  // +1 for null terminator
+                        l_udp_ctx->seq_num++, l_udp_ctx->session_id);
     
-    size_t l_packet_size = sizeof(l_header);
+    size_t l_packet_size = sizeof(l_header) + l_channels_len + 1;
+    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_packet_size);
+    if (!l_packet) {
+        log_it(L_ERROR, "Failed to allocate session create packet");
+        return -1;
+    }
+    
+    memcpy(l_packet, &l_header, sizeof(l_header));
+    memcpy(l_packet + sizeof(l_header), l_channels, l_channels_len + 1);
     
     // Send via dap_events_socket_write_unsafe
     if (!l_ctx || !l_ctx->esocket) {
         log_it(L_ERROR, "No esocket in trans ctx for session create");
+        DAP_DELETE(l_packet);
         return -1;
     }
     dap_events_socket_t *l_es = l_ctx->esocket;
     
-    size_t l_sent = dap_events_socket_write_unsafe(l_es, &l_header, l_packet_size);
+    size_t l_sent = dap_events_socket_write_unsafe(l_es, l_packet, l_packet_size);
+    DAP_DELETE(l_packet);
     
     if (l_sent != l_packet_size) {
         log_it(L_ERROR, "UDP session create send incomplete");
         return -1;
     }
     
-    log_it(L_INFO, "UDP session create request sent");
+    log_it(L_INFO, "UDP session create request sent with channels '%s'", l_channels);
     
     return 0;
 }
@@ -1288,6 +1303,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         // Extract payload pointer
         void *l_payload = (uint8_t*)a_buffer + sizeof(dap_stream_trans_udp_header_t);
         
+        // Allocate decryption buffer (max size for encrypted payloads)
+        size_t l_decrypted_max = l_payload_len * 2;  // Conservative estimate
+        uint8_t *l_decrypted = DAP_NEW_Z_SIZE(uint8_t, l_decrypted_max);
+        
         debug_if(s_debug_more, L_DEBUG, "SERVER MODE: packet type=%u, payload_len=%u", 
                  l_packet_type, l_payload_len);
         
@@ -1338,13 +1357,18 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             }
             
             case DAP_STREAM_UDP_PKT_SESSION_CREATE: {
-                // Server: Process session create request
+                // Server: Process session create request with channels from client
                 debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for session 0x%lx", 
                          be64toh(l_header->session_id));
                 
                 uint64_t l_sess_id = be64toh(l_header->session_id);
                 
-                // Session was already created during HANDSHAKE, just confirm it
+                // Extract channels from payload (null-terminated string)
+                const char *l_channels = (l_payload_len > 0) ? (const char*)l_payload : "";
+                log_it(L_INFO, "Server: SESSION_CREATE with channels '%s' for session 0x%lx", 
+                       l_channels, l_sess_id);
+                
+                // Session was already created during HANDSHAKE, update with channels
                 if (!a_stream->session) {
                     a_stream->session = dap_stream_session_pure_new();
                     if (a_stream->session) {
@@ -1352,29 +1376,29 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     }
                 }
                 
-                // CRITICAL: Initialize channels for server-side stream if not already done!
-                // Without channels, dap_stream_data_proc_read won't process incoming data
-                if (a_stream->session && a_stream->channel_count == 0) {
-                    // Default channels for testing: 'A', 'B', 'C'
-                    // In production, this should come from session negotiation
-                    strcpy(a_stream->session->active_channels, "ABC");
+                // CRITICAL: Set active_channels from client request
+                if (a_stream->session && l_payload_len > 0) {
+                    strncpy(a_stream->session->active_channels, l_channels, 
+                            sizeof(a_stream->session->active_channels) - 1);
+                    a_stream->session->active_channels[sizeof(a_stream->session->active_channels) - 1] = '\0';
                     
                     // Create channels for the session
                     size_t l_channel_count = strlen(a_stream->session->active_channels);
                     log_it(L_INFO, "Server: creating %zu channels for session 0x%lx", l_channel_count, l_sess_id);
+                    
                     for (size_t i = 0; i < l_channel_count; i++) {
-                        dap_stream_ch_t *l_ch = dap_stream_ch_new(a_stream, a_stream->session->active_channels[i]);
+                        char l_ch_id = a_stream->session->active_channels[i];
+                        dap_stream_ch_t *l_ch = dap_stream_ch_new(a_stream, (uint8_t)l_ch_id);
                         if (!l_ch) {
                             log_it(L_ERROR, "Server: failed to create channel '%c' for session 0x%lx", 
-                                   a_stream->session->active_channels[i], l_sess_id);
+                                   l_ch_id, l_sess_id);
                             break;
                         }
                         l_ch->ready_to_read = true;
-                        log_it(L_INFO, "Server: created channel '%c' for session 0x%lx", 
-                               a_stream->session->active_channels[i], l_sess_id);
+                        log_it(L_INFO, "Server: created channel '%c' for session 0x%lx", l_ch_id, l_sess_id);
                     }
-                } else if (a_stream->channel_count > 0) {
-                    log_it(L_INFO, "Server: session 0x%lx already has %zu channels", l_sess_id, a_stream->channel_count);
+                    
+                    log_it(L_INFO, "Server: session 0x%lx now has %zu channels", l_sess_id, a_stream->channel_count);
                 }
                 
                 // Use KDF to derive SESSION key from HANDSHAKE key (no seed transmission!)
@@ -1434,10 +1458,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             }
             
             case DAP_STREAM_UDP_PKT_DATA: {
-                // Server: Process stream data packet
-                // For DATA packets, the payload is already a complete stream packet (header + encrypted data)
-                // No need to decrypt at UDP level - stream layer will handle it
-                log_it(L_INFO, "Server: processing DATA packet (%u bytes stream data)", l_payload_len);
+                // Server: Process encrypted data packet
+                // For DATA packets, we need to decrypt and process stream data
+                debug_if(s_debug_more, L_DEBUG, "Server: processing DATA packet (%u bytes encrypted)", l_payload_len);
                 
                 // Debug: print first 64 bytes of stream packet
                 if (l_payload_len > 0) {
@@ -1449,44 +1472,44 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     log_it(L_INFO, "Server: stream packet first %zu bytes: %s", l_print_size, l_hex);
                 }
                 
-                // Process stream data directly (payload is stream packet)
+                size_t l_decrypted_size = dap_enc_decode(a_stream->session->key, 
+                                                         l_payload, l_payload_len,
+                                                         l_decrypted, l_decrypted_max,
+                                                         DAP_ENC_DATA_TYPE_RAW);
+                
+                if (l_decrypted_size == 0) {
+                    log_it(L_ERROR, "SERVER: failed to decrypt DATA packet");
+                    DAP_DELETE(l_decrypted);
+                    break;
+                }
+                
+                debug_if(s_debug_more, L_DEBUG, "Server: decrypted %zu bytes from %u bytes encrypted", 
+                         l_decrypted_size, l_payload_len);
+                
+                // Process decrypted stream data by temporarily setting trans_ctx->esocket
+                // This allows standard dap_stream_data_proc_read to work
                 if (a_stream->trans_ctx) {
-                    log_it(L_INFO, "Server: passing stream packet to dap_stream_data_proc_read (channel_count=%zu)", 
-                           a_stream->channel_count);
                     // Create temporary fake esocket for processing
+                    // We'll use trans_ctx->esocket temporarily
                     dap_events_socket_t *l_saved_es = a_stream->trans_ctx->esocket;
                     
-                    // Allocate fake esocket on heap with proper initialization
-                    dap_events_socket_t *l_fake_es = DAP_NEW_Z(dap_events_socket_t);
-                    l_fake_es->buf_in = DAP_NEW_SIZE(byte_t, l_payload_len);
-                    memcpy(l_fake_es->buf_in, l_payload, l_payload_len);
-                    l_fake_es->buf_in_size = l_payload_len;
-                    l_fake_es->_inheritor = a_stream;  // Link to stream
+                    // Create minimal fake esocket with buf_in pointing to decrypted data
+                    dap_events_socket_t l_fake_es = {0};
+                    l_fake_es.buf_in = l_decrypted;
+                    l_fake_es.buf_in_size = l_decrypted_size;
                     
-                    a_stream->trans_ctx->esocket = l_fake_es;
+                    a_stream->trans_ctx->esocket = &l_fake_es;
                     
                     // Process stream data (will parse stream packets and dispatch to channels)
                     size_t l_processed = dap_stream_data_proc_read(a_stream);
                     
-                    log_it(L_INFO, "Server: dap_stream_data_proc_read processed %zu bytes (buf_in_size=%zu)", 
-                           l_processed, l_fake_es->buf_in_size);
-                    
-                    // Shrink buffer if data was processed
-                    if (l_processed > 0) {
-                        dap_events_socket_shrink_buf_in(l_fake_es, l_processed);
-                        log_it(L_INFO, "Server: after shrink, buf_in_size=%zu", l_fake_es->buf_in_size);
-                    }
+                    debug_if(s_debug_more, L_DEBUG, "Server: processed %zu bytes of stream data", l_processed);
                     
                     // Restore original esocket
                     a_stream->trans_ctx->esocket = l_saved_es;
-                    
-                    // Cleanup
-                    DAP_DELETE(l_fake_es->buf_in);
-                    DAP_DELETE(l_fake_es);
-                } else {
-                    log_it(L_ERROR, "Server: no trans_ctx for processing DATA");
                 }
                 
+                DAP_DELETE(l_decrypted);
                 break;
             }
             
@@ -1495,6 +1518,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 break;
         }
         
+        DAP_DELETE(l_decrypted);  // Cleanup decryption buffer for all non-DATA cases
         return a_size;  // Consumed all dispatcher data
     }
     
@@ -1842,85 +1866,33 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     
     debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
-    // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER
-    // CLIENT streams: Have l_ctx->esocket set (own UDP socket)
-    // SERVER streams: No l_ctx->esocket (use listener + sendto)
-    
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx->esocket=%p", l_ctx->esocket);
-    
-    // Get UDP context for session_id and seq_num
+    // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER by presence of remote_addr in UDP context
+    // Server-side streams have remote_addr set (for sendto), client streams don't
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
-    if (!l_udp_ctx) {
-        log_it(L_ERROR, "No UDP context for write");
-        return -1;
-    }
+    bool l_is_server = (l_udp_ctx && l_udp_ctx->remote_addr.ss_family != 0);
     
-    // Check if data is already wrapped in UDP header
-    // HANDSHAKE and SESSION_CREATE responses create their own UDP headers
-    // DATA packets from dap_stream_pkt_write_unsafe need wrapping
-    bool l_already_wrapped = false;
-    if (a_size >= sizeof(dap_stream_trans_udp_header_t)) {
-        dap_stream_trans_udp_header_t *l_hdr_check = (dap_stream_trans_udp_header_t*)a_data;
-        if (l_hdr_check->version == 1 && 
-            (l_hdr_check->type == DAP_STREAM_UDP_PKT_HANDSHAKE || 
-             l_hdr_check->type == DAP_STREAM_UDP_PKT_SESSION_CREATE)) {
-            l_already_wrapped = true;
-            debug_if(s_debug_more, L_DEBUG, "s_udp_write: data already has UDP header (type=0x%02x), not wrapping", l_hdr_check->type);
-        }
-    }
-    
-    uint8_t *l_pkt = NULL;
-    size_t l_total_size;
-    
-    if (l_already_wrapped) {
-        // Send as-is
-        l_pkt = (uint8_t*)a_data;
-        l_total_size = a_size;
-    } else {
-        // Wrap data in UDP header (type=DATA)
-        dap_stream_trans_udp_header_t l_hdr;
-        s_create_udp_header(&l_hdr, DAP_STREAM_UDP_PKT_DATA, 
-                            (uint16_t)a_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
-        
-        l_total_size = sizeof(l_hdr) + a_size;
-        l_pkt = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
-        memcpy(l_pkt, &l_hdr, sizeof(l_hdr));
-        memcpy(l_pkt + sizeof(l_hdr), a_data, a_size);
-        debug_if(s_debug_more, L_DEBUG, "s_udp_write: wrapped data in UDP header (DATA packet)");
-    }
-    
-    ssize_t l_sent = -1;
-    
-    if (l_ctx->esocket) {
+    if (!l_is_server && l_ctx->esocket) {
         // CLIENT: Has own physical esocket, use it directly
-        struct sockaddr_in l_peer_addr;
-        socklen_t l_peer_len = sizeof(l_peer_addr);
-        if (getpeername(l_ctx->esocket->fd, (struct sockaddr*)&l_peer_addr, &l_peer_len) == 0) {
-            char l_ip_str[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &l_peer_addr.sin_addr, l_ip_str, sizeof(l_ip_str));
-            debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes (total %zu, wrapped=%d) via esocket %p (fd=%d) to %s:%u", 
-                     a_size, l_total_size, !l_already_wrapped, l_ctx->esocket, l_ctx->esocket->fd, l_ip_str, ntohs(l_peer_addr.sin_port));
-        } else {
-            debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes (total %zu, wrapped=%d) via esocket %p (fd=%d) [getpeername failed]", 
-                     a_size, l_total_size, !l_already_wrapped, l_ctx->esocket, l_ctx->esocket->fd);
-        }
+        debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
+                 a_size, l_ctx->esocket, l_ctx->esocket->fd);
         
-        l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_pkt, l_total_size);
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, a_data, a_size);
         if (l_sent < 0) {
             log_it(L_ERROR, "UDP client send failed");
+            return -1;
         }
+        return l_sent;
     } else {
         // SERVER: Use listener's physical esocket + sendto with remote_addr
         
+        // Get UDP per-stream context for remote_addr
         if (!l_udp_ctx) {
             log_it(L_ERROR, "Server stream has no UDP context for write");
-            if (!l_already_wrapped) DAP_DELETE(l_pkt);
             return -1;
         }
         
         if (l_udp_ctx->remote_addr.ss_family == 0) {
             log_it(L_ERROR, "Server stream has no remote address for write");
-            if (!l_already_wrapped) DAP_DELETE(l_pkt);
             return -1;
         }
         
@@ -1928,14 +1900,12 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         dap_events_socket_t *l_listener_es = l_udp_ctx->listener_esocket;
         if (!l_listener_es) {
             log_it(L_ERROR, "Server UDP context has no listener esocket for write");
-            if (!l_already_wrapped) DAP_DELETE(l_pkt);
             return -1;
         }
         
         int l_fd = l_listener_es->fd;
         if (l_fd < 0) {
             log_it(L_ERROR, "Listener esocket has invalid fd");
-            if (!l_already_wrapped) DAP_DELETE(l_pkt);
             return -1;
         }
         
@@ -1945,21 +1915,26 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         char l_ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_addr_in->sin_addr, l_ip_str, sizeof(l_ip_str));
         
-        l_sent = sendto(l_fd, l_pkt, l_total_size, 0,
-                        (struct sockaddr*)&l_udp_ctx->remote_addr,
-                        l_udp_ctx->remote_addr_len);
+        ssize_t l_sent = sendto(l_fd, a_data, a_size, 0,
+                                (struct sockaddr*)&l_udp_ctx->remote_addr,
+                                l_udp_ctx->remote_addr_len);
         
         if (l_sent < 0) {
             log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d, %s:%u)", 
                    strerror(errno), l_fd, l_ip_str, l_remote_port);
-        } else {
-            debug_if(s_debug_more, L_DEBUG, "Server sent packet: %zd bytes (total %zu, wrapped=%d) to %s:%u", 
-                     a_size, l_total_size, !l_already_wrapped, l_ip_str, l_remote_port);
+            return -1;
         }
+        
+        static __thread int s_data_pkt_count = 0;
+        if (++s_data_pkt_count <= 5) {  // Log first 5 data packets
+            log_it(L_INFO, "Server sent DATA packet #%d: %zd bytes to %s:%u (fd=%d)", 
+                   s_data_pkt_count, l_sent, l_ip_str, l_remote_port, l_fd);
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
+        
+        return l_sent;
     }
-    
-    if (!l_already_wrapped) DAP_DELETE(l_pkt);
-    return l_sent;
 }
 
 /**
