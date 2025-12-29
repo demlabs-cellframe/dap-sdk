@@ -296,16 +296,12 @@ static void s_listener_new_callback(dap_events_socket_t *a_es, void *a_arg)
                "Listener new callback: initialized shared buffer (listener_es=%p, capacity=%zu)", 
                a_es, l_udp_srv->shared_buf_capacity);
         
-        // NEW ARCHITECTURE: Store listener esocket in trans for write dispatcher
-        if (l_udp_srv->trans && l_udp_srv->trans->_inheritor) {
-            dap_stream_trans_udp_private_t *l_priv = 
-                (dap_stream_trans_udp_private_t*)l_udp_srv->trans->_inheritor;
-            l_priv->listener_esocket = a_es;
-            debug_if(s_debug_more, L_DEBUG, 
-                   "Stored listener esocket in trans for write dispatcher");
-        }
-    }
-    
+        // Store listener esocket reference for session management
+        l_udp_srv->listener_es = a_es;
+        
+        log_it(L_INFO, "Stored listener esocket: a_es=%p (fd=%d) in UDP server structure", 
+               a_es, a_es->fd);
+    }    
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
 }
 
@@ -392,6 +388,24 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         
         // CRITICAL: Keep sessions_lock as READ lock during stream access
         dap_stream_t *l_stream = l_session->stream;
+        
+        // CRITICAL: Update remote_addr from current packet (UDP is connectionless!)
+        // Client may send from different ports, we need to respond to the CURRENT address
+        if (l_stream->trans_ctx && l_stream->trans_ctx->_inheritor) {
+            dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)l_stream->trans_ctx->_inheritor;
+            if (l_udp_ctx && a_es->addr_size > 0) {
+                struct sockaddr_in *l_old_addr = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
+                uint16_t l_old_port = ntohs(l_old_addr->sin_port);
+                
+                memcpy(&l_udp_ctx->remote_addr, &a_es->addr_storage, a_es->addr_size);
+                l_udp_ctx->remote_addr_len = a_es->addr_size;
+                
+                struct sockaddr_in *l_new_addr = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
+                uint16_t l_new_port = ntohs(l_new_addr->sin_port);
+                
+                log_it(L_INFO, "Updated remote_addr for stream %p: %u -> %u", l_stream, l_old_port, l_new_port);
+            }
+        }
         
         // Dispatch encrypted data to stream for processing
         // Stream will decrypt and process channel packets internally
@@ -547,8 +561,12 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         l_udp_ctx->remote_addr_len = a_es->addr_size;
         l_udp_ctx->session_id = l_session_id;
         
-        log_it(L_DEBUG, "Initialized UDP context for server-side stream %p (session 0x%lx)", 
-               l_session->stream, l_session_id);
+        // CRITICAL: Store listener esocket in UDP context for server-side sendto
+        l_udp_ctx->listener_esocket = l_udp_srv->listener_es;
+        
+        log_it(L_DEBUG, "Initialized UDP context for server-side stream %p (session 0x%lx, listener_es=%p fd=%d)", 
+               l_session->stream, l_session_id, l_udp_ctx->listener_esocket, 
+               l_udp_ctx->listener_esocket ? l_udp_ctx->listener_esocket->fd : -1);
         
         // Add to server's session hash table by remote_addr (already under write lock)
         // NOTE: uthash will use full remote_addr as key via s_find_session_by_addr iteration

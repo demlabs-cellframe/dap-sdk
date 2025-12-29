@@ -174,6 +174,7 @@ typedef struct dap_net_trans_udp_ctx {
     dap_enc_key_t *handshake_key;       ///< HANDSHAKE key (from Kyber512 shared secret) - used to encrypt/decrypt session key
     void *client_ctx;                   ///< dap_client_t* from stage_prepare (if any)
     dap_stream_t *stream;               ///< Associated stream (back-reference)
+    dap_events_socket_t *listener_esocket; ///< Server: Listener esocket for sendto (server-side only)
 } dap_net_trans_udp_ctx_t;
 
 /**

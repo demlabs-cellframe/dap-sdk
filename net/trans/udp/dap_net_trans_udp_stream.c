@@ -1686,10 +1686,10 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
             return -1;
         }
         
-        // Get listener esocket - may be in l_ctx->esocket (temporarily) or in trans
-        dap_events_socket_t *l_listener_es = l_ctx->esocket ? l_ctx->esocket : l_priv->listener_esocket;
+        // Get listener esocket from UDP context (NOT from l_ctx->esocket which may be temporary!)
+        dap_events_socket_t *l_listener_es = l_udp_ctx->listener_esocket;
         if (!l_listener_es) {
-            log_it(L_ERROR, "Server trans has no listener esocket for write dispatcher");
+            log_it(L_ERROR, "Server UDP context has no listener esocket for write");
             return -1;
         }
         
@@ -1702,15 +1702,23 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         // Send via sendto with remote address
         struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         uint16_t l_remote_port = ntohs(l_addr_in->sin_port);
+        char l_ip_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_addr_in->sin_addr, l_ip_str, sizeof(l_ip_str));
         
         ssize_t l_sent = sendto(l_fd, a_data, a_size, 0,
                                 (struct sockaddr*)&l_udp_ctx->remote_addr,
                                 l_udp_ctx->remote_addr_len);
         
         if (l_sent < 0) {
-            log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d, remote_port=%u)", 
-                   strerror(errno), l_fd, l_remote_port);
+            log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d, %s:%u)", 
+                   strerror(errno), l_fd, l_ip_str, l_remote_port);
             return -1;
+        }
+        
+        static __thread int s_data_pkt_count = 0;
+        if (++s_data_pkt_count <= 5) {  // Log first 5 data packets
+            log_it(L_INFO, "Server sent DATA packet #%d: %zd bytes to %s:%u (fd=%d)", 
+                   s_data_pkt_count, l_sent, l_ip_str, l_remote_port, l_fd);
         }
         
         debug_if(s_debug_more, L_DEBUG, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
