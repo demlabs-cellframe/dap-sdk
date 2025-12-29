@@ -65,6 +65,8 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
     a_stream->is_active = true;
     
+    log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: stream=%p, type=0x%02x, data_size=%zu", a_stream, a_type, a_data_size);
+    
     dap_enc_key_t *l_key = (a_stream->session) ? a_stream->session->key : NULL;
     size_t l_full_size;
     
@@ -94,8 +96,10 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     // NEW ARCHITECTURE: Use trans->ops->write if available (for UDP dispatcher)
     // Fall back to direct esocket write for compatibility
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+        log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using trans->ops->write, l_full_size=%zu", l_full_size);
         return a_stream->trans->ops->write(a_stream, s_pkt_buf, l_full_size);
     } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
+        log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using direct esocket write, l_full_size=%zu", l_full_size);
         return dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, s_pkt_buf, l_full_size);
     }
     return 0;
