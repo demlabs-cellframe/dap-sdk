@@ -199,6 +199,20 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     }
     log_it(L_INFO, "Socket %d \"%s : %d\" binded", l_socket, a_addr, a_port);
 
+    // For UDP: Check if we should enable socket sharding with SO_REUSEPORT
+    bool l_enable_socket_sharding = false;
+    if (a_type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+#ifdef SO_REUSEPORT
+        // Socket sharding only if SO_REUSEPORT worked and we have multiple workers
+        uint32_t l_worker_count = dap_events_thread_get_count();
+        l_enable_socket_sharding = (l_worker_count > 1);
+        
+        if (l_enable_socket_sharding) {
+            log_it(L_NOTICE, "Enabling UDP socket sharding: %u listener sockets (one per worker)", l_worker_count);
+        }
+#endif
+    }
+
     if (a_type != DESCRIPTOR_TYPE_SOCKET_UDP) {
         if ( listen(l_socket, SOMAXCONN) < 0 ) {
             close_socket_due_to_fail("listen()");
@@ -212,6 +226,100 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #else
     fcntl(l_socket, F_SETFL, O_NONBLOCK);
 #endif
+
+    // Socket sharding for UDP: create N sockets (one per worker)
+    if (l_enable_socket_sharding) {
+        uint32_t l_worker_count = dap_events_thread_get_count();
+        
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            SOCKET l_sharded_socket = l_socket;
+            
+            // First socket already created above, create additional sockets for i > 0
+            if (i > 0) {
+                l_sharded_socket = socket(l_fam, SOCK_DGRAM, IPPROTO_UDP);
+                if (l_sharded_socket < 0) {
+                    log_it(L_ERROR, "Failed to create sharded socket %u: %s", i, dap_strerror(errno));
+                    continue;
+                }
+                
+                // Set SO_REUSEADDR + SO_REUSEPORT
+                u_long l_opt = 1;
+                if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_opt, sizeof(int)) < 0) {
+                    log_it(L_ERROR, "setsockopt(SO_REUSEADDR) failed for sharded socket %u", i);
+                    dap_close_socket(l_sharded_socket);
+                    continue;
+                }
+                
+#ifdef SO_REUSEPORT
+                l_opt = 1;
+                if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_REUSEPORT, (const char*)&l_opt, sizeof(int)) < 0) {
+                    log_it(L_ERROR, "setsockopt(SO_REUSEPORT) failed for sharded socket %u", i);
+                    dap_close_socket(l_sharded_socket);
+                    continue;
+                }
+#endif
+                
+                // Bind to the SAME address/port
+                if (bind(l_sharded_socket, (struct sockaddr*)&l_saddr, l_len) < 0) {
+                    log_it(L_ERROR, "bind() failed for sharded socket %u: %s", i, dap_strerror(errno));
+                    dap_close_socket(l_sharded_socket);
+                    continue;
+                }
+                
+                // Set non-blocking
+#ifdef DAP_OS_WINDOWS
+                l_opt = 1;
+                ioctlsocket(l_sharded_socket, (long)FIONBIO, &l_opt);
+#else
+                fcntl(l_sharded_socket, F_SETFL, O_NONBLOCK);
+#endif
+            }
+            
+            // Wrap socket
+            dap_events_socket_t *l_es_sharded = dap_events_socket_wrap_listener(a_server, l_sharded_socket, a_callbacks);
+            if (!l_es_sharded) {
+                log_it(L_ERROR, "Failed to wrap sharded listener socket %u for %s:%u", i, a_addr, a_port);
+                if (i > 0) {
+                    dap_close_socket(l_sharded_socket);
+                }
+                continue;
+            }
+            
+#ifdef DAP_EVENTS_CAPS_EPOLL
+            l_es_sharded->ev_base_flags = EPOLLIN;
+#ifdef EPOLLEXCLUSIVE
+            l_es_sharded->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
+#endif
+#endif
+            l_es_sharded->addr_size = l_len;
+            dap_strncpy(l_es_sharded->listener_addr_str, a_addr, INET6_ADDRSTRLEN);
+            l_es_sharded->listener_port = a_port;
+            l_es_sharded->addr_storage = l_saddr;
+            l_es_sharded->type = a_type;
+            l_es_sharded->no_close = true;
+            
+            // Add to server's listener list
+            a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es_sharded);
+            
+            // Add to SPECIFIC worker (not auto!)
+            dap_worker_t *l_worker = dap_events_worker_get(i);
+            if (!l_worker) {
+                log_it(L_ERROR, "Failed to get worker %u for sharded socket", i);
+                continue;
+            }
+            
+            if (dap_worker_add_events_socket_unsafe(l_worker, l_es_sharded) != 0) {
+                log_it(L_ERROR, "Failed to add sharded socket %u to worker %u", i, i);
+            } else {
+                log_it(L_INFO, "Created sharded UDP listener socket #%u (fd=%d) on worker %u for %s:%u", 
+                       i, l_sharded_socket, i, a_addr, a_port);
+            }
+        }
+        
+        return 0; // Success - all sharded sockets created
+    }
+    
+    // Non-sharded path (TCP or single UDP socket)
     dap_events_socket_t *l_es = dap_events_socket_wrap_listener(a_server, l_socket, a_callbacks);
     if (!l_es) {
         log_it(L_ERROR, "Failed to wrap listener socket for %s:%u", a_addr, a_port);
