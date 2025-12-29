@@ -372,34 +372,34 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
         }
     }
-    // Check if this could be a control packet (HANDSHAKE or SESSION_CREATE)
+    // ARCHITECTURE: UDP packet encryption
+    // - HANDSHAKE: NOT encrypted (no key yet)
+    // - SESSION_CREATE: ENCRYPTED with handshake key
+    // - DATA: ENCRYPTED with session key
+    // So only HANDSHAKE is unencrypted control packet!
+    
     dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
     uint8_t l_type = l_header->type;
-    bool l_looks_like_control = (l_type == DAP_STREAM_UDP_PKT_HANDSHAKE || 
-                                  l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE);
+    bool l_is_handshake = (l_type == DAP_STREAM_UDP_PKT_HANDSHAKE);
     
     // Debug: Check conditions for encrypted data path
     bool l_has_session = l_session_found && l_session;
     bool l_has_stream = l_has_session && l_session->stream;
-    bool l_has_session_key = l_has_stream && l_session->stream->session && l_session->stream->session->key;
     
     if (l_has_session && l_udp_srv->shared_buf_size > 0) {
-        log_it(L_INFO, "Dispatcher: session=%p, stream=%p, session_key=%p, type=0x%02x, looks_like_control=%d, size=%zu",
+        log_it(L_INFO, "Dispatcher: session=%p, stream=%p, type=0x%02x, is_handshake=%d, size=%zu",
                l_session, l_has_stream ? l_session->stream : NULL,
-               l_has_session_key ? l_session->stream->session->key : NULL,
-               l_type, l_looks_like_control, l_udp_srv->shared_buf_size);
+               l_type, l_is_handshake, l_udp_srv->shared_buf_size);
     }
     
-    // NEW ARCHITECTURE: Dispatch by packet type
-    // - Control packets (HANDSHAKE, SESSION_CREATE): go through control path
-    // - Data packets (DATA): go through encrypted data path
-    // NOTE: We check packet type, NOT session->key, to avoid race conditions
-    //       (client may send DATA before server finishes processing SESSION_CREATE)
-    if (l_session_found && l_session && l_session->stream && 
-        (l_type == DAP_STREAM_UDP_PKT_DATA)) {
+    // NEW ARCHITECTURE: Dispatch by encryption status
+    // - HANDSHAKE: unencrypted → control path
+    // - SESSION_CREATE, DATA: encrypted → encrypted data path
+    // If session exists (after HANDSHAKE), all packets except HANDSHAKE go through encrypted path
+    if (l_session_found && l_session && l_session->stream && !l_is_handshake) {
         
-        debug_if(s_debug_more, L_DEBUG, "Dispatching UDP DATA packet (%zu bytes) to stream %p", 
-               l_udp_srv->shared_buf_size, l_session->stream);
+        debug_if(s_debug_more, L_DEBUG, "Dispatching encrypted UDP packet type=0x%02x (%zu bytes) to stream %p", 
+               l_type, l_udp_srv->shared_buf_size, l_session->stream);
         
         // CRITICAL: Keep sessions_lock as READ lock during stream access
         dap_stream_t *l_stream = l_session->stream;
@@ -448,10 +448,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Release shared buffer lock (control packets don't use shared buffer)
+    // Release shared buffer lock (HANDSHAKE packets don't use shared buffer)
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
     
-    // No active session with key OR packet looks like control - parse as control packet
+    // No session OR packet is HANDSHAKE - parse as unencrypted control packet (HANDSHAKE only!)
     // Release read locks first as control packet processing doesn't need them
     pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);

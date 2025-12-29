@@ -1126,14 +1126,16 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
     dap_enc_base64_encode(l_session_id_str, strlen(l_session_id_str), l_session_id_b64, DAP_ENC_DATA_TYPE_B64);
     
     dap_string_t *l_json_resp = dap_string_new("");
-    dap_string_append_printf(l_json_resp, 
+    dap_string_append_printf(l_json_resp,
         "[{\"session_id\":\"%s\"},{\"bob_message\":\"%s\"}]",
         l_session_id_b64, l_bob_pub_b64);
 
     if (a_response && a_response_size) {
+        // Include null-terminator in response size for JSON parsing on client
+        // JSON parser expects null-terminated string
         *a_response = l_json_resp->str;
-        *a_response_size = l_json_resp->len;
-        DAP_DELETE(l_json_resp); // Free struct, keep str
+        *a_response_size = l_json_resp->len + 1;  // +1 to include null-terminator
+        DAP_DELETE(l_json_resp); // Free struct, keep str (dap_string->str is null-terminated)
     } else {
         dap_string_free(l_json_resp, true);
     }
