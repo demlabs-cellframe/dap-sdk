@@ -1258,15 +1258,36 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     if (!l_es) {
         // SERVER MODE: Use a_buffer passed by dispatcher
+        // Dispatcher now passes FULL UDP packet (header + payload) in a_buffer
         debug_if(s_debug_more, L_INFO, "s_udp_read: SERVER MODE activated");
         if (!a_buffer || a_size == 0) {
             debug_if(s_debug_more, L_DEBUG, "UDP server read: no data passed by dispatcher");
             return 0;
         }
         
-        // Process packet from a_buffer (dispatcher already extracted payload)
-        // For handshake, a_buffer contains the handshake request data
-        // Process it directly - this is server-side handshake processing
+        // Parse UDP header from a_buffer (dispatcher passes full packet now)
+        if (a_size < sizeof(dap_stream_trans_udp_header_t)) {
+            log_it(L_ERROR, "SERVER MODE: packet too small for header (%zu < %zu)", 
+                   a_size, sizeof(dap_stream_trans_udp_header_t));
+            return -1;
+        }
+        
+        dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_buffer;
+        uint16_t l_payload_len = ntohs(l_header->length);
+        uint8_t l_packet_type = l_header->type;
+        
+        // Validate packet size
+        size_t l_expected_size = sizeof(dap_stream_trans_udp_header_t) + l_payload_len;
+        if (a_size < l_expected_size) {
+            log_it(L_ERROR, "SERVER MODE: packet size mismatch (%zu < %zu)", a_size, l_expected_size);
+            return -1;
+        }
+        
+        // Extract payload pointer
+        void *l_payload = (uint8_t*)a_buffer + sizeof(dap_stream_trans_udp_header_t);
+        
+        debug_if(s_debug_more, L_DEBUG, "SERVER MODE: packet type=%u, payload_len=%u", 
+                 l_packet_type, l_payload_len);
         
         dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
         if (!l_udp_ctx) {
@@ -1274,39 +1295,179 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             return -1;
         }
         
-        // Server: Process handshake request
-        debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request (%zu bytes)", a_size);
-        void *l_response = NULL;
-        size_t l_response_size = 0;
-        int l_result = s_udp_handshake_process(a_stream, a_buffer, a_size, &l_response, &l_response_size);
-        
-        if (l_result == 0 && l_response && l_response_size > 0) {
-            // Send response via trans->ops->write (dispatcher will use sendto)
-            dap_stream_trans_udp_header_t l_resp_hdr;
-            s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
-            
-            size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
-            uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
-            memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
-            memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
-            
-            debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
-            
-            if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-                ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
-                if (l_sent != (ssize_t)l_resp_total) {
-                    log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
-                           l_sent, l_resp_total);
-                } else {
-                    debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
+        // Process based on packet type
+        switch (l_packet_type) {
+            case DAP_STREAM_UDP_PKT_HANDSHAKE: {
+                // Server: Process handshake request
+                debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request (%u bytes)", l_payload_len);
+                void *l_response = NULL;
+                size_t l_response_size = 0;
+                int l_result = s_udp_handshake_process(a_stream, l_payload, l_payload_len, &l_response, &l_response_size);
+                
+                if (l_result == 0 && l_response && l_response_size > 0) {
+                    // Send response via trans->ops->write (dispatcher will use sendto)
+                    dap_stream_trans_udp_header_t l_resp_hdr;
+                    s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                        (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+                    
+                    size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
+                    uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
+                    memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
+                    memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
+                    
+                    debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
+                    
+                    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+                        ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
+                        if (l_sent != (ssize_t)l_resp_total) {
+                            log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
+                                   l_sent, l_resp_total);
+                        } else {
+                            debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
+                        }
+                    } else {
+                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
+                    }
+                    
+                    DAP_DELETE(l_resp_pkt);
+                    DAP_DELETE(l_response);
                 }
-            } else {
-                log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
+                break;
             }
             
-            DAP_DELETE(l_resp_pkt);
-            DAP_DELETE(l_response);
+            case DAP_STREAM_UDP_PKT_SESSION_CREATE: {
+                // Server: Process session create request
+                debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for session 0x%lx", 
+                         be64toh(l_header->session_id));
+                
+                uint64_t l_sess_id = be64toh(l_header->session_id);
+                
+                // Session was already created during HANDSHAKE, just confirm it
+                if (!a_stream->session) {
+                    a_stream->session = dap_stream_session_pure_new();
+                    if (a_stream->session) {
+                        a_stream->session->id = l_sess_id;
+                    }
+                }
+                
+                // Use KDF to derive SESSION key from HANDSHAKE key (no seed transmission!)
+                if (!l_udp_ctx->handshake_key) {
+                    log_it(L_ERROR, "Server: no handshake key for deriving session key");
+                    break;
+                }
+                
+                // Counter for ratcheting (use counter = 1 for first session)
+                uint64_t l_session_counter = 1;
+                
+                // Derive session key from handshake key using KDF
+                if (a_stream->session->key) {
+                    dap_enc_key_delete(a_stream->session->key);
+                }
+                a_stream->session->key = dap_enc_kdf_create_cipher_key(
+                    l_udp_ctx->handshake_key,       // Source key
+                    DAP_ENC_KEY_TYPE_SALSA2012,     // Cipher type
+                    "udp_session",                   // Context
+                    12,                              // Context size
+                    l_session_counter,               // Counter
+                    32);                             // Key size
+                
+                if (!a_stream->session->key) {
+                    log_it(L_ERROR, "Server: failed to derive session key from handshake key using KDF");
+                    break;
+                }
+                
+                log_it(L_INFO, "Server: derived session key for session 0x%lx using KDF (counter=%lu)", 
+                       l_sess_id, l_session_counter);
+                
+                // Prepare response header with counter (client needs it to derive same key)
+                dap_stream_trans_udp_header_t l_resp_hdr;
+                s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                    sizeof(l_session_counter), l_udp_ctx->seq_num++, l_sess_id);
+                
+                // Prepare response packet (header + counter)
+                uint8_t l_session_resp[sizeof(l_resp_hdr) + sizeof(uint64_t)];
+                memcpy(l_session_resp, &l_resp_hdr, sizeof(l_resp_hdr));
+                uint64_t l_counter_be = htobe64(l_session_counter);
+                memcpy(l_session_resp + sizeof(l_resp_hdr), &l_counter_be, sizeof(l_counter_be));
+                
+                // Send response via trans->ops->write
+                if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
+                    ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_session_resp, sizeof(l_session_resp));
+                    if (l_sent != (ssize_t)sizeof(l_session_resp)) {
+                        log_it(L_ERROR, "Server: failed to send SESSION_CREATE response (%zd of %zu bytes)", 
+                               l_sent, sizeof(l_session_resp));
+                    } else {
+                        debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
+                                 l_session_counter, l_sess_id);
+                    }
+                } else {
+                    log_it(L_ERROR, "Server: no write method in trans for SESSION_CREATE response");
+                }
+                break;
+            }
+            
+            case DAP_STREAM_UDP_PKT_DATA: {
+                // Server: Process encrypted data packet
+                // For DATA packets, we need to decrypt and process stream data
+                debug_if(s_debug_more, L_DEBUG, "Server: processing DATA packet (%u bytes encrypted)", l_payload_len);
+                
+                if (!a_stream->session || !a_stream->session->key) {
+                    log_it(L_ERROR, "SERVER: cannot process DATA - no session key");
+                    break;
+                }
+                
+                // Decrypt encrypted payload
+                size_t l_decrypted_max = l_payload_len * 2; // Estimate max size (decrypted is usually smaller)
+                void *l_decrypted = DAP_NEW_SIZE(byte_t, l_decrypted_max);
+                if (!l_decrypted) {
+                    log_it(L_ERROR, "SERVER: memory allocation failed for decryption buffer");
+                    break;
+                }
+                
+                size_t l_decrypted_size = dap_enc_decode(a_stream->session->key, 
+                                                         l_payload, l_payload_len,
+                                                         l_decrypted, l_decrypted_max,
+                                                         DAP_ENC_DATA_TYPE_RAW);
+                
+                if (l_decrypted_size == 0) {
+                    log_it(L_ERROR, "SERVER: failed to decrypt DATA packet");
+                    DAP_DELETE(l_decrypted);
+                    break;
+                }
+                
+                debug_if(s_debug_more, L_DEBUG, "Server: decrypted %zu bytes from %u bytes encrypted", 
+                         l_decrypted_size, l_payload_len);
+                
+                // Process decrypted stream data by temporarily setting trans_ctx->esocket
+                // This allows standard dap_stream_data_proc_read to work
+                if (a_stream->trans_ctx) {
+                    // Create temporary fake esocket for processing
+                    // We'll use trans_ctx->esocket temporarily
+                    dap_events_socket_t *l_saved_es = a_stream->trans_ctx->esocket;
+                    
+                    // Create minimal fake esocket with buf_in pointing to decrypted data
+                    dap_events_socket_t l_fake_es = {0};
+                    l_fake_es.buf_in = l_decrypted;
+                    l_fake_es.buf_in_size = l_decrypted_size;
+                    
+                    a_stream->trans_ctx->esocket = &l_fake_es;
+                    
+                    // Process stream data (will parse stream packets and dispatch to channels)
+                    size_t l_processed = dap_stream_data_proc_read(a_stream);
+                    
+                    debug_if(s_debug_more, L_DEBUG, "Server: processed %zu bytes of stream data", l_processed);
+                    
+                    // Restore original esocket
+                    a_stream->trans_ctx->esocket = l_saved_es;
+                }
+                
+                DAP_DELETE(l_decrypted);
+                break;
+            }
+            
+            default:
+                log_it(L_WARNING, "SERVER: unknown packet type %u", l_packet_type);
+                break;
         }
         
         return a_size;  // Consumed all dispatcher data

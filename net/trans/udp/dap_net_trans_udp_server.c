@@ -390,13 +390,15 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
                l_type, l_looks_like_control, l_udp_srv->shared_buf_size);
     }
     
-    // NEW ARCHITECTURE: If we have active session with encryption key AND packet doesn't look like control packet,
-    // treat as encrypted stream data and dispatch to stream
+    // NEW ARCHITECTURE: Dispatch by packet type
+    // - Control packets (HANDSHAKE, SESSION_CREATE): go through control path
+    // - Data packets (DATA): go through encrypted data path
+    // NOTE: We check packet type, NOT session->key, to avoid race conditions
+    //       (client may send DATA before server finishes processing SESSION_CREATE)
     if (l_session_found && l_session && l_session->stream && 
-        l_session->stream->session && l_session->stream->session->key &&
-        !l_looks_like_control) {
+        (l_type == DAP_STREAM_UDP_PKT_DATA)) {
         
-        debug_if(s_debug_more, L_DEBUG, "Dispatching encrypted stream data (%zu bytes) to stream %p", 
+        debug_if(s_debug_more, L_DEBUG, "Dispatching UDP DATA packet (%zu bytes) to stream %p", 
                l_udp_srv->shared_buf_size, l_session->stream);
         
         // CRITICAL: Keep sessions_lock as READ lock during stream access
@@ -423,20 +425,14 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         // Dispatch encrypted data to stream for processing
         // Stream will decrypt and process channel packets internally
         if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-            // Temporarily set trans_ctx->esocket to listener for address info and buf_in access
-            dap_events_socket_t *l_saved_es = NULL;
-            if (l_stream->trans_ctx) {
-                l_saved_es = l_stream->trans_ctx->esocket;
-                l_stream->trans_ctx->esocket = a_es;
-            }
+            // Pass FULL UDP packet (with header) to s_udp_read for consistent processing
+            // s_udp_read SERVER MODE will parse header and handle decryption
+            size_t l_packet_size = l_udp_srv->shared_buf_size;
             
-            // Stream read will consume from a_es->buf_in (shared buffer)
-            ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
+            debug_if(s_debug_more, L_DEBUG, "Calling stream read with encrypted DATA packet (%zu bytes)", l_packet_size);
             
-            // Restore original esocket
-            if (l_stream->trans_ctx) {
-                l_stream->trans_ctx->esocket = l_saved_es;
-            }
+            // Stream read will parse UDP header, decrypt payload, and process stream data
+            ssize_t l_read = l_stream->trans->ops->read(l_stream, a_es->buf_in, l_packet_size);
             
             debug_if(s_debug_more, L_DEBUG, "Stream processed %zd bytes of encrypted data", l_read);
         } else {
@@ -627,20 +623,13 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             debug_if(s_debug_more, L_DEBUG, "Dispatching UDP HANDSHAKE packet to stream %p (session 0x%lx)", 
                      l_stream, l_session_id);
             
-            // Call stream's trans read method directly with payload from listener's buf_in
-            // Stream will process handshake internally via s_udp_read()
+            // Call stream's trans read method with FULL UDP packet (header + payload)
+            // s_udp_read will parse header and extract payload internally
             if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                // Pass payload directly to stream's read method
-                // Server streams have l_ctx->esocket == NULL, so they will use a_buffer instead
-                ssize_t l_read = l_stream->trans->ops->read(l_stream, l_payload, l_payload_len);
+                // Pass FULL packet (header + payload) so s_udp_read can determine packet type
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, a_es->buf_in, l_total_size);
                 
                 debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
-                
-                // If stream has response data, send it via sendto with remote_addr
-                if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->write) {
-                    // Write method will use sendto with l_session->remote_addr
-                    // TODO: Implement dispatcher write logic
-                }
             } else {
                 log_it(L_ERROR, "Stream has no trans read method");
             }
@@ -650,19 +639,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             debug_if(s_debug_more, L_DEBUG, "Dispatching UDP SESSION_CREATE packet to stream %p (session 0x%lx)", 
                      l_stream, l_session_id);
             
-            // Same dispatch logic as HANDSHAKE
+            // Pass FULL packet (header + payload) for unified processing
             if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                dap_events_socket_t *l_saved_es = NULL;
-                if (l_stream->trans_ctx) {
-                    l_saved_es = l_stream->trans_ctx->esocket;
-                    l_stream->trans_ctx->esocket = a_es;
-                }
-                
-                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
-                
-                if (l_stream->trans_ctx) {
-                    l_stream->trans_ctx->esocket = l_saved_es;
-                }
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, a_es->buf_in, l_total_size);
                 
                 debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
             } else {
@@ -675,19 +654,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             debug_if(s_debug_more, L_DEBUG, "Dispatching UDP DATA packet (%u bytes) to stream %p (session 0x%lx)", 
                    l_payload_len, l_stream, l_session_id);
             
-            // Dispatch to stream for processing
+            // Pass FULL packet (header + payload) for unified processing
+            // s_udp_read will decrypt and process via stream channels
             if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
-                dap_events_socket_t *l_saved_es = NULL;
-                if (l_stream->trans_ctx) {
-                    l_saved_es = l_stream->trans_ctx->esocket;
-                    l_stream->trans_ctx->esocket = a_es;
-                }
-                
-                ssize_t l_read = l_stream->trans->ops->read(l_stream, NULL, 0);
-                
-                if (l_stream->trans_ctx) {
-                    l_stream->trans_ctx->esocket = l_saved_es;
-                }
+                ssize_t l_read = l_stream->trans->ops->read(l_stream, a_es->buf_in, l_total_size);
                 
                 debug_if(s_debug_more, L_DEBUG, "Stream read returned %zd bytes", l_read);
             } else {
