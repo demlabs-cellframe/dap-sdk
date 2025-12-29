@@ -285,24 +285,25 @@ static void s_listener_new_callback(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     
-    // Initialize shared buffer using listener's buf_in
+    // WITH SOCKET SHARDING:
+    // Each listener has its OWN buf_in and processes its OWN packets in its OWN worker.
+    // No need for shared buffer - each listener is independent!
+    // Just initialize shared_buf pointer on first listener for legacy compatibility.
+    
     pthread_rwlock_wrlock(&l_udp_srv->shared_buf_lock);
     
     if (!l_udp_srv->listener_es) {
+        // First listener - initialize shared_buf for legacy code compatibility
+        // (actual processing uses a_es->buf_in directly in each read callback)
         l_udp_srv->listener_es = a_es;
         l_udp_srv->shared_buf = a_es->buf_in;
         l_udp_srv->shared_buf_capacity = a_es->buf_in_size_max;
         
-        debug_if(s_debug_more, L_DEBUG, 
-               "Listener new callback: initialized shared buffer (listener_es=%p, capacity=%zu)", 
-               a_es, l_udp_srv->shared_buf_capacity);
-        
-        // Store listener esocket reference for session management
-        l_udp_srv->listener_es = a_es;
-        
-        log_it(L_INFO, "Stored listener esocket: a_es=%p (fd=%d) in UDP server structure", 
-               a_es, a_es->fd);
-    }    
+        log_it(L_INFO, "First listener initialized (fd=%d), socket sharding enabled", a_es->fd);
+    } else {
+        log_it(L_DEBUG, "Additional listener added (fd=%d) for socket sharding", a_es->fd);
+    }
+    
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
 }
 
@@ -336,20 +337,15 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         return;
     }
     
-    // Shared buffer should already be initialized by s_listener_new_callback
-    if (!l_udp_srv->listener_es || !l_udp_srv->shared_buf) {
-        log_it(L_ERROR, "Shared buffer not initialized (listener_es=%p, shared_buf=%p)",
-               l_udp_srv->listener_es, l_udp_srv->shared_buf);
-        a_es->buf_in_size = 0;
-        return;
-    }
+    // WITH SOCKET SHARDING:
+    // Each listener processes its OWN packets using its OWN buf_in.
+    // No shared buffer needed - just use a_es->buf_in directly!
     
-    // Lock shared buffer for reading
-    pthread_rwlock_rdlock(&l_udp_srv->shared_buf_lock);
-    l_udp_srv->shared_buf_size = a_es->buf_in_size;
+    uint8_t *l_buf = a_es->buf_in;
+    size_t l_buf_size = a_es->buf_in_size;
     
-    debug_if(s_debug_more, L_DEBUG, "UDP server received %zu bytes on socket %d (shared buffer)", 
-           l_udp_srv->shared_buf_size, a_es->socket);
+    debug_if(s_debug_more, L_DEBUG, "UDP server received %zu bytes on socket %d", 
+           l_buf_size, a_es->socket);
     
     // Check if we have at least a UDP header
     if (a_es->buf_in_size < sizeof(dap_stream_trans_udp_header_t)) {
@@ -387,10 +383,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     bool l_has_session = l_session_found && l_session;
     bool l_has_stream = l_has_session && l_session->stream;
     
-    if (l_has_session && l_udp_srv->shared_buf_size > 0) {
+    if (l_has_session && l_buf_size > 0) {
         log_it(L_INFO, "Dispatcher: session=%p, stream=%p, type=0x%02x, is_handshake=%d, size=%zu",
                l_session, l_has_stream ? l_session->stream : NULL,
-               l_type, l_is_handshake, l_udp_srv->shared_buf_size);
+               l_type, l_is_handshake, l_buf_size);
     }
     
     // NEW ARCHITECTURE: Dispatch by encryption status
@@ -400,7 +396,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     if (l_session_found && l_session && l_session->stream && !l_is_handshake) {
         
         debug_if(s_debug_more, L_DEBUG, "Dispatching encrypted UDP packet type=0x%02x (%zu bytes) to stream %p", 
-               l_type, l_udp_srv->shared_buf_size, l_session->stream);
+               l_type, l_buf_size, l_session->stream);
         
         // CRITICAL: Keep sessions_lock as READ lock during stream access
         dap_stream_t *l_stream = l_session->stream;
@@ -428,7 +424,7 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->read) {
             // Pass FULL UDP packet (with header) to s_udp_read for consistent processing
             // s_udp_read SERVER MODE will parse header and handle decryption
-            size_t l_packet_size = l_udp_srv->shared_buf_size;
+            size_t l_packet_size = l_buf_size;
             
             debug_if(s_debug_more, L_DEBUG, "Calling stream read with encrypted DATA packet (%zu bytes)", l_packet_size);
             
@@ -442,15 +438,11 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         
         // Release locks
         pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
-        pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
         
         // Clear listener buffer
         a_es->buf_in_size = 0;
         return;
     }
-    
-    // Release shared buffer lock (HANDSHAKE packets don't use shared buffer)
-    pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
     
     // No session OR packet is HANDSHAKE - parse as unencrypted control packet (HANDSHAKE only!)
     // Release read locks first as control packet processing doesn't need them
@@ -587,8 +579,11 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
         l_udp_ctx->remote_addr_len = a_es->addr_size;
         l_udp_ctx->session_id = l_session_id;
         
-        // CRITICAL: Store listener esocket in UDP context for server-side sendto
-        l_udp_ctx->listener_esocket = l_udp_srv->listener_es;
+        // CRITICAL: Store THIS listener esocket (the one that received the packet)
+        // With socket sharding, we have N listener sockets. The session must use
+        // the SAME listener socket that received its first packet for ALL responses.
+        // This ensures session affinity and prevents race conditions on addr_storage.
+        l_udp_ctx->listener_esocket = a_es;  // Use a_es (current listener), NOT l_udp_srv->listener_es
         
         log_it(L_DEBUG, "Initialized UDP context for server-side stream %p (session 0x%lx, listener_es=%p fd=%d)", 
                l_session->stream, l_session_id, l_udp_ctx->listener_esocket, 

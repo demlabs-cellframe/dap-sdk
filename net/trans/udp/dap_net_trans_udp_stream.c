@@ -59,19 +59,6 @@
 #include "dap_net_trans_ctx.h"
 #include <json-c/json.h>  // For JSON parsing
 
-/**
- * @brief Write callback args for cross-worker UDP write
- */
-typedef struct udp_write_callback_args {
-    dap_events_socket_t *listener_esocket;
-    struct sockaddr_storage remote_addr;
-    socklen_t remote_addr_len;
-    uint8_t *data;
-    size_t data_size;
-} udp_write_callback_args_t;
-
-static void s_udp_write_in_listener_worker(void *a_arg);
-
 #define LOG_TAG "dap_stream_trans_udp"
 
 // Debug flags
@@ -83,41 +70,6 @@ static bool s_debug_more = false;  // Extra verbose debugging
 // Default configuration values
 #define DAP_STREAM_UDP_DEFAULT_MAX_PACKET_SIZE  1400
 #define DAP_STREAM_UDP_DEFAULT_KEEPALIVE_MS     30000
-
-/**
- * @brief Callback to write UDP packet in listener worker thread
- * @details This callback is executed in the listener's worker thread to safely update
- *          addr_storage and write data without race conditions.
- */
-static void s_udp_write_in_listener_worker(void *a_arg)
-{
-    udp_write_callback_args_t *l_args = (udp_write_callback_args_t*)a_arg;
-    if (!l_args || !l_args->listener_esocket || !l_args->data) {
-        log_it(L_ERROR, "s_udp_write_in_listener_worker: invalid arguments");
-        if (l_args && l_args->data) {
-            DAP_DELETE(l_args->data);
-        }
-        DAP_DELETE(l_args);
-        return;
-    }
-
-    // Update addr_storage for this specific write (thread-safe - we're in listener worker)
-    memcpy(&l_args->listener_esocket->addr_storage, &l_args->remote_addr, sizeof(l_args->remote_addr));
-    l_args->listener_esocket->addr_size = l_args->remote_addr_len;
-
-    // Write data - reactor will use our updated addr_storage for sendto
-    ssize_t l_sent = dap_events_socket_write_unsafe(l_args->listener_esocket, l_args->data, l_args->data_size);
-    
-    if (l_sent < 0) {
-        log_it(L_ERROR, "Server UDP write_unsafe failed in listener worker");
-    } else {
-        debug_if(s_debug_more, L_DEBUG, "Server UDP: queued %zd bytes for reactor sendto", l_sent);
-    }
-
-    // Cleanup
-    DAP_DELETE(l_args->data);
-    DAP_DELETE(l_args);
-}
 
 // Trans operations forward declarations
 static int s_udp_init(dap_net_trans_t *a_trans, dap_config_t *a_config);
@@ -1858,7 +1810,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         DAP_DELETE(l_pkt);
         return l_result;
     } else {
-        // SERVER: Use reactor sendto via listener worker callback
+        // SERVER: Use reactor sendto (DIRECT - we're already in listener worker with socket sharding!)
         
         // Get UDP per-stream context for remote_addr
         if (!l_udp_ctx) {
@@ -1881,34 +1833,31 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
             return -1;
         }
         
-        // Get listener worker to execute write in its thread
-        dap_worker_t *l_listener_worker = l_listener_es->worker;
-        if (!l_listener_worker) {
-            log_it(L_ERROR, "Listener esocket has no worker");
-            DAP_DELETE(l_pkt);
-            return -1;
+        // SOCKET SHARDING OPTIMIZATION:
+        // With socket sharding, we are ALREADY in the correct listener worker thread!
+        // - Kernel routes packets by hash(src_ip, src_port) to specific listener socket
+        // - That listener socket is bound to specific worker thread
+        // - Session is created in that worker thread
+        // - ALL subsequent packets from same client go to SAME worker thread (session affinity)
+        // - When trans->ops->write is called, we're invoked via reactor in SAME worker thread
+        // - NO need for dap_worker_exec_callback_on - we can update addr_storage directly!
+        
+        // Update addr_storage for this write (safe - we're in listener's worker)
+        memcpy(&l_listener_es->addr_storage, &l_udp_ctx->remote_addr, sizeof(l_udp_ctx->remote_addr));
+        l_listener_es->addr_size = l_udp_ctx->remote_addr_len;
+        
+        // Write directly - reactor will use our updated addr_storage for sendto
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_listener_es, l_pkt, l_total_size);
+        
+        if (l_sent < 0) {
+            log_it(L_ERROR, "Server UDP write_unsafe failed");
+        } else {
+            l_result = l_sent;
+            debug_if(s_debug_more, L_DEBUG, "Server UDP: wrote %zd bytes directly (socket sharding - already in listener worker)", l_sent);
         }
         
-        // Prepare callback args (callback takes ownership of l_pkt)
-        udp_write_callback_args_t *l_args = DAP_NEW_Z(udp_write_callback_args_t);
-        if (!l_args) {
-            log_it(L_ERROR, "Failed to allocate write callback args");
-            DAP_DELETE(l_pkt);
-            return -1;
-        }
-        
-        l_args->listener_esocket = l_listener_es;
-        memcpy(&l_args->remote_addr, &l_udp_ctx->remote_addr, sizeof(l_args->remote_addr));
-        l_args->remote_addr_len = l_udp_ctx->remote_addr_len;
-        l_args->data = l_pkt;  // Transfer ownership
-        l_args->data_size = l_total_size;
-        
-        // Execute write in listener worker thread (thread-safe)
-        dap_worker_exec_callback_on(l_listener_worker, s_udp_write_in_listener_worker, l_args);
-        
-        debug_if(s_debug_more, L_DEBUG, "Server UDP: queued %zu bytes for write via listener worker", l_total_size);
-        
-        return (ssize_t)l_total_size;  // Optimistic return - actual write happens async
+        DAP_DELETE(l_pkt);
+        return l_result;
     }
 }
 
