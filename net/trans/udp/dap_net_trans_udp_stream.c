@@ -1420,21 +1420,27 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     // Create temporary fake esocket for processing
                     dap_events_socket_t *l_saved_es = a_stream->trans_ctx->esocket;
                     
-                    // Create minimal fake esocket with buf_in pointing to stream packet
-                    dap_events_socket_t l_fake_es = {0};
-                    l_fake_es.buf_in = l_payload;
-                    l_fake_es.buf_in_size = l_payload_len;
+                    // Allocate fake esocket on heap with proper initialization
+                    dap_events_socket_t *l_fake_es = DAP_NEW_Z(dap_events_socket_t);
+                    l_fake_es->buf_in = DAP_NEW_SIZE(byte_t, l_payload_len);
+                    memcpy(l_fake_es->buf_in, l_payload, l_payload_len);
+                    l_fake_es->buf_in_size = l_payload_len;
+                    l_fake_es->_inheritor = a_stream;  // Link to stream
                     
-                    a_stream->trans_ctx->esocket = &l_fake_es;
+                    a_stream->trans_ctx->esocket = l_fake_es;
                     
                     // Process stream data (will parse stream packets and dispatch to channels)
                     size_t l_processed = dap_stream_data_proc_read(a_stream);
                     
                     log_it(L_INFO, "Server: processed %zu bytes of stream data (buf_in_size after=%zu)", 
-                           l_processed, l_fake_es.buf_in_size);
+                           l_processed, l_fake_es->buf_in_size);
                     
                     // Restore original esocket
                     a_stream->trans_ctx->esocket = l_saved_es;
+                    
+                    // Cleanup
+                    DAP_DELETE(l_fake_es->buf_in);
+                    DAP_DELETE(l_fake_es);
                 } else {
                     log_it(L_ERROR, "Server: no trans_ctx for processing DATA");
                 }
