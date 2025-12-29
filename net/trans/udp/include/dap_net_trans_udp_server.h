@@ -30,6 +30,41 @@ See more details here <http://www.gnu.org/licenses/>.
 typedef struct udp_session_entry udp_session_entry_t;
 
 /**
+ * @brief Cross-worker packet forwarding structure
+ */
+typedef struct udp_cross_worker_packet {
+    udp_session_entry_t *session;           ///< Target session (in remote worker)
+    uint8_t *data;                           ///< Packet data (ownership transferred)
+    size_t size;                             ///< Data size
+    struct sockaddr_storage remote_addr;    ///< Source address
+    socklen_t remote_addr_len;              ///< Address length
+} udp_cross_worker_packet_t;
+
+/**
+ * @brief Per-worker context for inter-worker communication
+ */
+typedef struct udp_worker_context {
+    uint32_t worker_id;                     ///< This worker's ID
+    
+    // Incoming pipe (receive from other workers)
+    int pipe_read_fd;                       ///< Read end for THIS worker
+    dap_events_socket_t *pipe_es;          ///< Wrapped pipe esocket
+    
+    // Outgoing batch buffers (send to other workers)
+    udp_cross_worker_packet_t **batches;   ///< Array[worker_count] of packet lists
+    size_t *batch_counts;                   ///< Current batch sizes
+    size_t *batch_capacities;              ///< Batch capacities
+    
+    // Write ends to other workers' pipes
+    int *pipe_write_fds;                    ///< Array[worker_count]
+    
+    // Statistics
+    _Atomic size_t packets_sent;
+    _Atomic size_t packets_received;
+    _Atomic size_t batches_flushed;
+} udp_worker_context_t;
+
+/**
  * @brief UDP server structure
  * 
  * UDP server is built on top of dap_server_t to handle
@@ -43,15 +78,19 @@ typedef struct dap_net_trans_udp_server {
     char server_name[256];              ///< Server name for identification
     dap_net_trans_t *trans;             ///< UDP trans instance
     
-    // Session management
-    udp_session_entry_t *sessions;      ///< Hash table of active UDP sessions (keyed by session_id)
-    pthread_rwlock_t sessions_lock;     ///< Lock for sessions hash table
+    // Per-worker session management (socket sharding optimization)
+    uint32_t worker_count;              ///< Number of workers
+    udp_session_entry_t **sessions_per_worker;  ///< Array[worker_count] of hash tables
+    pthread_rwlock_t *worker_locks;     ///< Array[worker_count] of locks
     
-    // Shared buffer architecture for multi-worker support
-    pthread_rwlock_t shared_buf_lock;   ///< RW lock for shared buffer access
-    byte_t *shared_buf;                 ///< Shared buffer pointer (points to listener esocket buf_in)
-    size_t shared_buf_size;             ///< Current size of data in shared buffer
-    size_t shared_buf_capacity;         ///< Maximum capacity of shared buffer
+    // Per-worker contexts for cross-worker communication
+    udp_worker_context_t **worker_contexts;  ///< Array[worker_count]
+    
+    // Statistics
+    _Atomic size_t local_hits;          ///< Local session lookups
+    _Atomic size_t remote_hits;         ///< Remote session lookups
+    _Atomic size_t session_migrations;  ///< Sessions migrated
+    
     dap_events_socket_t *listener_es;   ///< Physical listener esocket (owns shared buffer)
 } dap_net_trans_udp_server_t;
 
