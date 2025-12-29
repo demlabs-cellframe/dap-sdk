@@ -92,6 +92,8 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
                                 dap_net_trans_ready_cb_t a_callback);
 static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type, 
+                                  const void *a_data, size_t a_size);
 static void s_udp_close(dap_stream_t *a_stream);
 static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans);
 static void* s_udp_get_client_context(dap_stream_t *a_stream);
@@ -747,43 +749,17 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     void *l_alice_pub = l_udp_ctx->alice_key->pub_key_data;
     size_t l_alice_pub_size = l_udp_ctx->alice_key->pub_key_data_size;
     
-    // Create UDP packet with HANDSHAKE type
-    dap_stream_trans_udp_header_t l_header;
-    s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                        (uint16_t)l_alice_pub_size,
-                        l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+    // Send HANDSHAKE packet with alice public key via s_udp_write_typed
+    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_HANDSHAKE, 
+                                        l_alice_pub, l_alice_pub_size);
     
-    // Allocate buffer for header + payload
-    size_t l_packet_size = sizeof(l_header) + l_alice_pub_size;
-    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_packet_size);
-    if (!l_packet) {
-        log_it(L_CRITICAL, "Memory allocation failed for UDP handshake packet");
+    if (l_sent < 0) {
+        log_it(L_ERROR, "Failed to send UDP handshake init");
         return -1;
     }
     
-    // Copy header and payload
-    memcpy(l_packet, &l_header, sizeof(l_header));
-    memcpy(l_packet + sizeof(l_header), l_alice_pub, l_alice_pub_size);
-    
-    // Send via dap_events_socket_write_unsafe
-    // Use trans_ctx's esocket
-    if (!l_ctx || !l_ctx->esocket) {
-        log_it(L_ERROR, "No esocket in trans ctx for handshake init");
-        return -1;
-    }
-    dap_events_socket_t *l_es = l_ctx->esocket;
-    
-    size_t l_sent = dap_events_socket_write_unsafe(l_es, l_packet, l_packet_size);
-    
-    DAP_DELETE(l_packet);
-    
-    if (l_sent != l_packet_size) {
-        log_it(L_ERROR, "UDP handshake send incomplete: %zu of %zu bytes", l_sent, l_packet_size);
-        return -1;
-    }
-    
-    log_it(L_INFO, "UDP handshake init sent: %zu bytes (session_id=%lu)",
-           l_packet_size, l_udp_ctx->session_id);
+    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
+           l_sent, l_udp_ctx->session_id);
     
     return 0;
 }
@@ -1823,16 +1799,18 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 }
 
 /**
- * @brief Write data to UDP trans
+ * @brief Write data with specified UDP packet type (internal helper)
  * 
  * NEW ARCHITECTURE:
  * - Client: Uses own physical UDP esocket (trans_ctx->esocket)
  * - Server: Uses listener's physical esocket + sendto with remote_addr from UDP context
+ * - ALWAYS wraps payload in UDP header with specified type
  */
-static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
+                                  const void *a_data, size_t a_size)
 {
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write: a_stream=%p, a_data=%p, a_size=%zu", 
-             a_stream, a_data, a_size);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: a_stream=%p, type=0x%02x, a_size=%zu", 
+             a_stream, a_pkt_type, a_size);
     
     if (!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP write");
@@ -1864,35 +1842,65 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
     
     // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER by presence of remote_addr in UDP context
     // Server-side streams have remote_addr set (for sendto), client streams don't
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     bool l_is_server = (l_udp_ctx && l_udp_ctx->remote_addr.ss_family != 0);
     
+    // ALWAYS wrap data in UDP header - no exceptions!
+    // Callers should pass raw payload, we add UDP framing
+    if (!l_udp_ctx) {
+        log_it(L_ERROR, "No UDP context for write");
+        return -1;
+    }
+    
+    dap_stream_trans_udp_header_t l_hdr;
+    s_create_udp_header(&l_hdr, a_pkt_type, 
+                        (uint16_t)a_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+    
+    size_t l_total_size = sizeof(l_hdr) + a_size;
+    uint8_t *l_pkt = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
+    if (!l_pkt) {
+        log_it(L_ERROR, "Failed to allocate memory for UDP packet");
+        return -1;
+    }
+    memcpy(l_pkt, &l_hdr, sizeof(l_hdr));
+    memcpy(l_pkt + sizeof(l_hdr), a_data, a_size);
+    
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: wrapped %zu bytes payload in UDP header type=0x%02x (total=%zu)", 
+             a_size, a_pkt_type, l_total_size);
+    
+    ssize_t l_result = -1;
+    
     if (!l_is_server && l_ctx->esocket) {
         // CLIENT: Has own physical esocket, use it directly
         debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
-                 a_size, l_ctx->esocket, l_ctx->esocket->fd);
+                 l_total_size, l_ctx->esocket, l_ctx->esocket->fd);
         
-        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, a_data, a_size);
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_pkt, l_total_size);
         if (l_sent < 0) {
             log_it(L_ERROR, "UDP client send failed");
-            return -1;
+        } else {
+            l_result = l_sent;
         }
-        return l_sent;
+        
+        DAP_DELETE(l_pkt);
+        return l_result;
     } else {
         // SERVER: Use listener's physical esocket + sendto with remote_addr
         
         // Get UDP per-stream context for remote_addr
         if (!l_udp_ctx) {
             log_it(L_ERROR, "Server stream has no UDP context for write");
+            DAP_DELETE(l_pkt);
             return -1;
         }
         
         if (l_udp_ctx->remote_addr.ss_family == 0) {
             log_it(L_ERROR, "Server stream has no remote address for write");
+            DAP_DELETE(l_pkt);
             return -1;
         }
         
@@ -1900,12 +1908,14 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         dap_events_socket_t *l_listener_es = l_udp_ctx->listener_esocket;
         if (!l_listener_es) {
             log_it(L_ERROR, "Server UDP context has no listener esocket for write");
+            DAP_DELETE(l_pkt);
             return -1;
         }
         
         int l_fd = l_listener_es->fd;
         if (l_fd < 0) {
             log_it(L_ERROR, "Listener esocket has invalid fd");
+            DAP_DELETE(l_pkt);
             return -1;
         }
         
@@ -1915,26 +1925,37 @@ static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         char l_ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_addr_in->sin_addr, l_ip_str, sizeof(l_ip_str));
         
-        ssize_t l_sent = sendto(l_fd, a_data, a_size, 0,
+        ssize_t l_sent = sendto(l_fd, l_pkt, l_total_size, 0,
                                 (struct sockaddr*)&l_udp_ctx->remote_addr,
                                 l_udp_ctx->remote_addr_len);
         
         if (l_sent < 0) {
             log_it(L_ERROR, "Server UDP sendto failed: %s (fd=%d, %s:%u)", 
                    strerror(errno), l_fd, l_ip_str, l_remote_port);
+            DAP_DELETE(l_pkt);
             return -1;
         }
         
         static __thread int s_data_pkt_count = 0;
         if (++s_data_pkt_count <= 5) {  // Log first 5 data packets
-            log_it(L_INFO, "Server sent DATA packet #%d: %zd bytes to %s:%u (fd=%d)", 
-                   s_data_pkt_count, l_sent, l_ip_str, l_remote_port, l_fd);
+            log_it(L_INFO, "Server sent packet type=0x%02x #%d: %zd bytes to %s:%u (fd=%d)", 
+                   a_pkt_type, s_data_pkt_count, l_sent, l_ip_str, l_remote_port, l_fd);
         }
         
         debug_if(s_debug_more, L_DEBUG, "Server sent %zd bytes to remote port %u (fd=%d)", l_sent, l_remote_port, l_fd);
         
+        DAP_DELETE(l_pkt);
         return l_sent;
     }
+}
+
+/**
+ * @brief Write DATA packet (trans->ops->write implementation)
+ */
+static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    // All DATA packets go through here (from dap_stream_pkt_write_unsafe)
+    return s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_DATA, a_data, a_size);
 }
 
 /**
