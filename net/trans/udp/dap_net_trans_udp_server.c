@@ -372,10 +372,23 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             break;
         }
     }
-    // Check if this could be a control packet (version byte = 1)
+    // Check if this could be a control packet (HANDSHAKE or SESSION_CREATE)
     dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_es->buf_in;
-    uint8_t l_version = l_header->version;
-    bool l_looks_like_control = (l_version == 1);
+    uint8_t l_type = l_header->type;
+    bool l_looks_like_control = (l_type == DAP_STREAM_UDP_PKT_HANDSHAKE || 
+                                  l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE);
+    
+    // Debug: Check conditions for encrypted data path
+    bool l_has_session = l_session_found && l_session;
+    bool l_has_stream = l_has_session && l_session->stream;
+    bool l_has_session_key = l_has_stream && l_session->stream->session && l_session->stream->session->key;
+    
+    if (l_has_session && l_udp_srv->shared_buf_size > 0) {
+        log_it(L_INFO, "Dispatcher: session=%p, stream=%p, session_key=%p, type=0x%02x, looks_like_control=%d, size=%zu",
+               l_session, l_has_stream ? l_session->stream : NULL,
+               l_has_session_key ? l_session->stream->session->key : NULL,
+               l_type, l_looks_like_control, l_udp_srv->shared_buf_size);
+    }
     
     // NEW ARCHITECTURE: If we have active session with encryption key AND packet doesn't look like control packet,
     // treat as encrypted stream data and dispatch to stream
@@ -446,7 +459,9 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     // Release read locks first as control packet processing doesn't need them
     pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
     pthread_rwlock_unlock(&l_udp_srv->shared_buf_lock);
-    uint8_t l_type = l_header->type;
+    
+    // Parse control packet (l_type and l_header already defined above)
+    uint8_t l_version = l_header->version;
     uint16_t l_payload_len = ntohs(l_header->length);
     uint32_t l_seq_num = ntohl(l_header->seq_num);
     uint64_t l_session_id = be64toh(l_header->session_id);
