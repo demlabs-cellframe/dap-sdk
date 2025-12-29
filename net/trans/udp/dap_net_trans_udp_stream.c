@@ -1160,36 +1160,12 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     const char *l_channels = a_params->channels ? a_params->channels : "";
     size_t l_channels_len = strlen(l_channels);
     
-    // Create UDP packet with SESSION_CREATE type and channels as payload
-    // Format: UDP_HEADER + channels_string (null-terminated)
-    dap_stream_trans_udp_header_t l_header;
-    s_create_udp_header(&l_header, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                        (uint16_t)(l_channels_len + 1),  // +1 for null terminator
-                        l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+    // Send SESSION_CREATE packet with channels as payload (null-terminated string)
+    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                        l_channels, l_channels_len + 1);
     
-    size_t l_packet_size = sizeof(l_header) + l_channels_len + 1;
-    uint8_t *l_packet = DAP_NEW_Z_SIZE(uint8_t, l_packet_size);
-    if (!l_packet) {
-        log_it(L_ERROR, "Failed to allocate session create packet");
-        return -1;
-    }
-    
-    memcpy(l_packet, &l_header, sizeof(l_header));
-    memcpy(l_packet + sizeof(l_header), l_channels, l_channels_len + 1);
-    
-    // Send via dap_events_socket_write_unsafe
-    if (!l_ctx || !l_ctx->esocket) {
-        log_it(L_ERROR, "No esocket in trans ctx for session create");
-        DAP_DELETE(l_packet);
-        return -1;
-    }
-    dap_events_socket_t *l_es = l_ctx->esocket;
-    
-    size_t l_sent = dap_events_socket_write_unsafe(l_es, l_packet, l_packet_size);
-    DAP_DELETE(l_packet);
-    
-    if (l_sent != l_packet_size) {
-        log_it(L_ERROR, "UDP session create send incomplete");
+    if (l_sent < 0) {
+        log_it(L_ERROR, "Failed to send UDP session create request");
         return -1;
     }
     
@@ -1302,31 +1278,16 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 int l_result = s_udp_handshake_process(a_stream, l_payload, l_payload_len, &l_response, &l_response_size);
                 
                 if (l_result == 0 && l_response && l_response_size > 0) {
-                    // Send response via trans->ops->write (dispatcher will use sendto)
-                    dap_stream_trans_udp_header_t l_resp_hdr;
-                    s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                        (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+                    // Send handshake response via s_udp_write_typed
+                    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                                         l_response, l_response_size);
                     
-                    size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
-                    uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
-                    memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
-                    memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
-                    
-                    debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
-                    
-                    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-                        ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
-                        if (l_sent != (ssize_t)l_resp_total) {
-                            log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
-                                   l_sent, l_resp_total);
-                        } else {
-                            debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
-                        }
+                    if (l_sent < 0) {
+                        log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response");
                     } else {
-                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
+                        debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
                     }
                     
-                    DAP_DELETE(l_resp_pkt);
                     DAP_DELETE(l_response);
                 }
                 break;
@@ -1406,29 +1367,17 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 log_it(L_INFO, "Server: derived session key for session 0x%lx using KDF (counter=%lu)", 
                        l_sess_id, l_session_counter);
                 
-                // Prepare response header with counter (client needs it to derive same key)
-                dap_stream_trans_udp_header_t l_resp_hdr;
-                s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                    sizeof(l_session_counter), l_udp_ctx->seq_num++, l_sess_id);
-                
-                // Prepare response packet (header + counter)
-                uint8_t l_session_resp[sizeof(l_resp_hdr) + sizeof(uint64_t)];
-                memcpy(l_session_resp, &l_resp_hdr, sizeof(l_resp_hdr));
+                // Send SESSION_CREATE response with KDF counter (client needs it to derive same key)
                 uint64_t l_counter_be = htobe64(l_session_counter);
-                memcpy(l_session_resp + sizeof(l_resp_hdr), &l_counter_be, sizeof(l_counter_be));
                 
-                // Send response via trans->ops->write
-                if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-                    ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_session_resp, sizeof(l_session_resp));
-                    if (l_sent != (ssize_t)sizeof(l_session_resp)) {
-                        log_it(L_ERROR, "Server: failed to send SESSION_CREATE response (%zd of %zu bytes)", 
-                               l_sent, sizeof(l_session_resp));
-                    } else {
-                        debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
-                                 l_session_counter, l_sess_id);
-                    }
+                ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                                     &l_counter_be, sizeof(l_counter_be));
+                
+                if (l_sent < 0) {
+                    log_it(L_ERROR, "Server: failed to send SESSION_CREATE response for session 0x%lx", l_sess_id);
                 } else {
-                    log_it(L_ERROR, "Server: no write method in trans for SESSION_CREATE response");
+                    debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
+                             l_session_counter, l_sess_id);
                 }
                 break;
             }
@@ -1583,32 +1532,16 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  s_udp_handshake_process(a_stream, l_payload, l_payload_size, &l_response, &l_response_size);
                  
                 if (l_response && l_response_size > 0) {
-                    // Send response (use per-stream seq_num)
-                    dap_stream_trans_udp_header_t l_resp_hdr;
-                    s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                        (uint16_t)l_response_size, l_udp_ctx->seq_num++, l_header->session_id);
+                    // Send handshake response via s_udp_write_typed
+                    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                                         l_response, l_response_size);
                     
-                    size_t l_resp_total = sizeof(l_resp_hdr) + l_response_size;
-                    uint8_t *l_resp_pkt = DAP_NEW_Z_SIZE(uint8_t, l_resp_total);
-                    memcpy(l_resp_pkt, &l_resp_hdr, sizeof(l_resp_hdr));
-                    memcpy(l_resp_pkt + sizeof(l_resp_hdr), l_response, l_response_size);
-                    
-                    debug_if(s_debug_more, L_DEBUG, "SERVER: sending handshake response (%zu bytes total)", l_resp_total);
-                    
-                    // NEW ARCHITECTURE: Use trans->ops->write (dispatcher)
-                    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-                        ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_resp_pkt, l_resp_total);
-                        if (l_sent != (ssize_t)l_resp_total) {
-                            log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response (%zd of %zu bytes)",
-                                   l_sent, l_resp_total);
-                        } else {
-                            debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
-                        }
+                    if (l_sent < 0) {
+                        log_it(L_ERROR, "SERVER: failed to send HANDSHAKE response");
                     } else {
-                        log_it(L_ERROR, "SERVER: trans or trans->ops->write is NULL");
+                        debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
                     }
                     
-                    DAP_DELETE(l_resp_pkt);
                     DAP_DELETE(l_response);
                  } else {
                      debug_if(s_debug_more, L_DEBUG, "SERVER: handshake process returned no response (l_response=%p, l_response_size=%zu)", 
@@ -1757,28 +1690,16 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                        l_sess_id, l_session_counter);
                 
                 // Prepare response header with counter (client needs it to derive same key)
-                dap_stream_trans_udp_header_t l_resp_hdr;
-                s_create_udp_header(&l_resp_hdr, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                    sizeof(l_session_counter), l_udp_ctx->seq_num++, l_sess_id);
-                
-                // Prepare response packet (header + counter)
-                uint8_t l_session_resp[sizeof(l_resp_hdr) + sizeof(uint64_t)];
-                memcpy(l_session_resp, &l_resp_hdr, sizeof(l_resp_hdr));
                 uint64_t l_counter_be = htobe64(l_session_counter);
-                memcpy(l_session_resp + sizeof(l_resp_hdr), &l_counter_be, sizeof(l_counter_be));
                 
-                // NEW ARCHITECTURE: Use trans->ops->write (dispatcher)
-                if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-                    ssize_t l_sent = a_stream->trans->ops->write(a_stream, l_session_resp, sizeof(l_session_resp));
-                    if (l_sent != (ssize_t)sizeof(l_session_resp)) {
-                        log_it(L_ERROR, "Server: failed to send SESSION_CREATE response (%zd of %zu bytes)", 
-                               l_sent, sizeof(l_session_resp));
-                    } else {
-                        debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
-                                 l_session_counter, l_sess_id);
-                    }
+                ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                                     &l_counter_be, sizeof(l_counter_be));
+                
+                if (l_sent < 0) {
+                    log_it(L_ERROR, "Server: failed to send SESSION_CREATE response for session 0x%lx", l_sess_id);
                 } else {
-                    log_it(L_ERROR, "Server: no write method in trans for SESSION_CREATE response");
+                    debug_if(s_debug_more, L_DEBUG, "Server: sent SESSION_CREATE response with KDF counter (%lu) for session 0x%lx", 
+                             l_session_counter, l_sess_id);
                 }
             } else {
                 // Client: Duplicate SESSION_CREATE response (callback already called)
