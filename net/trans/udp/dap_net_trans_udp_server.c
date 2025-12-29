@@ -327,6 +327,10 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     if (!a_es || !a_es->buf_in_size || !a_es->server)
         return;
     
+    // UNCONDITIONAL LOG: Track ALL incoming UDP packets
+    log_it(L_INFO, "=== UDP SERVER RECV: fd=%d, buf_in_size=%zu ===", 
+           a_es->socket, a_es->buf_in_size);
+    
     // Get UDP server instance from listener socket
     dap_net_trans_udp_server_t *l_udp_srv = DAP_NET_TRANS_UDP_SERVER(a_es->server);
     if (!l_udp_srv) {
