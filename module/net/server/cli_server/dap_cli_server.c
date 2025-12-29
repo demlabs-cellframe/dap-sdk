@@ -40,6 +40,7 @@
 #include "dap_list.h"
 #include "dap_net.h"
 #include "dap_cli_server.h"
+#include "dap_cli_error_codes.h"
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_server.h"
@@ -186,6 +187,10 @@ static void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) 
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
 {
     s_debug_cli = a_debug_more;
+    
+    // Initialize CLI error codes registry
+    dap_cli_error_codes_init();
+    
     dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete };
     if (!( s_cli_server = dap_server_new(a_cfg_section, NULL, &l_callbacks) )) {
         log_it(L_ERROR, "CLI server not initialized");
@@ -203,6 +208,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
  */
 void dap_cli_server_deinit()
 {
+    dap_cli_error_codes_deinit();
     dap_server_delete(s_cli_server);
 }
 
