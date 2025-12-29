@@ -33,6 +33,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_udp_server.h"
 #include "dap_net_trans_udp_stream.h"
 #include "dap_stream.h"
+#include "dap_stream_worker.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
@@ -327,10 +328,6 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     if (!a_es || !a_es->buf_in_size || !a_es->server)
         return;
     
-    // UNCONDITIONAL LOG: Track ALL incoming UDP packets
-    log_it(L_INFO, "=== UDP SERVER RECV: fd=%d, buf_in_size=%zu ===", 
-           a_es->socket, a_es->buf_in_size);
-    
     // Get UDP server instance from listener socket
     dap_net_trans_udp_server_t *l_udp_srv = DAP_NET_TRANS_UDP_SERVER(a_es->server);
     if (!l_udp_srv) {
@@ -535,6 +532,20 @@ static void s_udp_server_read_callback(dap_events_socket_t *a_es, void *a_arg) {
             a_es->buf_in_size = 0;
             return;
         }
+        
+        // CRITICAL: Set stream_worker from listener's worker for channel creation
+        // Without stream_worker, dap_stream_ch_new will fail!
+        l_session->stream->stream_worker = DAP_STREAM_WORKER(a_es->worker);
+        if (!l_session->stream->stream_worker) {
+            log_it(L_ERROR, "Failed to get stream_worker from listener esocket worker");
+            DAP_DELETE(l_session->stream);
+            DAP_DELETE(l_session);
+            pthread_rwlock_unlock(&l_udp_srv->sessions_lock);
+            a_es->buf_in_size = 0;
+            return;
+        }
+        log_it(L_DEBUG, "Set stream_worker %p for server-side stream %p", 
+               l_session->stream->stream_worker, l_session->stream);
         
         // Initialize trans_ctx WITHOUT esocket (dispatcher will handle I/O)
         l_session->stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);

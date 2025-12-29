@@ -1352,6 +1352,31 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     }
                 }
                 
+                // CRITICAL: Initialize channels for server-side stream if not already done!
+                // Without channels, dap_stream_data_proc_read won't process incoming data
+                if (a_stream->session && a_stream->channel_count == 0) {
+                    // Default channels for testing: 'A', 'B', 'C'
+                    // In production, this should come from session negotiation
+                    strcpy(a_stream->session->active_channels, "ABC");
+                    
+                    // Create channels for the session
+                    size_t l_channel_count = strlen(a_stream->session->active_channels);
+                    log_it(L_INFO, "Server: creating %zu channels for session 0x%lx", l_channel_count, l_sess_id);
+                    for (size_t i = 0; i < l_channel_count; i++) {
+                        dap_stream_ch_t *l_ch = dap_stream_ch_new(a_stream, a_stream->session->active_channels[i]);
+                        if (!l_ch) {
+                            log_it(L_ERROR, "Server: failed to create channel '%c' for session 0x%lx", 
+                                   a_stream->session->active_channels[i], l_sess_id);
+                            break;
+                        }
+                        l_ch->ready_to_read = true;
+                        log_it(L_INFO, "Server: created channel '%c' for session 0x%lx", 
+                               a_stream->session->active_channels[i], l_sess_id);
+                    }
+                } else if (a_stream->channel_count > 0) {
+                    log_it(L_INFO, "Server: session 0x%lx already has %zu channels", l_sess_id, a_stream->channel_count);
+                }
+                
                 // Use KDF to derive SESSION key from HANDSHAKE key (no seed transmission!)
                 if (!l_udp_ctx->handshake_key) {
                     log_it(L_ERROR, "Server: no handshake key for deriving session key");
@@ -1414,9 +1439,20 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 // No need to decrypt at UDP level - stream layer will handle it
                 log_it(L_INFO, "Server: processing DATA packet (%u bytes stream data)", l_payload_len);
                 
+                // Debug: print first 64 bytes of stream packet
+                if (l_payload_len > 0) {
+                    char l_hex[256] = {0};
+                    size_t l_print_size = l_payload_len > 64 ? 64 : l_payload_len;
+                    for (size_t i = 0; i < l_print_size; i++) {
+                        sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_payload)[i]);
+                    }
+                    log_it(L_INFO, "Server: stream packet first %zu bytes: %s", l_print_size, l_hex);
+                }
+                
                 // Process stream data directly (payload is stream packet)
                 if (a_stream->trans_ctx) {
-                    log_it(L_INFO, "Server: passing stream packet to dap_stream_data_proc_read");
+                    log_it(L_INFO, "Server: passing stream packet to dap_stream_data_proc_read (channel_count=%zu)", 
+                           a_stream->channel_count);
                     // Create temporary fake esocket for processing
                     dap_events_socket_t *l_saved_es = a_stream->trans_ctx->esocket;
                     
@@ -1432,8 +1468,14 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     // Process stream data (will parse stream packets and dispatch to channels)
                     size_t l_processed = dap_stream_data_proc_read(a_stream);
                     
-                    log_it(L_INFO, "Server: processed %zu bytes of stream data (buf_in_size after=%zu)", 
+                    log_it(L_INFO, "Server: dap_stream_data_proc_read processed %zu bytes (buf_in_size=%zu)", 
                            l_processed, l_fake_es->buf_in_size);
+                    
+                    // Shrink buffer if data was processed
+                    if (l_processed > 0) {
+                        dap_events_socket_shrink_buf_in(l_fake_es, l_processed);
+                        log_it(L_INFO, "Server: after shrink, buf_in_size=%zu", l_fake_es->buf_in_size);
+                    }
                     
                     // Restore original esocket
                     a_stream->trans_ctx->esocket = l_saved_es;
