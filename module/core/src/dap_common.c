@@ -776,7 +776,7 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
 {
     unsigned l_len = LOG_FORMAT_LEN * 8;
     char l_line[l_len];
-	FILE *fp = fopen(filename, "rb+"); // rb+ is for unignoring \r
+	FILE *fp = fopen(filename, "rb"); // rb for read-only binary mode
 	if (!fp) {
 		return NULL;
 	}
@@ -811,7 +811,7 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     fseek(fp, l_start_pos, SEEK_SET);
 
     // Finaly read required data from file to buf
-    l_len = l_end_pos - l_start_pos - 1;
+    l_len = l_end_pos - l_start_pos;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
     fread(l_buf, l_len, 1, fp);
 	fclose(fp);
@@ -820,36 +820,38 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
 }
 
 char* dap_log_get_last_n_lines(const char *filename, int N) {
-
-    unsigned l_len = 2048 * 8;
-    char l_line[l_len];
-	FILE *file = fopen(filename, "rb+"); // rb+ is for unignoring \r
+    const unsigned l_buf_size = 2048 * 8;
+	FILE *file = fopen(filename, "rb"); // rb for read-only binary mode
 	if (!file) {
 		return NULL;
 	}
     int counter = 0;
     if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
         return NULL;
     }
 
     long l_ret = ftell(file);
     if (l_ret < 0) {
+        fclose(file);
         return NULL;
     }
     unsigned l_file_pos = l_ret;
     unsigned l_end_pos = l_file_pos;
     unsigned l_n_line_pos = 0;
     while (l_file_pos > 0) {
-        char buf[l_len];
-        size_t to_read = (l_file_pos >= l_len) ? l_len : l_file_pos;
+        char buf[l_buf_size];
+        size_t to_read = (l_file_pos >= l_buf_size) ? l_buf_size : l_file_pos;
         l_file_pos -= to_read;
 
         if (fseek(file, l_file_pos, SEEK_SET) != 0) {
+            fclose(file);
             return NULL;
         }
 
         size_t res = fread(buf, 1, to_read, file);
         if (ferror(file)) {
+            fclose(file);
             return NULL;
         }
 
@@ -868,7 +870,7 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         }
     }
 
-    long l_read_size = l_end_pos - l_n_line_pos - 1;
+    long l_read_size = l_end_pos - l_n_line_pos;
     char * l_res = DAP_NEW_Z_SIZE(char, l_read_size + 1);
     fseek(file, l_n_line_pos, SEEK_SET);
     fread(l_res, l_read_size, 1, file);
@@ -879,26 +881,37 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
 
 
 int dap_log_export_string_to_file(const char *a_string, const char *dest_file_str) {
-    if (!a_string)
+    if (!a_string || !strlen(a_string))
         return -1;
 
-    FILE *dest_file = fopen(dest_file_str, "w");
+    FILE *dest_file = fopen(dest_file_str, "wb");
     if (!dest_file)
         return -2;
 
-    size_t l_read_size = strlen(a_string);
-
-    fwrite(a_string, l_read_size, 1, dest_file);
+    size_t l_write_size = strlen(a_string);
+    size_t l_written = fwrite(a_string, 1, l_write_size, dest_file);
     fclose(dest_file);
+    
+    if (l_written != l_write_size)
+        return -3;
+    
     return 0;
 }
 
 int dap_log_clear_file(const char *filename) {
+    // Check if we're clearing the current log file (already opened by node)
+    if (s_log_file && filename && !strcmp(filename, s_log_file_path)) {
+        // Use freopen to clear - works on Windows even when file is locked
+        if (!freopen(filename, "w", s_log_file)) {
+            return -1;
+        }
+        return 0;
+    }
+    // For other files, try regular fopen
     FILE *file = fopen(filename, "w");
     if (!file) {
         return -1;
     }
-
     fclose(file);
     return 0;
 }
