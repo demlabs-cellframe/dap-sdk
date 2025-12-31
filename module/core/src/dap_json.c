@@ -146,7 +146,13 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
+    struct json_object *l_obj = json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx);
+    if (!l_obj) {
+        return NULL;
+    }
+    // Increase ref_count so the object can be safely freed independently
+    json_object_get(l_obj);
+    return _json_c_to_dap_json(l_obj);
 }
 
 static int s_sort_fn_wrapper(const void *a, const void *b, void *a_user_arg)
@@ -485,6 +491,8 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
+    // Increase ref_count so the object can be safely freed independently
+    json_object_get(l_obj);
     return _json_c_to_dap_json(l_obj);
 }
 
@@ -498,7 +506,9 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
     if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
         return NULL;
     }
-        
+    
+    // Increase ref_count so the object can be safely freed independently
+    json_object_get(l_obj);
     return _json_c_to_dap_json(l_obj);
 }
 
