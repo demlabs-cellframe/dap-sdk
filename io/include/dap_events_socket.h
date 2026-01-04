@@ -392,6 +392,9 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket);
 
 dap_events_socket_t * dap_events_socket_create_type_pipe_unsafe(dap_worker_t * a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags);
 dap_events_socket_t * dap_events_socket_create_type_pipe_mt(dap_worker_t * a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags);
+dap_events_socket_t * dap_events_socket_create_type_pipe_write_end_unsafe(dap_worker_t * a_worker, 
+                                                                          dap_events_socket_t * a_pipe_read_es,
+                                                                          dap_events_socket_callbacks_t * a_callbacks);
 
 dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es);
 int dap_events_socket_queue_ptr_send_to_input( dap_events_socket_t * a_es, void* a_arg);

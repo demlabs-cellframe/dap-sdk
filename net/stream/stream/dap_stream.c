@@ -955,7 +955,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
 
-        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%zu mem_shift=%u filled=%zu", 
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {

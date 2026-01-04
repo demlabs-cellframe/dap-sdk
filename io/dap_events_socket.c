@@ -688,6 +688,58 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_unsafe(dap_worker_t * a
 }
 
 /**
+ * @brief Create write end esocket for existing pipe (cross-platform)
+ * 
+ * Creates an esocket wrapper around the write end (fd2) of an existing pipe.
+ * This function handles platform-specific differences:
+ * - POSIX: wraps fd2 from pipe
+ * - Windows: returns NULL (pipes not supported via this mechanism)
+ * 
+ * @param a_worker Worker to attach write end to
+ * @param a_pipe_read_es Existing pipe esocket (with read end)
+ * @param a_callbacks Callbacks for write end
+ * @return Created write end esocket or NULL on error
+ */
+dap_events_socket_t * dap_events_socket_create_type_pipe_write_end_unsafe(dap_worker_t * a_worker, 
+                                                                          dap_events_socket_t * a_pipe_read_es,
+                                                                          dap_events_socket_callbacks_t * a_callbacks)
+{
+    if (!a_worker || !a_pipe_read_es || !a_callbacks) {
+        log_it(L_ERROR, "Invalid arguments for pipe write end creation");
+        return NULL;
+    }
+    
+#ifdef DAP_OS_WINDOWS
+    // On Windows, pipes are not supported via this mechanism
+    log_it(L_ERROR, "Pipe write end creation not supported on Windows");
+    return NULL;
+#else
+    // On POSIX, wrap fd2 (write end)
+    if (a_pipe_read_es->fd2 < 0) {
+        log_it(L_ERROR, "Invalid pipe write fd (fd2=%d)", a_pipe_read_es->fd2);
+        return NULL;
+    }
+    
+    dap_events_socket_t *l_write_es = dap_events_socket_wrap_no_add(a_pipe_read_es->fd2, a_callbacks);
+    if (!l_write_es) {
+        log_it(L_ERROR, "Failed to wrap pipe write end");
+        return NULL;
+    }
+    
+    l_write_es->type = DESCRIPTOR_TYPE_PIPE;
+    l_write_es->flags = DAP_SOCK_READY_TO_WRITE;
+    
+    if (dap_worker_add_events_socket_unsafe(a_worker, l_write_es) != 0) {
+        log_it(L_ERROR, "Failed to add pipe write esocket to worker");
+        dap_events_socket_delete_unsafe(l_write_es, false);
+        return NULL;
+    }
+    
+    return l_write_es;
+#endif
+}
+
+/**
  * @brief s_socket_type_queue_ptr_input_callback_delete
  * @param a_es
  * @param a_arg

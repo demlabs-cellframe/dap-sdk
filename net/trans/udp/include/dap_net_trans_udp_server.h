@@ -26,7 +26,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_server.h"
 #include "dap_net_trans.h"
 
-// Forward declaration for session table
+// Forward declarations
+typedef struct dap_io_flow_server dap_io_flow_server_t;
 typedef struct udp_session_entry udp_session_entry_t;
 
 /**
@@ -47,16 +48,14 @@ typedef struct udp_worker_context {
     uint32_t worker_id;                     ///< This worker's ID
     
     // Incoming pipe (receive from other workers)
-    int pipe_read_fd;                       ///< Read end for THIS worker
-    dap_events_socket_t *pipe_es;          ///< Wrapped pipe esocket
+    dap_events_socket_t *pipe_read_es;     ///< Read-end esocket for THIS worker
     
-    // Outgoing batch buffers (send to other workers)
-    udp_cross_worker_packet_t **batches;   ///< Array[worker_count] of packet lists
-    size_t *batch_counts;                   ///< Current batch sizes
-    size_t *batch_capacities;              ///< Batch capacities
+    // NO intermediate buffers! Packet pointers written DIRECTLY to pipe_write_es->buf_out
+    // Reactor handles all I/O - zero-copy architecture
     
-    // Write ends to other workers' pipes
-    int *pipe_write_fds;                    ///< Array[worker_count]
+    // Write ends to other workers' pipes (wrapped as esockets with write callback)
+    dap_events_socket_t **pipe_write_es;   ///< Array[worker_count] of write-end esockets
+    uint32_t *pipe_write_target_ids;       ///< Array[worker_count] of target worker IDs (for callbacks)
     
     // Statistics
     _Atomic size_t packets_sent;
@@ -67,31 +66,12 @@ typedef struct udp_worker_context {
 /**
  * @brief UDP server structure
  * 
- * UDP server is built on top of dap_server_t to handle
- * UDP datagrams and route them to dap_stream processing.
- * 
- * This structure is stored in dap_server_t->_inheritor field,
- * similar to dap_http_server_t pattern.
+ * Wraps generic dap_io_flow_server_t with Stream UDP protocol.
  */
 typedef struct dap_net_trans_udp_server {
-    dap_server_t *server;               ///< Back pointer to parent dap_server instance
     char server_name[256];              ///< Server name for identification
     dap_net_trans_t *trans;             ///< UDP trans instance
-    
-    // Per-worker session management (socket sharding optimization)
-    uint32_t worker_count;              ///< Number of workers
-    udp_session_entry_t **sessions_per_worker;  ///< Array[worker_count] of hash tables
-    pthread_rwlock_t *worker_locks;     ///< Array[worker_count] of locks
-    
-    // Per-worker contexts for cross-worker communication
-    udp_worker_context_t **worker_contexts;  ///< Array[worker_count]
-    
-    // Statistics
-    _Atomic size_t local_hits;          ///< Local session lookups
-    _Atomic size_t remote_hits;         ///< Remote session lookups
-    _Atomic size_t session_migrations;  ///< Sessions migrated
-    
-    dap_events_socket_t *listener_es;   ///< Physical listener esocket (owns shared buffer)
+    dap_io_flow_server_t *flow_server;  ///< Generic flow server instance
 } dap_net_trans_udp_server_t;
 
 #define DAP_NET_TRANS_UDP_SERVER(a) ((dap_net_trans_udp_server_t *) (a)->_inheritor)
@@ -119,23 +99,18 @@ void dap_net_trans_udp_server_deinit(void);
 dap_net_trans_udp_server_t *dap_net_trans_udp_server_new(const char *a_server_name);
 
 /**
- * @brief Start UDP server on specified addresses and ports
+ * @brief Start UDP server on specified address and port
  * 
- * Creates internal dap_server_t with UDP callbacks, then starts listening
- * on all specified address:port pairs.
+ * Starts the flow server listening on the given address and port.
  * 
- * @param a_udp_server UDP server instance
- * @param a_cfg_section Configuration section name for dap_server
- * @param a_addrs Array of addresses (can be NULL for INADDR_ANY)
- * @param a_ports Array of ports
- * @param a_count Number of addresses/ports in arrays
+ * @param a_server UDP server instance
+ * @param a_addr Address to bind (NULL for INADDR_ANY)
+ * @param a_port Port to bind
  * @return 0 if success, negative error code otherwise
  */
-int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_udp_server,
-                                       const char *a_cfg_section,
-                                       const char **a_addrs, 
-                                       uint16_t *a_ports, 
-                                       size_t a_count);
+int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_server,
+                                   const char *a_addr,
+                                   uint16_t a_port);
 
 /**
  * @brief Stop UDP server and cleanup resources
