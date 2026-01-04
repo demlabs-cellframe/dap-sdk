@@ -14,12 +14,14 @@
 #include <arpa/inet.h>
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
 #include "dap_string.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_net_trans_udp_stream.h"
+#include "dap_net_trans_server.h"
 #include "dap_io_flow.h"
 #include "dap_io_flow_udp.h"
 #include "dap_io_flow_socket.h"
@@ -52,15 +54,6 @@ typedef struct stream_udp_session {
     uint64_t session_id;                 // Session ID from handshake
     dap_enc_key_t *encryption_key;       // Session encryption key
 } stream_udp_session_t;
-
-/**
- * @brief Stream UDP server structure (new architecture with dap_io_flow)
- */
-struct dap_net_trans_udp_server {
-    char server_name[256];
-    dap_net_trans_t *trans;
-    dap_io_flow_server_t *flow_server;  // Generic flow server instance
-};
 
 // Forward declarations for protocol handlers
 static bool s_stream_udp_should_forward(dap_io_flow_t *a_flow);
@@ -105,6 +98,10 @@ static dap_io_flow_udp_ops_t s_stream_udp_ops = {
     .protocol_send = NULL  // We use direct send
 };
 
+// Forward declarations for server operations
+static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
+                                      const char **a_addrs, uint16_t *a_ports, size_t a_count);
+
 // VTable for generic flow server
 static dap_io_flow_ops_t s_stream_flow_ops = {
     .packet_received = NULL,  // Handled by UDP layer
@@ -119,6 +116,69 @@ static dap_io_flow_ops_t s_stream_flow_ops = {
     .stream_write = s_stream_udp_stream_write_cb,
     .stream_packet_send = s_stream_udp_stream_packet_send_cb
 };
+
+// Server operations VTable (for trans server API)
+static dap_net_trans_server_ops_t s_udp_server_ops = {
+    .new = (void* (*)(const char*))dap_net_trans_udp_server_new,
+    .start = s_udp_server_start_wrapper,
+    .stop = (void (*)(void*))dap_net_trans_udp_server_stop,
+    .delete = (void (*)(void*))dap_net_trans_udp_server_delete
+};
+
+// =============================================================================
+// SERVER OPERATIONS WRAPPERS
+// =============================================================================
+
+/**
+ * @brief Wrapper for start operation (adapts to unified trans server API)
+ * 
+ * Starts UDP server on all specified address:port pairs.
+ * Each pair creates a separate sharded listener set.
+ */
+static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
+                                      const char **a_addrs, uint16_t *a_ports, size_t a_count)
+{
+    UNUSED(a_cfg_section);
+    
+    if (!a_server || !a_addrs || !a_ports || a_count == 0) {
+        log_it(L_ERROR, "Invalid parameters for UDP server start");
+        return -1;
+    }
+    
+    dap_net_trans_udp_server_t *l_udp_server = (dap_net_trans_udp_server_t*)a_server;
+    
+    // Start listeners on all specified address:port pairs
+    for (size_t i = 0; i < a_count; i++) {
+        const char *l_addr = a_addrs[i];
+        uint16_t l_port = a_ports[i];
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Starting UDP server on %s:%u (%zu/%zu)",
+                 l_addr ? l_addr : "0.0.0.0", l_port, i + 1, a_count);
+        
+        int l_ret = dap_io_flow_server_listen(l_udp_server->flow_server, l_addr, l_port);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Failed to start listener on %s:%u: %d",
+                   l_addr ? l_addr : "0.0.0.0", l_port, l_ret);
+            
+            // Stop all previously started listeners
+            if (i > 0) {
+                log_it(L_WARNING, "Stopping %zu previously started listeners", i);
+                dap_net_trans_udp_server_stop(l_udp_server);
+            }
+            
+            return l_ret;
+        }
+        
+        log_it(L_NOTICE, "Started UDP server listener %zu/%zu on %s:%u",
+               i + 1, a_count, l_addr ? l_addr : "0.0.0.0", l_port);
+    }
+    
+    log_it(L_NOTICE, "Stream UDP server '%s' started successfully on %zu address:port pair(s)",
+           l_udp_server->server_name, a_count);
+    
+    return 0;
+}
 
 // =============================================================================
 // PUBLIC API IMPLEMENTATION
@@ -135,12 +195,28 @@ int dap_net_trans_udp_server_init(void)
         log_it(L_NOTICE, "Stream UDP debug mode ENABLED");
     }
     
+    // Register server operations for all UDP variants
+    int l_ret = 0;
+    l_ret |= dap_net_trans_server_register_ops(DAP_NET_TRANS_UDP_BASIC, &s_udp_server_ops);
+    l_ret |= dap_net_trans_server_register_ops(DAP_NET_TRANS_UDP_RELIABLE, &s_udp_server_ops);
+    l_ret |= dap_net_trans_server_register_ops(DAP_NET_TRANS_UDP_QUIC_LIKE, &s_udp_server_ops);
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to register UDP server operations");
+        return l_ret;
+    }
+    
     return 0;
 }
 
 void dap_net_trans_udp_server_deinit(void)
 {
     log_it(L_NOTICE, "Deinitializing Stream UDP server module");
+    
+    // Unregister server operations
+    dap_net_trans_server_unregister_ops(DAP_NET_TRANS_UDP_BASIC);
+    dap_net_trans_server_unregister_ops(DAP_NET_TRANS_UDP_RELIABLE);
+    dap_net_trans_server_unregister_ops(DAP_NET_TRANS_UDP_QUIC_LIKE);
 }
 
 dap_net_trans_udp_server_t* dap_net_trans_udp_server_new(const char *a_name)
@@ -333,8 +409,6 @@ static void* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow)
         return NULL;
     }
     
-    l_session->stream->conn_http = NULL;
-    l_session->stream->esocket = NULL;
     l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
     l_session->base.base.stream_context = l_session->stream;
     
@@ -385,9 +459,16 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     
     // Create dap_stream_session_t
-    dap_stream_session_t *l_stream_session = dap_stream_session_open_srv(l_session->stream);
+    dap_stream_session_t *l_stream_session = dap_stream_session_new(0, false);
     if (!l_stream_session) {
         log_it(L_ERROR, "Failed to create stream session");
+        return NULL;
+    }
+    
+    // Open session
+    if (dap_stream_session_open(l_stream_session) != 0) {
+        log_it(L_ERROR, "Failed to open stream session");
+        DAP_DELETE(l_stream_session);
         return NULL;
     }
     
@@ -408,7 +489,11 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
     
-    dap_stream_session_close(l_stream_session);
+    // Close session using session ID
+    if (l_stream_session->id) {
+        dap_stream_session_close_mt(l_stream_session->id);
+    }
+    
     l_session->session = NULL;
     l_session->base.base.session_context = NULL;
 }
@@ -433,7 +518,9 @@ static ssize_t s_stream_udp_stream_write_cb(dap_io_flow_t *a_flow, void *a_strea
     }
     
     dap_stream_t *l_stream = (dap_stream_t*)a_stream_context;
-    size_t l_processed = dap_stream_data_proc_read(l_stream, (void*)a_data, a_size);
+    
+    // Use transport-agnostic stream data processing
+    size_t l_processed = dap_stream_data_proc_read_ext(l_stream, a_data, a_size);
     
     return (ssize_t)l_processed;
 }
@@ -661,7 +748,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
             
             // Create session with specified channels
             dap_net_session_params_t l_params = {0};
-            l_params.channels_list = (char*)l_channels_str;
+            l_params.channels = l_channels_str;
             
             s_stream_udp_session_create_cb(&a_session->base.base, &l_params);
         }
@@ -703,7 +790,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         return -7;
     }
     
-    size_t l_encrypted_size = dap_enc_encode(l_session_key,
+    size_t l_encrypted_size = dap_enc_code(l_session_key,
                                              (uint8_t*)l_response, strlen(l_response),
                                              l_encrypted, l_encrypted_max,
                                              DAP_ENC_DATA_TYPE_RAW);
@@ -741,9 +828,9 @@ static int s_handle_data(stream_udp_session_t *a_session, const uint8_t *a_paylo
              a_payload_size);
     
     // Process data through stream
-    if (a_session->stream && a_session->base.stream_context) {
-        return (int)s_stream_udp_stream_write_cb(&a_session->base,
-                                                  a_session->base.stream_context,
+    if (a_session->stream && a_session->base.base.stream_context) {
+        return (int)s_stream_udp_stream_write_cb(&a_session->base.base,
+                                                  a_session->base.base.stream_context,
                                                   a_payload,
                                                   a_payload_size);
     }
@@ -782,8 +869,8 @@ static int s_handle_close(stream_udp_session_t *a_session)
     debug_if(s_debug_more, L_DEBUG, "Processing CLOSE");
     
     // Close session
-    if (a_session->session && a_session->base.session_context) {
-        s_stream_udp_session_close_cb(&a_session->base, a_session->base.session_context);
+    if (a_session->session && a_session->base.base.session_context) {
+        s_stream_udp_session_close_cb(&a_session->base.base, a_session->base.base.session_context);
     }
     
     return 0;

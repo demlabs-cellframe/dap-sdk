@@ -884,6 +884,57 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  * @param a_stream
  * @return
  */
+/**
+ * @brief Process incoming stream data from external buffer (transport agnostic)
+ * @param a_stream Stream instance
+ * @param a_data Data buffer to process
+ * @param a_data_size Size of data buffer
+ * @return Number of bytes processed
+ */
+size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
+{
+    if (!a_stream || !a_data || a_data_size == 0) {
+        return 0;
+    }
+    
+    byte_t *l_pos = (byte_t*)a_data;
+    byte_t *l_end = l_pos + a_data_size;
+    size_t l_shift = 0, l_processed_size = 0;
+    
+    while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
+        if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
+            break;
+        }
+        
+        if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
+            dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
+            if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
+                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
+                l_shift = sizeof(dap_stream_pkt_hdr_t);
+            } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
+                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                s_stream_proc_pkt_in(a_stream, l_pkt);
+            } else {
+                break;
+            }
+            l_pos += l_shift;
+            l_processed_size += l_shift;
+        } else {
+            ++l_pos;
+        }
+    }
+    
+    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG, 
+             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
+    
+    return l_processed_size;
+}
+
+/**
+ * @brief Process incoming stream data from esocket buffer (legacy wrapper)
+ * @param a_stream Stream instance
+ * @return Number of bytes processed
+ */
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket)
@@ -893,30 +944,8 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     
     if (!l_es->buf_in)
         return 0;
-        
-    byte_t *l_pos = l_es->buf_in, *l_end = l_pos + l_es->buf_in_size;
-    size_t l_shift = 0, l_processed_size = 0;
-    while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
-        if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
-            break;
-        if ( !memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig)) ) {
-            dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
-                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
-                l_shift = sizeof(dap_stream_pkt_hdr_t);
-            } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
-                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
-                s_stream_proc_pkt_in(a_stream, l_pkt);
-            } else
-                break;
-            l_pos += l_shift;
-            l_processed_size += l_shift;
-        } else
-            ++l_pos;
-    }
-    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
-              l_processed_size, (size_t)(l_end - l_es->buf_in) );
-    return l_processed_size;
+    
+    return dap_stream_data_proc_read_ext(a_stream, l_es->buf_in, l_es->buf_in_size);
 }
 
 /**
