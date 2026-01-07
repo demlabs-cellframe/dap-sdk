@@ -250,7 +250,7 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
         : sizeof(struct sockaddr_in6);
     l_udp_flow->listener_es = a_listener_es;
     l_udp_flow->seq_num_out = 0;
-    l_udp_flow->seq_num_in_last = 0;
+    l_udp_flow->last_seq_num_in = 0;
     l_udp_flow->last_activity = time(NULL);
     l_udp_flow->protocol_data = NULL;
     

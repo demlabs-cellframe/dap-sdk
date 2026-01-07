@@ -1216,8 +1216,245 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return a_size;  // Consumed
     }
     
-    // CLIENT MODE: Read from l_es->buf_in
-        uint16_t l_payload_len = ntohs(l_header->length);
+    // CLIENT MODE: Read from l_es->buf_in with OBFUSCATION support
+    if (!l_es->buf_in || l_es->buf_in_size == 0) {
+        debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: no data in buf_in");
+        return 0;  // No data available
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: buf_in_size=%zu", l_es->buf_in_size);
+    
+    // Get UDP context
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
+    if (!l_udp_ctx) {
+        log_it(L_ERROR, "Failed to get UDP context in s_udp_read");
+        return -1;
+    }
+    
+    // TRY DEOBFUSCATE AS HANDSHAKE (size 600-900 bytes)
+    // Obfuscation key is EPHEMERAL - used only for transport masking!
+    if (dap_transport_is_obfuscated_handshake_size(l_es->buf_in_size)) {
+        uint8_t *l_handshake = NULL;
+        size_t l_handshake_size = 0;
+        
+        int l_ret = dap_transport_deobfuscate_handshake(l_es->buf_in, l_es->buf_in_size,
+                                                        &l_handshake, &l_handshake_size);
+        
+        if (l_ret == 0) {
+            // Successfully deobfuscated as HANDSHAKE!
+            // Obfuscation key is NOW DISCARDED - it was just for masking!
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: Deobfuscated HANDSHAKE: %zu bytes → %zu bytes (obf key discarded)",
+                     l_es->buf_in_size, l_handshake_size);
+            
+            // DUPLICATE PROTECTION: Check if handshake already completed
+            if (l_udp_ctx->handshake_key) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT: ignoring duplicate HANDSHAKE response (handshake_key already exists)");
+                DAP_DELETE(l_handshake);
+                dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
+                return 0;  // Ignore duplicate
+            }
+            
+            // Process handshake response (Kyber shared secret derivation)
+            int l_result = s_udp_handshake_response(a_stream, l_handshake, l_handshake_size);
+            DAP_DELETE(l_handshake);
+            
+            // Call handshake callback
+            if (l_ctx && l_ctx->handshake_cb) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT: calling handshake_cb with result=%d", l_result);
+                l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
+            }
+            
+            // Clear buffer
+            dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
+            return l_es->buf_in_size;  // Consumed
+        }
+        
+        // Deobfuscation failed - might be regular encrypted packet
+        // Continue to decrypt with session key
+    }
+    
+    // ENCRYPTED PACKET: Decrypt with session key (derived from Kyber!)
+    // NO obfuscation keys here - they were discarded after handshake!
+    if (!l_udp_ctx->handshake_key) {
+        log_it(L_ERROR, "CLIENT: no session key for decrypting packet");
+        return -1;
+    }
+    
+    // Decrypt entire packet
+    size_t l_decrypted_max = l_es->buf_in_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
+    if (!l_decrypted) {
+        log_it(L_ERROR, "Failed to allocate decryption buffer");
+        return -1;
+    }
+    
+    size_t l_decrypted_size = dap_enc_decode(l_udp_ctx->handshake_key,
+                                             l_es->buf_in, l_es->buf_in_size,
+                                             l_decrypted, l_decrypted_max,
+                                             DAP_ENC_DATA_TYPE_RAW);
+    
+    if (l_decrypted_size == 0) {
+        log_it(L_ERROR, "CLIENT: failed to decrypt packet");
+        DAP_DELETE(l_decrypted);
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: decrypted %zu bytes from %zu bytes encrypted",
+             l_decrypted_size, l_es->buf_in_size);
+    
+    // Parse internal header: [type(1) + seq(4) + session_id(8) + payload]
+    if (l_decrypted_size < DAP_STREAM_UDP_INTERNAL_HEADER_SIZE) {
+        log_it(L_ERROR, "CLIENT: decrypted packet too small (%zu < %d)",
+               l_decrypted_size, DAP_STREAM_UDP_INTERNAL_HEADER_SIZE);
+        DAP_DELETE(l_decrypted);
+        return -1;
+    }
+    
+    dap_stream_trans_udp_internal_header_t *l_header =
+        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    
+    uint8_t l_type = l_header->type;
+    uint32_t l_seq_num = ntohl(l_header->seq_num);
+    uint64_t l_session_id = be64toh(l_header->session_id);
+    
+    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: packet type=0x%02x, seq=%u, session=0x%lx, payload=%zu bytes",
+             l_type, l_seq_num, l_session_id, l_payload_size);
+    
+    // Validate session_id
+    if (l_udp_ctx->session_id != 0 && l_udp_ctx->session_id != l_session_id) {
+        log_it(L_ERROR, "CLIENT: session_id mismatch: packet=0x%lx, ctx=0x%lx",
+               l_session_id, l_udp_ctx->session_id);
+        DAP_DELETE(l_decrypted);
+        return -1;
+    }
+    
+    // Update session_id if not set
+    if (l_udp_ctx->session_id == 0) {
+        l_udp_ctx->session_id = l_session_id;
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: set session_id=0x%lx from server", l_session_id);
+    }
+    
+    // Process based on packet type
+    switch (l_type) {
+        case DAP_STREAM_UDP_PKT_SESSION_CREATE: {
+            // SESSION_CREATE response: contains KDF counter for session key derivation
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: received SESSION_CREATE response (%zu bytes)", l_payload_size);
+            
+            if (l_payload_size != sizeof(uint64_t)) {
+                log_it(L_ERROR, "CLIENT: invalid SESSION_CREATE response size: %zu (expected 8)",
+                       l_payload_size);
+                DAP_DELETE(l_decrypted);
+                return -1;
+            }
+            
+            // Extract KDF counter
+            uint64_t l_counter_be;
+            memcpy(&l_counter_be, l_payload, sizeof(l_counter_be));
+            uint64_t l_kdf_counter = be64toh(l_counter_be);
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: KDF counter=%lu for session key derivation FROM KYBER shared secret",
+                     l_kdf_counter);
+            
+            // Derive session key from handshake key using same counter
+            // handshake_key was derived from Kyber shared secret!
+            dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
+                l_udp_ctx->handshake_key,
+                DAP_ENC_KEY_TYPE_SALSA2012,
+                "session", 7,
+                l_kdf_counter,
+                32  // 256-bit session key
+            );
+            
+            if (!l_session_key) {
+                log_it(L_ERROR, "CLIENT: failed to derive SESSION key from Kyber-based HANDSHAKE key");
+                DAP_DELETE(l_decrypted);
+                return -1;
+            }
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: derived SESSION key (counter=%lu) from Kyber shared secret chain",
+                     l_kdf_counter);
+            
+            // Replace handshake_key with session_key
+            dap_enc_key_delete(l_udp_ctx->handshake_key);
+            l_udp_ctx->handshake_key = l_session_key;
+            
+            // Call session callback if set
+            if (l_ctx && l_ctx->session_cb) {
+                debug_if(s_debug_more, L_DEBUG, "CLIENT: calling session_cb");
+                l_ctx->session_cb(a_stream, NULL, 0, 0);
+            }
+            
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_DATA: {
+            // DATA packet: contains stream data
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: received DATA packet (%zu bytes payload)", l_payload_size);
+            
+            if (l_payload_size == 0) {
+                debug_if(s_debug_more, L_DEBUG, "CLIENT: empty DATA packet");
+                break;
+            }
+            
+            // Process stream data using transport-agnostic function
+            size_t l_processed = dap_stream_data_proc_read_from_buf(a_stream,
+                                                                     l_payload,
+                                                                     l_payload_size);
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: processed %zu bytes of stream data", l_processed);
+            
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_KEEPALIVE: {
+            // KEEPALIVE: just update activity timestamp
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: received KEEPALIVE");
+            // Nothing to do, connection is alive
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_CLOSE: {
+            // CLOSE: server closing connection
+            log_it(L_INFO, "CLIENT: received CLOSE from server");
+            
+            // Close stream
+            if (a_stream->stream_sf) {
+                a_stream->stream_sf->flags |= DAP_STREAM_SF_CLIENT_CLOSE;
+            }
+            
+            break;
+        }
+        
+        default:
+            log_it(L_WARNING, "CLIENT: unknown packet type 0x%02x", l_type);
+            break;
+    }
+    
+    // Cleanup
+    DAP_DELETE(l_decrypted);
+    
+    // Clear processed data from buf_in
+    dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
+    
+    return l_es->buf_in_size;  // Consumed all data
+}
+
+/**
+ * @brief Write data with specified UDP packet type (internal helper)
         uint8_t l_packet_type = l_header->type;
         
         // Validate packet size
