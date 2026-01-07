@@ -359,39 +359,84 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
         l_pos += AVX2_CHUNK_SIZE;
     }
     
-    // Process tail bytes with scalar code (< 32 bytes)
-    while (l_pos < l_input_len) {
-        uint8_t l_char = l_input[l_pos];
+    // Process tail bytes (< 32 bytes) using reference implementation
+    // This ensures correctness for small inputs and remainder bytes
+    if (l_pos < l_input_len) {
+        log_it(L_DEBUG, "Processing tail: %zu bytes from position %zu", l_input_len - l_pos, l_pos);
         
-        // Use reference parsing for tail
-        // (This is simplified - real implementation would reuse above logic)
-        dap_json_char_class_t l_class = dap_json_classify_char(l_char);
+        a_stage1->current_pos = l_pos;
         
-        if (!l_in_string) {
-            if (l_char == '"') {
-                // Start string
-                l_in_string = true;
-            } else if (l_class == CHAR_CLASS_STRUCTURAL) {
-                dap_json_stage1_add_token(
-                    a_stage1,
-                    (uint32_t)l_pos,
-                    0,
-                    TOKEN_TYPE_STRUCTURAL,
-                    l_char
-                );
-                a_stage1->structural_chars++;
-            } else if (l_class == CHAR_CLASS_WHITESPACE) {
-                a_stage1->whitespace_chars++;
+        // Process remaining bytes character by character using reference logic
+        while (a_stage1->current_pos < l_input_len) {
+            uint8_t c = l_input[a_stage1->current_pos];
+            dap_json_char_class_t l_char_class = dap_json_classify_char(c);
+            
+            switch(l_char_class) {
+                case CHAR_CLASS_WHITESPACE:
+                    // Whitespace - skip
+                    a_stage1->whitespace_chars++;
+                    a_stage1->current_pos++;
+                    break;
+                
+                case CHAR_CLASS_QUOTE:
+                    // String - use reference scanner
+                    {
+                        size_t l_old_pos = a_stage1->current_pos;
+                        size_t l_new_pos = dap_json_stage1_scan_string_ref(a_stage1, l_old_pos);
+                        if(l_new_pos == l_old_pos) {
+                            log_it(L_ERROR, "Tail: String parsing failed at position %zu", a_stage1->current_pos);
+                            return a_stage1->error_code;
+                        }
+                    }
+                    break;
+                
+                case CHAR_CLASS_DIGIT:
+                case CHAR_CLASS_MINUS:
+                    // Number - use reference scanner
+                    {
+                        size_t l_old_pos = a_stage1->current_pos;
+                        size_t l_new_pos = dap_json_stage1_scan_number_ref(a_stage1, l_old_pos);
+                        if(l_new_pos == l_old_pos) {
+                            log_it(L_ERROR, "Tail: Invalid number at position %zu", a_stage1->current_pos);
+                            a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                            return a_stage1->error_code;
+                        }
+                    }
+                    break;
+                
+                case CHAR_CLASS_LETTER:
+                    // Literal - use reference scanner
+                    {
+                        size_t l_old_pos = a_stage1->current_pos;
+                        size_t l_new_pos = dap_json_stage1_scan_literal_ref(a_stage1, l_old_pos);
+                        if(l_new_pos == l_old_pos) {
+                            log_it(L_ERROR, "Tail: Invalid literal at position %zu", a_stage1->current_pos);
+                            a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                            return a_stage1->error_code;
+                        }
+                    }
+                    break;
+                
+                case CHAR_CLASS_STRUCTURAL:
+                    // Structural character
+                    if(!dap_json_stage1_add_token(a_stage1, (uint32_t)a_stage1->current_pos, 0, 
+                                                  TOKEN_TYPE_STRUCTURAL, c)) {
+                        log_it(L_ERROR, "Tail: Failed to add structural token at position %zu", a_stage1->current_pos);
+                        return a_stage1->error_code;
+                    }
+                    a_stage1->current_pos++;
+                    break;
+                
+                default:
+                    // Unexpected character
+                    log_it(L_ERROR, "Tail: Unexpected character 0x%02X at position %zu", c, a_stage1->current_pos);
+                    a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                    a_stage1->error_position = a_stage1->current_pos;
+                    snprintf(a_stage1->error_message, sizeof(a_stage1->error_message),
+                             "Unexpected character: 0x%02X", c);
+                    return STAGE1_ERROR_INVALID_INPUT;
             }
-        } else {
-            // Inside string
-            if (l_char == '"' && (l_pos == 0 || l_input[l_pos-1] != '\\')) {
-                l_in_string = false;
-            }
-            a_stage1->string_chars++;
         }
-        
-        l_pos++;
     }
     
     log_it(L_INFO, "AVX2 Stage 1 complete: %zu tokens, %zu structural, %zu whitespace, %zu string",

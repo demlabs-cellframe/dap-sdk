@@ -61,24 +61,26 @@ typedef int (*dap_json_stage1_func_t)(dap_json_stage1_t *a_stage1);
 // Reference implementation (always available)
 extern int dap_json_stage1_run(dap_json_stage1_t *a_stage1);
 
-// x86/x86_64 SIMD implementations
+// x86/x86_64 SIMD implementations (conditionally compiled)
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
+    #if defined(DAP_JSON_HAVE_AVX512)
         extern int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1);
     #endif
     
-    #if defined(__AVX2__)
+    #if defined(DAP_JSON_HAVE_AVX2) || defined(__AVX2__)
         extern int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1);
     #endif
     
-    #if defined(__SSE2__)
+    #if defined(DAP_JSON_HAVE_SSE2) || defined(__SSE2__)
         extern int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1);
     #endif
 #endif
 
-// ARM SIMD implementations
+// ARM SIMD implementations (conditionally compiled)
 #if defined(__ARM_NEON) || defined(__aarch64__)
-    extern int dap_json_stage1_run_neon(dap_json_stage1_t *a_stage1);
+    #if defined(DAP_JSON_HAVE_NEON) || defined(__ARM_NEON)
+        extern int dap_json_stage1_run_neon(dap_json_stage1_t *a_stage1);
+    #endif
 #endif
 
 /* ========================================================================== */
@@ -96,30 +98,36 @@ static dap_json_stage1_func_t s_select_optimal_implementation(void)
 {
     log_it(L_INFO, "Selecting optimal Stage 1 tokenization implementation...");
     
-    // Detect CPU features
+    // Detect CPU features at runtime
     dap_cpu_features_t l_features = dap_cpu_detect_features();
     
     log_it(L_DEBUG, "CPU features detected: AVX512=%d, AVX2=%d, SSE2=%d, NEON=%d",
            l_features.has_avx512, l_features.has_avx2, l_features.has_sse2, l_features.has_neon);
     
+    // Select best available implementation based on runtime CPU features
+    // Note: We still need compile-time checks for function availability
+    
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     // x86/x86_64 dispatch
     
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
+    // Try AVX-512 first (if available at compile time AND runtime)
+    #if defined(DAP_JSON_HAVE_AVX512)
         if (l_features.has_avx512) {
             log_it(L_INFO, "Selected: AVX-512 implementation (64 bytes/iteration)");
             return dap_json_stage1_run_avx512;
         }
     #endif
     
-    #if defined(__AVX2__)
+    // Try AVX2 (if available at compile time AND runtime)
+    #if defined(DAP_JSON_HAVE_AVX2) || defined(__AVX2__)
         if (l_features.has_avx2) {
             log_it(L_INFO, "Selected: AVX2 implementation (32 bytes/iteration)");
             return dap_json_stage1_run_avx2;
         }
     #endif
     
-    #if defined(__SSE2__)
+    // Try SSE2 (if available at compile time AND runtime)
+    #if defined(DAP_JSON_HAVE_SSE2) || defined(__SSE2__)
         if (l_features.has_sse2) {
             log_it(L_INFO, "Selected: SSE2 implementation (16 bytes/iteration)");
             return dap_json_stage1_run_sse2;
@@ -129,14 +137,16 @@ static dap_json_stage1_func_t s_select_optimal_implementation(void)
 #elif defined(__ARM_NEON) || defined(__aarch64__)
     // ARM dispatch
     
-    if (l_features.has_neon) {
-        log_it(L_INFO, "Selected: NEON implementation (16 bytes/iteration)");
-        return dap_json_stage1_run_neon;
-    }
+    #if defined(DAP_JSON_HAVE_NEON) || defined(__ARM_NEON)
+        if (l_features.has_neon) {
+            log_it(L_INFO, "Selected: NEON implementation (16 bytes/iteration)");
+            return dap_json_stage1_run_neon;
+        }
+    #endif
     
 #endif
     
-    // Fallback to reference implementation
+    // Fallback to reference implementation (always available)
     log_it(L_INFO, "Selected: Reference C implementation (portable fallback)");
     return dap_json_stage1_run;
 }
@@ -217,28 +227,35 @@ const char* dap_json_stage1_get_dispatch_name(void)
         return "Not initialized (will auto-detect on first use)";
     }
     
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    if (l_func == dap_json_stage1_run_avx512) {
-        return "AVX-512 (64 bytes/iteration)";
-    }
-#endif
+    // Check which implementation is active
+    // Must match the compile-time checks used in dispatch
+    
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    #if defined(DAP_JSON_HAVE_AVX512)
+        if (l_func == dap_json_stage1_run_avx512) {
+            return "AVX-512 (64 bytes/iteration)";
+        }
+    #endif
 
-#if defined(__AVX2__)
-    if (l_func == dap_json_stage1_run_avx2) {
-        return "AVX2 (32 bytes/iteration)";
-    }
-#endif
+    #if defined(DAP_JSON_HAVE_AVX2) || defined(__AVX2__)
+        if (l_func == dap_json_stage1_run_avx2) {
+            return "AVX2 (32 bytes/iteration)";
+        }
+    #endif
 
-#if defined(__SSE2__)
-    if (l_func == dap_json_stage1_run_sse2) {
-        return "SSE2 (16 bytes/iteration)";
-    }
+    #if defined(DAP_JSON_HAVE_SSE2) || defined(__SSE2__)
+        if (l_func == dap_json_stage1_run_sse2) {
+            return "SSE2 (16 bytes/iteration)";
+        }
+    #endif
 #endif
 
 #if defined(__ARM_NEON) || defined(__aarch64__)
-    if (l_func == dap_json_stage1_run_neon) {
-        return "NEON (16 bytes/iteration)";
-    }
+    #if defined(DAP_JSON_HAVE_NEON) || defined(__ARM_NEON)
+        if (l_func == dap_json_stage1_run_neon) {
+            return "NEON (16 bytes/iteration)";
+        }
+    #endif
 #endif
     
     if (l_func == dap_json_stage1_run) {
