@@ -939,11 +939,32 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
              "HANDSHAKE: stored encryption_key=%p for session %p (session_id=0x%lx)",
              a_session->encryption_key, a_session, a_session->session_id);
     
-    // Send Bob's public key back
+    // Build handshake response: Bob's ciphertext + session_id
+    // Client needs session_id to use in all subsequent packets!
+    size_t l_response_size = l_bob_pub_size + sizeof(uint64_t);
+    
+    // Serialize: Bob's ciphertext + session_id (network byte order)
+    uint64_t l_session_id_be = htobe64(a_session->session_id);
+    uint8_t *l_response = dap_serialize_multy(NULL, l_response_size,
+                                              l_bob_pub, l_bob_pub_size,
+                                              &l_session_id_be, sizeof(uint64_t),
+                                              DOOF_PTR);
+    if (!l_response) {
+        log_it(L_ERROR, "Failed to serialize handshake response");
+        dap_enc_key_delete(l_bob_key);
+        return -6;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
+             l_bob_pub_size, a_session->session_id);
+    
+    // Send handshake response
     int l_ret = s_send_udp_packet(a_session,
                                   DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                  l_bob_pub, l_bob_pub_size);
+                                  l_response, l_response_size);
     
+    DAP_DELETE(l_response);
     dap_enc_key_delete(l_bob_key);
     
     debug_if(s_debug_more, L_DEBUG, "HANDSHAKE response sent (ret=%d)", l_ret);

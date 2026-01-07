@@ -777,6 +777,14 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
 
     log_it(L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
     
+    // Validate size: Bob's ciphertext (768 bytes) + session_id (8 bytes) = 776 bytes
+    const size_t EXPECTED_SIZE = CRYPTO_CIPHERTEXTBYTES + sizeof(uint64_t);
+    if (a_data_size != EXPECTED_SIZE) {
+        log_it(L_ERROR, "Invalid handshake response size: %zu (expected %zu = %d ciphertext + 8 session_id)",
+               a_data_size, EXPECTED_SIZE, CRYPTO_CIPHERTEXTBYTES);
+        return -1;
+    }
+    
     // Get Alice's key from UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (!l_udp_ctx) {
@@ -787,6 +795,29 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         log_it(L_ERROR, "UDP handshake response: no Alice key");
         return -1;
     }
+    
+    // Deserialize: Bob's ciphertext (CRYPTO_CIPHERTEXTBYTES) + session_id (8 bytes)
+    uint8_t l_bob_ciphertext[CRYPTO_CIPHERTEXTBYTES];
+    uint64_t l_session_id_be;
+    
+    int l_ret = dap_deserialize_multy(a_data, a_data_size,
+                                      l_bob_ciphertext, (uint64_t)CRYPTO_CIPHERTEXTBYTES,
+                                      &l_session_id_be, sizeof(uint64_t),
+                                      DOOF_PTR);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to deserialize handshake response");
+        return -1;
+    }
+    
+    uint64_t l_server_session_id = be64toh(l_session_id_be);
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%lx (replacing client's 0x%lx)",
+             (size_t)CRYPTO_CIPHERTEXTBYTES, l_server_session_id, l_udp_ctx->session_id);
+    
+    // CRITICAL: Replace client's session_id with server's session_id!
+    // All subsequent packets MUST use server's session_id
+    l_udp_ctx->session_id = l_server_session_id;
     
     // DEBUG: Log Alice's public key that we sent (first 16 bytes)
     if (s_debug_more && l_udp_ctx->alice_key->pub_key_data && l_udp_ctx->alice_key->pub_key_data_size >= 16) {
@@ -811,14 +842,8 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
            l_alice_key, l_alice_key->gen_alice_shared_key);
     
     // UDP uses BINARY protocol, not JSON!
-    // Server sends raw ciphertext (Bob's encapsulated message)
-    // Expected size: CRYPTO_CIPHERTEXTBYTES (768 for Kyber512)
-    
-    if (a_data_size < 768) {
-        log_it(L_ERROR, "UDP handshake response: ciphertext too small (%zu bytes, expected 768)", 
-               a_data_size);
-        return -1;
-    }
+    // Server sends: Bob's ciphertext (768 bytes) + session_id (8 bytes)
+    // We already extracted session_id above, now use ciphertext for KEM
     
     // Perform KEM decapsulation (Alice side) using received ciphertext
     if (!l_alice_key->gen_alice_shared_key) {
@@ -829,8 +854,8 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     size_t l_shared_key_size = l_alice_key->gen_alice_shared_key(
         l_alice_key,
         NULL,  // Alice's private key (already in l_alice_key->_inheritor)
-        a_data_size,
-        (uint8_t*)a_data  // Bob's ciphertext
+        CRYPTO_CIPHERTEXTBYTES,  // Size of Bob's ciphertext
+        (uint8_t*)l_bob_ciphertext  // Bob's ciphertext (extracted above)
     );
     
     if (l_shared_key_size == 0 || !l_alice_key->shared_key) {
@@ -1362,7 +1387,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
                 l_udp_ctx->handshake_key,
                 DAP_ENC_KEY_TYPE_SALSA2012,
-                "session", 7,
+                "udp_session",  // MUST match server context!
+                11,
                 l_kdf_counter,
                 32  // 256-bit session key
             );
@@ -1381,8 +1407,19 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             dap_enc_key_delete(l_udp_ctx->handshake_key);
             l_udp_ctx->handshake_key = l_session_key;
             
-            // Session is now ready - no callback needed
             debug_if(s_debug_more, L_DEBUG, "CLIENT: session key established");
+            
+            // CRITICAL: Call session_create callback to notify dap_client!
+            // Client is waiting for this callback to advance from STAGE_STREAM_CTL
+            dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
+            if (l_ctx && l_ctx->session_create_cb) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT: calling session_create_cb for session 0x%lx",
+                         l_session_id);
+                l_ctx->session_create_cb(a_stream, (uint32_t)l_session_id, NULL, 0, 0);
+            } else {
+                log_it(L_WARNING, "CLIENT: no session_create_cb registered! l_ctx=%p", l_ctx);
+            }
             
             break;
         }
