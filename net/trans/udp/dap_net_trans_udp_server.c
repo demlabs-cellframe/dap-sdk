@@ -660,6 +660,13 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     l_session->session = l_stream_session;
     l_session->base.base.session_context = l_stream_session;
     
+    // CRITICAL: Link session to stream for dap_stream_data_proc_read_ext!
+    // dap_stream.c relies on stream->session->key for packet decryption
+    if (l_session->stream) {
+        l_session->stream->session = l_stream_session;
+        log_it(L_DEBUG, "Linked stream->session for stream %p", l_session->stream);
+    }
+    
     UNUSED(a_session_params);
     
     return l_stream_session;
@@ -1109,6 +1116,13 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // NOW replace handshake key with session key (after sending response)
     dap_enc_key_delete(a_session->encryption_key);
     a_session->encryption_key = l_session_key;
+    
+    // CRITICAL: Set session key in stream->session for dap_stream packet processing!
+    // dap_stream.c relies on stream->session->key for FRAGMENT_PACKET decryption
+    if (a_session->stream && a_session->stream->session) {
+        a_session->stream->session->key = l_session_key;
+        log_it(L_INFO, "Set session key in stream->session->key for stream %p", a_session->stream);
+    }
     
     return l_ret;
 }
