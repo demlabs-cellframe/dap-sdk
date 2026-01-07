@@ -1471,13 +1471,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 
     a_esocket->ev.events = events;
 
-    debug_if(g_debug_reactor, L_DEBUG, "dap_context_poll_update: socket %"DAP_FORMAT_SOCKET" (uuid=0x%"DAP_FORMAT_ESOCKET_UUID"), flags=0x%x (READ=%d,WRITE=%d,CONNECTING=%d), events=0x%x (IN=%d,OUT=%d), has_context=%d", 
-             a_esocket->socket, a_esocket->uuid, a_esocket->flags,
-             !!(a_esocket->flags & DAP_SOCK_READY_TO_READ),
-             !!(a_esocket->flags & DAP_SOCK_READY_TO_WRITE),
-             !!(a_esocket->flags & DAP_SOCK_CONNECTING),
-             events, !!(events & EPOLLIN), !!(events & EPOLLOUT),
-             a_esocket->context != NULL);
+    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)", 
+             a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
 
     if( a_esocket->context){
         if ( epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, a_esocket->socket, &a_esocket->ev) ){

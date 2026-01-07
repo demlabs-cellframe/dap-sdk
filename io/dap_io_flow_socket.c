@@ -268,6 +268,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // Add to worker
         dap_worker_add_events_socket_unsafe(l_worker, l_es);
         
+        // CRITICAL: is_initalized must be set for sockets added directly via _unsafe
+        // (not through queue). Required for poll() systems and general correctness.
+        l_es->is_initalized = true;
+        
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
         
