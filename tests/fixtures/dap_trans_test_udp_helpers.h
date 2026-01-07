@@ -224,6 +224,36 @@ bool dap_udp_test_validate_sequence_numbers(
     dap_enc_key_t *a_key
 );
 
+// ============================================================================
+// DAP_MOCK_CUSTOM DECLARATION
+// ============================================================================
+
+/**
+ * @brief Mock declaration for dap_events_socket_write_unsafe
+ * 
+ * This mock is defined in dap_trans_test_udp_helpers.c using DAP_MOCK_WRAPPER_CUSTOM.
+ * It automatically captures UDP packets for validation in tests.
+ * 
+ * Tests MUST include this header and call DAP_MOCK_ENABLE(dap_events_socket_write_unsafe)
+ * to activate packet capture.
+ * 
+ * Usage in tests:
+ * ```c
+ * #include "dap_trans_test_udp_helpers.h"
+ * 
+ * // In test function:
+ * DAP_MOCK_ENABLE(dap_events_socket_write_unsafe);
+ * 
+ * // Call function under test that writes UDP packets
+ * trans->ops->write(...);
+ * 
+ * // Validate captured packet
+ * dap_udp_test_captured_packet_t *packet = dap_udp_test_get_captured_packet();
+ * TEST_ASSERT(packet->is_valid, "Packet should be captured");
+ * ```
+ */
+DAP_MOCK_DECLARE(dap_events_socket_write_unsafe);
+
 #ifdef __cplusplus
 }
 #endif

@@ -27,6 +27,7 @@
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_transport_obfuscation.h"
+#include "dap_mock.h"
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -636,5 +637,44 @@ int dap_udp_test_obfuscation_roundtrip(
            a_handshake_size, *a_out_obfuscated_size, *a_out_deobfuscated_size);
     
     return 0;
+}
+
+// ============================================================================
+// DAP_MOCK_CUSTOM FOR dap_events_socket_write_unsafe
+// ============================================================================
+
+/**
+ * @brief Custom mock wrapper for dap_events_socket_write_unsafe
+ * 
+ * This mock captures UDP packets written to the socket for validation in tests.
+ * Uses proper DAP_MOCK_WRAPPER_CUSTOM pattern as per DAP SDK mock framework standards.
+ */
+DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_events_socket_write_unsafe,
+    PARAM(dap_events_socket_t*, a_es),
+    PARAM(const void*, a_data),
+    PARAM(size_t, a_size)
+)
+{
+    // Validate input
+    if (!a_data || a_size == 0 || a_size > DAP_UDP_TEST_MAX_PACKET_SIZE) {
+        log_it(L_ERROR, "Mock write_unsafe: Invalid params: data=%p, size=%zu", a_data, a_size);
+        return -1;
+    }
+    
+    // Capture packet data
+    memcpy(s_captured_packet.data, a_data, a_size);
+    s_captured_packet.size = a_size;
+    s_captured_packet.is_valid = true;
+    
+    // Copy destination address if esocket is provided
+    if (a_es && a_es->addr_size > 0) {
+        memcpy(&s_captured_packet.dest_addr, &a_es->addr_storage, a_es->addr_size);
+        s_captured_packet.dest_addr_len = a_es->addr_size;
+    }
+    
+    log_it(L_DEBUG, "Mock write_unsafe: Captured UDP packet: %zu bytes", a_size);
+    
+    // Simulate successful write - return number of bytes written
+    return (ssize_t)a_size;
 }
 

@@ -62,17 +62,19 @@
 #include "dap_enc_key.h"
 #include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
+#include "dap_trans_test_udp_helpers.h"
 
 #define LOG_TAG "test_trans_udp"
 
 // Note: Common mocks are now in dap_trans_test_mocks.h/c
-// Only UDP-specific mock instances are defined here
+// UDP-specific mocks (dap_events_socket_write_unsafe) are in dap_trans_test_udp_helpers.h
+// Only UDP transport-specific mocks are defined here
 
 // UDP-specific mocks
 DAP_MOCK_DECLARE(dap_stream_add_proc_udp, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_enc_server_process_request, DAP_MOCK_CONFIG_PASSTHROUGH);
 // Note: NOT mocking randombytes - it's a system crypto function that should work correctly
-DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
+// Note: dap_events_socket_write_unsafe mock is in dap_trans_test_udp_helpers.h
 DAP_MOCK_DECLARE(dap_events_socket_create, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_events_socket_create_platform, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_events_socket_delete_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
@@ -717,33 +719,190 @@ static void test_12_stream_read(void)
 }
 
 /**
- * @brief Test UDP stream trans write operation
+ * @brief Test UDP stream trans write operation with FULL protocol validation
+ * 
+ * This test validates the COMPLETE UDP write path:
+ * 1. Packet encryption with handshake key
+ * 2. Internal header construction (type, seq_num, session_id)
+ * 3. Packet format and size validation
+ * 4. Sequence number incrementing
+ * 
+ * Uses DAP_MOCK_WRAPPER_CUSTOM for dap_events_socket_write_unsafe
+ * to capture and validate the actual packet content.
  */
 static void test_13_stream_write(void)
 {
-    TEST_INFO("Testing UDP stream trans write operation (client-side)");
+    TEST_INFO("Testing UDP stream trans write operation with FULL validation");
     
-    // Find UDP trans (client trans)
-    dap_net_trans_t *l_trans = 
-        dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
+    // ========================================================================
+    // STEP 1: Setup - Find UDP trans and verify structure
+    // ========================================================================
+    
+    dap_net_trans_t *l_trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
     TEST_ASSERT_NOT_NULL(l_trans, "UDP trans should be registered");
-    
-    // Verify client trans has write callback
     TEST_ASSERT_NOT_NULL(l_trans->ops, "Trans should have ops");
     TEST_ASSERT_NOT_NULL(l_trans->ops->write, "Trans should have write callback");
     
-    TEST_INFO("✅ UDP client trans write callback is registered");
+    TEST_INFO("✅ UDP client trans structure validated");
     
-    // Note: Full write testing requires:
-    // - Initialized UDP context with session_id
-    // - Encryption key (handshake_key or session key)
-    // - Valid esocket with destination address
-    // - Working event loop for non-blocking sendto
-    // 
-    // These are tested in integration tests where full stack is initialized.
-    // Unit tests verify API structure and basic validation only.
+    // ========================================================================
+    // STEP 2: Create REAL UDP context with encryption key
+    // ========================================================================
     
-    TEST_SUCCESS("UDP stream trans write API verified (full test in integration)");
+    // Clear any previously captured packets
+    dap_udp_test_reset_captured_packet();
+    
+    // Create UDP context with REAL encryption key
+    uint64_t l_session_id = 0x1234567890ABCDEF;
+    dap_net_trans_udp_ctx_t *l_udp_ctx = dap_udp_test_create_mock_client_ctx(
+        l_session_id,
+        DAP_ENC_KEY_TYPE_SALSA2012,  // Use SALSA2012 for testing
+        "127.0.0.1",
+        8080
+    );
+    TEST_ASSERT_NOT_NULL(l_udp_ctx, "UDP context creation should succeed");
+    TEST_ASSERT_NOT_NULL(l_udp_ctx->handshake_key, "Handshake key should be generated");
+    TEST_ASSERT(l_udp_ctx->session_id == l_session_id, "Session ID should be set");
+    TEST_ASSERT(l_udp_ctx->seq_num == 1, "Initial sequence number should be 1");
+    
+    TEST_INFO("✅ UDP context created with session_id=0x%016lX, seq_num=%u",
+              l_udp_ctx->session_id, l_udp_ctx->seq_num);
+    
+    // ========================================================================
+    // STEP 3: Create mock stream and trans context
+    // ========================================================================
+    
+    dap_stream_t *l_mock_stream = dap_trans_test_get_mock_stream();
+    l_mock_stream->trans = l_trans;
+    
+    dap_net_trans_ctx_t *l_mock_trans_ctx = dap_trans_test_get_mock_trans_ctx();
+    *l_mock_trans_ctx = (dap_net_trans_ctx_t){0};
+    l_mock_trans_ctx->esocket = l_udp_ctx->esocket;  // Use esocket from UDP context
+    l_mock_trans_ctx->_inheritor = l_udp_ctx;        // Attach UDP context
+    l_mock_stream->trans_ctx = l_mock_trans_ctx;
+    
+    TEST_INFO("✅ Mock stream and trans context configured");
+    
+    // ========================================================================
+    // STEP 4: Setup mock for dap_events_socket_write_unsafe
+    // ========================================================================
+    
+    // NOTE: The actual DAP_MOCK_WRAPPER_CUSTOM is declared at the top of this file
+    // It calls dap_udp_test_mock_write_unsafe_callback which captures the packet
+    
+    // Enable the mock
+    DAP_MOCK_ENABLE(dap_events_socket_write_unsafe);
+    
+    TEST_INFO("✅ Mock for dap_events_socket_write_unsafe enabled");
+    
+    // ========================================================================
+    // STEP 5: Call trans->ops->write with test data
+    // ========================================================================
+    
+    const char l_test_data[] = "Hello UDP with encryption!";
+    size_t l_test_data_size = sizeof(l_test_data); // Includes null terminator
+    
+    TEST_INFO("Calling trans->ops->write with %zu bytes of test data...", l_test_data_size);
+    
+    ssize_t l_bytes_written = l_trans->ops->write(l_mock_stream, l_test_data, l_test_data_size);
+    
+    TEST_INFO("Write returned: %zd bytes", l_bytes_written);
+    
+    // ========================================================================
+    // STEP 6: Validate returned value
+    // ========================================================================
+    
+    TEST_ASSERT(l_bytes_written > 0, "Write operation should succeed (return > 0)");
+    
+    // Expected packet structure:
+    // [Encrypted: Internal Header (type + seq_num + session_id) + Payload]
+    // Internal header = 1 + 4 + 8 = 13 bytes
+    // Encrypted size may be larger due to padding/overhead
+    
+    size_t l_min_expected_size = DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size;
+    TEST_ASSERT((size_t)l_bytes_written >= l_min_expected_size,
+                "Packet size should be at least internal header + payload");
+    
+    TEST_INFO("✅ Write returned expected size: %zd bytes (min expected: %zu)",
+              l_bytes_written, l_min_expected_size);
+    
+    // ========================================================================
+    // STEP 7: Retrieve and validate captured packet
+    // ========================================================================
+    
+    dap_udp_test_captured_packet_t *l_captured = dap_udp_test_get_captured_packet();
+    TEST_ASSERT_NOT_NULL(l_captured, "Captured packet should be available");
+    TEST_ASSERT(l_captured->is_valid, "Captured packet should be valid");
+    TEST_ASSERT(l_captured->size > 0, "Captured packet should have non-zero size");
+    TEST_ASSERT(l_captured->size == (size_t)l_bytes_written,
+                "Captured size should match returned size");
+    
+    TEST_INFO("✅ Packet captured: %zu bytes", l_captured->size);
+    
+    // ========================================================================
+    // STEP 8: Decrypt and validate internal header + payload
+    // ========================================================================
+    
+    // Decrypt the captured packet
+    size_t l_decrypted_size = 0;
+    uint8_t *l_decrypted = dap_enc_decode(
+        l_udp_ctx->handshake_key,
+        l_captured->data,
+        l_captured->size,
+        &l_decrypted_size,
+        DAP_ENC_DATA_TYPE_RAW
+    );
+    
+    TEST_ASSERT_NOT_NULL(l_decrypted, "Packet decryption should succeed");
+    TEST_ASSERT(l_decrypted_size >= DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size,
+                "Decrypted size should include internal header + payload");
+    
+    TEST_INFO("✅ Packet decrypted: %zu bytes", l_decrypted_size);
+    
+    // Parse internal header
+    dap_stream_trans_udp_internal_header_t *l_header = 
+        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    
+    TEST_ASSERT(l_header->type == DAP_STREAM_UDP_PKT_DATA,
+                "Packet type should be DATA");
+    TEST_ASSERT(l_header->seq_num == 1,
+                "Sequence number should be 1 (first packet)");
+    TEST_ASSERT(l_header->session_id == l_session_id,
+                "Session ID should match");
+    
+    TEST_INFO("✅ Internal header validated: type=%u, seq=%u, session=0x%016lX",
+              l_header->type, l_header->seq_num, l_header->session_id);
+    
+    // Validate payload
+    const uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    
+    TEST_ASSERT(l_payload_size == l_test_data_size,
+                "Payload size should match original data");
+    TEST_ASSERT(memcmp(l_payload, l_test_data, l_test_data_size) == 0,
+                "Payload content should match original data");
+    
+    TEST_INFO("✅ Payload validated: \"%s\"", (const char*)l_payload);
+    
+    // ========================================================================
+    // STEP 9: Verify sequence number was incremented
+    // ========================================================================
+    
+    TEST_ASSERT(l_udp_ctx->seq_num == 2,
+                "Sequence number should be incremented after write");
+    
+    TEST_INFO("✅ Sequence number incremented to %u", l_udp_ctx->seq_num);
+    
+    // ========================================================================
+    // CLEANUP
+    // ========================================================================
+    
+    DAP_DELETE(l_decrypted);
+    dap_udp_test_cleanup_mock_client_ctx(l_udp_ctx);
+    DAP_MOCK_DISABLE(dap_events_socket_write_unsafe);
+    dap_udp_test_reset_captured_packet();
+    
+    TEST_SUCCESS("UDP stream trans write operation FULLY VALIDATED with maximum coverage");
 }
 
 /**
