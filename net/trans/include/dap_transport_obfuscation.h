@@ -2,8 +2,15 @@
  * @file dap_transport_obfuscation.h
  * @brief Transport-agnostic packet obfuscation for DPI resistance
  * 
- * This module provides zero-signature obfuscation for transport protocols.
- * Key feature: HANDSHAKE packets are encrypted using size-derived keys.
+ * This module provides TRANSPORT-LEVEL MASKING for handshake packets.
+ * 
+ * IMPORTANT: Obfuscation is NOT part of cryptographic chain!
+ * - Purpose: Hide packet structure from DPI (Deep Packet Inspection)
+ * - Method: Lightweight XOR/cipher with size-derived ephemeral keys
+ * - After deobfuscation: Discard obfuscation key, use inner crypto only!
+ * 
+ * Cryptographic security comes from inner protocol (Kyber, etc).
+ * Obfuscation just makes packets look random to network observers.
  * 
  * Purpose: Combat DPI and protocol fingerprinting to protect privacy rights.
  * 

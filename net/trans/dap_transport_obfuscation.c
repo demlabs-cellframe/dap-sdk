@@ -2,6 +2,15 @@
  * @file dap_transport_obfuscation.c
  * @brief Transport-agnostic packet obfuscation implementation
  * 
+ * TRANSPORT-LEVEL MASKING ONLY!
+ * - Obfuscation keys are ephemeral, derived from packet size
+ * - Used ONLY to hide packet structure from DPI
+ * - NOT part of cryptographic chain!
+ * - After deobfuscation, discard key and use inner crypto (Kyber, etc)
+ * 
+ * Think of it as "gift wrapping" - hides the box, not what's inside!
+ * Real security comes from Kyber shared secret → KDF → session keys.
+ * 
  * @copyright (c) 2025 DeM Labs Inc.
  */
 
