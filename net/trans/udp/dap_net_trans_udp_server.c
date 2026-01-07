@@ -89,6 +89,83 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
                              const uint8_t *a_payload,
                              size_t a_payload_size);
 
+// =============================================================================
+// SERVER-SIDE TRANS OPERATIONS (for stream->trans on server)
+// =============================================================================
+
+/**
+ * @brief Server-side write callback for trans->ops
+ * 
+ * This is called when dap_stream_pkt_write_unsafe() uses trans->ops->write.
+ * On server, we need to find the flow and call stream_packet_send callback.
+ * 
+ * Architecture:
+ * stream->trans->ops->write (this function) 
+ *   -> gets stream_udp_session_t via stream->_server_session
+ *   -> calls s_send_udp_packet with DAP_STREAM_UDP_PKT_DATA
+ *   -> which encrypts and sends via dap_io_flow_udp_send
+ */
+static ssize_t s_udp_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return -1;
+    }
+    
+    // Get session from stream backlink
+    stream_udp_session_t *l_session = (stream_udp_session_t*)a_stream->_server_session;
+    if (!l_session) {
+        log_it(L_ERROR, "Server stream has no _server_session backlink");
+        return -1;
+    }
+    
+    // Send packet wrapped in UDP header
+    int l_ret = s_send_udp_packet(l_session,
+                                  DAP_STREAM_UDP_PKT_DATA,
+                                  (const uint8_t*)a_data,
+                                  a_size);
+    
+    if (l_ret != 0) {
+        log_it(L_WARNING, "Failed to send stream packet via s_udp_server_trans_write (%d)", l_ret);
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Server trans write: sent %zu bytes for session 0x%lx",
+             a_size, l_session->session_id);
+    
+    return (ssize_t)a_size;
+}
+
+/**
+ * @brief Get maximum packet size for UDP transport (server-side)
+ */
+static size_t s_udp_server_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    UNUSED(a_trans);
+    return DAP_STREAM_UDP_MAX_PAYLOAD_SIZE;
+}
+
+// Server-side trans operations
+static const dap_net_trans_ops_t s_udp_server_trans_ops = {
+    .init = NULL,  // Not used on server (already initialized)
+    .deinit = NULL,
+    .connect = NULL,  // Server doesn't connect
+    .listen = NULL,   // Handled by dap_io_flow_server
+    .accept = NULL,   // Handled by dap_io_flow_server
+    .handshake_init = NULL,
+    .handshake_process = NULL,
+    .session_create = NULL,
+    .session_start = NULL,
+    .read = NULL,     // Handled by dap_io_flow callbacks
+    .write = s_udp_server_trans_write,  // THE KEY CALLBACK!
+    .close = NULL,    // Handled by dap_io_flow
+    .get_capabilities = NULL,
+    .register_server_handlers = NULL,
+    .stage_prepare = NULL,
+    .get_client_context = NULL,
+    .get_max_packet_size = s_udp_server_get_max_packet_size
+};
+
 // UDP flow callbacks
 static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
                                     const uint8_t *a_data,
@@ -310,15 +387,22 @@ dap_net_trans_udp_server_t* dap_net_trans_udp_server_new(const char *a_name)
     l_server->flow_servers = NULL;
     l_server->flow_servers_count = 0;
     
-    // CRITICAL: Get trans from registry (it's already registered at this point!)
-    l_server->trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
+    // CRITICAL: Create SERVER-SPECIFIC trans with server-side operations!
+    // This trans will be used by all streams on this server
+    l_server->trans = DAP_NEW_Z(dap_net_trans_t);
     if (!l_server->trans) {
-        log_it(L_WARNING, "UDP trans not found in registry during server creation");
-    } else {
-        log_it(L_DEBUG, "UDP server '%s' linked to trans %p", a_name, l_server->trans);
+        log_it(L_CRITICAL, "Failed to allocate server trans");
+        DAP_DELETE(l_server);
+        return NULL;
     }
     
-    log_it(L_NOTICE, "Created Stream UDP server '%s'", a_name);
+    l_server->trans->type = DAP_NET_TRANS_UDP_BASIC;
+    l_server->trans->ops = &s_udp_server_trans_ops;  // SERVER ops, not client!
+    l_server->trans->socket_type = DAP_NET_TRANS_SOCKET_UDP;
+    l_server->trans->_inheritor = NULL;  // Not needed for server trans
+    
+    log_it(L_NOTICE, "Created Stream UDP server '%s' with dedicated server trans %p", 
+           a_name, l_server->trans);
     
     return l_server;
 }
@@ -377,6 +461,12 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
     }
     
     a_server->flow_servers_count = 0;
+    
+    // Delete server-specific trans
+    if (a_server->trans) {
+        DAP_DELETE(a_server->trans);
+        a_server->trans = NULL;
+    }
     
     DAP_DELETE(a_server);
 }
@@ -594,6 +684,9 @@ static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_serve
     if (!l_session->stream->trans) {
         log_it(L_WARNING, "UDP server has no trans configured");
     }
+    
+    // CRITICAL: Set backlink from stream to session for trans->ops->write!
+    l_session->stream->_server_session = l_session;
     
     // stream_worker will be set in finalize callback after listener_es is available
     l_session->stream->stream_worker = NULL;

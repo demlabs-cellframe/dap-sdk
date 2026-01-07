@@ -87,6 +87,17 @@ typedef struct dap_stream {
      */
     struct dap_net_trans *trans;
     dap_net_trans_ctx_t *trans_ctx;
+    
+    /**
+     * @brief Server-side session backlink
+     * 
+     * On server, points to the protocol-specific session structure
+     * (e.g., stream_udp_session_t for UDP). This allows trans->ops->write
+     * to find the session and call the appropriate send callback.
+     * 
+     * NULL on client side.
+     */
+    void *_server_session;
 } dap_stream_t;
 
 typedef struct dap_stream_info {
