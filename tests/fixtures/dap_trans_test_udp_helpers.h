@@ -254,6 +254,18 @@ bool dap_udp_test_validate_sequence_numbers(
  */
 DAP_MOCK_DECLARE(dap_events_socket_write_unsafe);
 
+/**
+ * @brief Cleanup mock UDP client context and free all resources
+ * 
+ * This function deallocates:
+ * - UDP context structure
+ * - Handshake key (if present)
+ * - Mock esocket (if present)
+ * 
+ * @param a_ctx UDP context to cleanup
+ */
+void dap_udp_test_cleanup_mock_client_ctx(dap_net_trans_udp_ctx_t *a_ctx);
+
 #ifdef __cplusplus
 }
 #endif

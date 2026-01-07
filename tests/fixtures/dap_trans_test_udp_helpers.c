@@ -122,6 +122,36 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_client_ctx(
     return l_ctx;
 }
 
+void dap_udp_test_cleanup_mock_client_ctx(dap_net_trans_udp_ctx_t *a_ctx)
+{
+    if (!a_ctx) {
+        return;
+    }
+    
+    // Delete handshake key if present
+    if (a_ctx->handshake_key) {
+        dap_enc_key_delete(a_ctx->handshake_key);
+        a_ctx->handshake_key = NULL;
+    }
+    
+    // Delete esocket if present
+    if (a_ctx->esocket) {
+        DAP_DELETE(a_ctx->esocket);
+        a_ctx->esocket = NULL;
+    }
+    
+    // Delete stream if present
+    if (a_ctx->stream) {
+        DAP_DELETE(a_ctx->stream);
+        a_ctx->stream = NULL;
+    }
+    
+    // Delete context itself
+    DAP_DELETE(a_ctx);
+    
+    log_it(L_DEBUG, "Cleaned up mock client UDP context");
+}
+
 dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
     uint64_t a_session_id,
     dap_enc_key_type_t a_key_type,
