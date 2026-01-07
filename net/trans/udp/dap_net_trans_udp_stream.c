@@ -811,166 +811,70 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     }
     
     dap_enc_key_t *l_alice_key = l_udp_ctx->alice_key;
-    log_it(L_DEBUG, "UDP handshake response: alice_key=%p, dec_na=%p", 
-           l_alice_key, l_alice_key->dec_na);
+    log_it(L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
+           l_alice_key, l_alice_key->gen_alice_shared_key);
     
-    // Parse JSON response to extract bob_message
-    // Expected format: [{"session_id":"...base64..."},{"bob_message":"...base64..."}]
-    const char *l_bob_message_b64 = NULL;
-    const char *l_session_id_b64 = NULL;
+    // UDP uses BINARY protocol, not JSON!
+    // Server sends raw ciphertext (Bob's encapsulated message)
+    // Expected size: CRYPTO_CIPHERTEXTBYTES (768 for Kyber512)
     
-    struct json_object *jobj = json_tokener_parse((const char*)a_data);
-    if (!jobj) {
-        log_it(L_ERROR, "Failed to parse JSON response: %s", (const char*)a_data);
+    if (a_data_size < 768) {
+        log_it(L_ERROR, "UDP handshake response: ciphertext too small (%zu bytes, expected 768)", 
+               a_data_size);
         return -1;
     }
     
-    // Check if it's an array
-    if (json_object_get_type(jobj) != json_type_array) {
-        log_it(L_ERROR, "JSON response is not an array");
-        json_object_put(jobj);
+    // Perform KEM decapsulation (Alice side) using received ciphertext
+    if (!l_alice_key->gen_alice_shared_key) {
+        log_it(L_ERROR, "Alice key doesn't support KEM decapsulation");
         return -1;
     }
     
-    // Iterate through array elements
-    size_t l_array_len = json_object_array_length(jobj);
-    for (size_t i = 0; i < l_array_len; i++) {
-        struct json_object *l_elem = json_object_array_get_idx(jobj, i);
-        if (json_object_get_type(l_elem) != json_type_object) {
-            continue;
-        }
-        
-        // Parse each object in array
-        json_object_object_foreach(l_elem, key, val) {
-            if (json_object_get_type(val) == json_type_string) {
-                const char *l_str = json_object_get_string(val);
-                if (!strcmp(key, "session_id")) {
-                    l_session_id_b64 = l_str;
-                    log_it(L_DEBUG, "Parsed session_id (base64): %s", l_session_id_b64);
-                } else if (!strcmp(key, "bob_message")) {
-                    l_bob_message_b64 = l_str;
-                    log_it(L_DEBUG, "Parsed bob_message (base64, first 32 chars): %.32s", l_bob_message_b64);
-                }
-            }
-        }
-    }
+    size_t l_shared_key_size = l_alice_key->gen_alice_shared_key(
+        l_alice_key,
+        NULL,  // Alice's private key (already in l_alice_key->_inheritor)
+        a_data_size,
+        (uint8_t*)a_data  // Bob's ciphertext
+    );
     
-    if (!l_bob_message_b64) {
-        log_it(L_ERROR, "No bob_message in JSON response");
-        json_object_put(jobj);
+    if (l_shared_key_size == 0 || !l_alice_key->shared_key) {
+        log_it(L_ERROR, "Failed to derive shared key from Bob's ciphertext");
         return -1;
     }
     
-    // Decode bob_message from Base64 to get ciphertext
-    size_t l_bob_b64_len = strlen(l_bob_message_b64);
-    size_t l_ciphertext_size = DAP_ENC_BASE64_DECODE_SIZE(l_bob_b64_len);
-    void *l_ciphertext = DAP_NEW_Z_SIZE(uint8_t, l_ciphertext_size);
-    if (!l_ciphertext) {
-        log_it(L_ERROR, "Failed to allocate memory for ciphertext");
-        json_object_put(jobj);
+    log_it(L_INFO, "CLIENT: derived shared key via KEM decapsulation (%zu bytes)", 
+           l_shared_key_size);
+    
+    // Derive HANDSHAKE cipher key from shared secret using KDF-SHAKE256
+    dap_enc_key_t *l_handshake_key = dap_enc_kdf_create_cipher_key(
+        l_alice_key,
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        "udp_handshake",
+        14,
+        0,  // Counter = 0
+        32  // Key size
+    );
+    
+    if (!l_handshake_key) {
+        log_it(L_ERROR, "Failed to derive handshake cipher key via KDF");
         return -1;
     }
     
-    size_t l_decoded_size = dap_enc_base64_decode(l_bob_message_b64, l_bob_b64_len, 
-                                                   l_ciphertext, DAP_ENC_DATA_TYPE_B64);
-    json_object_put(jobj);
+    log_it(L_INFO, "CLIENT: handshake key derived via KDF-SHAKE256");
     
-    if (l_decoded_size == 0) {
-        log_it(L_ERROR, "Failed to decode bob_message from Base64");
-        DAP_DELETE(l_ciphertext);
-        return -1;
+    // Store handshake key in UDP context (will be used for encryption/decryption)
+    if (l_udp_ctx->handshake_key) {
+        dap_enc_key_delete(l_udp_ctx->handshake_key);
     }
-    l_ciphertext_size = l_decoded_size;
+    l_udp_ctx->handshake_key = l_handshake_key;
     
-    log_it(L_INFO, "Decoded bob_message: %zu bytes", l_ciphertext_size);
-    if (s_debug_more && l_ciphertext_size >= 16) {
-        char l_hex[49] = {0};
-        for (int i = 0; i < 16; i++) {
-            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_ciphertext)[i]);
-        }
-        log_it(L_DEBUG, "CLIENT decoded ciphertext (first 16 bytes): %s", l_hex);
-    }
-    
-    // Use Alice's key to decrypt and derive shared secret from Bob's ciphertext
-    // For Kyber512, we need to use gen_alice_shared_key
-    void *l_shared_key = NULL;
-    size_t l_shared_key_size = 0;
-    
-    // Kyber512 uses gen_alice_shared_key with alice_key itself (not priv_key_data)
-    if (l_alice_key->type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
-        log_it(L_DEBUG, "Calling gen_alice_shared_key with %zu byte ciphertext", l_ciphertext_size);
-        
-        // CRITICAL: gen_alice_shared_key stores shared secret in alice_key->shared_key, NOT priv_key_data!
-        // Second parameter is unused (UNUSED_ARG in implementation), pass NULL
-        l_shared_key_size = dap_enc_kyber512_gen_alice_shared_key(l_alice_key, 
-                                                                    NULL,  // unused
-                                                                    l_ciphertext_size,
-                                                                    (uint8_t*)l_ciphertext);
-        l_shared_key = l_alice_key->shared_key;  // CORRECT: shared_key, not priv_key_data!
-        
-        log_it(L_DEBUG, "gen_alice_shared_key returned: shared_key_size=%zu", l_shared_key_size);
-        
-        DAP_DELETE(l_ciphertext);  // Free decoded ciphertext
-        
-        if (l_shared_key_size == 0 || !l_shared_key) {
-            log_it(L_ERROR, "Failed to derive shared key from Bob's ciphertext");
-            return -1;
-        }
-    } else {
-        log_it(L_ERROR, "Unsupported key type for UDP handshake: %d (expected Kyber512)", l_alice_key->type);
-        return -1;
-    }
-    
-    log_it(L_DEBUG, "UDP handshake: derived shared secret (%zu bytes)", l_shared_key_size);
-    
-    // DEBUG: Log first 16 bytes of shared secret
-    if (s_debug_more && l_shared_key && l_shared_key_size >= 16) {
-        char l_hex[49] = {0};
-        for (int i = 0; i < 16; i++) {
-            sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
-        }
-        log_it(L_DEBUG, "CLIENT shared secret (first 16 bytes): %s", l_hex);
-    }
-    
-    // Create session and set encryption key
+    // Create session if it doesn't exist
     if (!a_stream->session) {
         a_stream->session = dap_stream_session_pure_new();
         if (!a_stream->session) {
             log_it(L_ERROR, "Failed to create session");
             return -1;
         }
-    }
-    
-    if (a_stream->session->key) {
-        dap_enc_key_delete(a_stream->session->key);
-    }
-    
-    // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
-    // This key will be used to decrypt the session key seed from server
-    // Using KDF with context "handshake" and counter 0 (same as server)
-    // l_udp_ctx is already retrieved above (line 788)
-    if (l_udp_ctx) {
-        if (l_udp_ctx->handshake_key) {
-            dap_enc_key_delete(l_udp_ctx->handshake_key);
-        }
-        
-        // Use NEW KDF API: derive handshake key from Alice's KEM key
-        l_udp_ctx->handshake_key = dap_enc_kdf_create_cipher_key(
-            l_alice_key,                    // KEM key with shared secret
-            DAP_ENC_KEY_TYPE_SALSA2012,     // Cipher type for handshake encryption
-            "udp_handshake",                // Context string (MUST match server!)
-            14,                             // Context size (strlen("udp_handshake"))
-            0,                              // Counter = 0 (same as server)
-            32                              // Key size (32 bytes for SALSA2012)
-        );
-        
-        if (!l_udp_ctx->handshake_key) {
-            log_it(L_ERROR, "CLIENT: failed to derive handshake key using KDF");
-            return -1;
-        }
-        
-        log_it(L_INFO, "CLIENT: handshake encryption key created using KDF (stream=%p, key=%p)", 
-               a_stream, l_udp_ctx->handshake_key);
     }
     
     // DO NOT create session key here! It will be received and decrypted during SESSION_CREATE

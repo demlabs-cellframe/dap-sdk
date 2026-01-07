@@ -736,7 +736,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     if (l_bob_key->gen_bob_shared_key) {
         l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_payload, a_payload_size, &l_bob_pub);
         l_shared_key = l_bob_key->shared_key;
-        l_bob_pub_size = l_bob_key->pub_key_data_size;
+        l_bob_pub_size = l_shared_key_size;  // Return value is ciphertext size, not pub key size!
         
         if (!l_bob_pub || l_shared_key_size == 0 || !l_shared_key) {
             log_it(L_ERROR, "Failed to generate shared key from Alice's public key");
