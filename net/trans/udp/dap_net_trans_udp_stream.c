@@ -33,6 +33,7 @@
 #include "dap_worker.h"
 #include "dap_net.h"
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
+#include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "json.h"  // For json-c API
 
 #ifdef DAP_OS_WINDOWS
@@ -1163,6 +1164,15 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 /**
  * @brief Read data from UDP trans
  */
+/**
+ * @brief UDP read function for OBFUSCATED protocol
+ * 
+ * NEW ARCHITECTURE with 100% encryption:
+ * - HANDSHAKE: Obfuscated packets (600-900 bytes, size-based encryption)
+ * - ALL OTHER: Fully encrypted with internal header
+ * 
+ * NO plaintext metadata, NO fixed sizes!
+ */
 static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
     if (!a_stream || !a_stream->trans) {
@@ -1170,7 +1180,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "s_udp_read called: a_stream=%p, a_buffer=%p, a_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "s_udp_read: stream=%p, buffer=%p, size=%zu", 
              a_stream, a_buffer, a_size);
     
     // Get esocket from trans_ctx
@@ -1180,33 +1190,33 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         l_es = l_ctx->esocket;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "s_udp_read: l_ctx=%p, l_es=%p, l_es->buf_in=%p, buf_in_size=%zu, a_buffer=%p, a_size=%zu", 
-             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0, a_buffer, a_size);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_read: ctx=%p, es=%p, buf_in=%p, buf_in_size=%zu", 
+             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
 
-    // NEW ARCHITECTURE: Two modes:
-    // 1. CLIENT (l_es != NULL): Read from l_es->buf_in (reactor managed)
-    // 2. SERVER (l_es == NULL): Read from a_buffer (dispatcher passed)
-    
-    debug_if(s_debug_more, L_INFO, "s_udp_read: l_es=%p, a_buffer=%p, a_size=%zu - MODE: %s",
-           l_es, a_buffer, a_size, l_es ? "CLIENT" : "SERVER");
-    
+    // NEW PROTOCOL: Two modes (CLIENT uses l_es->buf_in, SERVER uses a_buffer)
     if (!l_es) {
-        // SERVER MODE: Use a_buffer passed by dispatcher
-        // Dispatcher now passes FULL UDP packet (header + payload) in a_buffer
-        debug_if(s_debug_more, L_INFO, "s_udp_read: SERVER MODE activated");
+        // SERVER MODE: Server-side receives already-decrypted data from dap_io_flow!
+        // The s_udp_packet_received_cb on server has already:
+        // 1. Deobfuscated HANDSHAKE (if it was obfuscated)
+        // 2. Decrypted SESSION_CREATE/DATA packets
+        // 3. Parsed internal headers
+        //
+        // So here we just receive the final payload!
+        
+        debug_if(s_debug_more, L_INFO, "s_udp_read: SERVER MODE - data already processed by flow");
+        
         if (!a_buffer || a_size == 0) {
-            debug_if(s_debug_more, L_DEBUG, "UDP server read: no data passed by dispatcher");
+            debug_if(s_debug_more, L_DEBUG, "UDP server read: no data");
             return 0;
         }
         
-        // Parse UDP header from a_buffer (dispatcher passes full packet now)
-        if (a_size < sizeof(dap_stream_trans_udp_header_t)) {
-            log_it(L_ERROR, "SERVER MODE: packet too small for header (%zu < %zu)", 
-                   a_size, sizeof(dap_stream_trans_udp_header_t));
-            return -1;
-        }
-        
-        dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_buffer;
+        // TODO: Server-side processing is now done in s_udp_packet_received_cb!
+        // This path should not be reached in new architecture.
+        log_it(L_WARNING, "SERVER MODE s_udp_read called unexpectedly (size=%zu)", a_size);
+        return a_size;  // Consumed
+    }
+    
+    // CLIENT MODE: Read from l_es->buf_in
         uint16_t l_payload_len = ntohs(l_header->length);
         uint8_t l_packet_type = l_header->type;
         
@@ -1724,24 +1734,39 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
     
-    // HANDSHAKE packets are sent as PLAINTEXT (just Kyber public key)
+    // HANDSHAKE packets are OBFUSCATED (size-based encryption)
     if (a_pkt_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
-        // Validate size
+        // Validate size (must be Kyber public key)
         if (a_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
             log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
                    a_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
             return -1;
         }
         
-        // Send plaintext Kyber public key directly
-        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, a_data, a_size);
+        // Obfuscate handshake (encrypt with size-derived key, add random padding)
+        uint8_t *l_obfuscated = NULL;
+        size_t l_obfuscated_size = 0;
+        
+        int l_ret = dap_transport_obfuscate_handshake(a_data, a_size,
+                                                      &l_obfuscated, &l_obfuscated_size);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Failed to obfuscate HANDSHAKE packet");
+            return -1;
+        }
+        
+        // Send obfuscated handshake
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, 
+                                                         l_obfuscated, l_obfuscated_size);
+        DAP_DELETE(l_obfuscated);
+        
         if (l_sent < 0) {
-            log_it(L_ERROR, "Failed to send HANDSHAKE packet");
+            log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
             return -1;
         }
         
         debug_if(s_debug_more, L_DEBUG,
-                 "HANDSHAKE init sent (plaintext, %zu bytes)", a_size);
+                 "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
+                 a_size, l_obfuscated_size);
         return l_sent;
     }
     

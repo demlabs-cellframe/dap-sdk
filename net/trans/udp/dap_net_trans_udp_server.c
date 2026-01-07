@@ -19,6 +19,7 @@
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
 #include "dap_enc_kyber.h"  // For randombytes
+#include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_net_trans_udp_stream.h"
@@ -388,23 +389,38 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         return -2;
     }
     
-    // HANDSHAKE DETECTION: Size = 800 bytes (Kyber512 public key)
-    // This is the ONLY plaintext packet type!
-    if (a_size == DAP_STREAM_UDP_HANDSHAKE_SIZE) {
-        debug_if(s_debug_more, L_DEBUG,
-                 "HANDSHAKE packet detected (size=%zu)", a_size);
+    // OBFUSCATED HANDSHAKE DETECTION: Size in range 600-900 bytes
+    // This could be an obfuscated handshake packet!
+    if (dap_transport_is_obfuscated_handshake_size(a_size)) {
+        // Try to deobfuscate as handshake
+        uint8_t *l_handshake = NULL;
+        size_t l_handshake_size = 0;
         
-        // Initialize session_id if not set (first handshake)
-        if (l_session->session_id == 0) {
-            // Generate random session_id for this session
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+        int l_ret = dap_transport_deobfuscate_handshake(a_data, a_size,
+                                                        &l_handshake, &l_handshake_size);
+        
+        if (l_ret == 0) {
+            // Successfully deobfuscated as handshake!
             debug_if(s_debug_more, L_DEBUG,
-                     "HANDSHAKE: generated session_id=0x%lx for session %p",
-                     l_session->session_id, l_session);
+                     "Deobfuscated HANDSHAKE: %zu bytes → %zu bytes",
+                     a_size, l_handshake_size);
+            
+            // Initialize session_id if not set
+            if (l_session->session_id == 0) {
+                randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+                debug_if(s_debug_more, L_DEBUG,
+                         "HANDSHAKE: generated session_id=0x%lx for session %p",
+                         l_session->session_id, l_session);
+            }
+            
+            // Process deobfuscated handshake
+            int l_result = s_handle_handshake(l_session, l_handshake, l_handshake_size);
+            DAP_DELETE(l_handshake);
+            return l_result;
         }
         
-        // Process handshake (plaintext Kyber public key)
-        return s_handle_handshake(l_session, a_data, a_size);
+        // Deobfuscation failed - might be regular encrypted packet
+        // Continue to try decryption with session key
     }
     
     // ALL OTHER PACKETS: Must be encrypted!
@@ -742,24 +758,38 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     // Get sequence number from UDP flow
     uint32_t l_seq_num = atomic_load(&a_session->base.seq_num_out);
     
-    // HANDSHAKE packets are sent as PLAINTEXT (just Kyber public key)
+    // HANDSHAKE packets are OBFUSCATED (size-based encryption)
     if (a_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
-        // Validate size
+        // Validate size (must be Kyber public key)
         if (a_payload_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
             log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
                    a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
             return -2;
         }
         
-        // Send plaintext Kyber public key directly
-        int l_ret = dap_io_flow_udp_send(&a_session->base, a_payload, a_payload_size);
-        if (l_ret < 0) {
-            log_it(L_ERROR, "Failed to send HANDSHAKE packet");
+        // Obfuscate handshake (encrypt with size-derived key, add random padding)
+        uint8_t *l_obfuscated = NULL;
+        size_t l_obfuscated_size = 0;
+        
+        int l_ret = dap_transport_obfuscate_handshake(a_payload, a_payload_size,
+                                                      &l_obfuscated, &l_obfuscated_size);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Failed to obfuscate HANDSHAKE packet");
             return -3;
         }
         
+        // Send obfuscated handshake
+        l_ret = dap_io_flow_udp_send(&a_session->base, l_obfuscated, l_obfuscated_size);
+        DAP_DELETE(l_obfuscated);
+        
+        if (l_ret < 0) {
+            log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
+            return -4;
+        }
+        
         debug_if(s_debug_more, L_DEBUG,
-                 "HANDSHAKE response sent (plaintext, %zu bytes)", a_payload_size);
+                 "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
+                 a_payload_size, l_obfuscated_size);
         return 0;
     }
     
