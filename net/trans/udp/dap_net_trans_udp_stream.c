@@ -1695,68 +1695,134 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  * - Server: Uses listener's physical esocket + sendto with remote_addr from UDP context
  * - ALWAYS wraps payload in UDP header with specified type
  */
+/**
+ * @brief Write typed packet (encrypted or plaintext for HANDSHAKE)
+ * 
+ * HANDSHAKE packets: sent as plaintext (just Kyber public key)
+ * All other packets: encrypted with session key
+ */
 static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
                                   const void *a_data, size_t a_size)
 {
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: a_stream=%p, type=0x%02x, a_size=%zu", 
-             a_stream, a_pkt_type, a_size);
+    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: type=0x%02x, size=%zu", 
+             a_pkt_type, a_size);
     
     if (!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for UDP write");
         return -1;
     }
 
-    if (!a_stream->trans) {
-        log_it(L_ERROR, "Stream has no trans");
-        return -1;
-    }
-
-    dap_stream_trans_udp_private_t *l_priv = 
-        (dap_stream_trans_udp_private_t*)a_stream->trans->_inheritor;
-    if (!l_priv) {
-        log_it(L_ERROR, "UDP trans not initialized");
-        return -1;
-    }
-
-    // Check max packet size
-    if (a_size > l_priv->config.max_packet_size) {
-        log_it(L_WARNING, "Packet size %zu exceeds max %u, truncating",
-               a_size, l_priv->config.max_packet_size);
-        a_size = l_priv->config.max_packet_size;
-    }
-
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-    if (!l_ctx) {
-        log_it(L_ERROR, "No trans ctx for write");
+    if (!l_ctx || !l_ctx->esocket) {
+        log_it(L_ERROR, "No trans ctx or esocket for write");
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: l_ctx=%p, l_ctx->esocket=%p", l_ctx, l_ctx->esocket);
-    
-    // NEW ARCHITECTURE: Distinguish CLIENT vs SERVER by presence of remote_addr in UDP context
-    // Server-side streams have remote_addr set (for sendto), client streams don't
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
-    bool l_is_server = (l_udp_ctx && l_udp_ctx->remote_addr.ss_family != 0);
-    
-    // ALWAYS wrap data in UDP header - no exceptions!
-    // Callers should pass raw payload, we add UDP framing
     if (!l_udp_ctx) {
         log_it(L_ERROR, "No UDP context for write");
         return -1;
     }
     
-    dap_stream_trans_udp_header_t l_hdr;
-    s_create_udp_header(&l_hdr, a_pkt_type, 
-                        (uint16_t)a_size, l_udp_ctx->seq_num++, l_udp_ctx->session_id);
+    // HANDSHAKE packets are sent as PLAINTEXT (just Kyber public key)
+    if (a_pkt_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
+        // Validate size
+        if (a_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
+            log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
+                   a_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
+            return -1;
+        }
+        
+        // Send plaintext Kyber public key directly
+        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, a_data, a_size);
+        if (l_sent < 0) {
+            log_it(L_ERROR, "Failed to send HANDSHAKE packet");
+            return -1;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "HANDSHAKE init sent (plaintext, %zu bytes)", a_size);
+        return l_sent;
+    }
     
-    size_t l_total_size = sizeof(l_hdr) + a_size;
-    uint8_t *l_pkt = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
-    if (!l_pkt) {
-        log_it(L_ERROR, "Failed to allocate memory for UDP packet");
+    // ALL OTHER PACKETS: Encrypt entire packet
+    
+    if (!l_udp_ctx->handshake_key) {
+        log_it(L_ERROR, "No encryption key for sending encrypted packet (type=%u)", a_pkt_type);
         return -1;
     }
-    memcpy(l_pkt, &l_hdr, sizeof(l_hdr));
-    memcpy(l_pkt + sizeof(l_hdr), a_data, a_size);
+    
+    // Build encrypted header
+    dap_stream_trans_udp_encrypted_header_t l_header;
+    l_header.type = a_pkt_type;
+    l_header.seq_num = htonl(l_udp_ctx->seq_num++);
+    l_header.session_id = htobe64(l_udp_ctx->session_id);
+    
+    // Build cleartext packet (header + payload)
+    size_t l_cleartext_size = sizeof(l_header) + a_size;
+    uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
+    if (!l_cleartext) {
+        log_it(L_ERROR, "Failed to allocate cleartext buffer");
+        return -1;
+    }
+    
+    memcpy(l_cleartext, &l_header, sizeof(l_header));
+    memcpy(l_cleartext + sizeof(l_header), a_data, a_size);
+    
+    // Encrypt entire packet
+    size_t l_encrypted_max = l_cleartext_size + 256;  // Extra space for encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "Failed to allocate encryption buffer");
+        DAP_DELETE(l_cleartext);
+        return -1;
+    }
+    
+    // Use handshake_key for SESSION_CREATE, session key for DATA/KEEPALIVE/CLOSE
+    dap_enc_key_t *l_enc_key = l_udp_ctx->handshake_key;
+    if (a_pkt_type == DAP_STREAM_UDP_PKT_DATA || 
+        a_pkt_type == DAP_STREAM_UDP_PKT_KEEPALIVE || 
+        a_pkt_type == DAP_STREAM_UDP_PKT_CLOSE) {
+        // These packet types require session key
+        if (a_stream->session && a_stream->session->key) {
+            l_enc_key = a_stream->session->key;
+        } else {
+            log_it(L_ERROR, "No session key for DATA/KEEPALIVE/CLOSE packet");
+            DAP_DELETE(l_cleartext);
+            DAP_DELETE(l_encrypted);
+            return -1;
+        }
+    }
+    
+    size_t l_encrypted_size = dap_enc_code(l_enc_key,
+                                           l_cleartext, l_cleartext_size,
+                                           l_encrypted, l_encrypted_max,
+                                           DAP_ENC_DATA_TYPE_RAW);
+    
+    DAP_DELETE(l_cleartext);
+    
+    if (l_encrypted_size == 0) {
+        log_it(L_ERROR, "Failed to encrypt packet (type=%u)", a_pkt_type);
+        DAP_DELETE(l_encrypted);
+        return -1;
+    }
+    
+    // Send encrypted blob (no headers, no magic, just encrypted data)
+    ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size);
+    
+    DAP_DELETE(l_encrypted);
+    
+    if (l_sent < 0) {
+        log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_pkt_type);
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Encrypted packet sent: type=%u, session=0x%lx, encrypted_size=%zu",
+             a_pkt_type, l_udp_ctx->session_id, l_encrypted_size);
+    
+    return l_sent;
+}
     
     debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: wrapped %zu bytes payload in UDP header type=0x%02x (total=%zu)", 
              a_size, a_pkt_type, l_total_size);
@@ -1806,40 +1872,6 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         
         // Get listener esocket from UDP context
         dap_events_socket_t *l_listener_es = l_udp_ctx->listener_esocket;
-        if (!l_listener_es) {
-            log_it(L_ERROR, "Server UDP context has no listener esocket for write");
-            DAP_DELETE(l_pkt);
-            return -1;
-        }
-        
-        // SOCKET SHARDING OPTIMIZATION:
-        // With socket sharding, we are ALREADY in the correct listener worker thread!
-        // - Kernel routes packets by hash(src_ip, src_port) to specific listener socket
-        // - That listener socket is bound to specific worker thread
-        // - Session is created in that worker thread
-        // - ALL subsequent packets from same client go to SAME worker thread (session affinity)
-        // - When trans->ops->write is called, we're invoked via reactor in SAME worker thread
-        // - NO need for dap_worker_exec_callback_on - we can update addr_storage directly!
-        
-        // Update addr_storage for this write (safe - we're in listener's worker)
-        memcpy(&l_listener_es->addr_storage, &l_udp_ctx->remote_addr, sizeof(l_udp_ctx->remote_addr));
-        l_listener_es->addr_size = l_udp_ctx->remote_addr_len;
-        
-        // Write directly - reactor will use our updated addr_storage for sendto
-        ssize_t l_sent = dap_events_socket_write_unsafe(l_listener_es, l_pkt, l_total_size);
-        
-        if (l_sent < 0) {
-            log_it(L_ERROR, "Server UDP write_unsafe failed");
-        } else {
-            l_result = l_sent;
-            debug_if(s_debug_more, L_DEBUG, "Server UDP: wrote %zd bytes directly (socket sharding - already in listener worker)", l_sent);
-        }
-        
-        DAP_DELETE(l_pkt);
-        return l_result;
-    }
-}
-
 /**
  * @brief Write DATA packet (trans->ops->write implementation)
  */

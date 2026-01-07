@@ -18,6 +18,7 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
+#include "dap_enc_kyber.h"  // For randombytes
 #include "dap_string.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_net_trans_udp_stream.h"
@@ -381,100 +382,146 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         return -1;
     }
     
-    // Parse stream UDP protocol header
-    if (a_size < sizeof(dap_stream_trans_udp_header_t)) {
-        log_it(L_WARNING, "Packet too small for stream UDP header (%zu bytes)", a_size);
+    stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    if (!l_session) {
+        log_it(L_ERROR, "NULL session in packet callback");
         return -2;
     }
     
-    dap_stream_trans_udp_header_t *l_header = (dap_stream_trans_udp_header_t*)a_data;
+    // HANDSHAKE DETECTION: Size = 800 bytes (Kyber512 public key)
+    // This is the ONLY plaintext packet type!
+    if (a_size == DAP_STREAM_UDP_HANDSHAKE_SIZE) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "HANDSHAKE packet detected (size=%zu)", a_size);
+        
+        // Initialize session_id if not set (first handshake)
+        if (l_session->session_id == 0) {
+            // Generate random session_id for this session
+            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            debug_if(s_debug_more, L_DEBUG,
+                     "HANDSHAKE: generated session_id=0x%lx for session %p",
+                     l_session->session_id, l_session);
+        }
+        
+        // Process handshake (plaintext Kyber public key)
+        return s_handle_handshake(l_session, a_data, a_size);
+    }
     
-    // Validate version
-    if (l_header->version != DAP_STREAM_UDP_VERSION) {
-        log_it(L_WARNING, "Invalid stream UDP version: %u (expected %u)",
-               l_header->version, DAP_STREAM_UDP_VERSION);
+    // ALL OTHER PACKETS: Must be encrypted!
+    // Decrypt first, then parse inner header
+    
+    if (!l_session->encryption_key) {
+        log_it(L_WARNING, "Received encrypted packet but no encryption key established");
         return -3;
     }
     
-    // Extract fields
-    uint8_t l_type = l_header->type;
-    uint16_t l_payload_len = ntohs(l_header->length);
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_session_id = be64toh(l_header->session_id);
-    
-    // Validate payload length
-    size_t l_expected_size = sizeof(dap_stream_trans_udp_header_t) + l_payload_len;
-    if (a_size < l_expected_size) {
-        log_it(L_WARNING, "Packet size mismatch (%zu < %zu)", a_size, l_expected_size);
+    // Allocate buffer for decrypted data
+    size_t l_decrypted_max = a_size + 256;  // Extra space for decryption
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
+    if (!l_decrypted) {
+        log_it(L_ERROR, "Failed to allocate decryption buffer");
         return -4;
     }
     
-    // Extract payload
-    const uint8_t *l_payload = a_data + sizeof(dap_stream_trans_udp_header_t);
+    // Decrypt entire packet
+    size_t l_decrypted_size = dap_enc_decode(l_session->encryption_key,
+                                             a_data, a_size,
+                                             l_decrypted, l_decrypted_max,
+                                             DAP_ENC_DATA_TYPE_RAW);
+    
+    if (l_decrypted_size == 0) {
+        log_it(L_ERROR, "Failed to decrypt UDP packet");
+        DAP_DELETE(l_decrypted);
+        return -5;
+    }
+    
+    // Parse encrypted header (inside decrypted payload)
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
+        log_it(L_ERROR, "Decrypted packet too small for header (%zu bytes)", l_decrypted_size);
+        DAP_DELETE(l_decrypted);
+        return -6;
+    }
+    
+    dap_stream_trans_udp_encrypted_header_t *l_header = 
+        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    
+    // Extract and validate fields
+    uint8_t l_type = l_header->type;
+    uint32_t l_seq_num = ntohl(l_header->seq_num);
+    uint64_t l_session_id = be64toh(l_header->session_id);
+    
+    // Validate packet type
+    if (l_type < DAP_STREAM_UDP_PKT_SESSION_CREATE || l_type > DAP_STREAM_UDP_PKT_CLOSE) {
+        log_it(L_ERROR, "Invalid packet type: %u", l_type);
+        DAP_DELETE(l_decrypted);
+        return -7;
+    }
+    
+    // Validate session_id
+    if (l_session->session_id != 0 && l_session->session_id != l_session_id) {
+        log_it(L_ERROR, "Session ID mismatch: packet=0x%lx, session=0x%lx",
+               l_session_id, l_session->session_id);
+        DAP_DELETE(l_decrypted);
+        return -8;
+    }
+    
+    // REPLAY PROTECTION: Validate sequence number
+    // seq_num must be strictly increasing (with wraparound support)
+    uint32_t l_last_seq = atomic_load(&l_session->base.last_seq_num_in);
+    
+    // Check for sequence number advance (handle wraparound)
+    int32_t l_seq_diff = (int32_t)(l_seq_num - l_last_seq);
+    
+    if (l_seq_diff <= 0 && l_last_seq != 0) {
+        // seq_num is less than or equal to last seen seq_num (possible replay)
+        log_it(L_WARNING, "Replay attack detected: seq_num=%u, last_seq=%u (session=0x%lx)",
+               l_seq_num, l_last_seq, l_session_id);
+        DAP_DELETE(l_decrypted);
+        return -9;
+    }
+    
+    // Update last seen sequence number
+    atomic_store(&l_session->base.last_seq_num_in, l_seq_num);
     
     debug_if(s_debug_more, L_DEBUG,
-             "Stream UDP packet: type=%u, seq=%u, session=0x%lx, payload=%u bytes",
-             l_type, l_seq_num, l_session_id, l_payload_len);
+             "Sequence validation OK: seq=%u, last_seq=%u, diff=%d",
+             l_seq_num, l_last_seq, l_seq_diff);
     
-    // Cast UDP flow to stream session
-    stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    // Extract payload (after encrypted header)
+    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
     
     debug_if(s_debug_more, L_DEBUG,
-             "Packet routing: packet session_id=0x%lx, current session=%p (session_id=0x%lx, encryption_key=%p)",
-             l_session_id, l_session, l_session ? l_session->session_id : 0,
-             l_session ? l_session->encryption_key : NULL);
+             "Decrypted packet: type=%u, seq=%u, session=0x%lx, payload=%zu bytes",
+             l_type, l_seq_num, l_session_id, l_payload_size);
     
     // Dispatch by packet type
+    int l_result = 0;
     switch (l_type) {
-        case DAP_STREAM_UDP_PKT_HANDSHAKE:
-            // CRITICAL: Store session_id from packet header!
-            // This is the client's session_id that we must use for all future packets
-            if (l_session && l_session->session_id == 0) {
-                l_session->session_id = l_session_id;
-                debug_if(s_debug_more, L_DEBUG,
-                         "HANDSHAKE: initialized session_id=0x%lx for session %p",
-                         l_session_id, l_session);
-            }
-            return s_handle_handshake(l_session, l_payload, l_payload_len);
-            
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
-            if (!l_session) {
-                log_it(L_WARNING, "SESSION_CREATE for non-existent session");
-                return -5;
-            }
-            // CRITICAL: Verify session_id matches!
-            if (l_session->session_id != 0 && l_session->session_id != l_session_id) {
-                log_it(L_ERROR, "SESSION_CREATE session_id mismatch: packet=0x%lx, session=0x%lx",
-                       l_session_id, l_session->session_id);
-                return -50;
-            }
-            return s_handle_session_create(l_session, l_payload, l_payload_len);
+            l_result = s_handle_session_create(l_session, l_payload, l_payload_size);
+            break;
             
         case DAP_STREAM_UDP_PKT_DATA:
-            if (!l_session) {
-                log_it(L_WARNING, "DATA packet for non-existent session");
-                return -6;
-            }
-            return s_handle_data(l_session, l_payload, l_payload_len);
+            l_result = s_handle_data(l_session, l_payload, l_payload_size);
+            break;
             
         case DAP_STREAM_UDP_PKT_KEEPALIVE:
-            if (!l_session) {
-                log_it(L_WARNING, "KEEPALIVE for non-existent session");
-                return -7;
-            }
-            return s_handle_keepalive(l_session);
+            l_result = s_handle_keepalive(l_session);
+            break;
             
         case DAP_STREAM_UDP_PKT_CLOSE:
-            if (!l_session) {
-                log_it(L_WARNING, "CLOSE for non-existent session");
-                return -8;
-            }
-            return s_handle_close(l_session);
+            l_result = s_handle_close(l_session);
+            break;
             
         default:
-            log_it(L_WARNING, "Unknown packet type: %u", l_type);
-            return -9;
+            log_it(L_WARNING, "Unhandled packet type: %u", l_type);
+            l_result = -9;
+            break;
     }
+    
+    DAP_DELETE(l_decrypted);
+    return l_result;
 }
 
 /**
@@ -678,7 +725,10 @@ static ssize_t s_stream_udp_stream_packet_send_cb(dap_io_flow_t *a_flow, void *a
 // =============================================================================
 
 /**
- * @brief Send UDP packet with protocol header
+ * @brief Send UDP packet (encrypted or plaintext for HANDSHAKE)
+ * 
+ * HANDSHAKE packets: sent as plaintext (just Kyber public key)
+ * All other packets: encrypted with session key
  */
 static int s_send_udp_packet(stream_udp_session_t *a_session,
                              uint8_t a_type,
@@ -692,33 +742,90 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     // Get sequence number from UDP flow
     uint32_t l_seq_num = atomic_load(&a_session->base.seq_num_out);
     
-    // Create UDP header
-    dap_stream_trans_udp_header_t l_header;
-    l_header.version = DAP_STREAM_UDP_VERSION;
+    // HANDSHAKE packets are sent as PLAINTEXT (just Kyber public key)
+    if (a_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
+        // Validate size
+        if (a_payload_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
+            log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
+                   a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
+            return -2;
+        }
+        
+        // Send plaintext Kyber public key directly
+        int l_ret = dap_io_flow_udp_send(&a_session->base, a_payload, a_payload_size);
+        if (l_ret < 0) {
+            log_it(L_ERROR, "Failed to send HANDSHAKE packet");
+            return -3;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "HANDSHAKE response sent (plaintext, %zu bytes)", a_payload_size);
+        return 0;
+    }
+    
+    // ALL OTHER PACKETS: Encrypt entire packet
+    
+    if (!a_session->encryption_key) {
+        log_it(L_ERROR, "No encryption key for sending encrypted packet (type=%u)", a_type);
+        return -4;
+    }
+    
+    // Build encrypted header
+    dap_stream_trans_udp_encrypted_header_t l_header;
     l_header.type = a_type;
-    l_header.length = htons((uint16_t)a_payload_size);
     l_header.seq_num = htonl(l_seq_num);
     l_header.session_id = htobe64(a_session->session_id);
     
-    // Allocate packet buffer
-    size_t l_total_size = sizeof(l_header) + a_payload_size;
-    uint8_t *l_packet = DAP_NEW_SIZE(uint8_t, l_total_size);
-    if (!l_packet) {
-        return -2;
+    // Build cleartext packet (header + payload)
+    size_t l_cleartext_size = sizeof(l_header) + a_payload_size;
+    uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
+    if (!l_cleartext) {
+        log_it(L_ERROR, "Failed to allocate cleartext buffer");
+        return -5;
     }
     
-    // Copy header and payload
-    memcpy(l_packet, &l_header, sizeof(l_header));
+    memcpy(l_cleartext, &l_header, sizeof(l_header));
     if (a_payload && a_payload_size > 0) {
-        memcpy(l_packet + sizeof(l_header), a_payload, a_payload_size);
+        memcpy(l_cleartext + sizeof(l_header), a_payload, a_payload_size);
     }
     
-    // Send via UDP flow
-    int l_result = dap_io_flow_udp_send(&a_session->base, l_packet, l_total_size);
+    // Encrypt entire packet
+    size_t l_encrypted_max = l_cleartext_size + 256;  // Extra space for encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "Failed to allocate encryption buffer");
+        DAP_DELETE(l_cleartext);
+        return -6;
+    }
     
-    DAP_DELETE(l_packet);
+    size_t l_encrypted_size = dap_enc_code(a_session->encryption_key,
+                                           l_cleartext, l_cleartext_size,
+                                           l_encrypted, l_encrypted_max,
+                                           DAP_ENC_DATA_TYPE_RAW);
     
-    return l_result;
+    DAP_DELETE(l_cleartext);
+    
+    if (l_encrypted_size == 0) {
+        log_it(L_ERROR, "Failed to encrypt packet (type=%u)", a_type);
+        DAP_DELETE(l_encrypted);
+        return -7;
+    }
+    
+    // Send encrypted blob (no headers, no magic, just encrypted data)
+    int l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
+    
+    DAP_DELETE(l_encrypted);
+    
+    if (l_ret < 0) {
+        log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_type);
+        return -8;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Encrypted packet sent: type=%u, seq=%u, session=0x%lx, encrypted_size=%zu",
+             a_type, l_seq_num, a_session->session_id, l_encrypted_size);
+    
+    return 0;
 }
 
 // =============================================================================

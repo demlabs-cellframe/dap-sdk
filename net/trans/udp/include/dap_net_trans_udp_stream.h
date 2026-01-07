@@ -115,29 +115,40 @@ extern "C" {
 #endif
 
 /**
- * @brief UDP trans packet types
+ * @brief UDP trans packet types (encrypted, inside payload)
+ * 
+ * These types are ONLY visible after decryption.
+ * They exist INSIDE the encrypted payload, never in plaintext.
  */
 typedef enum dap_stream_trans_udp_pkt_type {
-    DAP_STREAM_UDP_PKT_HANDSHAKE       = 0x01,  ///< Encryption handshake packet
-    DAP_STREAM_UDP_PKT_SESSION_CREATE  = 0x02,  ///< Session creation packet
-    DAP_STREAM_UDP_PKT_DATA            = 0x03,  ///< Stream data packet
-    DAP_STREAM_UDP_PKT_KEEPALIVE       = 0x04,  ///< Keepalive heartbeat
-    DAP_STREAM_UDP_PKT_CLOSE           = 0x05   ///< Connection close packet
+    DAP_STREAM_UDP_PKT_HANDSHAKE       = 0x01,  ///< Encryption handshake packet (plaintext exception)
+    DAP_STREAM_UDP_PKT_SESSION_CREATE  = 0x02,  ///< Session creation packet (encrypted)
+    DAP_STREAM_UDP_PKT_DATA            = 0x03,  ///< Stream data packet (encrypted)
+    DAP_STREAM_UDP_PKT_KEEPALIVE       = 0x04,  ///< Keepalive heartbeat (encrypted)
+    DAP_STREAM_UDP_PKT_CLOSE           = 0x05   ///< Connection close packet (encrypted)
 } dap_stream_trans_udp_pkt_type_t;
 
 /**
- * @brief UDP trans packet header (18 bytes)
+ * @brief Encrypted packet payload header (13 bytes, INSIDE encrypted blob)
  * 
- * This header is prepended to all UDP packets to enable
- * stateless operation and packet identification.
+ * This header exists ONLY inside the encrypted payload.
+ * It is NEVER transmitted in plaintext.
+ * 
+ * Packet routing is done SOLELY by (remote_addr, remote_port).
+ * No magic numbers, no version bytes, no plaintext metadata.
+ * 
+ * HANDSHAKE packets are the ONLY exception - they contain just
+ * the raw Kyber512 public key (800 bytes) with no header.
  */
-typedef struct dap_stream_trans_udp_header {
-    uint8_t version;        ///< Protocol version (currently 1)
+typedef struct dap_stream_trans_udp_encrypted_header {
     uint8_t type;           ///< Packet type (dap_stream_trans_udp_pkt_type_t)
-    uint16_t length;        ///< Payload length (network byte order)
     uint32_t seq_num;       ///< Sequence number (network byte order)
     uint64_t session_id;    ///< Session ID (network byte order)
-} DAP_ALIGN_PACKED dap_stream_trans_udp_header_t;
+    // Followed by payload data
+} DAP_ALIGN_PACKED dap_stream_trans_udp_encrypted_header_t;
+
+// HANDSHAKE packet size (Kyber512 public key)
+#define DAP_STREAM_UDP_HANDSHAKE_SIZE 800
 
 /**
  * @brief UDP trans configuration

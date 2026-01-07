@@ -59,7 +59,7 @@ struct dap_io_flow_udp {
     
     // Session tracking
     _Atomic uint32_t seq_num_out;        ///< Outgoing sequence number
-    uint32_t seq_num_in_last;            ///< Last received sequence number
+    _Atomic uint32_t last_seq_num_in;    ///< Last received sequence number (for replay protection)
     time_t last_activity;                ///< Last packet time (for timeout)
     
     // Protocol-specific extension
