@@ -97,14 +97,21 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
     dap_worker_t *l_current_worker = dap_worker_get_current();
     dap_worker_t *l_target_worker = a_es->worker;
     
+    log_it(L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, fd=%d", 
+           a_size, l_current_worker ? l_current_worker->id : 999, 
+           l_target_worker ? l_target_worker->id : 999, a_es->fd);
+    
     if (l_current_worker == l_target_worker) {
         // FAST PATH: Same worker, direct write
         memcpy(&a_es->addr_storage, a_addr, a_addr_len);
         a_es->addr_size = a_addr_len;
         
-        return dap_events_socket_write_unsafe(a_es, a_data, a_size);
+        int l_ret = dap_events_socket_write_unsafe(a_es, a_data, a_size);
+        log_it(L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH write returned %d", l_ret);
+        return l_ret;
     } else {
         // SLOW PATH: Cross-worker, use callback
+        log_it(L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
         flow_sendto_args_t *l_args = DAP_NEW_Z(flow_sendto_args_t);
         if (!l_args) {
             log_it(L_ERROR, "Failed to allocate sendto args");
