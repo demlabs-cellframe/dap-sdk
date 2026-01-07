@@ -859,12 +859,14 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     json_object_put(l_json);
     
     // Derive session key from handshake key using KDF ratcheting
+    uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
+    
     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
         a_session->encryption_key,
         DAP_ENC_KEY_TYPE_SALSA2012,
         "udp_session",
         11,
-        1,  // Counter = 1 (ratcheting)
+        l_kdf_counter,  // Counter = 1 (ratcheting)
         32
     );
     
@@ -879,36 +881,14 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
     
-    // Send SESSION_CREATE response
-    char l_response[256];
-    snprintf(l_response, sizeof(l_response),
-             "{\"status\":\"ok\",\"session_id\":%lu}", a_session->session_id);
+    // Send SESSION_CREATE response with KDF counter (UNENCRYPTED!)
+    // Client will use this counter to derive the same session key via KDF
+    // This provides forward secrecy without transmitting the actual key
+    uint64_t l_counter_be = htobe64(l_kdf_counter);
     
-    // Encrypt response
-    size_t l_encrypted_max = strlen(l_response) + 256;
-    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
-    if (!l_encrypted) {
-        log_it(L_ERROR, "Failed to allocate encryption buffer");
-        return -7;
-    }
-    
-    size_t l_encrypted_size = dap_enc_code(l_session_key,
-                                             (uint8_t*)l_response, strlen(l_response),
-                                             l_encrypted, l_encrypted_max,
-                                             DAP_ENC_DATA_TYPE_RAW);
-    
-    if (l_encrypted_size == 0) {
-        log_it(L_ERROR, "Failed to encrypt SESSION_CREATE response");
-        DAP_DELETE(l_encrypted);
-        return -8;
-    }
-    
-    // Send response
     int l_ret = s_send_udp_packet(a_session,
                                   DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                  l_encrypted, l_encrypted_size);
-    
-    DAP_DELETE(l_encrypted);
+                                  (const uint8_t*)&l_counter_be, sizeof(l_counter_be));
     
     debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE response sent (ret=%d)", l_ret);
     

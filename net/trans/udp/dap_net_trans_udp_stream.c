@@ -33,6 +33,7 @@
 #include "dap_worker.h"
 #include "dap_net.h"
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
+#include "json.h"  // For json-c API
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -1064,9 +1065,59 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     const char *l_channels = a_params->channels ? a_params->channels : "";
     size_t l_channels_len = strlen(l_channels);
     
-    // Send SESSION_CREATE packet with channels as payload (null-terminated string)
+    // SECURITY: SESSION_CREATE must be encrypted with handshake key!
+    if (!l_udp_ctx->handshake_key) {
+        log_it(L_ERROR, "No handshake key for encrypting SESSION_CREATE");
+        return -1;
+    }
+    
+    // Prepare JSON payload
+    json_object *l_json = json_object_new_object();
+    if (!l_json) {
+        log_it(L_ERROR, "Failed to create JSON object for SESSION_CREATE");
+        return -1;
+    }
+    
+    // Add session_id (use udp_ctx->session_id)
+    json_object_object_add(l_json, "session_id", json_object_new_int64((int64_t)l_udp_ctx->session_id));
+    
+    // Add channels
+    json_object_object_add(l_json, "channels", json_object_new_string(l_channels));
+    
+    // Serialize to JSON string
+    const char *l_json_str = json_object_to_json_string(l_json);
+    size_t l_json_len = strlen(l_json_str);
+    
+    // Encrypt JSON with handshake key
+    size_t l_encrypted_max = l_json_len + 256;  // Extra space for encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "Failed to allocate encryption buffer");
+        json_object_put(l_json);
+        return -1;
+    }
+    
+    size_t l_encrypted_size = dap_enc_code(l_udp_ctx->handshake_key,
+                                           l_json_str, l_json_len,
+                                           l_encrypted, l_encrypted_max,
+                                           DAP_ENC_DATA_TYPE_RAW);
+    
+    json_object_put(l_json);  // Free JSON object
+    
+    if (l_encrypted_size == 0) {
+        log_it(L_ERROR, "Failed to encrypt SESSION_CREATE payload");
+        DAP_DELETE(l_encrypted);
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Encrypted SESSION_CREATE: %zu bytes (from %zu plaintext)", 
+             l_encrypted_size, l_json_len);
+    
+    // Send encrypted SESSION_CREATE packet
     ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                        l_channels, l_channels_len + 1);
+                                        l_encrypted, l_encrypted_size);
+    
+    DAP_DELETE(l_encrypted);  // Free encryption buffer
     
     if (l_sent < 0) {
         log_it(L_ERROR, "Failed to send UDP session create request");
