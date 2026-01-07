@@ -30,41 +30,77 @@
 // All encrypted with size-derived key
 
 /**
- * @brief Derive encryption key from packet size
+ * @brief Update cipher key with KDF directly to priv_key_data
  * 
- * Uses KDF-SHAKE256 to derive a symmetric key from packet size.
- * This ensures both client and server can compute the same key
- * knowing only the packet size.
+ * MAXIMUM OPTIMIZATION: Generate KDF key DIRECTLY into priv_key_data buffer!
+ * No intermediate seed buffers, no memcpy!
  * 
- * Returns raw key bytes (not dap_enc_key_t) for simple XOR-like encryption.
+ * @param a_key Existing cipher key with allocated priv_key_data
+ * @param a_packet_size Packet size (used as KDF counter)
+ * @return 0 on success, -1 on error
  */
-static int s_derive_key_from_size(size_t a_packet_size, uint8_t *a_out_key, size_t a_key_size)
+static int s_update_key_from_packet_size(dap_enc_key_t *a_key, size_t a_packet_size)
 {
-    if (!a_out_key || a_key_size == 0) {
-        log_it(L_ERROR, "Invalid parameters for obfuscation key derivation");
+    if (!a_key || !a_key->priv_key_data || a_key->priv_key_data_size == 0) {
+        log_it(L_ERROR, "Invalid cipher key for KDF update");
         return -1;
     }
     
-    // Use packet size as counter for KDF
+    // Generate KDF key DIRECTLY into priv_key_data!
     uint64_t l_size_counter = (uint64_t)a_packet_size;
     
-    // Derive key: key = SHAKE256(SEED || "obfuscation" || packet_size)
     int l_ret = dap_enc_kdf_derive(
         DAP_TRANSPORT_OBFUSCATION_SEED,
         strlen(DAP_TRANSPORT_OBFUSCATION_SEED),
         "obfuscation",
         strlen("obfuscation"),
         l_size_counter,
-        a_out_key,
-        a_key_size
+        a_key->priv_key_data,          // WRITE DIRECTLY HERE!
+        a_key->priv_key_data_size
     );
     
     if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to derive obfuscation key from size %zu", a_packet_size);
+        log_it(L_ERROR, "Failed to generate KDF directly to key buffer (size=%zu)", a_packet_size);
         return -1;
     }
     
+    // Key is ready to use - priv_key_data contains fresh KDF!
     return 0;
+}
+
+/**
+ * @brief Create cipher key with pre-allocated buffer for KDF updates
+ * 
+ * Creates dap_enc_key_t with allocated priv_key_data buffer.
+ * This buffer will be reused for KDF generation on each packet!
+ * 
+ * @param a_cipher_type Cipher type (SALSA2012, ChaCha20, etc.)
+ * @param a_key_size Size of key buffer (usually 32 bytes)
+ * @return New dap_enc_key_t ready for KDF updates, or NULL on error
+ */
+static dap_enc_key_t* s_create_reusable_cipher_key(dap_enc_key_type_t a_cipher_type, size_t a_key_size)
+{
+    // Create key with zero seed initially - we'll update it with KDF
+    uint8_t l_zero_seed[32] = {0};
+    if (a_key_size > sizeof(l_zero_seed)) {
+        log_it(L_ERROR, "Key size %zu too large", a_key_size);
+        return NULL;
+    }
+    
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+        a_cipher_type,
+        l_zero_seed,
+        a_key_size,
+        NULL, 0,
+        a_key_size
+    );
+    
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to create reusable cipher key");
+        return NULL;
+    }
+    
+    return l_key;
 }
 
 int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
@@ -114,27 +150,16 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
         randombytes(l_cleartext + l_required_size, l_padding_size);
     }
     
-    // Derive encryption key from final packet size
-    uint8_t l_obf_key[32];  // 256-bit key for stream cipher
-    if (s_derive_key_from_size(l_final_size, l_obf_key, sizeof(l_obf_key)) != 0) {
+    // Create reusable cipher key (SALSA2012 by default)
+    dap_enc_key_t *l_key = s_create_reusable_cipher_key(DAP_ENC_KEY_TYPE_SALSA2012, 32);
+    if (!l_key) {
         DAP_DELETE(l_cleartext);
         return -4;
     }
     
-    // Create temporary cipher key for encryption
-    dap_enc_key_t *l_key = dap_enc_key_new_generate(
-        DAP_ENC_KEY_TYPE_SALSA2012,
-        l_obf_key,
-        sizeof(l_obf_key),
-        NULL, 0,
-        sizeof(l_obf_key)
-    );
-    
-    // Zero out raw key material (defense in depth)
-    memset(l_obf_key, 0, sizeof(l_obf_key));
-    
-    if (!l_key) {
-        log_it(L_ERROR, "Failed to create obfuscation cipher key");
+    // Generate KDF DIRECTLY into key's priv_key_data!
+    if (s_update_key_from_packet_size(l_key, l_final_size) != 0) {
+        dap_enc_key_delete(l_key);
         DAP_DELETE(l_cleartext);
         return -4;
     }
@@ -188,26 +213,15 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
         return -2;  // Size out of range, not obfuscated handshake
     }
     
-    // Derive decryption key from packet size
-    uint8_t l_obf_key[32];  // 256-bit key for stream cipher
-    if (s_derive_key_from_size(a_obfuscated_size, l_obf_key, sizeof(l_obf_key)) != 0) {
+    // Create reusable cipher key for decryption
+    dap_enc_key_t *l_key = s_create_reusable_cipher_key(DAP_ENC_KEY_TYPE_SALSA2012, 32);
+    if (!l_key) {
         return -3;
     }
     
-    // Create temporary cipher key for decryption
-    dap_enc_key_t *l_key = dap_enc_key_new_generate(
-        DAP_ENC_KEY_TYPE_SALSA2012,
-        l_obf_key,
-        sizeof(l_obf_key),
-        NULL, 0,
-        sizeof(l_obf_key)
-    );
-    
-    // Zero out raw key material
-    memset(l_obf_key, 0, sizeof(l_obf_key));
-    
-    if (!l_key) {
-        log_it(L_ERROR, "Failed to create deobfuscation cipher key");
+    // Generate KDF DIRECTLY into key's priv_key_data!
+    if (s_update_key_from_packet_size(l_key, a_obfuscated_size) != 0) {
+        dap_enc_key_delete(l_key);
         return -3;
     }
     

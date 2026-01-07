@@ -103,7 +103,7 @@ static void setup_test(void)
         // Use common fixtures setup
         int l_ret = dap_trans_test_setup();
         TEST_ASSERT(l_ret == 0, "Common fixtures setup failed");
-        
+
         // Setup UDP-specific mocks - only essential ones that are always needed
         // Note: dap_io_flow_server_new_udp is NOT mocked globally - tests that need it
         // will mock it individually
@@ -149,7 +149,7 @@ static void suite_cleanup(void)
         // Deinitialize UDP components
         dap_net_trans_udp_stream_unregister();
         dap_net_trans_udp_server_deinit();
-        
+
         // Use common fixtures cleanup
         dap_trans_test_suite_cleanup();
         

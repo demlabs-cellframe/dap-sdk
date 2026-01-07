@@ -313,7 +313,7 @@ int dap_net_trans_udp_stream_register(void)
         dap_net_trans_udp_server_deinit();
         return l_ret_trans;
     }
-    
+
     log_it(L_NOTICE, "UDP trans registered successfully");
     return 0;
 }
@@ -823,8 +823,8 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     // Perform KEM decapsulation (Alice side) using received ciphertext
     if (!l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "Alice key doesn't support KEM decapsulation");
-        return -1;
-    }
+            return -1;
+        }
     
     size_t l_shared_key_size = l_alice_key->gen_alice_shared_key(
         l_alice_key,
@@ -1008,7 +1008,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
     dap_enc_base64_encode(l_session_id_str, strlen(l_session_id_str), l_session_id_b64, DAP_ENC_DATA_TYPE_B64);
     
     dap_string_t *l_json_resp = dap_string_new("");
-    dap_string_append_printf(l_json_resp,
+    dap_string_append_printf(l_json_resp, 
         "[{\"session_id\":\"%s\"},{\"bob_message\":\"%s\"}]",
         l_session_id_b64, l_bob_pub_b64);
 
@@ -1692,7 +1692,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             }
             memcpy(l_payload, l_es->buf_in + sizeof(*l_header), l_payload_size);
         }
-        
+
         dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
         
         // Get UDP per-stream context
@@ -1726,13 +1726,13 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  debug_if(s_debug_more, L_DEBUG, "Client: processing handshake response, calling s_udp_handshake_response");
                  int l_result = s_udp_handshake_response(a_stream, l_payload, l_payload_size);
                  
-                debug_if(s_debug_more, L_DEBUG, "Handshake response processed, result=%d, calling callback", l_result);
-                // Call handshake callback with result (no data, just status)
+                 debug_if(s_debug_more, L_DEBUG, "Handshake response processed, result=%d, calling callback", l_result);
+                 // Call handshake callback with result (no data, just status)
                 log_it(L_INFO, "UDP: About to call handshake_cb=%p with result=%d", l_ctx->handshake_cb, l_result);
-                l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
+                 l_ctx->handshake_cb(a_stream, NULL, 0, l_result);
                 // DO NOT clear callback - duplicate protection will handle subsequent responses
                 // l_ctx->handshake_cb = NULL;  // REMOVED - duplicate protection now checks handshake_key existence
-                debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
+                 debug_if(s_debug_more, L_DEBUG, "Handshake callback completed");
              } else {
                  // Server: Received Handshake Request (Alice Key)
                  debug_if(s_debug_more, L_DEBUG, "Server: processing handshake request");
@@ -1740,7 +1740,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  size_t l_response_size = 0;
                  s_udp_handshake_process(a_stream, l_payload, l_payload_size, &l_response, &l_response_size);
                  
-                if (l_response && l_response_size > 0) {
+                 if (l_response && l_response_size > 0) {
                     // Send handshake response via s_udp_write_typed
                     ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_HANDSHAKE,
                                                          l_response, l_response_size);
@@ -1751,7 +1751,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                         debug_if(s_debug_more, L_DEBUG, "SERVER: handshake response sent successfully (%zd bytes)", l_sent);
                     }
                     
-                    DAP_DELETE(l_response);
+                     DAP_DELETE(l_response);
                  } else {
                      debug_if(s_debug_more, L_DEBUG, "SERVER: handshake process returned no response (l_response=%p, l_response_size=%zu)", 
                               l_response, l_response_size);
@@ -1841,9 +1841,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     // Call callback with session_id (key is already in stream->session->key)
                     debug_if(s_debug_more, L_DEBUG, "Calling session_create_cb: stream=%p, session_id=%u, cb=%p", 
                              a_stream, (uint32_t)l_sess_id, l_ctx->session_create_cb);
-                    l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
+                 l_ctx->session_create_cb(a_stream, (uint32_t)l_sess_id, NULL, 0, 0);
                     debug_if(s_debug_more, L_DEBUG, "session_create_cb completed successfully");
-                } else {
+             } else {
                     // ERROR: Server must send KDF counter in payload
                     log_it(L_ERROR, "Client: SESSION_CREATE response missing payload (KDF counter expected)");
                     // Call callback with error (session_id=0 indicates failure)
@@ -1859,8 +1859,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 debug_if(s_debug_more, L_DEBUG, "Server: received SESSION_CREATE request for existing session 0x%lx", l_sess_id);
                 
                 // Session was already created during HANDSHAKE, just confirm it
-                if (!a_stream->session) {
-                    a_stream->session = dap_stream_session_pure_new();
+                 if (!a_stream->session) {
+                     a_stream->session = dap_stream_session_pure_new();
                     if (a_stream->session) {
                         a_stream->session->id = l_sess_id;
                     }
@@ -1914,7 +1914,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 // Client: Duplicate SESSION_CREATE response (callback already called)
                 debug_if(s_debug_more, L_DEBUG, "Ignoring duplicate SESSION_CREATE response (session_id=%lu)", 
                          be64toh(l_header->session_id));
-            }
+             }
         }
 
         if (l_payload) DAP_DELETE(l_payload);
@@ -1958,13 +1958,13 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         log_it(L_ERROR, "No trans ctx or esocket for write");
         return -1;
     }
-    
+
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (!l_udp_ctx) {
         log_it(L_ERROR, "No UDP context for write");
         return -1;
     }
-    
+
     // HANDSHAKE packets are OBFUSCATED (size-based encryption)
     if (a_pkt_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
         // Validate size (must be Kyber public key)
@@ -1972,8 +1972,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
             log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
                    a_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
             return -1;
-        }
-        
+    }
+
         // Obfuscate handshake (encrypt with size-derived key, add random padding)
         uint8_t *l_obfuscated = NULL;
         size_t l_obfuscated_size = 0;
@@ -1982,19 +1982,19 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
                                                       &l_obfuscated, &l_obfuscated_size);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to obfuscate HANDSHAKE packet");
-            return -1;
-        }
+        return -1;
+    }
         
         // Send obfuscated handshake
         ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, 
                                                          l_obfuscated, l_obfuscated_size);
         DAP_DELETE(l_obfuscated);
-        
+    
         if (l_sent < 0) {
             log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
-            return -1;
-        }
-        
+        return -1;
+    }
+
         debug_if(s_debug_more, L_DEBUG,
                  "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
                  a_size, l_obfuscated_size);
@@ -2072,7 +2072,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_pkt_type);
         return -1;
     }
-    
+
     debug_if(s_debug_more, L_DEBUG,
              "Encrypted packet sent: type=%u, session=0x%lx, encrypted_size=%zu",
              a_pkt_type, l_udp_ctx->session_id, l_encrypted_size);
@@ -2119,8 +2119,8 @@ static void s_udp_close(dap_stream_t *a_stream)
         if (l_udp_ctx->handshake_key) {
             dap_enc_key_delete(l_udp_ctx->handshake_key);
             l_udp_ctx->handshake_key = NULL;
-        }
-        
+    }
+    
         // Clear stream pointer to prevent use-after-free
         l_udp_ctx->stream = NULL;
         l_udp_ctx->session_id = 0;
@@ -2371,7 +2371,7 @@ dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
         if (!l_udp_ctx) {
             log_it(L_CRITICAL, "Failed to allocate UDP stream context");
             return NULL;
-        }
+    }
         l_trans_ctx->_inheritor = l_udp_ctx;
         debug_if(s_debug_more, L_DEBUG, "Created UDP context %p for stream %p", l_udp_ctx, a_stream);
     }

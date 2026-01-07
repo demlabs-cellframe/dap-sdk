@@ -296,7 +296,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
     } else {
         // Handshake completed without data to process - transport handled everything
         log_it(L_DEBUG, "Handshake completed via transport protocol, marking stage as done");
-        
+            
         // Copy session encryption key from stream to client_pvt (if available)
         // Some transports establish session key during handshake, others establish it later
         if (a_stream->session && a_stream->session->key) {
@@ -317,7 +317,7 @@ static void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
         }
         
         s_set_stage_status(l_client_pvt, STAGE_STATUS_DONE);
-        s_stage_status_after(l_client_pvt);
+            s_stage_status_after(l_client_pvt);
     }
 }
 
@@ -904,7 +904,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         break;
                     }
-                    
+
                     log_it(L_DEBUG, "Using trans-created stream %p for session_create", a_client_pvt->stream);
 
                     // Call transport session_create
@@ -943,11 +943,11 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->stream->session = dap_stream_session_pure_new();
                         if (!a_client_pvt->stream->session) {
                             log_it(L_CRITICAL, "Failed to create stream session");
-                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                             a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
-                            s_stage_status_after(a_client_pvt);
-                            return;
-                        }
+                        s_stage_status_after(a_client_pvt);
+                        return;
+                    }
                     }
 
                     // new added, whether it is necessary?
@@ -1645,14 +1645,14 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
             // Received data after connection, transition to streaming
             // Transport has already processed any protocol-specific headers via its read callback
             log_it(L_DEBUG, "Stream connected and data received, switching to STREAMING");
-            l_client_pvt->stage = STAGE_STREAM_STREAMING;
-            l_client_pvt->stage_status = STAGE_STATUS_DONE;
-            s_stage_status_after(l_client_pvt);
+                        l_client_pvt->stage = STAGE_STREAM_STREAMING;
+                        l_client_pvt->stage_status = STAGE_STATUS_DONE;
+                        s_stage_status_after(l_client_pvt);
 
-            // Process any remaining data immediately
-            if (l_client_pvt->stream) {
+                // Process any remaining data immediately
+                if (l_client_pvt->stream) {
                 // Recursive call to process packets
-                s_stream_es_callback_read(a_es, arg);
+                    s_stream_es_callback_read(a_es, arg);
             }
         }
             break;
