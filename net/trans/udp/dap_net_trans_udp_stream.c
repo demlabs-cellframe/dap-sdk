@@ -1413,8 +1413,11 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  // DUPLICATE PROTECTION: Check if handshake already completed
                  dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
                  if (l_udp_ctx && l_udp_ctx->handshake_key) {
-                     debug_if(s_debug_more, L_DEBUG, "Client: ignoring duplicate HANDSHAKE response (handshake_key already established)");
-                     return a_size;  // Ignore duplicate
+                     debug_if(s_debug_more, L_DEBUG, "Client: ignoring duplicate HANDSHAKE response (handshake_key already established), shrinking buf_in by %zu bytes", l_total_size);
+                     // CRITICAL: Must shrink buf_in even for duplicates, otherwise buf accumulates!
+                     if (l_payload) DAP_DELETE(l_payload);
+                     dap_events_socket_shrink_buf_in(l_es, l_total_size);
+                     return 0;  // Ignore duplicate but clear buffer
                  }
                  
                  // Process it here to establish encryption, then call callback
