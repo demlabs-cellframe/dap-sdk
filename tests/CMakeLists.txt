@@ -28,8 +28,6 @@ enable_testing()
 message("[+] DAP SDK Test Infrastructure:")
 message("[+] - Unit tests: ${CMAKE_CURRENT_SOURCE_DIR}/unit")
 message("[+] - Integration tests: ${CMAKE_CURRENT_SOURCE_DIR}/integration") 
-message("[+] - E2E tests: ${CMAKE_CURRENT_SOURCE_DIR}/e2e")
-message("[+] - Functional tests: ${CMAKE_CURRENT_SOURCE_DIR}/functional")
 message("[+] - Regression tests: ${CMAKE_CURRENT_SOURCE_DIR}/regression")
 message("[+] - Performance tests: ${CMAKE_CURRENT_SOURCE_DIR}/performance")
 message("[+] - Security tests: ${CMAKE_CURRENT_SOURCE_DIR}/security")
@@ -167,17 +165,6 @@ message("[+] Configuring Integration Tests")
 #    register_dap_test(test_integration_crypto_network "integration;crypto;network")
 #endif()
 
-# Build E2E Tests
-message("[+] Configuring E2E Tests")
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/e2e/test_complete_workflow.c)
-    add_dap_test(test_e2e_complete_workflow e2e/test_complete_workflow.c)
-    register_dap_test(test_e2e_complete_workflow "e2e;workflow")
-    
-    # E2E tests need longer timeout
-    set_tests_properties(test_e2e_complete_workflow PROPERTIES TIMEOUT 600)
-endif()
-
 # Build Performance Tests
 message("[+] Configuring Performance Tests")
 
@@ -187,14 +174,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_crypto_benchmarks.c)
     
     # Performance tests need longer timeout
     set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT 1200)
-endif()
-
-# Build Functional Tests
-message("[+] Configuring Functional Tests")
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_api_endpoints.c)
-    add_dap_test(test_functional_api functional/test_api_endpoints.c)
-    register_dap_test(test_functional_api "functional;api")
 endif()
 
 # Build Regression Tests  

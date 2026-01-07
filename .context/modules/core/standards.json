@@ -1,0 +1,391 @@
+{
+  "version": "2.1.0",
+  "created": "2025-01-10T15:30:00Z",
+  "updated": "2025-01-14T17:45:00Z",
+  "navigation_system": {
+    "purpose": "Стандарты разработки и coding guidelines для СЛК системы",
+    "recovery_path": ".context/manifest.json",
+    "current_file": ".context/modules/core/standards.json",
+    "file_role": "CORE_STANDARDS",
+    "related_files": [
+      ".context/manifest.json",
+      ".context/modules/core/manifest.json",
+      ".context/modules/core/project.json",
+      ".context/manifest.json"
+    ],
+    "quick_navigation": {
+      "🏠 Главная": ".context/manifest.json - главный навигатор системы",
+      "📋 Core": ".context/modules/core/manifest.json - манифест core модулей",
+      "📐 Стандарты": ".context/modules/core/standards.json - стандарты разработки",
+      "🏗️ Проект": ".context/modules/core/project.json - информация о проекте",
+      "🛠️ CLI": ".context/tools/scripts/slc_cli.py - автоматизация"
+    },
+    "usage_hint": "Этот файл содержит стандарты кодирования и best practices",
+    "ai_context": "Файл СЛК системы: standards.json"
+  },
+  "coding_standards": {
+    "slc_task_creation": {
+      "autoload_section_mandatory": {
+        "rule": "При создании СЛК задач ОБЯЗАТЕЛЬНО правильно заполнять autoload секцию",
+        "priority": "CRITICAL",
+        "verification_required": "Проверить задачу и autoload секцию 2-3 раза после создания",
+        "reference": ".context/modules/core/manifest.json -> project_rules -> SLC_TASK_AUTOLOAD_SECTION_RULE",
+        "quality_gates": [
+          "✅ Все SLC core модули включены",
+          "✅ Language модули соответствуют языкам",
+          "✅ Project модули релевантны задаче",
+          "✅ Standards модули добавлены",
+          "✅ Исходные файлы сгруппированы по категориям",
+          "✅ Test infrastructure (если тестовая задача)",
+          "✅ Build файлы (CMakeLists.txt и др.)",
+          "✅ Search patterns определены",
+          "✅ Directories указаны",
+          "✅ Priority load order задан",
+          "✅ Context size optimization заполнена",
+          "✅ Auto load triggers указаны",
+          "✅ Intelligent context expansion для фаз",
+          "✅ Финальная проверка всей секции 2-3 раза"
+        ],
+        "process": "СОЗДАТЬ → ЗАПОЛНИТЬ → ПРОВЕРКА 1 → ПРОВЕРКА 2 → ПРОВЕРКА 3 → ФИНАЛЬНАЯ ПРОВЕРКА",
+        "examples": {
+          "testing_task": ".context/tasks/vpn_test_coverage.json",
+          "feature_task": ".context/tasks/dap_stream_traffic_obfuscation_dpi_bypass.json",
+          "simple_task": ".context/tasks/templates/task_template.json"
+        }
+      }
+    },
+    "ai_ml_development": {
+      "prompt_engineering": {
+        "structure": "Используйте четкую иерархию: context → task → examples → constraints",
+        "optimization": "Итеративное тестирование и улучшение промптов",
+        "documentation": "Документируйте результаты A/B тестирования промптов",
+        "versioning": "Ведите версионность промптов с метриками качества"
+      },
+      "model_development": {
+        "fine_tuning": "Следуйте LoRA/QLoRA подходу для эффективности",
+        "data_preparation": "Валидация и очистка данных - обязательно",
+        "evaluation": "Количественные и качественные метрики оценки",
+        "monitoring": "Continuous monitoring производительности модели"
+      },
+      "ai_agents": {
+        "architecture": "Модульная архитектура: reasoning + memory + action",
+        "reliability": "Robust error handling и fallback механизмы",
+        "testing": "Comprehensive unit и integration тесты",
+        "ethics": "Этические ограничения и safety measures"
+      }
+    },
+    "template_development": {
+      "json_structure": {
+        "required_fields": [
+          "version",
+          "created",
+          "updated",
+          "navigation_system"
+        ],
+        "versioning": "Semantic versioning (major.minor.patch)",
+        "navigation": "Всегда включать navigation_system для восстановления контекста",
+        "descriptions": "Понятные описания на русском языке"
+      },
+      "template_quality": {
+        "completeness": "Шаблон должен создавать полностью рабочий проект",
+        "modularity": "Разделение на логические модули и компоненты",
+        "flexibility": "Параметризация для разных use cases",
+        "documentation": "Inline документация и примеры использования"
+      },
+      "testing_standards": {
+        "generation_test": "Каждый шаблон должен успешно генерироваться",
+        "project_validation": "Сгенерированный проект должен запускаться",
+        "edge_cases": "Тестирование граничных случаев и ошибок",
+        "performance": "Генерация шаблона < 1 секунды"
+      }
+    },
+    "cli_development": {
+      "command_design": {
+        "intuitive": "Команды должны быть интуитивно понятными",
+        "consistent": "Единообразный стиль аргументов и опций",
+        "helpful": "Полезные help сообщения и примеры",
+        "error_handling": "Понятные сообщения об ошибках"
+      },
+      "performance": {
+        "responsiveness": "Все команды < 2 секунд выполнения",
+        "caching": "Кэширование для улучшения производительности",
+        "lazy_loading": "Загрузка только необходимых модулей",
+        "validation": "Быстрая валидация входных данных"
+      }
+    }
+  },
+  "project_structure_standards": {
+    "directory_organization": {
+      "core/": "Базовые файлы системы (manifest, project, standards)",
+      "modules/": "Шаблоны, организованные по категориям",
+      "tasks/": "Управление задачами и прогрессом",
+      "tools/": "Автоматизация и вспомогательные скрипты",
+      "docs/": "Документация пользователя"
+    },
+    "file_naming": {
+      "json_templates": "snake_case с описательными именами",
+      "python_scripts": "snake_case с _cli.py суффиксом для CLI",
+      "documentation": "UPPERCASE для основных файлов (README.md)",
+      "version_files": "UPPERCASE без расширения (VERSION)"
+    },
+    "content_organization": {
+      "separation_of_concerns": "Разделение логики по файлам и модулям",
+      "reusability": "Переиспользуемые компоненты в отдельных модулях",
+      "maintainability": "Понятная структура для будущих разработчиков",
+      "scalability": "Архитектура поддерживает добавление новых шаблонов"
+    }
+  },
+  "documentation_standards": {
+    "user_documentation": {
+      "quick_start": "Пользователь должен начать работу за 5 минут",
+      "examples": "Реальные примеры использования",
+      "troubleshooting": "Решения типичных проблем",
+      "visual_aids": "Диаграммы и схемы для сложных концепций"
+    },
+    "technical_documentation": {
+      "architecture": "Объяснение архитектурных решений",
+      "api_reference": "Полный справочник по CLI командам",
+      "extension_guide": "Как добавлять новые шаблоны",
+      "contribution": "Руководство для контрибьюторов"
+    },
+    "code_documentation": {
+      "inline_comments": "Комментарии на русском языке",
+      "docstrings": "Подробные описания функций и классов",
+      "type_hints": "Использование type hints в Python коде",
+      "examples": "Примеры использования в docstrings"
+    }
+  },
+  "quality_assurance": {
+    "testing_strategy": {
+      "unit_tests": "Изолированное тестирование компонентов",
+      "integration_tests": "Тестирование взаимодействия компонентов",
+      "system_tests": "End-to-end тестирование пользовательских сценариев",
+      "performance_tests": "Проверка производительности и скорости"
+    },
+    "code_review": {
+      "standards_compliance": "Соответствие стандартам кодирования",
+      "functionality_review": "Проверка корректности реализации",
+      "performance_review": "Анализ влияния на производительность",
+      "security_review": "Проверка безопасности и уязвимостей"
+    },
+    "release_criteria": {
+      "all_tests_pass": "100% прохождение всех тестов",
+      "documentation_complete": "Полная документация всех изменений",
+      "performance_benchmarks": "Соответствие целевым показателям производительности",
+      "user_acceptance": "Валидация основных пользовательских сценариев"
+    }
+  },
+  "best_practices": {
+    "ai_development": {
+      "prompt_iteration": "Итеративное улучшение промптов с метриками",
+      "model_selection": "Выбор модели на основе задачи, не hype",
+      "data_quality": "Качество данных важнее количества",
+      "ethical_considerations": "Всегда учитывать этические аспекты"
+    },
+    "template_creation": {
+      "user_centric": "Шаблоны должны решать реальные проблемы пользователей",
+      "production_ready": "Шаблоны создают production-ready проекты",
+      "maintainable": "Код должен быть легко поддерживаемым",
+      "documented": "Каждый шаблон должен иметь документацию"
+    },
+    "system_design": {
+      "modularity": "Модульная архитектура для гибкости",
+      "performance": "Производительность - ключевое требование",
+      "usability": "Простота использования для конечных пользователей",
+      "extensibility": "Система должна легко расширяться"
+    }
+  },
+  "performance_requirements": {
+    "cli_commands": {
+      "list": "< 0.5 секунды",
+      "search": "< 1 секунда",
+      "info": "< 0.5 секунды",
+      "create": "< 2 секунды",
+      "validate": "< 1 секунда"
+    },
+    "template_generation": {
+      "simple_template": "< 0.5 секунды",
+      "complex_template": "< 2 секунды",
+      "large_project": "< 5 секунд"
+    },
+    "system_metrics": {
+      "memory_usage": "< 50MB для CLI операций",
+      "disk_space": "< 1MB для основной системы",
+      "startup_time": "< 0.1 секунды для CLI"
+    }
+  },
+  "security_guidelines": {
+    "template_safety": {
+      "no_arbitrary_code": "Шаблоны не должны выполнять произвольный код",
+      "path_validation": "Валидация всех путей файловой системы",
+      "input_sanitization": "Очистка всех пользовательских входных данных",
+      "permission_checks": "Проверка прав доступа перед операциями"
+    },
+    "data_handling": {
+      "no_sensitive_data": "Не храним чувствительные данные в шаблонах",
+      "secure_defaults": "Безопасные настройки по умолчанию",
+      "minimal_permissions": "Минимальные необходимые права доступа",
+      "audit_trail": "Логирование важных операций"
+    }
+  },
+  "project_name": "DAP SDK Smart Layered Context",
+  "type": "Smart Layered Context System",
+  "description": "Production-ready universal AI development framework with modular architecture",
+  "core_standards": {
+    "code_quality": {
+      "documentation": "All public APIs must have comprehensive documentation",
+      "error_handling": "Robust error handling with specific error codes",
+      "memory_management": "Proper memory allocation and cleanup",
+      "testing": "Comprehensive unit tests for all functionality"
+    },
+    "development_workflow": {
+      "version_control": "Git-based workflow with meaningful commit messages",
+      "code_review": "All changes require review and validation",
+      "testing_strategy": "Test-driven development approach",
+      "documentation_updates": "Documentation must be updated with code changes"
+    },
+    "testing_standards": {
+      "framework_integration": "ALL NEW TESTS MUST BE CREATED AS PART OF CMAKE UNIT TEST SUITE",
+      "test_organization": "Tests organized by functionality and component",
+      "test_data": "Use consistent test data and fixtures",
+      "performance_testing": "Include performance benchmarks in unit tests",
+      "standalone_tests": "NO standalone test executables - integrate into CMake test framework",
+      "test_discovery": "Tests must be discoverable via 'make test' or 'ctest'",
+      "naming_convention": "Test files: *_test.c, Test functions: test_*"
+    },
+    "architecture": {
+      "modularity": "Loosely coupled, highly cohesive modules",
+      "scalability": "Design for growth and extensibility",
+      "performance": "Optimize for efficiency where critical",
+      "maintainability": "Code should be self-documenting and clear"
+    }
+  },
+  "template_system": {
+    "template_categories": [
+      "AI/ML Development",
+      "Programming Languages",
+      "Development Methodologies",
+      "Tools & Utilities",
+      "Project Templates"
+    ],
+    "quality_metrics": {
+      "completeness": "Templates must cover all essential aspects",
+      "usability": "Clear structure and practical examples",
+      "maintainability": "Regular updates and community feedback",
+      "universality": "Applicable across different contexts"
+    }
+  },
+  "performance_standards": {
+    "optimization_approach": "Profile-first optimization - no premature optimization",
+    "benchmarking": "All performance work must include baseline measurements",
+    "testing_integration": "Performance tests integrated into CMake test suite",
+    "profiling_tools": "Use systematic profiling before optimization attempts"
+  },
+  "optimization_standards": {
+    "profile_first_mandatory": "ALL optimization work must begin with systematic profiling",
+    "data_driven_decisions": "Optimization decisions must be based on measured performance data",
+    "cmake_testing_only": "ALL performance testing via CMake CTest framework only",
+    "baseline_establishment": "Must establish baseline measurements before optimization",
+    "simd_optimization_guidelines": {
+      "target_validation": "Verify optimization targets represent significant execution time (>30%)",
+      "conditional_compilation": "Always provide fallback for non-SIMD platforms",
+      "intrinsics_compatibility": "Handle ARM NEON intrinsic limitations (e.g., vmulq_s64)",
+      "integration_strategy": "Prefer direct inclusion over separate compilation for complex SIMD",
+      "vectorization_approach": "Process 4+ elements simultaneously for meaningful SIMD gains"
+    }
+  },
+  "naming_conventions": {
+    "forbidden_refactoring_terms": {
+      "rule": "НИКОГДА не использовать в naming элементы, указывающие на рефакторинг",
+      "forbidden_words": [
+        "advanced", "unified", "legacy", "enhanced", "backup", "new", 
+        "universal", "improved", "optimized", "extended", "simplified",
+        "modern", "updated", "revised", "refactored", "migrated"
+      ],
+      "enforcement": "mandatory",
+      "action": "Немедленный рефакторинг при обнаружении",
+      "examples": {
+        "bad": ["advanced_hash", "unified_verification", "legacy_commit", "enhanced_proof"],
+        "good": ["hash_with_salt", "threshold_verification", "commitment_v1", "acorn_proof"]
+      }
+    }
+  },
+  "change_management": {
+    "no_rollback_policy": {
+      "rule": "НИКОГДА не откатывать изменения из-за сложности работы с ними",
+      "enforcement": "MANDATORY",
+      "reasoning": "Откаты уничтожают прогресс и создают технический долг",
+      "required_actions": [
+        "Исправлять ошибки пошагово, не откатывая весь прогресс",
+        "Разбивать сложные изменения на маленькие шаги",
+        "Тестировать каждый шаг перед переходом к следующему",
+        "Документировать проблемы и их решения для будущего"
+      ],
+      "forbidden_actions": [
+        "git checkout -- (откат файлов)",
+        "git reset (откат коммитов)",
+        "Удаление прогресса из-за временных сложностей",
+        "Возврат к 'рабочему состоянию' вместо исправления"
+      ],
+      "philosophy": "Двигаться только вперед, исправляя проблемы по пути"
+    },
+    "problem_investigation_policy": {
+      "rule": "НИКОГДА не действовать наугад при неясной проблеме - всегда исследовать проблему полностью",
+      "enforcement": "MANDATORY", 
+      "reasoning": "Действия наугад создают новые проблемы и маскируют реальные причины",
+      "required_actions": [
+        "Проанализировать стек вызовов и логи полностью",
+        "Найти точную причину проблемы перед исправлением",
+        "Понять связь между изменениями и возникшей проблемой",
+        "Проверить все предположения фактическими данными",
+        "Документировать найденную причину для будущего"
+      ],
+      "prohibited_actions": [
+        "Пробовать случайные исправления",
+        "Изменять код без понимания причины проблемы", 
+        "Полагаться на догадки вместо фактов",
+        "Исправлять симптомы вместо причин"
+      ],
+      "scope": "Все виды проблем: компиляция, тесты, производительность, логика",
+      "priority": "CRITICAL - превыше скорости исправления"
+    },
+    "direct_editing_policy": {
+      "rule": "НИКОГДА не создавать новые файлы или бэкапы - всегда редактировать существующие файлы напрямую",
+      "enforcement": "MANDATORY",
+      "reasoning": "Создание новых файлов и бэкапов усложняет структуру проекта и создает путаницу",
+      "required_actions": [
+        "Редактировать существующие файлы напрямую",
+        "Декомпозировать сложные задачи на маленькие шаги",
+        "Добавлять фазы исследования для сложных изменений",
+        "Использовать поэтапное редактирование вместо пересоздания"
+      ],
+      "prohibited_actions": [
+        "Создание файлов с суффиксами _new, _clean, _backup",
+        "Копирование файлов для 'безопасности'",
+        "Создание временных файлов вместо прямого редактирования",
+        "Пересоздание файлов 'с нуля'"
+      ],
+      "scope": "Все файлы проекта: код, конфигурация, документация",
+      "priority": "HIGHEST - обязательное правило"
+    },
+    "never_remove_problematic_parts_policy": {
+      "rule": "НИКОГДА не убирать проблемные части кода - всегда исправлять их на месте",
+      "enforcement": "MANDATORY",
+      "reasoning": "Удаление проблемных частей маскирует реальные проблемы и создает неполную функциональность",
+      "required_actions": [
+        "Исправлять проблемную логику напрямую",
+        "Находить корневую причину проблемы",
+        "Исправлять архитектуру, а не удалять функциональность",
+        "Сохранять полную функциональность при исправлении"
+      ],
+      "prohibited_actions": [
+        "Удаление проблемных функций 'временно'",
+        "Комментирование проблемного кода",
+        "Замена сложной логики на заглушки",
+        "Исключение проблемных частей из схем"
+      ],
+      "scope": "Все проблемные части: функции, схемы, алгоритмы, тесты",
+      "priority": "CRITICAL - сохранение полной функциональности"
+    }
+  }
+}

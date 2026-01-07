@@ -1,0 +1,317 @@
+{
+  "task_id": "vpn_test_coverage",
+  "title": "VPN Client & Service Test Coverage Implementation",
+  "description": "Comprehensive unit and integration test coverage for both VPN client (cellframe-srv-vpn-client) and VPN service (cellframe-sdk). Implementation of complete test infrastructure including unit tests, integration tests, mocks, and fixtures for all critical components.",
+  "priority": "high",
+  "status": "in_progress",
+  "created": "2025-10-26",
+  "updated": "2025-10-29",
+  "tags": [
+    "testing",
+    "vpn-client",
+    "vpn-service",
+    "unit-tests",
+    "integration-tests",
+    "quality-assurance",
+    "dap-events-fixed"
+  ],
+  "auto-load": [
+      ".context/modules/core/standards.json",
+      ".context/modules/core/development_standards.json",
+    ".context/modules/core/project.json",
+      ".context/modules/languages/c/c_development_enhanced.json",
+    ".context/modules/languages/c/c_debugging_tools.json",
+      ".context/modules/projects/cellframe_srv_vpn_client.json",
+      ".context/modules/projects/dap_sdk_project.json",
+    ".context/modules/projects/cellframe_sdk.json",
+    ".context/modules/standards/dap_sdk_coding_standards.json",
+      ".context/modules/testing/stage_env_system.json",
+    ".context/modules/testing/dap_mock_framework.json",
+    ".context/modules/testing/dap_async_test_framework.json",
+    ".context/modules/testing/dap_template_engine.json"
+  ],
+  
+  "workflow_integration": {
+    "cursor_todo_system": {
+      "description": "Интеграция с системой TODO Cursor для управления фазами задачи",
+      "approach": "Динамическое создание и обновление TODO по мере выполнения задачи",
+      "guidelines": [
+        "При начале работы над задачей: используй todo_write для создания списка текущих подзадач",
+        "Каждая фаза задачи = отдельный TODO item в Cursor с уникальным ID",
+        "Статусы: pending → in_progress → completed или cancelled",
+        "По завершении TODO: обновляй этот файл задачи только для записи результатов, архитектурных решений, и аналитики",
+        "НЕ дублируй фазы в этом файле - они живут в Cursor TODO",
+        "Этот файл содержит: требования, архитектуру, результаты анализа, достижения",
+        "Cursor TODO содержит: текущие подзадачи, их статусы, прогресс работы"
+      ],
+      "example_workflow": [
+        "1. AI читает эту задачу (requirements + architecture + achievements)",
+        "2. AI создает TODO через todo_write с конкретными подзадачами",
+        "3. AI работает с TODO (mark in_progress, complete, add new)",
+        "4. После завершения крупной фазы: AI обновляет этот файл (achievements, lessons_learned)",
+        "5. Повторяет цикл для следующей фазы"
+      ]
+    }
+  },
+
+  "requirements": {
+    "core_objectives": [
+      "100% coverage критических компонентов VPN client и service",
+      "Полная изоляция unit тестов через мок-фреймворк",
+      "Integration тесты с реальными компонентами для проверки взаимодействия",
+      "Автоматическая генерация mock wrappers через CMake",
+      "CI/CD ready тесты с понятным выводом и exit codes",
+      "Документация всех тестовых сценариев и компонентов"
+    ],
+    "quality_standards": [
+      "Все тесты должны компилироваться без warnings",
+      "Каждый тест должен иметь clear purpose и документацию",
+      "Мокирование внешних зависимостей обязательно для unit тестов",
+      "Integration тесты должны быть воспроизводимы локально",
+      "Использовать DAP SDK test framework и mock framework",
+      "Следовать coding standards DAP SDK"
+    ],
+    "technical_constraints": [
+      "C99 совместимость",
+      "CMake build system",
+      "Linux primary target (с учетом кросс-платформенности DAP SDK)",
+      "Dependency на cellframe-node, dap-sdk, dap-test-framework",
+      "Минимизация внешних test dependencies"
+    ]
+  },
+
+  "architecture": {
+    "test_infrastructure": {
+      "structure": {
+        "unit_tests": {
+          "location": "tests/unit/",
+          "purpose": "Изолированное тестирование отдельных модулей с полным мокированием",
+          "key_principles": [
+            "Один тест = один компонент",
+            "Все внешние зависимости мокируются",
+            "Быстрое выполнение (<100ms per test)",
+            "Нет реальных сетевых вызовов, файловых операций"
+          ]
+        },
+        "integration_tests": {
+          "location": "tests/integration/",
+          "purpose": "Тестирование взаимодействия компонентов с реальными зависимостями",
+          "key_principles": [
+            "Проверка реального взаимодействия client-server",
+            "Локальные сервисы (dap_events, dap_server)",
+            "Инициализация всех необходимых subsystems",
+            "Может требовать больше времени (секунды)"
+          ]
+        },
+        "fixtures": {
+          "location": "tests/fixtures/",
+          "purpose": "Общие helper функции, test data, mock implementations"
+        },
+        "mocks": {
+          "location": "cellframe-node/dap-sdk/test-framework/mocks/",
+          "purpose": "DAP SDK mock framework с автогенерацией wrappers"
+        }
+      },
+      "dap_events_system": {
+        "critical_fixes_implemented": {
+          "dap_events_deinit": {
+            "issue": "Утечка памяти worker structures, висячие указатели, невозможность повторной инициализации",
+            "solution": "Полное освобождение s_workers[i] и их queue inputs, обнуление указателей, сброс s_threads_count",
+            "file": "cellframe-node/dap-sdk/io/dap_events.c",
+            "impact": "✅ Критическое - теперь можно многократно init/deinit event систему"
+          },
+          "test_teardown_pattern": {
+            "issue": "Двойной pthread_join при explicit dap_events_wait() + implicit в dap_events_deinit()",
+            "solution": "НЕ вызывать dap_events_wait() явно, только через dap_events_deinit()",
+            "pattern": "dap_events_stop_all() → dap_events_deinit() (который внутри вызывает wait)",
+            "impact": "✅ Корректный teardown без UB"
+          },
+          "config_initialization": {
+            "issue": "dap_cert_init() требует g_config для инициализации cert folders",
+            "solution": "Создавать временный config файл перед dap_common_init(), затем dap_config_init/open, re-init crypto",
+            "pattern": "temp cfg → dap_common_init → dap_config_init → dap_config_open → dap_enc_deinit/init",
+            "impact": "✅ Правильная инициализация crypto/cert systems в тестах"
+          },
+          "server_readiness_check": {
+            "issue": "Простой sleep() не гарантировал что listener socket готов",
+            "solution": "Интеллектуальное ожидание через dap_test_wait_condition с проверкой atomic_load(&listener->is_initalized)",
+            "impact": "✅ Надежная проверка готовности сервера"
+          }
+        }
+      },
+      "test_framework_features": {
+        "dap_mock_framework": {
+          "version": "2.0.0",
+          "features": [
+            "DAP_MOCK_DECLARE with async execution support",
+            "Automatic mock initialization/deinitialization",
+            "DAP_MOCK_SETTINGS for global configuration",
+            "dap_mock_async for lightweight thread pool",
+            "dap_mock_autowrap CMake integration",
+            "Return value configuration, delay injection, call counting"
+          ]
+        },
+        "dap_test_helpers": {
+          "macros": [
+            "TEST_SUITE_START/END",
+            "TEST_RUN",
+            "TEST_ASSERT",
+            "TEST_INFO/SUCCESS/ERROR",
+            "DAP_TEST_WAIT_UNTIL"
+          ]
+        },
+        "dap_test_async": {
+          "features": [
+            "dap_test_wait_condition for polling conditions",
+            "dap_test_set_global_timeout for test timeout protection",
+            "dap_test_async_config_t for timeout/poll configuration"
+                  ]
+                }
+              }
+            },
+    "components_architecture": {
+      "vpn_client_core": {
+        "state_machine": {
+          "file": "source/library/core/vpn_state_machine.c",
+          "description": "Full state machine with transition table s_transition_table[VPN_STATE_MAX][VPN_EVENT_MAX]",
+          "states": ["DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING", "ERROR", "RECONNECTING"],
+          "events": ["CONNECT_REQUEST", "CONNECTED", "DISCONNECT_REQUEST", "DISCONNECTED", "ERROR_OCCURRED", "RECONNECT_REQUEST"],
+          "testing_approach": "Unit tests with mocked network/tunnel operations, verify all state transitions"
+        },
+        "tunnel_management": {
+          "file": "source/library/core/vpn_state_tunnel.c",
+          "description": "TUN device lifecycle and packet routing",
+          "testing_approach": "Mock dap_net_tun_* functions, verify tunnel setup/teardown logic"
+        },
+        "tun_adapter": {
+          "file": "source/library/vpn_tun.c",
+          "description": "Adapter between VPN client and DAP SDK unified TUN API (reduced from 711 to 282 LOC)",
+          "testing_approach": "Unit tests with mocked dap_net_tun functions"
+        }
+      }
+    }
+  },
+
+  "achievements": {
+    "completed_work": [
+      {
+        "date": "2025-10-29",
+        "title": "test_http_client_server: Полный HTTP Client-Server Integration Test",
+        "items": [
+          "✅ ИСПРАВЛЕНА КРИТИЧЕСКАЯ ПРОБЛЕМА: client_callbacks vs server_callbacks",
+          "✅ Config-based listener инициализация с правильными accept callbacks",
+          "✅ Правильный возврат HTTP status через a_arg в simple handlers",
+          "✅ Использование dap_worker_exec_callback_on для async HTTP requests",
+          "✅ Разные workers для client и server (устранение race conditions)",
+          "✅ ВСЕ 6/6 тестов ПРОХОДЯТ: basic GET, params, redirect, 404, connection failure, concurrent"
+        ],
+        "root_cause_analysis": [
+          "Проблема 1: Передавались client_callbacks в dap_server_listen_addr_add",
+          "→ Listener socket НЕ имел accept_callback",
+          "→ Accept events игнорировались, connect() висел в EINPROGRESS",
+          "→ РЕШЕНИЕ: Config [test_http_server] с listen-address для auto-setup",
+          "",
+          "Проблема 2: Simple handlers возвращали void",
+          "→ return_code = 0 интерпретировался как ошибка",
+          "→ Устанавливался Http_Status_InternalServerError (500)",
+          "→ РЕШЕНИЕ: Установка *(http_status_code_t*)a_arg = Http_Status_OK",
+          "",
+          "Проблема 3: --wrap не работал для static libraries",
+          "→ Функции внутри libdap_http_server.a не перехватывались",
+          "→ Моки показывали 0 вызовов",
+          "→ РЕШЕНИЕ: dap_mock_autowrap_with_static() с --whole-archive + --allow-multiple-definition"
+        ],
+        "files_changed": [
+          "cellframe-node/dap-sdk/tests/integration/net/http/test_http_client_server.c",
+          "cellframe-node/dap-sdk/tests/integration/net/http/CMakeLists.txt",
+          "cellframe-node/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake"
+        ],
+        "impact": "✅ КРИТИЧЕСКОЕ - первый работающий HTTP client-server integration test в DAP SDK!"
+      },
+      {
+        "date": "2025-10-29",
+        "title": "Критические исправления DAP Events System",
+        "items": [
+          "✅ Исправлен dap_events_deinit(): освобождение workers, обнуление указателей, сброс counters",
+          "✅ Исправлен test teardown pattern: убран двойной pthread_join",
+          "✅ test_http_simple: 100% тестов проходят (3/3)",
+          "✅ test_stream: правильная инициализация с config файлом"
+        ],
+        "files_changed": [
+          "cellframe-node/dap-sdk/io/dap_events.c",
+          "cellframe-node/dap-sdk/tests/integration/net/http/test_http_simple.c",
+          "cellframe-node/dap-sdk/tests/integration/net/stream/test_stream.c"
+        ],
+        "impact": "Критическое - теперь можно надежно писать integration тесты с dap_events"
+      }
+    ],
+    "lessons_learned": [
+      "dap_events_deinit() уже вызывает dap_events_wait() внутри - НЕ вызывать явно",
+      "dap_cert_init() требует g_config с [resources] ca_folders - создавать temp config",
+      "Порядок init: dap_common_init → dap_config_init → dap_config_open → dap_enc_deinit/init",
+      "dap_test_wait_condition лучше чем sleep() для проверки готовности компонентов",
+      "atomic_load(&socket->is_initalized) - правильный способ проверки готовности socket",
+      "dap_server_listen_addr_add требует SERVER callbacks (с accept_callback), НЕ client_callbacks!",
+      "Config-based listener setup ([server] listen-address=IP:PORT) - правильный способ создания listener",
+      "dap_http_simple handlers ДОЛЖНЫ устанавливать *(http_status_code_t*)a_arg = status_code",
+      "Без установки return code через a_arg, handler возвращает 500 Internal Server Error",
+      "dap_mock_autowrap_with_static() решает проблему --wrap для static libraries",
+      "--whole-archive + --allow-multiple-definition обязательны для мокирования в static libs"
+    ]
+  },
+
+  "next_steps_guidance": {
+    "instruction": "При продолжении работы над этой задачей:",
+              "steps": [
+      "1. Прочитай секции: requirements, architecture, achievements",
+      "2. Создай Cursor TODO с конкретными подзадачами через todo_write()",
+      "3. Работай с TODO: mark in_progress, complete, add new items",
+      "4. После завершения крупного блока работы:",
+      "   - Обнови секцию achievements в этом файле",
+      "   - Добавь lessons_learned если есть важные инсайты",
+      "   - Обнови architecture если изменилась структура",
+      "5. НЕ храни список фаз в этом файле - они в Cursor TODO",
+      "6. Используй ./slc update-context для синхронизации изменений"
+    ],
+    "current_focus_areas": [
+      "Завершение unit тестов для VPN client core (state machine, tunnel, connection)",
+      "Завершение unit тестов для VPN service modules",
+      "Integration тесты для end-to-end сценариев",
+      "Исправление зависающих/падающих тестов",
+      "Документация test coverage и CI/CD integration"
+    ]
+  },
+
+  "references": {
+    "key_files": {
+      "dap_sdk_test_framework": "cellframe-node/dap-sdk/test-framework/",
+      "dap_mock_framework": "cellframe-node/dap-sdk/test-framework/mocks/",
+      "vpn_client_source": "source/library/",
+      "vpn_service_source": "cellframe-node/cellframe-sdk/modules/service/vpn/",
+      "test_infrastructure": "tests/",
+      "cmake_config": "CMakeLists.txt, tests/CMakeLists.txt"
+    },
+    "documentation": {
+      "dap_mock_guide": "cellframe-node/dap-sdk/test-framework/docs/DAP_MOCK_FRAMEWORK_GUIDE_RU.md",
+      "dap_test_guide": "cellframe-node/dap-sdk/test-framework/docs/DAP_TEST_FRAMEWORK_GUIDE_RU.md",
+      "test_types": "cellframe-node/dap-sdk/tests/TEST_TYPES.md"
+    },
+    "slc_modules": {
+      "mock_framework": ".context/modules/testing/dap_mock_framework.json",
+      "async_testing": ".context/modules/testing/dap_async_test_framework.json",
+      "project_context": ".context/modules/projects/cellframe_srv_vpn_client.json"
+    }
+  },
+
+  "metadata": {
+    "total_tests_target": "~50-80 unit tests + ~10-15 integration tests",
+    "current_test_status": {
+      "passing": 6,
+      "failing": 0,
+      "pending": "~40+",
+      "note": "После исправления dap_events - стабильная основа для новых тестов"
+    },
+    "estimated_completion": "В процессе - зависит от complexity оставшихся компонентов",
+    "last_significant_update": "2025-10-29: Критические исправления dap_events, test infrastructure stable"
+  }
+}

@@ -75,12 +75,17 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# JSON module is always required (used by core and other modules)
+add_subdirectory(module/json)
+message("[+] Module 'json' (always required)")
+
 # Add DAP SDK unified interface using dap_add_library
 # This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
 dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/crypto/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include

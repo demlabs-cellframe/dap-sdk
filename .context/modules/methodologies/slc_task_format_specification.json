@@ -1,0 +1,344 @@
+{
+  "id": "slc_task_format_specification",
+  "name": "SLC Task Format Specification",
+  "description": "Полная спецификация формата задач в Smart Layered Context системе, включая auto_load механизм",
+  "version": "2.0.0",
+  "created": "2025-01-07",
+  "category": "methodology",
+  
+  "task_structure": {
+    "description": "Структура JSON файла задачи в .context/tasks/",
+    "required_fields": [
+      "id - уникальный идентификатор задачи",
+      "name - человекочитаемое название",
+      "description - детальное описание",
+      "status - текущий статус (pending|in_progress|completed|deferred)",
+      "created - дата создания (ISO 8601)",
+      "updated - дата последнего обновления",
+      "priority - приоритет (low|medium|high|critical)",
+      "category - категория задачи"
+    ],
+    
+    "optional_fields": [
+      "phases - массив фаз выполнения задачи",
+      "context - контекст для автозагрузки файлов",
+      "knowledge_base - база знаний по задаче",
+      "success_criteria - критерии успешного завершения",
+      "estimated_effort - оценка трудозатрат",
+      "metrics_tracking - метрики отслеживания прогресса"
+    ]
+  },
+  
+  "auto_load_mechanism": {
+    "description": "Механизм автоматической загрузки контекста при активации задачи",
+    
+    "location": {
+      "path": "context.context_loading_policy.auto_load",
+      "explanation": "auto_load находится ВНУТРИ context.context_loading_policy, а НЕ на верхнем уровне JSON"
+    },
+    
+    "format": {
+      "type": "array of strings",
+      "description": "Массив строк - путей к JSON файлам относительно .context/",
+      "important": "ТОЛЬКО JSON ФАЙЛЫ! Не .c, не .h, не .md - только .json!"
+    },
+    
+    "path_format": {
+      "correct": "modules/core/manifest.json",
+      "incorrect": ".context/modules/core/manifest.json",
+      "explanation": "Пути БЕЗ префикса .context/ - он добавляется автоматически"
+    },
+    
+    "example_structure": {
+      "note": "Пример ПРАВИЛЬНОЙ структуры auto_load (БЕЗ core модулей!)",
+      "context": {
+        "context_loading_policy": {
+          "auto_load": [
+            "modules/languages/c/c_development.json",
+            "modules/projects/dap_sdk.json",
+            "modules/methodologies/performance_optimization.json"
+          ],
+          "conditional_load": {
+            "simd_needed": [
+              "modules/languages/c/simd_optimization.json"
+            ],
+            "crypto_development": [
+              "modules/projects/cryptography_project.json"
+            ]
+          }
+        },
+        "related_modules": [
+          "module1",
+          "module2"
+        ],
+        "dependencies": [
+          "dependency1"
+        ],
+        "files_involved": [
+          "path/to/file1.c",
+          "path/to/file2.h"
+        ]
+      }
+    },
+    
+    "loading_order": {
+      "description": "Порядок загрузки файлов из auto_load",
+      "automatic_base_files": {
+        "description": "Эти файлы ВСЕГДА загружаются автоматически CLI, НЕ добавляйте их в auto_load!",
+        "files": [
+          "modules/core/manifest.json",
+          "modules/core/standards.json",
+          "modules/core/development_standards.json",
+          "modules/core/project.json"
+        ],
+        "important": "CLI сам добавляет base_files при создании задачи"
+      },
+      "steps": [
+        "1. Автоматически загружаются base_files (core модули)",
+        "2. Загружаются все файлы из auto_load массива",
+        "3. Для каждого загруженного файла проверяется его context.context_loading_policy.auto_load",
+        "4. Рекурсивно загружаются файлы из вложенных auto_load (до глубины 5)",
+        "5. Conditional_load загружается только при определённых условиях"
+      ],
+      "max_recursion_depth": 5,
+      "performance": "Файлы кэшируются, повторная загрузка не происходит"
+    },
+    
+    "what_to_include": {
+      "note": "НЕ включайте core модули - они загружаются автоматически CLI!",
+      "core_modules_auto": {
+        "description": "Эти модули АВТОМАТИЧЕСКИ загружаются CLI",
+        "files": [
+          "modules/core/manifest.json",
+          "modules/core/standards.json",
+          "modules/core/development_standards.json",
+          "modules/core/project.json"
+        ],
+        "action": "НЕ добавляйте их в auto_load!"
+      },
+      "language_modules": {
+        "description": "Модули по языкам программирования",
+        "examples": [
+          "modules/languages/c/c_development.json",
+          "modules/languages/c/simd_optimization.json",
+          "modules/languages/python/python_development.json",
+          "modules/languages/typescript/typescript_development.json"
+        ],
+        "when_to_use": "Когда задача связана с конкретным языком"
+      },
+      "methodology_modules": {
+        "description": "Методологии разработки",
+        "examples": [
+          "modules/methodologies/performance_optimization.json",
+          "modules/methodologies/circular_dependency_resolution.json",
+          "modules/methodologies/documentation_systems.json"
+        ],
+        "when_to_use": "Когда нужен определённый методологический подход"
+      },
+      "project_modules": {
+        "description": "Специфичные модули проектов",
+        "examples": [
+          "modules/projects/dap_sdk.json",
+          "modules/projects/cellframe_sdk.json",
+          "modules/projects/cryptography_project.json"
+        ],
+        "when_to_use": "Когда задача специфична для конкретного проекта"
+      },
+      "testing_modules": {
+        "description": "Модули по тестированию",
+        "examples": [
+          "modules/testing/dap_template_engine.json",
+          "modules/testing/dap_mock_framework.json",
+          "modules/testing/dap_async_test_framework.json"
+        ],
+        "when_to_use": "Когда задача сфокусирована на тестировании"
+      }
+    },
+    
+    "common_mistakes": {
+      "including_base_files": {
+        "wrong": "auto_load: ['modules/core/manifest.json', 'modules/core/standards.json', ...]",
+        "correct": "auto_load: ['modules/languages/c/c_development.json', ...]",
+        "explanation": "НЕ добавляйте core модули - они загружаются автоматически CLI!"
+      },
+      "wrong_path_prefix": {
+        "wrong": ".context/modules/core/manifest.json",
+        "correct": "modules/core/manifest.json",
+        "explanation": "Не добавляйте .context/ префикс"
+      },
+      "non_json_files": {
+        "wrong": "module/core/src/dap_json.c",
+        "correct": "modules/projects/dap_sdk.json",
+        "explanation": "ТОЛЬКО .json файлы! Для исходников используйте files_involved"
+      },
+      "non_existent_paths": {
+        "wrong": "modules/domains/dap_sdk/core_libraries.json",
+        "correct": "modules/projects/dap_sdk.json",
+        "explanation": "Проверяйте что модуль реально существует! modules/domains/ не существует"
+      },
+      "wrong_location": {
+        "wrong": "auto_load на верхнем уровне JSON",
+        "correct": "context.context_loading_policy.auto_load",
+        "explanation": "auto_load должен быть внутри context"
+      },
+      "object_instead_of_array": {
+        "wrong": "auto_load: { slc_core: [...], language: [...] }",
+        "correct": "auto_load: [...]",
+        "explanation": "auto_load - это массив, не объект"
+      }
+    },
+    
+    "best_practices": [
+      "НЕ добавляйте core модули (manifest, standards, project) - они загружаются автоматически!",
+      "Включайте минимальный набор нужных модулей (не всё подряд)",
+      "Добавляйте языковые модули для используемого языка",
+      "Добавляйте проектные модули (modules/projects/)",
+      "Используйте conditional_load для опциональных модулей",
+      "Документируйте почему каждый модуль включён",
+      "Проверяйте что все пути в auto_load реально существуют",
+      "Используйте ./slc list и ./slc update-context для проверки"
+    ]
+  },
+  
+  "phases_structure": {
+    "description": "Структура фаз выполнения задачи",
+    "format": {
+      "phases": [
+        {
+          "id": "phase-0",
+          "name": "Phase 0: Название фазы",
+          "description": "Детальное описание что делается в фазе",
+          "status": "pending|in_progress|completed",
+          "subphases": [
+            {
+              "id": "0.1",
+              "name": "Название субфазы",
+              "status": "pending|in_progress|completed",
+              "deliverables": [
+                "Конкретный deliverable 1",
+                "Конкретный deliverable 2"
+              ],
+              "acceptance_criteria": [
+                "Критерий приёмки 1",
+                "Критерий приёмки 2"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "best_practices": [
+      "Каждая фаза должна иметь чёткие deliverables",
+      "Субфазы должны быть атомарными (< 1 день работы)",
+      "Между фазами вставлять проверки и обновления СЛК",
+      "Acceptance criteria должны быть измеримыми"
+    ]
+  },
+  
+  "complete_example": {
+    "id": "example_task",
+    "name": "Example Task",
+    "description": "Пример правильно оформленной задачи",
+    "status": "pending",
+    "created": "2025-01-07T00:00:00Z",
+    "updated": "2025-01-07T00:00:00Z",
+    "priority": "high",
+    "category": "development",
+    
+    "context": {
+      "context_loading_policy": {
+        "auto_load": [
+          "modules/languages/c/c_development.json",
+          "modules/projects/dap_sdk.json",
+          "modules/methodologies/performance_optimization.json"
+        ],
+        "conditional_load": {
+          "testing": [
+            "modules/domains/dap_sdk/testing_framework.json"
+          ]
+        }
+      },
+      "related_modules": [
+        "module/core",
+        "module/target"
+      ],
+      "dependencies": [
+        "dependency1"
+      ],
+      "files_involved": [
+        "module/target/src/file.c",
+        "module/target/include/file.h"
+      ]
+    },
+    
+    "phases": [
+      {
+        "id": "phase-0",
+        "name": "Phase 0: Подготовка",
+        "description": "Подготовительная фаза",
+        "status": "pending",
+        "subphases": [
+          {
+            "id": "0.1",
+            "name": "Анализ текущего состояния",
+            "status": "pending",
+            "deliverables": [
+              "Документ с анализом"
+            ],
+            "acceptance_criteria": [
+              "Анализ завершён"
+            ]
+          }
+        ]
+      }
+    ],
+    
+    "success_criteria": [
+      "Все фазы завершены",
+      "Все тесты проходят",
+      "Документация обновлена"
+    ]
+  },
+  
+  "validation_checklist": {
+    "before_commit": [
+      "☐ JSON файл валиден (python3 -m json.tool task.json)",
+      "☐ auto_load находится в context.context_loading_policy",
+      "☐ auto_load содержит ТОЛЬКО .json файлы",
+      "☐ Пути в auto_load БЕЗ .context/ префикса",
+      "☐ Все файлы из auto_load существуют",
+      "☐ Каждая фаза имеет deliverables",
+      "☐ Success criteria определены",
+      "☐ ./slc update-context выполнен после создания задачи"
+    ]
+  },
+  
+  "cli_integration": {
+    "description": "Интеграция с SLC CLI",
+    "commands": {
+      "create_task": "./slc create --title 'Task Name' --category category",
+      "list_tasks": "./slc list",
+      "update_context": "./slc update-context",
+      "load_context": "./slc load-context 'task_id'"
+    },
+    "automatic_features": [
+      "CLI автоматически заполняет auto_load для известных категорий",
+      "При создании задачи добавляются базовые core модули",
+      "Категория-специфичные модули добавляются автоматически",
+      "Рекурсивная загрузка auto_load файлов происходит автоматически"
+    ]
+  },
+  
+  "navigation_system": {
+    "purpose": "Спецификация формата задач СЛК",
+    "current_file": ".context/modules/methodologies/slc_task_format_specification.json",
+    "file_role": "DOCUMENTATION",
+    "related_files": [
+      ".context/tasks/templates/task_template.json",
+      ".context/tools/cli_modules/core/unified_context_engine.py",
+      ".context/tools/cli_modules/commands/task_commands.py"
+    ],
+    "ai_context": "Модуль СЛК: Спецификация формата задач"
+  }
+}
+

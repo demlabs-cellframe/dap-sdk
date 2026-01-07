@@ -1,0 +1,2463 @@
+{
+  "task_id": "vpn_test_coverage",
+  "title": "VPN Client & Service Test Coverage Implementation",
+  "description": "Comprehensive unit and integration test coverage for both VPN client (cellframe-srv-vpn-client) and VPN service (cellframe-sdk). Implementation of complete test infrastructure including unit tests, integration tests, mocks, and fixtures for all critical components.",
+  "priority": "high",
+  "status": "in_progress",
+  "created": "2025-10-26",
+  "updated": "2025-10-26",
+  "tags": [
+    "testing",
+    "vpn-client",
+    "vpn-service",
+    "unit-tests",
+    "integration-tests",
+    "quality-assurance"
+  ],
+  "auto-load": [
+    ".context/modules/core/standards.json",
+    ".context/modules/core/development_standards.json",
+    ".context/modules/core/project.json",
+    ".context/modules/languages/c/c_development_enhanced.json",
+    ".context/modules/projects/cellframe_srv_vpn_client.json",
+    ".context/modules/projects/dap_sdk_project.json",
+    ".context/modules/testing/dap_mock_framework.json",
+    ".context/modules/testing/dap_async_test_framework.json",
+    ".context/modules/testing/stage_env_system.json"
+  ],
+  "phases": [
+    {
+      "phase_id": "phase_0",
+      "name": "Test Infrastructure Analysis & Planning",
+      "status": "completed",
+      "description": "Detailed analysis of VPN client and service code to identify testable components and create comprehensive test plan",
+      "completion_summary": "Analyzed 27 modules (9,946 total LOC). Created coverage matrices: Client (196 unit + 25 integration tests), Service (80 unit + 15 integration tests). Total estimated: 316 tests. Average target coverage: 88.5%.",
+      "subphases": [
+        {
+          "subphase_id": "0.1",
+          "name": "VPN Client Code Analysis",
+          "status": "completed",
+          "completion_summary": "Analyzed 16 VPN client modules (6,103 total LOC): State Machine (1698 LOC), Core modules (5), Network modules (6), Payment modules (4), Protocol modules (2), IPC modules (3), Service layer (2). Documented all states, events, functions, and test requirements.",
+          "tasks": [
+            {
+              "task": "Analyze VPN Client State Machine (vpn_state_machine.c)",
+              "status": "completed",
+              "file": "source/library/core/vpn_state_machine.c (1698 LOC)",
+              "analysis_results": {
+                "states_documented": {
+                  "total_states": 10,
+                  "states": [
+                    "VPN_STATE_DISCONNECTED (0) - No connection, idle state",
+                    "VPN_STATE_CONNECTING (1) - Establishing connection to server",
+                    "VPN_STATE_VERIFYING_CONNECTIVITY (2) - Testing protocols and connectivity",
+                    "VPN_STATE_ROUTING_SETUP (3) - Setting up routing table entries",
+                    "VPN_STATE_CONNECTED (4) - Active VPN tunnel, data transfer",
+                    "VPN_STATE_CONNECTION_LOST (5) - Connection dropped, deciding next action",
+                    "VPN_STATE_RECONNECTING (6) - Attempting to reconnect",
+                    "VPN_STATE_DISCONNECTING (7) - Gracefully closing connection",
+                    "VPN_STATE_CONNECT_FAILED (8) - Connection failed, temporary state",
+                    "VPN_STATE_SHUTDOWN (9) - Daemon shutting down"
+                  ]
+                },
+                "events_documented": {
+                  "total_events": 14,
+                  "events": [
+                    "VPN_EVENT_USER_CONNECT (0) - User initiated connect",
+                    "VPN_EVENT_USER_DISCONNECT (1) - User initiated disconnect",
+                    "VPN_EVENT_CONNECTION_SUCCESS (2) - Connection established",
+                    "VPN_EVENT_CONNECTION_FAILED (3) - Connection failed",
+                    "VPN_EVENT_PROTOCOLS_PROBED (4) - Protocol probing completed",
+                    "VPN_EVENT_VERIFICATION_SUCCESS (5) - Connectivity verified",
+                    "VPN_EVENT_VERIFICATION_FAILED (6) - Connectivity check failed",
+                    "VPN_EVENT_ROUTING_COMPLETE (7) - Routing setup complete",
+                    "VPN_EVENT_CONNECTION_LOST (8) - Connection dropped",
+                    "VPN_EVENT_KEEPALIVE_TIMEOUT (9) - Keepalive timeout",
+                    "VPN_EVENT_RECONNECT_SUCCESS (10) - Reconnection successful",
+                    "VPN_EVENT_RECONNECT_FAILED (11) - Reconnection failed",
+                    "VPN_EVENT_SERVER_DISCONNECT (12) - Server disconnect",
+                    "VPN_EVENT_SHUTDOWN (13) - Shutdown requested"
+                  ]
+                },
+                "state_transition_table": {
+                  "description": "Full transition table defined in s_transition_table[VPN_STATE_MAX][VPN_EVENT_MAX]",
+                  "total_transitions_defined": 140,
+                  "valid_transitions": 35,
+                  "critical_paths": [
+                    "DISCONNECTED --[USER_CONNECT]--> CONNECTING",
+                    "CONNECTING --[CONNECTION_SUCCESS]--> VERIFYING_CONNECTIVITY",
+                    "VERIFYING_CONNECTIVITY --[VERIFICATION_SUCCESS]--> ROUTING_SETUP",
+                    "ROUTING_SETUP --[ROUTING_COMPLETE]--> CONNECTED",
+                    "CONNECTED --[CONNECTION_LOST]--> CONNECTION_LOST",
+                    "CONNECTION_LOST --[reconnect.enabled]--> RECONNECTING",
+                    "RECONNECTING --[RECONNECT_SUCCESS]--> VERIFYING_CONNECTIVITY",
+                    "CONNECTING --[CONNECTION_FAILED]--> CONNECT_FAILED",
+                    "CONNECT_FAILED --[reconnect check]--> RECONNECTING or DISCONNECTED"
+                  ]
+                },
+                "public_api_functions": [
+                  "vpn_sm_init() - Allocate and initialize state machine",
+                  "vpn_sm_deinit() - Cleanup and free state machine",
+                  "vpn_sm_transition() - Process event and change state",
+                  "vpn_sm_get_state() - Get current state",
+                  "vpn_sm_is_connected() - Check if connected",
+                  "vpn_sm_register_callback() - Register state change callback",
+                  "vpn_sm_set_connect_params() - Set connection parameters",
+                  "vpn_sm_set_reconnect_policy() - Configure reconnection",
+                  "vpn_sm_set_keepalive() - Configure keepalive timers",
+                  "vpn_sm_stop_keepalive() - Stop keepalive timer",
+                  "vpn_sm_set_connection_timeout() - Set connection timeout",
+                  "vpn_sm_get_stats() - Retrieve statistics",
+                  "vpn_sm_set_debug_more() - Enable verbose logging"
+                ],
+                "internal_state_handlers": {
+                  "entry_functions": [
+                    "state_disconnected_entry()",
+                    "state_connecting_entry() - Creates dap_client, initiates connection",
+                    "state_verifying_connectivity_entry() - Runs connectivity tests",
+                    "state_routing_setup_entry() - Configures routing tables",
+                    "state_connected_entry() - Starts keepalive timer",
+                    "state_connection_lost_entry() - Decides reconnect vs disconnect",
+                    "state_reconnecting_entry() - Implements exponential backoff",
+                    "state_disconnecting_entry() - Graceful shutdown",
+                    "state_connect_failed_entry() - Error handling",
+                    "state_shutdown_entry() - Final cleanup"
+                  ],
+                  "exit_functions": [
+                    "state_verifying_connectivity_exit() - Cleanup test resources",
+                    "state_routing_setup_exit() - Cleanup routing helpers",
+                    "state_connected_exit() - Stop keepalive, backup network config"
+                  ]
+                },
+                "thread_safety": {
+                  "mechanism": "pthread_mutex_t mutex in vpn_sm_t structure",
+                  "protected_operations": "All state transitions, parameter updates, statistics access",
+                  "callback_execution": "Callbacks executed outside mutex to prevent deadlocks"
+                },
+                "error_conditions": [
+                  "NULL state machine pointer - graceful handling",
+                  "Invalid transitions - logged and rejected",
+                  "Connection timeout - triggers VPN_EVENT_CONNECTION_FAILED",
+                  "Keepalive timeout - triggers VPN_EVENT_KEEPALIVE_TIMEOUT",
+                  "Max reconnect attempts - transitions to DISCONNECTED",
+                  "Memory allocation failures - logged, state preserved"
+                ],
+                "dependencies": [
+                  "dap_client - connection management",
+                  "dap_net_tun - TUN device operations",
+                  "vpn_probe - protocol probing",
+                  "vpn_connectivity - connectivity testing",
+                  "vpn_backup - network config backup",
+                  "vpn_multihop_tx - payment TX creation",
+                  "vpn_receipt - receipt handling"
+                ]
+              }
+            },
+            {
+              "task": "Analyze VPN Client Core Modules",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_state_handlers.c": {
+                  "loc": 375,
+                  "purpose": "State entry/exit handlers for state machine lifecycle",
+                  "key_functions": [
+                    "state_disconnected_entry() - Cleanup all resources",
+                    "state_connecting_entry() - Create dap_client, initiate connection",
+                    "state_verifying_connectivity_entry() - Run connectivity tests",
+                    "state_routing_setup_entry() - Configure system routing",
+                    "state_connected_entry() - Start keepalive timer",
+                    "state_connection_lost_entry() - Decide reconnect vs disconnect",
+                    "state_reconnecting_entry() - Exponential backoff reconnection",
+                    "state_disconnecting_entry() - Graceful disconnect",
+                    "state_connect_failed_entry() - Error handling and retry logic",
+                    "state_shutdown_entry() - Final cleanup",
+                    "state_verifying_connectivity_exit() - Cleanup test resources",
+                    "state_routing_setup_exit() - Cleanup routing helpers",
+                    "state_connected_exit() - Stop keepalive, backup network config"
+                  ],
+                  "callbacks": [
+                    "protocol_probe_complete_callback() - Protocol probe results",
+                    "connectivity_test_complete_callback() - Connectivity test results"
+                  ],
+                  "helper_functions": [
+                    "cleanup_tun_device()",
+                    "cleanup_node_client()",
+                    "cleanup_keepalive_timer()"
+                  ],
+                  "test_requirements": [
+                    "Test each state entry function with mocked dependencies",
+                    "Test state exit functions cleanup properly",
+                    "Test callbacks trigger correct state transitions",
+                    "Test cleanup helpers handle NULL pointers",
+                    "Test reconnection exponential backoff algorithm"
+                  ]
+                },
+                "vpn_state_payment.c": {
+                  "loc": 123,
+                  "purpose": "Payment TX creation and validation",
+                  "key_functions": [
+                    "vpn_client_payment_validate() - Validate payment parameters",
+                    "vpn_client_payment_tx_create() - Create payment transaction (called from state_connecting_entry)"
+                  ],
+                  "validation_rules": [
+                    "payment_token must be non-NULL and non-empty",
+                    "service_units must be non-zero (checked via IS_ZERO_256 macro)",
+                    "service_unit_type must be specified (non-zero enum)",
+                    "Fail-fast approach: NO default values, explicit parameters required"
+                  ],
+                  "dependencies": [
+                    "vpn_wallet - wallet operations",
+                    "vpn_multihop_tx - multi-hop TX creation",
+                    "dap_chain_net - network access",
+                    "dap_chain_ledger - ledger operations"
+                  ],
+                  "test_requirements": [
+                    "Test valid payment params accepted",
+                    "Test NULL payment_token rejected",
+                    "Test zero service_units rejected",
+                    "Test zero service_unit_type rejected",
+                    "Test TX creation with valid wallet and network",
+                    "Test TX creation failure handling"
+                  ]
+                },
+                "vpn_state_tunnel.c": {
+                  "loc": 201,
+                  "purpose": "Bidirectional packet forwarding between TUN device and stream channel",
+                  "architecture": "Thread-safe, worker-affinity aware using dap_net_tun channel_info",
+                  "key_functions": [
+                    "vpn_tun_data_received_callback() - TUN → Stream (outgoing packets)",
+                    "vpn_stream_data_received_callback() - Stream → TUN (incoming packets)",
+                    "vpn_tunnel_set_debug_more() - Enable verbose packet logging"
+                  ],
+                  "packet_flow": {
+                    "outgoing": "Local network stack → TUN device → vpn_tun_data_received_callback → dap_stream_ch_pkt_write_mt → VPN server",
+                    "incoming": "VPN server → Stream channel → vpn_stream_data_received_callback → dap_net_tun_write → Local network stack"
+                  },
+                  "statistics_tracking": [
+                    "bytes_sent, bytes_received counters",
+                    "packets_sent, packets_received counters",
+                    "Updated on each successful packet transfer"
+                  ],
+                  "test_requirements": [
+                    "Test TUN → Stream packet forwarding",
+                    "Test Stream → TUN packet forwarding",
+                    "Test packet size validation and fragmentation",
+                    "Test statistics update on each transfer",
+                    "Test debug logging when s_debug_more enabled",
+                    "Test error handling (NULL pointers, invalid sizes)",
+                    "Test thread-safety with concurrent packet arrivals"
+                  ]
+                },
+                "vpn_client.c": {
+                  "loc": 873,
+                  "purpose": "Main VPN client library API implementation",
+                  "global_state": [
+                    "s_library_initialized - library init flag",
+                    "s_init_params - library initialization parameters",
+                    "sf_socks_mutex - SOCKS proxy mutex (global)"
+                  ],
+                  "key_public_functions": [
+                    "vpn_client_init() - Initialize library with params",
+                    "vpn_client_deinit() - Deinitialize library",
+                    "vpn_client_is_initialized() - Check init status",
+                    "vpn_client_start() - Start VPN connection",
+                    "vpn_client_stop() - Stop VPN connection",
+                    "vpn_client_get_status() - Get connection status",
+                    "vpn_client_get_state() - Get state machine state",
+                    "vpn_client_is_connected() - Check connected status",
+                    "vpn_client_version() - Get library version",
+                    "vpn_client_protocol_version() - Get protocol version"
+                  ],
+                  "initialization_flow": [
+                    "1. Check not already initialized",
+                    "2. Initialize pthread mutex (sf_socks_mutex)",
+                    "3. Store init params (debug_more, timeouts, reconnect policy)",
+                    "4. Call vpn_sm_set_debug_more() and vpn_tunnel_set_debug_more()",
+                    "5. Set s_library_initialized = true"
+                  ],
+                  "test_requirements": [
+                    "Test vpn_client_init() with NULL params (use defaults)",
+                    "Test vpn_client_init() with custom params",
+                    "Test double initialization rejected",
+                    "Test vpn_client_deinit() cleans up properly",
+                    "Test all public API functions with initialized/uninitialized library",
+                    "Test vpn_client_start() parameter validation",
+                    "Test vpn_client_stop() when not connected",
+                    "Test version functions return correct values"
+                  ]
+                },
+                "vpn_tun.c": {
+                  "loc": 282,
+                  "purpose": "TUN device management wrapper around dap_net_tun unified API",
+                  "description": "Adapter between VPN client and DAP SDK unified TUN API, reduced from 711 to 282 LOC by using dap_net_tun",
+                  "key_functions": [
+                    "vpn_tun_create() - Create TUN device with configuration",
+                    "vpn_tun_destroy() - Cleanup TUN device",
+                    "vpn_tun_get_device_name() - Get TUN interface name",
+                    "vpn_tun_get_mtu() - Get MTU value"
+                  ],
+                  "configuration_params": [
+                    "mode = DAP_NET_TUN_MODE_CLIENT",
+                    "device_name_prefix, mtu, network/gateway addresses",
+                    "Callbacks: on_data_received, on_error, callback_arg",
+                    "worker_count, workers array"
+                  ],
+                  "test_requirements": [
+                    "Test TUN device creation with valid config",
+                    "Test TUN device creation with invalid config",
+                    "Test TUN device cleanup",
+                    "Test device name retrieval",
+                    "Test MTU configuration",
+                    "Test callback registration"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client Network Modules",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_uplink.c": {
+                  "loc": 158,
+                  "purpose": "Single VPN uplink connection management",
+                  "key_functions": [
+                    "vpn_uplink_create() - Create uplink with server address, port, protocol",
+                    "vpn_uplink_destroy() - Cleanup uplink resources",
+                    "vpn_uplink_update_stats() - Update throughput, latency, packet loss",
+                    "vpn_uplink_update_traffic() - Update bytes/packets counters",
+                    "vpn_uplink_check_health() - Calculate health status based on metrics",
+                    "vpn_uplink_state_to_string() - Convert state enum to string (7 states)",
+                    "vpn_uplink_health_to_string() - Convert health enum to string (5 levels)"
+                  ],
+                  "uplink_states": [
+                    "UPLINK_STATE_IDLE - Not connected",
+                    "UPLINK_STATE_CONNECTING - Connection in progress",
+                    "UPLINK_STATE_VERIFYING - Speed test and connectivity verification",
+                    "UPLINK_STATE_ACTIVE - Ready for traffic routing",
+                    "UPLINK_STATE_STANDBY - Connected but not actively used",
+                    "UPLINK_STATE_DEGRADED - Performance degraded, failover candidate",
+                    "UPLINK_STATE_FAILED - Connection failed"
+                  ],
+                  "health_thresholds": {
+                    "EXCELLENT": "latency < 100ms AND packet_loss < 1%",
+                    "GOOD": "latency < 200ms AND packet_loss < 2%",
+                    "FAIR": "latency < 500ms AND packet_loss < 5%",
+                    "POOR": "latency < 1000ms AND packet_loss < 10%",
+                    "CRITICAL": "latency >= 1000ms OR packet_loss >= 10%"
+                  },
+                  "thread_safety": "pthread_mutex_t lock per uplink instance",
+                  "test_requirements": [
+                    "Test vpn_uplink_create() with valid params",
+                    "Test vpn_uplink_create() with NULL params",
+                    "Test vpn_uplink_destroy() cleanup",
+                    "Test vpn_uplink_update_stats() updates all fields",
+                    "Test vpn_uplink_update_traffic() increments counters",
+                    "Test vpn_uplink_check_health() for all 5 health levels",
+                    "Test health threshold boundaries (99ms vs 100ms, etc.)",
+                    "Test state_to_string() for all 7 states",
+                    "Test health_to_string() for all 5 health levels",
+                    "Test concurrent updates (thread-safety)"
+                  ]
+                },
+                "vpn_uplink_pool.c": {
+                  "loc": 652,
+                  "purpose": "Uplink pool manager with load balancing and health monitoring",
+                  "key_functions": [
+                    "vpn_uplink_pool_create() - Create pool with default config",
+                    "vpn_uplink_pool_create_ext() - Create pool with custom config",
+                    "vpn_uplink_pool_destroy() - Cleanup all uplinks",
+                    "vpn_uplink_pool_add() - Add uplink to pool",
+                    "vpn_uplink_pool_get_best() - Select best uplink (load balancing)",
+                    "vpn_uplink_pool_get_next() - Round-robin selection",
+                    "vpn_uplink_pool_check_health_all() - Health check for all uplinks",
+                    "vpn_uplink_pool_rebalance() - Rebalance traffic across uplinks",
+                    "vpn_uplink_pool_set_state_callback() - Register state callback",
+                    "vpn_uplink_pool_set_health_callback() - Register health callback",
+                    "vpn_uplink_pool_get_by_id() - Find uplink by ID",
+                    "vpn_uplink_pool_get_stats() - Get aggregate statistics",
+                    "vpn_uplink_pool_default_config() - Get default configuration"
+                  ],
+                  "selection_strategies": [
+                    "STRATEGY_ROUND_ROBIN - Sequential rotation",
+                    "STRATEGY_BEST_LATENCY - Lowest latency uplink",
+                    "STRATEGY_BEST_THROUGHPUT - Highest throughput uplink",
+                    "STRATEGY_WEIGHTED_SCORE - Score-based selection"
+                  ],
+                  "health_monitoring": {
+                    "periodic_health_checks": "Checks all uplinks health periodically",
+                    "degraded_detection": "Marks uplinks as degraded when health < FAIR",
+                    "automatic_failover": "Switches to backup uplink on failure",
+                    "health_callbacks": "Notifies when uplink health changes"
+                  },
+                  "test_requirements": [
+                    "Test pool_create() with default and custom config",
+                    "Test pool_add() and uplink management",
+                    "Test pool_get_best() with different strategies",
+                    "Test pool_get_next() round-robin behavior",
+                    "Test health monitoring triggers failover",
+                    "Test pool_rebalance() redistributes traffic",
+                    "Test callbacks fired on state/health changes",
+                    "Test pool_get_stats() aggregates correctly",
+                    "Test concurrent pool access (thread-safety)",
+                    "Test pool with 0, 1, many uplinks"
+                  ]
+                },
+                "vpn_backup.c": {
+                  "loc": 462,
+                  "purpose": "Network configuration backup and restore",
+                  "description": "Backs up original network config before VPN, restores on disconnect",
+                  "test_requirements": [
+                    "Test backup creation before connect",
+                    "Test restore after disconnect",
+                    "Test backup handles missing config",
+                    "Test platform-specific backup (Linux/macOS/BSD/Windows)"
+                  ]
+                },
+                "vpn_network.c": {
+                  "loc": 150,
+                  "purpose": "Network operations and utilities",
+                  "test_requirements": [
+                    "Test network info retrieval",
+                    "Test network validation"
+                  ]
+                },
+                "vpn_registry.c": {
+                  "loc": 268,
+                  "purpose": "Network registry management",
+                  "test_requirements": [
+                    "Test registry add/remove/lookup operations"
+                  ]
+                },
+                "vpn_client_routing.c": {
+                  "loc": 478,
+                  "purpose": "Routing table management (platform-specific)",
+                  "test_requirements": [
+                    "Test route addition/deletion",
+                    "Test platform-specific routing (Linux ip, macOS route, etc.)"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client Payment Modules",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_payment.c": {
+                  "loc": 213,
+                  "purpose": "Payment configuration and transaction processing",
+                  "test_requirements": [
+                    "Payment config creation",
+                    "TX processing",
+                    "Token resolution"
+                  ]
+                },
+                "vpn_multihop_tx.c": {
+                  "loc": 322,
+                  "purpose": "Multi-hop payment TX set creation",
+                  "key_function": "vpn_multihop_tx_set_create() - Creates array of payment TXs for route",
+                  "test_requirements": [
+                    "Multi-hop TX set creation",
+                    "Route validation",
+                    "Payment distribution across hops"
+                  ]
+                },
+                "vpn_receipt.c": {
+                  "loc": 259,
+                  "purpose": "Receipt generation and validation",
+                  "test_requirements": [
+                    "Receipt creation",
+                    "Receipt validation",
+                    "Receipt expiration",
+                    "Signature verification"
+                  ]
+                },
+                "vpn_wallet.c": {
+                  "loc": 309,
+                  "purpose": "Wallet integration for payments",
+                  "test_requirements": [
+                    "Wallet open/close",
+                    "Balance checking",
+                    "TX signing"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client Protocol Modules",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_probe.c": {
+                  "loc": 514,
+                  "purpose": "Protocol probing and transport selection",
+                  "test_requirements": [
+                    "HTTP/UDP probing",
+                    "Transport selection",
+                    "Timeout handling"
+                  ]
+                },
+                "vpn_connectivity.c": {
+                  "loc": 644,
+                  "purpose": "Connectivity testing (ICMP, HTTP)",
+                  "test_requirements": [
+                    "ICMP ping",
+                    "HTTP connectivity check",
+                    "Retry logic"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client Service Layer",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_auto.c": {
+                  "loc": 73,
+                  "purpose": "Automatic connection management",
+                  "test_requirements": [
+                    "Auto-connect init",
+                    "Trigger logic",
+                    "Disable/enable"
+                  ]
+                },
+                "vpn_balance_monitor.c": {
+                  "loc": "~200 (estimated)",
+                  "purpose": "Wallet balance monitoring for payments",
+                  "test_requirements": [
+                    "Balance checking",
+                    "Low balance callbacks",
+                    "Monitor cleanup"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client IPC Modules",
+              "status": "completed",
+              "analysis_results": {
+                "vpn_ipc_server.c": {
+                  "loc": 529,
+                  "purpose": "JSON-RPC 2.0 server for daemon-CLI communication",
+                  "transport": "Unix domain socket (/var/run/cellframe-vpn-clientd.sock) or Windows named pipe",
+                  "methods": [
+                    "CONNECT",
+                    "DISCONNECT",
+                    "STATUS",
+                    "CONFIG",
+                    "SHUTDOWN"
+                  ],
+                  "test_requirements": [
+                    "Server init",
+                    "Request handling",
+                    "Concurrent clients",
+                    "Socket cleanup"
+                  ]
+                },
+                "vpn_ipc_types.c": {
+                  "loc": 243,
+                  "purpose": "IPC type serialization/deserialization",
+                  "test_requirements": [
+                    "Serialize/deserialize connection params",
+                    "Serialize status",
+                    "Invalid JSON handling"
+                  ]
+                },
+                "vpn_protocol.c": {
+                  "loc": 663,
+                  "purpose": "IPC protocol implementation",
+                  "test_requirements": [
+                    "Protocol message handling",
+                    "Error responses",
+                    "Version negotiation"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Client Platform Abstraction",
+              "details": [
+                "platform/linux/network.c - Linux-specific networking",
+                "platform/darwin/network.c - macOS-specific networking",
+                "platform/bsd/network.c - BSD-specific networking",
+                "platform/windows/network.c - Windows-specific networking",
+                "platform/unix/network_common.c - Unix common code"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "0.2",
+          "name": "VPN Service (SDK) Code Analysis",
+          "status": "completed",
+          "tasks": [
+            {
+              "task": "Analyze VPN Service Core (dap_chain_net_srv_vpn.c)",
+              "status": "completed",
+              "file": "cellframe-node/cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.c (526 LOC)",
+              "analysis_results": {
+                "key_functions": [
+                  "dap_chain_net_srv_vpn_init() - Service initialization with config",
+                  "dap_chain_net_srv_vpn_deinit() - Service cleanup",
+                  "dap_chain_net_srv_vpn_pre_init() - Pre-initialization"
+                ],
+                "service_callbacks": [
+                  "s_callback_requested() - Handle service request",
+                  "s_callback_response_success() - Handle success response",
+                  "s_callback_response_error() - Handle error response",
+                  "s_callback_receipt_next_success() - Handle receipt",
+                  "s_callback_get_remain_service() - Get remaining service",
+                  "s_callback_save_remain_service() - Save service state"
+                ],
+                "global_state": [
+                  "g_vpn_tun_handle - Unified TUN device handle",
+                  "g_vpn_raw_server - Server configuration structure",
+                  "g_vpn_ch_vpn_addrs - Client address mappings",
+                  "g_vpn_addr_pool - IP address pool"
+                ],
+                "test_requirements": [
+                  "Test service init with valid config",
+                  "Test service init with invalid config",
+                  "Test service deinit cleanup",
+                  "Test each callback with mocked inputs",
+                  "Test global state initialization"
+                ]
+              }
+            },
+            {
+              "task": "Analyze VPN Service Stream Module",
+              "details": [
+                "dap_chain_net_srv_vpn_stream.c - stream channel packet processing",
+                "VPN packet opcodes (11 total):",
+                "  - VPN_PACKET_OP_CODE_CONNECTED, CONNECT, DISCONNECT (0xa9-0xab)",
+                "  - VPN_PACKET_OP_CODE_SEND, RECV, PROBLEM (0xac-0xae)",
+                "  - VPN_PACKET_OP_CODE_VPN_METADATA, RESERVED (0xb0-0xb1)",
+                "  - VPN_PACKET_OP_CODE_VPN_ADDR_REQUEST, ADDR_REPLY (0xb2-0xb3)",
+                "  - VPN_PACKET_OP_CODE_VPN_SEND, VPN_RECV (0xbc-0xbd)",
+                "  - VPN_PACKET_OP_CODE_PING, PONG (0xc0-0xc1)",
+                "Functions: vpn_srv_ch_new, vpn_srv_ch_delete, vpn_srv_ch_packet_in, vpn_srv_ch_packet_out",
+                "Worker assignment callbacks: vpn_srv_ch_esocket_assigned, vpn_srv_ch_esocket_unassigned"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service TUN Module",
+              "details": [
+                "dap_chain_net_srv_vpn_tun.c - TUN device management",
+                "Platform-specific TUN implementations (linux/darwin/bsd/windows)",
+                "Unified TUN API integration (dap_net_tun)",
+                "TUN event socket callbacks"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Session Management",
+              "details": [
+                "dap_chain_net_srv_vpn_session.c - session lifecycle",
+                "Session statistics and monitoring",
+                "Session cleanup and timeout handling"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Address Pool",
+              "details": [
+                "dap_chain_net_srv_vpn_addr_pool.c - IP address allocation",
+                "Address leasing and expiration",
+                "Address pool management"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Multi-hop Support",
+              "details": [
+                "dap_chain_net_srv_vpn_multihop.c - multi-hop routing",
+                "TSD parsing and validation",
+                "Route management"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Limits & Traffic",
+              "status": "completed",
+              "analysis_results": {
+                "dap_chain_net_srv_vpn_limits.c": {
+                  "loc": 259,
+                  "purpose": "Bandwidth and traffic limits enforcement",
+                  "test_requirements": [
+                    "Limit enforcement",
+                    "Bandwidth throttling",
+                    "QoS prioritization"
+                  ]
+                },
+                "dap_chain_net_srv_vpn_traffic.c": {
+                  "loc": 365,
+                  "purpose": "Traffic statistics and monitoring",
+                  "test_requirements": [
+                    "Traffic counting",
+                    "Statistics aggregation"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Service Additional Modules",
+              "status": "completed",
+              "analysis_results": {
+                "dap_chain_net_srv_vpn_callbacks.c": {
+                  "loc": 587,
+                  "purpose": "Service lifecycle callbacks implementation"
+                },
+                "dap_chain_net_srv_vpn_common.c": {
+                  "loc": 44,
+                  "purpose": "Common utilities"
+                },
+                "dap_chain_net_srv_vpn_cmd.c": {
+                  "loc": 92,
+                  "purpose": "CLI commands (vpn_stat)"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "subphase_id": "0.2",
+          "name": "VPN Service (SDK) Code Analysis",
+          "status": "completed",
+          "completion_summary": "Analyzed 11 VPN service modules (3,843 total LOC): Core (526), Stream (547), TUN (433), Session (263), Address Pool (304), Multi-hop (423), Limits (259), Traffic (365), Callbacks (587), Common (44), CMD (92). All modules analyzed with test requirements defined.",
+          "tasks": [
+            {
+              "task": "Analyze VPN Service Core (dap_chain_net_srv_vpn.c)",
+              "status": "completed",
+              "file": "cellframe-node/cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.c (526 LOC)",
+              "analysis_results": {
+                "key_functions": [
+                  "dap_chain_net_srv_vpn_init() - Service initialization with config",
+                  "dap_chain_net_srv_vpn_deinit() - Service cleanup",
+                  "dap_chain_net_srv_vpn_pre_init() - Pre-initialization"
+                ],
+                "service_callbacks": [
+                  "s_callback_requested() - Handle service request",
+                  "s_callback_response_success() - Handle success response",
+                  "s_callback_response_error() - Handle error response",
+                  "s_callback_receipt_next_success() - Handle receipt",
+                  "s_callback_get_remain_service() - Get remaining service",
+                  "s_callback_save_remain_service() - Save service state"
+                ],
+                "global_state": [
+                  "g_vpn_tun_handle - Unified TUN device handle",
+                  "g_vpn_raw_server - Server configuration structure",
+                  "g_vpn_ch_vpn_addrs - Client address mappings",
+                  "g_vpn_addr_pool - IP address pool"
+                ],
+                "test_requirements": [
+                  "Test service init with valid config",
+                  "Test service init with invalid config",
+                  "Test service deinit cleanup",
+                  "Test each callback with mocked inputs",
+                  "Test global state initialization"
+                ]
+              }
+            },
+            {
+              "task": "Analyze VPN Service Stream Module",
+              "details": [
+                "dap_chain_net_srv_vpn_stream.c - stream channel packet processing",
+                "VPN packet opcodes (11 total):",
+                "  - VPN_PACKET_OP_CODE_CONNECTED, CONNECT, DISCONNECT (0xa9-0xab)",
+                "  - VPN_PACKET_OP_CODE_SEND, RECV, PROBLEM (0xac-0xae)",
+                "  - VPN_PACKET_OP_CODE_VPN_METADATA, RESERVED (0xb0-0xb1)",
+                "  - VPN_PACKET_OP_CODE_VPN_ADDR_REQUEST, ADDR_REPLY (0xb2-0xb3)",
+                "  - VPN_PACKET_OP_CODE_VPN_SEND, VPN_RECV (0xbc-0xbd)",
+                "  - VPN_PACKET_OP_CODE_PING, PONG (0xc0-0xc1)",
+                "Functions: vpn_srv_ch_new, vpn_srv_ch_delete, vpn_srv_ch_packet_in, vpn_srv_ch_packet_out",
+                "Worker assignment callbacks: vpn_srv_ch_esocket_assigned, vpn_srv_ch_esocket_unassigned"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service TUN Module",
+              "details": [
+                "dap_chain_net_srv_vpn_tun.c - TUN device management",
+                "Platform-specific TUN implementations (linux/darwin/bsd/windows)",
+                "Unified TUN API integration (dap_net_tun)",
+                "TUN event socket callbacks"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Session Management",
+              "details": [
+                "dap_chain_net_srv_vpn_session.c - session lifecycle",
+                "Session statistics and monitoring",
+                "Session cleanup and timeout handling"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Address Pool",
+              "details": [
+                "dap_chain_net_srv_vpn_addr_pool.c - IP address allocation",
+                "Address leasing and expiration",
+                "Address pool management"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Multi-hop Support",
+              "details": [
+                "dap_chain_net_srv_vpn_multihop.c - multi-hop routing",
+                "TSD parsing and validation",
+                "Route management"
+              ]
+            },
+            {
+              "task": "Analyze VPN Service Limits & Traffic",
+              "status": "completed",
+              "analysis_results": {
+                "dap_chain_net_srv_vpn_limits.c": {
+                  "loc": 259,
+                  "purpose": "Bandwidth and traffic limits enforcement",
+                  "test_requirements": [
+                    "Limit enforcement",
+                    "Bandwidth throttling",
+                    "QoS prioritization"
+                  ]
+                },
+                "dap_chain_net_srv_vpn_traffic.c": {
+                  "loc": 365,
+                  "purpose": "Traffic statistics and monitoring",
+                  "test_requirements": [
+                    "Traffic counting",
+                    "Statistics aggregation"
+                  ]
+                }
+              }
+            },
+            {
+              "task": "Analyze VPN Service Additional Modules",
+              "status": "completed",
+              "analysis_results": {
+                "dap_chain_net_srv_vpn_callbacks.c": {
+                  "loc": 587,
+                  "purpose": "Service lifecycle callbacks implementation"
+                },
+                "dap_chain_net_srv_vpn_common.c": {
+                  "loc": 44,
+                  "purpose": "Common utilities"
+                },
+                "dap_chain_net_srv_vpn_cmd.c": {
+                  "loc": 92,
+                  "purpose": "CLI commands (vpn_stat)"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "subphase_id": "0.3",
+          "name": "Test Coverage Matrix Creation",
+          "status": "completed",
+          "completion_summary": "Created matrices for Client (8 modules, 196 unit tests) and Service (5 module groups, 80 unit tests). Total estimated: 276 unit tests + 40 integration tests.",
+          "tasks": [
+            {
+              "task": "Create VPN Client Test Coverage Matrix",
+              "status": "completed",
+              "coverage_matrix": {
+                "total_modules": 16,
+                "total_loc": 6103,
+                "modules_breakdown": [
+                  {
+                    "module": "State Machine",
+                    "files": [
+                      "vpn_state_machine.c",
+                      "vpn_state_handlers.c",
+                      "vpn_state_payment.c",
+                      "vpn_state_tunnel.c"
+                    ],
+                    "loc": 2396,
+                    "public_functions": 13,
+                    "internal_functions": 23,
+                    "estimated_unit_tests": 45,
+                    "estimated_integration_tests": 10,
+                    "target_coverage": "90%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "Client API",
+                    "files": [
+                      "vpn_client.c"
+                    ],
+                    "loc": 873,
+                    "public_functions": 27,
+                    "estimated_unit_tests": 30,
+                    "target_coverage": "95%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "TUN Device",
+                    "files": [
+                      "vpn_tun.c"
+                    ],
+                    "loc": 282,
+                    "public_functions": 4,
+                    "estimated_unit_tests": 8,
+                    "target_coverage": "85%",
+                    "priority": "high"
+                  },
+                  {
+                    "module": "Network (Uplink)",
+                    "files": [
+                      "vpn_uplink.c",
+                      "vpn_uplink_pool.c"
+                    ],
+                    "loc": 810,
+                    "public_functions": 20,
+                    "estimated_unit_tests": 35,
+                    "target_coverage": "90%",
+                    "priority": "high"
+                  },
+                  {
+                    "module": "Network (Other)",
+                    "files": [
+                      "vpn_backup.c",
+                      "vpn_network.c",
+                      "vpn_registry.c",
+                      "vpn_client_routing.c"
+                    ],
+                    "loc": 1358,
+                    "estimated_unit_tests": 20,
+                    "target_coverage": "80%",
+                    "priority": "medium"
+                  },
+                  {
+                    "module": "Payment",
+                    "files": [
+                      "vpn_payment.c",
+                      "vpn_multihop_tx.c",
+                      "vpn_receipt.c",
+                      "vpn_wallet.c"
+                    ],
+                    "loc": 1103,
+                    "public_functions": 15,
+                    "estimated_unit_tests": 25,
+                    "target_coverage": "90%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "Protocol",
+                    "files": [
+                      "vpn_probe.c",
+                      "vpn_connectivity.c"
+                    ],
+                    "loc": 1158,
+                    "estimated_unit_tests": 15,
+                    "target_coverage": "85%",
+                    "priority": "high"
+                  },
+                  {
+                    "module": "IPC",
+                    "files": [
+                      "vpn_ipc_server.c",
+                      "vpn_ipc_types.c",
+                      "vpn_protocol.c"
+                    ],
+                    "loc": 1435,
+                    "estimated_unit_tests": 18,
+                    "target_coverage": "90%",
+                    "priority": "high"
+                  }
+                ],
+                "summary": {
+                  "total_estimated_unit_tests": 196,
+                  "total_estimated_integration_tests": 25,
+                  "average_target_coverage": "88%"
+                }
+              }
+            },
+            {
+              "task": "Create VPN Service Test Coverage Matrix",
+              "status": "completed",
+              "coverage_matrix": {
+                "total_modules": 11,
+                "total_loc": 3843,
+                "modules_breakdown": [
+                  {
+                    "module": "Service Core",
+                    "files": [
+                      "dap_chain_net_srv_vpn.c",
+                      "dap_chain_net_srv_vpn_callbacks.c"
+                    ],
+                    "loc": 1113,
+                    "public_functions": 9,
+                    "estimated_unit_tests": 15,
+                    "target_coverage": "90%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "Stream Processing",
+                    "files": [
+                      "dap_chain_net_srv_vpn_stream.c"
+                    ],
+                    "loc": 547,
+                    "packet_opcodes": 11,
+                    "estimated_unit_tests": 20,
+                    "target_coverage": "95%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "TUN Management",
+                    "files": [
+                      "dap_chain_net_srv_vpn_tun.c"
+                    ],
+                    "loc": 433,
+                    "estimated_unit_tests": 15,
+                    "target_coverage": "90%",
+                    "priority": "critical"
+                  },
+                  {
+                    "module": "Session & Address Pool",
+                    "files": [
+                      "dap_chain_net_srv_vpn_session.c",
+                      "dap_chain_net_srv_vpn_addr_pool.c"
+                    ],
+                    "loc": 567,
+                    "estimated_unit_tests": 12,
+                    "target_coverage": "85%",
+                    "priority": "high"
+                  },
+                  {
+                    "module": "Multi-hop & Limits",
+                    "files": [
+                      "dap_chain_net_srv_vpn_multihop.c",
+                      "dap_chain_net_srv_vpn_limits.c",
+                      "dap_chain_net_srv_vpn_traffic.c"
+                    ],
+                    "loc": 1047,
+                    "estimated_unit_tests": 18,
+                    "target_coverage": "85%",
+                    "priority": "high"
+                  }
+                ],
+                "summary": {
+                  "total_estimated_unit_tests": 80,
+                  "total_estimated_integration_tests": 15,
+                  "average_target_coverage": "89%"
+                }
+              }
+            },
+            {
+              "task": "Define Integration Test Scenarios",
+              "details": [
+                "Client-Service connection establishment",
+                "Payment flow (create TX, submit, validate receipt)",
+                "Multi-hop routing setup",
+                "Failover and reconnection",
+                "Platform-specific TUN operations",
+                "IPC daemon-CLI communication"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "0.4",
+          "name": "Mock & Fixture Requirements Definition",
+          "status": "completed",
+          "completion_summary": "Defined all required mocks (6 categories) and fixtures (8 categories) for VPN client and service testing. Mock requirements include DAP SDK APIs (Stream, Chain, Events, TUN, Config, Crypto). Fixture requirements include connection params, payment TXs, receipts, VPN packets (11 opcodes), TUN packets, state sequences, and IPC JSON-RPC samples.",
+          "tasks": [
+            {
+              "task": "Define Required Mocks",
+              "details": [
+                "Mock DAP Stream API:",
+                "  - dap_client_* (connect, disconnect, wait, get_stage)",
+                "  - dap_stream_* (new, delete, set_channel_handler)",
+                "  - dap_stream_ch_* (new, delete, pkt_write, set_ready_to_read/write)",
+                "  - dap_stream_ch_pkt_* (write, write_mt, write_unsafe)",
+                "Mock DAP Chain Network API:",
+                "  - dap_chain_net_* (by_name, get_cur_addr, get_role)",
+                "  - dap_chain_wallet_* (open, close, get_balance)",
+                "  - dap_chain_net_srv_* (get, usage_find, client_create)",
+                "  - dap_chain_hash_fast_* (from_str, to_str, is_blank)",
+                "Mock TUN Device API:",
+                "  - dap_net_tun_init, dap_net_tun_deinit",
+                "  - dap_net_tun_create, dap_net_tun_destroy",
+                "  - dap_net_tun_read, dap_net_tun_write",
+                "  - dap_net_tun_get_device_name, dap_net_tun_get_device_count",
+                "Mock Event Loop API:",
+                "  - dap_events_socket_* (create, delete, write, set_callbacks)",
+                "  - dap_worker_* (get, get_current, add_event_socket)",
+                "  - dap_context_* (create, delete, run)",
+                "Mock Config API:",
+                "  - dap_config_get_item_str, dap_config_get_item_uint32",
+                "  - dap_config_get_item_bool, dap_config_get_item_bool_default",
+                "Mock Crypto API:",
+                "  - dap_enc_key_* (new, delete, serialize, deserialize)",
+                "  - dap_sign_* (create, verify, type_from_str)"
+              ]
+            },
+            {
+              "task": "Define Required Fixtures",
+              "details": [
+                "Connection Parameters Fixtures:",
+                "  - Valid single-hop params (all fields populated)",
+                "  - Valid multi-hop params (route, tunnel_count, session_id)",
+                "  - Invalid params (NULL fields, invalid port, empty network_name)",
+                "Payment Transaction Fixtures:",
+                "  - Single-hop payment TX (one hop, one payment)",
+                "  - Multi-hop payment TX set (3 hops, 3 payments)",
+                "  - Payment with different tokens (CELL, KEL)",
+                "  - Payment with different unit types (MB, seconds)",
+                "Receipt Fixtures:",
+                "  - Valid receipt (correct signature, not expired)",
+                "  - Invalid receipt (bad signature)",
+                "  - Expired receipt (timestamp too old)",
+                "Network Configuration Fixtures:",
+                "  - Backbone, KelVPN, Raiden network configs",
+                "  - IPv4 and IPv6 configurations",
+                "VPN Packet Fixtures (11 opcodes):",
+                "  - PING/PONG packets (0xc0/0xc1)",
+                "  - ADDR_REQUEST/ADDR_REPLY (0xb2/0xb3)",
+                "  - VPN_SEND/VPN_RECV (0xbc/0xbd)",
+                "  - CONNECT/CONNECTED/DISCONNECT (0xaa/0xa9/0xab)",
+                "  - SEND/RECV/PROBLEM (0xac/0xad/0xae)",
+                "TUN Packet Fixtures:",
+                "  - IPv4 packets (ICMP, TCP, UDP)",
+                "  - IPv6 packets",
+                "  - Fragmented packets",
+                "  - Malformed packets (invalid headers, bad checksums)",
+                "State Machine Sequences:",
+                "  - Happy path: DISCONNECTED -> CONNECTING -> CONNECTED",
+                "  - Reconnect path: CONNECTED -> CONNECTION_LOST -> RECONNECTING -> CONNECTED",
+                "  - Failure path: CONNECTING -> CONNECT_FAILED -> DISCONNECTED",
+                "IPC JSON-RPC Samples:",
+                "  - CONNECT request/response",
+                "  - DISCONNECT request/response",
+                "  - STATUS request/response",
+                "  - Invalid JSON (syntax errors, missing fields)"
+              ]
+            },
+            {
+              "task": "Define Test Environment Setup",
+              "details": [
+                "Virtual TUN device creation helpers",
+                "Mock network stack initialization",
+                "Dummy wallet and payment setup",
+                "Simulated stream connections",
+                "Worker thread simulation"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "0.5",
+          "name": "DAP SDK Mock Framework Implementation",
+          "status": "completed",
+          "completion_date": "2025-10-26",
+          "completion_summary": "Created reusable mock framework in DAP SDK test-framework/mocks/ with 10 API functions, 9 helper macros, thread-safe implementation, full DAP SDK standards compliance. Library successfully compiled and integrated into VPN client tests. Zero technical debt.",
+          "location": "cellframe-node/dap-sdk/test-framework/mocks/",
+          "files_created": {
+            "core": [
+              "dap_mock_framework.h (92 LOC) - Public API with 13 functions and 9 macros",
+              "dap_mock_framework.c (136 LOC) - Thread-safe implementation",
+              "CMakeLists.txt (18 LOC) - Build configuration for libdap_test_mocks.a",
+              "README.md (300+ LOC) - Comprehensive API documentation with examples"
+            ],
+            "infrastructure": [
+              "cellframe-node/dap-sdk/test-framework/CMakeLists.txt - Framework build integration",
+              "cellframe-node/dap-sdk/test-framework/README.md - Test framework overview",
+              "tests/mocks/CMakeLists.txt - VPN client alias: add_library(vpn_test_mocks ALIAS dap_test_mocks)",
+              "tests/CMakeLists.txt - Integration point: add_subdirectory(dap-sdk/test-framework)"
+            ]
+          },
+          "api_functions": [
+            {
+              "name": "dap_mock_framework_init",
+              "signature": "int dap_mock_framework_init(void)",
+              "description": "Initialize mock framework, allocate resources, setup mutexes",
+              "returns": "0 on success, negative on error"
+            },
+            {
+              "name": "dap_mock_framework_deinit",
+              "signature": "void dap_mock_framework_deinit(void)",
+              "description": "Cleanup framework, free all registered mocks, destroy mutexes"
+            },
+            {
+              "name": "dap_mock_framework_reset_all",
+              "signature": "void dap_mock_framework_reset_all(void)",
+              "description": "Reset all registered mocks (call counts, history)"
+            },
+            {
+              "name": "dap_mock_register",
+              "signature": "dap_mock_function_state_t* dap_mock_register(const char *a_name)",
+              "description": "Register new mock function, allocate state, initialize mutex",
+              "returns": "Pointer to mock state or NULL on error"
+            },
+            {
+              "name": "dap_mock_set_enabled",
+              "signature": "void dap_mock_set_enabled(dap_mock_function_state_t *a_state, bool a_enabled)",
+              "description": "Enable or disable mock function"
+            },
+            {
+              "name": "dap_mock_record_call",
+              "signature": "void dap_mock_record_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count, void *a_return_value)",
+              "description": "Record function call with timestamp, arguments (up to 10), return value"
+            },
+            {
+              "name": "dap_mock_get_call_count",
+              "signature": "int dap_mock_get_call_count(dap_mock_function_state_t *a_state)",
+              "description": "Get number of times mock was called",
+              "returns": "Call count or -1 on error"
+            },
+            {
+              "name": "dap_mock_get_last_call",
+              "signature": "dap_mock_call_record_t* dap_mock_get_last_call(dap_mock_function_state_t *a_state)",
+              "description": "Retrieve last call record with all arguments and return value",
+              "returns": "Pointer to last call or NULL"
+            },
+            {
+              "name": "dap_mock_reset",
+              "signature": "void dap_mock_reset(dap_mock_function_state_t *a_state)",
+              "description": "Reset single mock (clear call history, reset counters)"
+            },
+            {
+              "name": "dap_mock_was_called_with",
+              "signature": "bool dap_mock_was_called_with(dap_mock_function_state_t *a_state, int a_arg_index, void *a_expected_value)",
+              "description": "Verify if mock was called with specific argument value",
+              "returns": "true if argument matches, false otherwise"
+            }
+          ],
+          "helper_macros": [
+            "DAP_MOCK_DECLARE(func_name) - Declare static mock state variable g_mock_##func_name",
+            "DAP_MOCK_INIT(func_name) - Register and initialize mock: g_mock_##func_name = dap_mock_register(#func_name)",
+            "DAP_MOCK_ENABLE(func_name) - Enable mock: dap_mock_set_enabled(g_mock_##func_name, true)",
+            "DAP_MOCK_DISABLE(func_name) - Disable mock: dap_mock_set_enabled(g_mock_##func_name, false)",
+            "DAP_MOCK_SET_RETURN(func_name, value) - Set return value for mock",
+            "DAP_MOCK_RECORD_CALL(func_name, args, arg_count, ret) - Record call with arguments",
+            "DAP_MOCK_GET_CALL_COUNT(func_name) - Get call count: dap_mock_get_call_count(g_mock_##func_name)",
+            "DAP_MOCK_WAS_CALLED(func_name) - Check if called: (dap_mock_get_call_count(g_mock_##func_name) > 0)",
+            "DAP_MOCK_RESET(func_name) - Reset mock: dap_mock_reset(g_mock_##func_name)"
+          ],
+          "data_structures": {
+            "dap_mock_call_record_t": {
+              "fields": [
+                "const char *function_name - Name of mocked function",
+                "uint64_t timestamp - Call timestamp (microseconds since epoch)",
+                "void *args[10] - Array of up to 10 function arguments (type-erased)",
+                "void *return_value - Return value (type-erased)",
+                "int call_count - Sequential call number"
+              ]
+            },
+            "dap_mock_function_state_t": {
+              "fields": [
+                "const char *name - Function name",
+                "bool enabled - Whether mock is active",
+                "int call_count - Total number of calls",
+                "int max_calls - Maximum calls to track (DAP_MOCK_MAX_CALLS = 100)",
+                "dap_mock_call_record_t calls[100] - Call history",
+                "pthread_mutex_t lock - Per-function mutex for thread safety"
+              ]
+            }
+          },
+          "features": {
+            "thread_safety": {
+              "description": "Full thread-safety with pthread mutexes",
+              "implementation": [
+                "Framework-level mutex (s_framework_lock) for registration operations",
+                "Per-function mutex (state->lock) for call recording and verification",
+                "No global locks during high-frequency operations (minimal overhead)"
+              ]
+            },
+            "capacity": {
+              "max_functions": 100,
+              "max_calls_per_function": 100,
+              "max_arguments_per_call": 10,
+              "description": "Configurable via DAP_MOCK_MAX_CALLS and DAP_MOCK_MAX_REGISTERED macros"
+            },
+            "coding_standards": {
+              "dap_sdk_compliance": "100%",
+              "conventions_followed": [
+                "dap_ prefix for all public functions and types",
+                "s_ prefix for static/file-local variables",
+                "g_ prefix for global variables in macros",
+                "l_ prefix for local variables in functions",
+                "a_ prefix for all function parameters",
+                "LOG_TAG defined as 'dap_mock_framework'",
+                "log_it() used for all logging",
+                "DAP_NEW() / DAP_DELETE() for memory management (when integrated)",
+                "UNUSED() macro for intentionally unused parameters"
+              ]
+            },
+            "technical_debt": "Zero - clean implementation, no workarounds, no temporary solutions"
+          },
+          "build_integration": {
+            "library_artifact": "libdap_test_mocks.a",
+            "cmake_target": "dap_test_mocks",
+            "include_path": "${CMAKE_SOURCE_DIR}/cellframe-node/dap-sdk/test-framework/mocks/",
+            "dependencies": [
+              "dap_core",
+              "pthread"
+            ],
+            "exported_cmake_vars": [
+              "DAP_TEST_MOCKS_INCLUDE_DIR",
+              "DAP_TEST_FRAMEWORK_DIR"
+            ],
+            "vpn_client_usage": {
+              "alias_target": "vpn_test_mocks (ALIAS to dap_test_mocks)",
+              "integration_point": "tests/CMakeLists.txt adds DAP SDK test-framework as subdirectory",
+              "linking": "target_link_libraries(test_vpn_state_machine vpn_test_mocks ...)"
+            },
+            "compilation_status": "✅ Successfully compiled (verified 2025-10-26)",
+            "artifacts_location": "build/dap-test-framework/mocks/libdap_test_mocks.a"
+          },
+          "documentation": {
+            "mocks_readme": {
+              "file": "cellframe-node/dap-sdk/test-framework/mocks/README.md",
+              "sections": [
+                "Overview - Framework purpose and features",
+                "Architecture - Directory structure",
+                "API Reference - All 10 functions with signatures",
+                "Usage Example - Complete workflow (declare, init, enable, verify, reset)",
+                "Integration Guide - For Cellframe SDK and external projects",
+                "Macros - All 9 helper macros with descriptions",
+                "Data Structures - dap_mock_call_record_t and dap_mock_function_state_t",
+                "Thread Safety - Mutex implementation details",
+                "Limitations - Max calls, arguments, functions",
+                "Coding Standards - DAP SDK conventions"
+              ]
+            },
+            "framework_readme": {
+              "file": "cellframe-node/dap-sdk/test-framework/README.md",
+              "sections": [
+                "Overview - Test framework components",
+                "Structure - Directory layout",
+                "Components - Mock framework description",
+                "Integration Guide - Usage in Cellframe SDK and VPN client",
+                "Build System - CMake variables and targets",
+                "Coding Standards - Prefixes, logging, memory, error handling",
+                "Usage Examples - Unit test and integration test examples",
+                "Extending the Framework - Guidelines for new components"
+              ]
+            }
+          },
+          "usage_workflow": {
+            "step_1_declare": "DAP_MOCK_DECLARE(dap_client_connect);",
+            "step_2_init": "dap_mock_framework_init(); g_mock_dap_client_connect = dap_mock_register(\"dap_client_connect\");",
+            "step_3_enable": "dap_mock_set_enabled(g_mock_dap_client_connect, true);",
+            "step_4_set_return": "DAP_MOCK_SET_RETURN(dap_client_connect, NULL); // Simulate failure",
+            "step_5_call_function": "int result = my_function_under_test();",
+            "step_6_verify_calls": "assert(dap_mock_get_call_count(g_mock_dap_client_connect) == 3);",
+            "step_7_verify_args": "assert(dap_mock_was_called_with(g_mock_dap_client_connect, 1, expected_param));",
+            "step_8_cleanup": "dap_mock_framework_deinit();"
+          },
+          "reusability": {
+            "available_to": [
+              "DAP SDK core modules",
+              "Cellframe SDK modules (VPN service, wallet, chain, net)",
+              "VPN client (cellframe-srv-vpn-client)",
+              "Python bindings tests",
+              "Any future Cellframe ecosystem projects"
+            ],
+            "transparent_usage": "Projects using Cellframe SDK as submodule get mock framework automatically via test-framework subdirectory"
+          },
+          "next_steps": {
+            "immediate": [
+              "Use mock framework in test_vpn_state_machine.c for DAP SDK dependencies",
+              "Create specific mock implementations for dap_client, dap_stream_ch, dap_net_tun"
+            ],
+            "future": [
+              "Add more helper macros as needed (e.g., DAP_MOCK_VERIFY_CALL_SEQUENCE)",
+              "Implement mock function call sequence verification",
+              "Add support for callback verification",
+              "Create common mock libraries for frequently used DAP SDK modules"
+            ]
+          },
+          "tasks": [
+            {
+              "task": "Design Mock Framework Architecture",
+              "status": "completed",
+              "details": [
+                "Generic function pointer replacement strategy",
+                "Call tracking with argument storage (void* array)",
+                "Return value control mechanism",
+                "Thread-safe implementation with pthread mutexes",
+                "DAP SDK coding standards compliance from the start"
+              ]
+            },
+            {
+              "task": "Implement Mock Framework Core",
+              "status": "completed",
+              "implementation": {
+                "header": "dap_mock_framework.h (92 LOC)",
+                "source": "dap_mock_framework.c (136 LOC)",
+                "build": "CMakeLists.txt (18 LOC)",
+                "total_code": "246 LOC (excluding documentation)"
+              }
+            },
+            {
+              "task": "Create Comprehensive Documentation",
+              "status": "completed",
+              "files": [
+                "mocks/README.md (300+ LOC) - Full API reference with usage examples",
+                "test-framework/README.md (200+ LOC) - Framework overview and integration guide"
+              ]
+            },
+            {
+              "task": "Integrate into Build System",
+              "status": "completed",
+              "changes": [
+                "Created cellframe-node/dap-sdk/test-framework/CMakeLists.txt",
+                "Created cellframe-node/dap-sdk/test-framework/mocks/CMakeLists.txt",
+                "Updated tests/CMakeLists.txt to include DAP SDK test framework subdirectory",
+                "Created vpn_test_mocks alias in tests/mocks/CMakeLists.txt",
+                "Verified successful compilation of libdap_test_mocks.a"
+              ]
+            },
+            {
+              "task": "Verify Build and Integration",
+              "status": "completed",
+              "verification_steps": [
+                "✅ CMake configuration successful",
+                "✅ libdap_test_mocks.a compiled without errors",
+                "✅ test_vpn_state_machine linked against vpn_test_mocks successfully",
+                "✅ No compilation warnings in mock framework code",
+                "✅ All include paths resolved correctly",
+                "✅ pthread dependency linked properly"
+              ],
+              "artifacts_verified": [
+                "/home/naeper/work/cellframe-srv-vpn-client/build/dap-test-framework/mocks/libdap_test_mocks.a",
+                "/home/naeper/work/cellframe-srv-vpn-client/build/tests/unit/test_vpn_state_machine"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_1",
+      "name": "VPN Client Unit Tests - Core Modules",
+      "status": "pending",
+      "description": "Unit tests for VPN client core functionality: state machine, connection management, TUN device",
+      "subphases": [
+        {
+          "subphase_id": "1.1",
+          "name": "State Machine Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_state_machine.c",
+              "tests": [
+                "test_vpn_sm_init() - Test vpn_sm_init() allocation and initialization",
+                "test_vpn_sm_deinit() - Test vpn_sm_deinit() cleanup",
+                "test_vpn_sm_state_transitions() - Test all 10 states: DISCONNECTED -> CONNECTING -> VERIFYING_CONNECTIVITY -> ROUTING_SETUP -> CONNECTED",
+                "test_vpn_sm_invalid_transitions() - Test invalid state transitions are rejected",
+                "test_vpn_sm_event_processing() - Test all 14 events: USER_CONNECT, USER_DISCONNECT, CONNECTION_SUCCESS, etc.",
+                "test_vpn_sm_register_callback() - Test state change callback registration",
+                "test_vpn_sm_callbacks_triggered() - Verify callbacks are called on state changes",
+                "test_vpn_sm_concurrent_events() - Test thread-safety with pthread mutex",
+                "test_vpn_sm_set_reconnect_policy() - Test reconnect policy configuration",
+                "test_vpn_sm_reconnect_behavior() - Test reconnection with max_attempts, delays",
+                "test_vpn_sm_set_keepalive() - Test keepalive timer setup",
+                "test_vpn_sm_stop_keepalive() - Test keepalive timer stop",
+                "test_vpn_sm_keepalive_timeout() - Test VPN_EVENT_KEEPALIVE_TIMEOUT",
+                "test_vpn_sm_set_connection_timeout() - Test connection timeout configuration",
+                "test_vpn_sm_get_state() - Test state retrieval",
+                "test_vpn_sm_is_connected() - Test connection status check",
+                "test_vpn_sm_get_stats() - Test statistics retrieval",
+                "test_vpn_sm_set_connect_params() - Test connection parameters setup",
+                "test_vpn_sm_set_debug_more() - Test debug mode toggle"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_state_handlers.c",
+              "tests": [
+                "test_state_connecting_entry() - Connection initiation",
+                "test_state_verifying_connectivity() - Connectivity verification",
+                "test_state_routing_setup() - Routing table setup",
+                "test_state_connected_entry() - Connected state entry",
+                "test_state_reconnecting() - Reconnection logic",
+                "test_state_connection_lost() - Connection loss handling"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_state_payment.c",
+              "tests": [
+                "test_payment_tx_create() - Payment transaction creation",
+                "test_payment_validate() - Payment validation",
+                "test_multihop_payment() - Multi-hop payment creation",
+                "test_payment_insufficient_balance() - Insufficient balance error",
+                "test_payment_invalid_token() - Invalid token handling"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_state_tunnel.c",
+              "tests": [
+                "test_tun_packet_forwarding() - Packet forwarding to/from TUN",
+                "test_tun_stream_write() - Stream write operations",
+                "test_tun_fragmentation() - Large packet fragmentation",
+                "test_tun_error_handling() - TUN device errors"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.2",
+          "name": "VPN Client API Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_client_api.c",
+              "tests": [
+                "test_vpn_client_init() - Test vpn_client_init() with valid/NULL params",
+                "test_vpn_client_deinit() - Test vpn_client_deinit() cleanup",
+                "test_vpn_client_is_initialized() - Test initialization state check",
+                "test_vpn_client_start() - Test vpn_client_start() with various params",
+                "test_vpn_client_stop() - Test vpn_client_stop() and cleanup",
+                "test_vpn_client_wait_disconnected() - Test timeout behavior",
+                "test_vpn_client_version() - Test vpn_client_version() return",
+                "test_vpn_client_protocol_version() - Test vpn_client_protocol_version()",
+                "test_vpn_client_get_status() - Test vpn_client_get_status()",
+                "test_vpn_client_get_state() - Test vpn_client_get_state()",
+                "test_vpn_client_is_connected() - Test connection state check",
+                "test_vpn_client_get_statistics() - Test statistics retrieval",
+                "test_vpn_client_get_uptime() - Test uptime calculation",
+                "test_vpn_client_get_server_address() - Test server info retrieval",
+                "test_vpn_client_reconnect() - Test manual reconnection",
+                "test_vpn_client_list_servers() - Test server discovery",
+                "test_vpn_client_probe_server() - Test server probing",
+                "test_vpn_client_register_callbacks() - Test callback registration",
+                "test_vpn_client_invalid_params() - Negative tests for all functions"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_tun.c",
+              "tests": [
+                "test_tun_device_create() - TUN device creation",
+                "test_tun_device_destroy() - TUN device cleanup",
+                "test_tun_device_configure() - IP address configuration",
+                "test_tun_packet_read() - Packet reading",
+                "test_tun_packet_write() - Packet writing",
+                "test_tun_mtu_handling() - MTU configuration"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.3",
+          "name": "Network Module Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_uplink.c",
+              "tests": [
+                "test_vpn_uplink_create() - Test uplink creation with valid params",
+                "test_vpn_uplink_create_invalid() - Test NULL/invalid params",
+                "test_vpn_uplink_destroy() - Test uplink cleanup and resource freeing",
+                "test_vpn_uplink_update_stats() - Test stats update (throughput, latency, packet_loss)",
+                "test_vpn_uplink_update_traffic() - Test traffic counters update",
+                "test_vpn_uplink_check_health() - Test health status calculation",
+                "test_uplink_health_status_ranges() - Test EXCELLENT/GOOD/FAIR/POOR/CRITICAL thresholds",
+                "test_uplink_score_calculation() - Test quality score algorithm",
+                "test_uplink_state_to_string() - Test state enum to string conversion",
+                "test_uplink_health_to_string() - Test health enum to string conversion",
+                "test_uplink_concurrent_updates() - Test thread-safety of updates"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_uplink_pool.c",
+              "tests": [
+                "test_pool_create() - Pool creation",
+                "test_pool_add_remove_uplink() - Uplink management",
+                "test_pool_select_uplink() - Load balancing",
+                "test_pool_failover() - Automatic failover",
+                "test_pool_health_monitoring() - Health checks"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_backup.c",
+              "tests": [
+                "test_backup_create() - Network config backup",
+                "test_backup_restore() - Network config restore",
+                "test_backup_cleanup() - Backup cleanup"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.4",
+          "name": "Payment Module Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_payment.c",
+              "tests": [
+                "test_payment_config_create() - Payment configuration",
+                "test_payment_tx_create() - Transaction creation",
+                "test_payment_tx_validate() - Transaction validation",
+                "test_payment_token_resolve() - Token resolution"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_multihop_tx.c",
+              "tests": [
+                "test_multihop_tx_set_create() - Multi-hop TX set creation",
+                "test_multihop_route_validation() - Route validation",
+                "test_multihop_payment_distribution() - Payment distribution"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_receipt.c",
+              "tests": [
+                "test_receipt_create() - Receipt creation",
+                "test_receipt_validate() - Receipt validation",
+                "test_receipt_expired() - Expired receipt handling"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.5",
+          "name": "Protocol Module Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_probe.c",
+              "tests": [
+                "test_protocol_probe_http() - HTTP transport probing",
+                "test_protocol_probe_udp() - UDP transport probing",
+                "test_protocol_probe_timeout() - Probe timeout handling",
+                "test_transport_selection_best() - Best transport selection",
+                "test_obfuscation_detection() - Obfuscation level detection and selection"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_connectivity.c",
+              "tests": [
+                "test_connectivity_check_icmp() - ICMP-based connectivity check",
+                "test_connectivity_check_http() - HTTP-based connectivity check",
+                "test_connectivity_timeout() - Timeout handling",
+                "test_connectivity_retry() - Retry logic with backoff"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.7",
+          "name": "Service Layer Module Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_auto.c",
+              "tests": [
+                "test_auto_connection_init() - Auto-connection initialization",
+                "test_auto_connection_trigger() - Auto-connection trigger logic",
+                "test_auto_connection_disable() - Disable auto-connection"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_balance_monitor.c",
+              "tests": [
+                "test_balance_monitor_init() - Balance monitor initialization",
+                "test_balance_check() - Wallet balance checking",
+                "test_insufficient_balance_callback() - Low balance notification",
+                "test_balance_monitor_cleanup() - Monitor cleanup"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "1.6",
+          "name": "IPC Module Unit Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/unit/test_vpn_ipc_types.c",
+              "tests": [
+                "test_ipc_serialize_connect_params() - Serialization",
+                "test_ipc_deserialize_connect_params() - Deserialization",
+                "test_ipc_serialize_status() - Status serialization",
+                "test_ipc_invalid_json() - Invalid JSON handling"
+              ]
+            },
+            {
+              "task": "Create tests/unit/test_vpn_ipc_server.c",
+              "tests": [
+                "test_ipc_server_init() - Server initialization",
+                "test_ipc_handle_connect() - Connect request handling",
+                "test_ipc_handle_disconnect() - Disconnect request handling",
+                "test_ipc_handle_status() - Status request handling",
+                "test_ipc_concurrent_requests() - Concurrent request handling"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_2",
+      "name": "VPN Service (SDK) Unit Tests",
+      "status": "pending",
+      "description": "Unit tests for VPN service modules in cellframe-sdk",
+      "subphases": [
+        {
+          "subphase_id": "2.1",
+          "name": "Service Core Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_core.c",
+              "tests": [
+                "test_dap_chain_net_srv_vpn_init() - Test service initialization with config",
+                "test_dap_chain_net_srv_vpn_deinit() - Test service cleanup",
+                "test_srv_vpn_pre_init() - Test pre-initialization steps",
+                "test_callback_requested() - Test service request callback",
+                "test_callback_response_success() - Test success response handling",
+                "test_callback_response_error() - Test error response handling",
+                "test_callback_receipt_next_success() - Test receipt handling",
+                "test_callback_get_remain_service() - Test remaining service retrieval",
+                "test_callback_save_remain_service() - Test service state saving"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "2.2",
+          "name": "Stream Module Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_stream.c",
+              "tests": [
+                "test_vpn_srv_ch_new() - Channel creation and initialization",
+                "test_vpn_srv_ch_delete() - Channel cleanup and IP lease release",
+                "test_packet_in_ping() - Process VPN_PACKET_OP_CODE_PING (0xc0)",
+                "test_packet_in_pong() - Process VPN_PACKET_OP_CODE_PONG (0xc1)",
+                "test_packet_in_addr_request() - Process VPN_PACKET_OP_CODE_VPN_ADDR_REQUEST (0xb2)",
+                "test_packet_in_addr_reply() - Process VPN_PACKET_OP_CODE_VPN_ADDR_REPLY (0xb3, client-only)",
+                "test_packet_in_vpn_send() - Process VPN_PACKET_OP_CODE_VPN_SEND (0xbc, server receives)",
+                "test_packet_in_vpn_recv() - Process VPN_PACKET_OP_CODE_VPN_RECV (0xbd, server sends)",
+                "test_packet_invalid_size() - Handle packets with invalid sizes",
+                "test_packet_routing_by_ip() - Packet routing based on destination IP",
+                "test_vpn_srv_ch_esocket_assigned() - Worker assignment callback",
+                "test_vpn_srv_ch_esocket_unassigned() - Worker unassignment callback",
+                "test_stream_channel_stats_update() - Statistics update on packet processing"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "2.3",
+          "name": "TUN Module Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_tun.c",
+              "tests": [
+                "test_vpn_srv_tun_init() - TUN infrastructure initialization",
+                "test_vpn_srv_tun_create() - TUN device creation with unified API",
+                "test_vpn_srv_tun_data_received_callback() - Process data from TUN device",
+                "test_vpn_srv_tun_error_callback() - Handle TUN device errors",
+                "test_vpn_srv_es_tun_new() - TUN event socket creation",
+                "test_vpn_srv_es_tun_delete() - TUN event socket cleanup",
+                "test_vpn_srv_es_tun_read() - Read packets from TUN and route to clients",
+                "test_vpn_srv_es_tun_write() - Write packets to TUN device",
+                "test_tun_routing_by_destination_ip() - Route packets based on IP header",
+                "test_tun_client_lookup() - Client lookup by IPv4 address",
+                "test_tun_inter_worker_messaging() - TUN socket messages between workers"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "2.4",
+          "name": "Session Module Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_session.c",
+              "tests": [
+                "test_session_create() - Session creation",
+                "test_session_destroy() - Session cleanup",
+                "test_session_stats() - Statistics tracking",
+                "test_session_timeout() - Timeout handling"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "2.5",
+          "name": "Address Pool Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_addr_pool.c",
+              "tests": [
+                "test_addr_pool_init() - Pool initialization",
+                "test_addr_lease() - IP address leasing",
+                "test_addr_release() - IP address release",
+                "test_addr_expiration() - Lease expiration",
+                "test_addr_pool_exhaustion() - Pool exhaustion handling"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "2.6",
+          "name": "Multi-hop Module Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/unit/",
+          "tasks": [
+            {
+              "task": "Create test_srv_vpn_multihop.c",
+              "tests": [
+                "test_multihop_tsd_parse() - TSD parsing",
+                "test_multihop_route_setup() - Route setup",
+                "test_multihop_payment_validate() - Payment validation"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_3",
+      "name": "Mocks & Fixtures Implementation",
+      "status": "pending",
+      "description": "Implementation of mock objects and test fixtures",
+      "subphases": [
+        {
+          "subphase_id": "3.1",
+          "name": "DAP SDK Mocks",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/fixtures/mock_dap_stream.c/h",
+              "details": [
+                "Mock dap_client_* functions",
+                "Mock dap_stream_* functions",
+                "Mock dap_stream_ch_* functions",
+                "Mock dap_stream_transport_* functions (register, unregister, find)",
+                "Configurable success/failure responses",
+                "Simulated network conditions (latency, packet loss)"
+              ]
+            },
+            {
+              "task": "Create tests/fixtures/mock_dap_chain.c/h",
+              "details": [
+                "Mock dap_chain_net_* functions",
+                "Mock dap_chain_wallet_* functions",
+                "Mock dap_chain_net_srv_* functions",
+                "Dummy ledger and transaction simulation"
+              ]
+            },
+            {
+              "task": "Create tests/fixtures/mock_dap_events.c/h",
+              "details": [
+                "Mock dap_events_* functions",
+                "Mock dap_worker_* functions",
+                "Simulated event loop"
+              ]
+            },
+            {
+              "task": "Create tests/fixtures/mock_dap_tun.c/h",
+              "details": [
+                "Mock dap_net_tun_* functions",
+                "Virtual TUN device simulation",
+                "Packet capture and injection"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "3.2",
+          "name": "Test Fixtures - Client",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Enhance tests/fixtures/vpn_test_fixtures.c/h",
+              "details": [
+                "Connection parameter fixtures (valid/invalid)",
+                "Payment transaction fixtures (single/multi-hop)",
+                "Receipt fixtures (valid/invalid/expired)",
+                "Network configuration fixtures",
+                "State machine test sequences"
+              ]
+            },
+            {
+              "task": "Create tests/fixtures/vpn_packet_fixtures.c/h",
+              "details": [
+                "VPN packet samples for all opcodes",
+                "TUN packet samples (IPv4/IPv6)",
+                "Malformed packet samples for negative tests"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "3.3",
+          "name": "Test Fixtures - Service",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/fixtures/",
+          "tasks": [
+            {
+              "task": "Create vpn_srv_test_fixtures.c/h",
+              "details": [
+                "Service configuration fixtures",
+                "Session fixtures",
+                "Client connection fixtures",
+                "TSD fixtures (multi-hop)"
+              ]
+            },
+            {
+              "task": "Create vpn_srv_packet_fixtures.c/h",
+              "details": [
+                "Stream channel packet samples",
+                "TUN device packet samples",
+                "Address request/reply samples"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "3.4",
+          "name": "Test Helpers & Utilities",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/fixtures/test_helpers.c/h",
+              "details": [
+                "Assert macros for VPN types",
+                "Memory leak detection helpers",
+                "Timing and timeout utilities",
+                "Random data generators",
+                "Setup/teardown helpers"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_4",
+      "name": "Integration Tests - Client",
+      "status": "pending",
+      "description": "Integration tests for VPN client end-to-end scenarios",
+      "subphases": [
+        {
+          "subphase_id": "4.1",
+          "name": "Connection Lifecycle Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/integration/test_connection_lifecycle.c",
+              "tests": [
+                "test_full_connection_flow() - Init -> Connect -> Transfer -> Disconnect",
+                "test_connection_failure_recovery() - Connection failure and retry",
+                "test_reconnection_on_loss() - Automatic reconnection",
+                "test_keepalive_mechanism() - Keepalive timeout and reconnection"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "4.2",
+          "name": "Payment Flow Integration Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/integration/test_payment_flow.c",
+              "tests": [
+                "test_single_hop_payment() - Single-hop payment creation and validation",
+                "test_multi_hop_payment() - Multi-hop payment TX set creation",
+                "test_receipt_generation() - Receipt creation and sign",
+                "test_payment_failure() - Payment failure handling"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "4.3",
+          "name": "Multi-hop Integration Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/integration/test_multihop.c",
+              "tests": [
+                "test_multihop_route_setup() - Multi-hop route establishment",
+                "test_multihop_data_transfer() - Data transfer through hops",
+                "test_multihop_failover() - Hop failure and recovery"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "4.4",
+          "name": "Platform Integration Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/integration/test_platform_linux.c",
+              "tests": [
+                "test_linux_tun_operations() - Linux-specific TUN operations",
+                "test_linux_routing_setup() - Linux routing table setup"
+              ]
+            },
+            {
+              "task": "Create tests/integration/test_platform_darwin.c",
+              "tests": [
+                "test_darwin_tun_operations() - macOS-specific TUN operations",
+                "test_darwin_routing_setup() - macOS routing table setup"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "4.5",
+          "name": "IPC Integration Tests",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/integration/test_daemon_cli_ipc.c",
+              "tests": [
+                "test_ipc_connect_request() - CLI -> Daemon connect",
+                "test_ipc_disconnect_request() - CLI -> Daemon disconnect",
+                "test_ipc_status_query() - CLI -> Daemon status query",
+                "test_ipc_concurrent_clients() - Multiple CLI instances"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_5",
+      "name": "Integration Tests - Service",
+      "status": "pending",
+      "description": "Integration tests for VPN service in SDK",
+      "subphases": [
+        {
+          "subphase_id": "5.1",
+          "name": "Client-Server Integration Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/integration/",
+          "tasks": [
+            {
+              "task": "Create test_client_server_connection.c",
+              "tests": [
+                "test_client_connects_receives_ip() - Full connection flow",
+                "test_multiple_clients() - Multiple simultaneous clients",
+                "test_client_disconnect_cleanup() - Cleanup on disconnect"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "5.2",
+          "name": "Data Transfer Integration Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/integration/",
+          "tasks": [
+            {
+              "task": "Create test_data_transfer.c",
+              "tests": [
+                "test_client_to_server_data() - Upload data transfer",
+                "test_server_to_client_data() - Download data transfer",
+                "test_bidirectional_data() - Simultaneous bi-directional transfer",
+                "test_large_transfer() - Large file transfer"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "5.3",
+          "name": "Service Stress Tests",
+          "status": "pending",
+          "location": "cellframe-node/cellframe-sdk/tests/modules/service/vpn/integration/",
+          "tasks": [
+            {
+              "task": "Create test_service_stress.c",
+              "tests": [
+                "test_high_connection_rate() - Rapid connect/disconnect",
+                "test_address_pool_exhaustion() - IP pool limits",
+                "test_high_throughput() - Maximum throughput",
+                "test_many_concurrent_clients() - Scalability test"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_6",
+      "name": "DAP SDK Transport Protocol Tests",
+      "status": "pending",
+      "description": "Unit and integration tests for DAP SDK transport layer (HTTP, UDP, future transports)",
+      "location": "cellframe-node/dap-sdk/tests/net/stream/",
+      "subphases": [
+        {
+          "subphase_id": "6.1",
+          "name": "HTTP Transport Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/dap-sdk/tests/net/stream/transport/unit/",
+          "tasks": [
+            {
+              "task": "Create test_transport_http.c",
+              "tests": [
+                "test_http_transport_register() - Test HTTP transport registration",
+                "test_http_transport_unregister() - Test HTTP transport unregistration",
+                "test_http_connect() - Test HTTP connection establishment",
+                "test_http_disconnect() - Test HTTP connection close",
+                "test_http_handshake() - Test encryption handshake over HTTP",
+                "test_http_session_create() - Test session creation over HTTP",
+                "test_http_data_write() - Test data writing over HTTP",
+                "test_http_data_read() - Test data reading from HTTP stream",
+                "test_http_connection_timeout() - Test HTTP connection timeout",
+                "test_http_ssl_upgrade() - Test HTTP to HTTPS upgrade",
+                "test_http_headers_parsing() - Test HTTP header parsing",
+                "test_http_chunked_transfer() - Test chunked transfer encoding"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "6.2",
+          "name": "UDP Transport Unit Tests",
+          "status": "pending",
+          "location": "cellframe-node/dap-sdk/tests/net/stream/transport/unit/",
+          "tasks": [
+            {
+              "task": "Create test_transport_udp.c",
+              "tests": [
+                "test_udp_transport_register() - Test UDP_BASIC transport registration",
+                "test_udp_transport_unregister() - Test UDP transport unregistration",
+                "test_udp_connect() - Test UDP connection setup",
+                "test_udp_disconnect() - Test UDP connection close",
+                "test_udp_packet_send() - Test UDP packet sending",
+                "test_udp_packet_receive() - Test UDP packet receiving",
+                "test_udp_packet_loss_handling() - Test packet loss scenarios",
+                "test_udp_out_of_order_packets() - Test out-of-order packet handling",
+                "test_udp_fragmentation() - Test large packet fragmentation",
+                "test_udp_reassembly() - Test fragment reassembly",
+                "test_udp_connection_timeout() - Test UDP connection timeout",
+                "test_udp_keepalive() - Test UDP keepalive mechanism"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "6.3",
+          "name": "Future Transport Unit Tests (Stubs)",
+          "status": "pending",
+          "location": "cellframe-node/dap-sdk/tests/net/stream/transport/unit/",
+          "tasks": [
+            {
+              "task": "Create test_transport_udp_reliable.c (for future implementation)",
+              "tests": [
+                "test_udp_reliable_arq() - Automatic Repeat Request mechanism",
+                "test_udp_reliable_ack() - ACK/NACK handling",
+                "test_udp_reliable_retransmission() - Packet retransmission",
+                "test_udp_reliable_ordering() - In-order packet delivery"
+              ]
+            },
+            {
+              "task": "Create test_transport_quic.c (for future implementation)",
+              "tests": [
+                "test_quic_connection_migration() - Connection migration on network change",
+                "test_quic_multiplexing() - Multiple streams over single connection",
+                "test_quic_0rtt() - 0-RTT connection establishment",
+                "test_quic_congestion_control() - Congestion control algorithm"
+              ]
+            },
+            {
+              "task": "Create test_transport_websocket.c (for future implementation)",
+              "tests": [
+                "test_websocket_upgrade() - HTTP to WebSocket upgrade",
+                "test_websocket_framing() - WebSocket frame encoding/decoding",
+                "test_websocket_masking() - Client-to-server masking",
+                "test_websocket_ping_pong() - WebSocket ping/pong frames"
+              ]
+            },
+            {
+              "task": "Create test_transport_tls.c (for future implementation)",
+              "tests": [
+                "test_tls_handshake() - TLS handshake",
+                "test_tls_certificate_validation() - Certificate validation",
+                "test_tls_cipher_negotiation() - Cipher suite negotiation",
+                "test_tls_session_resumption() - TLS session resumption"
+              ]
+            },
+            {
+              "task": "Create test_transport_dns_tunnel.c (for future implementation)",
+              "tests": [
+                "test_dns_encoding() - Data encoding in DNS queries",
+                "test_dns_decoding() - Data extraction from DNS responses",
+                "test_dns_query_types() - Different DNS record types (TXT, NULL, etc.)",
+                "test_dns_fragmentation() - Large data fragmentation across multiple queries"
+              ]
+            },
+            {
+              "task": "Create test_transport_obfs4.c (for future implementation)",
+              "tests": [
+                "test_obfs4_handshake() - Tor obfs4 handshake",
+                "test_obfs4_padding() - Random padding injection",
+                "test_obfs4_timing_obfuscation() - Traffic timing randomization",
+                "test_obfs4_length_obfuscation() - Packet length randomization"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "6.4",
+          "name": "Transport Integration Tests",
+          "status": "pending",
+          "location": "cellframe-node/dap-sdk/tests/net/stream/transport/integration/",
+          "tasks": [
+            {
+              "task": "Create test_transport_switching.c",
+              "tests": [
+                "test_http_to_udp_switch() - Switch from HTTP to UDP transport",
+                "test_transport_failover() - Failover to backup transport on error",
+                "test_transport_selection_by_network() - Transport selection based on network type",
+                "test_concurrent_transports() - Multiple transports active simultaneously"
+              ]
+            },
+            {
+              "task": "Create test_transport_obfuscation.c",
+              "tests": [
+                "test_obfuscation_level_none() - No obfuscation",
+                "test_obfuscation_level_low() - Low-level obfuscation (timing only)",
+                "test_obfuscation_level_medium() - Medium obfuscation (padding + timing)",
+                "test_obfuscation_level_high() - High obfuscation (mimicry + padding + timing)",
+                "test_obfuscation_dpi_evasion() - DPI evasion testing",
+                "test_mimicry_http() - HTTP traffic mimicry",
+                "test_mimicry_websocket() - WebSocket traffic mimicry"
+              ]
+            },
+            {
+              "task": "Create test_transport_performance.c",
+              "tests": [
+                "test_http_throughput() - HTTP transport throughput benchmark",
+                "test_udp_throughput() - UDP transport throughput benchmark",
+                "test_http_latency() - HTTP transport latency measurement",
+                "test_udp_latency() - UDP transport latency measurement",
+                "test_transport_overhead() - Protocol overhead comparison",
+                "test_concurrent_connections() - Multiple concurrent connections per transport"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "6.5",
+          "name": "Transport Abstraction Layer Tests",
+          "status": "pending",
+          "location": "cellframe-node/dap-sdk/tests/net/stream/transport/unit/",
+          "tasks": [
+            {
+              "task": "Create test_transport_abstraction.c",
+              "tests": [
+                "test_transport_register() - Generic transport registration",
+                "test_transport_unregister() - Generic transport unregistration",
+                "test_transport_find() - Transport lookup by type",
+                "test_transport_ops_validation() - Validate operations table completeness",
+                "test_transport_caps_query() - Query transport capabilities",
+                "test_transport_inheritor_data() - Transport-specific data management"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_7",
+      "name": "Test Infrastructure & Automation",
+      "status": "pending",
+      "description": "Test automation, CI/CD integration, and reporting",
+      "subphases": [
+        {
+          "subphase_id": "7.1",
+          "name": "CMake Test Integration",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Update tests/CMakeLists.txt",
+              "details": [
+                "Enable CTest integration",
+                "Add test discovery",
+                "Configure test timeouts",
+                "Setup test dependencies"
+              ]
+            },
+            {
+              "task": "Update cellframe-sdk tests/CMakeLists.txt",
+              "details": [
+                "Add VPN service unit tests",
+                "Add VPN service integration tests",
+                "Configure test execution"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "7.2",
+          "name": "Test Runner Scripts",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/run_unit_tests.sh",
+              "details": [
+                "Run all unit tests",
+                "Generate coverage report",
+                "Return proper exit codes"
+              ]
+            },
+            {
+              "task": "Create tests/run_integration_tests.sh",
+              "details": [
+                "Setup test environment",
+                "Run integration tests",
+                "Cleanup after tests"
+              ]
+            },
+            {
+              "task": "Create tests/run_all_tests.sh",
+              "details": [
+                "Run unit + integration tests",
+                "Generate combined coverage",
+                "Create test report"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "7.3",
+          "name": "Coverage Analysis",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Setup gcov/lcov for client",
+              "details": [
+                "Configure CMake for coverage",
+                "Generate HTML coverage reports",
+                "Set coverage thresholds"
+              ]
+            },
+            {
+              "task": "Setup gcov/lcov for service",
+              "details": [
+                "Configure CMake for SDK coverage",
+                "Generate service coverage reports",
+                "Integration with CI/CD"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "7.4",
+          "name": "CI/CD Integration",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create .gitlab-ci.yml test stages",
+              "details": [
+                "Unit test stage",
+                "Integration test stage",
+                "Coverage report stage",
+                "Test artifact collection"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "phase_8",
+      "name": "Documentation & Quality Assurance",
+      "status": "pending",
+      "description": "Test documentation and quality metrics",
+      "subphases": [
+        {
+          "subphase_id": "8.1",
+          "name": "Test Documentation",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Create tests/TESTING.md",
+              "details": [
+                "Overview of test infrastructure",
+                "How to run tests",
+                "How to add new tests",
+                "Mock usage guidelines",
+                "Coverage requirements"
+              ]
+            },
+            {
+              "task": "Document each test module",
+              "details": [
+                "Module purpose and scope",
+                "Test coverage matrix",
+                "Known limitations",
+                "Future test additions"
+              ]
+            }
+          ]
+        },
+        {
+          "subphase_id": "8.2",
+          "name": "Quality Metrics & Reporting",
+          "status": "pending",
+          "tasks": [
+            {
+              "task": "Define coverage targets",
+              "details": [
+                "Client core modules: 90%+ coverage",
+                "Client network modules: 85%+ coverage",
+                "Client platform modules: 80%+ coverage",
+                "Service core: 90%+ coverage",
+                "Service modules: 85%+ coverage"
+              ]
+            },
+            {
+              "task": "Setup automated reporting",
+              "details": [
+                "Daily coverage reports",
+                "Test failure notifications",
+                "Performance regression detection"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_phases": 8,
+    "completed_phases": 0,
+    "total_subphases": 31,
+    "estimated_test_count": "400+",
+    "components_covered": [
+      "VPN Client State Machine",
+      "VPN Client Core API",
+      "VPN Client Network Modules (Uplink, Uplink Pool, Backup, Registry, Routing)",
+      "VPN Client Payment Modules (Payment, Multi-hop TX, Receipt, Wallet)",
+      "VPN Client Protocol Modules (Probe, Connectivity)",
+      "VPN Client IPC (Server, Types, Protocol)",
+      "VPN Client Service Layer (Auto-connect, Balance Monitor)",
+      "VPN Service Core (Callbacks, Lifecycle)",
+      "VPN Service Stream Processing (11 Packet Opcodes)",
+      "VPN Service TUN Management (Unified TUN API)",
+      "VPN Service Session Management",
+      "VPN Service Address Pool",
+      "VPN Service Multi-hop (TSD Parsing)",
+      "DAP SDK HTTP Transport (dap_stream_transport_http)",
+      "DAP SDK UDP Transport (dap_stream_transport_udp)",
+      "DAP SDK Future Transports (UDP_RELIABLE, QUIC, WebSocket, TLS, DNS_TUNNEL, OBFS4)",
+      "DAP SDK Transport Abstraction Layer",
+      "DAP SDK Obfuscation & Mimicry"
+    ]
+  },
+  "notes": [
+    "Tests use DAP SDK testing framework (dap_test.h with dap_assert_PIF macro)",
+    "Both projects (client and service) maintain separate test suites",
+    "Integration tests may require elevated privileges for TUN device operations",
+    "Platform-specific tests should be conditionally compiled based on target OS",
+    "Mock implementations should be minimal but functionally complete",
+    "Coverage reports should be generated separately for client and service",
+    "Transport tests cover both implemented (HTTP, UDP_BASIC) and planned (6 future) transports",
+    "Future transport tests serve as specification and implementation guidance",
+    "Obfuscation tests should verify DPI evasion effectiveness",
+    "Performance tests should establish baseline metrics for regression detection",
+    "All transport tests must verify ops vtable contract compliance"
+  ]
+}

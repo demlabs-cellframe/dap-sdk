@@ -1,0 +1,648 @@
+{
+  "type": "slc_feature_spec",
+  "version": "1.0.0",
+  "feature_id": "vpn_multihop_intelligent_routing",
+  "created": "2025-10-23T05:00:00Z",
+  "status": "planning",
+  "priority": "high",
+  "parent_task": "dap_stream_traffic_obfuscation_dpi_bypass",
+  
+  "auto_load": {
+    "description": "Essential modules for multi-hop VPN and intelligent routing implementation",
+    "modules": [
+      ".context/modules/core/project.json",
+      ".context/modules/core/standards.json",
+      ".context/modules/standards/dap_sdk_coding_standards.json",
+      ".context/modules/projects/cellframe_sdk.json",
+      ".context/modules/projects/dap_sdk.json",
+      ".context/modules/languages/c/c_development_enhanced.json",
+      ".context/modules/methodologies/performance_optimization.json",
+      ".context/modules/networking_communication.json"
+    ],
+    "source_files": {
+      "vpn_service": [
+        "cellframe-sdk/modules/service/vpn/include/dap_chain_net_vpn.h",
+        "cellframe-sdk/modules/service/vpn/dap_chain_net_vpn.c",
+        "cellframe-sdk/modules/service/vpn/include/dap_chain_net_vpn_client.h",
+        "cellframe-sdk/modules/service/vpn/dap_chain_net_vpn_client.c",
+        "cellframe-sdk/modules/service/vpn/client/dap_chain_net_vpn_client_payment.h",
+        "cellframe-sdk/modules/service/vpn/client/dap_chain_net_vpn_client_payment.c"
+      ],
+      "gdb_layer": [
+        "dap-sdk/global-db/include/dap_global_db.h",
+        "dap-sdk/global-db/dap_global_db.c",
+        "dap-sdk/global-db/include/dap_global_db_cluster.h",
+        "dap-sdk/global-db/dap_global_db_cluster.c"
+      ],
+      "chain_layer": [
+        "cellframe-sdk/modules/common/include/dap_chain_net.h",
+        "cellframe-sdk/modules/common/dap_chain_net.c",
+        "cellframe-sdk/modules/net/include/dap_chain_node_client.h",
+        "cellframe-sdk/modules/net/dap_chain_node_client.c"
+      ],
+      "stream_transport": [
+        "dap-sdk/net/stream/stream/include/dap_stream.h",
+        "dap-sdk/net/stream/stream/dap_stream.c",
+        "dap-sdk/net/stream/ch/include/dap_stream_ch.h",
+        "dap-sdk/net/stream/ch/dap_stream_ch.c"
+      ]
+    },
+    "related_tasks": [
+      ".context/tasks/dap_stream_traffic_obfuscation_dpi_bypass.json"
+    ]
+  },
+  
+  "metadata": {
+    "title": "Multi-Hop VPN with Intelligent Route Selection",
+    "description": "Implement multi-hop VPN routing with GDB-based statistics and intelligent route optimization",
+    "category": "network_routing",
+    "tags": [
+      "multi-hop",
+      "intelligent-routing",
+      "gdb-statistics",
+      "vpn-optimization",
+      "cost-optimization",
+      "security-routing"
+    ],
+    "complexity": "very_high",
+    "estimated_duration": "3-4 weeks",
+    "estimated_effort_person_days": "40-50 person-days"
+  },
+  
+  "problem_statement": {
+    "current_situation": "VPN currently supports only direct single-hop connections to VPN servers",
+    "limitations": [
+      "No multi-hop routing for enhanced privacy",
+      "No route optimization based on performance metrics",
+      "No cost/speed trade-off options",
+      "No geographic entry/exit point selection",
+      "Server selection is manual and not optimized"
+    ],
+    "business_impact": [
+      "Limited privacy protection (single hop)",
+      "Suboptimal performance (no intelligent routing)",
+      "No premium service tiers (no multi-hop upsell)",
+      "Cannot compete with advanced VPN providers (NordVPN, ProtonVPN)",
+      "Limited monetization options"
+    ],
+    "payment_policy": {
+      "client": "Payment is ALWAYS required. No free mode support in VPN client.",
+      "server": "For backward compatibility, server MAY support legacy free mode, but ONLY for direct (non-multi-hop) connections in old protocol format.",
+      "multi_hop": "Multi-hop routing is ONLY available with paid mode. Free legacy mode does not support multi-hop."
+    }
+  },
+  
+  "objectives": {
+    "primary": "Implement multi-hop VPN with intelligent route selection based on GDB-published statistics",
+    "secondary": [
+      "Create GDB cluster for VPN nodes to share connection statistics",
+      "Implement route optimization algorithm with multiple criteria",
+      "Support premium multi-hop routes for enhanced speed",
+      "Allow user-defined routing preferences (speed vs security vs cost)",
+      "Maintain backward compatibility with single-hop mode"
+    ],
+    "success_criteria": [
+      "Multi-hop routes work reliably (1-5 hops)",
+      "Route selection algorithm optimizes for user preferences",
+      "GDB statistics are accurate and up-to-date",
+      "Premium routes provide measurable speed improvements",
+      "Performance overhead < 20% for 2-hop routes"
+    ]
+  },
+  
+  "architecture": {
+    "gdb_statistics_cluster": {
+      "description": "VPN nodes form a GDB cluster to publish and share connection statistics",
+      "components": {
+        "vpn_node_stats": {
+          "description": "Statistics published by each VPN node",
+          "data_structure": {
+            "node_id": "Unique node identifier (hash)",
+            "location": {
+              "country_code": "ISO 3166-1 alpha-2 (e.g., 'US', 'DE')",
+              "region": "Geographic region (e.g., 'North America', 'Europe')",
+              "city": "Optional city name",
+              "coordinates": {"lat": "float", "lon": "float"}
+            },
+            "performance": {
+              "bandwidth_up_mbps": "Upload bandwidth in Mbps",
+              "bandwidth_down_mbps": "Download bandwidth in Mbps",
+              "latency_ms": "Average latency to internet in ms",
+              "packet_loss_percent": "Packet loss percentage (0.0-100.0)",
+              "uptime_percent": "Uptime percentage over last 24h"
+            },
+            "capacity": {
+              "active_connections": "Current number of active connections",
+              "max_connections": "Maximum allowed connections",
+              "cpu_usage_percent": "CPU usage (0-100)",
+              "memory_usage_percent": "Memory usage (0-100)"
+            },
+            "pricing": {
+              "cost_per_gb": "Cost per GB in datoshi",
+              "cost_per_hour": "Cost per hour in datoshi",
+              "premium_multiplier": "Premium route multiplier (e.g., 1.5x)"
+            },
+            "routes": {
+              "peer_nodes": ["List of node_ids this node can route to"],
+              "peer_latencies": {"node_id": "latency_ms"},
+              "peer_bandwidths": {"node_id": "bandwidth_mbps"}
+            },
+            "timestamp": "Unix timestamp of last update",
+            "signature": "Node signature for authenticity"
+          }
+        },
+        "gdb_schema": {
+          "table_name": "vpn_nodes_stats",
+          "key_format": "vpn:node:<node_id>",
+          "update_frequency": "Every 5 minutes",
+          "ttl": "30 minutes (stale data removed)",
+          "replication": "Full replication across VPN nodes cluster"
+        }
+      }
+    },
+    "route_selection_algorithm": {
+      "description": "Intelligent algorithm to select optimal multi-hop route",
+      "criteria": [
+        {
+          "name": "brevity",
+          "description": "Minimize number of hops (ideally 1-2)",
+          "weight": "user_configurable",
+          "calculation": "hop_count_penalty = hop_count * brevity_weight"
+        },
+        {
+          "name": "security",
+          "description": "Entry node in user's country, exit node abroad",
+          "weight": "user_configurable",
+          "calculation": "security_score = entry_same_country ? 100 : 0 + exit_different_country ? 100 : 0"
+        },
+        {
+          "name": "speed",
+          "description": "Maximize bandwidth and minimize latency",
+          "weight": "user_configurable",
+          "calculation": "speed_score = min(bandwidth_all_hops) / max(latency_sum)"
+        },
+        {
+          "name": "cost",
+          "description": "Minimize total cost per GB/hour",
+          "weight": "user_configurable",
+          "calculation": "cost_score = 1 / sum(hop_costs)"
+        }
+      ],
+      "scoring_function": "total_score = (brevity_score * W_b) + (security_score * W_s) + (speed_score * W_sp) + (cost_score * W_c)",
+      "user_profiles": {
+        "balanced": {
+          "brevity_weight": 0.25,
+          "security_weight": 0.25,
+          "speed_weight": 0.25,
+          "cost_weight": 0.25
+        },
+        "speed_priority": {
+          "brevity_weight": 0.3,
+          "security_weight": 0.1,
+          "speed_weight": 0.5,
+          "cost_weight": 0.1
+        },
+        "security_priority": {
+          "brevity_weight": 0.1,
+          "security_weight": 0.6,
+          "speed_weight": 0.2,
+          "cost_weight": 0.1
+        },
+        "cost_priority": {
+          "brevity_weight": 0.2,
+          "security_weight": 0.2,
+          "speed_weight": 0.1,
+          "cost_weight": 0.5
+        },
+        "premium": {
+          "brevity_weight": 0.2,
+          "security_weight": 0.3,
+          "speed_weight": 0.5,
+          "cost_weight": 0.0,
+          "note": "Premium mode: willing to pay more for speed"
+        }
+      }
+    },
+    "multi_hop_routing": {
+      "description": "Route packets through multiple VPN nodes",
+      "flow": [
+        "1. Client requests multi-hop route with preferences",
+        "2. Client queries GDB for VPN node statistics",
+        "3. Route selection algorithm calculates optimal route",
+        "4. Client establishes connection to first hop (entry node)",
+        "5. Entry node forwards encrypted traffic to next hop",
+        "6. Middle hops relay traffic (double/triple encryption)",
+        "7. Exit node decrypts and forwards to destination",
+        "8. Response flows back through same route"
+      ],
+      "encryption_layers": {
+        "onion_routing": "Each hop adds/removes one encryption layer",
+        "protocol": "Use dap_stream encryption with nested sessions",
+        "key_exchange": "Separate session keys for each hop"
+      },
+      "hop_limit": {
+        "min_hops": 1,
+        "max_hops": 5,
+        "recommended": "2-3 hops for balance of security and performance"
+      }
+    }
+  },
+  
+  "phases": {
+    "phase_9_vpn_service_analysis": {
+      "id": "phase_9",
+      "name": "VPN Service Code Analysis",
+      "description": "Deep analysis of current VPN service implementation in Cellframe SDK",
+      "status": "pending",
+      "duration": "5-7 days",
+      "dependencies": ["phase_6"],
+      "subphases": {
+        "subphase_9_1": {
+          "id": "subphase_9_1",
+          "name": "VPN Service Architecture Analysis",
+          "tasks": [
+            "Analyze cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.c",
+            "Analyze cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.h",
+            "Document current VPN service request/response protocol",
+            "Identify packet routing logic",
+            "Map session management",
+            "Document TUN/TAP interface handling",
+            "Analyze traffic forwarding mechanisms",
+            "Identify extension points for multi-hop"
+          ],
+          "deliverables": [
+            "VPN service architecture document",
+            "Current routing flow diagram",
+            "Session management specification",
+            "Extension points for multi-hop"
+          ]
+        },
+        "subphase_9_2": {
+          "id": "subphase_9_2",
+          "name": "VPN Server-Side Logic Analysis",
+          "tasks": [
+            "Analyze order processing (dap_chain_net_srv_order.c)",
+            "Document pricing and billing logic",
+            "Analyze bandwidth accounting",
+            "Identify connection limits enforcement",
+            "Map service order validation",
+            "Document conditional transactions",
+            "Analyze payment verification flow"
+          ],
+          "deliverables": [
+            "Server-side logic specification",
+            "Pricing and billing architecture",
+            "Payment verification flow",
+            "Multi-hop billing model design"
+          ]
+        },
+        "subphase_9_3": {
+          "id": "subphase_9_3",
+          "name": "VPN Client-Server Protocol Analysis",
+          "tasks": [
+            "Analyze stream channel communication (DAP_STREAM_CH_NET_SRV_ID_VPN)",
+            "Document packet types and formats",
+            "Analyze handshake protocol",
+            "Map request/response flow",
+            "Identify protocol extension points",
+            "Design multi-hop protocol extensions"
+          ],
+          "deliverables": [
+            "Client-server protocol specification",
+            "Packet format documentation",
+            "Multi-hop protocol extension design"
+          ]
+        },
+        "subphase_9_4": {
+          "id": "subphase_9_4",
+          "name": "GDB Integration Design",
+          "tasks": [
+            "Design VPN nodes GDB cluster schema",
+            "Design statistics publishing mechanism",
+            "Design statistics querying API",
+            "Design node discovery protocol",
+            "Design statistics validation and trust model",
+            "Design stale data cleanup mechanism"
+          ],
+          "deliverables": [
+            "GDB schema specification",
+            "Statistics publishing/querying API",
+            "Node discovery protocol",
+            "Trust model design"
+          ]
+        }
+      },
+      "completion_criteria": [
+        "All VPN service code analyzed and documented",
+        "Multi-hop extension points identified",
+        "GDB integration design complete",
+        "Protocol extensions designed"
+      ]
+    },
+    "phase_10_multihop_implementation": {
+      "id": "phase_10",
+      "name": "Multi-Hop VPN Implementation",
+      "description": "Implement multi-hop routing in VPN client and service",
+      "status": "pending",
+      "duration": "15-20 days",
+      "dependencies": ["phase_9"],
+      "subphases": {
+        "subphase_10_1": {
+          "id": "subphase_10_1",
+          "name": "GDB Statistics Infrastructure",
+          "tasks": [
+            "Implement GDB schema for VPN node statistics",
+            "Implement statistics collection module",
+            "Implement statistics publishing to GDB",
+            "Implement statistics querying API",
+            "Implement node discovery mechanism",
+            "Implement stale data cleanup",
+            "Implement statistics validation and signature verification"
+          ],
+          "deliverables": [
+            "GDB schema implementation",
+            "Statistics publishing module",
+            "Statistics querying API",
+            "Node discovery service"
+          ]
+        },
+        "subphase_10_2": {
+          "id": "subphase_10_2",
+          "name": "Route Selection Algorithm",
+          "tasks": [
+            "Implement multi-criteria scoring function",
+            "Implement user profile presets",
+            "Implement custom weight configuration",
+            "Implement route validation (connectivity, capacity)",
+            "Implement route caching for performance",
+            "Implement fallback route selection",
+            "Add route selection unit tests"
+          ],
+          "deliverables": [
+            "Route selection algorithm implementation",
+            "User profile system",
+            "Route validation logic",
+            "Unit tests"
+          ]
+        },
+        "subphase_10_3": {
+          "id": "subphase_10_3",
+          "name": "Client Multi-Hop Support",
+          "tasks": [
+            "Extend dap_chain_net_vpn_client API for multi-hop",
+            "Implement hop list configuration",
+            "Implement nested encryption (onion routing)",
+            "Implement route establishment protocol",
+            "Implement hop connection management",
+            "Implement route failover and recovery",
+            "Update standalone VPN client CLI for multi-hop"
+          ],
+          "deliverables": [
+            "Multi-hop client API",
+            "Onion routing implementation",
+            "Route management module",
+            "Updated CLI"
+          ]
+        },
+        "subphase_10_4": {
+          "id": "subphase_10_4",
+          "name": "Server Multi-Hop Support",
+          "tasks": [
+            "Implement hop relay logic in VPN service",
+            "Implement nested packet forwarding",
+            "Implement hop chain validation",
+            "Implement billing for relay nodes",
+            "Implement bandwidth accounting per hop",
+            "Implement relay node discovery",
+            "Add relay security checks"
+          ],
+          "deliverables": [
+            "Hop relay implementation",
+            "Packet forwarding logic",
+            "Multi-hop billing system",
+            "Security validations"
+          ]
+        },
+        "subphase_10_5": {
+          "id": "subphase_10_5",
+          "name": "Premium Route Optimization",
+          "tasks": [
+            "Implement premium node tier system",
+            "Implement dynamic pricing for premium routes",
+            "Implement route quality monitoring",
+            "Implement automatic route re-optimization",
+            "Implement premium node selection",
+            "Add premium route analytics"
+          ],
+          "deliverables": [
+            "Premium tier system",
+            "Dynamic pricing module",
+            "Route monitoring",
+            "Analytics dashboard"
+          ]
+        },
+        "subphase_10_6": {
+          "id": "subphase_10_6",
+          "name": "Testing and Validation",
+          "tasks": [
+            "Create multi-hop test scenarios",
+            "Test 2-hop, 3-hop, 4-hop, 5-hop routes",
+            "Test route selection algorithm accuracy",
+            "Test failover and recovery",
+            "Benchmark performance overhead",
+            "Test GDB statistics accuracy",
+            "Test billing for multi-hop routes",
+            "Load testing with multiple concurrent routes"
+          ],
+          "deliverables": [
+            "Test suite for multi-hop",
+            "Performance benchmarks",
+            "Failover tests",
+            "Load test results"
+          ]
+        }
+      },
+      "completion_criteria": [
+        "Multi-hop routes work reliably (1-5 hops)",
+        "Route selection optimizes for user preferences",
+        "GDB statistics are accurate and timely",
+        "Premium routes show measurable performance gains",
+        "All tests pass",
+        "Documentation complete"
+      ]
+    }
+  },
+  
+  "implementation_details": {
+    "files_to_create": [
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_route.c",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_route.h",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_stats.c",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_stats.h",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_relay.c",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn_relay.h",
+      "cellframe-sdk/modules/service/vpn/client/dap_chain_net_vpn_client_multihop.c",
+      "cellframe-sdk/modules/service/vpn/client/dap_chain_net_vpn_client_multihop.h"
+    ],
+    "files_to_modify": [
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.c",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_srv_vpn.h",
+      "cellframe-sdk/modules/service/vpn/dap_chain_net_vpn_client.c",
+      "cellframe-sdk/modules/service/vpn/include/dap_chain_net_vpn_client.h",
+      "vpn_client_cli/include/vpn_client_cli.h",
+      "vpn_client_cli/main.c"
+    ]
+  },
+  
+  "api_extensions": {
+    "client_api": {
+      "dap_chain_net_vpn_client_start_multihop": {
+        "description": "Start VPN connection with multi-hop route",
+        "parameters": [
+          "dap_chain_net_t *a_net",
+          "dap_chain_net_vpn_route_config_t *a_route_config",
+          "dap_chain_net_vpn_client_payment_config_t *a_payment_config"
+        ],
+        "return": "0 on success, negative on error"
+      },
+      "dap_chain_net_vpn_client_select_route": {
+        "description": "Select optimal route based on user preferences",
+        "parameters": [
+          "dap_chain_net_t *a_net",
+          "dap_chain_net_vpn_route_preferences_t *a_preferences"
+        ],
+        "return": "dap_chain_net_vpn_route_config_t* (optimal route) or NULL"
+      },
+      "dap_chain_net_vpn_client_query_nodes": {
+        "description": "Query available VPN nodes from GDB",
+        "parameters": [
+          "dap_chain_net_t *a_net",
+          "dap_chain_net_vpn_node_filter_t *a_filter"
+        ],
+        "return": "Array of available nodes"
+      }
+    },
+    "cli_extensions": {
+      "commands": [
+        "cellframe-node-vpn-client connect-multihop HOST1 HOST2 [HOST3...] --profile=<balanced|speed|security|cost|premium>",
+        "cellframe-node-vpn-client select-route --preference=speed --max-hops=3",
+        "cellframe-node-vpn-client list-nodes --country=US --min-bandwidth=100",
+        "cellframe-node-vpn-client route-info"
+      ]
+    }
+  },
+  
+  "user_scenarios": {
+    "scenario_1": {
+      "name": "Balanced user - 2-hop route",
+      "profile": "balanced",
+      "preferences": {
+        "max_hops": 2,
+        "entry_country": "user's country",
+        "exit_country": "any"
+      },
+      "expected_route": "Entry node in user's country → Exit node abroad",
+      "expected_cost": "Standard pricing (2x single-hop)"
+    },
+    "scenario_2": {
+      "name": "Speed-priority user - premium single-hop",
+      "profile": "speed_priority",
+      "preferences": {
+        "max_hops": 1,
+        "min_bandwidth": 500,
+        "max_latency": 50
+      },
+      "expected_route": "Direct to fastest exit node",
+      "expected_cost": "Premium pricing (1.5-2x standard)"
+    },
+    "scenario_3": {
+      "name": "Security-priority user - 3-hop route",
+      "profile": "security_priority",
+      "preferences": {
+        "max_hops": 3,
+        "entry_country": "user's country",
+        "middle_countries": ["different continent"],
+        "exit_country": "target region"
+      },
+      "expected_route": "Entry (local) → Middle (different continent) → Exit (target)",
+      "expected_cost": "Higher pricing (3x single-hop)"
+    },
+    "scenario_4": {
+      "name": "Cost-conscious user - cheapest 2-hop",
+      "profile": "cost_priority",
+      "preferences": {
+        "max_hops": 2,
+        "max_cost_per_gb": "low threshold"
+      },
+      "expected_route": "Cheapest available 2-hop route",
+      "expected_cost": "Lowest pricing tier"
+    },
+    "scenario_5": {
+      "name": "Premium user - willing to pay for best speed",
+      "profile": "premium",
+      "preferences": {
+        "max_hops": 2,
+        "min_bandwidth": 1000,
+        "max_latency": 30,
+        "premium_nodes_only": true
+      },
+      "expected_route": "Premium entry → Premium exit (fastest route)",
+      "expected_cost": "Premium pricing (2.5-3x standard)"
+    }
+  },
+  
+  "pricing_model": {
+    "single_hop": {
+      "base_cost": "1x",
+      "premium_multiplier": "1.5x"
+    },
+    "multi_hop": {
+      "2_hops": "2x base (relay node gets share)",
+      "3_hops": "3x base",
+      "4_hops": "4x base",
+      "5_hops": "5x base"
+    },
+    "premium_routes": {
+      "description": "High-performance nodes with guaranteed bandwidth",
+      "multiplier": "1.5-2.5x per hop",
+      "benefits": [
+        "Lower latency",
+        "Higher bandwidth",
+        "Better reliability",
+        "Priority routing"
+      ]
+    },
+    "revenue_distribution": {
+      "entry_node": "30% of total",
+      "middle_nodes": "Split 40% equally",
+      "exit_node": "30% of total"
+    }
+  },
+  
+  "security_considerations": [
+    "Validate all nodes in route before establishing connection",
+    "Verify node signatures in GDB statistics",
+    "Implement trust score for nodes based on history",
+    "Detect and blacklist malicious relay nodes",
+    "Encrypt each hop separately (onion routing)",
+    "Implement hop timing analysis protection",
+    "Prevent route fingerprinting",
+    "Implement circuit breaker for compromised routes"
+  ],
+  
+  "performance_targets": {
+    "route_selection_time": "< 2 seconds",
+    "hop_establishment_time": "< 5 seconds per hop",
+    "performance_overhead": {
+      "1_hop": "< 5%",
+      "2_hops": "< 20%",
+      "3_hops": "< 35%",
+      "4_hops": "< 50%",
+      "5_hops": "< 65%"
+    },
+    "gdb_query_time": "< 500ms",
+    "statistics_freshness": "< 10 minutes",
+    "route_failover_time": "< 10 seconds"
+  }
+}
+

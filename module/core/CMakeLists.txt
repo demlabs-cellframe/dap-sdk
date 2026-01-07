@@ -7,7 +7,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 add_definitions("-D_GNU_SOURCE") 
 
 file (GLOB CORE_HEADERS include/*.h)
+# Exclude dap_json.h - moved to module/json
+list(FILTER CORE_HEADERS EXCLUDE REGEX ".*dap_json\\.h$")
+
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
+# Exclude dap_json.c - moved to module/json
+list(FILTER CORE_SRCS EXCLUDE REGEX ".*dap_json\\.c$")
 
 if(UNIX)
     file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
@@ -42,9 +47,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC .
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
-    ${CMAKE_CURRENT_BINARY_DIR}/json-c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 # Platform-specific include directories
 if(UNIX)
@@ -79,10 +82,10 @@ if (BUILD_WITH_ZIP)
     set(CORE_LIBRARIES ${CORE_LIBRARIES} zip)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
-add_subdirectory(../../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
+# json-c is now part of module/json - no longer included here
 
 # Store dependencies for final library - no linking of OBJECT targets
-set(DAP_CORE_DEPS "${CORE_LIBRARIES};dap_json-c" CACHE INTERNAL "dap_core external dependencies")
+set(DAP_CORE_DEPS "${CORE_LIBRARIES}" CACHE INTERNAL "dap_core external dependencies")
 
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")

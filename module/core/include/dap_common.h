@@ -96,6 +96,20 @@
   #define DAP_PACKED  __attribute__((packed))
 #endif
 
+// Constructor/Destructor attributes for auto-init/cleanup
+#if defined(__GNUC__) || defined(__clang__)
+  #define DAP_CONSTRUCTOR __attribute__((constructor))
+  #define DAP_DESTRUCTOR __attribute__((destructor))
+#elif defined(_MSC_VER)
+  // MSVC doesn't have __attribute__((constructor))
+  // Will need pragma section or manual init
+  #define DAP_CONSTRUCTOR
+  #define DAP_DESTRUCTOR
+#else
+  #define DAP_CONSTRUCTOR
+  #define DAP_DESTRUCTOR
+#endif
+
 #ifdef _MSC_VER
   #define DAP_STATIC_INLINE static __forceinline
   #define DAP_INLINE __forceinline

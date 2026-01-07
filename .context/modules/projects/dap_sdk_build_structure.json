@@ -1,0 +1,372 @@
+{
+  "name": "DAP SDK Build Structure & Object Libraries System",
+  "version": "1.0.0",
+  "type": "project_knowledge",
+  "created": "2025-01-16",
+  "description": "Подробное описание структуры модулей DAP SDK, системы объектных библиотек и работы CMake хелперов для управления сборкой",
+  "purpose": "Документация архитектуры сборки DAP SDK для использования при миграции cellframe-sdk и других проектов",
+  
+  "architecture": {
+    "object_libraries_concept": {
+      "description": "Концепция объектных библиотек (OBJECT libraries) в CMake",
+      "key_points": [
+        "OBJECT библиотеки не создают отдельные .a/.so файлы",
+        "Они компилируют исходники в объектные файлы (.o)",
+        "Объектные файлы затем объединяются в финальную библиотеку",
+        "Преимущества: поддержка --wrap для тестов, лучший контроль зависимостей"
+      ],
+      "cmake_syntax": "add_library(target_name OBJECT source1.c source2.c ...)"
+    },
+    
+    "module_registration_system": {
+      "description": "Система регистрации модулей через CACHE переменную",
+      "variable_name": "DAP_INTERNAL_MODULES",
+      "purpose": "Хранит список всех OBJECT библиотек для последующего объединения",
+      "registration_function": "create_object_library()",
+      "how_it_works": [
+        "Каждый модуль вызывает create_object_library() с параметром DAP_INTERNAL_MODULES",
+        "Функция создает OBJECT библиотеку и добавляет её имя в CACHE переменную",
+        "После создания всех модулей список доступен для создания финальной библиотеки"
+      ],
+      "example": {
+        "code": "create_object_library(dap_core DAP_INTERNAL_MODULES ${SOURCES} HEADERS ${HEADERS})",
+        "result": "dap_core добавляется в DAP_INTERNAL_MODULES, создается OBJECT библиотека"
+      }
+    },
+    
+    "helper_functions": {
+      "location": "cellframe-node/dap-sdk/cmake/LibraryHelpers.cmake",
+      "functions": {
+        "create_object_library": {
+          "signature": "create_object_library(TARGET_NAME MODULE_LIST_VAR sources... HEADERS headers...)",
+          "purpose": "Создает OBJECT библиотеку и регистрирует её в списке модулей",
+          "parameters": {
+            "TARGET_NAME": "Имя целевой библиотеки",
+            "MODULE_LIST_VAR": "Имя переменной для регистрации (обычно DAP_INTERNAL_MODULES)",
+            "sources": "Список исходных файлов",
+            "HEADERS": "Опциональный список заголовочных файлов"
+          },
+          "what_it_does": [
+            "Создает OBJECT библиотеку через add_library()",
+            "Включает POSITION_INDEPENDENT_CODE для shared библиотек",
+            "Регистрирует библиотеку в MODULE_LIST_VAR через CACHE",
+            "Регистрирует для пост-обработки через register_object_library()",
+            "Устанавливает свойство DAP_CURRENT_TARGET для DapModule.cmake"
+          ],
+          "example": "create_object_library(dap_crypto DAP_INTERNAL_MODULES ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS})"
+        },
+        
+        "dap_link_libraries": {
+          "signature": "dap_link_libraries(TARGET_NAME [PUBLIC|PRIVATE|INTERFACE] lib1 lib2 ...)",
+          "purpose": "Улучшенная версия target_link_libraries с автоматической пропагацией include директорий",
+          "key_features": [
+            "Автоматическая пропагация include директорий для OBJECT библиотек",
+            "Детекция циклических зависимостей через глобальный CACHE",
+            "Рекурсивная обработка транзитивных зависимостей",
+            "Пропагация build зависимостей (DAP_BUILD_DEPENDENCIES property)"
+          ],
+          "how_it_works": [
+            "Для OBJECT библиотек устанавливает build зависимости ДО target_link_libraries",
+            "Пропагирует include директории из прямых зависимостей",
+            "После target_link_libraries обрабатывает транзитивные зависимости",
+            "Использует два этапа: сбор информации, затем применение"
+          ],
+          "cycle_detection": {
+            "method": "Глобальный CACHE с уникальными идентификаторами для каждого обхода",
+            "implementation": "Функции _dap_create_visited_set(), _dap_mark_visited(), _dap_is_visited()",
+            "cleanup": "Автоматическая очистка после завершения обхода"
+          },
+          "example": "dap_link_libraries(dap_crypto INTERFACE dap_core dap_crypto_XKCP)"
+        },
+        
+        "propagate_includes_for_target": {
+          "signature": "propagate_includes_for_target(TARGET_NAME DEPENDENCIES VISITED_SET_VAR)",
+          "purpose": "Рекурсивно пропагирует include директории с детекцией циклов",
+          "two_phase_approach": {
+            "phase1": "_collect_transitive_includes() - собирает все include директории",
+            "phase2": "_apply_collected_includes() - применяет собранные директории"
+          },
+          "why_two_phase": "Обеспечивает консистентное состояние для параллельных сборок и правильную обработку циклов"
+        },
+        
+        "propagate_build_dependencies": {
+          "signature": "propagate_build_dependencies(TARGET_NAME DEPENDENCIES VISITED_SET_VAR)",
+          "purpose": "Пропагирует build зависимости (например, BuildXKCP) транзитивно",
+          "property_used": "DAP_BUILD_DEPENDENCIES",
+          "example_use_case": "dap_crypto зависит от BuildXKCP, все потребители dap_crypto также получают эту зависимость"
+        },
+        
+        "create_final_shared_library": {
+          "signature": "create_final_shared_library(LIBRARY_NAME MODULE_LIST_VAR VERSION version VERSION_MAJOR major [LINK_LIBRARIES ...])",
+          "purpose": "Создает финальную SHARED или STATIC библиотеку из всех OBJECT модулей",
+          "what_it_does": [
+            "Собирает все объектные файлы из модулей через $<TARGET_OBJECTS:module>",
+            "Создает SHARED или STATIC библиотеку в зависимости от BUILD_SHARED",
+            "Автоматически собирает и экспортирует include директории из всех модулей",
+            "Линкует системные библиотеки (pthread, rt, dl, frameworks)",
+            "Настраивает версионирование для shared библиотек"
+          ],
+          "include_propagation": "Автоматически собирает INTERFACE_INCLUDE_DIRECTORIES из всех модулей и экспортирует их"
+        },
+        
+        "dap_link_all_sdk_modules": {
+          "signature": "dap_link_all_sdk_modules(TARGET MODULE_LIST_VAR [LINK_LIBRARIES ...])",
+          "purpose": "Универсальная функция для линковки всех SDK модулей к целевому target",
+          "usage": "Используется для приложений и тестов, которым нужны все модули SDK",
+          "what_it_does": [
+            "Добавляет все объектные файлы из модулей через target_sources()",
+            "Собирает внешние библиотеки через collect_external_libraries_from_modules()",
+            "Линкует внешние библиотеки и дополнительные библиотеки если указаны"
+          ],
+          "example": "dap_link_all_sdk_modules(my_app DAP_INTERNAL_MODULES LINK_LIBRARIES my_custom_lib)"
+        },
+        
+        "collect_external_libraries_from_modules": {
+          "signature": "collect_external_libraries_from_modules(MODULE_LIST RESULT_VAR)",
+          "purpose": "Собирает все внешние (не-OBJECT) библиотеки из списка модулей",
+          "filters": "Исключает OBJECT библиотеки, оставляет только внешние (XKCP, SQLite, PostgreSQL, etc.)"
+        }
+      }
+    },
+    
+    "post_processing_system": {
+      "file": "cellframe-node/dap-sdk/cmake/ObjectLibraryIncludePostProcess.cmake",
+      "purpose": "Пост-обработка всех OBJECT библиотек для финальной пропагации include директорий",
+      "function": "post_process_object_libraries()",
+      "when_called": "После создания всех модулей, но до создания финальной библиотеки",
+      "how_it_works": [
+        "Проходит по всем зарегистрированным OBJECT библиотекам",
+        "Для каждой библиотеки рекурсивно пропагирует include директории",
+        "Использует глобальный CACHE для детекции циклов",
+        "Очищает CACHE после обработки каждой библиотеки"
+      ],
+      "why_needed": "Обеспечивает что все транзитивные include директории правильно пропагированы даже для сложных графов зависимостей"
+    },
+    
+    "module_registration_system_dapmodule": {
+      "file": "cellframe-node/dap-sdk/cmake/DapModule.cmake",
+      "purpose": "Автоматическая регистрация модулей через систему dap_module",
+      "function": "dap_register_module()",
+      "what_it_does": [
+        "Генерирует C файл с __attribute__((constructor))",
+        "Файл автоматически регистрирует модуль при загрузке библиотеки",
+        "Обеспечивает инициализацию модулей даже при использовании OBJECT библиотек"
+      ],
+      "when_needed": "Для модулей, которые должны автоматически регистрироваться в системе dap_module"
+    }
+  },
+  
+  "module_structure_patterns": {
+    "typical_module_cmake": {
+      "description": "Типичная структура CMakeLists.txt для модуля DAP SDK",
+      "pattern": [
+        "1. cmake_minimum_required(VERSION 3.10)",
+        "2. project(module_name)",
+        "3. include(LibraryHelpers.cmake)",
+        "4. file(GLOB SOURCES ...) и file(GLOB HEADERS ...)",
+        "5. create_object_library(module_name DAP_INTERNAL_MODULES ${SOURCES} HEADERS ${HEADERS})",
+        "6. target_include_directories() для настройки include путей",
+        "7. dap_link_libraries() для зависимостей",
+        "8. target_compile_definitions() для дефайнов если нужно",
+        "9. Установка через INSTALL() если INSTALL_DAP_SDK включен"
+      ],
+      "example": {
+        "file": "cellframe-node/dap-sdk/net/client/CMakeLists.txt",
+        "key_points": [
+          "Использует create_object_library() вместо add_library(STATIC)",
+          "Использует dap_link_libraries() с INTERFACE для зависимостей",
+          "Настраивает include директории через target_include_directories()",
+          "Системные библиотеки (rt) не линкуются напрямую, будут добавлены на финальном этапе"
+        ]
+      }
+    },
+    
+    "definitions_handling": {
+      "description": "Как обрабатываются дефайны в DAP SDK",
+      "global_definitions": {
+        "location": "Верхний уровень CMakeLists.txt",
+        "usage": "add_definitions() для глобальных дефайнов (версия, платформа)",
+        "examples": [
+          "add_definitions(\"-DDAP_VERSION=\\\"${DAP_VERSION}\\\"\")",
+          "add_definitions(-DHAVE_EXPLICIT_BZERO)",
+          "add_definitions(\"-D_GNU_SOURCE\")"
+        ]
+      },
+      "module_specific_definitions": {
+        "usage": "target_compile_definitions() для дефайнов конкретного модуля",
+        "scopes": {
+          "PUBLIC": "Пропагируется потребителям модуля",
+          "PRIVATE": "Только для этого модуля",
+          "INTERFACE": "Только для потребителей, не для самого модуля"
+        },
+        "example": "target_compile_definitions(dap_crypto PUBLIC DAP_USE_RPMALLOC)"
+      },
+      "conditional_definitions": {
+        "pattern": "if(condition) add_definitions(-DDEFINE_NAME) endif()",
+        "example": "if (CELLFRAME_MODULES MATCHES \"srv-stake\") add_definitions(\"-DDAP_SRV_STAKE_USED\") endif()"
+      }
+    },
+    
+    "include_directories_patterns": {
+      "description": "Паттерны настройки include директорий",
+      "public_includes": {
+        "purpose": "Для заголовков, которые должны быть доступны потребителям",
+        "syntax": "target_include_directories(target PUBLIC include/)",
+        "propagation": "Автоматически пропагируется через INTERFACE_INCLUDE_DIRECTORIES"
+      },
+      "private_includes": {
+        "purpose": "Для внутренних заголовков модуля",
+        "syntax": "target_include_directories(target PRIVATE src/)",
+        "propagation": "Не пропагируется потребителям"
+      },
+      "interface_includes": {
+        "purpose": "Для заголовков, которые нужны потребителям, но не самому модулю",
+        "syntax": "target_include_directories(target INTERFACE include/)",
+        "usage": "Редко используется, обычно PUBLIC достаточно"
+      },
+      "automatic_propagation": {
+        "description": "dap_link_libraries() автоматически пропагирует include директории из зависимостей",
+        "note": "Не нужно вручную добавлять include директории зависимостей, если они настроены как PUBLIC/INTERFACE"
+      }
+    },
+    
+    "dependency_management": {
+      "description": "Как управляются зависимости между модулями",
+      "linking_pattern": {
+        "for_object_libraries": "dap_link_libraries(module INTERFACE dependency1 dependency2 ...)",
+        "why_interface": "OBJECT библиотеки не линкуются напрямую, только пропагируют интерфейсы",
+        "what_gets_propagated": [
+          "INTERFACE_INCLUDE_DIRECTORIES",
+          "INTERFACE_LINK_LIBRARIES",
+          "INTERFACE_COMPILE_DEFINITIONS",
+          "DAP_BUILD_DEPENDENCIES (custom property)"
+        ]
+      },
+      "build_dependencies": {
+        "property": "DAP_BUILD_DEPENDENCIES",
+        "purpose": "Хранит список build зависимостей (например, BuildXKCP)",
+        "how_set": "set_target_properties(target PROPERTIES DAP_BUILD_DEPENDENCIES \"BuildXKCP\")",
+        "how_propagated": "Автоматически через propagate_build_dependencies()",
+        "example": "dap_crypto устанавливает DAP_BUILD_DEPENDENCIES=\"BuildXKCP\", все потребители получают эту зависимость"
+      },
+      "external_libraries": {
+        "description": "Внешние библиотеки (не-OBJECT) линкуются как обычно",
+        "example": "target_link_libraries(module INTERFACE sqlite3 pq mdbx-static)",
+        "note": "Системные библиотеки (pthread, rt, dl) линкуются на финальном этапе через create_final_shared_library()"
+      }
+    }
+  },
+  
+  "migration_patterns": {
+    "from_static_to_object": {
+      "before": {
+        "code": "add_library(${PROJECT_NAME} STATIC ${SOURCES})\ntarget_link_libraries(${PROJECT_NAME} dep1 dep2)",
+        "issues": [
+          "Ручное управление зависимостями",
+          "Нет автоматической пропагации include",
+          "Не работает --wrap для тестов"
+        ]
+      },
+      "after": {
+        "code": "include(LibraryHelpers.cmake)\ncreate_object_library(${PROJECT_NAME} MODULE_LIST_VAR ${SOURCES})\ndap_link_libraries(${PROJECT_NAME} INTERFACE dep1 dep2)",
+        "benefits": [
+          "Автоматическая пропагация include директорий",
+          "Детекция циклических зависимостей",
+          "Поддержка --wrap для тестов",
+          "Единообразная структура"
+        ]
+      }
+    },
+    
+    "definitions_migration": {
+      "from_global": {
+        "pattern": "add_definitions(-DDEFINE_NAME)",
+        "migration": "target_compile_definitions(module PUBLIC DEFINE_NAME)",
+        "when": "Если дефайн нужен только конкретному модулю"
+      },
+      "keep_global": {
+        "when": "Дефайны версии, платформы, глобальные настройки остаются глобальными",
+        "examples": ["DAP_VERSION", "BUILD_TS", "BUILD_HASH", "DAP_OS_LINUX"]
+      }
+    },
+    
+    "include_directories_migration": {
+      "before": "include_directories(include/)  # Глобально",
+      "after": "target_include_directories(module PUBLIC include/)",
+      "benefit": "Изоляция include директорий, правильная пропагация"
+    }
+  },
+  
+  "best_practices": {
+    "module_creation": [
+      "Всегда используйте create_object_library() вместо add_library(STATIC)",
+      "Регистрируйте модуль в соответствующей переменной (DAP_INTERNAL_MODULES или CELLFRAME_INTERNAL_MODULES)",
+      "Используйте dap_link_libraries() вместо target_link_libraries() для OBJECT библиотек",
+      "Настраивайте include директории через target_include_directories() с правильным scope"
+    ],
+    
+    "dependency_management": [
+      "Для OBJECT библиотек всегда используйте INTERFACE при линковке",
+      "Не линкуйте системные библиотеки напрямую, они будут добавлены на финальном этапе",
+      "Используйте DAP_BUILD_DEPENDENCIES для build зависимостей (custom targets)",
+      "Полагайтесь на автоматическую пропагацию include директорий"
+    ],
+    
+    "definitions": [
+      "Глобальные дефайны (версия, платформа) остаются через add_definitions()",
+      "Модуль-специфичные дефайны через target_compile_definitions()",
+      "Используйте PUBLIC для дефайнов, которые нужны потребителям",
+      "Используйте PRIVATE для внутренних дефайнов модуля"
+    ],
+    
+    "testing": {
+      "description": "Для тестов используйте dap_link_all_sdk_modules()",
+      "benefit": "Автоматически получаете все модули и их зависимости",
+      "wrap_support": "OBJECT библиотеки позволяют использовать --wrap для внутренних вызовов"
+    }
+  },
+  
+  "common_pitfalls": {
+    "forgetting_interface": {
+      "issue": "Использование PUBLIC/PRIVATE вместо INTERFACE для OBJECT библиотек",
+      "why_wrong": "OBJECT библиотеки не линкуются напрямую, только пропагируют интерфейсы",
+      "correct": "dap_link_libraries(module INTERFACE dependency)"
+    },
+    
+    "manual_include_propagation": {
+      "issue": "Ручное добавление include директорий зависимостей",
+      "why_wrong": "dap_link_libraries() делает это автоматически",
+      "correct": "Полагайтесь на автоматическую пропагацию"
+    },
+    
+    "system_libraries_in_modules": {
+      "issue": "Линковка системных библиотек (pthread, rt) в модулях",
+      "why_wrong": "Они должны линковаться только на финальном этапе",
+      "correct": "Системные библиотеки добавляются через create_final_shared_library()"
+    },
+    
+    "missing_post_process": {
+      "issue": "Забыть вызвать post_process_object_libraries()",
+      "why_wrong": "Финальная пропагация include директорий не произойдет",
+      "correct": "Вызывать после создания всех модулей, перед созданием финальной библиотеки"
+    }
+  },
+  
+  "file_references": {
+    "main_helpers": "cellframe-node/dap-sdk/cmake/LibraryHelpers.cmake",
+    "post_processing": "cellframe-node/dap-sdk/cmake/ObjectLibraryIncludePostProcess.cmake",
+    "module_registration": "cellframe-node/dap-sdk/cmake/DapModule.cmake",
+    "main_cmake": "cellframe-node/dap-sdk/CMakeLists.txt",
+    "example_module": "cellframe-node/dap-sdk/core/CMakeLists.txt",
+    "example_module_with_deps": "cellframe-node/dap-sdk/crypto/CMakeLists.txt",
+    "example_client": "cellframe-node/dap-sdk/net/client/CMakeLists.txt",
+    "usage_examples": "cellframe-node/dap-sdk/cmake/USAGE_EXAMPLES.md"
+  },
+  
+  "related_modules": [
+    ".context/modules/projects/dap_sdk_project.json",
+    ".context/modules/projects/cellframe_sdk.json",
+    ".context/modules/core/development_standards.json"
+  ]
+}
+

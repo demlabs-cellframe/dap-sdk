@@ -1,0 +1,14 @@
+{
+  "active_task": "slc_deep_cursor_integration",
+  "active_task_reference": {
+    "$ref": ".context/tasks/slc_deep_cursor_integration.json"
+  },
+  "started": "2025-12-15",
+  "description": "SLC Deep Cursor Integration - Native LLM and Chat API Integration",
+  "current_phase": "phase-1",
+  "current_subphase": "1.1",
+  "previous_task": {
+    "$ref": ".context/tasks/slc_cursor_plugin_development.json",
+    "note": "Base plugin functionality completed, pivoting to deep Cursor integration"
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "name": "TypeScript Development Standards",
+  "version": "1.0.0",
+  "category": "language",
+  "priority": "high",
+  "created": "2025-11-14T18:15:00Z",
+  "description": "Стандарты и best practices для разработки на TypeScript",
+  "typescript_standards": {
+    "compiler_options": {
+      "strict_mode": {
+        "enabled": true,
+        "includes": [
+          "strictNullChecks",
+          "strictFunctionTypes",
+          "strictPropertyInitialization",
+          "noImplicitAny",
+          "noImplicitThis"
+        ]
+      },
+      "module_resolution": "Node",
+      "target": "ES2022",
+      "module": "CommonJS or ESNext",
+      "esModuleInterop": true,
+      "skipLibCheck": true
+    },
+    "type_annotations": {
+      "rule": "Explicit return types for all functions",
+      "examples": {
+        "correct": [
+          "function add(a: number, b: number): number { return a + b; }",
+          "const getName = (): string => 'John';",
+          "async function fetchData(): Promise<Data> { ... }"
+        ],
+        "incorrect": [
+          "function add(a, b) { return a + b; }",
+          "const getName = () => 'John';",
+          "async function fetchData() { ... }"
+        ]
+      }
+    },
+    "no_any_type": {
+      "rule": "Never use 'any' type - use 'unknown' with type guards instead",
+      "enforcement": "ESLint rule: @typescript-eslint/no-explicit-any",
+      "alternative": "Use unknown, generic types, or proper interfaces"
+    },
+    "interface_vs_type": {
+      "prefer_interface": "For object shapes that can be extended",
+      "prefer_type": "For unions, intersections, and mapped types",
+      "examples": {
+        "interface_usage": "interface User { name: string; age: number; }",
+        "type_usage": "type ID = string | number; type ReadOnly<T> = { readonly [P in keyof T]: T[P] }"
+      }
+    },
+    "readonly_modifier": {
+      "rule": "Use readonly for properties that shouldn't change",
+      "apply_to": ["Class properties", "Interface members", "Function parameters"],
+      "example": "interface Config { readonly apiUrl: string; readonly timeout: number; }"
+    },
+    "utility_types": {
+      "commonly_used": [
+        "Partial<T> - все свойства optional",
+        "Required<T> - все свойства required",
+        "Readonly<T> - все свойства readonly",
+        "Pick<T, K> - выбрать определенные свойства",
+        "Omit<T, K> - исключить определенные свойства",
+        "Record<K, T> - создать объект с ключами K и значениями T"
+      ]
+    }
+  },
+  "code_style": {
+    "naming_conventions": {
+      "classes": "PascalCase (MyClass)",
+      "interfaces": "PascalCase с префиксом I опционально (User или IUser)",
+      "types": "PascalCase (UserId)",
+      "functions": "camelCase (getUserName)",
+      "variables": "camelCase (userName)",
+      "constants": "UPPER_SNAKE_CASE (MAX_RETRIES)",
+      "enums": "PascalCase (enum Status { Active, Inactive })",
+      "private_members": "_camelCase с underscore префиксом (private _data)"
+    },
+    "file_naming": {
+      "components": "PascalCase.ts (UserProfile.ts)",
+      "utilities": "camelCase.ts (stringUtils.ts)",
+      "types": "camelCase.types.ts (user.types.ts)",
+      "tests": "*.test.ts или *.spec.ts"
+    },
+    "import_order": {
+      "order": [
+        "1. Node built-in modules",
+        "2. External packages",
+        "3. Internal modules (absolute imports)",
+        "4. Relative imports (parent directories)",
+        "5. Relative imports (same directory)",
+        "6. Type imports"
+      ],
+      "example": [
+        "import * as fs from 'fs';",
+        "import { z } from 'zod';",
+        "import { logger } from '@/utils/logger';",
+        "import { BaseModule } from '../modules/BaseModule';",
+        "import { helper } from './helper';",
+        "import type { Config } from './types';"
+      ]
+    }
+  },
+  "best_practices": {
+    "error_handling": {
+      "use_custom_errors": "Extend Error class for domain-specific errors",
+      "never_swallow_errors": "Always handle or propagate errors",
+      "example": [
+        "class ValidationError extends Error {",
+        "  constructor(message: string, public details: unknown) {",
+        "    super(message);",
+        "    this.name = 'ValidationError';",
+        "  }",
+        "}"
+      ]
+    },
+    "async_await": {
+      "prefer_over_promises": "Use async/await instead of .then().catch()",
+      "always_handle_rejections": "Wrap in try-catch or use .catch()",
+      "return_types": "Explicitly type Promise return values"
+    },
+    "immutability": {
+      "prefer_const": "Use const by default, let only when reassignment needed",
+      "readonly_arrays": "Use ReadonlyArray<T> or readonly T[] for arrays that shouldn't mutate",
+      "avoid_mutations": "Use spread operators and array methods that return new arrays"
+    },
+    "type_guards": {
+      "use_for_unions": "Create type guards for discriminated unions",
+      "example": [
+        "function isString(value: unknown): value is string {",
+        "  return typeof value === 'string';",
+        "}"
+      ]
+    },
+    "generics": {
+      "use_when_appropriate": "Use generics for reusable, type-safe code",
+      "constrain_when_needed": "Use extends to constrain generic types",
+      "example": "function identity<T extends { id: string }>(item: T): T { return item; }"
+    }
+  },
+  "testing": {
+    "framework": "Jest with ts-jest",
+    "coverage_target": "80% minimum",
+    "test_structure": {
+      "describe_blocks": "Group related tests",
+      "it_blocks": "Single assertion per test when possible",
+      "setup_teardown": "Use beforeEach/afterEach for test setup"
+    },
+    "mocking": {
+      "jest_mocks": "Use jest.mock() for module mocks",
+      "spy_on": "Use jest.spyOn() for function spies",
+      "avoid_over_mocking": "Mock only external dependencies, not internal logic"
+    }
+  },
+  "tooling": {
+    "eslint": {
+      "parser": "@typescript-eslint/parser",
+      "plugins": ["@typescript-eslint"],
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended",
+        "plugin:@typescript-eslint/recommended-requiring-type-checking"
+      ],
+      "critical_rules": [
+        "@typescript-eslint/no-explicit-any: error",
+        "@typescript-eslint/explicit-function-return-type: error",
+        "@typescript-eslint/no-unused-vars: error",
+        "no-console: warn"
+      ]
+    },
+    "prettier": {
+      "config": {
+        "semi": true,
+        "singleQuote": true,
+        "trailingComma": "es5",
+        "printWidth": 100,
+        "tabWidth": 2
+      }
+    },
+    "build": {
+      "bundler": "Webpack или esbuild",
+      "source_maps": "Enable for debugging",
+      "tree_shaking": "Enable for production builds"
+    }
+  },
+  "performance": {
+    "avoid_expensive_operations": [
+      "Minimize synchronous file I/O",
+      "Use async/await for I/O operations",
+      "Cache expensive computations",
+      "Use WeakMap/WeakSet for memory-efficient caching"
+    ],
+    "type_inference": "Let TypeScript infer types when obvious, explicit types for complex cases"
+  },
+  "navigation_system": {
+    "purpose": "TypeScript development standards",
+    "file_role": "LANGUAGE_MODULE",
+    "related_files": [
+      ".context/modules/languages/typescript/vscode_extension_development.json",
+      ".context/modules/core/standards.json"
+    ]
+  }
+}
+

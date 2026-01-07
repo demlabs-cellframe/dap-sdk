@@ -83,12 +83,18 @@ void dap_mock_deinit(void);
 
 #### Макросы объявления моков
 
-**Простое объявление (авто-включено, возврат 0):**
+**Простой мок (РЕКОМЕНДУЕТСЯ для базовых моков):**
 ```c
-DAP_MOCK_DECLARE(function_name);
+DAP_MOCK(function_name);
+// Авто-включен, возвращает 0 по умолчанию
+// Wrapper автоматически генерируется - не нужно писать вручную!
+
+DAP_MOCK(function_name, return_value);
+// С опциональным возвращаемым значением (intptr_t cast)
+// Пример: DAP_MOCK(dap_net_tun_create, 0xABCDEF00);
 ```
 
-**С конфигурационной структурой:**
+**С конфигурационной структурой (для расширенной конфигурации):**
 ```c
 DAP_MOCK_DECLARE(function_name, {
     .enabled = true,
@@ -98,6 +104,7 @@ DAP_MOCK_DECLARE(function_name, {
         .fixed_us = 1000
     }
 });
+// Примечание: Wrapper автоматически генерируется для DAP_MOCK_DECLARE
 ```
 
 **Со встроенным callback:**
@@ -112,14 +119,33 @@ DAP_MOCK_DECLARE(function_name, {.return_value.i = 0}, {
 });
 ```
 
-**Для пользовательской обертки (без авто-генерации):**
+**Кастомный мок с полным контролем (РЕКОМЕНДУЕТСЯ для кастомных wrapper'ов):**
 ```c
-DAP_MOCK_DECLARE_CUSTOM(function_name, {
-    .delay = {
-        .type = DAP_MOCK_DELAY_VARIANCE,
-        .variance = {.center_us = 100000, .variance_us = 50000}
-    }
-});
+DAP_MOCK_CUSTOM(return_type, function_name,
+    PARAM(type1, name1),
+    PARAM(type2, name2),
+    ...
+) {
+    // Пользовательская логика мока здесь
+    // Автоматически регистрирует мок И создаёт wrapper
+    // Не нужно писать DAP_MOCK_DECLARE отдельно!
+}
+```
+
+**Пример DAP_MOCK_CUSTOM:**
+```c
+DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,
+    PARAM(dap_enc_key_t*, a_key),
+    PARAM(size_t, a_buf_in_size),
+    PARAM(dap_enc_data_type_t, type)
+) {
+    // Пользовательская логика мока
+    size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) 
+        ? a_buf_in_size 
+        : (a_buf_in_size * 4 / 3 + 100);
+    return (size_t)(intptr_t)(g_mock_dap_enc_code_out_size->return_value.ptr 
+        ?: (void*)(intptr_t)l_result);
+}
 ```
 
 #### Конфигурационные структуры
@@ -255,35 +281,38 @@ typedef void* (*dap_mock_callback_t)(
 );
 ```
 
-### 3.3 API пользовательских линкер-оберток
+### 3.3 API кастомных моков
 
-**Заголовочный файл:** `dap_mock_linker_wrapper.h`
+**Заголовочный файл:** `dap_mock.h`
 
-#### Макрос DAP_MOCK_WRAPPER_CUSTOM
+#### Макрос DAP_MOCK_CUSTOM (РЕКОМЕНДУЕТСЯ)
 
-Создает пользовательскую линкер-обертку с PARAM синтаксисом:
+Унифицированный макрос, объединяющий объявление мока и реализацию кастомного wrapper'а:
 
 ```c
-DAP_MOCK_WRAPPER_CUSTOM(return_type, function_name,
+DAP_MOCK_CUSTOM(return_type, function_name,
     PARAM(type1, name1),
     PARAM(type2, name2),
     ...
 ) {
-    // Реализация пользовательской обертки
+    // Пользовательская логика мока здесь
+    // Автоматически регистрирует мок И создаёт wrapper
 }
 ```
 
 **Возможности:**
-- Автоматически генерирует сигнатуру функции
-- Автоматически создает массив void* аргументов с правильным приведением типов
-- Автоматически проверяет, включен ли мок
-- Автоматически выполняет настроенную задержку
-- Автоматически записывает вызов
-- Вызывает реальную функцию при выключенном моке
+- ✅ Объединяет `DAP_MOCK_DECLARE_CUSTOM` и `DAP_MOCK_WRAPPER_CUSTOM` в один макрос
+- ✅ Не нужно писать `DAP_MOCK_DECLARE` отдельно - всё в одном месте
+- ✅ Автоматически регистрирует мок во фреймворке
+- ✅ Автоматически генерирует сигнатуру функции
+- ✅ Автоматически проверяет, включен ли мок
+- ✅ Автоматически выполняет настроенную задержку
+- ✅ Автоматически записывает вызов
+- ✅ Вызывает реальную функцию при выключенном моке
 
 **Пример:**
 ```c
-DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
+DAP_MOCK_CUSTOM(int, my_function,
     PARAM(const char*, path),
     PARAM(int, flags),
     PARAM(mode_t, mode)
@@ -302,17 +331,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
 - Правильно обрабатывает приведение к void*
 - Использует `uintptr_t` для безопасного приведения указателей и целочисленных типов
 
-#### Упрощенные макросы оберток
-
-Для распространенных типов возвращаемых значений:
-
-```c
-DAP_MOCK_WRAPPER_INT(func_name, (params), (args))
-DAP_MOCK_WRAPPER_PTR(func_name, (params), (args))
-DAP_MOCK_WRAPPER_VOID_FUNC(func_name, (params), (args))
-DAP_MOCK_WRAPPER_BOOL(func_name, (params), (args))
-DAP_MOCK_WRAPPER_SIZE_T(func_name, (params), (args))
-```
+**Примечание:** Для простых моков без кастомной логики используйте `DAP_MOCK()` вместо этого - wrapper'ы автоматически генерируются!
 
 ### 3.4 Интеграция с CMake
 
@@ -329,7 +348,7 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 ```
 
 **Как работает:**
-1. Сканирует исходные файлы на наличие паттернов `DAP_MOCK_DECLARE`
+1. Сканирует исходные файлы на наличие паттернов `DAP_MOCK`, `DAP_MOCK_DECLARE` и `DAP_MOCK_CUSTOM`
 2. Извлекает имена функций
 3. Добавляет `-Wl,--wrap=function_name` к флагам линкера
 4. Работает с GCC, Clang, MinGW
@@ -338,55 +357,65 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 
 **Проблема:** При линковке статических библиотек (`lib*.a`) функции могут быть исключены из финального исполняемого файла, если они не используются напрямую. Это приводит к тому, что `--wrap` флаги не работают для функций внутри статических библиотек.
 
-**Решение:** Используйте функцию `dap_mock_autowrap_with_static()` для оборачивания статических библиотек флагами `--whole-archive`, что заставляет линкер включить все символы из статической библиотеки.
+**Решение (АВТОМАТИЧЕСКОЕ):** Функция `dap_mock_autowrap()` теперь **автоматически** оборачивает все `*_static` библиотеки флагами `--whole-archive`. Ручная настройка больше не нужна!
 
 **Пример использования:**
 
 ```cmake
 include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_SOURCE_DIR}/dap-sdk/tests/cmake/dap_test_helpers.cmake)
 
 add_executable(test_http_client 
     test_http_client.c
-    test_http_client_mocks.c
 )
 
-# Обычная линковка
-target_link_libraries(test_http_client
-    dap_test           # Test framework
-    dap_core           # Core library
-    dap_http_server    # Статическая библиотека, которую нужно мокировать
-    pthread
-)
+# Линковка через helper-функцию (автоматически использует STATIC библиотеки)
+dap_test_link_libraries(test_http_client)
 
-# Автогенерация --wrap флагов из исходников теста
+# Добавление include директорий
+dap_test_add_includes(test_http_client)
+
+# Автогенерация --wrap флагов И автоматическое оборачивание всех *_static библиотек
+# Всё! Больше dap_mock_autowrap_with_static не нужен!
 dap_mock_autowrap(test_http_client)
-
-# Важно: обернуть статическую библиотеку --whole-archive ПОСЛЕ dap_mock_autowrap!
-# Это заставляет линкер включить все символы из dap_http_server,
-# включая те, которые используются только внутри библиотеки
-dap_mock_autowrap_with_static(test_http_client dap_http_server)
 ```
 
-**Что делает `dap_mock_autowrap_with_static`:**
-1. Перестраивает список линкуемых библиотек
-2. Оборачивает указанные статические библиотеки флагами:
-   - `-Wl,--whole-archive` (перед библиотекой)
-   - `<library_name>` (сама библиотека)
-   - `-Wl,--no-whole-archive` (после библиотеки)
-3. Добавляет `-Wl,--allow-multiple-definition` для обработки дублирующихся символов
+**Что происходит автоматически:**
+
+1. `dap_test_link_libraries()` линкует все SDK модули как **STATIC библиотеки** (`*_static.a`)
+2. `dap_mock_autowrap()` сканирует исходники на `DAP_MOCK`, `DAP_MOCK_DECLARE` и `DAP_MOCK_CUSTOM` и генерирует `--wrap` флаги
+3. `dap_mock_autowrap()` **автоматически** обнаруживает все `*_static.a` библиотеки и оборачивает их:
+   ```
+   -Wl,--start-group
+   -Wl,--whole-archive libdap_io_static.a -Wl,--no-whole-archive
+   -Wl,--whole-archive libdap_http_server_static.a -Wl,--no-whole-archive
+   ...остальные библиотеки...
+   -Wl,--end-group
+   ```
+4. Добавляет `-Wl,--allow-multiple-definition` для обработки дублирующихся символов
 
 **Важные замечания:**
 
-1. **Порядок вызовов важен:**
+1. **Нужен только ОДИН вызов функции:**
    ```cmake
-   # Правильно:
-   dap_mock_autowrap(test_target)                    # Сначала автогенерация
-   dap_mock_autowrap_with_static(test_target lib)    # Потом --whole-archive
+   # Современный подход (РЕКОМЕНДУЕТСЯ):
+   dap_mock_autowrap(test_target)  # Всё автоматически!
    
-   # Неправильно:
-   dap_mock_autowrap_with_static(test_target lib)    # Это перезапишет предыдущие настройки
+   # Устаревший подход (работает, но не нужен):
    dap_mock_autowrap(test_target)
+   dap_mock_autowrap_with_static(test_target lib)  # Опциональное переопределение
    ```
+
+2. **Статические библиотеки создаются автоматически:**
+   - Все SDK модули имеют `*_static.a` версии (создаются из объектных библиотек)
+   - Создаются в главном `dap-sdk/CMakeLists.txt` при включении тестов
+   - Все зависимости правильно пробрасываются с суффиксом `_static`
+
+3. **Технические требования:**
+   - **Компилятор:** GCC, Clang или MinGW (MSVC не поддерживает `--wrap`)
+   - **Helper-функция:** Необходимо использовать `dap_test_link_libraries()` для линковки статических библиотек
+   - **Критично:** `--wrap` НЕ работает с объектными файлами (`.o`) - только со статическими библиотеками (`.a`)
+   - **Почему:** Объектные файлы, слинкованные напрямую, имеют разрешённые символы - нет косвенности для перехвата `--wrap`
 
 2. **Множественные библиотеки:**
    ```cmake
@@ -501,29 +530,30 @@ bool dap_mock_async_wait_all(int a_timeout_ms);
 
 #### Конфигурация async мока
 
-Для включения async выполнения установите `.async = true` в конфигурации:
+Для включения async выполнения используйте `DAP_MOCK_DECLARE` с `.async = true` в конфигурации:
 
 ```c
-// Async мок с задержкой
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+// Async мок с задержкой и кастомным callback
+DAP_MOCK_DECLARE(dap_client_http_request, {
     .enabled = true,
     .async = true,  // Выполнять callback асинхронно
     .delay = {
         .type = DAP_MOCK_DELAY_FIXED,
         .fixed_us = 50000  // 50ms
     }
+}, {
+    // Кастомная логика callback - выполняется асинхронно в worker потоке
+    // Этот код выполняется после задержки
+    if (a_arg_count >= 2 && a_args[1]) {
+        callback_t callback = (callback_t)a_args[1];
+        callback("response data", 200, a_args[2]);  // a_args[2] это user_data
+    }
+    return (void*)(intptr_t)0;  // Успех
 });
-
-// Mock обертка (выполняется асинхронно если был вызван dap_mock_async_init())
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request,
-    PARAM(const char*, a_url),
-    PARAM(callback_t, a_callback),
-    PARAM(void*, a_arg)
-) {
-    // Этот код выполняется в worker потоке после задержки
-    a_callback("response data", 200, a_arg);
-}
+// Примечание: Wrapper генерируется автоматически - не нужно писать DAP_MOCK_CUSTOM!
 ```
+
+**Альтернатива:** Для async моков с кастомной логикой wrapper'а можно использовать `DAP_MOCK_DECLARE_CUSTOM` + `DAP_MOCK_WRAPPER_CUSTOM` (устаревший подход), но рекомендуется `DAP_MOCK_DECLARE` с callback.
 
 #### Утилиты
 

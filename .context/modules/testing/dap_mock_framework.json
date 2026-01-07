@@ -1,0 +1,997 @@
+{
+  "version": "2.3.0",
+  "created": "2025-10-27T01:30:00Z",
+  "updated": "2025-01-15T12:00:00Z",
+  "module_type": "testing_infrastructure",
+  "auto-load": [".context/modules/testing/dap_mock_framework.json"],
+  "navigation_system": {
+    "purpose": "DAP SDK Mock Framework - система мокирования для C с linker wrapping",
+    "recovery_path": ".context/manifest.json",
+    "current_file": ".context/modules/testing/dap_mock_framework.json",
+    "file_role": "TESTING_MODULE",
+    "related_files": {
+      ".context/manifest.json": "Main system navigator",
+      ".context/modules/core/standards.json": "Coding standards",
+      ".context/modules/projects/dap_sdk_project.json": "DAP SDK architecture",
+      "cellframe-node/dap-sdk/test-framework/mocks/README.md": "Mock framework documentation",
+      "cellframe-node/dap-sdk/test-framework/mocks/AUTOWRAP.md": "Auto-wrapper system guide",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/04_api_reference.md": "Complete API reference (RU)",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_en/04_api_reference.md": "Complete API reference (EN)",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/05_examples.md": "Usage examples (RU)",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/07_troubleshooting.md": "Troubleshooting guide (RU)"
+    },
+    "quick_navigation": {
+      "🏠 Main": ".context/manifest.json",
+      "📋 Standards": ".context/modules/core/standards.json",
+      "🧪 Mock Framework": "cellframe-node/dap-sdk/test-framework/mocks/",
+      "📖 Docs": "cellframe-node/dap-sdk/test-framework/mocks/README.md"
+    }
+  },
+  "metadata": {
+    "title": "DAP SDK Mock Framework",
+    "description": "Professional C mocking framework using GNU ld linker wrapping for zero-overhead function interception in unit tests",
+    "category": "testing_infrastructure",
+    "tags": [
+      "mocking",
+      "testing",
+      "c-language",
+      "linker-wrapping",
+      "unit-tests",
+      "dap-sdk",
+      "test-automation"
+    ],
+    "complexity": "high",
+    "maturity": "production_ready",
+    "technical_debt": "zero"
+  },
+  "overview": {
+    "purpose": "Предоставить профессиональный mock framework для тестирования C кода в DAP SDK и VPN Client проектах",
+    "version_history": {
+      "v2.3.0": "Добавлены правила anti-patterns для кастомных моков - запрет обращений к __real_ функциям и внутренним структурам",
+      "v2.2.0": "DAP_MOCK_WRAPPER_CUSTOM с поддержкой функций без параметров",
+      "v2.1.1": "DAP_MOCK_SETTINGS declarative macro with __attribute__((constructor))",
+      "v2.1.0": "Universal passthrough wrappers + call_original control flags",
+      "v2.0.0": "Async mocks + auto init/deinit + global settings",
+      "v1.0.0": "Initial linker wrapping framework"
+    },
+    "key_features": [
+      "True function mocking через GNU ld --wrap linker option",
+      "Thread-safe call tracking с pthread",
+      "Automatic wrapper generation (Bash/PowerShell/Python scripts)",
+      "CMake integration с compiler auto-detection",
+      "Response file optimization для GCC/Clang (-Wl,@file)",
+      "Asynchronous mock execution с thread pool (dap_mock_async)",
+      "Automatic init/deinit - не требует явных вызовов dap_mock_init/deinit",
+      "Global mock configuration с DAP_MOCK_SETTINGS",
+      "Configurable delays для simulation реальных операций",
+      "✨ Flexible call_original control (before/after mock logic) - v2.1",
+      "✨ Universal passthrough wrappers для integration tests - v2.1",
+      "✨ Boolean flags вместо enum для простоты конфигурации - v2.1",
+      "Comprehensive logging и debugging support",
+      "Zero technical debt - полное соответствие DAP SDK standards",
+      "Cross-platform support (Linux, macOS, Windows/MinGW, BSD)"
+    ],
+    "use_cases": [
+      "Unit testing с изоляцией внешних зависимостей",
+      "Integration testing с passthrough tracking (v2.1)",
+      "Spy/tracking pattern для мониторинга вызовов без замены логики",
+      "Parameter modification pattern с call_original_after",
+      "Behavior testing с проверкой call patterns",
+      "Performance testing без реальных I/O операций",
+      "Async operation simulation с configurable delays"
+    ]
+  },
+  "architecture": {
+    "location": "cellframe-node/dap-sdk/test-framework/mocks/",
+    "components": {
+      "core_framework": {
+        "description": "Базовая инфраструктура мокирования",
+        "files": [
+          {
+            "file": "dap_mock.h",
+            "loc": 643,
+            "description": "Public API - DAP_MOCK_DECLARE, DAP_MOCK_WRAPPER_PASSTHROUGH (v2.1), async support"
+          },
+          {
+            "file": "dap_mock.c",
+            "loc": 502,
+            "description": "Thread-safe implementation с auto init/deinit, logging, settings"
+          },
+          {
+            "file": "dap_mock_linker_wrapper.h",
+            "loc": 60,
+            "description": "Wrapper macros для создания __wrap_ функций"
+          },
+          {
+            "file": "test_mock_linker_example.c",
+            "loc": 80,
+            "description": "Working example demonstrating linker wrapping"
+          }
+        ],
+        "total_loc": 1022
+      },
+      "async_mock_system": {
+        "description": "Асинхронное выполнение моков в thread pool",
+        "files": [
+          {
+            "file": "dap_mock_async.h",
+            "loc": 120,
+            "description": "Async mock API - thread pool, task scheduling, wait mechanisms"
+          },
+          {
+            "file": "dap_mock_async.c",
+            "loc": 280,
+            "description": "Lightweight thread pool implementation для async mocks"
+          }
+        ],
+        "total_loc": 400,
+        "features": [
+          "Configurable thread pool size (default = CPU count)",
+          "Task queue с FIFO execution",
+          "Wait all tasks completion",
+          "Graceful shutdown",
+          "Thread-safe task scheduling",
+          "Statistics collection"
+        ]
+      },
+      "auto_wrapper_system": {
+        "description": "Автоматическая генерация linker wrap конфигураций",
+        "files": [
+          {
+            "file": "dap_mock_autowrap.sh",
+            "loc": 207,
+            "description": "Bash script для Linux/macOS - сканирует DAP_MOCK_DECLARE()"
+          },
+          {
+            "file": "dap_mock_autowrap.ps1",
+            "loc": 214,
+            "description": "PowerShell script для Windows - аналогичная функциональность"
+          },
+          {
+            "file": "dap_mock_autowrap.py",
+            "loc": 200,
+            "description": "Python script для CI/CD - platform-agnostic"
+          },
+          {
+            "file": "DAPMockAutoWrap.cmake",
+            "loc": 210,
+            "description": "CMake module с 3 функциями интеграции + compiler detection"
+          }
+        ],
+        "total_loc": 831
+      },
+      "documentation": {
+        "description": "Comprehensive documentation",
+        "files": [
+          {
+            "file": "README.md",
+            "loc": 367,
+            "description": "Mock framework API reference с примерами"
+          },
+          {
+            "file": "AUTOWRAP.md",
+            "loc": 370,
+            "description": "Auto-wrapper system guide - полное руководство"
+          },
+          {
+            "file": "COMPILER_SUPPORT.md",
+            "loc": 200,
+            "description": "Platform/compiler compatibility matrix"
+          },
+          {
+            "file": "DAP_SDK_INTEGRATION_COMPLETE.md",
+            "loc": 150,
+            "description": "Integration summary для DAP SDK modules"
+          },
+          {
+            "file": "docs/DAP_MOCK_ASYNC.md",
+            "loc": 450,
+            "description": "Async mock system - complete guide"
+          },
+          {
+            "file": "docs/parts_ru/04_api_reference.md",
+            "loc": 573,
+            "description": "Complete API reference with static library mocking documentation (RU)"
+          },
+          {
+            "file": "docs/parts_en/04_api_reference.md",
+            "loc": 573,
+            "description": "Complete API reference with static library mocking documentation (EN)"
+          },
+          {
+            "file": "docs/parts_ru/05_examples.md",
+            "loc": 439,
+            "description": "Usage examples including static library mocking (RU)"
+          },
+          {
+            "file": "docs/parts_ru/07_troubleshooting.md",
+            "loc": 125,
+            "description": "Troubleshooting guide including static library issues (RU)"
+          }
+        ],
+        "total_loc": 2500
+      },
+      "build_infrastructure": {
+        "description": "CMake build configuration",
+        "files": [
+          {
+            "file": "CMakeLists.txt",
+            "loc": 25,
+            "description": "Static library build: libdap_test_mocks.a"
+          },
+          {
+            "file": "../CMakeLists.txt",
+            "loc": 10,
+            "description": "Test framework main CMakeLists"
+          },
+          {
+            "file": "../README.md",
+            "loc": 257,
+            "description": "Test framework overview"
+          }
+        ],
+        "total_loc": 292
+      }
+    },
+    "total_system_loc": 4553
+  },
+  "api_reference": {
+    "automatic_initialization": {
+      "description": "Mock framework автоматически инициализируется при первом использовании DAP_MOCK_DECLARE",
+      "auto_init": "Вызывается при первом dap_mock_prepare_call() или явно через DAP_MOCK_DECLARE",
+      "auto_deinit": "dap_mock_deinit() вызывается автоматически при завершении теста",
+      "note": "Явные вызовы dap_mock_init/deinit БОЛЬШЕ НЕ ТРЕБУЮТСЯ",
+      "async_init": "dap_mock_async автоматически инициализируется с configured worker threads"
+    },
+    "global_settings": {
+      "macro": "DAP_MOCK_SETTINGS",
+      "signature": "DAP_MOCK_SETTINGS(...)",
+      "description": "✨ Declarative global mock configuration (v2.1.1) - auto-applied at program start via __attribute__((constructor))",
+      "usage": "DAP_MOCK_SETTINGS(\n    .async_worker_threads = 4,\n    .default_delay = {.type = DAP_MOCK_DELAY_NONE},\n    .enable_logging = true,\n    .log_timestamps = true\n);",
+      "placement": "Global scope, alongside DAP_MOCK_DECLARE declarations",
+      "benefits": [
+        "✅ Declarative - configuration lives with mock declarations",
+        "✅ Automatic - applied before main() via constructor attribute",
+        "✅ Clean - no manual setup code required",
+        "✅ Type-safe - variadic macro handles struct fields correctly"
+      ],
+      "example": "// At file scope\nDAP_MOCK_SETTINGS(\n    .async_worker_threads = 4,\n    .enable_logging = true\n);\n\nDAP_MOCK_DECLARE(my_func, DAP_MOCK_CONFIG_PASSTHROUGH);"
+    },
+    "runtime_settings": {
+      "macro": "DAP_MOCK_SETTINGS_SET",
+      "signature": "DAP_MOCK_SETTINGS_SET(...)",
+      "description": "Runtime mock system configuration - use in functions for dynamic changes during test execution",
+      "fields": [
+        {
+          "name": "async_worker_threads",
+          "type": "int",
+          "default": "number of CPU cores",
+          "description": "Количество worker threads для async mocks"
+        },
+        {
+          "name": "default_delay_ms",
+          "type": "int",
+          "default": "0",
+          "description": "Дефолтная задержка для всех моков (milliseconds)"
+        },
+        {
+          "name": "logging_enabled",
+          "type": "bool",
+          "default": "false",
+          "description": "Включить логирование mock calls"
+        }
+      ],
+      "functions": [
+        {
+          "name": "dap_mock_apply_settings",
+          "signature": "void dap_mock_apply_settings(const dap_mock_settings_t *a_settings)",
+          "description": "Применить глобальные настройки (обычно вызывается через DAP_MOCK_SETTINGS макрос)"
+        },
+        {
+          "name": "dap_mock_get_settings",
+          "signature": "dap_mock_settings_t dap_mock_get_settings(void)",
+          "description": "Получить текущие настройки"
+        }
+      ],
+      "usage_note": "Предпочитайте DAP_MOCK_SETTINGS для declarative configuration вместо прямого вызова dap_mock_apply_settings"
+    },
+    "global_test_timeout": {
+      "type": "dap_test_global_timeout_t",
+      "description": "Глобальный таймаут для всего test suite - защита от зависания тестов",
+      "function": {
+        "name": "dap_test_set_global_timeout",
+        "signature": "int dap_test_set_global_timeout(dap_test_global_timeout_t *a_timeout, uint32_t a_timeout_sec, const char *a_test_name)",
+        "returns": "0 on success, non-zero if timeout already triggered",
+        "description": "Устанавливает alarm() который прервёт тест по истечении времени"
+      },
+      "usage": "dap_test_global_timeout_t l_timeout;\nif (dap_test_set_global_timeout(&l_timeout, 30, \"VPN Tests\")) {\n    return 1; // Timeout triggered\n}",
+      "use_case": "Защита от зависших async операций, бесконечных циклов, deadlocks"
+    },
+    "custom_mock_callbacks": {
+      "description": "Продвинутое мокирование с кастомной логикой в теле mock функции",
+      "pattern": "Inline custom callback body",
+      "syntax": "DAP_MOCK_DECLARE(func_name) {\n    /* Custom mock logic here */\n    return custom_value;\n}",
+      "features": [
+        "Полный контроль над mock поведением",
+        "Доступ к параметрам функции",
+        "Возможность вызова DAP_MOCK_CALL_ORIGINAL для частичного мокирования",
+        "Поддержка сложной логики (if/else, loops, state machines)"
+      ],
+      "example": "DAP_MOCK_DECLARE(dap_stream_write) {\n    if (a_size > 1024) {\n        return -1; // Simulate overflow\n    }\n    g_write_count++;\n    return (ssize_t)a_size; // Success\n}",
+      "advanced_example": "DAP_MOCK_DECLARE(dap_net_connect) {\n    if (g_simulate_failure) {\n        errno = ECONNREFUSED;\n        return -1;\n    }\n    // Call real connection for specific cases\n    return DAP_MOCK_CALL_ORIGINAL(dap_net_connect, a_addr, a_port);\n}",
+      "best_practice": "Используйте inline callbacks для сложной логики, DAP_MOCK_WRAPPER_PASSTHROUGH для simple spy pattern"
+    },
+    "core_functions": [
+      {
+        "name": "dap_mock_framework_init",
+        "signature": "int dap_mock_framework_init(void)",
+        "description": "⚠️ DEPRECATED - автоматически вызывается при первом использовании",
+        "returns": "0 on success, -1 on error",
+        "thread_safety": "Safe - инициализирует global mutex"
+      },
+      {
+        "name": "dap_mock_framework_deinit",
+        "signature": "void dap_mock_framework_deinit(void)",
+        "description": "Деинициализация и cleanup всех моков",
+        "thread_safety": "Safe - уничтожает mutex"
+      },
+      {
+        "name": "dap_mock_framework_reset_all",
+        "signature": "void dap_mock_framework_reset_all(void)",
+        "description": "Сброс всех моков (очистка call history, reset return values)",
+        "thread_safety": "Safe - использует mutex"
+      },
+      {
+        "name": "dap_mock_register",
+        "signature": "dap_mock_function_state_t* dap_mock_register(const char *a_func_name)",
+        "description": "Регистрация новой mock функции",
+        "returns": "Pointer to mock state или NULL on error",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_enable",
+        "signature": "void dap_mock_enable(dap_mock_function_state_t *a_mock)",
+        "description": "Включить мокирование (перенаправление вызовов)",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_disable",
+        "signature": "void dap_mock_disable(dap_mock_function_state_t *a_mock)",
+        "description": "Выключить мокирование (вызывать __real_ функцию)",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_set_return_value",
+        "signature": "void dap_mock_set_return_value(dap_mock_function_state_t *a_mock, void *a_value)",
+        "description": "Установить возвращаемое значение мока",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_get_call_count",
+        "signature": "uint32_t dap_mock_get_call_count(dap_mock_function_state_t *a_mock)",
+        "description": "Получить количество вызовов мока",
+        "returns": "Number of calls",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_get_call_args",
+        "signature": "void** dap_mock_get_call_args(dap_mock_function_state_t *a_mock, uint32_t a_call_index)",
+        "description": "Получить аргументы конкретного вызова",
+        "returns": "Array of arguments или NULL",
+        "thread_safety": "Safe"
+      },
+      {
+        "name": "dap_mock_reset",
+        "signature": "void dap_mock_reset(dap_mock_function_state_t *a_mock)",
+        "description": "Сброс конкретного мока",
+        "thread_safety": "Safe"
+      }
+    ],
+    "helper_macros": [
+      {
+        "name": "DAP_MOCK_DECLARE",
+        "signature": "DAP_MOCK_DECLARE(func_name, ...)",
+        "description": "Объявить и сконфигурировать mock для функции",
+        "usage": "DAP_MOCK_DECLARE(dap_stream_write, .return_value = 0, .delay_ms = 100, .async = true);",
+        "parameters": {
+          "return_value": "Значение возврата (по умолчанию 0/NULL)",
+          "delay_ms": "Задержка выполнения в миллисекундах (по умолчанию 0)",
+          "async": "Выполнять в отдельном thread pool (по умолчанию false)",
+          "enabled": "Включить мок сразу (по умолчанию true)",
+          "call_original_before": "Вызвать оригинал ДО mock логики (по умолчанию false) - v2.1",
+          "call_original_after": "Вызвать оригинал ПОСЛЕ mock логики (по умолчанию false) - v2.1"
+        },
+        "note": "Автоматически инициализирует mock framework при первом использовании"
+      },
+      {
+        "name": "DAP_MOCK_INIT",
+        "signature": "DAP_MOCK_INIT(func_name)",
+        "description": "Инициализировать и зарегистрировать mock",
+        "usage": "DAP_MOCK_INIT(dap_stream_write);"
+      },
+      {
+        "name": "DAP_MOCK_ENABLE",
+        "signature": "DAP_MOCK_ENABLE(func_name)",
+        "description": "Включить мокирование функции",
+        "usage": "DAP_MOCK_ENABLE(dap_stream_write);"
+      },
+      {
+        "name": "DAP_MOCK_DISABLE",
+        "signature": "DAP_MOCK_DISABLE(func_name)",
+        "description": "Выключить мокирование функции",
+        "usage": "DAP_MOCK_DISABLE(dap_stream_write);"
+      },
+      {
+        "name": "DAP_MOCK_SET_RETURN",
+        "signature": "DAP_MOCK_SET_RETURN(func_name, value)",
+        "description": "Установить возвращаемое значение",
+        "usage": "DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)0);"
+      },
+      {
+        "name": "DAP_MOCK_GET_CALL_COUNT",
+        "signature": "DAP_MOCK_GET_CALL_COUNT(func_name)",
+        "description": "Получить количество вызовов",
+        "usage": "assert(DAP_MOCK_GET_CALL_COUNT(dap_stream_write) == 5);"
+      },
+      {
+        "name": "DAP_MOCK_WAS_CALLED_WITH",
+        "signature": "DAP_MOCK_WAS_CALLED_WITH(func_name, call_idx, arg_idx)",
+        "description": "Проверить конкретный аргумент вызова",
+        "usage": "assert(DAP_MOCK_WAS_CALLED_WITH(func, 0, (void*)expected));"
+      },
+      {
+        "name": "DAP_MOCK_RESET",
+        "signature": "DAP_MOCK_RESET(func_name)",
+        "description": "Сбросить mock (очистить историю)",
+        "usage": "DAP_MOCK_RESET(dap_stream_write);"
+      },
+      {
+        "name": "DAP_MOCK_WRAPPER",
+        "signature": "DAP_MOCK_WRAPPER(return_type, func_name, params_with_types, params_names)",
+        "description": "Создать __wrap_ функцию для linker wrapping",
+        "usage": "DAP_MOCK_WRAPPER(int, my_func, (int a, char *b), (a, b))"
+      }
+    ],
+    "wrapper_macros_v2_1": [
+      {
+        "name": "DAP_MOCK_WRAPPER_PASSTHROUGH",
+        "signature": "DAP_MOCK_WRAPPER_PASSTHROUGH(return_type, func_name, params_with_types, params_names)",
+        "description": "✨ УНИВЕРСАЛЬНЫЙ passthrough wrapper - работает с ЛЮБЫМИ типами! (v2.1)",
+        "status": "✅ RECOMMENDED для integration tests",
+        "features": [
+          "✅ Работает с size_t, int, bool, и ЛЮБЫМИ типами",
+          "✅ Использует call_original_before/after флаги из конфигурации",
+          "✅ Автоматический fallback к вызову оригинала",
+          "✅ НЕ использует void *l_args[] - нет проблем с type casting",
+          "✅ Поддерживает delay и call tracking"
+        ],
+        "usage": "DAP_MOCK_DECLARE(my_func, DAP_MOCK_CONFIG_PASSTHROUGH);\nDAP_MOCK_WRAPPER_PASSTHROUGH(size_t, my_func, (void *a, size_t b), (a, b))",
+        "use_when": "Integration tests с tracking + вызовом оригинала, ЛЮБЫЕ типы параметров/возврата"
+      },
+      {
+        "name": "DAP_MOCK_WRAPPER_PASSTHROUGH_VOID",
+        "signature": "DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, params_with_types, params_names)",
+        "description": "✨ УНИВЕРСАЛЬНЫЙ passthrough wrapper для void функций (v2.1)",
+        "status": "✅ RECOMMENDED для integration tests",
+        "features": [
+          "✅ Работает с ЛЮБЫМИ типами параметров",
+          "✅ Использует call_original_before/after флаги",
+          "✅ Автоматический fallback к вызову оригинала"
+        ],
+        "usage": "DAP_MOCK_DECLARE(my_func, DAP_MOCK_CONFIG_PASSTHROUGH);\nDAP_MOCK_WRAPPER_PASSTHROUGH_VOID(my_func, (int a, size_t b), (a, b))",
+        "use_when": "Integration tests с void функциями, ЛЮБЫЕ типы параметров"
+      },
+      {
+        "name": "DAP_MOCK_CALL_ORIGINAL",
+        "signature": "DAP_MOCK_CALL_ORIGINAL(func_name, ...)",
+        "description": "Вызвать оригинальную (unwrapped) функцию из wrapper'а",
+        "expands_to": "__real_##func_name(__VA_ARGS__)",
+        "use_case": "Ручные custom wrappers (УСТАРЕЛО - используйте DAP_MOCK_WRAPPER_PASSTHROUGH)",
+        "example": "size_t result = DAP_MOCK_CALL_ORIGINAL(my_func, a, b);"
+      },
+      {
+        "name": "DAP_MOCK_CONFIG_PASSTHROUGH",
+        "description": "✨ Готовая конфигурация для passthrough моков (v2.1)",
+        "value": "{ .enabled = true, .call_original_before = true }",
+        "usage": "DAP_MOCK_DECLARE(func, DAP_MOCK_CONFIG_PASSTHROUGH);",
+        "use_case": "Integration tests - вызов оригинала + tracking вызовов"
+      },
+      {
+        "name": "DAP_MOCK_WRAPPER_CUSTOM",
+        "signature": "DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)",
+        "description": "✨ Custom wrapper с PARAM() синтаксисом - полный контроль над mock логикой (v2.2)",
+        "status": "✅ RECOMMENDED для unit tests с custom логикой",
+        "features": [
+          "✅ Поддержка функций БЕЗ параметров (void func())",
+          "✅ Автоматическая генерация сигнатуры функции из PARAM() списка",
+          "✅ Автоматическая генерация передачи параметров",
+          "✅ Автоматическая генерация void* массива для dap_mock_prepare_call",
+          "✅ Автоматический подсчет количества параметров",
+          "✅ Проверка enabled состояния и выполнение delay",
+          "✅ Запись вызова через dap_mock_record_call",
+          "✅ Вызов __real_ функции если mock disabled"
+        ],
+        "usage_syntax": "DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, PARAM(type1, name1), PARAM(type2, name2), ...) {\n    // Custom mock logic here\n    return custom_value;\n}",
+        "usage_with_params": "DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_enc_code_out_size,\n    PARAM(dap_enc_key_t*, a_key),\n    PARAM(size_t, a_buf_in_size),\n    PARAM(dap_enc_data_type_t, type)\n) {\n    // Calculate mock return value based on parameters\n    size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);\n    // Return value can be overridden via DAP_MOCK_SET_RETURN if needed\n    return l_result;\n}",
+        "usage_without_params": "DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto) {\n    // Return mock worker instance - value can be set via DAP_MOCK_SET_RETURN\n    static dap_worker_t s_mock_worker = {0};\n    return &s_mock_worker;\n}",
+        "usage_void_no_params": "DAP_MOCK_WRAPPER_CUSTOM(void, dap_http_client_deinit) {\n    // Mock intercepted - don't call original (return immediately)\n}",
+        "param_macro": {
+          "name": "PARAM(type, name)",
+          "description": "Макрос для объявления параметра в DAP_MOCK_WRAPPER_CUSTOM",
+          "usage": "PARAM(int, a_value), PARAM(const char*, a_string), PARAM(bool, a_flag)"
+        },
+        "best_for": [
+          "Unit tests - полный контроль над mock поведением",
+          "Функции без параметров (void func())",
+          "Сложная mock логика с условными возвратами",
+          "Мокирование функций из статических библиотек"
+        ],
+        "limitations": [
+          "Поддерживает до 16 параметров (расширяемо)",
+          "Для функций без параметров используйте пустой PARAM() список"
+        ],
+        "anti_patterns": [
+          "❌ НЕ вызывайте __real_##func_name в теле кастомного мока - если нужна реальная функция, не мокируйте её",
+          "❌ НЕ обращайтесь напрямую к g_mock_##func_name->return_value - используйте DAP_MOCK_SET_RETURN",
+          "❌ НЕ создавайте кастомные моки которые просто вызывают реальную функцию - это бессмысленно",
+          "✅ Если нужен passthrough - используйте DAP_MOCK_WRAPPER_PASSTHROUGH вместо кастомного мока"
+        ],
+        "version": "v2.2 - добавлена поддержка функций без параметров"
+      }
+    ]
+  },
+  "cmake_integration": {
+    "description": "CMake functions для автоматизации linker wrapping",
+    "functions": [
+      {
+        "name": "dap_mock_autowrap",
+        "signature": "dap_mock_autowrap(target_name)",
+        "description": "✨ ОСНОВНАЯ функция для обычных unit тестов - автоматически находит все DAP_MOCK_DECLARE в исходниках target, генерирует --wrap опции",
+        "usage": "dap_mock_autowrap(test_vpn_client)",
+        "when_to_use": "Юнит тесты где мокируемые функции находятся в других compile units",
+        "features": [
+          "Автоматически сканирует все source files target'а",
+          "Находит все DAP_MOCK_DECLARE() макросы",
+          "Генерирует *_wrap.txt с --wrap options",
+          "Генерирует *_mocks.cmake fragment",
+          "Применяет wrap options через -Wl,@file (GCC/Clang) или direct (MSVC-style)",
+          "Compiler auto-detection"
+        ],
+        "limitations": [
+          "НЕ работает для функций внутри static libraries (используйте dap_mock_autowrap_with_static)",
+          "Требует что моки объявлены через DAP_MOCK_DECLARE"
+        ],
+        "example": "add_executable(test_vpn test_vpn.c)\ntarget_link_libraries(test_vpn vpn_lib dap_core dap_test)\ndap_mock_autowrap(test_vpn)"
+      },
+      {
+        "name": "dap_mock_wrap_from_file",
+        "signature": "dap_mock_wrap_from_file(target_name wrap_file)",
+        "description": "Читает wrap options из файла и применяет к target",
+        "usage": "dap_mock_wrap_from_file(test_module mocks/wraps.txt)",
+        "optimization": "Использует -Wl,@file для GCC/Clang/MinGW (эффективнее парсинга)",
+        "file_format": "Одна функция на строку (без -Wl,--wrap= префикса)"
+      },
+      {
+        "name": "dap_mock_manual_wrap",
+        "signature": "dap_mock_manual_wrap(target_name function1 function2 ...)",
+        "description": "Вручную указать функции для wrapping",
+        "usage": "dap_mock_manual_wrap(test_module dap_stream_write dap_net_tun_create)",
+        "use_case": "Когда не хочется использовать auto-detection"
+      },
+      {
+        "name": "dap_mock_autowrap_with_static",
+        "signature": "dap_mock_autowrap_with_static(target_name library1 library2 ...)",
+        "description": "✨ ДЛЯ INTEGRATION ТЕСТОВ - включает --whole-archive для static libraries, чтобы --wrap работал для функций внутри них",
+        "usage": "dap_mock_autowrap_with_static(test_http_client_server dap_http_server dap_client)",
+        "when_to_use": "Integration tests где мокируются функции, которые ВЫЗЫВАЮТСЯ ВНУТРИ static library",
+        "problem": "По умолчанию linker не включает невызванные символы из static lib → --wrap не перехватывает вызовы внутри lib",
+        "solution": "--whole-archive форсирует линкер включить ВСЕ символы из библиотеки → --wrap перехватывает все вызовы",
+        "linker_flags_applied": [
+          "-Wl,--whole-archive <library> -Wl,--no-whole-archive (для каждой указанной библиотеки)",
+          "-Wl,--allow-multiple-definition (разрешает дубликаты символов, возникающие при whole-archive)"
+        ],
+        "sequence": "1. Сначала вызываете dap_mock_autowrap(target) для генерации --wrap опций\n2. Затем вызываете dap_mock_autowrap_with_static(target libs...) для --whole-archive",
+        "complete_example": "# Integration test: mock http_simple_reply inside dap_http_server static lib\nadd_executable(test_http_client_server test_http_client_server.c)\n\ntarget_link_libraries(test_http_client_server\n    dap_http_server  # static library containing http_simple_reply\n    dap_client\n    dap_test\n)\n\n# Step 1: Generate --wrap options from DAP_MOCK_DECLARE in test file\ndap_mock_autowrap(test_http_client_server)\n\n# Step 2: Enable --whole-archive for libraries with mocked internals\ndap_mock_autowrap_with_static(test_http_client_server dap_http_server)",
+        "real_world_usage": "cellframe-node/dap-sdk/tests/integration/net/http/CMakeLists.txt:46",
+        "performance_note": "--whole-archive увеличивает размер executable, используйте только когда необходимо"
+      }
+    ],
+    "compiler_support": {
+      "gcc": {
+        "status": "✅ Full support",
+        "linker": "GNU ld",
+        "wrap_syntax": "-Wl,--wrap=function_name",
+        "response_file": "✅ -Wl,@file supported",
+        "platforms": ["Linux", "macOS", "Windows/MinGW"]
+      },
+      "clang": {
+        "status": "✅ Full support",
+        "linker": "GNU ld or LLD",
+        "wrap_syntax": "-Wl,--wrap=function_name",
+        "response_file": "✅ -Wl,@file supported",
+        "platforms": ["Linux", "macOS", "Windows/Clang"]
+      },
+      "mingw": {
+        "status": "✅ Full support",
+        "linker": "GNU ld",
+        "wrap_syntax": "-Wl,--wrap=function_name",
+        "response_file": "✅ -Wl,@file supported",
+        "platforms": ["Windows"]
+      },
+      "msvc": {
+        "status": "❌ Not supported",
+        "linker": "link.exe",
+        "wrap_syntax": "N/A",
+        "response_file": "N/A",
+        "alternative": "/ALTERNATENAME (несовместимо с --wrap подходом)",
+        "recommendation": "Используйте MinGW или Clang для unit testing на Windows"
+      }
+    }
+  },
+  "integration_status": {
+    "dap_sdk_modules": {
+      "description": "Mock framework интегрирован в DAP SDK тестовые модули",
+      "integrated_modules": [
+        {
+          "module": "core/test",
+          "file": "cellframe-node/dap-sdk/core/test/CMakeLists.txt",
+          "status": "✅ Integrated"
+        },
+        {
+          "module": "net/client/test",
+          "file": "cellframe-node/dap-sdk/net/client/test/CMakeLists.txt",
+          "status": "✅ Integrated"
+        },
+        {
+          "module": "io/test",
+          "file": "cellframe-node/dap-sdk/io/test/CMakeLists.txt",
+          "status": "✅ Integrated"
+        },
+        {
+          "module": "global-db/test",
+          "file": "cellframe-node/dap-sdk/global-db/test/CMakeLists.txt",
+          "status": "✅ Integrated"
+        },
+        {
+          "module": "net/stream/test",
+          "file": "cellframe-node/dap-sdk/net/stream/test/CMakeLists.txt",
+          "status": "✅ Integrated"
+        }
+      ],
+      "total_integrated": 5
+    },
+    "vpn_client_tests": {
+      "description": "VPN Client тесты используют mock framework",
+      "test_files": [
+        {
+          "file": "tests/unit/test_vpn_state_machine.c",
+          "status": "✅ Using mock framework",
+          "description": "State Machine unit tests"
+        },
+        {
+          "file": "tests/unit/test_vpn_client_api.c",
+          "status": "⏳ Ready for mocks",
+          "description": "API tests - базовая структура готова"
+        },
+        {
+          "file": "tests/unit/test_vpn_tun.c",
+          "status": "⏳ Ready for mocks",
+          "description": "TUN device tests - базовая структура готова"
+        },
+        {
+          "file": "tests/unit/test_vpn_state_handlers.c",
+          "status": "⏳ Ready for mocks",
+          "description": "State handlers tests - базовая структура готова"
+        }
+      ]
+    }
+  },
+  "usage_examples": {
+    "basic_example_v2": {
+      "description": "Современный способ (v2.0) - автоматическая инициализация",
+      "code_snippet": "// 1. Declare mock с конфигурацией\nDAP_MOCK_DECLARE(dap_stream_write, .return_value = 0);\n\n// 2. Test setup - настройка глобальных параметров (опционально)\nvoid test_setup(void) {\n    DAP_MOCK_SETTINGS(.logging_enabled = true, .async_worker_threads = 4);\n}\n\n// 3. Test case - моки работают автоматически\nvoid test_write_packet(void) {\n    // Mock уже включен и настроен через DAP_MOCK_DECLARE\n    \n    // Call code under test\n    int result = my_function_that_calls_dap_stream_write();\n    \n    // Verify\n    assert(DAP_MOCK_GET_CALL_COUNT(dap_stream_write) == 1);\n    assert(result == 0);\n}\n\n// 4. Test teardown - автоматический cleanup, явный deinit НЕ НУЖЕН\nvoid test_teardown(void) {\n    // Mock framework cleanup автоматический\n}",
+      "linker_flags": "-Wl,--wrap=dap_stream_write",
+      "cmake_integration": "dap_mock_autowrap(my_test test_file.c)",
+      "improvements": [
+        "Не нужны dap_mock_init/deinit",
+        "Конфигурация в одной строке",
+        "Автоматический cleanup",
+        "Глобальные настройки через DAP_MOCK_SETTINGS"
+      ]
+    },
+    "passthrough_wrapper_v2_1": {
+      "description": "✨ НОВЫЙ универсальный passthrough wrapper (v2.1) - работает с ЛЮБЫМИ типами!",
+      "code_snippet": "// 1. Declare mock с DAP_MOCK_CONFIG_PASSTHROUGH\nDAP_MOCK_DECLARE(dap_http_simple_reply, DAP_MOCK_CONFIG_PASSTHROUGH);\n\n// 2. Create универсальный wrapper с DAP_MOCK_WRAPPER_PASSTHROUGH\nDAP_MOCK_WRAPPER_PASSTHROUGH(size_t, dap_http_simple_reply,\n    (dap_http_simple_t *a_http_simple, void *a_data, size_t a_data_size),\n    (a_http_simple, a_data, a_data_size))\n\n// Готово! Mock автоматически:\n// - Вызывает __real_dap_http_simple_reply() (call_original_before=true)\n// - Записывает вызов через dap_mock_record_call()\n// - Возвращает результат оригинальной функции\n\n// 3. В тесте проверяем call count\nvoid test_http_request(void) {\n    // ... HTTP request ...\n    \n    // Verify that reply was called\n    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_http_simple_reply) == 1,\n               \"HTTP reply should be called once\");\n}",
+      "use_case": "Integration tests где нужно tracking вызовов БЕЗ замены логики",
+      "linker_flags": "-Wl,--wrap=dap_http_simple_reply",
+      "cmake_integration": "dap_mock_autowrap_with_static(target_name dap_http_server)",
+      "improvements_over_v2_0": [
+        "✅ Работает с size_t, int, bool, ЛЮБЫМИ типами (НЕТ void *l_args[]!)",
+        "✅ Один макрос вместо ручного __wrap_ кода",
+        "✅ Использует call_original_before/after флаги",
+        "✅ Автоматический fallback к вызову оригинала",
+        "✅ Поддерживает delay и async"
+      ],
+      "benefits": [
+        "Простота - один DAP_MOCK_WRAPPER_PASSTHROUGH макрос",
+        "Универсальность - ЛЮБЫЕ типы параметров и возврата",
+        "Гибкость - call_original_before/after управление",
+        "Безопасность - автоматический fallback",
+        "Производительность - минимальный overhead"
+      ],
+      "real_world_example": "cellframe-node/dap-sdk/tests/integration/net/http/test_http_client_server.c"
+    },
+    "async_mock_example": {
+      "description": "Асинхронное выполнение мока",
+      "code_snippet": "// Declare async mock с задержкой\nDAP_MOCK_DECLARE(dap_client_http_request, {\n    .return_value = {0},\n    .delay = {.type = DAP_MOCK_DELAY_FIXED, .fixed_us = 500000},  // 500ms\n    .async = true     // Execute in thread pool\n});\n\nvoid test_concurrent_requests(void) {\n    // Configure thread pool\n    dap_mock_settings_t l_settings = {\n        .async_worker_threads = 8,\n        .logging_enabled = true\n    };\n    dap_mock_apply_settings(&l_settings);\n    \n    // Start multiple async requests\n    for (int i = 0; i < 10; i++) {\n        start_http_request();\n    }\n    \n    // Wait for completion with intelligent check\n    dap_test_async_config_t l_config = {.timeout_ms = 10000, .check_interval_ms = 100};\n    TEST_ASSERT(dap_test_wait_condition(\n        []{ return DAP_MOCK_GET_CALL_COUNT(dap_client_http_request) == 10; },\n        &l_config\n    ), \"All requests should complete\");\n}",
+      "benefits": [
+        "Реалистичная симуляция async операций",
+        "Тестирование concurrent scenarios",
+        "Автоматический thread pool management"
+      ]
+    },
+    "v2_1_patterns": {
+      "description": "✨ Новые паттерны использования в v2.1",
+      "spy_pattern": {
+        "name": "Spy Pattern - мониторинг без изменения поведения",
+        "code": "DAP_MOCK_DECLARE(critical_function, {\n    .call_original_before = true  // Call first, then track\n});\nDAP_MOCK_WRAPPER_PASSTHROUGH(int, critical_function, (int a), (a))\n\n// Function behaves normally, но мы можем проверить вызовы\nTEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(critical_function) > 0, \"Should be called\");",
+        "use_case": "Integration tests, production code monitoring"
+      },
+      "parameter_spy": {
+        "name": "Parameter Spy - инспекция аргументов",
+        "code": "DAP_MOCK_DECLARE(sensitive_func, {\n    .call_original_before = true\n});\n\nvoid test_check_params(void) {\n    my_code_that_calls_sensitive_func(\"secret\", 123);\n    \n    // Verify parameters passed to sensitive function\n    void **l_args = dap_mock_get_call_args(g_mock_sensitive_func, 0);\n    TEST_ASSERT(strcmp((char*)l_args[0], \"secret\") == 0, \"Correct string\");\n    TEST_ASSERT((int)(intptr_t)l_args[1] == 123, \"Correct number\");\n}",
+        "use_case": "Security testing, parameter validation"
+      },
+      "async_integration_test": {
+        "name": "Async Integration Test - passthrough + delays",
+        "code": "// Simulate network latency in integration test\nDAP_MOCK_DECLARE(dap_http_request, {\n    .call_original_before = true,\n    .delay = {.type = DAP_MOCK_DELAY_RANGE, .range_min_us = 100000, .range_max_us = 500000},\n    .async = true  // Realistic async behavior\n});\nDAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_request, (void *req), (req))\n\nvoid test_concurrent_http(void) {\n    // Start 10 parallel requests - each with random latency\n    for (int i = 0; i < 10; i++) {\n        async_http_request(...);\n    }\n    \n    // Verify all completed\n    dap_test_wait_condition(check_all_done, &config);\n}",
+        "use_case": "Realistic async simulation, load testing"
+      }
+    },
+    "legacy_v1_0_example": {
+      "description": "⚠️ УСТАРЕВШИЙ способ (v1.0) - НЕ ИСПОЛЬЗУЙТЕ в новом коде",
+      "note": "Оставлено только для reference, используйте v2.1 API",
+      "code_snippet": "// 1. Declare mock state\nDAP_MOCK_DECLARE(dap_stream_write);\n\n// 2. In test setup\nvoid test_setup(void) {\n    dap_mock_framework_init();\n    DAP_MOCK_INIT(dap_stream_write);\n}\n\n// 3. In test case\nvoid test_write_packet(void) {\n    DAP_MOCK_ENABLE(dap_stream_write);\n    DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)0);\n    \n    // Call code under test\n    int result = my_function_that_calls_dap_stream_write();\n    \n    // Verify\n    assert(DAP_MOCK_GET_CALL_COUNT(dap_stream_write) == 1);\n    assert(result == 0);\n}\n\n// 4. In test teardown\nvoid test_teardown(void) {\n    dap_mock_framework_deinit();\n}",
+      "linker_flags": "-Wl,--wrap=dap_stream_write",
+      "cmake_integration": "dap_mock_autowrap(my_test test_file.c)",
+      "note": "Работает, но используйте v2.0 API для новых тестов"
+    },
+    "cmake_autowrap_example": {
+      "description": "Автоматическая генерация wrap конфигураций",
+      "cmake_code": "# In tests/unit/CMakeLists.txt\ninclude(${CMAKE_SOURCE_DIR}/cellframe-node/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)\n\nadd_executable(test_vpn_client test_vpn_client.c)\ntarget_link_libraries(test_vpn_client\n    cellframe_srv_vpn_client_lib\n    dap_test_mocks\n    dap_core\n)\n\n# Автоматически сканирует test_vpn_client.c,\n# находит все DAP_MOCK_DECLARE(),\n# генерирует wrap options,\n# применяет к test_vpn_client\ndap_mock_autowrap(test_vpn_client ${CMAKE_CURRENT_SOURCE_DIR}/test_vpn_client.c)",
+      "generated_files": [
+        "test_vpn_client_wrap.txt - linker wrap options",
+        "test_vpn_client_mocks.cmake - CMake fragment",
+        "test_vpn_client_wrappers_template.c - template для missing wrappers"
+      ]
+    }
+  },
+  "best_practices": {
+    "mock_design_v2_1": {
+      "declarative_configuration": [
+        "✨ ВСЕГДА используйте DAP_MOCK_SETTINGS(...) в global scope рядом с mock declarations",
+        "✅ Конфигурация применяется автоматически через __attribute__((constructor))",
+        "✅ Не нужен код в main() или setup() - всё декларативно"
+      ],
+      "mock_selection": [
+        "✅ Мокируйте только внешние зависимости (I/O, network, system calls)",
+        "❌ НЕ мокируйте internal functions или implementation details",
+        "✅ Используйте моки для изоляции, не для white-box testing"
+      ],
+      "unit_vs_integration": [
+        "🔷 Unit tests: используйте inline callbacks для полной замены логики",
+        "🔷 Integration tests: используйте DAP_MOCK_WRAPPER_PASSTHROUGH для spy pattern",
+        "✅ DAP_MOCK_CONFIG_PASSTHROUGH для tracking без изменения поведения"
+      ],
+      "wrapper_types": [
+        "✨ DAP_MOCK_WRAPPER_PASSTHROUGH - универсальный, работает с ЛЮБЫМИ типами (size_t, int, bool, void*, struct*)",
+        "✅ call_original_before=true - spy pattern (вызов → track → return)",
+        "✅ call_original_after=true - modification pattern (track → вызов → return)",
+        "✅ Поддержка async + delays для realistic simulation"
+      ],
+      "async_and_delays": [
+        "✅ .async=true для simulation I/O/network operations",
+        "✅ Delays для realistic latency: FIXED (constant), RANGE (random), VARIANCE (gaussian)",
+        "✅ Настройка thread pool через DAP_MOCK_SETTINGS"
+      ],
+      "debugging": [
+        "✅ .enable_logging = true в DAP_MOCK_SETTINGS для call tracing",
+        "✅ .log_timestamps = true для timing analysis",
+        "✅ DAP_MOCK_GET_CALL_COUNT для verification",
+        "✅ dap_test_set_global_timeout для защиты от hangs"
+      ],
+      "deprecated": [
+        "❌ НЕ вызывайте dap_mock_init/deinit явно",
+        "❌ НЕ используйте DAP_MOCK_WRAPPER/DAP_MOCK_WRAPPER_VOID (legacy v1.0)",
+        "❌ НЕ используйте dap_mock_apply_settings напрямую (используйте DAP_MOCK_SETTINGS)"
+      ],
+      "custom_mock_anti_patterns": [
+        "❌ КРИТИЧЕСКИ ВАЖНО: В кастомных моках НЕ ДОЛЖНО быть обращений к __real_ функциям",
+        "❌ В кастомных моках НЕ ДОЛЖНО быть прямых обращений к внутренним структурам моков (g_mock_##func_name)",
+        "❌ Если нужна реальная функция - НЕ мокируйте её вообще (удалите DAP_MOCK_DECLARE и wrapper)",
+        "✅ Для passthrough с tracking используйте DAP_MOCK_WRAPPER_PASSTHROUGH + DAP_MOCK_CONFIG_PASSTHROUGH",
+        "✅ Кастомные моки должны возвращать статические значения или выполнять простую логику БЕЗ вызова реальных функций",
+        "✅ Используйте DAP_MOCK_SET_RETURN для установки возвращаемых значений вместо прямого доступа к g_mock_##func_name->return_value"
+      ],
+      "when_not_to_mock": [
+        "✅ Если функция должна работать как обычно - НЕ мокируйте её",
+        "✅ Если нужен только tracking вызовов - используйте DAP_MOCK_WRAPPER_PASSTHROUGH",
+        "✅ Если нужна реальная функция с модификацией параметров - используйте call_original_after",
+        "❌ НЕ создавайте кастомные моки которые просто вызывают __real_ функцию - это бессмысленно"
+      ]
+    },
+    "automatic_initialization": [
+      "Mock framework инициализируется автоматически при первом DAP_MOCK_DECLARE",
+      "dap_mock_async инициализируется автоматически с configured thread pool",
+      "Cleanup происходит автоматически - явный deinit НЕ НУЖЕН",
+      "Использовать DAP_MOCK_SETTINGS в test setup для глобальной конфигурации",
+      "Legacy API (dap_mock_init/deinit) всё ещё работает но deprecated"
+    ],
+    "async_mocks": {
+      "description": "Асинхронное выполнение mock функций в lightweight thread pool",
+      "configuration": "DAP_MOCK_SETTINGS(.async_worker_threads = 4, ...);",
+      "usage": "DAP_MOCK_DECLARE(slow_io, {.async = true, .delay = {.type = DAP_MOCK_DELAY_FIXED, .fixed_us = 100000}});",
+      "best_practices": [
+        "✅ Используйте .async=true для симуляции I/O, network, disk operations",
+        "✅ Комбинируйте с delays для реалистичной latency simulation",
+        "✅ Настраивайте async_worker_threads = CPU count для maximum throughput",
+        "✅ Используйте dap_test_wait_condition() для ожидания completion",
+        "✅ Thread pool автоматически управляется - cleanup не нужен"
+      ],
+      "example": "// Async network request simulation\nDAP_MOCK_DECLARE(dap_http_request, {\n    .async = true,\n    .delay = {.type = DAP_MOCK_DELAY_RANGE, .range = {.min_us = 50000, .max_us = 200000}}\n});\n\n// In test\nstart_http_request();\ndap_test_wait_condition(check_response_received, NULL, &config);",
+      "advanced": "Async mocks поддерживают call_original_before/after для passthrough + async simulation"
+    },
+    "linker_wrapping": [
+      "Всегда использовать DAP_MOCK_DECLARE в том же файле где используется mock",
+      "Использовать DAP_MOCK_WRAPPER_PASSTHROUGH для создания wrappers",
+      "Проверять compiler support перед использованием (GCC/Clang/MinGW only)",
+      "Использовать dap_mock_autowrap для автоматизации linker flags generation",
+      "DAPMockAutoWrap.cmake автоматически находит все DAP_MOCK_DECLARE",
+      "Для static libraries использовать dap_mock_autowrap_with_static"
+    ],
+    "performance": [
+      "Linker wrapping имеет zero runtime overhead vs function pointers",
+      "Thread-safe operations используют mutex - минимальный overhead",
+      "Async mocks используют lightweight thread pool - low overhead",
+      "Call tracking имеет O(1) complexity для append",
+      "Reset operations - O(n) где n = call count"
+    ],
+    "thread_safety": [
+      "Все API функции thread-safe благодаря pthread_mutex_t",
+      "Можно безопасно использовать в multi-threaded tests",
+      "Mock state изолирован между threads (каждый thread видит одинаковые моки)",
+      "Async mock execution полностью thread-safe с task queue",
+      "Avoid shared mutable state в test fixtures"
+    ],
+    "debugging": [
+      "Включать logging через DAP_MOCK_SETTINGS(.logging_enabled = true)",
+      "Логи показывают: function name, call count, return value, delay, async status",
+      "Использовать DAP_MOCK_GET_CALL_COUNT для проверки вызовов",
+      "Проверять dap_mock_async statistics для async performance analysis"
+    ]
+  },
+  "troubleshooting": {
+    "common_issues": [
+      {
+        "issue": "Undefined reference to __wrap_function_name",
+        "cause": "Wrapper не создан или не скомпилирован",
+        "solution": "Создать DAP_MOCK_WRAPPER_* для функции или проверить что wrappers.c в target_sources"
+      },
+      {
+        "issue": "Function calls не мокируются (real function вызывается)",
+        "cause": "Linker wrap options не применены",
+        "solution": "Проверить что dap_mock_autowrap() вызван или вручную добавить -Wl,--wrap=func"
+      },
+      {
+        "issue": "Segmentation fault в mock framework",
+        "cause": "Mock не инициализирован перед использованием",
+        "solution": "Вызвать DAP_MOCK_INIT(func_name) перед DAP_MOCK_ENABLE"
+      },
+      {
+        "issue": "MSVC linker errors",
+        "cause": "MSVC не поддерживает --wrap",
+        "solution": "Использовать MinGW или Clang для unit testing на Windows"
+      }
+    ]
+  },
+  "roadmap": {
+    "current_version": "2.1.1",
+    "status": "Production Ready",
+    "completed_in_v2_0": [
+      "✅ Automatic initialization/deinitialization",
+      "✅ Asynchronous mock execution с thread pool",
+      "✅ Global configuration через DAP_MOCK_SETTINGS",
+      "✅ Configurable delays для latency simulation",
+      "✅ Comprehensive logging system",
+      "✅ dap_mock_async module с full documentation",
+      "✅ Fixed DAPMockAutoWrap.cmake path issues"
+    ],
+    "completed_in_v2_1": [
+      "✅ DAP_MOCK_SETTINGS declarative macro с __attribute__((constructor)) (v2.1.1)",
+      "✅ DAP_MOCK_SETTINGS_SET для runtime configuration (v2.1.1)",
+      "✅ call_original_before/call_original_after boolean флаги (v2.1.0)",
+      "✅ DAP_MOCK_WRAPPER_PASSTHROUGH - универсальный wrapper для ЛЮБЫХ типов (v2.1.0)",
+      "✅ DAP_MOCK_WRAPPER_PASSTHROUGH_VOID - универсальный wrapper для void функций (v2.1.0)",
+      "✅ DAP_MOCK_CONFIG_PASSTHROUGH - готовая конфигурация для integration tests (v2.1.0)",
+      "✅ Полное решение проблемы non-pointer types (size_t, int, bool) (v2.1.0)",
+      "✅ dap_mock_autowrap_with_static для mocking внутри static libraries (v2.1.0)",
+      "✅ Устранение необходимости в ручных __wrap_ функциях (v2.1.0)",
+      "✅ Удаление legacy DAP_MOCK_WRAPPER/VOID макросов из кода и документации (v2.1.0)"
+    ],
+    "completed_in_v2_1_1": [
+      "✅ Comprehensive documentation update (parts_ru/parts_en structure)",
+      "✅ Static library mocking documentation in API reference",
+      "✅ Troubleshooting guide with static library solutions",
+      "✅ Usage examples for dap_mock_autowrap_with_static",
+      "✅ Documentation verification against source code"
+    ],
+    "future_enhancements": [
+      "Mock expectations DSL (Google Mock style)",
+      "Call sequence verification",
+      "Mock templates library для common DAP SDK functions",
+      "Performance profiling integration",
+      "Code coverage integration",
+      "Windows native async support (без pthread)",
+      "Mock recording/playback для integration tests"
+    ]
+  },
+  "compliance": {
+    "dap_sdk_standards": {
+      "naming_conventions": "✅ All functions/types use dap_ prefix",
+      "coding_style": "✅ DAP SDK C coding style",
+      "error_handling": "✅ Proper error codes and logging",
+      "thread_safety": "✅ Thread-safe with pthread",
+      "documentation": "✅ Comprehensive inline docs + README",
+      "memory_management": "✅ No memory leaks, proper cleanup"
+    },
+    "technical_debt": "Zero - все по стандартам"
+  },
+  "references": {
+    "documentation_files": [
+      "cellframe-node/dap-sdk/test-framework/mocks/README.md",
+      "cellframe-node/dap-sdk/test-framework/mocks/AUTOWRAP.md",
+      "cellframe-node/dap-sdk/test-framework/mocks/COMPILER_SUPPORT.md",
+      "cellframe-node/dap-sdk/test-framework/mocks/DAP_SDK_INTEGRATION_COMPLETE.md",
+      "cellframe-node/dap-sdk/test-framework/docs/DAP_MOCK_ASYNC.md",
+      "cellframe-node/dap-sdk/test-framework/docs/DAP_TEST_FRAMEWORK_GUIDE_RU.md",
+      "cellframe-node/dap-sdk/test-framework/docs/DAP_TEST_FRAMEWORK_GUIDE_EN.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/04_api_reference.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_en/04_api_reference.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/05_examples.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_en/05_examples.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_ru/07_troubleshooting.md",
+      "cellframe-node/dap-sdk/test-framework/docs/parts_en/07_troubleshooting.md"
+    ],
+    "source_files": [
+      "cellframe-node/dap-sdk/test-framework/dap_mock.h",
+      "cellframe-node/dap-sdk/test-framework/dap_mock.c",
+      "cellframe-node/dap-sdk/test-framework/dap_mock_async.h",
+      "cellframe-node/dap-sdk/test-framework/dap_mock_async.c",
+      "cellframe-node/dap-sdk/test-framework/dap_mock_linker_wrapper.h",
+      "cellframe-node/dap-sdk/test-framework/mocks/test_mock_linker_example.c"
+    ],
+    "automation_scripts": [
+      "cellframe-node/dap-sdk/test-framework/mocks/dap_mock_autowrap.sh",
+      "cellframe-node/dap-sdk/test-framework/mocks/dap_mock_autowrap.ps1",
+      "cellframe-node/dap-sdk/test-framework/mocks/dap_mock_autowrap.py"
+    ],
+    "cmake_modules": [
+      "cellframe-node/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake",
+      "cellframe-node/dap-sdk/test-framework/mocks/CMakeLists.txt",
+      "cellframe-node/dap-sdk/test-framework/CMakeLists.txt"
+    ],
+    "external_resources": [
+      {
+        "name": "GNU ld --wrap documentation",
+        "url": "https://sourceware.org/binutils/docs/ld/Options.html",
+        "description": "Official linker wrapping documentation"
+      },
+      {
+        "name": "Google Test Mocking Guide",
+        "url": "https://google.github.io/googletest/gmock_for_dummies.html",
+        "description": "Inspiration for mock design patterns"
+      }
+    ]
+  }
+}
+

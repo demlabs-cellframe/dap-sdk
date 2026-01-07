@@ -1,0 +1,320 @@
+{
+  "name": "Cursor IDE Specific Development Guide",
+  "version": "1.0.0",
+  "category": "language",
+  "priority": "high",
+  "created": "2025-11-14T18:25:00Z",
+  "description": "Особенности разработки расширений специфично для Cursor IDE",
+  "based_on": "Cursor documentation (docs.cursor.com) and VS Code fork analysis",
+  "cursor_overview": {
+    "what_is_cursor": "Fork Visual Studio Code с встроенным AI ассистентом",
+    "key_features": [
+      "AI-powered code completion (Tab to autocomplete)",
+      "AI Chat интеграция (@-mentions для контекста)",
+      "Composer для multi-file editing",
+      "Support для Claude, GPT, DeepSeek и других моделей",
+      "Cursor Rules (.cursorrules) для кастомизации AI поведения"
+    ],
+    "compatibility": "Полная совместимость с VS Code расширениями",
+    "marketplace": "Использует VS Code Marketplace"
+  },
+  "cursor_specific_features": {
+    "ai_context_api": {
+      "description": "API для взаимодействия с AI контекстом Cursor",
+      "status": "Частично документировано, экспериментальное",
+      "potential_apis": {
+        "context_injection": {
+          "description": "Инъекция контекста в AI промпт",
+          "hypothetical_usage": [
+            "// Hypothetical - may not exist yet",
+            "cursor.ai.injectContext({",
+            "  type: 'system-reminder',",
+            "  content: 'Remember to use TDD approach',",
+            "  priority: 'high'",
+            "});"
+          ],
+          "workaround": "Использовать .cursorrules файл для static rules"
+        },
+        "model_detection": {
+          "description": "Определение текущей AI модели",
+          "hypothetical_usage": [
+            "const currentModel = await cursor.ai.getCurrentModel();",
+            "if (currentModel.includes('claude')) {",
+            "  // Claude-specific behavior",
+            "}"
+          ],
+          "workaround": "Проверять через vscode.workspace.getConfiguration('cursor')"
+        }
+      },
+      "important_note": "Cursor AI API не полностью публичный - используйте standard VS Code API"
+    },
+    "cursorrules_integration": {
+      "description": ".cursorrules файл для кастомизации AI поведения",
+      "location": "Workspace root или ~/.cursor/rules",
+      "format": "Plain text с правилами и инструкциями",
+      "slc_integration": {
+        "use_case": "SLC плагин может генерировать .cursorrules на лету",
+        "example": [
+          "# Smart Layered Context Rules",
+          "## Critical Principles",
+          "1. FAIL FAST - NO FALLBACKS",
+          "2. SINGLE SOURCE OF TRUTH",
+          "3. MEASUREMENT-DRIVEN DEVELOPMENT",
+          "",
+          "## Current Task Context",
+          "- Task: ${currentTask.name}",
+          "- Phase: ${currentPhase}",
+          "- Loaded Modules: ${loadedModules.join(', ')}"
+        ],
+        "implementation": [
+          "async function updateCursorRules(context: string): Promise<void> {",
+          "  const rulesPath = path.join(workspace.rootPath, '.cursorrules');",
+          "  const content = generateRulesFromContext(context);",
+          "  await fs.writeFile(rulesPath, content);",
+          "}"
+        ]
+      }
+    },
+    "composer_integration": {
+      "description": "Composer - multi-file AI editing mode в Cursor",
+      "trigger": "Cmd+I (Mac) or Ctrl+I (Windows/Linux)",
+      "extension_interaction": [
+        "Extension может предоставлять контекст для Composer",
+        "Использовать vscode.workspace API для file operations",
+        "Отслеживать изменения через workspace.onDidChangeTextDocument"
+      ]
+    },
+    "chat_integration": {
+      "at_mentions": {
+        "description": "@-mentions в Cursor Chat для добавления контекста",
+        "types": [
+          "@Files - упоминание файлов",
+          "@Docs - документация",
+          "@Codebase - поиск по кодовой базе",
+          "@Web - web search"
+        ],
+        "extension_opportunity": "SLC может предоставлять кастомные @-mentions",
+        "implementation_idea": [
+          "// Hypothetical - would require Cursor API",
+          "cursor.chat.registerMentionProvider({",
+          "  prefix: '@slc',",
+          "  provide: async (query) => {",
+          "    return slcKnowledgeBase.search(query);",
+          "  }",
+          "});"
+        ]
+      }
+    }
+  },
+  "cursor_vs_vscode_differences": {
+    "compatible_apis": [
+      "Все standard VS Code Extension APIs",
+      "Commands, Configuration, Workspace",
+      "Language features, Diagnostics",
+      "UI components (StatusBar, TreeView, Webview)"
+    ],
+    "cursor_enhancements": [
+      "AI context awareness (не fully documented API)",
+      "Enhanced terminal с AI features",
+      "Modified settings structure (cursor.* namespace)",
+      "Telemetry отличается от VS Code"
+    ],
+    "testing_considerations": [
+      "Test in both VS Code и Cursor",
+      "Cursor-specific features должны иметь fallbacks",
+      "Use feature detection: if (typeof cursor !== 'undefined')"
+    ]
+  },
+  "slc_plugin_cursor_strategies": {
+    "approach_1_standard_vscode": {
+      "description": "Использовать только standard VS Code API",
+      "pros": [
+        "Полная совместимость с VS Code",
+        "Stable API",
+        "Может публиковаться на VS Code Marketplace"
+      ],
+      "cons": [
+        "Не использует Cursor-specific AI features",
+        "Ограниченная интеграция с AI контекстом"
+      ],
+      "recommendation": "РЕКОМЕНДУЕТСЯ для v1.0"
+    },
+    "approach_2_cursor_detection": {
+      "description": "Детект Cursor и использование расширенных features если доступны",
+      "implementation": [
+        "function isCursor(): boolean {",
+        "  const productName = vscode.env.appName;",
+        "  return productName.toLowerCase().includes('cursor');",
+        "}",
+        "",
+        "if (isCursor()) {",
+        "  // Try Cursor-specific features with fallback",
+        "  try {",
+        "    // Cursor-specific code",
+        "  } catch (error) {",
+        "    // Fallback to standard API",
+        "  }",
+        "}"
+      ],
+      "pros": [
+        "Best of both worlds",
+        "Progressive enhancement"
+      ],
+      "cons": [
+        "More complex code",
+        "Need to maintain dual code paths"
+      ],
+      "recommendation": "Для v2.0+ с experimental features"
+    },
+    "approach_3_cursorrules_manipulation": {
+      "description": "Манипуляция .cursorrules для влияния на AI поведение",
+      "implementation": "SLC plugin динамически генерирует .cursorrules на основе контекста",
+      "pros": [
+        "Works with Cursor AI natively",
+        "No need for undocumented APIs",
+        "Portable - rules are just text files"
+      ],
+      "cons": [
+        "Limited to what .cursorrules can express",
+        "Static rules, not dynamic context injection"
+      ],
+      "recommendation": "РЕКОМЕНДУЕТСЯ в комбинации с approach_1"
+    }
+  },
+  "recommended_architecture_for_slc": {
+    "core_strategy": "Standard VS Code APIs + .cursorrules manipulation",
+    "components": {
+      "context_monitor": {
+        "api": "Standard VS Code workspace и editor APIs",
+        "implementation": "Track открытые файлы, редактор changes, token count estimation"
+      },
+      "module_manager": {
+        "api": "Standard file system APIs (vscode.workspace.fs)",
+        "implementation": "Dynamic loading Markdown knowledge base"
+      },
+      "cursorrules_generator": {
+        "api": "File system write",
+        "implementation": [
+          "class CursorRulesGenerator {",
+          "  async updateRules(context: SlcContext): Promise<void> {",
+          "    const rules = this.generateRules(context);",
+          "    const rulesPath = this.getCursorRulesPath();",
+          "    await vscode.workspace.fs.writeFile(",
+          "      vscode.Uri.file(rulesPath),",
+          "      Buffer.from(rules)",
+          "    );",
+          "  }",
+          "",
+          "  private generateRules(context: SlcContext): string {",
+          "    return `",
+          "# SLC Auto-Generated Rules",
+          "# Updated: ${new Date().toISOString()}",
+          "",
+          "## Current Context",
+          "- Task: ${context.currentTask}",
+          "- Loaded Modules: ${context.modules.join(', ')}",
+          "",
+          "## Active Thought Injections",
+          "${context.thoughts.map(t => `- ${t.content}`).join('\\n')}",
+          "",
+          "## Critical Reminders",
+          "${context.reminders.join('\\n')}",
+          "    `;",
+          "  }",
+          "}"
+        ]
+      },
+      "status_bar": {
+        "api": "vscode.window.createStatusBarItem",
+        "display": "SLC: 145K/200K [██████████░░] 72%"
+      },
+      "webview_dashboard": {
+        "api": "vscode.window.createWebviewPanel",
+        "content": "Performance metrics, context analysis, module status"
+      },
+      "autonomous_mode": {
+        "api": "Standard commands, tasks, terminal",
+        "validation": "Run tests via terminal, parse output, check TODO completion"
+      }
+    }
+  },
+  "practical_implementation_tips": {
+    "ai_context_awareness": {
+      "without_api": [
+        "1. Update .cursorrules с текущим контекстом",
+        "2. Monitor editor changes для определения AI activity",
+        "3. Inject comments в код с reminders",
+        "4. Use output channel для persistent logs AI может видеть"
+      ]
+    },
+    "thought_injection": {
+      "mechanisms": [
+        "1. Periodic .cursorrules updates",
+        "2. Insert comments в active file (temporary, then remove)",
+        "3. Show notifications user может передать AI",
+        "4. Update workspace settings для AI context"
+      ]
+    },
+    "model_fixture_application": {
+      "approach": [
+        "1. Detect model через settings inspection",
+        "2. Load соответствующие rules в .cursorrules",
+        "3. Adjust notification styles per model",
+        "4. Customize prompts в UI based on model"
+      ]
+    }
+  },
+  "cursor_configuration": {
+    "relevant_settings": {
+      "cursor.ai.model": "Selected AI model",
+      "cursor.ai.temperature": "AI temperature setting",
+      "cursor.chat.enabled": "Chat feature enabled",
+      "cursor.composer.enabled": "Composer feature enabled"
+    },
+    "reading_settings": [
+      "const config = vscode.workspace.getConfiguration('cursor');",
+      "const model = config.get('ai.model');",
+      "const chatEnabled = config.get('chat.enabled');"
+    ]
+  },
+  "testing_in_cursor": {
+    "setup": "Same as VS Code - use F5 to launch Extension Development Host",
+    "cursor_specific_tests": [
+      "Test .cursorrules generation",
+      "Test behavior с different AI models selected",
+      "Test performance в Cursor (может быть heavier than VS Code)",
+      "Verify extension works когда AI features disabled"
+    ],
+    "manual_testing_checklist": [
+      "✓ Install в Cursor",
+      "✓ Verify commands work",
+      "✓ Check .cursorrules generation",
+      "✓ Test context monitoring",
+      "✓ Verify status bar updates",
+      "✓ Test autonomous mode",
+      "✓ Check performance impact"
+    ]
+  },
+  "future_considerations": {
+    "cursor_api_evolution": "Cursor может добавить public AI API в будущем",
+    "monitoring": "Следить за Cursor changelogs и documentation updates",
+    "community": "Participate in Cursor community для early access к новым APIs",
+    "fallback_strategy": "Всегда иметь fallback на standard VS Code APIs"
+  },
+  "resources": {
+    "cursor_docs": "https://docs.cursor.com",
+    "cursor_changelog": "Check Cursor IDE for changelogs",
+    "vscode_api": "https://code.visualstudio.com/api (base для всего)",
+    "community": "Cursor Discord, GitHub discussions"
+  },
+  "navigation_system": {
+    "purpose": "Cursor IDE specific development guide",
+    "file_role": "LANGUAGE_MODULE",
+    "related_files": [
+      ".context/modules/languages/typescript/typescript_development.json",
+      ".context/modules/languages/typescript/vscode_extension_development.json",
+      ".context/tasks/slc_cursor_plugin_development.json"
+    ]
+  }
+}
+

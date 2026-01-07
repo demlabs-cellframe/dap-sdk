@@ -1,0 +1,183 @@
+{
+  "name": "DAP SDK Template Engine Documentation",
+  "version": "2.0.0",
+  "type": "knowledge_module",
+  "created": "2025-01-16",
+  "updated": "2025-01-16",
+  "description": "Документация системы шаблонов DAP SDK Mock Framework с поддержкой вложенных конструкций",
+  "category": "testing",
+  "tags": [
+    "dap-sdk",
+    "template-engine",
+    "mock-framework",
+    "testing",
+    "code-generation"
+  ],
+  "content": {
+    "overview": {
+      "title": "DAP SDK Template Engine - Система шаблонов для генерации кода",
+      "description": "Мощная система шаблонов в стиле Jinja2 для генерации кода моков и тестовых заголовков",
+      "location": "cellframe-node/dap-sdk/test-framework/mocks/templates/",
+      "documentation_file": "cellframe-node/dap-sdk/test-framework/mocks/templates/README_TEMPLATE_CONSTRUCTS.md"
+    },
+    "supported_constructs": {
+      "conditional": {
+        "syntax": "{{#if VAR}}...{{/if}}",
+        "description": "Условная генерация контента",
+        "else_support": true,
+        "example": "{{#if ENABLE_DEBUG}}\n// Debug code\n{{/if}}"
+      },
+      "loops": {
+        "syntax": "{{#for item in ARRAY}}...{{/for}}",
+        "description": "Циклы по массивам данных",
+        "array_format": "newline или pipe-separated через переменные окружения",
+        "example": "{{#for type in TYPES_ARRAY}}\n#define TYPE_{{type}} 1\n{{/for}}"
+      },
+      "variables": {
+        "set": {
+          "syntax": "{{#set VAR=value}} or {{#set VAR={{VAR2|function|args}}}}",
+          "description": "Установка переменных в шаблоне с поддержкой функций"
+        },
+        "output": {
+          "syntax": "{{VAR}} or {{VAR|function|args}}",
+          "description": "Вывод значения переменной с поддержкой функций"
+        },
+        "functions": {
+          "split": {
+            "syntax": "{{VAR|split|delimiter}}",
+            "description": "Разбивает строку по разделителю (pipe, newline)",
+            "creates": "VAR_parts_0, VAR_parts_1, ... для доступа к частям"
+          },
+          "part": {
+            "syntax": "{{VAR|part|index}}",
+            "description": "Получает часть строки по индексу (после split)"
+          },
+          "contains": {
+            "syntax": "{{VAR|contains|substring}}",
+            "description": "Проверяет наличие подстроки, возвращает 1 или 0"
+          },
+          "ne": {
+            "syntax": "{{VAR|ne|value}}",
+            "description": "Проверяет неравенство, возвращает 1 или 0"
+          },
+          "in_list": {
+            "syntax": "{{VAR|in_list|LIST_VAR}}",
+            "description": "Проверяет наличие значения переменной в списке (newline или pipe-separated), возвращает 1 или 0"
+          }
+        }
+      },
+      "awk_scripts": {
+        "inline": {
+          "syntax": "{{AWK:...}}",
+          "description": "Встроенные AWK скрипты для обработки данных",
+          "include_support": true,
+          "include_syntax": "@include \"filename.awk\"",
+          "environ_access": "Все переменные окружения доступны через ENVIRON[\"VAR\"]"
+        },
+        "standalone": {
+          "syntax": "{{#awk:...}}",
+          "description": "Отдельные AWK скрипты"
+        }
+      },
+      "include": {
+        "syntax": "{{#include FILE}}",
+        "description": "Подключение содержимого файла",
+        "file_path": "Может быть переменной окружения или прямой строкой",
+        "example": "{{#if RETURN_TYPE_MACROS_FILE}}\n{{#include RETURN_TYPE_MACROS_FILE}}\n{{/if}}"
+      },
+      "shell_scripts": {
+        "syntax": "{{#/bin/sh:...}}",
+        "description": "Shell скрипты для подготовки данных (устарело)",
+        "usage": "Подготовка переменных окружения перед обработкой шаблона. Рекомендуется использовать язык шаблонов"
+      }
+    },
+    "nested_constructs": {
+      "supported": true,
+      "description": "Вложенные конструкции полностью поддерживаются",
+      "example": "{{#if VAR}}\n  {{#for item in ARRAY}}\n    {{#if item}}\n      {{AWK:...}}\n    {{/if}}\n  {{/for}}\n{{/if}}",
+      "implementation": "Используется стек конструкций для корректной обработки вложенности"
+    },
+    "processing_pipeline": {
+      "step_1": "Парсинг конструкций (parse_template_constructs.awk)",
+      "step_2": "Обработка конструкций (process_template_constructs.awk)",
+      "step_3": "Рекурсивная обработка вложенных конструкций",
+      "step_4": "Выполнение AWK скриптов с передачей переменных окружения",
+      "step_5": "Замена маркеров на обработанный контент"
+    },
+    "environment_variables": {
+      "loop_variables": {
+        "description": "Переменные из циклов доступны в AWK скриптах через ENVIRON",
+        "example": "{{#for entry in ARRAY}}\n  {{AWK:\n    BEGIN {\n      entry_value = ENVIRON[\"entry\"]\n      print entry_value\n    }\n  }}\n{{/for}}"
+      },
+      "shell_variables": {
+        "description": "Переменные из shell скриптов доступны во всех конструкциях",
+        "example": "{{#/bin/sh:\n  export MY_VAR=\"value\"\n}}\n{{#if MY_VAR}}\n  Value: {{MY_VAR}}\n{{/if}}"
+      }
+    },
+    "common_libraries": {
+      "dap_common.awk": {
+        "location": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/dap_common.awk",
+        "description": "Общая библиотека AWK функций для шаблонов",
+        "functions": [
+          "trim_string(str) - удаление пробелов",
+          "contains(str, substr) - проверка наличия подстроки",
+          "parse_pipe_separated(data, parts, delimiter) - парсинг разделенных данных"
+        ],
+        "usage": "@include \"dap_common.awk\""
+      }
+    },
+    "examples": {
+      "type_normalization_macros": {
+        "file": "cellframe-node/dap-sdk/test-framework/mocks/templates/type_normalization_macros.h.tpl",
+        "description": "Пример использования AWK для подготовки данных и циклов для генерации макросов",
+        "features": [
+          "AWK скрипт для обработки NORMALIZATION_MACROS_DATA",
+          "Цикл по TYPE_ENTRIES_ARRAY",
+          "Вложенный AWK скрипт для обработки каждой записи",
+          "Условная генерация на основе типа данных"
+        ]
+      }
+    },
+    "debugging": {
+      "temp_files": {
+        "awk_scripts": "/tmp/template_construct_awk_*.awk",
+        "preprocessed": "/tmp/awk_preprocessed_construct_*.awk",
+        "debug": "/tmp/debug_preprocessed.awk"
+      },
+      "stderr_output": "AWK скрипты могут выводить отладочную информацию в stderr"
+    },
+    "best_practices": {
+      "data_preparation": "Используйте AWK скрипты для подготовки данных из сложных форматов",
+      "nested_processing": "Вложенные конструкции позволяют создавать сложную логику генерации",
+      "variable_access": "Всегда используйте ENVIRON для доступа к переменным в AWK скриптах",
+      "include_libraries": "Используйте @include для переиспользования AWK функций",
+      "error_handling": "Проверяйте наличие переменных перед использованием"
+    },
+    "limitations": {
+      "arrays": "Массивы должны передаваться через переменные окружения",
+      "process_isolation": "AWK скрипты выполняются в отдельных процессах",
+      "scope": "Переменные из циклов доступны только внутри блока цикла"
+    },
+    "future_improvements": {
+      "filters": "Поддержка фильтров (например, {{item|upper}})",
+      "math_operations": "Математические операции в условиях",
+      "caching": "Кэширование результатов обработки",
+      "functions": "Поддержка функций в шаблонах"
+    }
+  },
+  "related_files": {
+    "template_engine": "cellframe-node/dap-sdk/test-framework/mocks/dap_tpl.sh",
+    "parser": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/parse_template_constructs.awk",
+    "processor": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/process_template_constructs.awk",
+    "documentation": "cellframe-node/dap-sdk/test-framework/mocks/templates/README_TEMPLATE_CONSTRUCTS.md",
+    "common_library": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/dap_common.awk"
+  },
+  "navigation_system": {
+    "file_role": "KNOWLEDGE_MODULE",
+    "usage": "Автоматически загружается при работе с шаблонами DAP SDK Mock Framework",
+    "related_modules": [
+      ".context/modules/testing/dap_mock_framework.json"
+    ]
+  }
+}
+
