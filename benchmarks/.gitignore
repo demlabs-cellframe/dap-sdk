@@ -1,0 +1,19 @@
+# Ignore all JSON datasets except the reference ones we already committed
+*.json
+!twitter.json
+!citm_catalog.json
+!canada.json
+
+# Ignore temporary files
+*.tmp
+*.download
+
+# Ignore downloaded competitors
+competitors/
+
+# Ignore benchmark results
+results/
+
+# Ignore build artifacts
+build/
+
