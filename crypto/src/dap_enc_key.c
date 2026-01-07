@@ -1248,3 +1248,72 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
     DAP_DELETE(l_pub_key);
     return l_ret;
 }
+
+/**
+ * @brief Create cipher key from raw key bytes - NO Keccak hashing!
+ * 
+ * PERFORMANCE CRITICAL: Bypasses Keccak hash (~50μs) for direct memcpy (~500ns).
+ */
+dap_enc_key_t* dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                               const void *a_raw_key_bytes,
+                                               size_t a_key_size)
+{
+    if (!a_raw_key_bytes || a_key_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for raw key creation");
+        return NULL;
+    }
+    
+    // Allocate key structure
+    dap_enc_key_t *l_key = dap_enc_key_new(a_key_type);
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to create key structure for type %s", 
+               dap_enc_get_type_name(a_key_type));
+        return NULL;
+    }
+    
+    // Allocate priv_key_data buffer
+    l_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key_size);
+    if (!l_key->priv_key_data) {
+        log_it(L_ERROR, "Failed to allocate priv_key_data buffer");
+        DAP_DELETE(l_key);
+        return NULL;
+    }
+    
+    l_key->priv_key_data_size = a_key_size;
+    
+    // Copy raw key bytes directly - NO Keccak hashing!
+    memcpy(l_key->priv_key_data, a_raw_key_bytes, a_key_size);
+    
+    // Set timestamp
+    l_key->last_used_timestamp = time(NULL);
+    
+    return l_key;
+}
+
+/**
+ * @brief Update existing key with new raw bytes - ZERO allocations!
+ */
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                       const void *a_raw_key_bytes,
+                                       size_t a_key_size)
+{
+    if (!a_key || !a_raw_key_bytes || a_key_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for key update");
+        return -1;
+    }
+    
+    if (!a_key->priv_key_data || a_key->priv_key_data_size != a_key_size) {
+        log_it(L_ERROR, "Key size mismatch: expected %zu, got %zu",
+               a_key->priv_key_data_size, a_key_size);
+        return -1;
+    }
+    
+    // Update raw key bytes - NO Keccak hashing!
+    memcpy(a_key->priv_key_data, a_raw_key_bytes, a_key_size);
+    
+    // Update timestamp
+    a_key->last_used_timestamp = time(NULL);
+    
+    return 0;
+}
+

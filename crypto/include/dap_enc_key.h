@@ -344,6 +344,42 @@ DAP_STATIC_INLINE bool dap_enc_key_is_insign_hashing(dap_enc_key_type_t a_type)
     return a_type == DAP_ENC_KEY_TYPE_SIG_ECDSA;
 }
 
+/**
+ * @brief Create cipher key from raw key bytes (NO Keccak hashing!)
+ * 
+ * CRITICAL FOR PERFORMANCE:
+ * dap_enc_key_new_generate() uses Keccak hash which is SLOW (~50μs per call).
+ * For packet obfuscation where we create NEW key on EVERY packet, this is unacceptable.
+ * 
+ * This function creates dap_enc_key_t directly from pre-computed raw bytes,
+ * bypassing ALL hashing - just direct memcpy (~500ns).
+ * 
+ * @param a_key_type Cipher type (DAP_ENC_KEY_TYPE_SALSA2012, etc.)
+ * @param a_raw_key_bytes Raw key material (e.g., from KDF-SHAKE256)
+ * @param a_key_size Size of raw key (32 bytes for SALSA2012)
+ * @return New dap_enc_key_t ready to use, or NULL on error
+ * 
+ * @warning Raw key MUST be cryptographically secure (from KDF, not user input!)
+ */
+dap_enc_key_t* dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                               const void *a_raw_key_bytes,
+                                               size_t a_key_size);
+
+/**
+ * @brief Update existing key with new raw bytes (ZERO allocations!)
+ * 
+ * Reuses existing dap_enc_key_t, just updates priv_key_data.
+ * Even faster than dap_enc_key_new_from_raw_bytes (~200ns vs ~500ns).
+ * 
+ * @param a_key Existing key (created via dap_enc_key_new_from_raw_bytes)
+ * @param a_raw_key_bytes New raw key material
+ * @param a_key_size Size of new key
+ * @return 0 on success, -1 on error
+ */
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                       const void *a_raw_key_bytes,
+                                       size_t a_key_size);
+
 #ifdef __cplusplus
 }
 #endif
