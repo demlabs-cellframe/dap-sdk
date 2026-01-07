@@ -106,6 +106,22 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
         memcpy(&a_es->addr_storage, a_addr, a_addr_len);
         a_es->addr_size = a_addr_len;
         
+        // Debug: log destination address
+        char l_addr_str[INET6_ADDRSTRLEN] = {0};
+        uint16_t l_port = 0;
+        if (a_addr->ss_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
+            inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+            l_port = ntohs(l_sin->sin_port);
+        } else if (a_addr->ss_family == AF_INET6) {
+            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)a_addr;
+            inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
+            l_port = ntohs(l_sin6->sin6_port);
+        }
+        
+        log_it(L_DEBUG, "dap_io_flow_socket_send_to: sending %zu bytes to %s:%u via fd=%d",
+               a_size, l_addr_str, l_port, a_es->fd);
+        
         int l_ret = dap_events_socket_write_unsafe(a_es, a_data, a_size);
         log_it(L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH write returned %d", l_ret);
         return l_ret;
