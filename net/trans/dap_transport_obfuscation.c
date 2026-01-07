@@ -16,11 +16,14 @@
 
 #include <string.h>
 #include <time.h>
+#include <arpa/inet.h>  // For htons/ntohs
 #include "dap_common.h"
 #include "dap_transport_obfuscation.h"
 #include "dap_enc_kdf.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_enc.h"
+
+#define LOG_TAG "dap_transport_obfuscation"
 
 // Internal structure for obfuscated packet
 // Format: [handshake_size(2)] + [handshake_data] + [padding]
@@ -32,44 +35,36 @@
  * Uses KDF-SHAKE256 to derive a symmetric key from packet size.
  * This ensures both client and server can compute the same key
  * knowing only the packet size.
+ * 
+ * Returns raw key bytes (not dap_enc_key_t) for simple XOR-like encryption.
  */
-static dap_enc_key_t* s_derive_key_from_size(size_t a_packet_size)
+static int s_derive_key_from_size(size_t a_packet_size, uint8_t *a_out_key, size_t a_key_size)
 {
-    // Use packet size as "counter" for KDF
+    if (!a_out_key || a_key_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for obfuscation key derivation");
+        return -1;
+    }
+    
+    // Use packet size as counter for KDF
     uint64_t l_size_counter = (uint64_t)a_packet_size;
     
-    // Create KDF key from static seed
-    dap_enc_key_t *l_kdf_key = dap_enc_key_new_generate(
-        DAP_ENC_KEY_TYPE_KDF_SHAKE256,
-        (const uint8_t*)DAP_TRANSPORT_OBFUSCATION_SEED,
+    // Derive key: key = SHAKE256(SEED || "obfuscation" || packet_size)
+    int l_ret = dap_enc_kdf_derive(
+        DAP_TRANSPORT_OBFUSCATION_SEED,
         strlen(DAP_TRANSPORT_OBFUSCATION_SEED),
-        NULL, 0,
-        0
+        "obfuscation",
+        strlen("obfuscation"),
+        l_size_counter,
+        a_out_key,
+        a_key_size
     );
     
-    if (!l_kdf_key) {
-        log_it(L_ERROR, "Failed to create KDF key for obfuscation");
-        return NULL;
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to derive obfuscation key from size %zu", a_packet_size);
+        return -1;
     }
     
-    // Derive cipher key using packet size as counter
-    dap_enc_key_t *l_cipher_key = dap_enc_kdf_create_cipher_key(
-        l_kdf_key,
-        DAP_ENC_KEY_TYPE_SALSA2012,  // Fast symmetric cipher
-        "obf",  // Context
-        3,      // Context size
-        l_size_counter,  // Counter = packet size
-        32      // Key size (256 bits)
-    );
-    
-    dap_enc_key_delete(l_kdf_key);
-    
-    if (!l_cipher_key) {
-        log_it(L_ERROR, "Failed to derive cipher key from size %zu", a_packet_size);
-        return NULL;
-    }
-    
-    return l_cipher_key;
+    return 0;
 }
 
 int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
@@ -120,8 +115,26 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     }
     
     // Derive encryption key from final packet size
-    dap_enc_key_t *l_key = s_derive_key_from_size(l_final_size);
+    uint8_t l_obf_key[32];  // 256-bit key for stream cipher
+    if (s_derive_key_from_size(l_final_size, l_obf_key, sizeof(l_obf_key)) != 0) {
+        DAP_DELETE(l_cleartext);
+        return -4;
+    }
+    
+    // Create temporary cipher key for encryption
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        l_obf_key,
+        sizeof(l_obf_key),
+        NULL, 0,
+        sizeof(l_obf_key)
+    );
+    
+    // Zero out raw key material (defense in depth)
+    memset(l_obf_key, 0, sizeof(l_obf_key));
+    
     if (!l_key) {
+        log_it(L_ERROR, "Failed to create obfuscation cipher key");
         DAP_DELETE(l_cleartext);
         return -4;
     }
@@ -176,8 +189,25 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     }
     
     // Derive decryption key from packet size
-    dap_enc_key_t *l_key = s_derive_key_from_size(a_obfuscated_size);
+    uint8_t l_obf_key[32];  // 256-bit key for stream cipher
+    if (s_derive_key_from_size(a_obfuscated_size, l_obf_key, sizeof(l_obf_key)) != 0) {
+        return -3;
+    }
+    
+    // Create temporary cipher key for decryption
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        l_obf_key,
+        sizeof(l_obf_key),
+        NULL, 0,
+        sizeof(l_obf_key)
+    );
+    
+    // Zero out raw key material
+    memset(l_obf_key, 0, sizeof(l_obf_key));
+    
     if (!l_key) {
+        log_it(L_ERROR, "Failed to create deobfuscation cipher key");
         return -3;
     }
     

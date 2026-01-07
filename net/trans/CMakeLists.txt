@@ -17,11 +17,13 @@ add_subdirectory(dns)
 file(GLOB TRANS_CORE_SRCS 
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_server.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dap_transport_obfuscation.c"
 )
 
 file(GLOB TRANS_CORE_HDRS 
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_net_trans.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_net_trans_server.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_transport_obfuscation.h"
 )
 
 # Create OBJECT library for trans core
