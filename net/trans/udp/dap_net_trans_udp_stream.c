@@ -1454,7 +1454,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed in stream->session (session_id=0x%lx)", l_session_id);
+            log_it(L_INFO, "CLIENT: session key installed in stream->session (stream=%p, session_id=0x%lx)", 
+                   a_stream, l_session_id);
             
             // CRITICAL: Call session_create callback to notify dap_client!
             // Client is waiting for this callback to advance from STAGE_STREAM_CTL
