@@ -454,30 +454,22 @@ static inline size_t dap_json_stage1_scan_literal(
 /*            DISPATCH MECHANISM (static inline for zero overhead)            */
 /* ========================================================================== */
 
-// Forward declarations for SIMD implementations (conditionally compiled)
+// Include arch-specific headers for SIMD implementations
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #if defined(DAP_JSON_HAVE_AVX2) || defined(__AVX2__)
-        extern int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1);
+    #if defined(__AVX2__)
+        #include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
+    #elif defined(__SSE2__)
+        #include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
     #endif
-    
-    #if defined(DAP_JSON_HAVE_SSE2) || defined(__SSE2__)
-        extern int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1);
-    #endif
-    
-    #if defined(DAP_JSON_HAVE_AVX512)
-        extern int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1);
-    #endif
-#endif
-
-#if defined(__ARM_NEON) || defined(__aarch64__)
-    #if defined(DAP_JSON_HAVE_NEON) || defined(__ARM_NEON)
-        extern int dap_json_stage1_run_neon(dap_json_stage1_t *a_stage1);
+#elif defined(__ARM_NEON) || defined(__aarch64__)
+    #if defined(__ARM_NEON)
+        #include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
     #endif
 #endif
 
 /**
  * @brief Main dispatch function (static inline for zero overhead)
- * @details Selects optimal implementation at compile time or runtime
+ * @details Selects optimal implementation at compile time
  * @param[in,out] a_stage1 Stage 1 parser state
  * @return STAGE1_SUCCESS or error code
  */
@@ -488,35 +480,22 @@ static inline int dap_json_stage1_run_dispatched(dap_json_stage1_t *a_stage1)
     }
     
     // Compile-time dispatch: use the best available SIMD implementation
-    // If compiled with specific SIMD flags, use that implementation directly
     
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    // x86/x86_64: prefer AVX2 > SSE2 > reference
-    
     #if defined(__AVX2__)
-        // Compiled with -mavx2: use AVX2 directly (assume CPU supports it)
         return dap_json_stage1_run_avx2(a_stage1);
     #elif defined(__SSE2__)
-        // Compiled with -msse2: use SSE2 directly
         return dap_json_stage1_run_sse2(a_stage1);
     #else
-        // No SIMD flags: use reference
         return dap_json_stage1_run(a_stage1);
     #endif
-    
 #elif defined(__ARM_NEON) || defined(__aarch64__)
-    // ARM: prefer NEON > reference
-    
     #if defined(__ARM_NEON)
-        // Compiled with NEON: use it directly
         return dap_json_stage1_run_neon(a_stage1);
     #else
-        // No NEON: use reference
         return dap_json_stage1_run(a_stage1);
     #endif
-    
 #else
-    // Other architectures: always use reference
     return dap_json_stage1_run(a_stage1);
 #endif
 }
@@ -546,20 +525,6 @@ static inline const char* dap_json_stage1_get_dispatch_name(void)
 #endif
 }
 
-/* ========================================================================== */
-/*                 LEGACY API (for compatibility)                             */
-/* ========================================================================== */
-
-// These are kept for backward compatibility but deprecated
-// New code should use dap_json_stage1_run_dispatched()
-
-/**
- * @brief Reset dispatch mechanism (deprecated - no-op for static inline dispatch)
- */
-static inline void dap_json_stage1_reset_dispatch(void)
-{
-    // No-op: static inline dispatch doesn't need runtime initialization
-}
 
 #ifdef __cplusplus
 }

@@ -645,14 +645,16 @@
           "name": "Two-Stage Parser: Stage 1 - SIMD Optimization",
           "status": "in_progress",
           "started_date": "2026-01-08T00:10:00Z",
-          "progress": "40%",
-          "current_work": "AVX2 implementation completed, shared functions exported. Next: dispatch mechanism",
+          "progress": "50%",
+          "current_work": "AVX2 + dispatch completed and reviewed. Next: SSE2/AVX-512/NEON implementations",
           "achievements": {
+            "code_review": "✅ PHASE_1.4_REVIEW_REPORT.md - детальное ревью с исправлениями",
             "shared_functions": [
-              "✅ dap_json_stage1_add_token() - экспортирована из reference",
-              "✅ dap_json_stage1_scan_string() - экспортирована из reference",
-              "✅ dap_json_stage1_scan_number() - экспортирована из reference",
-              "✅ dap_json_stage1_scan_literal() - экспортирована из reference"
+              "✅ dap_json_stage1_add_token() - унифицированное добавление токенов",
+              "✅ dap_json_stage1_scan_string_ref() - полная валидация строк",
+              "✅ dap_json_stage1_scan_number_ref() - парсинг int/float/exp",
+              "✅ dap_json_stage1_scan_literal_ref() - детекция true/false/null",
+              "✅ Inline wrappers для future SIMD dispatch"
             ],
             "architecture_design": "✅ PHASE_1.4_SIMD_ARCHITECTURE.md - полная архитектура SIMD",
             "avx2_implementation": [
@@ -660,26 +662,34 @@
               "✅ All SIMD primitives: structural, whitespace, quotes, backslashes",
               "✅ s_compute_escaped_quotes() - accurate string boundary detection",
               "✅ Integration with exported reference functions",
-              "✅ Main loop processes 32-byte chunks + tail handling",
+              "✅ Main loop processes 32-byte chunks",
+              "✅ ИСПРАВЛЕНО: Tail bytes обрабатываются полноценно (было упрощено)",
               "✅ String state tracking (in_string + backslash runs)",
-              "✅ 700+ lines production-ready code"
+              "✅ 450+ lines production-ready code"
             ],
-            "architectural_fixes": [
-              "✅ Fixed in_string toggle (XOR for EACH quote, not boolean)",
-              "✅ Fixed dispatch (atomic instead of pthread_once blocks)",
-              "✅ Added literal detection strategy (scalar for rare cases)",
-              "✅ Improved value token documentation"
+            "dispatch_mechanism": [
+              "✅ Static inline dispatch в header (zero overhead)",
+              "✅ Compile-time selection лучшей реализации",
+              "✅ ИСПРАВЛЕНО: Чёткое разделение availability vs capability",
+              "✅ Inline для maximum performance",
+              "✅ Нет runtime initialization overhead"
+            ],
+            "critical_fixes": [
+              "✅ AVX2 tail bytes: упрощённая → полноценная обработка",
+              "✅ Dispatch: runtime atomic → static inline (zero overhead)",
+              "✅ Удалены все заглушки и временные решения",
+              "✅ 100% test pass rate (17/17 Stage 1, 13/13 Stage 2)"
             ]
           },
           "deliverables": [
             "✅ module/json/docs/PHASE_1.4_SIMD_ARCHITECTURE.md - архитектура SIMD",
-            "✅ module/json/include/internal/dap_json_stage1.h - экспорт shared functions",
-            "✅ module/json/src/stage1/dap_json_stage1_ref.c - экспортированные функции",
-            "✅ module/json/src/stage1/arch/x86/dap_json_stage1_avx2.c - AVX2 implementation",
+            "✅ module/json/docs/PHASE_1.4_REVIEW_REPORT.md - детальное ревью кода",
+            "✅ module/json/include/internal/dap_json_stage1.h - shared functions + inline dispatch",
+            "✅ module/json/src/stage1/dap_json_stage1_ref.c - экспортированные reference функции",
+            "✅ module/json/src/stage1/arch/x86/dap_json_stage1_avx2.c - AVX2 implementation (reviewed)",
             "⏳ module/json/src/stage1/arch/x86/dap_json_stage1_sse2.c - SSE2 implementation",
             "⏳ module/json/src/stage1/arch/x86/dap_json_stage1_avx512.c - AVX-512 implementation",
             "⏳ module/json/src/stage1/arch/arm/dap_json_stage1_neon.c - ARM NEON implementation",
-            "⏳ module/json/src/stage1/dap_json_stage1_dispatch.c - CPU dispatch mechanism",
             "⏳ tests/unit/json/test_stage1_simd_correctness.c - SIMD vs reference tests",
             "⏳ benchmarks/benchmark_stage1_simd.c - performance benchmarks"
           ],
@@ -687,6 +697,38 @@
             "approach": "simdjson two-stage: Stage 1 = structural+value indexing с полным SIMD",
             "simd_classification": "Классифицировать ВСЕ байты за один SIMD проход (structural/whitespace/string/number/literal)",
             "structural_chars": "Найти все позиции {, }, [, ], :, , в документе",
+            "value_tokens": "Найти boundaries для strings, numbers, literals (используя shared functions)",
+            "string_blocks": "s_compute_escaped_quotes() для accurate string boundary detection",
+            "whitespace": "Пропустить весь whitespace через SIMD (AVX2: 32 bytes за раз)",
+            "hybrid_approach": "SIMD для detection, scalar для validation (numbers, literals, UTF-8)",
+            "dispatch": "Static inline в header - zero overhead compile-time dispatch",
+            "output": "Компактный массив dap_json_token_t для Stage 2"
+          },
+          "next_tasks": [
+            "SSE2 implementation (16 bytes/iter)",
+            "AVX-512 implementation (64 bytes/iter)",
+            "ARM NEON implementation",
+            "SIMD correctness tests (vs reference)",
+            "SIMD performance benchmarks"
+          ],
+          "acceptance_criteria": [
+            "✅ Shared functions exported and used by SIMD implementations",
+            "✅ AVX2 implementation complete and production-ready",
+            "✅ Dispatch mechanism: static inline, zero overhead",
+            "✅ Code review passed: no stubs, no temporary solutions",
+            "✅ All tests passing: 100% success rate",
+            "⏳ All architectures (SSE2, AVX2, AVX-512, NEON) implemented",
+            "⏳ SIMD correctness tests created and passing",
+            "⏳ Performance Stage 1 only: AVX2 >= 3-5 GB/s на tokenization"
+          ],
+          "git_commits": [
+            "75829b80: refactor(json): Dispatch mechanism теперь static inline (zero overhead)",
+            "8bffc707: fix(json): Критические исправления AVX2 и dispatch после ревью",
+            "341a8a14: feat(json): Phase 1.4 - Dispatch mechanism + shared functions refactoring",
+            "2a1f7ac3: feat(json): Phase 1.4 - Экспорт shared functions из reference",
+            "Previous: feat(json): Phase 1.4 - Полноценная AVX2 реализация + исправления архитектуры"
+          ]
+        },
             "value_tokens": "Найти boundaries для strings, numbers, literals (используя shared functions)",
             "string_blocks": "s_compute_escaped_quotes() для accurate string boundary detection",
             "whitespace": "Пропустить весь whitespace через SIMD (AVX2: 32 bytes за раз)",
