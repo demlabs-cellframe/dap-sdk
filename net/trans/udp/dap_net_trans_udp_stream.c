@@ -1435,6 +1435,27 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             
             debug_if(s_debug_more, L_DEBUG, "CLIENT: session key established");
             
+            // CRITICAL: Set session key in stream->session for dap_client FSM!
+            // dap_client checks a_stream->session->key to verify session is ready
+            if (!a_stream->session) {
+                a_stream->session = dap_stream_session_pure_new();
+                if (!a_stream->session) {
+                    log_it(L_ERROR, "CLIENT: failed to create stream session");
+                    dap_enc_key_delete(l_session_key);
+                    DAP_DELETE(l_decrypted);
+                    return -1;
+                }
+            }
+            
+            // Set session key and ID
+            if (a_stream->session->key) {
+                dap_enc_key_delete(a_stream->session->key);
+            }
+            a_stream->session->key = l_session_key;
+            a_stream->session->id = l_session_id;
+            
+            log_it(L_INFO, "CLIENT: session key installed in stream->session (session_id=0x%lx)", l_session_id);
+            
             // CRITICAL: Call session_create callback to notify dap_client!
             // Client is waiting for this callback to advance from STAGE_STREAM_CTL
             if (l_ctx->session_create_cb) {
@@ -1450,9 +1471,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             }
             
             // NOW replace handshake_key with session_key (after callback)
-            // This ensures future packets are encrypted/decrypted with session key
+            // NOTE: We don't delete session_key here because it's now owned by a_stream->session->key!
+            // Just replace the pointer in l_udp_ctx for future packet encryption/decryption
             dap_enc_key_delete(l_udp_ctx->handshake_key);
-            l_udp_ctx->handshake_key = l_session_key;
+            l_udp_ctx->handshake_key = l_session_key;  // Share the same key object
             
             break;
         }
