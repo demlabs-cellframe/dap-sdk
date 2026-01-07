@@ -258,6 +258,13 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         l_es->type = (a_socket_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
         
+        // CRITICAL FIX: Initialize addr_size for UDP sockets!
+        // recvfrom() requires addr_size to be set to the buffer size BEFORE the call.
+        // Without this, the first recvfrom() won't populate addr_storage!
+        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+            l_es->addr_size = sizeof(struct sockaddr_storage);
+        }
+        
         // Add to worker
         dap_worker_add_events_socket_unsafe(l_worker, l_es);
         

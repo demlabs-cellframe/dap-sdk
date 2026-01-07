@@ -1704,6 +1704,17 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
                  l_total_size, l_ctx->esocket, l_ctx->esocket->fd);
         
+        // DEBUG: Log local socket address to verify we're using correct socket
+        struct sockaddr_storage l_local_addr;
+        socklen_t l_local_addr_len = sizeof(l_local_addr);
+        if (getsockname(l_ctx->esocket->fd, (struct sockaddr*)&l_local_addr, &l_local_addr_len) == 0) {
+            if (l_local_addr.ss_family == AF_INET) {
+                struct sockaddr_in *l_sa = (struct sockaddr_in*)&l_local_addr;
+                log_it(L_DEBUG, "CLIENT sending from local port %u (fd=%d)", 
+                       ntohs(l_sa->sin_port), l_ctx->esocket->fd);
+            }
+        }
+        
         ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_pkt, l_total_size);
         if (l_sent < 0) {
             log_it(L_ERROR, "UDP client send failed");

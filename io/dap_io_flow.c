@@ -444,6 +444,11 @@ static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     
+    // DEBUG: Log socket type and addr_storage details
+    log_it(L_DEBUG, "Flow server received %zu bytes on fd=%d, type=%d, addr_family=%d, addr_size=%u",
+           a_es->buf_in_size, a_es->fd, a_es->type, 
+           a_es->addr_storage.ss_family, a_es->addr_size);
+    
     debug_if(s_debug_more, L_DEBUG, "Flow server received %zu bytes from %s",
              a_es->buf_in_size,
              dap_io_flow_socket_addr_to_string(&a_es->addr_storage));

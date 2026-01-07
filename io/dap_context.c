@@ -1230,6 +1230,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                  * Socket is ready to write and not going to close
                  */
                 if ( l_cur->context && l_cur->buf_out_size ){ // esocket wasn't unassigned in callback, we need some other ops with it
+                    log_it(L_DEBUG, "Write ready: fd=%d, type=%d, buf_out_size=%zu",
+                           l_cur->fd, l_cur->type, l_cur->buf_out_size);
                     switch (l_cur->type){
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
@@ -1246,6 +1248,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
+                        // DEBUG: Log destination address for UDP sendto
+                        if (l_cur->addr_storage.ss_family == AF_INET) {
+                            struct sockaddr_in *l_sa = (struct sockaddr_in*)&l_cur->addr_storage;
+                            char l_addr_buf[INET_ADDRSTRLEN];
+                            inet_ntop(AF_INET, &l_sa->sin_addr, l_addr_buf, sizeof(l_addr_buf));
+                            log_it(L_DEBUG, "UDP sendto: %zu bytes to %s:%u (fd=%d, addr_size=%u)",
+                                   l_cur->buf_out_size, l_addr_buf, ntohs(l_sa->sin_port), 
+                                   l_cur->fd, l_cur->addr_size);
+                        }
+                        
                         l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
                                               l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
                                               (struct sockaddr*)&l_cur->addr_storage, l_cur->addr_size);
@@ -1255,6 +1267,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                         l_errno = errno;
 #endif
+                        
+                        if (l_bytes_sent < 0) {
+                            log_it(L_WARNING, "UDP sendto failed: errno=%d (%s)", l_errno, strerror(l_errno));
+                        } else {
+                            log_it(L_DEBUG, "UDP sendto: sent %zd bytes", l_bytes_sent);
+                        }
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                         if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) { 
