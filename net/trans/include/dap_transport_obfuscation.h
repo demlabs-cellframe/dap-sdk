@@ -33,18 +33,21 @@ extern "C" {
 /**
  * @brief Minimum obfuscated handshake packet size (bytes)
  * 
- * Must be large enough to contain actual handshake data plus minimal padding.
- * Recommended: 600 bytes minimum for good obfuscation.
+ * Chosen to accommodate:
+ * - Kyber512 public key: 800 bytes
+ * - Size header: 2 bytes
+ * - Minimum padding: ~50 bytes
+ * Total: 850+ bytes ensures all handshakes fit
  */
-#define DAP_TRANSPORT_OBFUSCATION_MIN_SIZE 600
+#define DAP_TRANSPORT_OBFUSCATION_MIN_SIZE 850
 
 /**
  * @brief Maximum obfuscated handshake packet size (bytes)
  * 
- * Should stay within reasonable UDP MTU limits.
- * Recommended: 900 bytes maximum.
+ * Allows reasonable padding while keeping packets under typical MTU.
+ * Range [850, 1200] = ~350 bytes variability for DPI resistance.
  */
-#define DAP_TRANSPORT_OBFUSCATION_MAX_SIZE 900
+#define DAP_TRANSPORT_OBFUSCATION_MAX_SIZE 1200
 
 /**
  * @brief Static seed for size-based key derivation
@@ -54,7 +57,7 @@ extern "C" {
  * 
  * Changing this breaks compatibility with older versions!
  */
-#define DAP_TRANSPORT_OBFUSCATION_SEED "cellframe-transport-obfuscation-v1-2025"
+#define DAP_TRANSPORT_OBFUSCATION_SEED "cellframe-transport-obfuscation-v1"
 
 /**
  * @brief Obfuscate handshake packet
