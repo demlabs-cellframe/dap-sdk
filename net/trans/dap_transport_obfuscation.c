@@ -64,6 +64,9 @@ static int s_update_key_from_packet_size(dap_enc_key_t *a_key, size_t a_packet_s
         return -1;
     }
     
+    // Update key internals (e.g., expand key schedule for SALSA2012)
+    dap_enc_key_update(a_key);
+    
     // Key is ready to use - priv_key_data contains fresh KDF!
     return 0;
 }
@@ -80,26 +83,27 @@ static int s_update_key_from_packet_size(dap_enc_key_t *a_key, size_t a_packet_s
  */
 static dap_enc_key_t* s_create_reusable_cipher_key(dap_enc_key_type_t a_cipher_type, size_t a_key_size)
 {
-    // Create key with zero seed initially - we'll update it with KDF
-    uint8_t l_zero_seed[32] = {0};
-    if (a_key_size > sizeof(l_zero_seed)) {
-        log_it(L_ERROR, "Key size %zu too large", a_key_size);
-        return NULL;
-    }
-    
-    dap_enc_key_t *l_key = dap_enc_key_new_generate(
-        a_cipher_type,
-        l_zero_seed,
-        a_key_size,
-        NULL, 0,
-        a_key_size
-    );
-    
+    // Allocate key structure manually to ensure priv_key_data buffer exists
+    dap_enc_key_t *l_key = DAP_NEW_Z(dap_enc_key_t);
     if (!l_key) {
-        log_it(L_ERROR, "Failed to create reusable cipher key");
+        log_it(L_ERROR, "Failed to allocate cipher key structure");
         return NULL;
     }
     
+    // Allocate priv_key_data buffer for KDF updates
+    l_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key_size);
+    if (!l_key->priv_key_data) {
+        log_it(L_ERROR, "Failed to allocate priv_key_data buffer");
+        DAP_DELETE(l_key);
+        return NULL;
+    }
+    
+    l_key->priv_key_data_size = a_key_size;
+    l_key->type = a_cipher_type;
+    l_key->_inheritor_size = 0;
+    l_key->_inheritor = NULL;
+    
+    // Key is ready - priv_key_data buffer is allocated and zeroed
     return l_key;
 }
 
