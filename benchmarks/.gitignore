@@ -1,8 +1,5 @@
-# Ignore all JSON datasets except the reference ones we already committed
+# Ignore all JSON datasets (too large for git)
 *.json
-!twitter.json
-!citm_catalog.json
-!canada.json
 
 # Ignore temporary files
 *.tmp
