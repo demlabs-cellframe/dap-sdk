@@ -419,15 +419,34 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
     // Cast UDP flow to stream session
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     
+    debug_if(s_debug_more, L_DEBUG,
+             "Packet routing: packet session_id=0x%lx, current session=%p (session_id=0x%lx, encryption_key=%p)",
+             l_session_id, l_session, l_session ? l_session->session_id : 0,
+             l_session ? l_session->encryption_key : NULL);
+    
     // Dispatch by packet type
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_HANDSHAKE:
+            // CRITICAL: Store session_id from packet header!
+            // This is the client's session_id that we must use for all future packets
+            if (l_session && l_session->session_id == 0) {
+                l_session->session_id = l_session_id;
+                debug_if(s_debug_more, L_DEBUG,
+                         "HANDSHAKE: initialized session_id=0x%lx for session %p",
+                         l_session_id, l_session);
+            }
             return s_handle_handshake(l_session, l_payload, l_payload_len);
             
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
             if (!l_session) {
                 log_it(L_WARNING, "SESSION_CREATE for non-existent session");
                 return -5;
+            }
+            // CRITICAL: Verify session_id matches!
+            if (l_session->session_id != 0 && l_session->session_id != l_session_id) {
+                log_it(L_ERROR, "SESSION_CREATE session_id mismatch: packet=0x%lx, session=0x%lx",
+                       l_session_id, l_session->session_id);
+                return -50;
             }
             return s_handle_session_create(l_session, l_payload, l_payload_len);
             
@@ -770,6 +789,10 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // Store handshake key in session
     a_session->encryption_key = l_handshake_key;
     
+    debug_if(s_debug_more, L_DEBUG,
+             "HANDSHAKE: stored encryption_key=%p for session %p (session_id=0x%lx)",
+             a_session->encryption_key, a_session, a_session->session_id);
+    
     // Send Bob's public key back
     int l_ret = s_send_udp_packet(a_session,
                                   DAP_STREAM_UDP_PKT_HANDSHAKE,
@@ -795,6 +818,11 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     debug_if(s_debug_more, L_DEBUG,
              "Processing SESSION_CREATE packet (%zu bytes)",
              a_payload_size);
+    
+    // Debug: log session info
+    debug_if(s_debug_more, L_DEBUG,
+             "SESSION_CREATE for session %p: session_id=0x%lx, encryption_key=%p",
+             a_session, a_session->session_id, a_session->encryption_key);
     
     // Decrypt payload with handshake key
     if (!a_session->encryption_key) {
@@ -824,6 +852,23 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     debug_if(s_debug_more, L_DEBUG,
              "Decrypted SESSION_CREATE: %zu bytes", l_decrypted_size);
+    
+    // Debug: print decrypted content (as hex and string)
+    if (s_debug_more && l_decrypted_size > 0) {
+        char l_hex[512] = {0};
+        size_t l_print_size = l_decrypted_size > 128 ? 128 : l_decrypted_size;
+        for (size_t i = 0; i < l_print_size; i++) {
+            sprintf(l_hex + i*3, "%02x ", l_decrypted[i]);
+        }
+        log_it(L_DEBUG, "Decrypted hex (first %zu bytes): %s", l_print_size, l_hex);
+        
+        // Print as string (null-terminated)
+        char l_str[256] = {0};
+        size_t l_str_len = l_decrypted_size < 255 ? l_decrypted_size : 255;
+        memcpy(l_str, l_decrypted, l_str_len);
+        l_str[l_str_len] = '\0';
+        log_it(L_DEBUG, "Decrypted string: '%s'", l_str);
+    }
     
     // Parse JSON parameters
     json_object *l_json = json_tokener_parse((const char*)l_decrypted);

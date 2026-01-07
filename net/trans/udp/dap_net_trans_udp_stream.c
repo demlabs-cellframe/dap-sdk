@@ -865,9 +865,15 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     
     // Store handshake key in UDP context (will be used for encryption/decryption)
     if (l_udp_ctx->handshake_key) {
+        log_it(L_WARNING, "CLIENT: replacing existing handshake_key %p with new one %p",
+               l_udp_ctx->handshake_key, l_handshake_key);
         dap_enc_key_delete(l_udp_ctx->handshake_key);
     }
     l_udp_ctx->handshake_key = l_handshake_key;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: stored handshake_key=%p for session_id=0x%lx",
+             l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Create session if it doesn't exist
     if (!a_stream->session) {
@@ -1070,6 +1076,10 @@ static int s_udp_session_create(dap_stream_t *a_stream,
         log_it(L_ERROR, "No handshake key for encrypting SESSION_CREATE");
         return -1;
     }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%lx)",
+             l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Prepare JSON payload
     json_object *l_json = json_object_new_object();
