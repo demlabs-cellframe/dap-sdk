@@ -151,6 +151,20 @@ typedef struct dap_stream_trans_udp_encrypted_header {
 #define DAP_STREAM_UDP_HANDSHAKE_SIZE 800
 
 /**
+ * @brief Internal encrypted header (INSIDE encrypted payload)
+ * 
+ * This header is part of the encrypted blob!
+ * Format: [type(1) + seq_num(4) + session_id(8)] + payload
+ */
+typedef struct dap_stream_trans_udp_internal_header {
+    uint8_t type;           // Packet type
+    uint32_t seq_num;       // Sequence number (network byte order)
+    uint64_t session_id;    // Session ID (network byte order)
+} DAP_ALIGN_PACKED dap_stream_trans_udp_internal_header_t;
+
+#define DAP_STREAM_UDP_INTERNAL_HEADER_SIZE sizeof(dap_stream_trans_udp_internal_header_t)
+
+/**
  * @brief UDP trans configuration
  */
 typedef struct dap_stream_trans_udp_config {

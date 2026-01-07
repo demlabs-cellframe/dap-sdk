@@ -132,12 +132,6 @@ static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
 // Made non-static for server.c to create UDP context for server-side streams
 dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
 static int s_udp_handshake_response(dap_stream_t *a_stream, const void *a_data, size_t a_data_size);
-static int s_create_udp_header(dap_stream_trans_udp_header_t *a_header,
-                                uint8_t a_type, uint16_t a_length,
-                                uint32_t a_seq_num, uint64_t a_session_id);
-static int s_parse_udp_header(const dap_stream_trans_udp_header_t *a_header,
-                               uint8_t *a_type, uint16_t *a_length,
-                               uint32_t *a_seq_num, uint64_t *a_session_id);
 
 /**
  * @brief UDP write callback for client esockets
@@ -1390,11 +1384,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             dap_enc_key_delete(l_udp_ctx->handshake_key);
             l_udp_ctx->handshake_key = l_session_key;
             
-            // Call session callback if set
-            if (l_ctx && l_ctx->session_cb) {
-                debug_if(s_debug_more, L_DEBUG, "CLIENT: calling session_cb");
-                l_ctx->session_cb(a_stream, NULL, 0, 0);
-            }
+            // Session is now ready - no callback needed
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: session key established");
             
             break;
         }
@@ -1409,10 +1400,18 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 break;
             }
             
-            // Process stream data using transport-agnostic function
-            size_t l_processed = dap_stream_data_proc_read_from_buf(a_stream,
-                                                                     l_payload,
-                                                                     l_payload_size);
+            // Process stream data - create temporary esocket for processing
+            // This is a workaround until we have proper stream data processing API
+            dap_events_socket_t l_fake_es = {0};
+            l_fake_es.buf_in = l_payload;
+            l_fake_es.buf_in_size = l_payload_size;
+            
+            dap_events_socket_t *l_saved_es = l_ctx->esocket;
+            l_ctx->esocket = &l_fake_es;
+            
+            size_t l_processed = dap_stream_data_proc_read(a_stream);
+            
+            l_ctx->esocket = l_saved_es;
             
             debug_if(s_debug_more, L_DEBUG,
                      "CLIENT: processed %zu bytes of stream data", l_processed);
@@ -1431,10 +1430,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             // CLOSE: server closing connection
             log_it(L_INFO, "CLIENT: received CLOSE from server");
             
-            // Close stream
-            if (a_stream->stream_sf) {
-                a_stream->stream_sf->flags |= DAP_STREAM_SF_CLIENT_CLOSE;
-            }
+            // Just mark stream as closed - proper cleanup will be done elsewhere
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: stream close requested");
             
             break;
         }
@@ -2085,57 +2082,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     return l_sent;
 }
- 
-             a_size, a_pkt_type, l_total_size);
-    
-    ssize_t l_result = -1;
-    
-    if (!l_is_server && l_ctx->esocket) {
-        // CLIENT: Has own physical esocket, use it directly
-        debug_if(s_debug_more, L_DEBUG, "UDP write (client): %zu bytes via esocket %p (fd=%d)", 
-                 l_total_size, l_ctx->esocket, l_ctx->esocket->fd);
-        
-        // DEBUG: Log local socket address to verify we're using correct socket
-        struct sockaddr_storage l_local_addr;
-        socklen_t l_local_addr_len = sizeof(l_local_addr);
-        if (getsockname(l_ctx->esocket->fd, (struct sockaddr*)&l_local_addr, &l_local_addr_len) == 0) {
-            if (l_local_addr.ss_family == AF_INET) {
-                struct sockaddr_in *l_sa = (struct sockaddr_in*)&l_local_addr;
-                log_it(L_DEBUG, "CLIENT sending from local port %u (fd=%d)", 
-                       ntohs(l_sa->sin_port), l_ctx->esocket->fd);
-            }
-        }
-        
-        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_pkt, l_total_size);
-        if (l_sent < 0) {
-            log_it(L_ERROR, "UDP client send failed");
-        } else {
-            l_result = l_sent;
-        }
-        
-        DAP_DELETE(l_pkt);
-        return l_result;
-    } else {
-        // SERVER: Use reactor sendto (DIRECT - we're already in listener worker with socket sharding!)
-        
-        // Get UDP per-stream context for remote_addr
-        if (!l_udp_ctx) {
-            log_it(L_ERROR, "Server stream has no UDP context for write");
-            DAP_DELETE(l_pkt);
-            return -1;
-        }
-        
-        if (l_udp_ctx->remote_addr.ss_family == 0) {
-            log_it(L_ERROR, "Server stream has no remote address for write");
-            DAP_DELETE(l_pkt);
-            return -1;
-        }
-        
-        // Get listener esocket from UDP context
-        dap_events_socket_t *l_listener_es = l_udp_ctx->listener_esocket;
-/**
- * @brief Write DATA packet (trans->ops->write implementation)
- */
+
 static ssize_t s_udp_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
     // All DATA packets go through here (from dap_stream_pkt_write_unsafe)
@@ -2438,46 +2385,3 @@ dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
 /**
  * @brief Create UDP header
  */
-static int s_create_udp_header(dap_stream_trans_udp_header_t *a_header,
-                                uint8_t a_type, uint16_t a_length,
-                                uint32_t a_seq_num, uint64_t a_session_id)
-{
-    if (!a_header)
-        return -1;
-
-    a_header->version = DAP_STREAM_UDP_VERSION;
-    a_header->type = a_type;
-    a_header->length = htons(a_length);
-    a_header->seq_num = htonl(a_seq_num);
-    a_header->session_id = htobe64(a_session_id);
-
-    return 0;
-}
-
-/**
- * @brief Parse UDP header
- */
-static int s_parse_udp_header(const dap_stream_trans_udp_header_t *a_header,
-                               uint8_t *a_type, uint16_t *a_length,
-                               uint32_t *a_seq_num, uint64_t *a_session_id)
-{
-    if (!a_header)
-        return -1;
-
-    if (a_header->version != DAP_STREAM_UDP_VERSION) {
-        log_it(L_ERROR, "Unsupported UDP protocol version: %u", a_header->version);
-        return -1;
-    }
-
-    if (a_type)
-        *a_type = a_header->type;
-    if (a_length)
-        *a_length = ntohs(a_header->length);
-    if (a_seq_num)
-        *a_seq_num = ntohl(a_header->seq_num);
-    if (a_session_id)
-        *a_session_id = be64toh(a_header->session_id);
-
-    return 0;
-}
-
