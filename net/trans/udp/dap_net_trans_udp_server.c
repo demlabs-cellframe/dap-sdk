@@ -642,6 +642,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     }
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    dap_net_session_params_t *l_params = (dap_net_session_params_t*)a_session_params;
     
     // Create dap_stream_session_t
     dap_stream_session_t *l_stream_session = dap_stream_session_new(0, false);
@@ -665,9 +666,32 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     if (l_session->stream) {
         l_session->stream->session = l_stream_session;
         log_it(L_DEBUG, "Linked stream->session for stream %p", l_session->stream);
+        
+        // CRITICAL: Create channels from session params!
+        if (l_params && l_params->channels) {
+            size_t l_channel_count = strlen(l_params->channels);
+            log_it(L_INFO, "Creating %zu channels for session: %s", l_channel_count, l_params->channels);
+            
+            // Copy channels to session->active_channels
+            strncpy(l_stream_session->active_channels, l_params->channels, 
+                   sizeof(l_stream_session->active_channels) - 1);
+            l_stream_session->active_channels[sizeof(l_stream_session->active_channels) - 1] = '\0';
+            
+            // Create each channel
+            for (size_t i = 0; i < l_channel_count; i++) {
+                char l_ch_id = l_params->channels[i];
+                dap_stream_ch_t *l_ch = dap_stream_ch_new(l_session->stream, (uint8_t)l_ch_id);
+                if (!l_ch) {
+                    log_it(L_ERROR, "Failed to create channel '%c'", l_ch_id);
+                    continue;
+                }
+                l_ch->ready_to_read = true;
+                log_it(L_INFO, "Created channel '%c' for stream %p", l_ch_id, l_session->stream);
+            }
+            
+            log_it(L_INFO, "Stream %p now has %zu channels", l_session->stream, l_session->stream->channel_count);
+        }
     }
-    
-    UNUSED(a_session_params);
     
     return l_stream_session;
 }
