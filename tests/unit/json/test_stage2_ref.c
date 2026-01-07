@@ -450,9 +450,7 @@ int main(void)
     
     // End-to-end parsing
     log_it(L_INFO, "=== End-to-End Parsing Tests ===");
-    // NOTE: Simple values (null, true, 42, "string") не поддерживаются Stage 1
-    //       так как они не содержат structural characters. Это будет исправлено в Phase 1.3.
-    // dap_assert(s_test_parse_simple_values(), "Parse simple values");
+    dap_assert(s_test_parse_simple_values(), "Parse simple values");
     dap_assert(s_test_parse_array(), "Parse array");
     dap_assert(s_test_parse_object(), "Parse object");
     dap_assert(s_test_parse_nested(), "Parse nested structures");

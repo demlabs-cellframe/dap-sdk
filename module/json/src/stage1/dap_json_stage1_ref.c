@@ -103,7 +103,10 @@ static bool s_add_structural_index(
     
     // Add index
     a_stage1->indices[a_stage1->indices_count].position = a_position;
+    a_stage1->indices[a_stage1->indices_count].length = 0;  // Structural chars have no length
+    a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRUCTURAL;
     a_stage1->indices[a_stage1->indices_count].character = a_character;
+    a_stage1->indices[a_stage1->indices_count]._reserved = 0;
     a_stage1->indices_count++;
     a_stage1->structural_chars++;
     
@@ -365,6 +368,182 @@ static bool s_skip_string(dap_json_stage1_t *a_stage1)
 }
 
 /* ========================================================================== */
+/*                     VALUE DETECTION (Phase 1.3)                            */
+/* ========================================================================== */
+
+/**
+ * @brief Detect and add number token
+ * @details Phase 1.3: Сканирует number и добавляет token.
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @return true on success, false on invalid number
+ */
+static bool s_scan_number_token(dap_json_stage1_t *a_stage1)
+{
+    const uint8_t *l_input = a_stage1->input;
+    const size_t l_len = a_stage1->input_len;
+    size_t i = a_stage1->current_pos;
+    uint32_t l_start = (uint32_t)i;
+    
+    bool l_has_decimal = false;
+    bool l_has_exponent = false;
+    
+    // Optional minus
+    if(i < l_len && l_input[i] == '-') {
+        i++;
+    }
+    
+    if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
+        return false; // No digits
+    }
+    
+    // Integer part
+    if(l_input[i] == '0') {
+        i++;
+    }
+    else {
+        while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
+            i++;
+        }
+    }
+    
+    // Optional decimal
+    if(i < l_len && l_input[i] == '.') {
+        l_has_decimal = true;
+        i++;
+        if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
+            return false;
+        }
+        while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
+            i++;
+        }
+    }
+    
+    // Optional exponent
+    if(i < l_len && (l_input[i] == 'e' || l_input[i] == 'E')) {
+        l_has_exponent = true;
+        i++;
+        if(i < l_len && (l_input[i] == '+' || l_input[i] == '-')) {
+            i++;
+        }
+        if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
+            return false;
+        }
+        while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
+            i++;
+        }
+    }
+    
+    // Add number token
+    uint32_t l_length = (uint32_t)(i - l_start);
+    uint8_t l_subtype = (l_has_decimal || l_has_exponent) ? 2 : 1;
+    
+    // Grow if needed
+    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
+        if(!s_grow_indices_array(a_stage1)) {
+            return false;
+        }
+    }
+    
+    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
+    l_token->position = l_start;
+    l_token->length = l_length;
+    l_token->type = TOKEN_TYPE_NUMBER;
+    l_token->character = l_subtype;
+    l_token->_reserved = 0;
+    
+    a_stage1->number_count++;
+    a_stage1->current_pos = i;
+    return true;
+}
+
+/**
+ * @brief Detect and add literal token
+ * @details Phase 1.3: Детектирует true/false/null и добавляет token.
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @return true on success, false on invalid literal
+ */
+static bool s_scan_literal_token(dap_json_stage1_t *a_stage1)
+{
+    const uint8_t *l_input = a_stage1->input;
+    const size_t l_len = a_stage1->input_len;
+    size_t i = a_stage1->current_pos;
+    uint32_t l_start = (uint32_t)i;
+    
+    uint8_t l_subtype = 0;
+    uint32_t l_length = 0;
+    
+    if(i + 4 <= l_len && memcmp(l_input + i, "true", 4) == 0) {
+        l_subtype = 1;
+        l_length = 4;
+    }
+    else if(i + 5 <= l_len && memcmp(l_input + i, "false", 5) == 0) {
+        l_subtype = 2;
+        l_length = 5;
+    }
+    else if(i + 4 <= l_len && memcmp(l_input + i, "null", 4) == 0) {
+        l_subtype = 3;
+        l_length = 4;
+    }
+    else {
+        return false;
+    }
+    
+    // Grow if needed
+    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
+        if(!s_grow_indices_array(a_stage1)) {
+            return false;
+        }
+    }
+    
+    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
+    l_token->position = l_start;
+    l_token->length = l_length;
+    l_token->type = TOKEN_TYPE_LITERAL;
+    l_token->character = l_subtype;
+    l_token->_reserved = 0;
+    
+    a_stage1->literal_count++;
+    a_stage1->current_pos = i + l_length;
+    return true;
+}
+
+/**
+ * @brief Scan string and add token
+ * @details Phase 1.3: Сканирует строку и добавляет STRING token.
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @return true on success, false on error
+ */
+static bool s_scan_string_token(dap_json_stage1_t *a_stage1)
+{
+    uint32_t l_start = (uint32_t)a_stage1->current_pos;
+    
+    // Skip string (existing logic)
+    if(!s_skip_string(a_stage1)) {
+        return false;
+    }
+    
+    // Add string token
+    uint32_t l_length = (uint32_t)(a_stage1->current_pos - l_start);
+    
+    // Grow if needed
+    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
+        if(!s_grow_indices_array(a_stage1)) {
+            return false;
+        }
+    }
+    
+    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
+    l_token->position = l_start;
+    l_token->length = l_length;
+    l_token->type = TOKEN_TYPE_STRING;
+    l_token->character = 0;
+    l_token->_reserved = 0;
+    
+    a_stage1->string_count++;
+    return true;
+}
+
+/* ========================================================================== */
 /*                       STRUCTURAL INDEXING                                  */
 /* ========================================================================== */
 
@@ -390,6 +569,9 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     a_stage1->current_pos = 0;
     a_stage1->in_string = false;
     a_stage1->escape_next = false;
+    a_stage1->string_count = 0;  // Phase 1.3
+    a_stage1->number_count = 0;  // Phase 1.3
+    a_stage1->literal_count = 0; // Phase 1.3
     a_stage1->string_chars = 0;
     a_stage1->whitespace_chars = 0;
     a_stage1->structural_chars = 0;
@@ -397,9 +579,9 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
     
-    log_it(L_DEBUG, "Starting Stage 1 structural indexing (%zu bytes)", l_len);
+    log_it(L_DEBUG, "Starting Stage 1 tokenization (%zu bytes)", l_len);
     
-    // Main scanning loop
+    // Main scanning loop (Phase 1.3: enhanced для value detection)
     while(a_stage1->current_pos < l_len) {
         uint8_t c = l_input[a_stage1->current_pos];
         dap_json_char_class_t l_char_class = dap_json_classify_char(c);
@@ -411,8 +593,8 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
                 break;
             
             case CHAR_CLASS_QUOTE:
-                // Start of string - skip entire string
-                if(!s_skip_string(a_stage1)) {
+                // String - scan and add STRING token
+                if(!s_scan_string_token(a_stage1)) {
                     log_it(L_ERROR, "String parsing failed at position %zu: %s",
                            a_stage1->error_position, a_stage1->error_message);
                     return a_stage1->error_code;
@@ -420,7 +602,7 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
                 break;
             
             case CHAR_CLASS_STRUCTURAL:
-                // Add structural index
+                // Structural character - add STRUCTURAL token
                 if(!s_add_structural_index(a_stage1, (uint32_t)a_stage1->current_pos, c)) {
                     log_it(L_ERROR, "Failed to add structural index at position %zu", a_stage1->current_pos);
                     return a_stage1->error_code;
@@ -428,15 +610,37 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
                 a_stage1->current_pos++;
                 break;
             
-            default:
-                // All other characters (numbers, true/false/null literals, etc.)
-                a_stage1->current_pos++;
+            case CHAR_CLASS_DIGIT:
+            case CHAR_CLASS_MINUS:
+                // Number - scan and add NUMBER token
+                if(!s_scan_number_token(a_stage1)) {
+                    log_it(L_ERROR, "Invalid number at position %zu", a_stage1->current_pos);
+                    a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                    return a_stage1->error_code;
+                }
                 break;
+            
+            case CHAR_CLASS_LETTER:
+                // Literal (true/false/null) - scan and add LITERAL token
+                if(!s_scan_literal_token(a_stage1)) {
+                    log_it(L_ERROR, "Invalid literal at position %zu", a_stage1->current_pos);
+                    a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                    return a_stage1->error_code;
+                }
+                break;
+            
+            default:
+                // Unexpected character
+                log_it(L_ERROR, "Unexpected character 0x%02X at position %zu", c, a_stage1->current_pos);
+                a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                a_stage1->error_position = a_stage1->current_pos;
+                return a_stage1->error_code;
         }
     }
     
-    log_it(L_INFO, "Stage 1 complete: %zu structural indices, %zu string chars, %zu whitespace chars",
-           a_stage1->structural_chars, a_stage1->string_chars, a_stage1->whitespace_chars);
+    log_it(L_INFO, "Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+           a_stage1->indices_count, a_stage1->structural_chars, 
+           a_stage1->string_count, a_stage1->number_count, a_stage1->literal_count);
     
     return STAGE1_SUCCESS;
 }
@@ -491,6 +695,15 @@ dap_json_stage1_t *dap_json_stage1_init(const uint8_t *a_input, size_t a_input_l
     l_stage1->current_pos = 0;
     l_stage1->in_string = false;
     l_stage1->escape_next = false;
+    l_stage1->in_number = false;           // Phase 1.3
+    l_stage1->number_start = 0;            // Phase 1.3
+    l_stage1->number_has_decimal = false;  // Phase 1.3
+    l_stage1->number_has_exponent = false; // Phase 1.3
+    l_stage1->string_start = 0;            // Phase 1.3
+    l_stage1->value_start = 0;             // Phase 1.3
+    l_stage1->string_count = 0;            // Phase 1.3
+    l_stage1->number_count = 0;            // Phase 1.3
+    l_stage1->literal_count = 0;           // Phase 1.3
     l_stage1->string_chars = 0;
     l_stage1->whitespace_chars = 0;
     l_stage1->structural_chars = 0;

@@ -56,39 +56,82 @@ typedef enum {
 } dap_json_struct_char_t;
 
 /**
- * @brief Structural index entry
+ * @brief Token type (Phase 1.3 enhancement)
  * 
- * Одна запись в массиве structural indices.
- * Содержит позицию и тип structural character.
+ * Stage 1 теперь индексирует не только structural characters,
+ * но и все JSON values (strings, numbers, literals).
+ */
+typedef enum {
+    TOKEN_TYPE_STRUCTURAL = 0,  /**< Structural character: { } [ ] : , */
+    TOKEN_TYPE_STRING = 1,      /**< String value: "..." */
+    TOKEN_TYPE_NUMBER = 2,      /**< Number value: 123, -45.67, 1.2e+10 */
+    TOKEN_TYPE_LITERAL = 3      /**< Literal: true, false, null */
+} dap_json_token_type_t;
+
+/**
+ * @brief Structural index entry (Phase 1.3 enhanced)
+ * 
+ * Универсальный token descriptor для всех JSON elements.
+ * 
+ * Phase 1.3: Добавлены поля length и type для support value tokens.
+ * 
+ * Размер: 12 bytes (cache-friendly, aligned to 4 bytes)
+ * 
+ * Examples:
+ * 
+ * Input: [123, "hello"]
+ * 
+ * Indices:
+ * { position: 0, length: 0, type: STRUCTURAL, character: '[' }
+ * { position: 1, length: 3, type: NUMBER, character: 0 }      // "123"
+ * { position: 4, length: 0, type: STRUCTURAL, character: ',' }
+ * { position: 6, length: 7, type: STRING, character: 0 }      // "hello" with quotes
+ * { position: 13, length: 0, type: STRUCTURAL, character: ']' }
  */
 typedef struct {
-    uint32_t position;  /**< Byte offset in input buffer */
-    uint8_t character;  /**< Actual character ({, }, [, ], :, ,) */
-    uint8_t _padding[3]; /**< Alignment padding */
+    uint32_t position;  /**< Byte offset in input buffer (start of token) */
+    uint32_t length;    /**< Token length in bytes (0 for structural chars) */
+    uint8_t type;       /**< Token type (dap_json_token_type_t) */
+    uint8_t character;  /**< For structural: actual char, for values: subtype/flags */
+    uint16_t _reserved; /**< Reserved for future use (alignment) */
 } dap_json_struct_index_t;
 
 /**
  * @brief Stage 1 parser state
  * 
  * Внутреннее состояние Stage 1 parser.
- * Содержит input buffer, structural indices, и parser state.
+ * Содержит input buffer, structural indices (enhanced с value tokens), и parser state.
+ * 
+ * Phase 1.3: Добавлены поля для value detection.
  */
 typedef struct {
     /* Input */
     const uint8_t *input;       /**< Input JSON buffer (not owned) */
     size_t input_len;           /**< Input buffer length in bytes */
     
-    /* Structural indices array */
-    dap_json_struct_index_t *indices;  /**< Structural indices array */
+    /* Structural indices array (enhanced - теперь включает value tokens) */
+    dap_json_struct_index_t *indices;  /**< Token array (structural + values) */
     size_t indices_capacity;    /**< Allocated capacity */
-    size_t indices_count;       /**< Number of structural indices found */
+    size_t indices_count;       /**< Number of tokens found */
     
     /* Parser state */
     size_t current_pos;         /**< Current position in input */
     bool in_string;             /**< Are we inside a string? */
     bool escape_next;           /**< Is next char escaped? */
     
+    /* Value detection state (Phase 1.3) */
+    bool in_number;             /**< Are we inside a number? */
+    uint32_t number_start;      /**< Start position of current number */
+    bool number_has_decimal;    /**< Number has decimal point? */
+    bool number_has_exponent;   /**< Number has exponent? */
+    
+    uint32_t string_start;      /**< Start position of current string (opening quote) */
+    uint32_t value_start;       /**< Start position of current literal value */
+    
     /* Statistics (for profiling) */
+    size_t string_count;        /**< Number of strings found (Phase 1.3) */
+    size_t number_count;        /**< Number of numbers found (Phase 1.3) */
+    size_t literal_count;       /**< Number of literals found (Phase 1.3) */
     size_t string_chars;        /**< Number of chars in strings */
     size_t whitespace_chars;    /**< Number of whitespace chars */
     size_t structural_chars;    /**< Number of structural chars */
