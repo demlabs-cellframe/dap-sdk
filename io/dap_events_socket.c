@@ -90,6 +90,168 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+// =============================================================================
+// DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
+// =============================================================================
+
+#define DAP_PACKET_QUEUE_INITIAL_CAPACITY 16
+#define DAP_PACKET_QUEUE_MAX_CAPACITY 4096  // Limit to prevent memory exhaustion
+
+/**
+ * @brief Create datagram packet queue
+ */
+static dap_events_socket_packet_queue_t* s_packet_queue_create(void)
+{
+    dap_events_socket_packet_queue_t *l_queue = DAP_NEW_Z(dap_events_socket_packet_queue_t);
+    if (!l_queue) {
+        return NULL;
+    }
+    
+    l_queue->packets = DAP_NEW_Z_COUNT(dap_events_socket_packet_t, DAP_PACKET_QUEUE_INITIAL_CAPACITY);
+    if (!l_queue->packets) {
+        DAP_DELETE(l_queue);
+        return NULL;
+    }
+    
+    l_queue->capacity = DAP_PACKET_QUEUE_INITIAL_CAPACITY;
+    l_queue->count = 0;
+    l_queue->head = 0;
+    
+    return l_queue;
+}
+
+/**
+ * @brief Delete datagram packet queue and free all packets
+ */
+static void s_packet_queue_delete(dap_events_socket_packet_queue_t *a_queue)
+{
+    if (!a_queue) {
+        return;
+    }
+    
+    // Free all packet data
+    for (size_t i = 0; i < a_queue->count; i++) {
+        size_t idx = (a_queue->head + i) % a_queue->capacity;
+        DAP_DELETE(a_queue->packets[idx].data);
+    }
+    
+    DAP_DELETE(a_queue->packets);
+    DAP_DELETE(a_queue);
+}
+
+/**
+ * @brief Enqueue datagram packet
+ * @return 0 on success, -1 on error
+ */
+static int s_packet_queue_push(dap_events_socket_packet_queue_t *a_queue,
+                                const uint8_t *a_data, size_t a_size,
+                                const struct sockaddr_storage *a_addr, socklen_t a_addr_len)
+{
+    if (!a_queue || !a_data || a_size == 0 || !a_addr) {
+        return -1;
+    }
+    
+    // Check capacity limit
+    if (a_queue->count >= DAP_PACKET_QUEUE_MAX_CAPACITY) {
+        log_it(L_WARNING, "Packet queue full (%zu packets), dropping packet", a_queue->count);
+        return -1;
+    }
+    
+    // Grow array if needed (double capacity)
+    if (a_queue->count >= a_queue->capacity) {
+        size_t l_new_capacity = a_queue->capacity * 2;
+        if (l_new_capacity > DAP_PACKET_QUEUE_MAX_CAPACITY) {
+            l_new_capacity = DAP_PACKET_QUEUE_MAX_CAPACITY;
+        }
+        
+        dap_events_socket_packet_t *l_new_packets = 
+            DAP_NEW_Z_COUNT(dap_events_socket_packet_t, l_new_capacity);
+        if (!l_new_packets) {
+            log_it(L_ERROR, "Failed to grow packet queue");
+            return -1;
+        }
+        
+        // Copy existing packets (preserving ring buffer order)
+        for (size_t i = 0; i < a_queue->count; i++) {
+            size_t old_idx = (a_queue->head + i) % a_queue->capacity;
+            l_new_packets[i] = a_queue->packets[old_idx];
+        }
+        
+        DAP_DELETE(a_queue->packets);
+        a_queue->packets = l_new_packets;
+        a_queue->capacity = l_new_capacity;
+        a_queue->head = 0;  // Reset head after reallocation
+    }
+    
+    // Add packet to tail
+    size_t tail_idx = (a_queue->head + a_queue->count) % a_queue->capacity;
+    
+    a_queue->packets[tail_idx].data = DAP_NEW_SIZE(uint8_t, a_size);
+    if (!a_queue->packets[tail_idx].data) {
+        log_it(L_ERROR, "Failed to allocate packet data");
+        return -1;
+    }
+    
+    memcpy(a_queue->packets[tail_idx].data, a_data, a_size);
+    a_queue->packets[tail_idx].size = a_size;
+    memcpy(&a_queue->packets[tail_idx].addr, a_addr, sizeof(struct sockaddr_storage));
+    a_queue->packets[tail_idx].addr_len = a_addr_len;
+    
+    a_queue->count++;
+    
+    debug_if(g_debug_reactor, L_DEBUG, 
+             "Packet queue: enqueued packet %zu bytes (queue size now: %zu)",
+             a_size, a_queue->count);
+    
+    return 0;
+}
+
+/**
+ * @brief Dequeue and send first datagram packet
+ * @return Number of bytes sent, 0 if queue empty, -1 on error, -2 if would block
+ * 
+ * NOTE: This function is NOT static because it's called from dap_context.c
+ */
+ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, int a_fd)
+{
+    if (!a_queue || a_queue->count == 0) {
+        return 0;  // Empty queue
+    }
+    
+    dap_events_socket_packet_t *l_pkt = &a_queue->packets[a_queue->head];
+    
+    ssize_t l_sent = sendto(a_fd, l_pkt->data, l_pkt->size, 0,
+                            (struct sockaddr*)&l_pkt->addr, l_pkt->addr_len);
+    
+    if (l_sent < 0) {
+        int l_errno = errno;
+        if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+            return -2;  // Would block, keep packet in queue
+        }
+        log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
+        // Drop this packet and continue
+        DAP_DELETE(l_pkt->data);
+        a_queue->head = (a_queue->head + 1) % a_queue->capacity;
+        a_queue->count--;
+        return -1;
+    }
+    
+    // Successfully sent, remove from queue
+    debug_if(g_debug_reactor, L_DEBUG,
+             "Packet queue: sent packet %zd bytes (queue size now: %zu)",
+             l_sent, a_queue->count - 1);
+    
+    DAP_DELETE(l_pkt->data);
+    a_queue->head = (a_queue->head + 1) % a_queue->capacity;
+    a_queue->count--;
+    
+    return l_sent;
+}
+
+// =============================================================================
+// END DATAGRAM PACKET QUEUE
+// =============================================================================
+
 const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
     "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT", "RAW", 
     "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
@@ -1924,6 +2086,13 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
 #ifndef DAP_EVENTS_CAPS_IOCP
     dap_events_socket_close(a_esocket);
 #endif
+    
+    // Clean up packet queue for datagram sockets
+    if (a_esocket->packet_queue) {
+        s_packet_queue_delete(a_esocket->packet_queue);
+        a_esocket->packet_queue = NULL;
+    }
+    
     DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
     if (!a_preserve_inheritor)
         DAP_DELETE(a_esocket->_inheritor);
@@ -2318,6 +2487,65 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
 #endif
 
+    // DATAGRAM PROTOCOLS (UDP, SCTP, etc.): Try direct sendto first, queue if EAGAIN
+    if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+        if (!a_es->addr_size || a_es->addr_storage.ss_family == 0) {
+            log_it(L_ERROR, "Datagram socket has no destination address set");
+            return 0;
+        }
+        
+        // If queue already has packets, add to queue (maintain ordering!)
+        if (a_es->packet_queue && a_es->packet_queue->count > 0) {
+            if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size,
+                                    &a_es->addr_storage, a_es->addr_size) == 0) {
+                // Mark socket as writable to trigger queue flush
+                dap_events_socket_set_writable_unsafe(a_es, true);
+                return a_data_size;  // Queued successfully
+            }
+            return 0;  // Queue full
+        }
+        
+        // Try direct sendto
+        ssize_t l_sent = sendto(a_es->fd, a_data, a_data_size, 0,
+                                (struct sockaddr*)&a_es->addr_storage, a_es->addr_size);
+        
+        if (l_sent < 0) {
+            int l_errno = errno;
+            if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+                // Socket would block, create queue and add packet
+                if (!a_es->packet_queue) {
+                    a_es->packet_queue = s_packet_queue_create();
+                    if (!a_es->packet_queue) {
+                        log_it(L_ERROR, "Failed to create packet queue");
+                        return 0;
+                    }
+                }
+                
+                if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size,
+                                        &a_es->addr_storage, a_es->addr_size) == 0) {
+                    // Mark socket as writable to trigger queue flush later
+                    dap_events_socket_set_writable_unsafe(a_es, true);
+                    
+                    debug_if(g_debug_reactor, L_DEBUG,
+                             "Datagram sendto would block, queued %zu bytes", a_data_size);
+                    return a_data_size;  // Queued successfully
+                }
+                return 0;  // Queue full
+            }
+            
+            // Permanent error
+            log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
+            return 0;
+        }
+        
+        debug_if(g_debug_reactor, L_DEBUG,
+                 "Datagram direct sendto: sent %zd bytes (requested %zu)",
+                 l_sent, a_data_size);
+        
+        return (size_t)l_sent;
+    }
+
+    // TCP/other: Use buffered writes
     byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
     if (!l_write_pos)
         return 0;

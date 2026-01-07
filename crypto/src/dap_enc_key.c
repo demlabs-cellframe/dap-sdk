@@ -164,6 +164,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_callback =                     dap_enc_salsa2012_key_new,
         .delete_callback =                  dap_enc_salsa2012_key_delete,
         .new_generate_callback =            dap_enc_salsa2012_key_generate,
+        .new_from_data_private_callback =   dap_enc_salsa2012_key_new_from_raw_bytes,
         .gen_key_public =                   NULL,
         .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_salsa2012_calc_encode_size,
@@ -1271,18 +1272,27 @@ dap_enc_key_t* dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
         return NULL;
     }
     
-    // Allocate priv_key_data buffer
-    l_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key_size);
-    if (!l_key->priv_key_data) {
-        log_it(L_ERROR, "Failed to allocate priv_key_data buffer");
-        DAP_DELETE(l_key);
-        return NULL;
+    // Check if cipher has custom private key data callback
+    if (s_callbacks[a_key_type].new_from_data_private_callback) {
+        // Cipher-specific setup (e.g., SALSA2012 extracting nonce from first 8 bytes)
+        s_callbacks[a_key_type].new_from_data_private_callback(
+            l_key,
+            NULL, 0,  // kex_buf (unused for raw bytes)
+            a_raw_key_bytes, a_key_size,  // seed = raw bytes
+            a_key_size  // key_size
+        );
+    } else {
+        // Default: just copy raw bytes to priv_key_data
+        l_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key_size);
+        if (!l_key->priv_key_data) {
+            log_it(L_ERROR, "Failed to allocate priv_key_data buffer");
+            DAP_DELETE(l_key);
+            return NULL;
+        }
+        
+        l_key->priv_key_data_size = a_key_size;
+        memcpy(l_key->priv_key_data, a_raw_key_bytes, a_key_size);
     }
-    
-    l_key->priv_key_data_size = a_key_size;
-    
-    // Copy raw key bytes directly - NO Keccak hashing!
-    memcpy(l_key->priv_key_data, a_raw_key_bytes, a_key_size);
     
     // Set timestamp
     l_key->last_used_timestamp = time(NULL);
@@ -1316,4 +1326,5 @@ int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
     
     return 0;
 }
+
 

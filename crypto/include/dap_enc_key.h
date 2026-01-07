@@ -277,6 +277,12 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;
     dap_enc_callback_new_generate new_generate_callback;
+    
+    // Callback for creating key from raw private key data (e.g., KDF output)
+    // If NULL, default implementation just copies bytes to priv_key_data
+    // If set, allows cipher-specific setup (e.g., SALSA2012 extracting nonce)
+    dap_enc_callback_new_generate new_from_data_private_callback;
+    
     dap_enc_callback_new delete_callback;
     dap_enc_callback_delete del_sign;
     dap_enc_callback_delete del_pub_key;

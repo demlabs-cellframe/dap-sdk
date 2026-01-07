@@ -87,6 +87,9 @@
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
 
+// Forward declaration for packet queue helper (defined in dap_events_socket.c, NOT static)
+extern ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, int a_fd);
+
 static _Thread_local dap_context_t *s_context = NULL;
 
 static void *s_context_thread(void *arg); // Context thread
@@ -982,9 +985,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_must_read_smth = true;
-                        l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
-                                                l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
+                        // UDP: ALWAYS overwrite buf_in (datagrams are independent!)
+                        // Do NOT append like TCP - each datagram is a separate message!
+                        debug_if(g_debug_reactor, L_DEBUG, 
+                                 "UDP recvfrom: fd=%d, buf_in=%p, buf_in_size(before)=%zu, buf_in_size_max=%zu",
+                                 l_cur->fd, l_cur->buf_in, l_cur->buf_in_size, l_cur->buf_in_size_max);
+                        l_bytes_read = recvfrom(l_cur->fd, (char *)l_cur->buf_in,
+                                                l_cur->buf_in_size_max, 0,
                                                 (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
+                        debug_if(g_debug_reactor, L_DEBUG, 
+                                 "UDP recvfrom: fd=%d, bytes_read=%zd", l_cur->fd, l_bytes_read);
 
 #ifdef DAP_OS_WINDOWS
                         l_errno = WSAGetLastError();
@@ -1089,7 +1099,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT  || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
                             l_cur->last_time_active = l_cur_time;
                         }
-                        l_cur->buf_in_size += l_bytes_read;
+                        // UDP: Replace buf_in_size (datagrams are independent!)
+                        // TCP: Append to buf_in_size (stream-based)
+                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+                            l_cur->buf_in_size = l_bytes_read;  // REPLACE for UDP
+                        } else {
+                            l_cur->buf_in_size += l_bytes_read;  // APPEND for TCP
+                        }
                         if(g_debug_reactor)
                             log_it(L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
                         if (l_cur->callbacks.read_callback) {
@@ -1246,14 +1262,34 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
-                        l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
-                                              l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
-                                              (struct sockaddr*)&l_cur->addr_storage, l_cur->addr_size);
+                        // UDP uses packet queue (not buf_out!)
+                        if (l_cur->packet_queue && l_cur->packet_queue->count > 0) {
+                            // Flush packet queue
+                            ssize_t l_queue_sent = s_packet_queue_pop_and_send(l_cur->packet_queue, l_cur->fd);
+                            if (l_queue_sent > 0) {
+                                l_bytes_sent = l_queue_sent;
+                                l_errno = 0;
+                                
+                                // Continue flushing if more packets in queue
+                                if (l_cur->packet_queue->count > 0) {
+                                    dap_events_socket_set_writable_unsafe(l_cur, true);
+                                } else {
+                                    dap_events_socket_set_writable_unsafe(l_cur, false);
+                                }
+                            } else if (l_queue_sent == -2) {
+                                // Would block, keep writable flag and try again later
+                                l_errno = EAGAIN;
+                            } else {
+                                // Error or empty queue
+                                dap_events_socket_set_writable_unsafe(l_cur, false);
+                            }
+                        } else {
+                            // No queued packets, disable writable flag
+                            dap_events_socket_set_writable_unsafe(l_cur, false);
+                        }
 #ifdef DAP_OS_WINDOWS
-                        dap_events_socket_set_writable_unsafe(l_cur,false);
-                        l_errno = WSAGetLastError();
-#else
-                        l_errno = errno;
+                        if (l_errno == 0)
+                            l_errno = WSAGetLastError();
 #endif
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_RAW:

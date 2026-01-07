@@ -79,6 +79,57 @@ void dap_enc_salsa2012_key_new(struct dap_enc_key * a_key)
 }
 
 /**
+ * @brief Create SALSA2012 key from raw bytes with embedded nonce
+ * 
+ * CRITICAL: For obfuscation where we derive DETERMINISTIC keys from KDF.
+ * Format: raw_bytes = [nonce(8)] + [key(32+)] = 40+ bytes total
+ * 
+ * The nonce is stored in _inheritor for use by encrypt/decrypt functions.
+ * This ensures SAME key object on client/server when using same KDF params.
+ * 
+ * @param a_key Key structure (already allocated)
+ * @param kex_buf Unused
+ * @param kex_size Unused
+ * @param seed Raw bytes from KDF
+ * @param seed_size Size of raw bytes (must be >= 40)
+ * @param key_size Desired key size
+ */
+void dap_enc_salsa2012_key_new_from_raw_bytes(struct dap_enc_key *a_key,
+                                                const void *kex_buf, size_t kex_size,
+                                                const void *seed, size_t seed_size,
+                                                size_t key_size)
+{
+    (void)kex_buf;
+    (void)kex_size;
+    
+    if (seed_size < SALSA20_NONCE_SIZE + SALSA20_KEY_SIZE) {
+        log_it(L_ERROR, "SALSA2012: raw bytes too small (need %d, got %zu)",
+               SALSA20_NONCE_SIZE + SALSA20_KEY_SIZE, seed_size);
+        return;
+    }
+    
+    a_key->last_used_timestamp = time(NULL);
+    
+    // Copy actual key (skip first 8 bytes nonce)
+    a_key->priv_key_data_size = SALSA20_KEY_SIZE;
+    a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
+    memcpy(a_key->priv_key_data, (const uint8_t*)seed + SALSA20_NONCE_SIZE, SALSA20_KEY_SIZE);
+    
+    // Store nonce in _inheritor for encrypt/decrypt
+    a_key->_inheritor_size = SALSA20_NONCE_SIZE;
+    a_key->_inheritor = DAP_NEW_SIZE(uint8_t, SALSA20_NONCE_SIZE);
+    memcpy(a_key->_inheritor, seed, SALSA20_NONCE_SIZE);
+    
+    log_it(L_DEBUG, "SALSA2012: created key from raw bytes: nonce=%02x%02x%02x%02x%02x%02x%02x%02x key=%02x%02x%02x%02x...",
+           ((uint8_t*)a_key->_inheritor)[0], ((uint8_t*)a_key->_inheritor)[1],
+           ((uint8_t*)a_key->_inheritor)[2], ((uint8_t*)a_key->_inheritor)[3],
+           ((uint8_t*)a_key->_inheritor)[4], ((uint8_t*)a_key->_inheritor)[5],
+           ((uint8_t*)a_key->_inheritor)[6], ((uint8_t*)a_key->_inheritor)[7],
+           ((uint8_t*)a_key->priv_key_data)[0], ((uint8_t*)a_key->priv_key_data)[1],
+           ((uint8_t*)a_key->priv_key_data)[2], ((uint8_t*)a_key->priv_key_data)[3]);
+}
+
+/**
  * @brief dap_enc_salsa2012_decrypt
  * 
  * @param a_key 
@@ -191,13 +242,20 @@ size_t dap_enc_salsa2012_encrypt_fast(struct dap_enc_key * a_key, const void * a
         return 0;
     }
 
-    if(randombytes(a_out, SALSA20_NONCE_SIZE) == 1)
-    {
-        log_it(L_ERROR, "failed to get SALSA20_NONCE_SIZE bytes nonce");
-        return 0;
+    // Check if we have deterministic nonce in _inheritor
+    if (a_key->_inheritor && a_key->_inheritor_size == SALSA20_NONCE_SIZE) {
+        // Use deterministic nonce from _inheritor
+        memcpy(a_out, a_key->_inheritor, SALSA20_NONCE_SIZE);
+    } else {
+        // Generate random nonce (default behavior)
+        if(randombytes(a_out, SALSA20_NONCE_SIZE) == 1) {
+            log_it(L_ERROR, "failed to get SALSA20_NONCE_SIZE bytes nonce");
+            return 0;
+        }
     }
 
     crypto_stream_salsa2012_xor(a_out + SALSA20_NONCE_SIZE, a_in, a_in_size, a_out, a_key->priv_key_data);
     return l_out_size;
  }
 
+ 

@@ -11,6 +11,13 @@ extern "C" {
 void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key);
 void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size);
+
+// Create key from raw bytes with deterministic nonce
+void dap_enc_salsa2012_key_new_from_raw_bytes(struct dap_enc_key *a_key,
+                                                const void *kex_buf, size_t kex_size,
+                                                const void *seed, size_t seed_size,
+                                                size_t key_size);
+
 //------salsa2012---------
 void dap_enc_salsa2012_key_new(struct dap_enc_key * a_key);
 

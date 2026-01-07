@@ -24,9 +24,6 @@
 #include "dap_rand.h"  // For randombytes
 #include "dap_enc.h"
 
-// SALSA2012 direct access for deterministic encryption
-#include "salsa2012/crypto_stream_salsa2012.h"
-
 #define LOG_TAG "dap_transport_obfuscation"
 #define SALSA20_NONCE_SIZE 8
 
@@ -35,19 +32,19 @@
 // All encrypted with size-derived key
 
 /**
- * @brief Create or update cipher key with KDF from packet size
+ * @brief Create cipher key from KDF (with embedded nonce for SALSA2012)
  * 
- * OPTIMIZED: Uses dap_enc_key_new_from_raw_bytes (NO Keccak hashing!)
+ * For SALSA2012: KDF generates 40 bytes = [nonce(8)] + [key(32)]
+ * The cipher's new_from_data_private_callback extracts nonce automatically.
  * 
  * @param a_packet_size Packet size (used as KDF counter)
  * @param a_existing_key Existing key to update, or NULL to create new
- * @param a_nonce_out Output buffer for deterministic nonce (8 bytes), or NULL if not needed
  * @return dap_enc_key_t ready to use, or NULL on error
  */
-static dap_enc_key_t* s_get_cipher_key_for_size(size_t a_packet_size, dap_enc_key_t *a_existing_key, uint8_t *a_nonce_out)
+static dap_enc_key_t* s_get_cipher_key_for_size(size_t a_packet_size, dap_enc_key_t *a_existing_key)
 {
-    // Generate KDF from packet size
-    uint8_t l_kdf_key[32];  // 256-bit key for SALSA2012
+    // Generate KDF: 40 bytes for SALSA2012 (8 nonce + 32 key)
+    uint8_t l_kdf_key[40];
     uint64_t l_size_counter = (uint64_t)a_packet_size;
     
     int l_ret = dap_enc_kdf_derive(
@@ -65,41 +62,12 @@ static dap_enc_key_t* s_get_cipher_key_for_size(size_t a_packet_size, dap_enc_ke
         return NULL;
     }
     
-    // Generate deterministic nonce (CRITICAL for reproducibility!)
-    if (a_nonce_out) {
-        uint8_t l_nonce_full[16];  // Get more than needed, then truncate
-        l_ret = dap_enc_kdf_derive(
-            DAP_TRANSPORT_OBFUSCATION_SEED,
-            strlen(DAP_TRANSPORT_OBFUSCATION_SEED),
-            "nonce",
-            strlen("nonce"),
-            l_size_counter,  // Same counter!
-            l_nonce_full,
-            sizeof(l_nonce_full)
-        );
-        
-        if (l_ret != 0) {
-            log_it(L_ERROR, "Failed to derive nonce for size %zu", a_packet_size);
-            return NULL;
-        }
-        
-        // Copy first 8 bytes as SALSA2012 nonce
-        memcpy(a_nonce_out, l_nonce_full, 8);
-        
-        // DEBUG: Print nonce
-        log_it(L_DEBUG, "Nonce for size %zu: %02x%02x%02x%02x %02x%02x%02x%02x",
-               a_packet_size,
-               a_nonce_out[0], a_nonce_out[1], a_nonce_out[2], a_nonce_out[3],
-               a_nonce_out[4], a_nonce_out[5], a_nonce_out[6], a_nonce_out[7]);
-    }
-    
-    // DEBUG: Print KDF
-    log_it(L_DEBUG, "KDF for size %zu: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+    // DEBUG: Print KDF structure
+    log_it(L_DEBUG, "KDF for size %zu: nonce=%02x%02x%02x%02x%02x%02x%02x%02x key=%02x%02x%02x%02x...",
            a_packet_size,
            l_kdf_key[0], l_kdf_key[1], l_kdf_key[2], l_kdf_key[3],
            l_kdf_key[4], l_kdf_key[5], l_kdf_key[6], l_kdf_key[7],
-           l_kdf_key[8], l_kdf_key[9], l_kdf_key[10], l_kdf_key[11],
-           l_kdf_key[12], l_kdf_key[13], l_kdf_key[14], l_kdf_key[15]);
+           l_kdf_key[8], l_kdf_key[9], l_kdf_key[10], l_kdf_key[11]);
     
     dap_enc_key_t *l_key;
     
@@ -113,6 +81,7 @@ static dap_enc_key_t* s_get_cipher_key_for_size(size_t a_packet_size, dap_enc_ke
         }
     } else {
         // Create new key from raw KDF bytes (NO Keccak!)
+        // SALSA2012 will extract nonce from bytes [0:7], key from [8:39]
         l_key = dap_enc_key_new_from_raw_bytes(DAP_ENC_KEY_TYPE_SALSA2012, 
                                                 l_kdf_key, sizeof(l_kdf_key));
         if (!l_key) {
@@ -173,11 +142,10 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
         randombytes(l_cleartext + l_required_size, l_padding_size);
     }
     
-    // Create cipher key + deterministic nonce
-    uint8_t l_nonce[SALSA20_NONCE_SIZE];
+    // Create cipher key (40 bytes: 8 nonce + 32 key)
     log_it(L_DEBUG, "OBFUSCATE: final_size=%zu, handshake=%zu, padding=%zu", 
            l_final_size, a_handshake_size, l_padding_size);
-    dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_final_size, NULL, l_nonce);
+    dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_final_size, NULL);
     if (!l_key) {
         DAP_DELETE(l_cleartext);
         return -4;
@@ -196,10 +164,9 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
            l_cleartext[24], l_cleartext[25], l_cleartext[26], l_cleartext[27],
            l_cleartext[28], l_cleartext[29], l_cleartext[30], l_cleartext[31]);
     
-    // Encrypt entire packet with deterministic nonce
-    // Format: [nonce(8)] + [encrypted_cleartext]
-    size_t l_encrypted_size = SALSA20_NONCE_SIZE + l_final_size;
-    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_size);
+    // Encrypt with SALSA2012 (uses embedded nonce from key)
+    size_t l_encrypted_max = l_final_size + 256;  // Extra for encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
     if (!l_encrypted) {
         log_it(L_ERROR, "Failed to allocate encryption buffer");
         dap_enc_key_delete(l_key);
@@ -207,23 +174,16 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
         return -5;
     }
     
-    // Write deterministic nonce
-    memcpy(l_encrypted, l_nonce, SALSA20_NONCE_SIZE);
-    
-    // Encrypt with SALSA2012 XOR (deterministic!)
-    int l_xor_ret = crypto_stream_salsa2012_xor(
-        l_encrypted + SALSA20_NONCE_SIZE,  // Output after nonce
-        l_cleartext,                        // Input cleartext
-        l_final_size,                       // Input size
-        l_nonce,                            // Deterministic nonce
-        l_key->priv_key_data                // Key
-    );
+    size_t l_encrypted_size = dap_enc_code(l_key,
+                                           l_cleartext, l_final_size,
+                                           l_encrypted, l_encrypted_max,
+                                           DAP_ENC_DATA_TYPE_RAW);
     
     dap_enc_key_delete(l_key);
     DAP_DELETE(l_cleartext);
     
-    if (l_xor_ret != 0) {
-        log_it(L_ERROR, "Failed to encrypt obfuscated handshake (XOR failed)");
+    if (l_encrypted_size == 0) {
+        log_it(L_ERROR, "Failed to encrypt obfuscated handshake");
         DAP_DELETE(l_encrypted);
         return -6;
     }
@@ -268,38 +228,17 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
         return -2;  // Size out of range, not obfuscated handshake
     }
     
-    // Ensure packet has nonce
-    if (a_obfuscated_size < SALSA20_NONCE_SIZE) {
-        return -3;
-    }
-    
-    // Extract nonce from packet (first 8 bytes)
-    uint8_t l_nonce[SALSA20_NONCE_SIZE];
-    memcpy(l_nonce, a_obfuscated_data, SALSA20_NONCE_SIZE);
-    
     // CRITICAL: KDF is based on CLEARTEXT size, NOT encrypted size!
     // encrypted_size = cleartext_size + SALSA20_NONCE_SIZE
     // So: cleartext_size = encrypted_size - SALSA20_NONCE_SIZE
     size_t l_cleartext_size = a_obfuscated_size - SALSA20_NONCE_SIZE;
     
-    // Verify nonce matches expected (deterministic from CLEARTEXT size!)
-    uint8_t l_expected_nonce[SALSA20_NONCE_SIZE];
+    // Create cipher key for decryption (40 bytes: 8 nonce + 32 key)
     log_it(L_DEBUG, "DEOBFUSCATE: encrypted_size=%zu, cleartext_size=%zu", 
            a_obfuscated_size, l_cleartext_size);
-    dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_cleartext_size, NULL, l_expected_nonce);
+    dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_cleartext_size, NULL);
     if (!l_key) {
         return -4;
-    }
-    
-    // DEBUG: Compare nonces
-    if (memcmp(l_nonce, l_expected_nonce, SALSA20_NONCE_SIZE) != 0) {
-        log_it(L_WARNING, "Nonce mismatch: received %02x%02x%02x%02x %02x%02x%02x%02x, "
-               "expected %02x%02x%02x%02x %02x%02x%02x%02x",
-               l_nonce[0], l_nonce[1], l_nonce[2], l_nonce[3],
-               l_nonce[4], l_nonce[5], l_nonce[6], l_nonce[7],
-               l_expected_nonce[0], l_expected_nonce[1], l_expected_nonce[2], l_expected_nonce[3],
-               l_expected_nonce[4], l_expected_nonce[5], l_expected_nonce[6], l_expected_nonce[7]);
-        // Continue anyway - might be old packet
     }
     
     // DEBUG: Print first 32 bytes of ciphertext BEFORE decryption
@@ -317,32 +256,27 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
                a_obfuscated_data[28], a_obfuscated_data[29], a_obfuscated_data[30], a_obfuscated_data[31]);
     }
     
-    // Decrypt with SALSA2012 XOR
-    size_t l_ciphertext_size = a_obfuscated_size - SALSA20_NONCE_SIZE;
-    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_ciphertext_size);
+    // Decrypt with SALSA2012 (uses embedded nonce from key)
+    size_t l_decrypted_max = a_obfuscated_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
     if (!l_decrypted) {
         log_it(L_ERROR, "Failed to allocate decryption buffer");
         dap_enc_key_delete(l_key);
         return -5;
     }
     
-    int l_xor_ret = crypto_stream_salsa2012_xor(
-        l_decrypted,                                    // Output cleartext
-        a_obfuscated_data + SALSA20_NONCE_SIZE,       // Input ciphertext (after nonce)
-        l_ciphertext_size,                             // Size
-        l_nonce,                                        // Nonce from packet
-        l_key->priv_key_data                           // Key
-    );
+    size_t l_decrypted_size = dap_enc_decode(l_key,
+                                             a_obfuscated_data, a_obfuscated_size,
+                                             l_decrypted, l_decrypted_max,
+                                             DAP_ENC_DATA_TYPE_RAW);
     
     dap_enc_key_delete(l_key);
     
-    if (l_xor_ret != 0) {
-        log_it(L_ERROR, "Failed to decrypt obfuscated handshake (XOR failed)");
+    if (l_decrypted_size == 0) {
+        // Decryption failed - not an obfuscated handshake or wrong key
         DAP_DELETE(l_decrypted);
         return -6;
     }
-    
-    size_t l_decrypted_size = l_ciphertext_size;
     
     // DEBUG: Print first 32 bytes of decrypted data AFTER decryption
     if (l_decrypted_size >= 32) {

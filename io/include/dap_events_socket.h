@@ -140,6 +140,34 @@ typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_worker dap_worker_t;
 typedef struct dap_context dap_context_t;
 
+/**
+ * @brief Single datagram packet for queuing
+ * 
+ * Universal structure for all datagram protocols (UDP, SCTP, etc.)
+ * Used when sendto() returns EAGAIN/EWOULDBLOCK.
+ * Each packet is sent independently (no merging!)
+ */
+typedef struct dap_events_socket_packet {
+    uint8_t *data;                      // Packet data (allocated)
+    size_t size;                        // Packet size
+    struct sockaddr_storage addr;       // Destination address
+    socklen_t addr_len;                 // Address length
+} dap_events_socket_packet_t;
+
+/**
+ * @brief Datagram packet queue (fast dynamic array)
+ * 
+ * Universal queue for all datagram protocols (UDP, SCTP, etc.)
+ * Stores pending packets when socket is not writable.
+ * Uses ring buffer for O(1) enqueue/dequeue.
+ */
+typedef struct dap_events_socket_packet_queue {
+    dap_events_socket_packet_t *packets;  // Dynamic array
+    size_t count;                         // Current number of packets
+    size_t capacity;                      // Array capacity
+    size_t head;                          // Index of first packet to send
+} dap_events_socket_packet_queue_t;
+
 typedef struct dap_server dap_server_t;
 
 typedef size_t (*dap_events_socket_clear_buf)(char*, size_t);
@@ -277,6 +305,10 @@ typedef struct dap_events_socket {
 
     byte_t *buf_in, *buf_out;
     dap_events_socket_clear_buf cb_buf_cleaner;
+
+    // Datagram packet queue (for all datagram protocols: UDP, SCTP, etc.)
+    // Stores individual packets when sendto() returns EAGAIN
+    dap_events_socket_packet_queue_t *packet_queue;
 
 
 
