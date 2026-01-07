@@ -50,8 +50,11 @@ typedef int SOCKET;
     #include <unistd.h>
     #include <sys/un.h>
 #elif defined(DAP_OS_LINUX)
+    // Both poll and epoll are supported on Linux
+    // epoll is recommended for production (better scalability)
+    // poll can be used for compatibility/debugging by uncommenting below
     #define DAP_EVENTS_CAPS_EPOLL
-    //#define DAP_EVENTS_CAPS_POLL  // Use epoll instead of poll for better scalability
+    //#define DAP_EVENTS_CAPS_POLL  // Uncomment to use poll instead of epoll
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
     #define DAP_EVENTS_CAPS_EVENT_EVENTFD
