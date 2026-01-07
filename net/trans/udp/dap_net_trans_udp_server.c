@@ -132,8 +132,8 @@ static dap_net_trans_server_ops_t s_udp_server_ops = {
 /**
  * @brief Wrapper for start operation (adapts to unified trans server API)
  * 
- * Starts UDP server on all specified address:port pairs.
- * Each pair creates a separate sharded listener set.
+ * Creates separate flow server for each address:port pair.
+ * Each flow server handles its own sharded listeners and flows.
  */
 static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
                                       const char **a_addrs, uint16_t *a_ports, size_t a_count)
@@ -147,34 +147,96 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
     
     dap_net_trans_udp_server_t *l_udp_server = (dap_net_trans_udp_server_t*)a_server;
     
-    // Start listeners on all specified address:port pairs
+    debug_if(s_debug_more, L_DEBUG, "Starting UDP server '%s' with %zu address:port pairs",
+             l_udp_server->server_name, a_count);
+    
+    // Allocate array for flow servers
+    l_udp_server->flow_servers = DAP_NEW_Z_COUNT(dap_io_flow_server_t*, a_count);
+    if (!l_udp_server->flow_servers) {
+        log_it(L_CRITICAL, "Failed to allocate flow servers array");
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Allocated flow_servers array for %zu servers", a_count);
+    
+    // Create and start flow server for each address:port pair
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = a_addrs[i];
         uint16_t l_port = a_ports[i];
         
         debug_if(s_debug_more, L_DEBUG,
-                 "Starting UDP server on %s:%u (%zu/%zu)",
+                 "Creating UDP flow server for %s:%u (%zu/%zu)",
                  l_addr ? l_addr : "0.0.0.0", l_port, i + 1, a_count);
         
-        int l_ret = dap_io_flow_server_listen(l_udp_server->flow_server, l_addr, l_port);
+        // Create unique name for this flow server
+        char l_flow_name[300];
+        snprintf(l_flow_name, sizeof(l_flow_name), "%s_%s_%u", 
+                 l_udp_server->server_name,
+                 l_addr ? l_addr : "0.0.0.0",
+                 l_port);
+        
+        debug_if(s_debug_more, L_DEBUG, "Creating flow server '%s'", l_flow_name);
+        
+        // Create flow server
+        dap_io_flow_server_t *l_flow_server = dap_io_flow_server_new_udp(
+            l_flow_name, &s_stream_flow_ops, &s_stream_udp_ops);
+        
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_udp returned %p", 
+                 (void*)l_flow_server);
+        
+        if (!l_flow_server) {
+            log_it(L_ERROR, "Failed to create flow server for %s:%u",
+                   l_addr ? l_addr : "0.0.0.0", l_port);
+            
+            // Cleanup previously created flow servers
+            for (size_t j = 0; j < i; j++) {
+                if (l_udp_server->flow_servers[j]) {
+                    dap_io_flow_server_delete(l_udp_server->flow_servers[j]);
+                }
+            }
+            DAP_DELETE(l_udp_server->flow_servers);
+            l_udp_server->flow_servers = NULL;
+            
+            return -2;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "Flow server '%s' created, starting listener", l_flow_name);
+        
+        // Start listener on this flow server
+        int l_ret = dap_io_flow_server_listen(l_flow_server, l_addr, l_port);
+        
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_listen returned %d", l_ret);
+        
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start listener on %s:%u: %d",
                    l_addr ? l_addr : "0.0.0.0", l_port, l_ret);
             
-            // Stop all previously started listeners
-            if (i > 0) {
-                log_it(L_WARNING, "Stopping %zu previously started listeners", i);
-                dap_net_trans_udp_server_stop(l_udp_server);
+            // Cleanup this flow server
+            dap_io_flow_server_delete(l_flow_server);
+            
+            // Cleanup previously created flow servers
+            for (size_t j = 0; j < i; j++) {
+                if (l_udp_server->flow_servers[j]) {
+                    dap_io_flow_server_delete(l_udp_server->flow_servers[j]);
+                }
             }
+            DAP_DELETE(l_udp_server->flow_servers);
+            l_udp_server->flow_servers = NULL;
             
             return l_ret;
         }
         
-        log_it(L_NOTICE, "Started UDP server listener %zu/%zu on %s:%u",
+        // Store flow server
+        l_udp_server->flow_servers[i] = l_flow_server;
+        l_udp_server->flow_servers_count++;
+        
+        log_it(L_NOTICE, "Started UDP flow server %zu/%zu on %s:%u",
                i + 1, a_count, l_addr ? l_addr : "0.0.0.0", l_port);
     }
     
-    log_it(L_NOTICE, "Stream UDP server '%s' started successfully on %zu address:port pair(s)",
+    debug_if(s_debug_more, L_DEBUG, "Success: returning 0");
+    
+    log_it(L_NOTICE, "Stream UDP server '%s' started successfully with %zu flow server(s)",
            l_udp_server->server_name, a_count);
     
     return 0;
@@ -233,16 +295,10 @@ dap_net_trans_udp_server_t* dap_net_trans_udp_server_new(const char *a_name)
     }
     
     snprintf(l_server->server_name, sizeof(l_server->server_name), "%s", a_name);
+    l_server->flow_servers = NULL;
+    l_server->flow_servers_count = 0;
     
-    // Create UDP flow server with stream protocol VTable
-    l_server->flow_server = dap_io_flow_server_new_udp(a_name, &s_stream_flow_ops, &s_stream_udp_ops);
-    if (!l_server->flow_server) {
-        log_it(L_ERROR, "Failed to create UDP flow server");
-        DAP_DELETE(l_server);
-        return NULL;
-    }
-    
-    log_it(L_NOTICE, "Created Stream UDP server '%s' using UDP flow infrastructure", a_name);
+    log_it(L_NOTICE, "Created Stream UDP server '%s'", a_name);
     
     return l_server;
 }
@@ -251,34 +307,34 @@ int dap_net_trans_udp_server_start(dap_net_trans_udp_server_t *a_server,
                                    const char *a_addr,
                                    uint16_t a_port)
 {
-    if (!a_server || !a_server->flow_server) {
+    if (!a_server) {
         log_it(L_ERROR, "Invalid UDP server for start");
         return -1;
     }
     
-    // Delegate to generic flow server (handles socket sharding automatically)
-    int l_result = dap_io_flow_server_listen(a_server->flow_server, a_addr, a_port);
+    // Use wrapper with single address/port
+    const char *l_addrs[] = {a_addr};
+    uint16_t l_ports[] = {a_port};
     
-    if (l_result == 0) {
-        log_it(L_NOTICE, "Stream UDP server '%s' started on %s:%u",
-               a_server->server_name, a_addr ? a_addr : "0.0.0.0", a_port);
-    } else {
-        log_it(L_ERROR, "Failed to start Stream UDP server '%s': error %d",
-               a_server->server_name, l_result);
-    }
-    
-    return l_result;
+    return s_udp_server_start_wrapper(a_server, NULL, l_addrs, l_ports, 1);
 }
 
 void dap_net_trans_udp_server_stop(dap_net_trans_udp_server_t *a_server)
 {
-    if (!a_server || !a_server->flow_server) {
+    if (!a_server) {
         return;
     }
     
     log_it(L_NOTICE, "Stopping Stream UDP server '%s'", a_server->server_name);
     
-    dap_io_flow_server_stop(a_server->flow_server);
+    // Stop all flow servers
+    if (a_server->flow_servers) {
+        for (size_t i = 0; i < a_server->flow_servers_count; i++) {
+            if (a_server->flow_servers[i]) {
+                dap_io_flow_server_stop(a_server->flow_servers[i]);
+            }
+        }
+    }
 }
 
 void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
@@ -289,9 +345,18 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
     
     log_it(L_NOTICE, "Deleting Stream UDP server '%s'", a_server->server_name);
     
-    if (a_server->flow_server) {
-        dap_io_flow_server_delete(a_server->flow_server);
+    // Delete all flow servers
+    if (a_server->flow_servers) {
+        for (size_t i = 0; i < a_server->flow_servers_count; i++) {
+            if (a_server->flow_servers[i]) {
+                dap_io_flow_server_delete(a_server->flow_servers[i]);
+            }
+        }
+        DAP_DELETE(a_server->flow_servers);
+        a_server->flow_servers = NULL;
     }
+    
+    a_server->flow_servers_count = 0;
     
     DAP_DELETE(a_server);
 }

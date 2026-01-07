@@ -170,6 +170,9 @@ int dap_net_trans_server_start(dap_net_trans_server_t *a_server,
         return -1;
     }
 
+    log_it(L_DEBUG, "dap_net_trans_server_start: type=%d, count=%zu", 
+             a_server->trans_type, a_count);
+
     // Get operations for this trans type
     const dap_net_trans_server_ops_t *l_ops = dap_net_trans_server_get_ops(a_server->trans_type);
     if (!l_ops) {
@@ -177,8 +180,15 @@ int dap_net_trans_server_start(dap_net_trans_server_t *a_server,
         return -1;
     }
 
+    log_it(L_DEBUG, "dap_net_trans_server_start: ops=%p, start=%p, trans_specific=%p", 
+             (void*)l_ops, (void*)l_ops->start, (void*)a_server->trans_specific);
+
     // Start trans-specific server using registered callback
-    return l_ops->start(a_server->trans_specific, a_cfg_section, a_addrs, a_ports, a_count);
+    int l_ret = l_ops->start(a_server->trans_specific, a_cfg_section, a_addrs, a_ports, a_count);
+    
+    log_it(L_DEBUG, "dap_net_trans_server_start: start returned %d", l_ret);
+    
+    return l_ret;
 }
 
 /**

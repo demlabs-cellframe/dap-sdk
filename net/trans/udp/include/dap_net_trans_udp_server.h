@@ -69,9 +69,10 @@ typedef struct udp_worker_context {
  * Wraps generic dap_io_flow_server_t with Stream UDP protocol.
  */
 typedef struct dap_net_trans_udp_server {
-    char server_name[256];              ///< Server name for identification
-    dap_net_trans_t *trans;             ///< UDP trans instance
-    dap_io_flow_server_t *flow_server;  ///< Generic flow server instance
+    char server_name[256];               ///< Server name for identification
+    dap_net_trans_t *trans;              ///< UDP trans instance
+    dap_io_flow_server_t **flow_servers; ///< Array of flow server instances (one per listener)
+    size_t flow_servers_count;           ///< Number of flow servers
 } dap_net_trans_udp_server_t;
 
 #define DAP_NET_TRANS_UDP_SERVER(a) ((dap_net_trans_udp_server_t *) (a)->_inheritor)

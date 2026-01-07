@@ -345,3 +345,115 @@ DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_enc_code,
     return l_copy_size;
 }
 
+// ============================================================================
+// dap_io_flow Mock Wrappers (for UDP isolation)
+// ============================================================================
+
+// Mock flow server instance
+static struct {
+    void *mock_ptr;
+} s_mock_io_flow_server = {0};
+
+// Wrapper for dap_io_flow_server_new
+DAP_MOCK_WRAPPER_CUSTOM(void*, dap_io_flow_server_new,
+    PARAM(const char*, a_name),
+    PARAM(void*, a_ops),
+    PARAM(int, a_boundary_type)
+)
+{
+    UNUSED(a_name);
+    UNUSED(a_ops);
+    UNUSED(a_boundary_type);
+    
+    // Return mock value if set, otherwise return mock instance
+    if (g_mock_dap_io_flow_server_new && g_mock_dap_io_flow_server_new->return_value.ptr) {
+        return g_mock_dap_io_flow_server_new->return_value.ptr;
+    }
+    return &s_mock_io_flow_server;
+}
+
+// Wrapper for dap_io_flow_server_new_udp
+DAP_MOCK_WRAPPER_CUSTOM(void*, dap_io_flow_server_new_udp,
+    PARAM(const char*, a_name),
+    PARAM(void*, a_ops),
+    PARAM(void*, a_udp_ops)
+)
+{
+    UNUSED(a_name);
+    UNUSED(a_ops);
+    UNUSED(a_udp_ops);
+    
+    // Return mock value if set, otherwise return mock instance
+    if (g_mock_dap_io_flow_server_new_udp && g_mock_dap_io_flow_server_new_udp->return_value.ptr) {
+        return g_mock_dap_io_flow_server_new_udp->return_value.ptr;
+    }
+    return &s_mock_io_flow_server;
+}
+
+// Wrapper for dap_io_flow_server_listen
+DAP_MOCK_WRAPPER_CUSTOM(int, dap_io_flow_server_listen,
+    PARAM(void*, a_server),
+    PARAM(const char*, a_addr),
+    PARAM(uint16_t, a_port)
+)
+{
+    UNUSED(a_server);
+    UNUSED(a_addr);
+    UNUSED(a_port);
+    
+    // Return mock value if set, otherwise return 0 (success)
+    if (g_mock_dap_io_flow_server_listen && g_mock_dap_io_flow_server_listen->return_value.i != 0) {
+        return g_mock_dap_io_flow_server_listen->return_value.i;
+    }
+    return 0;
+}
+
+// Wrapper for dap_io_flow_server_stop
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_io_flow_server_stop,
+    PARAM(void*, a_server)
+)
+{
+    UNUSED(a_server);
+    // Just verify the call, don't actually stop anything
+}
+
+// Wrapper for dap_io_flow_server_delete
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_io_flow_server_delete,
+    PARAM(void*, a_server)
+)
+{
+    UNUSED(a_server);
+    // Just verify the call, don't actually delete anything
+}
+
+// Wrapper for dap_io_flow_send
+DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_io_flow_send,
+    PARAM(void*, a_flow),
+    PARAM(const uint8_t*, a_data),
+    PARAM(size_t, a_size)
+)
+{
+    UNUSED(a_flow);
+    UNUSED(a_data);
+    
+    // Return mock value if set, otherwise return size (success)
+    if (g_mock_dap_io_flow_send && g_mock_dap_io_flow_send->return_value.i != 0) {
+        return (ssize_t)g_mock_dap_io_flow_send->return_value.i;
+    }
+    return (ssize_t)a_size;
+}
+
+// ============================================================================
+// dap_proc_thread Mock Wrappers
+// ============================================================================
+
+// Wrapper for dap_proc_thread_get_count - return 4 workers for tests
+DAP_MOCK_WRAPPER_CUSTOM(uint32_t, dap_proc_thread_get_count, void)
+{
+    // Return mock value if set, otherwise return 4 (typical test worker count)
+    if (g_mock_dap_proc_thread_get_count && g_mock_dap_proc_thread_get_count->return_value.i != 0) {
+        return (uint32_t)g_mock_dap_proc_thread_get_count->return_value.i;
+    }
+    return 4; // Default: 4 workers for tests
+}
+

@@ -348,8 +348,11 @@ static dap_server_t *s_get_server_from_trans(dap_net_trans_server_t *a_server)
         a_server->trans_type == DAP_NET_TRANS_UDP_RELIABLE ||
         a_server->trans_type == DAP_NET_TRANS_UDP_QUIC_LIKE) {
         dap_net_trans_udp_server_t *l_udp_server = (dap_net_trans_udp_server_t *)a_server->trans_specific;
-        if (l_udp_server && l_udp_server->flow_server && l_udp_server->flow_server->dap_server) {
-            return l_udp_server->flow_server->dap_server;
+        if (l_udp_server && l_udp_server->flow_servers && 
+            l_udp_server->flow_servers_count > 0 &&
+            l_udp_server->flow_servers[0] && 
+            l_udp_server->flow_servers[0]->dap_server) {
+            return l_udp_server->flow_servers[0]->dap_server;
         }
     }
     

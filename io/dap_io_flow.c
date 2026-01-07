@@ -26,6 +26,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_io_flow.h"
 #include "dap_io_flow_socket.h"
@@ -34,6 +35,9 @@
 #include "dap_proc_thread.h"
 
 #define LOG_TAG "dap_io_flow"
+
+// Debug mode
+static bool s_debug_more = false;
 
 // Forward declarations for internal structures
 typedef struct flow_worker_context flow_worker_context_t;
@@ -61,9 +65,6 @@ struct flow_worker_context {
     _Atomic size_t packets_received;
 };
 
-// Static debug flag
-static bool s_debug_more = false;
-
 // Forward declarations for internal functions
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
 static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr);
@@ -85,6 +86,18 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     dap_io_flow_ops_t *a_ops,
     dap_io_flow_boundary_type_t a_boundary_type)
 {
+    // Initialize debug mode from config (once)
+    static bool s_debug_initialized = false;
+    if (!s_debug_initialized && g_config) {
+        s_debug_more = dap_config_get_item_bool_default(g_config, "io_flow", "debug_more", false);
+        s_debug_initialized = true;
+        if (s_debug_more) {
+            log_it(L_NOTICE, "IO Flow debug mode ENABLED");
+        }
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new: entry, name=%s", a_name ? a_name : "NULL");
+    
     if (!a_name || !a_ops) {
         log_it(L_ERROR, "Invalid arguments: name=%p, ops=%p", a_name, a_ops);
         return NULL;
@@ -96,18 +109,33 @@ dap_io_flow_server_t* dap_io_flow_server_new(
         return NULL;
     }
     
+    debug_if(s_debug_more, L_DEBUG, "Allocating dap_io_flow_server_t");
+    
     dap_io_flow_server_t *l_server = DAP_NEW_Z(dap_io_flow_server_t);
     if (!l_server) {
         log_it(L_CRITICAL, "Memory allocation failed");
         return NULL;
     }
     
+    debug_if(s_debug_more, L_DEBUG, "Allocated server at %p", (void*)l_server);
+    
     l_server->name = dap_strdup(a_name);
     l_server->ops = a_ops;
     l_server->boundary_type = a_boundary_type;
     
+    debug_if(s_debug_more, L_DEBUG, "Getting worker count");
+    
     // Get worker count
     uint32_t l_worker_count = dap_proc_thread_get_count();
+    
+    debug_if(s_debug_more, L_DEBUG, "Worker count: %u", l_worker_count);
+    
+    if (l_worker_count == 0) {
+        log_it(L_CRITICAL, "Worker count is 0 - proc threads not initialized");
+        DAP_DEL_Z(l_server->name);
+        DAP_DELETE(l_server);
+        return NULL;
+    }
     
     // Allocate per-worker hash tables
     l_server->flows_per_worker = DAP_NEW_Z_COUNT(dap_io_flow_t*, l_worker_count);
@@ -122,6 +150,8 @@ dap_io_flow_server_t* dap_io_flow_server_new(
         return NULL;
     }
     
+    debug_if(s_debug_more, L_DEBUG, "Initializing RW locks for %u workers", l_worker_count);
+    
     // Initialize RW locks
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_init(&l_server->flow_locks_per_worker[i], NULL);
@@ -130,6 +160,8 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     
     log_it(L_INFO, "Created flow server '%s' with %u workers, boundary_type=%d",
            a_name, l_worker_count, a_boundary_type);
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new: success, returning %p", (void*)l_server);
     
     return l_server;
 }
@@ -282,6 +314,9 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
         DAP_DELETE(a_server->inter_worker_queues);
     }
+    
+    // Free ops structure if it was heap-allocated (e.g. by UDP wrapper)
+    DAP_DELETE(a_server->ops);
     
     DAP_DELETE(a_server->name);
     DAP_DELETE(a_server);

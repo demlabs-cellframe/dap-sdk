@@ -18,6 +18,46 @@ set(TRANSPORT_TEST_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/udp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/dns/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/common/server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../io/include
+)
+
+# ============================================================================
+# Test: Common Trans Tests (transport-agnostic)
+# ============================================================================
+project(test_trans)
+
+add_executable(${PROJECT_NAME}
+    test_trans.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h
+)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
+
+# Link dependencies
+dap_test_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server dap_json-c)
+
+# Include directories
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 30
+    LABELS "unit;net;trans;common"
 )
 
 # ============================================================================
@@ -27,15 +67,15 @@ project(test_trans_http)
 
 add_executable(${PROJECT_NAME}
     test_trans_http.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
-    # Add header file for mock scanner (it won't be compiled, just scanned for DAP_MOCK_DECLARE)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h
 )
-# Mark header file as header-only (not compiled)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
-# Link dependencies using helper function (now uses STATIC libraries)
+# Link dependencies
 dap_test_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server dap_json-c)
 
 # Include directories
 dap_test_add_includes(${PROJECT_NAME})
@@ -141,15 +181,15 @@ project(test_trans_udp)
 
 add_executable(${PROJECT_NAME}
     test_trans_udp.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
-    # Add header file for mock scanner (it won't be compiled, just scanned for DAP_MOCK_DECLARE)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h
 )
-# Mark header file as header-only (not compiled)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
-# Link dependencies using helper function (now uses STATIC libraries)
+# Link dependencies
 dap_test_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server dap_json-c)
 
 # Include directories
 dap_test_add_includes(${PROJECT_NAME})
@@ -177,17 +217,15 @@ project(test_trans_dns)
 
 add_executable(${PROJECT_NAME}
     test_trans_dns.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
-    # Add header file for mock scanner (it won't be compiled, just scanned for DAP_MOCK_DECLARE)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h
 )
-# Mark header file as header-only (not compiled)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # Link dependencies
 dap_test_link_libraries(${PROJECT_NAME})
-# Link with dap_http_client and other libs needed by dap_trans_test_mocks.c
-target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server)
+target_link_libraries(${PROJECT_NAME} PRIVATE dap_http_client dap_http_server dap_http_common dap_enc_server dap_json-c)
 
 # Include directories
 dap_test_add_includes(${PROJECT_NAME})

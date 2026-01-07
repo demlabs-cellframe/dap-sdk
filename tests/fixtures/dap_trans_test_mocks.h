@@ -98,6 +98,17 @@ DAP_MOCK_DECLARE(dap_http_deinit);
 DAP_MOCK_DECLARE(dap_enc_code_out_size);
 DAP_MOCK_DECLARE(dap_enc_code);
 
+// Mock dap_io_flow functions (for UDP isolation)
+DAP_MOCK_DECLARE(dap_io_flow_server_new);
+DAP_MOCK_DECLARE(dap_io_flow_server_new_udp);
+DAP_MOCK_DECLARE(dap_io_flow_server_listen);
+DAP_MOCK_DECLARE(dap_io_flow_server_stop);
+DAP_MOCK_DECLARE(dap_io_flow_server_delete);
+DAP_MOCK_DECLARE(dap_io_flow_send);
+
+// Mock dap_proc_thread functions (for worker count in tests)
+DAP_MOCK_DECLARE(dap_proc_thread_get_count);
+
 // ============================================================================
 // Common Mock Server Instances
 // ============================================================================

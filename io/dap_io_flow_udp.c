@@ -10,10 +10,14 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_io_flow_udp.h"
 #include "dap_io_flow_socket.h"
 
 #define LOG_TAG "dap_io_flow_udp"
+
+// Debug mode
+static bool s_debug_more = false;
 
 // Static storage for UDP-specific ops
 static dap_io_flow_udp_ops_t *s_udp_ops = NULL;
@@ -40,6 +44,18 @@ dap_io_flow_server_t* dap_io_flow_server_new_udp(
     dap_io_flow_ops_t *a_ops,
     dap_io_flow_udp_ops_t *a_udp_ops)
 {
+    // Initialize debug mode from config (once)
+    static bool s_debug_initialized = false;
+    if (!s_debug_initialized && g_config) {
+        s_debug_more = dap_config_get_item_bool_default(g_config, "io_flow_udp", "debug_more", false);
+        s_debug_initialized = true;
+        if (s_debug_more) {
+            log_it(L_NOTICE, "IO Flow UDP debug mode ENABLED");
+        }
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_udp: entry, name=%s", a_name ? a_name : "NULL");
+    
     if (!a_name || !a_ops || !a_udp_ops) {
         log_it(L_ERROR, "Invalid arguments for UDP flow server");
         return NULL;
@@ -48,31 +64,46 @@ dap_io_flow_server_t* dap_io_flow_server_new_udp(
     // Store UDP ops globally (simplified approach)
     s_udp_ops = a_udp_ops;
     
-    // Wrap generic ops with UDP-specific wrappers
-    dap_io_flow_ops_t l_wrapped_ops = *a_ops;
+    debug_if(s_debug_more, L_DEBUG, "Allocating wrapped ops in heap");
     
-    // Override packet_received to add UDP handling
-    l_wrapped_ops.packet_received = s_udp_packet_received_wrapper;
+    // Allocate wrapped ops in heap for this specific server
+    dap_io_flow_ops_t *l_wrapped_ops = DAP_NEW(dap_io_flow_ops_t);
+    if (!l_wrapped_ops) {
+        log_it(L_CRITICAL, "Failed to allocate wrapped ops");
+        return NULL;
+    }
     
-    // Override flow_create to add UDP initialization
-    l_wrapped_ops.flow_create = s_udp_flow_create_wrapper;
+    // Copy and wrap generic ops with UDP-specific wrappers
+    *l_wrapped_ops = *a_ops;
     
-    // Override flow_destroy to add UDP cleanup
-    l_wrapped_ops.flow_destroy = s_udp_flow_destroy_wrapper;
+    // Override callbacks to add UDP handling
+    l_wrapped_ops->packet_received = s_udp_packet_received_wrapper;
+    l_wrapped_ops->flow_create = s_udp_flow_create_wrapper;
+    l_wrapped_ops->flow_destroy = s_udp_flow_destroy_wrapper;
+    
+    debug_if(s_debug_more, L_DEBUG, "Calling dap_io_flow_server_new");
     
     // Create generic flow server with DATAGRAM boundary type (UDP)
     dap_io_flow_server_t *l_server = dap_io_flow_server_new(
         a_name,
-        &l_wrapped_ops,
+        l_wrapped_ops,  // Pass heap-allocated wrapped ops
         DAP_IO_FLOW_BOUNDARY_DATAGRAM
     );
     
+    fprintf(stderr, "dap_io_flow_server_new returned: %p\n", (void*)l_server);
+    fflush(stderr);
+    
     if (!l_server) {
-        log_it(L_ERROR, "Failed to create generic flow server for UDP");
+        fprintf(stderr, "ERROR: Failed to create generic flow server for UDP\n");
+        fflush(stderr);
+        log_it(L_ERROR, "Failed to create generic flow server for UDP (dap_io_flow_server_new returned NULL)");
+        DAP_DELETE(l_wrapped_ops);
         return NULL;
     }
     
     log_it(L_INFO, "Created UDP flow server '%s'", a_name);
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_udp: success, returning %p", (void*)l_server);
     
     return l_server;
 }
