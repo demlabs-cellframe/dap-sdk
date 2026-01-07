@@ -18,7 +18,8 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"  // For randombytes
+#include "dap_enc_kyber.h"
+#include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
 #include "dap_net_trans_udp_server.h"

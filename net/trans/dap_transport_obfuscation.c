@@ -19,7 +19,7 @@
 #include "dap_common.h"
 #include "dap_transport_obfuscation.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"  // For randombytes
+#include "dap_rand.h"  // For randombytes
 #include "dap_enc.h"
 
 // Internal structure for obfuscated packet
