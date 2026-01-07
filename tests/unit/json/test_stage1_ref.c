@@ -9,13 +9,16 @@
  * @date 2025-01-07
  */
 
+#include "dap_test.h"
 #include "dap_common.h"
 #include "internal/dap_json_stage1.h"
-#include "dap_test.h"
 
 #include <string.h>
 
 #define LOG_TAG "dap_json_stage1_tests"
+
+// Forward declaration (dap_json.h included later causes issues)
+extern void dap_json_init(void);
 
 /* Test helper macros */
 #define DAP_TEST_FAIL_IF_NULL(ptr, msg) do { \
@@ -401,6 +404,9 @@ cleanup:
 /* ========================================================================== */
 
 int main(void) {
+    // Initialize dap_json module (CPU feature detection)
+    dap_json_init();
+    
     dap_print_module_name("Stage 1 Reference Implementation Tests");
     
     /* Character Classification Tests */

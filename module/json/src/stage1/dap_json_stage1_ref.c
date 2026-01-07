@@ -26,6 +26,7 @@
 
 #include "dap_common.h"
 #include "internal/dap_json_stage1.h"
+#include "internal/dap_json_stage1_ref.h"
 
 
 #define LOG_TAG "dap_json_stage1_ref"
@@ -565,13 +566,13 @@ size_t dap_json_stage1_scan_string_ref(
 /* ========================================================================== */
 
 /**
- * @brief Run Stage 1 structural indexing
+ * @brief Run Stage 1 structural indexing (reference C implementation)
  * @details Scans input buffer and extracts all structural characters.
  *          After successful execution, indices array is filled.
  * @param[in,out] a_stage1 Initialized Stage 1 parser
  * @return STAGE1_SUCCESS on success, error code otherwise
  */
-int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
+int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
 {
     if(!a_stage1) {
         log_it(L_ERROR, "NULL stage1 pointer");

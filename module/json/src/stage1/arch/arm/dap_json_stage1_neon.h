@@ -30,6 +30,7 @@
 #pragma once
 
 #include "internal/dap_json_stage1.h"
+#include "internal/dap_json_stage1_ref.h"
 
 #ifdef __cplusplus
 extern "C" {

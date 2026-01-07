@@ -12,12 +12,58 @@ file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
 file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
+file(GLOB_RECURSE JSON_ARCH_SRCS src/stage1/arch/**/*.c)
 
 # Combine all sources
-set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS})
+set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_ARCH_SRCS})
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_INTERNAL_HEADERS})
+
+# Set architecture-specific compiler flags for SIMD implementations
+# This enables compile-time dispatch based on available instruction sets
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    # x86/x64 architecture
+    file(GLOB AVX2_SRCS src/stage1/arch/x86/*avx2.c)
+    file(GLOB SSE2_SRCS src/stage1/arch/x86/*sse2.c)
+    file(GLOB AVX512_SRCS src/stage1/arch/x86/*avx512.c)
+    
+    if(AVX2_SRCS)
+        set_source_files_properties(${AVX2_SRCS} PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi -mbmi2 -mpopcnt")
+        message(STATUS "[dap_json] AVX2 implementation enabled: ${AVX2_SRCS}")
+    endif()
+    
+    if(SSE2_SRCS)
+        set_source_files_properties(${SSE2_SRCS} PROPERTIES COMPILE_FLAGS "-msse2 -msse4.2")
+        message(STATUS "[dap_json] SSE2 implementation enabled: ${SSE2_SRCS}")
+    endif()
+    
+    if(AVX512_SRCS)
+        set_source_files_properties(${AVX512_SRCS} PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
+        message(STATUS "[dap_json] AVX-512 implementation enabled: ${AVX512_SRCS}")
+    endif()
+    
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
+    # ARM architecture
+    file(GLOB NEON_SRCS src/stage1/arch/arm/*neon.c)
+    file(GLOB SVE_SRCS src/stage1/arch/arm/*sve.c)
+    
+    if(NEON_SRCS)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+            # ARM64 - NEON is always available
+            set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "")
+        else()
+            # ARM32 - explicit NEON flag
+            set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon")
+        endif()
+        message(STATUS "[dap_json] NEON implementation enabled: ${NEON_SRCS}")
+    endif()
+    
+    if(SVE_SRCS)
+        set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+        message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
+    endif()
+endif()
 
 # Register headers for component-based installation
 register_module_headers(DIRECTORIES include)

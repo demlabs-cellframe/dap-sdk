@@ -35,6 +35,13 @@ extern "C" {
 #endif
 
 /**
+ * @brief Initialize dap_json module
+ * @details Must be called once at application startup before using any JSON functions.
+ *          Initializes CPU feature detection for optimal SIMD performance.
+ */
+void dap_json_init(void);
+
+/**
  * @brief Opaque DAP JSON type - hides internal json-c implementation
  * Can represent both JSON objects and arrays internally
  */

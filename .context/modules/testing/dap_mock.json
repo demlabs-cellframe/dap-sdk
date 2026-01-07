@@ -1,18 +1,19 @@
 {
-  "version": "2.3.0",
+  "version": "3.1.0",
   "created": "2025-10-27T01:30:00Z",
-  "updated": "2025-01-15T12:00:00Z",
+  "updated": "2025-01-21T12:00:00Z",
   "module_type": "testing_infrastructure",
-  "auto-load": [".context/modules/testing/dap_mock_framework.json"],
+  "auto-load": [".context/modules/testing/dap_mock.json"],
   "navigation_system": {
     "purpose": "DAP SDK Mock Framework - система мокирования для C с linker wrapping",
     "recovery_path": ".context/manifest.json",
-    "current_file": ".context/modules/testing/dap_mock_framework.json",
+    "current_file": ".context/modules/testing/dap_mock.json",
     "file_role": "TESTING_MODULE",
     "related_files": {
       ".context/manifest.json": "Main system navigator",
       ".context/modules/core/standards.json": "Coding standards",
       ".context/modules/projects/dap_sdk_project.json": "DAP SDK architecture",
+      ".context/modules/testing/dap_template_engine.json": "dap_tpl template engine (используется для генерации wrapper макросов)",
       "cellframe-node/dap-sdk/test-framework/mocks/README.md": "Mock framework documentation",
       "cellframe-node/dap-sdk/test-framework/mocks/AUTOWRAP.md": "Auto-wrapper system guide",
       "cellframe-node/dap-sdk/test-framework/docs/parts_ru/04_api_reference.md": "Complete API reference (RU)",
@@ -47,6 +48,7 @@
   "overview": {
     "purpose": "Предоставить профессиональный mock framework для тестирования C кода в DAP SDK и VPN Client проектах",
     "version_history": {
+      "v3.0.0": "Полный рефакторинг генерации wrapper'ов - переход на dap_tpl, удаление всех ## операторов, модульная архитектура",
       "v2.3.0": "Добавлены правила anti-patterns для кастомных моков - запрет обращений к __real_ функциям и внутренним структурам",
       "v2.2.0": "DAP_MOCK_WRAPPER_CUSTOM с поддержкой функций без параметров",
       "v2.1.1": "DAP_MOCK_SETTINGS declarative macro with __attribute__((constructor))",
@@ -90,7 +92,7 @@
           {
             "file": "dap_mock.h",
             "loc": 643,
-            "description": "Public API - DAP_MOCK_DECLARE, DAP_MOCK_WRAPPER_PASSTHROUGH (v2.1), async support"
+            "description": "Public API - DAP_MOCK_DECLARE, DAP_MOCK_WRAPPER_PASSTHROUGH (v2.1), DAP_MOCK_WRAPPER_CUSTOM (v2.2), async support"
           },
           {
             "file": "dap_mock.c",
@@ -98,9 +100,9 @@
             "description": "Thread-safe implementation с auto init/deinit, logging, settings"
           },
           {
-            "file": "dap_mock_linker_wrapper.h",
-            "loc": 60,
-            "description": "Wrapper macros для создания __wrap_ функций"
+            "file": "dap_mock_linker_wrapper.h.tpl",
+            "location": "cellframe-node/dap-sdk/test-framework/templates/dap_mock_linker_wrapper.h.tpl",
+            "description": "✨ Шаблон для генерации wrapper макросов через dap_tpl (v3.0) - генерирует dap_mock_linker_wrapper.h"
           },
           {
             "file": "test_mock_linker_example.c",
@@ -108,7 +110,8 @@
             "description": "Working example demonstrating linker wrapping"
           }
         ],
-        "total_loc": 1022
+        "total_loc": 1022,
+        "note": "dap_mock_linker_wrapper.h теперь генерируется из шаблона через dap_tpl"
       },
       "async_mock_system": {
         "description": "Асинхронное выполнение моков в thread pool",
@@ -135,12 +138,20 @@
         ]
       },
       "auto_wrapper_system": {
-        "description": "Автоматическая генерация linker wrap конфигураций",
+        "description": "Автоматическая генерация linker wrap конфигураций и wrapper макросов через dap_tpl",
+        "architecture": "v3.0 - Полностью переработанная система генерации на базе dap_tpl",
+        "generation_pipeline": {
+          "step_1": "Сканирование исходников для поиска DAP_MOCK_DECLARE и DAP_MOCK_WRAPPER_CUSTOM",
+          "step_2": "Парсинг типов возврата и параметров через awk скрипты",
+          "step_3": "Генерация макросов через dap_tpl шаблоны",
+          "step_4": "Генерация linker wrap опций",
+          "step_5": "Интеграция в CMake build system"
+        },
         "files": [
           {
             "file": "dap_mock_autowrap.sh",
             "loc": 207,
-            "description": "Bash script для Linux/macOS - сканирует DAP_MOCK_DECLARE()"
+            "description": "Bash script для Linux/macOS - оркестрирует весь процесс генерации"
           },
           {
             "file": "dap_mock_autowrap.ps1",
@@ -158,7 +169,60 @@
             "description": "CMake module с 3 функциями интеграции + compiler detection"
           }
         ],
-        "total_loc": 831
+        "generation_modules": {
+          "scanning": {
+            "file": "lib/dap_mock_scan.sh",
+            "description": "Сканирование исходников для поиска mock declarations"
+          },
+          "parsing": {
+            "file": "lib/dap_mock_parse.sh",
+            "description": "Парсинг mock declarations с использованием awk скриптов",
+            "awk_scripts": [
+              "lib/awk/scan_mock_declarations.awk",
+              "lib/awk/parse_custom_mocks.awk",
+              "lib/awk/count_params.awk",
+              "lib/awk/extract_return_types.awk",
+              "lib/awk/extract_all_types.awk",
+              "lib/awk/process_mock_data.awk"
+            ]
+          },
+          "type_processing": {
+            "file": "lib/dap_mock_types.sh",
+            "description": "Обработка типов и генерация данных для шаблонов"
+          },
+          "code_generation": {
+            "file": "lib/dap_mock_generate.sh",
+            "description": "Генерация кода через dap_tpl шаблоны",
+            "templates": [
+              "templates/dap_mock_linker_wrapper.h.tpl",
+              "templates/mock_macros_header.h.tpl",
+              "templates/function_wrappers.h.tpl",
+              "templates/dispatcher_macros.h.tpl",
+              "templates/mock_map_macros.h.tpl",
+              "templates/mock_map_core.h.tpl",
+              "templates/mock_map_param_count_routing.h.tpl",
+              "templates/mock_map_first_arg_routing.h.tpl",
+              "templates/mock_map_count_params.h.tpl",
+              "templates/mock_map_impl_cond.h.tpl"
+            ]
+          }
+        },
+        "generated_files": {
+          "dap_mock_linker_wrapper.h": "Генерируется из dap_mock_linker_wrapper.h.tpl",
+          "mock_macros.h": "Генерируется из mock_macros_header.h.tpl и связанных шаблонов",
+          "custom_mocks.h": "Генерируется из custom_mock_header.h.tpl",
+          "wrap.txt": "Linker response file с --wrap опциями"
+        },
+        "total_loc": 831,
+        "improvements_v3_0": [
+          "✅ Полный переход на dap_tpl для генерации макросов",
+          "✅ Удаление всех ## операторов (кроме ##__VA_ARGS__)",
+          "✅ Модульная архитектура шаблонов",
+          "✅ Fail-Fast принцип без fallback'ов",
+          "✅ Автоматическая генерация всех необходимых макросов",
+          "✅ Поддержка функций без параметров",
+          "✅ Правильная обработка void и pointer типов"
+        ]
       },
       "documentation": {
         "description": "Comprehensive documentation",
@@ -389,9 +453,23 @@
     ],
     "helper_macros": [
       {
+        "name": "DAP_MOCK",
+        "signature": "DAP_MOCK(func_name) или DAP_MOCK(func_name, return_value)",
+        "description": "✨ ПРОСТОЙ макрос для обычных моков с опциональным возвращаемым значением",
+        "status": "✅ RECOMMENDED для простых моков",
+        "usage": "DAP_MOCK(dap_stream_write);\nDAP_MOCK(dap_net_tun_create, 0xABCDEF00);",
+        "features": [
+          "✅ Автоматически генерирует wrapper через DAP_MOCK_WRAPPER_DEFAULT",
+          "✅ Поддерживает опциональное возвращаемое значение (intptr_t cast)",
+          "✅ Не требует ручного написания wrapper'ов",
+          "✅ Wrapper'ы генерируются автоматически системой моков"
+        ],
+        "note": "Для кастомных моков используйте DAP_MOCK_CUSTOM вместо DAP_MOCK + DAP_MOCK_WRAPPER_CUSTOM"
+      },
+      {
         "name": "DAP_MOCK_DECLARE",
         "signature": "DAP_MOCK_DECLARE(func_name, ...)",
-        "description": "Объявить и сконфигурировать mock для функции",
+        "description": "Объявить и сконфигурировать mock для функции (расширенная версия)",
         "usage": "DAP_MOCK_DECLARE(dap_stream_write, .return_value = 0, .delay_ms = 100, .async = true);",
         "parameters": {
           "return_value": "Значение возврата (по умолчанию 0/NULL)",
@@ -401,7 +479,7 @@
           "call_original_before": "Вызвать оригинал ДО mock логики (по умолчанию false) - v2.1",
           "call_original_after": "Вызвать оригинал ПОСЛЕ mock логики (по умолчанию false) - v2.1"
         },
-        "note": "Автоматически инициализирует mock framework при первом использовании"
+        "note": "Автоматически инициализирует mock framework при первом использовании. Для простых случаев используйте DAP_MOCK."
       },
       {
         "name": "DAP_MOCK_INIT",
@@ -497,10 +575,24 @@
         "use_case": "Integration tests - вызов оригинала + tracking вызовов"
       },
       {
+        "name": "DAP_MOCK_CUSTOM",
+        "signature": "DAP_MOCK_CUSTOM(return_type, func_name, PARAM(...), ...) { body }",
+        "description": "✨ УНИФИЦИРОВАННЫЙ макрос для кастомных моков - объединяет объявление и реализацию",
+        "status": "✅ RECOMMENDED для кастомных моков",
+        "features": [
+          "✅ Объединяет DAP_MOCK_DECLARE_CUSTOM и DAP_MOCK_WRAPPER_CUSTOM в один макрос",
+          "✅ Не нужно писать DAP_MOCK отдельно - всё в одном месте",
+          "✅ Автоматически регистрирует мок и создаёт wrapper"
+        ],
+        "usage": "DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,\n    PARAM(dap_enc_key_t*, a_key),\n    PARAM(size_t, a_buf_in_size),\n    PARAM(dap_enc_data_type_t, type)\n) {\n    size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);\n    return (size_t)(intptr_t)(g_mock_dap_enc_code_out_size->return_value.ptr ?: (void*)(intptr_t)l_result);\n}",
+        "note": "Используйте вместо DAP_MOCK + DAP_MOCK_WRAPPER_CUSTOM для упрощения кода"
+      },
+      {
         "name": "DAP_MOCK_WRAPPER_CUSTOM",
         "signature": "DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ...)",
-        "description": "✨ Custom wrapper с PARAM() синтаксисом - полный контроль над mock логикой (v2.2)",
-        "status": "✅ RECOMMENDED для unit tests с custom логикой",
+        "description": "✨ Custom wrapper с PARAM() синтаксисом - полный контроль над mock логикой (v2.2, улучшен в v3.0)",
+        "status": "⚠️ DEPRECATED - используйте DAP_MOCK_CUSTOM вместо DAP_MOCK + DAP_MOCK_WRAPPER_CUSTOM",
+        "generation": "✨ v3.0 - Автоматически генерируется через dap_tpl из шаблонов",
         "features": [
           "✅ Поддержка функций БЕЗ параметров (void func())",
           "✅ Автоматическая генерация сигнатуры функции из PARAM() списка",
@@ -509,7 +601,9 @@
           "✅ Автоматический подсчет количества параметров",
           "✅ Проверка enabled состояния и выполнение delay",
           "✅ Запись вызова через dap_mock_record_call",
-          "✅ Вызов __real_ функции если mock disabled"
+          "✅ Вызов __real_ функции если mock disabled",
+          "✅ Генерация через dap_tpl без использования ## операторов",
+          "✅ Модульная архитектура шаблонов для легкой поддержки"
         ],
         "usage_syntax": "DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, PARAM(type1, name1), PARAM(type2, name2), ...) {\n    // Custom mock logic here\n    return custom_value;\n}",
         "usage_with_params": "DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_enc_code_out_size,\n    PARAM(dap_enc_key_t*, a_key),\n    PARAM(size_t, a_buf_in_size),\n    PARAM(dap_enc_data_type_t, type)\n) {\n    // Calculate mock return value based on parameters\n    size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);\n    // Return value can be overridden via DAP_MOCK_SET_RETURN if needed\n    return l_result;\n}",
@@ -536,7 +630,13 @@
           "❌ НЕ создавайте кастомные моки которые просто вызывают реальную функцию - это бессмысленно",
           "✅ Если нужен passthrough - используйте DAP_MOCK_WRAPPER_PASSTHROUGH вместо кастомного мока"
         ],
-        "version": "v2.2 - добавлена поддержка функций без параметров"
+        "version": "v2.2 - добавлена поддержка функций без параметров, v3.0 - генерация через dap_tpl",
+        "generation_details": {
+          "template": "templates/function_wrappers.h.tpl",
+          "process": "Генерируется автоматически при сборке через dap_mock_autowrap",
+          "routing": "Использует function-specific routing через _DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_SWITCH",
+          "no_hash_operators": "Все макросы генерируются напрямую через dap_tpl, без ## операторов"
+        }
       }
     ]
   },
@@ -750,11 +850,10 @@
     },
     "legacy_v1_0_example": {
       "description": "⚠️ УСТАРЕВШИЙ способ (v1.0) - НЕ ИСПОЛЬЗУЙТЕ в новом коде",
-      "note": "Оставлено только для reference, используйте v2.1 API",
+      "note": "Оставлено только для reference, используйте v2.1 API. Работает, но используйте v2.0 API для новых тестов",
       "code_snippet": "// 1. Declare mock state\nDAP_MOCK_DECLARE(dap_stream_write);\n\n// 2. In test setup\nvoid test_setup(void) {\n    dap_mock_framework_init();\n    DAP_MOCK_INIT(dap_stream_write);\n}\n\n// 3. In test case\nvoid test_write_packet(void) {\n    DAP_MOCK_ENABLE(dap_stream_write);\n    DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)0);\n    \n    // Call code under test\n    int result = my_function_that_calls_dap_stream_write();\n    \n    // Verify\n    assert(DAP_MOCK_GET_CALL_COUNT(dap_stream_write) == 1);\n    assert(result == 0);\n}\n\n// 4. In test teardown\nvoid test_teardown(void) {\n    dap_mock_framework_deinit();\n}",
       "linker_flags": "-Wl,--wrap=dap_stream_write",
-      "cmake_integration": "dap_mock_autowrap(my_test test_file.c)",
-      "note": "Работает, но используйте v2.0 API для новых тестов"
+      "cmake_integration": "dap_mock_autowrap(my_test test_file.c)"
     },
     "cmake_autowrap_example": {
       "description": "Автоматическая генерация wrap конфигураций",
@@ -820,7 +919,7 @@
         "❌ НЕ создавайте кастомные моки которые просто вызывают __real_ функцию - это бессмысленно"
       ]
     },
-    "automatic_initialization": [
+    "automatic_initialization_best_practices": [
       "Mock framework инициализируется автоматически при первом DAP_MOCK_DECLARE",
       "dap_mock_async инициализируется автоматически с configured thread pool",
       "Cleanup происходит автоматически - явный deinit НЕ НУЖЕН",
@@ -895,7 +994,7 @@
     ]
   },
   "roadmap": {
-    "current_version": "2.1.1",
+    "current_version": "3.0.0",
     "status": "Production Ready",
     "completed_in_v2_0": [
       "✅ Automatic initialization/deinitialization",
@@ -924,6 +1023,18 @@
       "✅ Troubleshooting guide with static library solutions",
       "✅ Usage examples for dap_mock_autowrap_with_static",
       "✅ Documentation verification against source code"
+    ],
+    "completed_in_v3_0": [
+      "✅ Полный рефакторинг системы генерации wrapper'ов",
+      "✅ Переход на dap_tpl для генерации всех макросов",
+      "✅ Удаление dap_mock_linker_wrapper.h - теперь генерируется из шаблона",
+      "✅ Удаление всех ## операторов (кроме ##__VA_ARGS__)",
+      "✅ Модульная декомпозиция шаблонов (mock_map_*.h.tpl)",
+      "✅ Исправление бага dap_tpl с |newline разделителем",
+      "✅ Добавление регрессионных тестов для dap_tpl",
+      "✅ Fail-Fast архитектура без fallback'ов",
+      "✅ Автоматическая генерация function-specific routing",
+      "✅ Поддержка AWK секций в шаблонах для генерации макросов расширения"
     ],
     "future_enhancements": [
       "Mock expectations DSL (Google Mock style)",
@@ -967,7 +1078,7 @@
       "cellframe-node/dap-sdk/test-framework/dap_mock.c",
       "cellframe-node/dap-sdk/test-framework/dap_mock_async.h",
       "cellframe-node/dap-sdk/test-framework/dap_mock_async.c",
-      "cellframe-node/dap-sdk/test-framework/dap_mock_linker_wrapper.h",
+      "cellframe-node/dap-sdk/test-framework/templates/dap_mock_linker_wrapper.h.tpl",
       "cellframe-node/dap-sdk/test-framework/mocks/test_mock_linker_example.c"
     ],
     "automation_scripts": [

@@ -341,7 +341,7 @@
   },
   
   "related_modules": [
-    "dap_mock_framework.json",
+    "dap_mock.json",
     "stage_env_system.json"
   ],
   

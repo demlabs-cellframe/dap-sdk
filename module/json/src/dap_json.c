@@ -26,9 +26,19 @@
 #include "dap_strfuncs.h"
 #include "json.h"
 #include "json_object.h"
+#include "internal/dap_json_stage1.h"  // For Stage 1 dispatch init
 #include <string.h>
 
 #define LOG_TAG "dap_json"
+
+/**
+ * @brief Initialize dap_json module (call once at startup)
+ * @details Initializes CPU feature detection for optimal SIMD dispatch
+ */
+void dap_json_init(void)
+{
+    dap_json_stage1_init_dispatch();
+}
 
 /**
  * @brief Internal DAP JSON structure - opaque to users

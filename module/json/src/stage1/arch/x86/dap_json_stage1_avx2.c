@@ -263,7 +263,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             
             // Check for quote (string start)
             if (l_real_quotes & l_bit) {
-                size_t l_string_end = dap_json_stage1_scan_string(a_stage1, l_abs_pos);
+                size_t l_string_end = dap_json_stage1_scan_string_ref(a_stage1, l_abs_pos);
                 if (l_string_end == l_abs_pos) {
                     // Error in string parsing
                     return a_stage1->error_code;
@@ -275,7 +275,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
                     a_stage1,
                     (uint32_t)l_abs_pos,
                     (uint32_t)l_string_len,
-                    DAP_JSON_TOKEN_TYPE_STRING,
+                    TOKEN_TYPE_STRING,
                     0
                 );
                 
@@ -292,7 +292,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
                     a_stage1,
                     (uint32_t)l_abs_pos,
                     0,  // Length 0 for structural
-                    DAP_JSON_TOKEN_TYPE_STRUCTURAL,
+                    TOKEN_TYPE_STRUCTURAL,
                     l_char
                 );
                 a_stage1->structural_chars++;
@@ -308,14 +308,14 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             // Check for number start
             dap_json_char_class_t l_class = dap_json_classify_char(l_char);
             if (l_class == CHAR_CLASS_DIGIT || l_class == CHAR_CLASS_MINUS) {
-                size_t l_num_end = dap_json_stage1_scan_number(a_stage1, l_abs_pos);
+                size_t l_num_end = dap_json_stage1_scan_number_ref(a_stage1, l_abs_pos);
                 if (l_num_end > l_abs_pos) {
                     size_t l_num_len = l_num_end - l_abs_pos;
                     dap_json_stage1_add_token(
                         a_stage1,
                         (uint32_t)l_abs_pos,
                         (uint32_t)l_num_len,
-                        DAP_JSON_TOKEN_TYPE_NUMBER,
+                        TOKEN_TYPE_NUMBER,
                         0
                     );
                     
@@ -328,7 +328,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             
             // Check for literal start (t, f, n)
             if (l_class == CHAR_CLASS_LETTER) {
-                size_t l_lit_end = dap_json_stage1_scan_literal(a_stage1, l_abs_pos);
+                size_t l_lit_end = dap_json_stage1_scan_literal_ref(a_stage1, l_abs_pos);
                 if (l_lit_end > l_abs_pos) {
                     size_t l_lit_len = l_lit_end - l_abs_pos;
                     
@@ -342,7 +342,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
                         a_stage1,
                         (uint32_t)l_abs_pos,
                         (uint32_t)l_lit_len,
-                        DAP_JSON_TOKEN_TYPE_LITERAL,
+                        TOKEN_TYPE_LITERAL,
                         l_lit_type
                     );
                     

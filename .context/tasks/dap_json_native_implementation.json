@@ -4,12 +4,18 @@
   "description": "Создание САМОГО БЫСТРОГО и НАИБОЛЕЕ ПОЛНОГО JSON парсера в мире, ПРЕВОСХОДЯЩЕГО simdjson (>6-10 GB/s). FEATURES: Standard JSON RFC 8259 + JSON5 + JSONC + Streaming + JSONPath (с JIT) + JSON Schema. АРХИТЕКТУРА: Enhanced simdjson two-stage + parallel Stage 2 + predictive parsing + hardware prefetching. INFRASTRUCTURE: 5 переиспользуемых компонентов в module/core для всего SDK. ЦЕЛЬ: World record performance + complete feature set + reusable infrastructure. КРИТИЧНО: TDD подход - comprehensive test suite ДО реализации.",
   "status": "in_progress",
   "current_phase": "phase-1",
-  "current_subphase": "1.3",
+  "current_subphase": "1.4",
   "created": "2025-01-07T00:00:00Z",
-  "updated": "2025-01-07T23:51:00Z",
+  "updated": "2026-01-08T01:20:00Z",
   "priority": "critical",
   "category": "core-refactoring",
-  "tags": ["performance", "simd", "simdjson-level", "multi-platform", "zero-dependency"],
+  "tags": [
+    "performance",
+    "simd",
+    "simdjson-level",
+    "multi-platform",
+    "zero-dependency"
+  ],
   "estimated_duration_days": "65-86",
   "performance_target": "ПРЕВЗОЙТИ simdjson: 6-8 GB/s single-core AVX-512, 10-12 GB/s multi-core AVX-512, 3-4 GB/s AVX2",
   "phases": [
@@ -645,8 +651,8 @@
           "name": "Two-Stage Parser: Stage 1 - SIMD Optimization",
           "status": "in_progress",
           "started_date": "2026-01-08T00:10:00Z",
-          "progress": "50%",
-          "current_work": "AVX2 + dispatch completed and reviewed. Next: SSE2/AVX-512/NEON implementations",
+          "progress": "75%",
+          "current_work": "CPU detect + AVX2 + init готовы. Next: SSE2/NEON full",
           "achievements": {
             "code_review": "✅ PHASE_1.4_REVIEW_REPORT.md - детальное ревью с исправлениями",
             "shared_functions": [
@@ -725,35 +731,6 @@
             "75829b80: refactor(json): Dispatch mechanism теперь static inline (zero overhead)",
             "8bffc707: fix(json): Критические исправления AVX2 и dispatch после ревью",
             "341a8a14: feat(json): Phase 1.4 - Dispatch mechanism + shared functions refactoring",
-            "2a1f7ac3: feat(json): Phase 1.4 - Экспорт shared functions из reference",
-            "Previous: feat(json): Phase 1.4 - Полноценная AVX2 реализация + исправления архитектуры"
-          ]
-        },
-            "value_tokens": "Найти boundaries для strings, numbers, literals (используя shared functions)",
-            "string_blocks": "s_compute_escaped_quotes() для accurate string boundary detection",
-            "whitespace": "Пропустить весь whitespace через SIMD (AVX2: 32 bytes за раз)",
-            "hybrid_approach": "SIMD для detection, scalar для validation (numbers, literals, UTF-8)",
-            "output": "Компактный массив dap_json_token_t для Stage 2"
-          },
-          "next_tasks": [
-            "Export helper functions header (dap_json_stage1_simd.h)",
-            "CPU dispatch mechanism (dap_json_stage1_dispatch.c)",
-            "SSE2 implementation (16 bytes/iter)",
-            "AVX-512 implementation (64 bytes/iter)",
-            "ARM NEON implementation",
-            "SIMD correctness tests (vs reference)",
-            "SIMD performance benchmarks"
-          ],
-          "acceptance_criteria": [
-            "✅ Shared functions exported and used by SIMD implementations",
-            "✅ AVX2 implementation complete and production-ready",
-            "⏳ All architectures (SSE2, AVX2, AVX-512, NEON) implemented",
-            "⏳ CPU dispatch mechanism selects optimal implementation",
-            "⏳ Stage 1 находит ВСЕ tokens (structural + values) за один проход",
-            "⏳ Correctness: SIMD impl == reference impl на всех тестах",
-            "⏳ Performance Stage 1 only: AVX2 >= 3-5 GB/s на tokenization"
-          ],
-          "git_commits": [
             "2a1f7ac3: feat(json): Phase 1.4 - Экспорт shared functions из reference",
             "Previous: feat(json): Phase 1.4 - Полноценная AVX2 реализация + исправления архитектуры"
           ]
@@ -1332,7 +1309,7 @@
           ],
           "affected_modules": [
             "module/core",
-            "module/crypto", 
+            "module/crypto",
             "module/plugin",
             "module/net/server/*",
             "module/net/client",
@@ -1809,11 +1786,21 @@
   },
   "phase_dependencies": {
     "phase-0": [],
-    "phase-1": ["phase-0"],
-    "phase-2": ["phase-1"],
-    "phase-3": ["phase-2"],
-    "phase-4": ["phase-3"],
-    "phase-5": ["phase-4"],
+    "phase-1": [
+      "phase-0"
+    ],
+    "phase-2": [
+      "phase-1"
+    ],
+    "phase-3": [
+      "phase-2"
+    ],
+    "phase-4": [
+      "phase-3"
+    ],
+    "phase-5": [
+      "phase-4"
+    ],
     "notes": "ВСЕ фазы обязательны. Никаких сокращений."
   },
   "critical_path": [
@@ -2079,12 +2066,32 @@
       "zero_copy": "Нет копирования для строк без escape"
     },
     "platform_coverage": {
-      "must_support_all": ["x86", "x86_64", "ARM32", "ARM64", "RISC-V (reference)"],
+      "must_support_all": [
+        "x86",
+        "x86_64",
+        "ARM32",
+        "ARM64",
+        "RISC-V (reference)"
+      ],
       "simd_implementations_mandatory": {
-        "x86_64": ["SSE2 (base)", "SSE4.2 (Phase 1)", "AVX2 (Phase 1)", "AVX-512 (Phase 5)"],
-        "ARM64": ["NEON (Phase 1)", "SVE (Phase 5)", "SVE2 (Phase 5)"],
-        "x86": ["SSE2", "SSE4.2"],
-        "ARM32": ["NEON"],
+        "x86_64": [
+          "SSE2 (base)",
+          "SSE4.2 (Phase 1)",
+          "AVX2 (Phase 1)",
+          "AVX-512 (Phase 5)"
+        ],
+        "ARM64": [
+          "NEON (Phase 1)",
+          "SVE (Phase 5)",
+          "SVE2 (Phase 5)"
+        ],
+        "x86": [
+          "SSE2",
+          "SSE4.2"
+        ],
+        "ARM32": [
+          "NEON"
+        ],
         "reference": "Pure C для всех остальных (RISC-V, MIPS, etc)"
       },
       "ci_testing": "Full matrix на ВСЕХ платформах: x86_64 (SSE4.2, AVX2, AVX-512), ARM64 (NEON, SVE)",
@@ -3160,4 +3167,3 @@
     }
   }
 }
-

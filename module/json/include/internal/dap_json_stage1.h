@@ -19,6 +19,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "dap_cpu_detect.h"  // Runtime CPU feature detection
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,6 +69,16 @@ typedef enum {
     TOKEN_TYPE_NUMBER = 2,      /**< Number value: 123, -45.67, 1.2e+10 */
     TOKEN_TYPE_LITERAL = 3      /**< Literal: true, false, null */
 } dap_json_token_type_t;
+
+/**
+ * @brief Literal subtypes for TOKEN_TYPE_LITERAL
+ */
+typedef enum {
+    DAP_JSON_LITERAL_TRUE = 0,
+    DAP_JSON_LITERAL_FALSE = 1,
+    DAP_JSON_LITERAL_NULL = 2,
+    DAP_JSON_LITERAL_UNKNOWN = 3
+} dap_json_literal_type_t;
 
 /**
  * @brief Structural index entry (Phase 1.3 enhanced)
@@ -176,17 +188,6 @@ dap_json_stage1_t *dap_json_stage1_init(const uint8_t *input, size_t input_len);
  * @param stage1 Stage 1 parser to free (can be NULL)
  */
 void dap_json_stage1_free(dap_json_stage1_t *stage1);
-
-/**
- * @brief Run Stage 1 structural indexing
- * 
- * Scans input buffer and extracts all structural characters.
- * После успешного выполнения indices array заполнен.
- * 
- * @param stage1 Initialized Stage 1 parser
- * @return STAGE1_SUCCESS on success, error code otherwise
- */
-int dap_json_stage1_run(dap_json_stage1_t *stage1);
 
 /**
  * @brief Get structural indices array
@@ -354,150 +355,69 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 }
 
 /* ========================================================================== */
-/*                 SHARED FUNCTIONS (for SIMD implementations)                */
-/* ========================================================================== */
-
-/**
- * @brief Add token to indices array (shared by all implementations)
- * @details Grows array if needed, adds token with all metadata
- * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_position Byte position in input
- * @param[in] a_length Token length (0 for structural chars)
- * @param[in] a_type Token type (structural/string/number/literal)
- * @param[in] a_character_or_subtype Character for structural, or subtype for literal
- * @return true on success, false on allocation failure
- */
-bool dap_json_stage1_add_token(
-    dap_json_stage1_t *a_stage1,
-    uint32_t a_position,
-    uint32_t a_length,
-    dap_json_token_type_t a_type,
-    uint8_t a_character_or_subtype
-);
-
-/**
- * @brief Scan and validate string from opening quote to closing quote (reference implementation)
- * @details Handles escape sequences, returns end position
- * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_start_pos Position of opening quote "
- * @return Position after closing quote on success, a_start_pos on error
- */
-size_t dap_json_stage1_scan_string_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
-/**
- * @brief Scan and validate number (reference implementation)
- * @details Handles integers, decimals, scientific notation
- * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_start_pos Position of first digit or minus sign
- * @return Position after last number character on success, a_start_pos on error
- */
-size_t dap_json_stage1_scan_number_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
-/**
- * @brief Scan and validate literal (reference implementation)
- * @details Exact match with boundary check for true/false/null
- * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_start_pos Position of first character (t/f/n)
- * @return Position after literal on success, a_start_pos if not a literal
- */
-size_t dap_json_stage1_scan_literal_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
-/**
- * @brief Inline wrapper for string scanning (selects best implementation)
- */
-static inline size_t dap_json_stage1_scan_string(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-)
-{
-    // For now, always use reference
-    // Future: dispatch to SIMD-optimized version
-    return dap_json_stage1_scan_string_ref(a_stage1, a_start_pos);
-}
-
-/**
- * @brief Inline wrapper for number scanning (selects best implementation)
- */
-static inline size_t dap_json_stage1_scan_number(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-)
-{
-    // For now, always use reference
-    // Future: dispatch to SIMD-optimized version
-    return dap_json_stage1_scan_number_ref(a_stage1, a_start_pos);
-}
-
-/**
- * @brief Inline wrapper for literal scanning (selects best implementation)
- */
-static inline size_t dap_json_stage1_scan_literal(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-)
-{
-    // For now, always use reference
-    // Future: dispatch to SIMD-optimized version
-    return dap_json_stage1_scan_literal_ref(a_stage1, a_start_pos);
-}
-
 /* ========================================================================== */
 /*            DISPATCH MECHANISM (static inline for zero overhead)            */
 /* ========================================================================== */
 
-// Include arch-specific headers for SIMD implementations
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #if defined(__AVX2__)
-        #include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
-    #elif defined(__SSE2__)
-        #include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
-    #endif
-#elif defined(__ARM_NEON) || defined(__aarch64__)
-    #if defined(__ARM_NEON)
-        #include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
-    #endif
-#endif
+// Include arch-specific headers for SIMD implementations (always include all)
+#include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
+#include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
+#include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
+
+/* ========================================================================== */
+/*                          DISPATCH MECHANISM                                */
+/* ========================================================================== */
+
+// Global CPU features cache (initialized once)
+extern dap_cpu_features_t g_dap_json_cpu_features;
+extern bool g_dap_json_cpu_features_initialized;
 
 /**
- * @brief Main dispatch function (static inline for zero overhead)
- * @details Selects optimal implementation at compile time
- * @param[in,out] a_stage1 Stage 1 parser state
- * @return STAGE1_SUCCESS or error code
+ * @brief Initialize CPU features detection for Stage 1 dispatch
+ * @details Must be called once at startup before any Stage 1 operations
+ * 
+ * This function performs runtime CPU detection and caches the results
+ * in global variables for fast dispatch in dap_json_stage1_run().
+ * 
+ * Thread-safety: Not thread-safe, must be called from single thread
+ * during initialization phase.
  */
-static inline int dap_json_stage1_run_dispatched(dap_json_stage1_t *a_stage1)
+void dap_json_stage1_init_dispatch(void);
+
+
+/**
+ * @brief Main Stage 1 tokenization entry point (dispatched to optimal implementation)
+ * @param a_stage1 Initialized Stage 1 parser
+ * @return STAGE1_SUCCESS on success, error code otherwise
+ * 
+ * This function uses runtime dispatch to select the best available
+ * SIMD implementation for the current CPU architecture.
+ * 
+ * NOTE: Call dap_json_stage1_init_dispatch() once at startup before using this function.
+ */
+static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
 {
     if (!a_stage1) {
         return STAGE1_ERROR_INVALID_INPUT;
     }
     
-    // Compile-time dispatch: use the best available SIMD implementation
-    
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #if defined(__AVX2__)
+    // x86/x64 architecture - check for AVX2, SSE2, then fallback
+    if (g_dap_json_cpu_features.has_avx2) {
         return dap_json_stage1_run_avx2(a_stage1);
-    #elif defined(__SSE2__)
+    }
+    if (g_dap_json_cpu_features.has_sse2) {
         return dap_json_stage1_run_sse2(a_stage1);
-    #else
-        return dap_json_stage1_run(a_stage1);
-    #endif
+    }
 #elif defined(__ARM_NEON) || defined(__aarch64__)
-    #if defined(__ARM_NEON)
+    // ARM architecture - check for NEON, then fallback
+    if (g_dap_json_cpu_features.has_neon) {
         return dap_json_stage1_run_neon(a_stage1);
-    #else
-        return dap_json_stage1_run(a_stage1);
-    #endif
-#else
-    return dap_json_stage1_run(a_stage1);
+    }
 #endif
+    
+    // Fallback to portable reference implementation
+    return dap_json_stage1_run_ref(a_stage1);
 }
 
 /**

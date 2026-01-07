@@ -1,10 +1,10 @@
 {
   "name": "DAP SDK Template Engine Documentation",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "knowledge_module",
   "created": "2025-01-16",
-  "updated": "2025-01-16",
-  "description": "Документация системы шаблонов DAP SDK Mock Framework с поддержкой вложенных конструкций",
+  "updated": "2025-11-19",
+  "description": "Документация системы шаблонов DAP SDK (dap_tpl) - модульная система обработки шаблонов с расширенной архитектурой",
   "category": "testing",
   "tags": [
     "dap-sdk",
@@ -15,23 +15,37 @@
   ],
   "content": {
     "overview": {
-      "title": "DAP SDK Template Engine - Система шаблонов для генерации кода",
-      "description": "Мощная система шаблонов в стиле Jinja2 для генерации кода моков и тестовых заголовков",
-      "location": "cellframe-node/dap-sdk/test-framework/mocks/templates/",
-      "documentation_file": "cellframe-node/dap-sdk/test-framework/mocks/templates/README_TEMPLATE_CONSTRUCTS.md"
+      "title": "DAP SDK Template Engine (dap_tpl) - Модульная система обработки шаблонов",
+      "description": "Мощная модульная система шаблонов для генерации C кода с поддержкой переменных, условий, циклов, макросов, AWK секций и рекурсивных включений",
+      "location": "cellframe-node/dap-sdk/test-framework/dap_tpl/",
+      "documentation_files": [
+        "cellframe-node/dap-sdk/test-framework/dap_tpl/README.md",
+        "cellframe-node/dap-sdk/test-framework/dap_tpl/README.ru.md",
+        "cellframe-node/dap-sdk/test-framework/dap_tpl/docs/DAP_TPL_GUIDE.md",
+        "cellframe-node/dap-sdk/test-framework/dap_tpl/docs/DAP_TPL_GUIDE.ru.md"
+      ],
+      "architecture": "Модульная плагинная архитектура с системой регистрации конструкций",
+      "test_coverage": "41+ тестов (27 unit + 10 integration + 4 mocking)"
     },
     "supported_constructs": {
       "conditional": {
-        "syntax": "{{#if VAR}}...{{/if}}",
-        "description": "Условная генерация контента",
+        "syntax": "{{#if VAR}}...{{else}}...{{/if}}",
+        "description": "Условная генерация контента с поддержкой elif и else",
         "else_support": true,
-        "example": "{{#if ENABLE_DEBUG}}\n// Debug code\n{{/if}}"
+        "elif_support": true,
+        "comparison_operators": ["==", "!=", ">", "<", ">=", "<="],
+        "logical_operators": ["&&", "||", "!"],
+        "special_conditions": ["contains", "matches", "in"],
+        "example": "{{#if ENABLE_DEBUG}}\n// Debug code\n{{#elif DEBUG_LEVEL > 5}}\n// Verbose debug\n{{else}}\n// No debug\n{{/if}}"
       },
       "loops": {
         "syntax": "{{#for item in ARRAY}}...{{/for}}",
-        "description": "Циклы по массивам данных",
+        "description": "Циклы по массивам данных с поддержкой вложенных циклов",
         "array_format": "newline или pipe-separated через переменные окружения",
-        "example": "{{#for type in TYPES_ARRAY}}\n#define TYPE_{{type}} 1\n{{/for}}"
+        "separators": ["|newline", "|pipe", "|newline_double"],
+        "loop_variables": ["_index", "_is_first", "_is_last", "_count"],
+        "example": "{{#for type in TYPES_ARRAY|split|pipe}}\n#define TYPE_{{type}} 1\n{{/for}}",
+        "nested_example": "{{#for outer in OUTER}}\n  {{#for inner in INNER}}\n    #define MACRO_{{outer}}_{{inner}}\n  {{/for}}\n{{/for}}"
       },
       "variables": {
         "set": {
@@ -60,9 +74,29 @@
             "syntax": "{{VAR|ne|value}}",
             "description": "Проверяет неравенство, возвращает 1 или 0"
           },
+          "eq": {
+            "syntax": "{{VAR|eq|value}}",
+            "description": "Проверяет равенство, возвращает 1 или 0"
+          },
           "in_list": {
             "syntax": "{{VAR|in_list|LIST_VAR}}",
             "description": "Проверяет наличие значения переменной в списке (newline или pipe-separated), возвращает 1 или 0"
+          },
+          "replace": {
+            "syntax": "{{VAR|replace|pattern|replacement}}",
+            "description": "Заменяет паттерн на replacement"
+          },
+          "remove_suffix": {
+            "syntax": "{{VAR|remove_suffix|_t}}",
+            "description": "Удаляет суффикс из строки"
+          },
+          "trim": {
+            "syntax": "{{VAR|trim}}",
+            "description": "Удаляет пробелы в начале и конце строки"
+          },
+          "add": {
+            "syntax": "{{VAR|add|number}}",
+            "description": "Добавляет число к переменной (для числовых значений)"
           }
         }
       },
@@ -72,18 +106,43 @@
           "description": "Встроенные AWK скрипты для обработки данных",
           "include_support": true,
           "include_syntax": "@include \"filename.awk\"",
-          "environ_access": "Все переменные окружения доступны через ENVIRON[\"VAR\"]"
+          "environ_access": "Все переменные окружения доступны через ENVIRON[\"VAR\"]",
+          "loop_variables": "Переменные из циклов доступны через ENVIRON[\"item\"], ENVIRON[\"_index\"], ENVIRON[\"_is_first\"], ENVIRON[\"_is_last\"]",
+          "example": "{{#for level in \"1|2|3|4|5|6\"|split|pipe}}\n  {{AWK:\n    BEGIN {\n      level = ENVIRON[\"level\"]\n      printf \"#define LEVEL_%s\\n\", level\n    }\n  }}\n{{/for}}"
         },
         "standalone": {
           "syntax": "{{#awk:...}}",
-          "description": "Отдельные AWK скрипты"
+          "description": "Отдельные AWK скрипты (устарело, использовать {{AWK:...}})"
         }
       },
       "include": {
         "syntax": "{{#include FILE}}",
-        "description": "Подключение содержимого файла",
+        "description": "Подключение содержимого файла (рекурсивная обработка)",
         "file_path": "Может быть переменной окружения или прямой строкой",
+        "recursive": true,
         "example": "{{#if RETURN_TYPE_MACROS_FILE}}\n{{#include RETURN_TYPE_MACROS_FILE}}\n{{/if}}"
+      },
+      "macros": {
+        "definition": {
+          "syntax": "{{#macro NAME}}...{{/macro}}",
+          "description": "Определение переиспользуемого макроса"
+        },
+        "call": {
+          "syntax": "{{#call NAME|arg1|arg2}}",
+          "description": "Вызов макроса с параметрами",
+          "parameters": "Доступны через {{ARG0}}, {{ARG1}}, {{ARG2}}, ..."
+        },
+        "example": "{{#macro GREET}}\nHello, {{ARG0}}!\n{{/macro}}\n{{#call GREET|World}}"
+      },
+      "comments": {
+        "single_line": {
+          "syntax": "{{! comment }}",
+          "description": "Однострочный комментарий"
+        },
+        "multi_line": {
+          "syntax": "{{!-- multi-line comment --}}",
+          "description": "Многострочный комментарий"
+        }
       },
       "shell_scripts": {
         "syntax": "{{#/bin/sh:...}}",
@@ -98,11 +157,14 @@
       "implementation": "Используется стек конструкций для корректной обработки вложенности"
     },
     "processing_pipeline": {
-      "step_1": "Парсинг конструкций (parse_template_constructs.awk)",
-      "step_2": "Обработка конструкций (process_template_constructs.awk)",
-      "step_3": "Рекурсивная обработка вложенных конструкций",
-      "step_4": "Выполнение AWK скриптов с передачей переменных окружения",
-      "step_5": "Замена маркеров на обработанный контент"
+      "step_1": "Построение AST (Abstract Syntax Tree) через tokenizer_core.awk",
+      "step_2": "Регистрация конструкций через construct_registry.awk",
+      "step_3": "Обработка переменных через variable_context.awk (стековая модель)",
+      "step_4": "Выполнение конструкций через evaluator_core.awk с dispatch на плагины",
+      "step_5": "Рекурсивная обработка вложенных конструкций",
+      "step_6": "Выполнение AWK секций с передачей переменных окружения",
+      "step_7": "Рендеринг AST в текст через renderer.awk",
+      "architecture": "Модульная плагинная архитектура - каждый конструкт является отдельным плагином"
     },
     "environment_variables": {
       "loop_variables": {
@@ -116,25 +178,45 @@
     },
     "common_libraries": {
       "dap_common.awk": {
-        "location": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/dap_common.awk",
+        "location": "cellframe-node/dap-sdk/test-framework/dap_tpl/utils/dap_common.awk",
         "description": "Общая библиотека AWK функций для шаблонов",
         "functions": [
           "trim_string(str) - удаление пробелов",
           "contains(str, substr) - проверка наличия подстроки",
           "parse_pipe_separated(data, parts, delimiter) - парсинг разделенных данных"
         ],
-        "usage": "@include \"dap_common.awk\""
+        "usage": "@include \"dap_common.awk\" в AWK секциях"
       }
     },
     "examples": {
-      "type_normalization_macros": {
-        "file": "cellframe-node/dap-sdk/test-framework/mocks/templates/type_normalization_macros.h.tpl",
-        "description": "Пример использования AWK для подготовки данных и циклов для генерации макросов",
+      "mock_map_core": {
+        "file": "cellframe-node/dap-sdk/test-framework/templates/mock_map_core.h.tpl",
+        "description": "Пример использования AWK секций для генерации макросов расширения",
         "features": [
-          "AWK скрипт для обработки NORMALIZATION_MACROS_DATA",
-          "Цикл по TYPE_ENTRIES_ARRAY",
-          "Вложенный AWK скрипт для обработки каждой записи",
-          "Условная генерация на основе типа данных"
+          "AWK секция для генерации последовательности макросов",
+          "Использование циклов AWK для создания уровней расширения",
+          "Генерация макросов без использования ## оператора"
+        ]
+      },
+      "function_wrappers": {
+        "file": "cellframe-node/dap-sdk/test-framework/templates/function_wrappers.h.tpl",
+        "description": "Пример использования циклов for с newline разделителем",
+        "features": [
+          "Цикл по FUNCTIONS_DATA с разделителем |newline",
+          "Вложенные условия для void и non-void функций",
+          "Генерация специфичных макросов для каждой функции"
+        ]
+      },
+      "documentation_examples": {
+        "location": "cellframe-node/dap-sdk/test-framework/dap_tpl/docs/examples/",
+        "files": [
+          "01_variables.tpl - базовые переменные",
+          "02_conditionals.tpl - условия и сравнения",
+          "03_loops.tpl - циклы и массивы",
+          "04_macros.tpl - макросы и переиспользование",
+          "05_includes.tpl - включение файлов",
+          "06_complex.tpl - сложные примеры",
+          "07_awk_sections.tpl - AWK секции"
         ]
       }
     },
@@ -156,7 +238,17 @@
     "limitations": {
       "arrays": "Массивы должны передаваться через переменные окружения",
       "process_isolation": "AWK скрипты выполняются в отдельных процессах",
-      "scope": "Переменные из циклов доступны только внутри блока цикла"
+      "scope": "Переменные из циклов доступны только внутри блока цикла (стековая модель переменных)",
+      "arithmetic": "Ограниченная поддержка арифметических операций (использовать AWK секции для сложных вычислений)"
+    },
+    "recent_improvements": {
+      "modular_architecture": "Полностью переработанная модульная архитектура с системой плагинов",
+      "test_coverage": "41+ тестов с полным покрытием всех конструкций (27 unit + 10 integration + 4 mocking)",
+      "regression_tests": "Добавлена система регрессионных тестов (tests/regression/)",
+      "for_loop_fixes": "Исправлена обработка |newline разделителя в циклах for (evaluator.awk)",
+      "documentation": "Полная документация на английском и русском языках с примерами",
+      "aw_section_enhancements": "Улучшена поддержка переменных окружения в AWK секциях",
+      "construct_system": "Система регистрации конструкций через construct_registry.awk"
     },
     "future_improvements": {
       "filters": "Поддержка фильтров (например, {{item|upper}})",
@@ -166,18 +258,102 @@
     }
   },
   "related_files": {
-    "template_engine": "cellframe-node/dap-sdk/test-framework/mocks/dap_tpl.sh",
-    "parser": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/parse_template_constructs.awk",
-    "processor": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/process_template_constructs.awk",
-    "documentation": "cellframe-node/dap-sdk/test-framework/mocks/templates/README_TEMPLATE_CONSTRUCTS.md",
-    "common_library": "cellframe-node/dap-sdk/test-framework/mocks/templates/scripts/dap_common.awk"
+    "template_engine": "cellframe-node/dap-sdk/test-framework/dap_tpl/dap_tpl.sh",
+    "template_library": "cellframe-node/dap-sdk/test-framework/dap_tpl/dap_tpl_lib.sh",
+    "build_engine": "cellframe-node/dap-sdk/test-framework/dap_tpl/utils/build_engine.sh",
+    "core_modules": [
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/token_tree.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/variable_context.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/macro_store.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/construct_registry.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/tokenizer_core.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/evaluator_core.awk",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/core/renderer.awk"
+    ],
+    "constructs": [
+      {
+        "name": "if",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/if/",
+        "description": "Условные блоки с elif/else"
+      },
+      {
+        "name": "for",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/for/",
+        "description": "Циклы по массивам данных"
+      },
+      {
+        "name": "set",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/set/",
+        "description": "Установка переменных"
+      },
+      {
+        "name": "var",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/var/",
+        "description": "Подстановка переменных"
+      },
+      {
+        "name": "macro",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/macro/",
+        "description": "Определение макросов"
+      },
+      {
+        "name": "call",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/call/",
+        "description": "Вызов макросов"
+      },
+      {
+        "name": "include",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/include/",
+        "description": "Включение файлов"
+      },
+      {
+        "name": "comment",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/comment/",
+        "description": "Комментарии"
+      },
+      {
+        "name": "awk_section",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/awk_section/",
+        "description": "Выполнение AWK кода"
+      },
+      {
+        "name": "sh_section",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/sh_section/",
+        "description": "Выполнение shell скриптов"
+      },
+      {
+        "name": "text",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/text/",
+        "description": "Обработка текстового контента (внутренний)"
+      },
+      {
+        "name": "root",
+        "path": "cellframe-node/dap-sdk/test-framework/dap_tpl/constructs/root/",
+        "description": "Корневой конструкт шаблона (внутренний)"
+      }
+    ],
+    "documentation": [
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/README.md",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/README.ru.md",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/docs/DAP_TPL_GUIDE.md",
+      "cellframe-node/dap-sdk/test-framework/dap_tpl/docs/DAP_TPL_GUIDE.ru.md"
+    ],
+    "common_library": "cellframe-node/dap-sdk/test-framework/dap_tpl/utils/dap_common.awk",
+    "tests": "cellframe-node/dap-sdk/test-framework/dap_tpl/tests/"
   },
   "navigation_system": {
     "file_role": "KNOWLEDGE_MODULE",
-    "usage": "Автоматически загружается при работе с шаблонами DAP SDK Mock Framework",
+    "usage": "Автоматически загружается при работе с шаблонами DAP SDK Mock Framework и dap_tpl",
     "related_modules": [
-      ".context/modules/testing/dap_mock_framework.json"
-    ]
+      ".context/modules/testing/dap_mock.json",
+      ".context/modules/projects/dap_sdk_project.json"
+    ],
+    "quick_reference": {
+      "main_script": "cellframe-node/dap-sdk/test-framework/dap_tpl/dap_tpl.sh",
+      "usage": "source dap_tpl/dap_tpl.sh && replace_template_placeholders input.tpl output.h VAR=value",
+      "build_engine": "./utils/build_engine.sh",
+      "run_tests": "cd tests && ./run.sh test-framework"
+    }
   }
 }
 
