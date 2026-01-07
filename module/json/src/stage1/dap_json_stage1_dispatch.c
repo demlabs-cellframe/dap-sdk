@@ -51,7 +51,11 @@ void dap_json_stage1_init_dispatch(void)
     log_it(L_INFO, "Stage 1 dispatch initialized");
     
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    if (g_dap_json_cpu_features.has_avx2) {
+    if (g_dap_json_cpu_features.has_avx512f && 
+        g_dap_json_cpu_features.has_avx512dq && 
+        g_dap_json_cpu_features.has_avx512bw) {
+        log_it(L_INFO, "  Selected implementation: AVX-512 (64 bytes/iteration)");
+    } else if (g_dap_json_cpu_features.has_avx2) {
         log_it(L_INFO, "  Selected implementation: AVX2 (32 bytes/iteration)");
     } else if (g_dap_json_cpu_features.has_sse2) {
         log_it(L_INFO, "  Selected implementation: SSE2 (16 bytes/iteration)");

@@ -360,6 +360,7 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 /* ========================================================================== */
 
 // Include arch-specific headers for SIMD implementations (always include all)
+#include "../../src/stage1/arch/x86/dap_json_stage1_avx512.h"
 #include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
 #include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
 #include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
@@ -402,7 +403,12 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     }
     
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    // x86/x64 architecture - check for AVX2, SSE2, then fallback
+    // x86/x64 architecture - check for AVX-512, AVX2, SSE2, then fallback
+    if (g_dap_json_cpu_features.has_avx512f && 
+        g_dap_json_cpu_features.has_avx512dq && 
+        g_dap_json_cpu_features.has_avx512bw) {
+        return dap_json_stage1_run_avx512(a_stage1);
+    }
     if (g_dap_json_cpu_features.has_avx2) {
         return dap_json_stage1_run_avx2(a_stage1);
     }
@@ -427,22 +433,23 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
 static inline const char* dap_json_stage1_get_dispatch_name(void)
 {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #if defined(__AVX2__)
+    if (g_dap_json_cpu_features.has_avx512f && 
+        g_dap_json_cpu_features.has_avx512dq && 
+        g_dap_json_cpu_features.has_avx512bw) {
+        return "AVX-512 (64 bytes/iteration)";
+    }
+    if (g_dap_json_cpu_features.has_avx2) {
         return "AVX2 (32 bytes/iteration)";
-    #elif defined(__SSE2__)
+    }
+    if (g_dap_json_cpu_features.has_sse2) {
         return "SSE2 (16 bytes/iteration)";
-    #else
-        return "Reference C (portable)";
-    #endif
+    }
 #elif defined(__ARM_NEON) || defined(__aarch64__)
-    #if defined(__ARM_NEON)
-        return "NEON (16 bytes/iteration)";
-    #else
-        return "Reference C (portable)";
-    #endif
-#else
-    return "Reference C (portable)";
+    if (g_dap_json_cpu_features.has_neon) {
+        return "ARM NEON (16 bytes/iteration)";
+    }
 #endif
+    return "Reference C (portable)";
 }
 
 
