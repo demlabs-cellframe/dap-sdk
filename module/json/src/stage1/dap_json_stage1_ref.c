@@ -72,17 +72,21 @@ static bool s_grow_indices_array(dap_json_stage1_t *a_stage1)
 }
 
 /**
- * @brief Add structural index
- * @details Adds a structural character to indices array. Grows array if necessary.
+ * @brief Add token to indices array (exported for SIMD implementations)
+ * @details Adds any type of token to indices array. Grows array if necessary.
  * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_position Position of structural character
- * @param[in] a_character Structural character
+ * @param[in] a_position Byte position in input
+ * @param[in] a_length Token length (0 for structural chars)
+ * @param[in] a_type Token type
+ * @param[in] a_character_or_subtype Character for structural, subtype for literal
  * @return true on success, false on allocation failure
  */
-static bool s_add_structural_index(
+bool dap_json_stage1_add_token(
     dap_json_stage1_t *a_stage1,
     uint32_t a_position,
-    uint8_t a_character
+    uint32_t a_length,
+    dap_json_token_type_t a_type,
+    uint8_t a_character_or_subtype
 )
 {
     if(!a_stage1) {
@@ -101,14 +105,32 @@ static bool s_add_structural_index(
         }
     }
     
-    // Add index
-    a_stage1->indices[a_stage1->indices_count].position = a_position;
-    a_stage1->indices[a_stage1->indices_count].length = 0;  // Structural chars have no length
-    a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRUCTURAL;
-    a_stage1->indices[a_stage1->indices_count].character = a_character;
-    a_stage1->indices[a_stage1->indices_count]._reserved = 0;
+    // Add token
+    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count];
+    l_token->position = a_position;
+    l_token->length = a_length;
+    l_token->type = a_type;
+    l_token->character = a_character_or_subtype;
+    
     a_stage1->indices_count++;
-    a_stage1->structural_chars++;
+    
+    // Update statistics
+    switch(a_type) {
+        case TOKEN_TYPE_STRUCTURAL:
+            a_stage1->structural_chars++;
+            break;
+        case TOKEN_TYPE_STRING:
+            a_stage1->string_count++;
+            break;
+        case TOKEN_TYPE_NUMBER:
+            a_stage1->number_count++;
+            break;
+        case TOKEN_TYPE_LITERAL:
+            a_stage1->literal_count++;
+            break;
+        default:
+            break;
+    }
     
     return true;
 }
@@ -372,13 +394,21 @@ static bool s_skip_string(dap_json_stage1_t *a_stage1)
 /* ========================================================================== */
 
 /**
- * @brief Detect and add number token
- * @details Phase 1.3: Сканирует number и добавляет token.
+ * @brief Scan number from current position (exported for SIMD implementations)
+ * @details Scans integers, decimals, scientific notation. Advances current_pos.
  * @param[in,out] a_stage1 Stage 1 parser state
- * @return true on success, false on invalid number
+ * @param[in] a_start_pos Position of first digit/minus (now ignored, uses current_pos)
+ * @return Position after last number character on success, original position on error
  */
-static bool s_scan_number_token(dap_json_stage1_t *a_stage1)
+size_t dap_json_stage1_scan_number_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
 {
+    if(!a_stage1) {
+        return a_start_pos;
+    }
+    
     const uint8_t *l_input = a_stage1->input;
     const size_t l_len = a_stage1->input_len;
     size_t i = a_stage1->current_pos;
@@ -393,7 +423,7 @@ static bool s_scan_number_token(dap_json_stage1_t *a_stage1)
     }
     
     if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
-        return false; // No digits
+        return l_start; // No digits
     }
     
     // Integer part
@@ -411,7 +441,7 @@ static bool s_scan_number_token(dap_json_stage1_t *a_stage1)
         l_has_decimal = true;
         i++;
         if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
-            return false;
+            return l_start; // Error
         }
         while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
             i++;
@@ -426,44 +456,42 @@ static bool s_scan_number_token(dap_json_stage1_t *a_stage1)
             i++;
         }
         if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
-            return false;
+            return l_start; // Error
         }
         while(i < l_len && l_input[i] >= '0' && l_input[i] <= '9') {
             i++;
         }
     }
     
-    // Add number token
+    // Add number token using new unified function
     uint32_t l_length = (uint32_t)(i - l_start);
     uint8_t l_subtype = (l_has_decimal || l_has_exponent) ? 2 : 1;
     
-    // Grow if needed
-    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
-        if(!s_grow_indices_array(a_stage1)) {
-            return false;
-        }
+    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
+                                   TOKEN_TYPE_NUMBER, l_subtype)) {
+        return l_start; // Allocation failure
     }
     
-    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
-    l_token->position = l_start;
-    l_token->length = l_length;
-    l_token->type = TOKEN_TYPE_NUMBER;
-    l_token->character = l_subtype;
-    l_token->_reserved = 0;
-    
-    a_stage1->number_count++;
     a_stage1->current_pos = i;
-    return true;
+    return i;
 }
 
 /**
- * @brief Detect and add literal token
- * @details Phase 1.3: Детектирует true/false/null и добавляет token.
+ * @brief Scan literal from current position (exported for SIMD implementations)
+ * @details Detects and validates true/false/null. Advances current_pos.
  * @param[in,out] a_stage1 Stage 1 parser state
- * @return true on success, false on invalid literal
+ * @param[in] a_start_pos Position of first character (now ignored, uses current_pos)
+ * @return Position after literal on success, original position if not a literal
  */
-static bool s_scan_literal_token(dap_json_stage1_t *a_stage1)
+size_t dap_json_stage1_scan_literal_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
 {
+    if(!a_stage1) {
+        return a_start_pos;
+    }
+    
     const uint8_t *l_input = a_stage1->input;
     const size_t l_len = a_stage1->input_len;
     size_t i = a_stage1->current_pos;
@@ -485,62 +513,51 @@ static bool s_scan_literal_token(dap_json_stage1_t *a_stage1)
         l_length = 4;
     }
     else {
-        return false;
+        return l_start; // Not a literal
     }
     
-    // Grow if needed
-    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
-        if(!s_grow_indices_array(a_stage1)) {
-            return false;
-        }
+    // Add literal token using new unified function
+    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
+                                   TOKEN_TYPE_LITERAL, l_subtype)) {
+        return l_start; // Allocation failure
     }
     
-    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
-    l_token->position = l_start;
-    l_token->length = l_length;
-    l_token->type = TOKEN_TYPE_LITERAL;
-    l_token->character = l_subtype;
-    l_token->_reserved = 0;
-    
-    a_stage1->literal_count++;
     a_stage1->current_pos = i + l_length;
-    return true;
+    return a_stage1->current_pos;
 }
 
 /**
- * @brief Scan string and add token
- * @details Phase 1.3: Сканирует строку и добавляет STRING token.
+ * @brief Scan string from current position (exported for SIMD implementations)
+ * @details Expects current_pos to be AT opening quote. Advances to after closing quote.
+ *          Validates UTF-8, escape sequences. Returns position after string on success.
  * @param[in,out] a_stage1 Stage 1 parser state
- * @return true on success, false on error
+ * @param[in] a_start_pos Position of opening quote (updated: now ignored, uses current_pos)
+ * @return Position after closing quote on success, original position on error
  */
-static bool s_scan_string_token(dap_json_stage1_t *a_stage1)
+size_t dap_json_stage1_scan_string_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
 {
+    if(!a_stage1) {
+        return a_start_pos;
+    }
+    
     uint32_t l_start = (uint32_t)a_stage1->current_pos;
     
     // Skip string (existing logic)
     if(!s_skip_string(a_stage1)) {
-        return false;
+        return l_start; // Error
     }
     
-    // Add string token
+    // Add string token using new unified function
     uint32_t l_length = (uint32_t)(a_stage1->current_pos - l_start);
-    
-    // Grow if needed
-    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
-        if(!s_grow_indices_array(a_stage1)) {
-            return false;
-        }
+    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
+                                   TOKEN_TYPE_STRING, 0)) {
+        return l_start; // Allocation failure
     }
     
-    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count++];
-    l_token->position = l_start;
-    l_token->length = l_length;
-    l_token->type = TOKEN_TYPE_STRING;
-    l_token->character = 0;
-    l_token->_reserved = 0;
-    
-    a_stage1->string_count++;
-    return true;
+    return a_stage1->current_pos;
 }
 
 /* ========================================================================== */
@@ -594,16 +611,22 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
             
             case CHAR_CLASS_QUOTE:
                 // String - scan and add STRING token
-                if(!s_scan_string_token(a_stage1)) {
-                    log_it(L_ERROR, "String parsing failed at position %zu: %s",
-                           a_stage1->error_position, a_stage1->error_message);
-                    return a_stage1->error_code;
+                {
+                    size_t l_old_pos = a_stage1->current_pos;
+                    size_t l_new_pos = dap_json_stage1_scan_string_ref(a_stage1, l_old_pos);
+                    if(l_new_pos == l_old_pos) {
+                        log_it(L_ERROR, "String parsing failed at position %zu: %s",
+                               a_stage1->error_position, a_stage1->error_message);
+                        return a_stage1->error_code;
+                    }
+                    // Position already updated by scan_string
                 }
                 break;
             
             case CHAR_CLASS_STRUCTURAL:
                 // Structural character - add STRUCTURAL token
-                if(!s_add_structural_index(a_stage1, (uint32_t)a_stage1->current_pos, c)) {
+                if(!dap_json_stage1_add_token(a_stage1, (uint32_t)a_stage1->current_pos, 0, 
+                                              TOKEN_TYPE_STRUCTURAL, c)) {
                     log_it(L_ERROR, "Failed to add structural index at position %zu", a_stage1->current_pos);
                     return a_stage1->error_code;
                 }
@@ -613,19 +636,29 @@ int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
             case CHAR_CLASS_DIGIT:
             case CHAR_CLASS_MINUS:
                 // Number - scan and add NUMBER token
-                if(!s_scan_number_token(a_stage1)) {
-                    log_it(L_ERROR, "Invalid number at position %zu", a_stage1->current_pos);
-                    a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
-                    return a_stage1->error_code;
+                {
+                    size_t l_old_pos = a_stage1->current_pos;
+                    size_t l_new_pos = dap_json_stage1_scan_number_ref(a_stage1, l_old_pos);
+                    if(l_new_pos == l_old_pos) {
+                        log_it(L_ERROR, "Invalid number at position %zu", a_stage1->current_pos);
+                        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                        return a_stage1->error_code;
+                    }
+                    // Position already updated by scan_number
                 }
                 break;
             
             case CHAR_CLASS_LETTER:
                 // Literal (true/false/null) - scan and add LITERAL token
-                if(!s_scan_literal_token(a_stage1)) {
-                    log_it(L_ERROR, "Invalid literal at position %zu", a_stage1->current_pos);
-                    a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
-                    return a_stage1->error_code;
+                {
+                    size_t l_old_pos = a_stage1->current_pos;
+                    size_t l_new_pos = dap_json_stage1_scan_literal_ref(a_stage1, l_old_pos);
+                    if(l_new_pos == l_old_pos) {
+                        log_it(L_ERROR, "Invalid literal at position %zu", a_stage1->current_pos);
+                        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                        return a_stage1->error_code;
+                    }
+                    // Position already updated by scan_literal
                 }
                 break;
             

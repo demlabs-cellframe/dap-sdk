@@ -65,22 +65,6 @@ extern bool dap_json_stage1_add_token(
     uint8_t a_character_or_subtype
 );
 
-// Scan functions from reference (for validation)
-static size_t s_scan_string_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
-static size_t s_scan_number_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
-static size_t s_scan_literal_ref(
-    dap_json_stage1_t *a_stage1,
-    size_t a_start_pos
-);
-
 /* ========================================================================== */
 /*                         SIMD PRIMITIVES                                    */
 /* ========================================================================== */
@@ -204,139 +188,6 @@ static inline uint32_t s_compute_escaped_quotes(
 }
 
 /* ========================================================================== */
-/*          REFERENCE FUNCTIONS (imported for validation)                     */
-/* ========================================================================== */
-
-/**
- * @brief Scan string using reference implementation
- * @details Handles escape sequences and returns end position
- * @param[in,out] a_stage1 Stage 1 state
- * @param[in] a_start_pos Position of opening quote
- * @return Position after closing quote, or a_start_pos on error
- */
-static size_t s_scan_string_ref(dap_json_stage1_t *a_stage1, size_t a_start_pos)
-{
-    // This will be implemented by calling reference implementation
-    // For now, stub that scans to next unescaped quote
-    const uint8_t *l_input = a_stage1->input;
-    const size_t l_len = a_stage1->input_len;
-    
-    size_t l_pos = a_start_pos + 1; // Skip opening quote
-    bool l_escaped = false;
-    
-    while (l_pos < l_len) {
-        uint8_t l_char = l_input[l_pos];
-        
-        if (l_escaped) {
-            l_escaped = false;
-            l_pos++;
-            continue;
-        }
-        
-        if (l_char == '\\') {
-            l_escaped = true;
-            l_pos++;
-            continue;
-        }
-        
-        if (l_char == '"') {
-            return l_pos + 1; // Position after closing quote
-        }
-        
-        l_pos++;
-    }
-    
-    // Unterminated string
-    a_stage1->error_code = STAGE1_ERROR_UNTERMINATED_STRING;
-    a_stage1->error_position = a_start_pos;
-    snprintf(a_stage1->error_message, sizeof(a_stage1->error_message),
-             "Unterminated string");
-    return a_start_pos;
-}
-
-/**
- * @brief Scan number using reference implementation
- * @param[in,out] a_stage1 Stage 1 state
- * @param[in] a_start_pos Position of first digit/minus
- * @return Position after last number character
- */
-static size_t s_scan_number_ref(dap_json_stage1_t *a_stage1, size_t a_start_pos)
-{
-    const uint8_t *l_input = a_stage1->input;
-    const size_t l_len = a_stage1->input_len;
-    size_t l_pos = a_start_pos;
-    
-    // Skip minus
-    if (l_pos < l_len && l_input[l_pos] == '-') {
-        l_pos++;
-    }
-    
-    // Require at least one digit
-    if (l_pos >= l_len || !isdigit(l_input[l_pos])) {
-        return a_start_pos;
-    }
-    
-    // Skip digits
-    while (l_pos < l_len && isdigit(l_input[l_pos])) {
-        l_pos++;
-    }
-    
-    // Optional decimal
-    if (l_pos < l_len && l_input[l_pos] == '.') {
-        l_pos++;
-        while (l_pos < l_len && isdigit(l_input[l_pos])) {
-            l_pos++;
-        }
-    }
-    
-    // Optional exponent
-    if (l_pos < l_len && (l_input[l_pos] == 'e' || l_input[l_pos] == 'E')) {
-        l_pos++;
-        if (l_pos < l_len && (l_input[l_pos] == '+' || l_input[l_pos] == '-')) {
-            l_pos++;
-        }
-        while (l_pos < l_len && isdigit(l_input[l_pos])) {
-            l_pos++;
-        }
-    }
-    
-    return l_pos;
-}
-
-/**
- * @brief Scan literal (true/false/null) using reference implementation
- * @param[in,out] a_stage1 Stage 1 state
- * @param[in] a_start_pos Position of first character (t/f/n)
- * @return Position after literal, or a_start_pos if not a literal
- */
-static size_t s_scan_literal_ref(dap_json_stage1_t *a_stage1, size_t a_start_pos)
-{
-    const uint8_t *l_input = a_stage1->input;
-    const size_t l_len = a_stage1->input_len;
-    
-    if (a_start_pos >= l_len) return a_start_pos;
-    
-    uint8_t l_first = l_input[a_start_pos];
-    
-    if (l_first == 't' && a_start_pos + 4 <= l_len &&
-        memcmp(&l_input[a_start_pos], "true", 4) == 0) {
-        return a_start_pos + 4;
-    }
-    
-    if (l_first == 'f' && a_start_pos + 5 <= l_len &&
-        memcmp(&l_input[a_start_pos], "false", 5) == 0) {
-        return a_start_pos + 5;
-    }
-    
-    if (l_first == 'n' && a_start_pos + 4 <= l_len &&
-        memcmp(&l_input[a_start_pos], "null", 4) == 0) {
-        return a_start_pos + 4;
-    }
-    
-    return a_start_pos; // Not a literal
-}
-
-/* ========================================================================== */
 /*                         MAIN AVX2 TOKENIZER                                */
 /* ========================================================================== */
 
@@ -412,7 +263,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             
             // Check for quote (string start)
             if (l_real_quotes & l_bit) {
-                size_t l_string_end = s_scan_string_ref(a_stage1, l_abs_pos);
+                size_t l_string_end = dap_json_stage1_scan_string(a_stage1, l_abs_pos);
                 if (l_string_end == l_abs_pos) {
                     // Error in string parsing
                     return a_stage1->error_code;
@@ -457,7 +308,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             // Check for number start
             dap_json_char_class_t l_class = dap_json_classify_char(l_char);
             if (l_class == CHAR_CLASS_DIGIT || l_class == CHAR_CLASS_MINUS) {
-                size_t l_num_end = s_scan_number_ref(a_stage1, l_abs_pos);
+                size_t l_num_end = dap_json_stage1_scan_number(a_stage1, l_abs_pos);
                 if (l_num_end > l_abs_pos) {
                     size_t l_num_len = l_num_end - l_abs_pos;
                     dap_json_stage1_add_token(
@@ -477,7 +328,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
             
             // Check for literal start (t, f, n)
             if (l_class == CHAR_CLASS_LETTER) {
-                size_t l_lit_end = s_scan_literal_ref(a_stage1, l_abs_pos);
+                size_t l_lit_end = dap_json_stage1_scan_literal(a_stage1, l_abs_pos);
                 if (l_lit_end > l_abs_pos) {
                     size_t l_lit_len = l_lit_end - l_abs_pos;
                     
@@ -525,7 +376,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
                     a_stage1,
                     (uint32_t)l_pos,
                     0,
-                    DAP_JSON_TOKEN_TYPE_STRUCTURAL,
+                    TOKEN_TYPE_STRUCTURAL,
                     l_char
                 );
                 a_stage1->structural_chars++;

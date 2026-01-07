@@ -353,6 +353,125 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
     return 0;
 }
 
+/* ========================================================================== */
+/*                 SHARED FUNCTIONS (for SIMD implementations)                */
+/* ========================================================================== */
+
+/**
+ * @brief Add token to indices array (shared by all implementations)
+ * @details Grows array if needed, adds token with all metadata
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @param[in] a_position Byte position in input
+ * @param[in] a_length Token length (0 for structural chars)
+ * @param[in] a_type Token type (structural/string/number/literal)
+ * @param[in] a_character_or_subtype Character for structural, or subtype for literal
+ * @return true on success, false on allocation failure
+ */
+bool dap_json_stage1_add_token(
+    dap_json_stage1_t *a_stage1,
+    uint32_t a_position,
+    uint32_t a_length,
+    dap_json_token_type_t a_type,
+    uint8_t a_character_or_subtype
+);
+
+/**
+ * @brief Scan and validate string from opening quote to closing quote (reference implementation)
+ * @details Handles escape sequences, returns end position
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @param[in] a_start_pos Position of opening quote "
+ * @return Position after closing quote on success, a_start_pos on error
+ */
+size_t dap_json_stage1_scan_string_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+);
+
+/**
+ * @brief Scan and validate number (reference implementation)
+ * @details Handles integers, decimals, scientific notation
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @param[in] a_start_pos Position of first digit or minus sign
+ * @return Position after last number character on success, a_start_pos on error
+ */
+size_t dap_json_stage1_scan_number_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+);
+
+/**
+ * @brief Scan and validate literal (reference implementation)
+ * @details Exact match with boundary check for true/false/null
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @param[in] a_start_pos Position of first character (t/f/n)
+ * @return Position after literal on success, a_start_pos if not a literal
+ */
+size_t dap_json_stage1_scan_literal_ref(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+);
+
+/**
+ * @brief Inline wrapper for string scanning (selects best implementation)
+ */
+static inline size_t dap_json_stage1_scan_string(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
+{
+    // For now, always use reference
+    // Future: dispatch to SIMD-optimized version
+    return dap_json_stage1_scan_string_ref(a_stage1, a_start_pos);
+}
+
+/**
+ * @brief Inline wrapper for number scanning (selects best implementation)
+ */
+static inline size_t dap_json_stage1_scan_number(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
+{
+    // For now, always use reference
+    // Future: dispatch to SIMD-optimized version
+    return dap_json_stage1_scan_number_ref(a_stage1, a_start_pos);
+}
+
+/**
+ * @brief Inline wrapper for literal scanning (selects best implementation)
+ */
+static inline size_t dap_json_stage1_scan_literal(
+    dap_json_stage1_t *a_stage1,
+    size_t a_start_pos
+)
+{
+    // For now, always use reference
+    // Future: dispatch to SIMD-optimized version
+    return dap_json_stage1_scan_literal_ref(a_stage1, a_start_pos);
+}
+
+/* ========================================================================== */
+/*                 DISPATCH FUNCTIONS (CPU-specific entry points)             */
+/* ========================================================================== */
+
+/**
+ * @brief Run Stage 1 tokenization with CPU dispatch (auto-selects best implementation)
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @return STAGE1_SUCCESS or error code
+ */
+int dap_json_stage1_run_dispatched(dap_json_stage1_t *a_stage1);
+
+/**
+ * @brief Reset dispatch mechanism (force re-detection)
+ */
+void dap_json_stage1_reset_dispatch(void);
+
+/**
+ * @brief Get current dispatch implementation name
+ * @return String description of active implementation
+ */
+const char* dap_json_stage1_get_dispatch_name(void);
+
 #ifdef __cplusplus
 }
 #endif
