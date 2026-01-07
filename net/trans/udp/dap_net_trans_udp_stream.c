@@ -1400,18 +1400,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 break;
             }
             
-            // Process stream data - create temporary esocket for processing
-            // This is a workaround until we have proper stream data processing API
-            dap_events_socket_t l_fake_es = {0};
-            l_fake_es.buf_in = l_payload;
-            l_fake_es.buf_in_size = l_payload_size;
-            
-            dap_events_socket_t *l_saved_es = l_ctx->esocket;
-            l_ctx->esocket = &l_fake_es;
-            
-            size_t l_processed = dap_stream_data_proc_read(a_stream);
-            
-            l_ctx->esocket = l_saved_es;
+            // Process stream data using transport-agnostic function
+            size_t l_processed = dap_stream_data_proc_read_ext(a_stream,
+                                                                l_payload,
+                                                                l_payload_size);
             
             debug_if(s_debug_more, L_DEBUG,
                      "CLIENT: processed %zu bytes of stream data", l_processed);
@@ -1430,8 +1422,13 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             // CLOSE: server closing connection
             log_it(L_INFO, "CLIENT: received CLOSE from server");
             
-            // Just mark stream as closed - proper cleanup will be done elsewhere
-            debug_if(s_debug_more, L_DEBUG, "CLIENT: stream close requested");
+            // Mark stream as inactive and close the transport
+            a_stream->is_active = false;
+            
+            if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->close) {
+                debug_if(s_debug_more, L_DEBUG, "CLIENT: calling transport close");
+                a_stream->trans->ops->close(a_stream);
+            }
             
             break;
         }
