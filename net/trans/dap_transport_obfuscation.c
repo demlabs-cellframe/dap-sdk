@@ -64,6 +64,15 @@ static int s_update_key_from_packet_size(dap_enc_key_t *a_key, size_t a_packet_s
         return -1;
     }
     
+    // DEBUG: Print first 16 bytes of KDF for debugging
+    uint8_t *l_key_bytes = (uint8_t*)a_key->priv_key_data;
+    log_it(L_DEBUG, "KDF for size %zu: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+           a_packet_size,
+           l_key_bytes[0], l_key_bytes[1], l_key_bytes[2], l_key_bytes[3],
+           l_key_bytes[4], l_key_bytes[5], l_key_bytes[6], l_key_bytes[7],
+           l_key_bytes[8], l_key_bytes[9], l_key_bytes[10], l_key_bytes[11],
+           l_key_bytes[12], l_key_bytes[13], l_key_bytes[14], l_key_bytes[15]);
+    
     // Update key internals (e.g., expand key schedule for SALSA2012)
     dap_enc_key_update(a_key);
     
@@ -156,6 +165,8 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     }
     
     // Generate KDF DIRECTLY into key's priv_key_data!
+    log_it(L_DEBUG, "OBFUSCATE: final_size=%zu, handshake=%zu, padding=%zu", 
+           l_final_size, a_handshake_size, l_padding_size);
     if (s_update_key_from_packet_size(l_key, l_final_size) != 0) {
         dap_enc_key_delete(l_key);
         DAP_DELETE(l_cleartext);
@@ -190,8 +201,8 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     *a_obfuscated_data = l_encrypted;
     *a_obfuscated_size = l_encrypted_size;
     
-    log_it(L_DEBUG, "Obfuscated handshake: %zu bytes → %zu bytes (padding=%zu)",
-           a_handshake_size, l_encrypted_size, l_padding_size);
+    log_it(L_DEBUG, "Obfuscated handshake: %zu bytes → %zu bytes (padding=%zu), final_plaintext=%zu",
+           a_handshake_size, l_encrypted_size, l_padding_size, l_final_size);
     
     return 0;
 }
@@ -218,6 +229,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     }
     
     // Generate KDF DIRECTLY into key's priv_key_data!
+    log_it(L_DEBUG, "DEOBFUSCATE: packet_size=%zu", a_obfuscated_size);
     if (s_update_key_from_packet_size(l_key, a_obfuscated_size) != 0) {
         dap_enc_key_delete(l_key);
         return -3;
