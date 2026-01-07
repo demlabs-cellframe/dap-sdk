@@ -168,8 +168,12 @@ uint32_t backslash_mask = simd_find_backslash_avx2(chunk);
 uint32_t escaped_quotes = compute_escaped_quotes(backslash_mask, quote_mask);
 uint32_t real_quotes = quote_mask & ~escaped_quotes;
 
-// Toggle in_string state at each real quote
-in_string ^= (real_quotes != 0);
+// Toggle in_string state at EACH real quote
+while (real_quotes) {
+    int bit = __builtin_ctz(real_quotes);  // Count trailing zeros
+    in_string ^= 1;
+    real_quotes &= (real_quotes - 1);  // Clear lowest bit
+}
 ```
 
 **Detailed Implementation:**
@@ -268,6 +272,20 @@ static inline uint32_t simd_find_number_chars_avx2(__m256i chunk) {
 
 **Why?** Number validation is complex (no leading zeros, required digits after `.`, etc.). SIMD is for **detection**, not validation.
 
+### Literal Detection: `true`, `false`, `null`
+
+**Strategy:** SIMD cannot efficiently match multi-character sequences like "true". Use scalar approach:
+
+```c
+// After finding non-structural, non-whitespace, non-quote, non-number char
+if (input[pos] == 't' || input[pos] == 'f' || input[pos] == 'n') {
+    // Potential literal - use reference s_scan_literal_token()
+    // This is rare in typical JSON, so scalar is acceptable
+}
+```
+
+**Why scalar?** Literals are typically rare (<5% of tokens in real JSON). SIMD overhead for 4-5 byte matches not worth it.
+
 ---
 
 ## 🏗️ Implementation Strategy
@@ -331,11 +349,12 @@ static dap_json_stage1_fn s_select_implementation(void) {
 // Public API wrapper
 int dap_json_stage1_run(dap_json_stage1_t *a_stage1) {
     static dap_json_stage1_fn s_impl = NULL;
-    static pthread_once_t s_once = PTHREAD_ONCE_INIT;
+    static int s_once = 0;
     
-    pthread_once(&s_once, ^{
+    if (!s_once) {
         s_impl = s_select_implementation();
-    });
+        __atomic_store_n(&s_once, 1, __ATOMIC_RELEASE);
+    }
     
     return s_impl(a_stage1);
 }
