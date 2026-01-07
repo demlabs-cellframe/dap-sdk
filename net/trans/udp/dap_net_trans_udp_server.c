@@ -761,12 +761,10 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     
     // HANDSHAKE packets are OBFUSCATED (size-based encryption)
     if (a_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
-        // Validate size (must be Kyber public key)
-        if (a_payload_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
-            log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
-                   a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
-            return -2;
-        }
+        // NO SIZE VALIDATION HERE!
+        // Alice sends: 800 bytes (CRYPTO_PUBLICKEYBYTES)
+        // Bob sends: 768 bytes (CRYPTO_CIPHERTEXTBYTES)
+        // Size varies, validation is at protocol level (before calling s_send_udp_packet)
         
         // Obfuscate handshake (encrypt with size-derived key, add random padding)
         uint8_t *l_obfuscated = NULL;
@@ -877,6 +875,10 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
              "Processing HANDSHAKE packet (%zu bytes) for session %p",
              a_payload_size, a_session);
     
+    // DEBUG: Show actual received size
+    log_it(L_DEBUG, "s_handle_handshake RECEIVED: a_payload_size=%zu, expected=%d",
+           a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
+    
     // Generate ephemeral Bob key (Kyber512)
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     if (!l_bob_key) {
@@ -893,13 +895,19 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     if (l_bob_key->gen_bob_shared_key) {
         l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_payload, a_payload_size, &l_bob_pub);
         l_shared_key = l_bob_key->shared_key;
-        l_bob_pub_size = l_shared_key_size;  // Return value is ciphertext size, not pub key size!
         
-        if (!l_bob_pub || l_shared_key_size == 0 || !l_shared_key) {
+        // CRITICAL: Return value is ciphertext size (768 for Kyber512), NOT shared key size (32)!
+        l_bob_pub_size = l_shared_key_size;  // This IS the ciphertext size
+        
+        if (!l_bob_pub || l_bob_pub_size == 0 || !l_shared_key) {
             log_it(L_ERROR, "Failed to generate shared key from Alice's public key");
             dap_enc_key_delete(l_bob_key);
             return -3;
         }
+        
+        // DEBUG: Show sizes
+        log_it(L_DEBUG, "HANDSHAKE: Bob ciphertext size=%zu, shared_secret addr=%p",
+               l_bob_pub_size, l_shared_key);
     } else {
         log_it(L_ERROR, "Key type doesn't support KEM handshake");
         dap_enc_key_delete(l_bob_key);

@@ -371,6 +371,10 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     memcpy(&l_hs_size_net, l_decrypted, sizeof(l_hs_size_net));
     size_t l_hs_size = ntohs(l_hs_size_net);
     
+    // DEBUG: Show what we parsed
+    log_it(L_DEBUG, "DEOBFUSCATE: parsed l_hs_size=%zu from bytes %02x%02x (net order=%04x)",
+           l_hs_size, l_decrypted[0], l_decrypted[1], l_hs_size_net);
+    
     // Validate handshake size
     if (l_hs_size == 0 || l_hs_size > (l_decrypted_size - sizeof(uint16_t))) {
         log_it(L_WARNING, "Invalid handshake size: %zu (packet=%zu)", 
