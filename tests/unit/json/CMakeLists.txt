@@ -179,6 +179,30 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
+# Test 8: SIMD Correctness Tests (Phase 1.4)
+# =========================================
+# Coverage: Compare SIMD implementations (AVX2, SSE2, NEON, AVX-512) vs reference
+# Tests: 40+ test cases × 4 implementations = 160+ comparisons
+project(test_json_stage1_simd_correctness)
+
+add_executable(${PROJECT_NAME}
+    test_stage1_simd_correctness.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;json;stage1;simd;correctness;critical"
+)
+
+# =========================================
 # Summary
 # =========================================
 # Phase 0.2 tests: 55+ test cases across 5 files
@@ -194,6 +218,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 #   - Performance baseline: established (5 benchmarks)
 #   - Stage 1 reference: 100% (25+ tests)
 #   - Stage 2 reference: 100% (13+ tests)
+#   - SIMD correctness: 100% (4 implementations × 40+ test cases)
 #
 # Run tests:
 #   - All JSON tests: ctest -L json --verbose
@@ -201,3 +226,4 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 #   - Benchmarks: ctest -L benchmark --verbose
 #   - Stage 1 only: ctest -L stage1 --verbose
 #   - Stage 2 only: ctest -L stage2 --verbose
+#   - SIMD correctness: ctest -L simd --verbose
