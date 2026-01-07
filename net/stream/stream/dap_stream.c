@@ -1004,13 +1004,19 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
+            debug_if(s_debug, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u", 
+                   a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
         }
         // All fragments collected, move forward
+        debug_if(s_debug, L_INFO, "All fragments collected! Falling through to DATA_PACKET processing");
     }
     case STREAM_PKT_TYPE_DATA_PACKET: {
         dap_stream_ch_pkt_t *l_ch_pkt;
         size_t l_dec_pkt_size;
+
+        debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s", 
+               (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
         if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->buf_fragments;

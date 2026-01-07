@@ -151,6 +151,19 @@ typedef struct dap_stream_trans_udp_encrypted_header {
 #define DAP_STREAM_UDP_HANDSHAKE_SIZE 800
 
 /**
+ * @brief Maximum UDP payload size for safe transmission
+ * @note Conservative size to avoid IP fragmentation:
+ *       - Standard IPv4 MTU: 1500 bytes
+ *       - IPv4 header: ~20 bytes
+ *       - UDP header: 8 bytes
+ *       - UDP stream internal header: ~50 bytes
+ *       - Encryption overhead: ~20 bytes
+ *       - Safety margin: ~200 bytes
+ *       = ~1200 bytes safe payload
+ */
+#define DAP_STREAM_UDP_MAX_PAYLOAD_SIZE 1200
+
+/**
  * @brief Internal encrypted header (INSIDE encrypted payload)
  * 
  * This header is part of the encrypted blob!

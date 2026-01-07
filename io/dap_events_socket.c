@@ -2494,6 +2494,16 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
             return 0;
         }
         
+        // Check maximum datagram size (UDP MTU limitation)
+        // Typical safe UDP payload: 1200-1400 bytes to avoid IP fragmentation
+        #define DAP_UDP_MAX_DATAGRAM_SIZE 65507  // Theoretical max UDP payload (65535 - 8 UDP header - 20 IP header)
+        if (a_data_size > DAP_UDP_MAX_DATAGRAM_SIZE) {
+            log_it(L_ERROR, "UDP datagram too large: %zu bytes (max %d bytes). "
+                   "Use dap_stream fragmentation for large data!",
+                   a_data_size, DAP_UDP_MAX_DATAGRAM_SIZE);
+            return 0;
+        }
+        
         // If queue already has packets, add to queue (maintain ordering!)
         if (a_es->packet_queue && a_es->packet_queue->count > 0) {
             if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size,

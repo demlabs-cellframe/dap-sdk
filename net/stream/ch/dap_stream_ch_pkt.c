@@ -323,8 +323,15 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
             (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
 
     size_t l_target_size = DAP_STREAM_PKT_FRAGMENT_SIZE;
-    if (a_ch->stream && a_ch->stream->trans && a_ch->stream->trans->mtu > 0)
-        l_target_size = a_ch->stream->trans->mtu;
+    // Get max packet size from trans (for datagram-based transs like UDP)
+    if (a_ch->stream && a_ch->stream->trans && a_ch->stream->trans->ops && a_ch->stream->trans->ops->get_max_packet_size) {
+        size_t l_trans_max_size = a_ch->stream->trans->ops->get_max_packet_size(a_ch->stream->trans);
+        if (l_trans_max_size > 0) {
+            l_target_size = l_trans_max_size;
+            debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
+                    "Using trans MTU: %zu bytes for channel '%c'", l_target_size, (char)a_ch->proc->id);
+        }
+    }
 
     size_t l_max_fragm_size = l_target_size - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
 

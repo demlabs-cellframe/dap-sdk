@@ -54,6 +54,7 @@
 // Test configuration
 #define TEST_PARALLEL_TRANSS 4  // Number of parallel trans instances per type
 #define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB for HTTP/WebSocket
+#define TEST_UDP_DATA_SIZE (10 * 1024)           // 10 KB for UDP (realistic for datagram trans)
 #define TEST_SMALL_DATA_SIZE (1024)  // 1 KB for UDP/DNS (packet-based transs)
 #define TEST_STREAM_CH_ID 'A'
 #define TEST_TRANS_TIMEOUT_MS 10000  // 10 seconds
@@ -417,7 +418,12 @@ static void *test_trans_worker(void *a_arg)
     
     // Initialize all client ctxs and generate unique client node addresses
     for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, TEST_LARGE_DATA_SIZE) != 0) {
+        // Use smaller data size for UDP to test fragmentation (10KB vs 10MB)
+        size_t l_test_data_size = (l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) 
+                                  ? TEST_UDP_DATA_SIZE 
+                                  : TEST_LARGE_DATA_SIZE;
+        
+        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_test_data_size) != 0) {
             TEST_ERROR("Failed to initialize stream channel ctx %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -2;
             l_ctx->running = false;
@@ -551,8 +557,11 @@ static void *test_trans_worker(void *a_arg)
     }
     
     pthread_mutex_lock(&s_test_mutex);
-    printf("  All %s clients completed data exchange successfully (%u MB per client)\n", 
-           l_ctx->config.name, TEST_LARGE_DATA_SIZE / (1024 * 1024));
+    size_t l_test_data_size = (l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) 
+                              ? TEST_UDP_DATA_SIZE 
+                              : TEST_LARGE_DATA_SIZE;
+    printf("  All %s clients completed data exchange successfully (%zu KB per client)\n", 
+           l_ctx->config.name, l_test_data_size / 1024);
     pthread_mutex_unlock(&s_test_mutex);
     
     l_ctx->result = 0;

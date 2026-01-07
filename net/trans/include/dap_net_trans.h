@@ -421,6 +421,18 @@ typedef struct dap_net_trans_ops {
      *       while providing clean access to client context when needed
      */
     void* (*get_client_context)(dap_stream_t *a_stream);
+
+    /**
+     * @brief Get maximum packet size for this trans (optional)
+     * @param a_trans Trans instance
+     * @return Maximum packet size in bytes, or 0 if unlimited/streaming
+     * @note Used by dap_stream for automatic fragmentation of channel packets.
+     *       For datagram-based transs (UDP, DNS), this should return the MTU
+     *       minus headers overhead. For streaming transs (TCP, WebSocket), 
+     *       return 0 to indicate no fragmentation needed.
+     *       Typical values: UDP=1200, DNS=500, TCP/HTTP/WebSocket=0
+     */
+    size_t (*get_max_packet_size)(dap_net_trans_t *a_trans);
 } dap_net_trans_ops_t;
 
 /**

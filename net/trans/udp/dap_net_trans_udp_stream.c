@@ -102,6 +102,7 @@ static void* s_udp_get_client_context(dap_stream_t *a_stream);
 static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
+static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans);
 
 // UDP trans operations table
 static const dap_net_trans_ops_t s_udp_ops = {
@@ -120,7 +121,8 @@ static const dap_net_trans_ops_t s_udp_ops = {
     .get_capabilities = s_udp_get_capabilities,
     .register_server_handlers = NULL,  // UDP trans registers handlers via dap_stream_add_proc_udp
     .stage_prepare = s_udp_stage_prepare,
-    .get_client_context = s_udp_get_client_context
+    .get_client_context = s_udp_get_client_context,
+    .get_max_packet_size = s_udp_get_max_packet_size
 };
 
 // UDP per-stream context is now dap_net_trans_udp_ctx_t (defined in header)
@@ -2468,6 +2470,26 @@ dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
     }
     
     return (dap_net_trans_udp_ctx_t*)l_trans_ctx->_inheritor;
+}
+
+/**
+ * @brief Get maximum UDP packet size for fragmentation
+ * @param a_trans Trans instance
+ * @return Maximum safe UDP payload size in bytes
+ * @note Returns conservative MTU (1200 bytes) to account for:
+ *       - Standard IPv4 MTU: 1500 bytes
+ *       - IPv4 header: 20 bytes
+ *       - UDP header: 8 bytes
+ *       - Internal UDP stream headers: ~50 bytes
+ *       - Encryption overhead (SALSA2012): ~20 bytes
+ *       - Safety margin for network overhead
+ */
+static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    (void)a_trans;
+    // Conservative UDP payload size to avoid fragmentation
+    // Actual UDP packet will be larger due to headers + encryption
+    return DAP_STREAM_UDP_MAX_PAYLOAD_SIZE;  // 1200 bytes
 }
 
 /**
