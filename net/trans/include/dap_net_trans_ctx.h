@@ -27,6 +27,7 @@ typedef struct dap_net_trans_ctx {
     // Pending callbacks
     dap_net_trans_handshake_cb_t handshake_cb;
     dap_net_trans_session_cb_t session_create_cb;
+    bool session_create_sent;  // Duplicate protection: true if SESSION_CREATE already sent
     
     // Trans-specific private data (e.g., UDP session context, client context)
     void *_inheritor;

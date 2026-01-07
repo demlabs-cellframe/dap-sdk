@@ -1084,6 +1084,17 @@ static int s_udp_session_create(dap_stream_t *a_stream,
         log_it(L_ERROR, "No trans_ctx for session create");
         return -1;
     }
+    
+    // DUPLICATE PROTECTION: Check if SESSION_CREATE already sent for this stream
+    // This prevents multiple identical requests when FSM cycles
+    if (l_ctx->session_create_sent) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: ignoring duplicate session_create call (SESSION_CREATE already sent for this stream)");
+        // Still update callback in case it changed
+        l_ctx->session_create_cb = a_callback;
+        return 0;  // Success, but don't send duplicate request
+    }
+    
     l_ctx->session_create_cb = a_callback;
 
     // Serialize session parameters (channels, encryption, etc) to send to server
@@ -1150,6 +1161,9 @@ static int s_udp_session_create(dap_stream_t *a_stream,
         log_it(L_ERROR, "Failed to send UDP session create request");
         return -1;
     }
+    
+    // Mark SESSION_CREATE as sent to prevent duplicates
+    l_ctx->session_create_sent = true;
     
     log_it(L_INFO, "UDP session create request sent with channels '%s'", l_channels);
     
@@ -1366,6 +1380,22 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             debug_if(s_debug_more, L_DEBUG,
                      "CLIENT: received SESSION_CREATE response (%zu bytes)", l_payload_size);
             
+            // DUPLICATE PROTECTION: Check if session already has session key
+            // Once session key is established, ignore all subsequent SESSION_CREATE responses
+            dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
+            if (!l_ctx) {
+                log_it(L_ERROR, "CLIENT: no trans_ctx for SESSION_CREATE");
+                DAP_DELETE(l_decrypted);
+                return -1;
+            }
+            
+            if (!l_ctx->session_create_cb) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT: ignoring duplicate SESSION_CREATE response (session_create_cb already cleared)");
+                DAP_DELETE(l_decrypted);
+                return a_size;
+            }
+            
             if (l_payload_size != sizeof(uint64_t)) {
                 log_it(L_ERROR, "CLIENT: invalid SESSION_CREATE response size: %zu (expected 8)",
                        l_payload_size);
@@ -1407,12 +1437,14 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             
             // CRITICAL: Call session_create callback to notify dap_client!
             // Client is waiting for this callback to advance from STAGE_STREAM_CTL
-            dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-            if (l_ctx && l_ctx->session_create_cb) {
+            if (l_ctx->session_create_cb) {
                 debug_if(s_debug_more, L_DEBUG,
                          "CLIENT: calling session_create_cb for session 0x%lx",
                          l_session_id);
                 l_ctx->session_create_cb(a_stream, (uint32_t)l_session_id, NULL, 0, 0);
+                
+                // Clear callback to prevent duplicate calls
+                l_ctx->session_create_cb = NULL;
             } else {
                 log_it(L_WARNING, "CLIENT: no session_create_cb registered! l_ctx=%p", l_ctx);
             }
