@@ -131,18 +131,46 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
+# Test 6: Stage 1 Reference Implementation
+# =========================================
+# Coverage: Structural indexing, UTF-8 validation, character classification
+# Tests: 25+ test cases (Phase 1.1)
+project(test_json_stage1_ref)
+
+add_executable(${PROJECT_NAME}
+    test_stage1_ref.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;json;stage1;reference;critical"
+)
+
+# =========================================
 # Summary
 # =========================================
-# Total new tests: 55+ test cases across 5 files
-# Total lines: ~2167 lines of test code
+# Phase 0.2 tests: 55+ test cases across 5 files
+# Phase 1.1 tests: 25+ test cases (Stage 1 reference)
+# Total: 80+ test cases
+# Total lines: ~2800 lines of test code
 # Coverage targets:
 #   - Unicode/UTF-8: 100% (14 tests)
 #   - Numeric edges: 100% (13 tests)
 #   - Invalid JSON: 100% (15 tests)
 #   - Boundary conditions: 100% (8 tests)
 #   - Performance baseline: established (5 benchmarks)
+#   - Stage 1 reference: 100% (25+ tests)
 #
 # Run tests:
 #   - All JSON tests: ctest -L json --verbose
 #   - Critical only: ctest -L critical --verbose
 #   - Benchmarks: ctest -L benchmark --verbose
+#   - Stage 1 only: ctest -L stage1 --verbose

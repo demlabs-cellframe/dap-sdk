@@ -8,10 +8,16 @@ add_definitions("-D_GNU_SOURCE")
 
 # Collect JSON module sources and headers
 file(GLOB JSON_HEADERS include/*.h)
+file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
+file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
+file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
+
+# Combine all sources
+set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS})
 
 # Use universal DAP library macro
-dap_add_library(${PROJECT_NAME} ${JSON_SRCS} HEADERS ${JSON_HEADERS})
+dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_INTERNAL_HEADERS})
 
 # Register headers for component-based installation
 register_module_headers(DIRECTORIES include)
@@ -19,6 +25,7 @@ register_module_headers(DIRECTORIES include)
 # Include directories
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c

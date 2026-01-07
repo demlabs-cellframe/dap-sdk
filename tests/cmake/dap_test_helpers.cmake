@@ -29,6 +29,10 @@ function(dap_test_add_includes TARGET_NAME)
         ${DAP_SDK_ROOT}/module/crypto/include
         ${DAP_SDK_ROOT}/module/io/include
         
+        # JSON module (Phase 1.1+)
+        ${DAP_SDK_ROOT}/module/json/include
+        ${DAP_SDK_ROOT}/module/json/include/internal
+        
         # Network modules
         ${DAP_SDK_ROOT}/module/net/client/include
         ${DAP_SDK_ROOT}/module/net/stream/stream/include

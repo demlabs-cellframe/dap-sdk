@@ -1,0 +1,1043 @@
+{
+  "document_info": {
+    "title": "dap_json_native Architecture Design Specification",
+    "version": "1.0.0",
+    "status": "completed",
+    "created": "2025-01-07",
+    "completed": "2025-01-07",
+    "phase": "0.4",
+    "purpose": "Детальная спецификация архитектуры самого быстрого JSON парсера в мире",
+    "review_status": "reviewed_and_enhanced",
+    "review_date": "2025-01-07",
+    "sections_count": 18,
+    "lines_count": 1039
+  },
+  
+  "design_goals": {
+    "performance": {
+      "primary_goal": "ПРЕВЗОЙТИ simdjson на multi-core благодаря parallel Stage 2",
+      "targets": {
+        "avx512_single_core": "6-8 GB/s",
+        "avx512_multi_core": "10-12 GB/s (превзойти simdjson)",
+        "avx2_single_core": "3-4 GB/s",
+        "avx2_multi_core": "6-8 GB/s",
+        "sve_single_core": "4-5 GB/s",
+        "sve_multi_core": "8-10 GB/s",
+        "neon_single_core": "2-3 GB/s",
+        "neon_multi_core": "4-6 GB/s",
+        "c_reference": "0.8-1.2 GB/s"
+      },
+      "latency": {
+        "first_event": "<10 μs",
+        "small_json_1kb": "<50 μs",
+        "medium_json_100kb": "<500 μs"
+      },
+      "memory": {
+        "streaming_mode": "O(depth) = 5-10 KB",
+        "dom_mode": "O(size) = 1-2x input size",
+        "hybrid_mode": "adaptive based on workload"
+      }
+    },
+    "features": {
+      "standards_compliance": [
+        "RFC 8259 (Standard JSON)",
+        "JSON5 (comments, trailing commas, unquoted keys)",
+        "JSONC (comments only)",
+        "RFC 9535 (JSONPath)",
+        "JSON Schema Draft 2020-12"
+      ],
+      "apis": [
+        "DOM API (random access, tree structure)",
+        "SAX API (event-driven, callbacks)",
+        "Streaming API (incremental parsing)",
+        "JSONPath API (with JIT compilation)",
+        "JSON Schema API (validation)"
+      ],
+      "innovations": [
+        "Parallel Stage 2 DOM building",
+        "Predictive parsing for DAP SDK patterns",
+        "Hybrid streaming (yajl speed + simdjson throughput)",
+        "Multi-mode runtime selection"
+      ]
+    },
+    "architecture_principles": {
+      "correctness_first": "правильно важнее чем быстро - TDD подход",
+      "zero_dependencies": "Pure C, no external libs except libc",
+      "platform_agnostic": "Works on x86/ARM/любая архитектура",
+      "abi_stable": "Stable C ABI for long-term compatibility",
+      "memory_safe": "No leaks, no overflows, arena-based allocation"
+    }
+  },
+
+  "core_architecture": {
+    "overview": "Enhanced simdjson two-stage parsing с parallel Stage 2 и predictive optimizations",
+    "pipeline": [
+      "Input (JSON string/stream)",
+      "→ Stage 1: SIMD Structural Indexing (parallel chunks)",
+      "→ Structural Indices (tape/bitset)",
+      "→ Stage 2: Parallel DOM Building (work-stealing queue)",
+      "→ DOM Tree / SAX Events / Streaming Callback",
+      "→ User API (DOM/SAX/Streaming/JSONPath/Schema)"
+    ],
+    
+    "stage_1_structural_indexing": {
+      "purpose": "Find all structural characters {[]}:, using SIMD",
+      "algorithm": "simdjson-inspired bitwise operations",
+      "input": "Raw JSON bytes",
+      "output": "Structural indices (tape or bitset)",
+      "parallelization": "Process chunks in parallel (chunk size = 64KB)",
+      "simd_operations": {
+        "character_classification": "SIMD compare для {[]}:,\"\\",
+        "quote_detection": "Find all quotes, build quote mask",
+        "escape_handling": "clmul-based escape detection (AVX2+)",
+        "utf8_validation": "SIMD UTF-8 validation at 13 GB/s",
+        "whitespace_skip": "Bitwise OR для пропуска whitespace"
+      },
+      "data_structures": {
+        "structural_tape": {
+          "description": "Linear array of (type, position) pairs",
+          "type_encoding": "uint8_t: OBJECT_START, ARRAY_START, KEY, VALUE, etc.",
+          "position": "uint32_t offset в input buffer",
+          "size": "O(structural_chars) = ~5-10% от input size"
+        },
+        "quote_bitset": {
+          "description": "1 bit per byte, 1 = inside quotes",
+          "use": "Fast check if character is inside string",
+          "size": "input_size / 8 bytes"
+        }
+      },
+      "performance": {
+        "expected_throughput": "15-20 GB/s (Stage 1 only, AVX-512)",
+        "bottleneck": "Memory bandwidth, не CPU",
+        "optimization": "Prefetch next chunk while processing current"
+      }
+    },
+
+    "stage_2_dom_building": {
+      "purpose": "Build DOM tree from structural indices",
+      "algorithm": "НАША ИННОВАЦИЯ: Parallel DOM building с work-stealing",
+      "input": "Structural tape from Stage 1",
+      "output": "dap_json_value_t tree",
+      "parallelization": {
+        "strategy": "Work-stealing queue for parallel object/array parsing",
+        "thread_count": "auto-detect (num_cores)",
+        "work_item": "Each object/array is a work item",
+        "synchronization": "Lock-free queue (atomic ops)",
+        "expected_speedup": "+30-50% vs sequential Stage 2"
+      },
+      "phases": {
+        "phase_1_structural_parse": {
+          "description": "Walk structural tape, identify objects/arrays",
+          "output": "List of (object_start, object_end) ranges"
+        },
+        "phase_2_parallel_build": {
+          "description": "Each thread takes object/array, builds DOM subtree",
+          "coordination": "Parent waits for children via atomic counter"
+        },
+        "phase_3_link": {
+          "description": "Link subtrees into final DOM tree",
+          "fast_path": "Pre-allocated arena, no malloc per node"
+        }
+      },
+      "data_structures": {
+        "work_queue": {
+          "type": "Per-thread work-stealing deque (Chase-Lev: SPMC per queue)",
+          "implementation": "Atomic CAS-based, lock-free",
+          "work_item": "{ tape_start, tape_end, parent_node, key }",
+          "note": "Each thread has own deque (SPMC), collectively forms work-stealing system"
+        },
+        "dom_node": {
+          "type": "dap_json_value_t",
+          "size": "32 bytes (cache-friendly)",
+          "layout": "type (4 bytes) + value union (24 bytes) + metadata (4 bytes)"
+        }
+      },
+      "memory_management": {
+        "arena_allocator": "Bump allocator for DOM nodes",
+        "string_pool": "Interned strings for keys (deduplication)",
+        "object_pool": "Reusable array storage for small arrays"
+      }
+    },
+
+    "predictive_parsing": {
+      "purpose": "Learn common DAP SDK JSON patterns, enable fast paths",
+      "approach": "Runtime profiling + code generation",
+      "patterns_to_learn": [
+        "Common object schemas (e.g. network packets)",
+        "Frequent key names",
+        "Typical nesting depths",
+        "Value type distributions"
+      ],
+      "optimizations": {
+        "schema_fast_path": "If JSON matches learned schema → skip validation",
+        "key_prefetch": "Prefetch likely keys based on history",
+        "type_prediction": "Predict value type from key name",
+        "layout_optimization": "Reorder fields in DOM for cache locality"
+      },
+      "expected_gain": "+10-20% для типичных DAP SDK workloads",
+      "implementation": "Phase 4.4 (after basic parser + SIMD + parallel Stage 2)",
+      "learning_mode": {
+        "cold_start": "First 100 parses - collect statistics",
+        "hot": "After 100 parses - apply learned optimizations",
+        "update": "Continuously update patterns based on new data"
+      }
+    },
+
+    "hybrid_streaming": {
+      "purpose": "yajl-style streaming + simdjson speed",
+      "approach": "Chunk-based parallel processing с incremental callbacks",
+      "chunking": {
+        "chunk_size": "64 KB (L2 cache friendly, L1 typically 32KB)",
+        "overlap": "4 KB overlap для boundaries",
+        "alignment": "Align на structural characters",
+        "rationale": "64KB балансирует между L1 misses и chunk overhead"
+      },
+      "pipeline": [
+        "Read chunk → Stage 1 (parallel) → Stage 2 (parallel) → Callbacks → Next chunk"
+      ],
+      "memory": "O(chunk_size + depth) = 64KB + 5-10KB",
+      "expected_speed": "3-5x faster than yajl",
+      "use_cases": [
+        "Large JSON files (>100 MB)",
+        "Network streams",
+        "Log processing"
+      ]
+    }
+  },
+
+  "api_design": {
+    "dom_api": {
+      "description": "Tree-based API для random access",
+      "primary_types": {
+        "dap_json_value_t": {
+          "description": "Unified JSON value (object, array, string, number, bool, null)",
+          "fields": {
+            "type": "dap_json_type_t enum",
+            "value": "union { object, array, string, number, bool }",
+            "metadata": "refcount, arena_id, flags"
+          }
+        },
+        "dap_json_object_t": {
+          "description": "JSON object (key-value map)",
+          "implementation": "Hash table (open addressing, Robin Hood hashing)",
+          "load_factor": "0.75",
+          "growth": "2x on overflow"
+        },
+        "dap_json_array_t": {
+          "description": "JSON array (dynamic array)",
+          "implementation": "Dynamic array (exponential growth)",
+          "growth": "1.5x on overflow",
+          "optimization": "Small array optimization (<= 8 elements inline)"
+        }
+      },
+      "functions": {
+        "parsing": [
+          "dap_json_parse(const char *json, size_t len) → dap_json_value_t*",
+          "dap_json_parse_file(const char *path) → dap_json_value_t*",
+          "dap_json_parse_with_options(const char *json, dap_json_options_t opts) → dap_json_value_t*"
+        ],
+        "access": [
+          "dap_json_object_get(object, key) → value",
+          "dap_json_array_get(array, index) → value",
+          "dap_json_get_type(value) → type",
+          "dap_json_get_string(value) → string",
+          "dap_json_get_number(value) → number"
+        ],
+        "modification": [
+          "dap_json_object_set(object, key, value)",
+          "dap_json_array_append(array, value)",
+          "dap_json_value_free(value) → decrement refcount"
+        ],
+        "serialization": [
+          "dap_json_stringify(value) → string",
+          "dap_json_stringify_pretty(value, indent) → string"
+        ]
+      }
+    },
+
+    "sax_api": {
+      "description": "Event-driven API для streaming processing",
+      "callback_types": {
+        "start_object": "void (*)(void *ctx)",
+        "end_object": "void (*)(void *ctx)",
+        "start_array": "void (*)(void *ctx)",
+        "end_array": "void (*)(void *ctx)",
+        "key": "void (*)(void *ctx, const char *key, size_t len)",
+        "string": "void (*)(void *ctx, const char *str, size_t len)",
+        "number": "void (*)(void *ctx, double num)",
+        "bool": "void (*)(void *ctx, bool val)",
+        "null": "void (*)(void *ctx)"
+      },
+      "functions": [
+        "dap_json_sax_parse(json, callbacks, ctx) → status",
+        "dap_json_sax_parse_stream(stream, callbacks, ctx) → status"
+      ],
+      "use_cases": [
+        "Large JSON processing без DOM",
+        "Validation only",
+        "Transformation (JSON → другой формат)"
+      ]
+    },
+
+    "streaming_api": {
+      "description": "Incremental parsing для network streams",
+      "state_machine": "dap_json_parser_t maintains parse state",
+      "functions": [
+        "dap_json_parser_create() → parser",
+        "dap_json_parser_feed(parser, chunk, len) → status",
+        "dap_json_parser_finish(parser) → value",
+        "dap_json_parser_destroy(parser)"
+      ],
+      "memory": "O(max_depth) = 5-10 KB",
+      "use_cases": [
+        "Network protocols (HTTP, WebSocket)",
+        "File reading (по частям)",
+        "Unbounded streams"
+      ]
+    },
+
+    "jsonpath_api": {
+      "description": "RFC 9535 compliant JSONPath queries с JIT",
+      "query_syntax": "$.store.book[?(@.price < 10)].title",
+      "functions": [
+        "dap_json_path_compile(query) → compiled_query (JIT native code)",
+        "dap_json_path_execute(value, query) → results[]",
+        "dap_json_path_execute_one(value, query) → first_result"
+      ],
+      "jit_compilation": {
+        "approach": "Custom JIT engine (module/jit)",
+        "target": "x86_64, ARM64 native code",
+        "expected_speedup": "10-100x vs interpreted",
+        "fallback": "Interpreted для unsupported platforms"
+      },
+      "operators": [
+        "$ (root)",
+        ".key (child)",
+        "[index] (array index)",
+        "[start:end] (array slice)",
+        "[?(@.expr)] (filter)",
+        "..key (recursive descent)",
+        "* (wildcard)"
+      ]
+    },
+
+    "json_schema_api": {
+      "description": "JSON Schema Draft 2020-12 validation",
+      "functions": [
+        "dap_json_schema_compile(schema) → compiled_schema",
+        "dap_json_schema_validate(value, schema) → errors[]",
+        "dap_json_schema_is_valid(value, schema) → bool"
+      ],
+      "keywords_supported": [
+        "type, enum, const",
+        "properties, required, additionalProperties",
+        "items, minItems, maxItems",
+        "minimum, maximum, multipleOf",
+        "minLength, maxLength, pattern",
+        "allOf, anyOf, oneOf, not",
+        "$ref, $defs"
+      ],
+      "performance": "Compiled schema → fast validation path"
+    },
+
+    "json5_jsonc_support": {
+      "json5_features": [
+        "Comments (// и /* */)",
+        "Trailing commas",
+        "Unquoted keys",
+        "Single-quoted strings",
+        "Hex numbers (0x...)",
+        "Infinity, NaN",
+        "Multiline strings"
+      ],
+      "jsonc_features": [
+        "Comments only (// и /* */)"
+      ],
+      "parse_mode": "dap_json_parse_with_options({ .mode = JSON5 })"
+    },
+
+    "json_c_compatibility": {
+      "strategy": "Provide compatibility layer для existing DAP SDK code",
+      "approach": "Wrapper functions mapping json-c API → dap_json_native API",
+      "functions_to_wrap": [
+        "json_object_new_*() → dap_json_object_new_*()",
+        "json_object_get() → dap_json_object_get()",
+        "json_object_to_json_string() → dap_json_stringify()",
+        "json_tokener_parse() → dap_json_parse()"
+      ],
+      "compatibility_mode": {
+        "strict": "100% drop-in replacement (Phase 4)",
+        "lenient": "Minor behavioral differences documented",
+        "deprecated": "Old API marked deprecated, migration guide provided"
+      },
+      "migration_path": {
+        "phase_1": "Compatibility layer (can use both json-c and dap_json)",
+        "phase_2": "Gradual migration (module by module)",
+        "phase_3": "Full migration (remove json-c dependency)",
+        "phase_4": "Remove compatibility layer (pure dap_json API)"
+      }
+    }
+  },
+
+  "memory_management": {
+    "arena_allocator": {
+      "purpose": "Fast allocation для DOM nodes",
+      "algorithm": "Bump allocator (pointer increment)",
+      "chunk_size": "64 KB (cache-line aligned)",
+      "growth": "2x on overflow (faster than 1.5x, acceptable waste)",
+      "lifetime": "Tied to dap_json_value_t root",
+      "free": "Bulk free (single free() call для всего arena)",
+      "performance": "10-100x faster than malloc/free",
+      "implementation": {
+        "structure": "dap_arena_t { chunks[], current_chunk, offset }",
+        "allocation": "if (offset + size <= chunk_size) → bump; else → new chunk",
+        "alignment": "16 bytes (SIMD friendly), 64 bytes for large objects"
+      },
+      "thread_safety": "Per-parser arena (no synchronization needed)"
+    },
+
+    "string_pool": {
+      "purpose": "Deduplicate object keys",
+      "algorithm": "String interning (hash table)",
+      "hash_function": "FNV-1a or xxHash",
+      "collision_resolution": "Chaining",
+      "expected_saving": "30-50% для типичных JSON (много дублей ключей)",
+      "implementation": {
+        "structure": "dap_string_pool_t { hash_table, arena }",
+        "intern": "hash(key) → lookup → if exists: return; else: allocate + insert"
+      }
+    },
+
+    "object_pool": {
+      "purpose": "Reuse array storage для small arrays",
+      "algorithm": "Free-list по размерам",
+      "size_classes": "[8, 16, 32, 64, 128, 256] elements",
+      "fallback": "malloc для больших массивов",
+      "performance": "Avoid allocation churn для temporary arrays",
+      "implementation": {
+        "structure": "dap_object_pool_t { free_lists[NUM_SIZE_CLASSES] }",
+        "alloc": "pop from free_list[size_class]",
+        "free": "push to free_list[size_class]"
+      }
+    },
+
+    "reference_counting": {
+      "purpose": "Safe memory management для shared values",
+      "algorithm": "Atomic refcount (32-bit)",
+      "operations": {
+        "retain": "atomic_fetch_add(&refcount, 1)",
+        "release": "if (atomic_fetch_sub(&refcount, 1) == 1) → free"
+      },
+      "cycles": "Не поддерживаются (пользователь не должен создавать cycles)",
+      "note": "Optional - можно использовать manual free если нет sharing"
+    }
+  },
+
+  "error_handling": {
+    "philosophy": "Fail fast with detailed error information",
+    "error_codes": {
+      "DAP_JSON_OK": "Success",
+      "DAP_JSON_ERROR_PARSE": "Generic parse error",
+      "DAP_JSON_ERROR_INVALID_UTF8": "Invalid UTF-8 sequence",
+      "DAP_JSON_ERROR_UNEXPECTED_CHAR": "Unexpected character",
+      "DAP_JSON_ERROR_UNCLOSED_STRING": "Unclosed string",
+      "DAP_JSON_ERROR_UNCLOSED_OBJECT": "Unclosed object",
+      "DAP_JSON_ERROR_UNCLOSED_ARRAY": "Unclosed array",
+      "DAP_JSON_ERROR_INVALID_NUMBER": "Invalid number format",
+      "DAP_JSON_ERROR_INVALID_ESCAPE": "Invalid escape sequence",
+      "DAP_JSON_ERROR_DEPTH_LIMIT": "Maximum nesting depth exceeded",
+      "DAP_JSON_ERROR_OUT_OF_MEMORY": "Out of memory"
+    },
+    "error_context": {
+      "line": "Line number (1-indexed)",
+      "column": "Column number (1-indexed)",
+      "position": "Byte offset in input",
+      "context": "Surrounding text (30 chars before/after)",
+      "message": "Human-readable error message"
+    },
+    "validation_modes": {
+      "strict": {
+        "description": "RFC 8259 compliance, reject any extensions",
+        "rejects": "Trailing commas, comments, unquoted keys, NaN/Infinity"
+      },
+      "permissive": {
+        "description": "Allow common extensions (JSONC)",
+        "allows": "Comments (// and /* */)",
+        "rejects": "Trailing commas, unquoted keys, NaN/Infinity"
+      },
+      "json5": {
+        "description": "Full JSON5 support",
+        "allows": "All JSON5 features (comments, trailing commas, unquoted keys, hex, NaN/Infinity)"
+      }
+    },
+    "error_recovery": {
+      "strategy": "No recovery - fail on first error",
+      "rationale": "Error recovery complicates parser and may hide bugs",
+      "future": "Optional error recovery mode for editors/IDEs (Phase 7)"
+    }
+  },
+
+  "simd_implementation": {
+    "platforms": {
+      "x86_64": {
+        "sse2": {
+          "description": "Baseline x86_64 (all CPUs have this)",
+          "operations": "16-byte SIMD (128-bit)",
+          "expected_speed": "1.5-2 GB/s"
+        },
+        "sse42": {
+          "description": "String processing instructions",
+          "operations": "pcmpistri for fast string search",
+          "expected_speed": "2-2.5 GB/s"
+        },
+        "avx2": {
+          "description": "256-bit SIMD",
+          "operations": "32-byte compare, clmul для escape",
+          "expected_speed": "3-4 GB/s single, 6-8 GB/s multi",
+          "target": "Primary target для modern x86_64"
+        },
+        "avx512": {
+          "description": "512-bit SIMD",
+          "operations": "64-byte compare, mask operations",
+          "expected_speed": "6-8 GB/s single, 10-12 GB/s multi",
+          "target": "Cutting-edge performance"
+        }
+      },
+      "arm": {
+        "neon": {
+          "description": "128-bit SIMD (all ARM64 have this)",
+          "operations": "16-byte SIMD",
+          "expected_speed": "2-3 GB/s single, 4-6 GB/s multi",
+          "target": "Baseline ARM64"
+        },
+        "sve": {
+          "description": "Scalable Vector Extension (128-2048 bits)",
+          "operations": "Vector length agnostic",
+          "expected_speed": "4-5 GB/s single, 8-10 GB/s multi",
+          "target": "High-end ARM servers"
+        },
+        "sve2": {
+          "description": "SVE2 (more operations)",
+          "operations": "Все SVE + дополнительные инструкции",
+          "expected_speed": "5-6 GB/s single, 10-12 GB/s multi",
+          "target": "Future ARM CPUs"
+        }
+      },
+      "reference_c": {
+        "description": "Portable C implementation (no SIMD)",
+        "expected_speed": "0.8-1.2 GB/s (yajl-level)",
+        "target": "Any platform, fallback"
+      }
+    },
+
+    "runtime_dispatch": {
+      "mechanism": "dap_cpu_detect at initialization",
+      "function_pointers": "Set best implementation для каждой функции",
+      "example": "parse_stage1 = detect_avx512() ? parse_stage1_avx512 : detect_avx2() ? parse_stage1_avx2 : parse_stage1_c",
+      "overhead": "Одна проверка при инициализации (negligible)"
+    },
+
+    "simd_operations": {
+      "character_classification": {
+        "operation": "Find all {[]}:,\"\\",
+        "avx2": "_mm256_cmpeq_epi8(chunk, target) → bitmask",
+        "neon": "vceqq_u8(chunk, target) → bitmask"
+      },
+      "quote_detection": {
+        "operation": "Build quote mask (1 = inside quotes)",
+        "algorithm": "XOR prefix scan на bitmask",
+        "avx2": "clmul-based carry-less XOR",
+        "implementation": "See simdjson quote_mask.cpp"
+      },
+      "escape_handling": {
+        "operation": "Find all \\ and validate \\x sequences",
+        "avx2": "clmul для fast prefix XOR",
+        "fallback": "Scalar loop"
+      },
+      "utf8_validation": {
+        "operation": "Validate UTF-8 encoding",
+        "algorithm": "SIMD lookup table (Lemire's algorithm)",
+        "speed": "13 GB/s (AVX2)",
+        "reference": "simdjson utf8_validation.cpp"
+      }
+    }
+  },
+
+  "parallel_stage2_design": {
+    "motivation": "simdjson Stage 2 sequential → bottleneck на multi-core",
+    "our_innovation": "Parallel Stage 2 с work-stealing",
+    
+    "work_decomposition": {
+      "unit_of_work": "Single JSON object or array",
+      "granularity": "Any object/array with >N elements (N=8) → spawn work",
+      "base_case": "Small objects (<8 keys) → parse inline"
+    },
+
+    "work_stealing_queue": {
+      "type": "Deque (double-ended queue) per thread",
+      "operations": {
+        "push": "Thread pushes work to its own queue (tail)",
+        "pop": "Thread pops work from its own queue (tail) - LIFO for cache locality",
+        "steal": "Other threads steal from head - FIFO to avoid contention"
+      },
+      "implementation": "Chase-Lev work-stealing deque (lock-free)",
+      "reference": "\"Dynamic Circular Work-Stealing Deque\" (Chase & Lev, 2005)"
+    },
+
+    "synchronization": {
+      "parent_child": "Parent has atomic counter of pending children",
+      "completion": "Child decrements counter when done",
+      "waiting": "Parent spins on counter == 0 or steals more work",
+      "no_locks": "Only atomic operations (CAS, fetch_add, fetch_sub)"
+    },
+
+    "load_balancing": {
+      "strategy": "Automatic via work stealing",
+      "idle_threads": "Idle thread steals work from busiest queue",
+      "efficiency": "Near-linear scalup до 8-16 cores"
+    },
+
+    "expected_performance": {
+      "speedup_vs_sequential": "1.5-2x (2 cores), 2.5-4x (4 cores), 4-8x (8 cores)",
+      "vs_simdjson": "+30-50% благодаря parallel Stage 2"
+    },
+
+    "implementation_phases": {
+      "phase_1": "Sequential Stage 2 (работает корректно)",
+      "phase_2": "Identify parallelizable units (objects/arrays)",
+      "phase_3": "Implement work queue + worker threads",
+      "phase_4": "Tune granularity + load balancing"
+    }
+  },
+
+  "security_considerations": {
+    "input_validation": {
+      "utf8_validation": "Mandatory SIMD UTF-8 validation (13 GB/s)",
+      "bom_handling": "Detect and reject UTF-16/32 BOM (security attack vector)",
+      "overlong_encoding": "Reject overlong UTF-8 sequences (CVE-2019-16721)",
+      "surrogate_pairs": "Validate UTF-16 surrogate pairs (CVE-2020-28935)",
+      "cesu8_mutf8": "Reject CESU-8 and MUTF-8 encodings (CVE-2021-31800)"
+    },
+    "resource_limits": {
+      "max_depth": "Default: 1000, configurable via options",
+      "max_string_length": "Default: 10 MB, configurable",
+      "max_array_size": "Default: 10M elements, configurable",
+      "max_object_size": "Default: 1M keys, configurable",
+      "parse_timeout": "Optional timeout for DoS protection"
+    },
+    "memory_safety": {
+      "bounds_checking": "All array accesses bounds-checked",
+      "integer_overflow": "Check all size calculations for overflow",
+      "arena_limits": "Arena has maximum size to prevent OOM",
+      "stack_limits": "Recursion depth limited (prevent stack overflow)"
+    },
+    "dos_protection": {
+      "hash_flooding": "Robin Hood hashing resistant to hash DoS",
+      "algorithmic_complexity": "O(n) parsing, no quadratic behavior",
+      "memory_amplification": "Max 2x input size для DOM (configurable)",
+      "depth_attacks": "Configurable max depth (default 1000)"
+    }
+  },
+
+  "performance_optimizations": {
+    "cache_optimization": {
+      "data_layout": "Structure-of-Arrays (SOA) для structural indices",
+      "prefetching": "Software prefetch next chunk while processing current",
+      "cache_line_alignment": "64-byte alignment для hot structures",
+      "false_sharing_avoidance": "Per-thread data on separate cache lines"
+    },
+    "branch_prediction": {
+      "likely_unlikely": "Use __builtin_expect для hot paths",
+      "switch_to_table": "Convert switches to jump tables где возможно",
+      "early_exit": "Check common cases first (e.g. ASCII before UTF-8)"
+    },
+    "instruction_level": {
+      "loop_unrolling": "Unroll inner loops (factor 4-8)",
+      "function_inlining": "Inline hot functions (parse_number, etc.)",
+      "restrict_keyword": "Use restrict для pointer aliasing hints"
+    },
+    "algorithmic": {
+      "zero_copy": "Avoid copying strings (point into input buffer)",
+      "lazy_evaluation": "Defer number parsing until value accessed",
+      "short_string_opt": "Inline strings <=15 bytes в dap_json_value_t"
+    }
+  },
+
+  "testing_strategy": {
+    "unit_tests": {
+      "coverage_target": ">90% code coverage",
+      "frameworks": "dap_test framework",
+      "categories": [
+        "API correctness",
+        "Edge cases",
+        "Error handling",
+        "Memory safety"
+      ],
+      "count": "~200 unit tests"
+    },
+
+    "correctness_tests": {
+      "approach": "SIMD vs reference implementation",
+      "methodology": "For every input, SIMD output === reference output",
+      "test_suite": "JSONTestSuite (>300 test cases)",
+      "property_based": "QuickCheck-style random inputs"
+    },
+
+    "performance_tests": {
+      "benchmark_suite": {
+        "competitors": ["json-c", "RapidJSON", "simdjson", "yajl"],
+        "datasets": [
+          "twitter.json (600 KB)",
+          "citm_catalog.json (1.7 MB)",
+          "canada.json (2.2 MB)",
+          "large_file.json (100 MB)"
+        ],
+        "metrics": ["throughput (GB/s)", "latency (μs)", "memory (MB)"]
+      },
+      "ablation_studies": {
+        "purpose": "Quantify impact of each optimization",
+        "tests": [
+          "SIMD vs scalar",
+          "Parallel Stage 2 vs sequential",
+          "Arena vs malloc",
+          "String interning vs no interning"
+        ]
+      }
+    },
+
+    "fuzzing": {
+      "tool": "AFL++ or libFuzzer",
+      "corpus": "JSONTestSuite + generated samples",
+      "duration": "24-48 hours continuous",
+      "goal": "Find crashes, hangs, memory leaks"
+    },
+
+    "continuous_benchmarking": {
+      "frequency": "Every commit to main branch",
+      "comparison": "vs json-c, RapidJSON, simdjson baselines",
+      "regression_alert": "If performance drops >5% → alert"
+    }
+  },
+
+  "reusable_components": {
+    "dap_cpu_detect": {
+      "location": "module/core/include/dap_cpu_detect.h",
+      "purpose": "Runtime CPU feature detection (SSE/AVX/NEON/SVE)",
+      "functions": [
+        "dap_cpu_has_sse2()",
+        "dap_cpu_has_avx2()",
+        "dap_cpu_has_avx512()",
+        "dap_cpu_has_neon()",
+        "dap_cpu_has_sve()"
+      ],
+      "implementation": "CPUID (x86), hwcap (ARM)"
+    },
+
+    "dap_arena": {
+      "location": "module/core/include/dap_arena.h",
+      "purpose": "Arena allocator для всего SDK",
+      "api": [
+        "dap_arena_create()",
+        "dap_arena_alloc(arena, size)",
+        "dap_arena_destroy(arena)"
+      ]
+    },
+
+    "dap_string_pool": {
+      "location": "module/core/include/dap_string_pool.h",
+      "purpose": "String interning для всего SDK",
+      "api": [
+        "dap_string_pool_create()",
+        "dap_string_pool_intern(pool, str)",
+        "dap_string_pool_destroy(pool)"
+      ]
+    },
+
+    "dap_string_simd": {
+      "location": "module/core/include/dap_string_simd.h",
+      "purpose": "SIMD string operations (compare, search, validate)",
+      "api": [
+        "dap_string_simd_find(haystack, needle)",
+        "dap_string_simd_compare(a, b)",
+        "dap_string_simd_validate_utf8(str)"
+      ]
+    },
+
+    "dap_object_pool": {
+      "location": "module/core/include/dap_object_pool.h",
+      "purpose": "Object pool для всего SDK",
+      "api": [
+        "dap_object_pool_create(object_size)",
+        "dap_object_pool_alloc(pool)",
+        "dap_object_pool_free(pool, obj)"
+      ]
+    },
+
+    "module_jit": {
+      "location": "module/jit/",
+      "purpose": "JIT compilation engine для JSONPath и других DSL",
+      "targets": "x86_64, ARM64",
+      "api": [
+        "dap_jit_create()",
+        "dap_jit_compile(jit, bytecode)",
+        "dap_jit_execute(jit, code, args)"
+      ]
+    }
+  },
+
+  "implementation_roadmap": {
+    "phase_0_preparation": {
+      "status": "in_progress",
+      "subphases": {
+        "0.0": "✅ Module structure",
+        "0.1": "✅ Test audit",
+        "0.2": "✅ Test expansion (93 tests)",
+        "0.3": "✅ Architecture research (simdjson, RapidJSON, yajl)",
+        "0.4": "✅ Architecture design (this document - UNDER REVIEW)",
+        "0.5": "⏳ Benchmark infrastructure"
+      },
+      "note": "Phase 0.4 completed, document under continuous refinement"
+    },
+    
+    "phase_1_core_implementation": {
+      "status": "pending",
+      "duration": "3-4 weeks",
+      "subphases": {
+        "1.1": "Stage 1 reference implementation (C)",
+        "1.2": "Stage 2 reference implementation (C, sequential)",
+        "1.3": "DOM API implementation",
+        "1.4": "Memory management (arena, string pool)"
+      },
+      "deliverables": [
+        "Working parser (reference C, slow)",
+        "All tests pass",
+        "Correctness verified vs json-c"
+      ]
+    },
+
+    "phase_2_simd_optimization": {
+      "status": "pending",
+      "duration": "4-5 weeks",
+      "subphases": {
+        "2.1": "dap_cpu_detect implementation",
+        "2.2": "Stage 1 SSE2 implementation",
+        "2.3": "Stage 1 AVX2 implementation",
+        "2.4": "Stage 1 AVX-512 implementation",
+        "2.5": "Stage 1 NEON implementation",
+        "2.6": "UTF-8 SIMD validation"
+      },
+      "deliverables": [
+        "Multi-platform SIMD Stage 1",
+        "3-6 GB/s single-core (AVX2/AVX-512)",
+        "Correctness tests (SIMD === reference)"
+      ]
+    },
+
+    "phase_3_parallel_stage2": {
+      "status": "pending",
+      "duration": "2-3 weeks",
+      "subphases": {
+        "3.1": "Work-stealing queue implementation",
+        "3.2": "Thread pool",
+        "3.3": "Parallel Stage 2 с work decomposition",
+        "3.4": "Load balancing tuning"
+      },
+      "deliverables": [
+        "Parallel Stage 2 working",
+        "10-12 GB/s multi-core (AVX-512)",
+        "ПРЕВЗОШЛИ simdjson на multi-core"
+      ]
+    },
+
+    "phase_4_advanced_features": {
+      "status": "pending",
+      "duration": "3-4 weeks",
+      "subphases": {
+        "4.1": "SAX API",
+        "4.2": "Streaming API",
+        "4.3": "JSON5/JSONC support",
+        "4.4": "Predictive parsing"
+      }
+    },
+
+    "phase_5_jsonpath_schema": {
+      "status": "pending",
+      "duration": "4-5 weeks",
+      "subphases": {
+        "5.1": "module/jit implementation",
+        "5.2": "JSONPath parser",
+        "5.3": "JSONPath JIT compiler",
+        "5.4": "JSON Schema implementation"
+      }
+    },
+
+    "phase_6_optimization_tuning": {
+      "status": "pending",
+      "duration": "2-3 weeks",
+      "subphases": {
+        "6.1": "A/B testing различных оптимизаций",
+        "6.2": "Ablation studies",
+        "6.3": "Fine-tuning memory allocators",
+        "6.4": "Continuous benchmarking setup"
+      }
+    }
+  },
+
+  "metrics_and_kpis": {
+    "performance_metrics": {
+      "throughput": {
+        "measurement": "GB/s (gigabytes per second)",
+        "datasets": ["twitter.json (600KB)", "citm_catalog.json (1.7MB)", "canada.json (2.2MB)"],
+        "target_avx512": "10-12 GB/s multi-core (ПРЕВЗОЙТИ simdjson)",
+        "target_avx2": "6-8 GB/s multi-core",
+        "baseline": "json-c (~0.3 GB/s)"
+      },
+      "latency": {
+        "measurement": "microseconds (μs)",
+        "first_event": "<10 μs (99th percentile)",
+        "small_json_1kb": "<50 μs (99th percentile)",
+        "medium_json_100kb": "<500 μs (99th percentile)"
+      },
+      "memory": {
+        "dom_overhead": "1-2x input size (target: 1.5x average)",
+        "streaming_overhead": "O(depth) = 5-10 KB",
+        "peak_memory": "Track maximum RSS during parsing"
+      },
+      "cpu_efficiency": {
+        "instructions_per_byte": "Target: <20 instructions/byte (simdjson: 15-20)",
+        "cache_misses": "Target: <5% L1 miss rate",
+        "branch_mispredictions": "Target: <2%"
+      }
+    },
+    "quality_metrics": {
+      "correctness": {
+        "test_pass_rate": "100% (all 93+ tests)",
+        "json_test_suite": "100% compliance (300+ tests)",
+        "fuzz_crashes": "0 crashes in 48+ hours"
+      },
+      "code_coverage": {
+        "line_coverage": ">90%",
+        "branch_coverage": ">85%",
+        "function_coverage": "100%"
+      },
+      "code_quality": {
+        "compiler_warnings": "0 with -Wall -Wextra -Werror",
+        "static_analysis": "0 issues (cppcheck, scan-build)",
+        "complexity": "Cyclomatic complexity <15 per function"
+      }
+    },
+    "development_metrics": {
+      "build_time": "Target: <2 minutes full rebuild",
+      "test_execution": "Target: <10 seconds all tests",
+      "benchmark_suite": "Target: <5 minutes full benchmark"
+    }
+  },
+
+  "documentation_plan": {
+    "user_documentation": [
+      "README.md - Getting started",
+      "API.md - Complete API reference",
+      "EXAMPLES.md - Usage examples",
+      "MIGRATION.md - Migration from json-c",
+      "PERFORMANCE.md - Performance guide"
+    ],
+    "developer_documentation": [
+      "ARCHITECTURE.md - This document (exported from JSON)",
+      "CONTRIBUTING.md - Development guidelines",
+      "SIMD_GUIDE.md - SIMD implementation guide",
+      "TESTING.md - Testing strategy"
+    ],
+    "benchmark_reports": [
+      "BENCHMARKS.md - Latest benchmark results",
+      "COMPARISON.md - vs simdjson/RapidJSON/yajl"
+    ]
+  },
+
+  "success_criteria": {
+    "correctness": {
+      "all_tests_pass": "93+ existing tests + 200+ new tests",
+      "json_test_suite": "Pass all valid/invalid JSON tests",
+      "no_memory_leaks": "Valgrind clean",
+      "no_crashes": "48+ hours fuzzing без crashes"
+    },
+    
+    "performance": {
+      "avx512_multi": "10-12 GB/s (ПРЕВЗОЙТИ simdjson)",
+      "avx2_single": "3-4 GB/s (match simdjson)",
+      "latency": "<10 μs first event",
+      "memory": "O(size) для DOM, O(depth) для streaming"
+    },
+
+    "features": {
+      "standards": "RFC 8259, JSON5, JSONC, RFC 9535, JSON Schema 2020-12",
+      "apis": "DOM, SAX, Streaming, JSONPath, JSON Schema",
+      "platforms": "x86_64 (SSE2/AVX2/AVX-512), ARM64 (NEON/SVE), reference C"
+    },
+
+    "code_quality": {
+      "test_coverage": ">90%",
+      "no_warnings": "gcc -Wall -Wextra -Werror",
+      "valgrind_clean": "No leaks, no errors",
+      "static_analysis": "cppcheck, scan-build clean"
+    }
+  },
+
+  "risks_and_mitigations": {
+    "risk_complexity": {
+      "description": "Parallel Stage 2 очень сложный",
+      "probability": "medium",
+      "mitigation": "Phased approach: sequential Stage 2 сначала, parallel потом"
+    },
+    
+    "risk_correctness": {
+      "description": "SIMD bugs трудно найти",
+      "probability": "medium",
+      "mitigation": "Extensive testing: SIMD === reference, fuzzing, property-based tests"
+    },
+
+    "risk_performance": {
+      "description": "Может не достичь целевой производительности",
+      "probability": "low",
+      "mitigation": "Research-driven design (simdjson доказал что 6-12 GB/s возможно)"
+    },
+
+    "risk_portability": {
+      "description": "SIMD код platform-specific",
+      "probability": "low",
+      "mitigation": "Reference C fallback + multi-platform testing (x86/ARM)"
+    },
+
+    "risk_thread_safety": {
+      "description": "Parallel Stage 2 race conditions и deadlocks",
+      "probability": "medium",
+      "mitigation": "Extensive stress testing, ThreadSanitizer, lock-free algorithms"
+    },
+
+    "risk_memory_overhead": {
+      "description": "Arena allocator может использовать больше памяти чем malloc",
+      "probability": "low",
+      "mitigation": "Configurable arena chunk size, monitoring memory usage"
+    }
+  },
+
+  "future_enhancements": {
+    "phase_7_plus": [
+      "SIMD Stage 2 (SIMD DOM building, not just indexing)",
+      "GPU acceleration (CUDA/OpenCL для massive parallel parsing)",
+      "Lazy parsing (defer parsing until value accessed)",
+      "Memory-mapped file support (mmap для больших файлов)",
+      "Incremental updates (patch JSON без full reparse)",
+      "Schema-based codegen (generate C structs from JSON Schema)",
+      "Error recovery mode (для editors/IDEs)",
+      "YAML support (YAML subset via same parser)",
+      "Binary JSON formats (BSON, MessagePack, CBOR)"
+    ],
+    "community_features": [
+      "Python bindings (via ctypes/cffi)",
+      "Node.js addon (N-API)",
+      "Rust FFI bindings",
+      "WebAssembly port"
+    ]
+  }
+}
+

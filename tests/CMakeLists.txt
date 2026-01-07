@@ -132,6 +132,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/dap_json/dap_json_tests.c)
     register_dap_test(test_unit_dap_json "unit;core")
 endif()
 
+# JSON module unit tests (Phase 0.2 + Phase 1.1)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/json/CMakeLists.txt)
+    add_subdirectory(unit/json)
+    message("[+] JSON module unit tests configured (Phase 0.2 + Phase 1.1)")
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)
