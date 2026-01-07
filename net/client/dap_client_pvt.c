@@ -938,8 +938,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     
                     log_it(L_DEBUG, "Using trans-created stream %p for STAGE_STREAM_SESSION", a_client_pvt->stream);
                     
-                    // Create session if not already created 
-                    if (!a_client_pvt->stream->session) {
+                    // Create session if not already created with valid key
+                    // For transports like UDP that set session+key directly, don't recreate
+                    if (!a_client_pvt->stream->session || !a_client_pvt->stream->session->key) {
+                        if (a_client_pvt->stream->session && !a_client_pvt->stream->session->key) {
+                            log_it(L_DEBUG, "Session exists but no key, recreating session");
+                        }
+                        
                         a_client_pvt->stream->session = dap_stream_session_pure_new();
                         if (!a_client_pvt->stream->session) {
                             log_it(L_CRITICAL, "Failed to create stream session");
@@ -948,10 +953,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
+                        
+                        // Copy stream_key into new session
+                        a_client_pvt->stream->session->key = a_client_pvt->stream_key;
+                    } else {
+                        log_it(L_INFO, "Session already created with key by transport, reusing it");
                     }
-
-                    // new added, whether it is necessary?
-                    a_client_pvt->stream->session->key = a_client_pvt->stream_key;
                     if (l_worker->_inheritor) {
                         a_client_pvt->stream_worker = DAP_STREAM_WORKER(l_worker);
                         a_client_pvt->stream->stream_worker = a_client_pvt->stream_worker;

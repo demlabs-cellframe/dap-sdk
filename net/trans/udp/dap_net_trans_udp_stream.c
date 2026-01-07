@@ -2133,7 +2133,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         if (a_stream->session && a_stream->session->key) {
             l_enc_key = a_stream->session->key;
         } else {
-            log_it(L_ERROR, "No session key for DATA/KEEPALIVE/CLOSE packet");
+            log_it(L_ERROR, "No session key for DATA/KEEPALIVE/CLOSE packet (stream=%p, session=%p, session->key=%p)",
+                   a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL);
             DAP_DELETE(l_cleartext);
             DAP_DELETE(l_encrypted);
             return -1;
