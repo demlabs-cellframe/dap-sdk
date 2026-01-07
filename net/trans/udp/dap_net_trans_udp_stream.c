@@ -1076,17 +1076,14 @@ static int s_udp_session_create(dap_stream_t *a_stream,
              "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%lx)",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
-    // Prepare JSON payload
+    // Prepare JSON payload (NO session_id - it's already in internal header!)
     json_object *l_json = json_object_new_object();
     if (!l_json) {
         log_it(L_ERROR, "Failed to create JSON object for SESSION_CREATE");
         return -1;
     }
     
-    // Add session_id (use udp_ctx->session_id)
-    json_object_object_add(l_json, "session_id", json_object_new_int64((int64_t)l_udp_ctx->session_id));
-    
-    // Add channels
+    // Add channels only (session_id is in internal header)
     json_object_object_add(l_json, "channels", json_object_new_string(l_channels));
     
     // Serialize to JSON string
