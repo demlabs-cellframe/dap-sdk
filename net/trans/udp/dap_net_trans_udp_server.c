@@ -87,13 +87,15 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
 static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
                                     const uint8_t *a_data,
                                     size_t a_size);
-static void* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow);
+static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow);
+static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow);
 static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow);
 
 // VTable for UDP flow
 static dap_io_flow_udp_ops_t s_stream_udp_ops = {
     .packet_received = s_udp_packet_received_cb,
     .protocol_create = s_udp_protocol_create_cb,
+    .protocol_finalize = s_udp_protocol_finalize_cb,
     .protocol_destroy = s_udp_protocol_destroy_cb,
     .protocol_send = NULL  // We use direct send
 };
@@ -457,36 +459,71 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
 }
 
 /**
- * @brief UDP protocol create callback
+ * @brief Protocol create callback - allocate stream_udp_session_t
  */
-static void* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow)
+static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow)
 {
-    if (!a_flow) {
+    UNUSED(a_flow);  // We allocate fresh structure
+    
+    // Allocate FULL structure (stream_udp_session_t extends dap_io_flow_udp_t)
+    stream_udp_session_t *l_session = DAP_NEW_Z(stream_udp_session_t);
+    if (!l_session) {
+        log_it(L_CRITICAL, "Failed to allocate stream_udp_session_t");
         return NULL;
     }
     
-    stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    // Note: UDP layer will initialize base fields (remote_addr, listener_es, etc)
+    // We only initialize protocol-specific fields here
     
     // Create stream instance
     l_session->stream = DAP_NEW_Z(dap_stream_t);
     if (!l_session->stream) {
         log_it(L_CRITICAL, "Failed to allocate stream");
+        DAP_DELETE(l_session);
         return NULL;
     }
     
-    l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+    // stream_worker will be set in finalize callback after listener_es is available
+    l_session->stream->stream_worker = NULL;
     l_session->base.base.stream_context = l_session->stream;
     
-    debug_if(s_debug_more, L_DEBUG,
-             "Created stream for UDP flow %p (stream=%p, worker=%u)",
-             l_session, l_session->stream,
-             a_flow->listener_es->worker ? a_flow->listener_es->worker->id : 0);
+    // Initialize encryption key to NULL (will be set during handshake)
+    l_session->encryption_key = NULL;
+    l_session->session = NULL;
+    l_session->session_id = 0;
     
-    return l_session->stream;
+    debug_if(s_debug_more, L_DEBUG,
+             "Allocated stream_udp_session_t at %p (stream=%p)",
+             l_session, l_session->stream);
+    
+    return &l_session->base;  // Return pointer to base dap_io_flow_udp_t
 }
 
 /**
- * @brief UDP protocol destroy callback
+ * @brief Protocol finalize callback - complete initialization after UDP layer setup
+ */
+static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow)
+{
+    if (!a_flow || !a_flow->listener_es) {
+        log_it(L_ERROR, "Invalid flow or listener_es in finalize");
+        return -1;
+    }
+    
+    stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    
+    // Now we can set stream_worker using listener_es->worker
+    l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Finalized stream_udp_session_t %p (stream=%p, worker=%u)",
+             l_session, l_session->stream,
+             a_flow->listener_es->worker ? a_flow->listener_es->worker->id : 0);
+    
+    return 0;
+}
+
+/**
+ * @brief Protocol destroy callback - cleanup stream_udp_session_t
  */
 static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow)
 {

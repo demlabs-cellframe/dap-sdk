@@ -25,6 +25,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "dap_common.h"
+#include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
 #include "dap_server.h"
@@ -252,6 +253,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Add to worker
         dap_worker_add_events_socket_unsafe(l_worker, l_es);
+        
+        // Add to server's listener list
+        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
         
         // Socket is ready to send packets
         l_es->flags |= DAP_SOCK_READY_TO_WRITE;

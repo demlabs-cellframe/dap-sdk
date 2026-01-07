@@ -91,13 +91,29 @@ struct dap_io_flow_udp_ops {
     /**
      * @brief Create protocol-specific data
      * 
-     * Called when UDP flow is created. Protocol can allocate
-     * and initialize its specific data here.
+     * Protocol MUST allocate its extended structure (e.g. stream_udp_session_t)
+     * which extends dap_io_flow_udp_t. The returned pointer should be to the
+     * base dap_io_flow_udp_t (first member of extended structure).
      * 
-     * @param a_flow UDP flow
-     * @return Protocol data pointer or NULL
+     * UDP layer will initialize common fields (remote_addr, listener_es, etc).
+     * Protocol should only initialize its specific fields.
+     * 
+     * @param a_flow NULL (ignored, kept for API consistency)
+     * @return Allocated dap_io_flow_udp_t* (or extended structure) or NULL
      */
-    void* (*protocol_create)(dap_io_flow_udp_t *a_flow);
+    dap_io_flow_udp_t* (*protocol_create)(dap_io_flow_udp_t *a_flow);
+    
+    /**
+     * @brief Finalize protocol-specific initialization
+     * 
+     * Called after UDP layer has initialized common fields (remote_addr, listener_es).
+     * Protocol can now access listener_es->worker and complete initialization
+     * (e.g. set stream->stream_worker).
+     * 
+     * @param a_flow Fully initialized UDP flow
+     * @return 0 on success, negative on error
+     */
+    int (*protocol_finalize)(dap_io_flow_udp_t *a_flow);
     
     /**
      * @brief Destroy protocol-specific data

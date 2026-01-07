@@ -228,10 +228,18 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
         return NULL;
     }
     
-    // Allocate UDP flow (protocol should extend this further if needed)
-    dap_io_flow_udp_t *l_udp_flow = DAP_NEW_Z(dap_io_flow_udp_t);
+    // Call protocol-specific creation which allocates the full structure
+    // Protocol MUST extend dap_io_flow_udp_t and return its base pointer
+    if (!s_udp_ops || !s_udp_ops->protocol_create) {
+        log_it(L_ERROR, "UDP protocol_create callback is missing");
+        return NULL;
+    }
+    
+    // Create extended UDP flow via protocol callback
+    // Protocol allocates full structure (e.g. stream_udp_session_t extends dap_io_flow_udp_t)
+    dap_io_flow_udp_t *l_udp_flow = s_udp_ops->protocol_create(NULL);
     if (!l_udp_flow) {
-        log_it(L_CRITICAL, "Failed to allocate UDP flow");
+        log_it(L_CRITICAL, "Failed to allocate UDP flow via protocol_create");
         return NULL;
     }
     
@@ -246,9 +254,14 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
     l_udp_flow->last_activity = time(NULL);
     l_udp_flow->protocol_data = NULL;
     
-    // Call protocol-specific creation
-    if (s_udp_ops && s_udp_ops->protocol_create) {
-        l_udp_flow->protocol_data = s_udp_ops->protocol_create(l_udp_flow);
+    // Finalize protocol-specific initialization (e.g. set stream_worker)
+    // Protocol can use listener_es->worker now
+    if (s_udp_ops && s_udp_ops->protocol_finalize) {
+        if (s_udp_ops->protocol_finalize(l_udp_flow) != 0) {
+            log_it(L_ERROR, "Protocol finalize failed");
+            s_udp_ops->protocol_destroy(l_udp_flow);
+            return NULL;
+        }
     }
     
     log_it(L_DEBUG, "Created UDP flow for %s",
