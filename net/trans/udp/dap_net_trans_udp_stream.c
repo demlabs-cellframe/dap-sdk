@@ -2085,8 +2085,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     return l_sent;
 }
-    
-    debug_if(s_debug_more, L_DEBUG, "s_udp_write_typed: wrapped %zu bytes payload in UDP header type=0x%02x (total=%zu)", 
+ 
              a_size, a_pkt_type, l_total_size);
     
     ssize_t l_result = -1;
