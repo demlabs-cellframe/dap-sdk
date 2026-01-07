@@ -271,8 +271,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
         
-        // Socket is ready to send packets
-        l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+        // Socket is ready to send packets - use proper API to set flag and update epoll
+        dap_events_socket_set_writable_unsafe(l_es, true);
     }
     
     log_it(L_INFO, "Created %u sharded listener%s on %s:%u (type=%d, protocol=%d)",

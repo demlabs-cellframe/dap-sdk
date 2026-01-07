@@ -1760,6 +1760,9 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
     if (!a_esocket || a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_WRITE))
         return;
 
+    debug_if(g_debug_reactor, L_DEBUG, "set_writable_unsafe: socket %"DAP_FORMAT_SOCKET" (uuid=0x%"DAP_FORMAT_ESOCKET_UUID", type=%d), a_is_ready=%d, has_context=%d",
+             a_esocket->socket, a_esocket->uuid, a_esocket->type, a_is_ready, a_esocket->context != NULL);
+
     if ( a_is_ready )
         a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
     else
