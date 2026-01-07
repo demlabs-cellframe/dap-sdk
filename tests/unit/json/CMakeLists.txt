@@ -155,12 +155,37 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
+# Test 7: Stage 2 Reference Implementation
+# =========================================
+# Coverage: DOM building, value parsing, tree assembly
+# Tests: 13+ test cases (Phase 1.2)
+project(test_json_stage2_ref)
+
+add_executable(${PROJECT_NAME}
+    test_stage2_ref.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;json;stage2;reference;critical"
+)
+
+# =========================================
 # Summary
 # =========================================
 # Phase 0.2 tests: 55+ test cases across 5 files
 # Phase 1.1 tests: 25+ test cases (Stage 1 reference)
-# Total: 80+ test cases
-# Total lines: ~2800 lines of test code
+# Phase 1.2 tests: 13+ test cases (Stage 2 reference)
+# Total: 93+ test cases
+# Total lines: ~3400 lines of test code
 # Coverage targets:
 #   - Unicode/UTF-8: 100% (14 tests)
 #   - Numeric edges: 100% (13 tests)
@@ -168,9 +193,11 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 #   - Boundary conditions: 100% (8 tests)
 #   - Performance baseline: established (5 benchmarks)
 #   - Stage 1 reference: 100% (25+ tests)
+#   - Stage 2 reference: 100% (13+ tests)
 #
 # Run tests:
 #   - All JSON tests: ctest -L json --verbose
 #   - Critical only: ctest -L critical --verbose
 #   - Benchmarks: ctest -L benchmark --verbose
 #   - Stage 1 only: ctest -L stage1 --verbose
+#   - Stage 2 only: ctest -L stage2 --verbose
