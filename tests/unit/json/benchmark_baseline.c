@@ -25,6 +25,7 @@
 #include "dap_common.h"
 #include "dap_json.h"
 #include "dap_time.h"
+#include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +98,8 @@ static bool s_benchmark_parse_medium(void) {
     }
     
     dap_json_object_add_array(l_root, "items", l_array);
-    l_medium_json = dap_json_get_string(l_root);
+    const char *l_serialized = dap_json_get_string(l_root);
+    l_medium_json = (char*)l_serialized;  // Cast away const
     dap_json_object_free(l_root);
     
     if (!l_medium_json) {
@@ -162,12 +164,12 @@ static bool s_benchmark_serialization(void) {
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
-        char *l_str = dap_json_get_string(l_json);
-        if (!l_str) {
+        const char *l_str_const = dap_json_get_string(l_json);
+        if (!l_str_const) {
             log_it(L_ERROR, "Serialization failed at iteration %d", i);
             goto cleanup;
         }
-        free(l_str);
+        free((void*)l_str_const);  // Cast away const for free
     }
     
     uint64_t l_end = get_time_usec();
@@ -288,8 +290,8 @@ cleanup:
  * @brief Main test runner for performance baseline benchmarks
  */
 int dap_json_benchmark_tests_run(void) {
-    dap_test_msg("=== DAP JSON Performance Baseline Benchmarks ===");
-    dap_test_msg("NOTE: These establish baseline with json-c for Phase 2 comparisons");
+    log_it(L_INFO, "=== DAP JSON Performance Baseline Benchmarks ===");
+    log_it(L_INFO, "NOTE: These establish baseline with json-c for Phase 2 comparisons");
     
     int tests_passed = 0;
     int tests_total = 5;
@@ -300,8 +302,15 @@ int dap_json_benchmark_tests_run(void) {
     tests_passed += s_benchmark_object_manipulation() ? 1 : 0;
     tests_passed += s_benchmark_memory_usage() ? 1 : 0;
     
-    dap_test_msg("Performance benchmarks: %d/%d passed", tests_passed, tests_total);
+    log_it(L_INFO, "Performance benchmarks: %d/%d passed", tests_passed, tests_total);
     
     return (tests_passed == tests_total) ? 0 : -1;
 }
 
+/**
+ * @brief Main entry point
+ */
+int main(void) {
+    dap_print_module_name("DAP JSON Performance Baseline Benchmarks");
+    return dap_json_benchmark_tests_run();
+}

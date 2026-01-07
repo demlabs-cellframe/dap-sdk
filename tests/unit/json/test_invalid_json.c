@@ -24,6 +24,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 
 #define LOG_TAG "dap_json_invalid_tests"
@@ -325,7 +326,6 @@ static bool s_test_bare_values(void) {
     result = true;
     log_it(L_DEBUG, "Bare values test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
@@ -387,7 +387,7 @@ cleanup:
  * @brief Main test runner for invalid JSON tests
  */
 int dap_json_invalid_tests_run(void) {
-    dap_test_msg("=== DAP JSON Invalid Format Tests ===");
+    log_it(L_INFO, "=== DAP JSON Invalid Format Tests ===");
     
     int tests_passed = 0;
     int tests_total = 15;
@@ -408,8 +408,16 @@ int dap_json_invalid_tests_run(void) {
     tests_passed += s_test_duplicate_keys() ? 1 : 0;
     tests_passed += s_test_empty_input() ? 1 : 0;
     
-    dap_test_msg("Invalid JSON tests: %d/%d passed", tests_passed, tests_total);
+    log_it(L_INFO, "Invalid JSON tests: %d/%d passed", tests_passed, tests_total);
     
     return (tests_passed == tests_total) ? 0 : -1;
+}
+
+/**
+ * @brief Main entry point
+ */
+int main(void) {
+    dap_print_module_name("DAP JSON Invalid Format Tests");
+    return dap_json_invalid_tests_run();
 }
 

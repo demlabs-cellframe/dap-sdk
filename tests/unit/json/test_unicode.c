@@ -24,6 +24,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 #include <string.h>
 
@@ -472,8 +473,9 @@ static bool s_test_unicode_serialization(void) {
     dap_json_object_add_string(l_json, "unicode", "Привет 世界 😀");
     
     // Serialize to string
-    l_serialized = dap_json_get_string(l_json);
-    DAP_TEST_FAIL_IF_NULL(l_serialized, "Serialize JSON with Unicode");
+    const char *l_serialized_const = dap_json_get_string(l_json);
+    DAP_TEST_FAIL_IF_NULL(l_serialized_const, "Serialize JSON with Unicode");
+    l_serialized = (char*)l_serialized_const;  // Safe cast for cleanup
     
     log_it(L_DEBUG, "Serialized JSON: %s", l_serialized);
     
@@ -593,7 +595,6 @@ static bool s_test_utf32le_bom(void) {
     result = true;
     log_it(L_DEBUG, "UTF-32LE BOM test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
@@ -624,7 +625,6 @@ static bool s_test_utf32be_bom(void) {
     result = true;
     log_it(L_DEBUG, "UTF-32BE BOM test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
@@ -826,7 +826,7 @@ cleanup:
  * @brief Main test runner for Unicode tests
  */
 int dap_json_unicode_tests_run(void) {
-    dap_test_msg("=== DAP JSON Unicode & UTF-8 Tests ===");
+    log_it(L_INFO, "=== DAP JSON Unicode & UTF-8 Tests ===");
     
     int tests_passed = 0;
     int tests_total = 25;  // Increased from 14 to 25
@@ -863,8 +863,15 @@ int dap_json_unicode_tests_run(void) {
     tests_passed += s_test_cesu8_encoding() ? 1 : 0;
     tests_passed += s_test_charset_confusion() ? 1 : 0;
     
-    dap_test_msg("Unicode tests: %d/%d passed", tests_passed, tests_total);
+    log_it(L_INFO, "Unicode tests: %d/%d passed", tests_passed, tests_total);
     
     return (tests_passed == tests_total) ? 0 : -1;
 }
 
+/**
+ * @brief Main entry point
+ */
+int main(void) {
+    dap_print_module_name("DAP JSON Unicode & UTF-8 Tests");
+    return dap_json_unicode_tests_run();
+}

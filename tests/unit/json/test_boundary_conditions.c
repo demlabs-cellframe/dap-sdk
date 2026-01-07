@@ -24,6 +24,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 #include <stdlib.h>
 #include <string.h>
@@ -426,7 +427,7 @@ cleanup:
  * @brief Main test runner for boundary conditions tests
  */
 int dap_json_boundary_tests_run(void) {
-    dap_test_msg("=== DAP JSON Boundary Conditions Tests ===");
+    log_it(L_INFO, "=== DAP JSON Boundary Conditions Tests ===");
     
     int tests_passed = 0;
     int tests_total = 8;
@@ -440,8 +441,16 @@ int dap_json_boundary_tests_run(void) {
     tests_passed += s_test_empty_key() ? 1 : 0;
     tests_passed += s_test_mixed_large_content() ? 1 : 0;
     
-    dap_test_msg("Boundary conditions tests: %d/%d passed", tests_passed, tests_total);
+    log_it(L_INFO, "Boundary conditions tests: %d/%d passed", tests_passed, tests_total);
     
     return (tests_passed == tests_total) ? 0 : -1;
+}
+
+/**
+ * @brief Main entry point
+ */
+int main(void) {
+    dap_print_module_name("DAP JSON Boundary Conditions Tests");
+    return dap_json_boundary_tests_run();
 }
 

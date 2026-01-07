@@ -24,6 +24,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 #include <stdint.h>
 #include <limits.h>
@@ -444,7 +445,7 @@ cleanup:
  * @brief Main test runner for numeric edge cases
  */
 int dap_json_numeric_tests_run(void) {
-    dap_test_msg("=== DAP JSON Numeric Edge Cases Tests ===");
+    log_it(L_INFO, "=== DAP JSON Numeric Edge Cases Tests ===");
     
     int tests_passed = 0;
     int tests_total = 13;
@@ -463,8 +464,16 @@ int dap_json_numeric_tests_run(void) {
     tests_passed += s_test_large_integer_precision() ? 1 : 0;
     tests_passed += s_test_zero_variants() ? 1 : 0;
     
-    dap_test_msg("Numeric edge cases tests: %d/%d passed", tests_passed, tests_total);
+    log_it(L_INFO, "Numeric edge cases tests: %d/%d passed", tests_passed, tests_total);
     
     return (tests_passed == tests_total) ? 0 : -1;
+}
+
+/**
+ * @brief Main entry point
+ */
+int main(void) {
+    dap_print_module_name("DAP JSON Numeric Edge Cases Tests");
+    return dap_json_numeric_tests_run();
 }
 
