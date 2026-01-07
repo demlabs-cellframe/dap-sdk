@@ -119,6 +119,16 @@ int dap_io_flow_udp_send(dap_io_flow_udp_t *a_flow,
         return -1;
     }
     
+    // Debug: show destination
+    char l_addr_str[64] = {0};
+    if (a_flow->remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)&a_flow->remote_addr;
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_DEBUG, "Sending %zu bytes to %s:%u (listener_es=%p, fd=%d)",
+               a_size, l_addr_str, ntohs(l_sin->sin_port),
+               a_flow->listener_es, a_flow->listener_es ? a_flow->listener_es->fd : -1);
+    }
+    
     // Increment sequence number atomically
     uint32_t l_seq = atomic_fetch_add(&a_flow->seq_num_out, 1);
     
@@ -222,8 +232,6 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
                                                 const struct sockaddr_storage *a_remote_addr,
                                                 dap_events_socket_t *a_listener_es)
 {
-    UNUSED(a_srv);
-    
     if (!a_remote_addr || !a_listener_es) {
         return NULL;
     }
@@ -237,7 +245,8 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
     
     // Create extended UDP flow via protocol callback
     // Protocol allocates full structure (e.g. stream_udp_session_t extends dap_io_flow_udp_t)
-    dap_io_flow_udp_t *l_udp_flow = s_udp_ops->protocol_create(NULL);
+    // Pass a_srv so protocol can access a_srv->_inheritor for server-specific data
+    dap_io_flow_udp_t *l_udp_flow = s_udp_ops->protocol_create(a_srv, NULL);
     if (!l_udp_flow) {
         log_it(L_CRITICAL, "Failed to allocate UDP flow via protocol_create");
         return NULL;
@@ -292,5 +301,6 @@ static void s_udp_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     // Free UDP flow
     DAP_DELETE(l_udp_flow);
 }
+
 
 

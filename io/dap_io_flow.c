@@ -122,6 +122,7 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     l_server->name = dap_strdup(a_name);
     l_server->ops = a_ops;
     l_server->boundary_type = a_boundary_type;
+    l_server->_inheritor = NULL;  // Initialize inheritor field
     
     debug_if(s_debug_more, L_DEBUG, "Getting worker count");
     
@@ -649,5 +650,27 @@ static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server,
              a_packet, a_packet->size, a_from_worker_id, a_to_worker_id);
     
     return 0;
+}
+
+// =============================================================================
+// Accessor Functions
+// =============================================================================
+
+/**
+ * @brief Set inheritor (user data) for flow server
+ */
+void dap_io_flow_server_set_inheritor(dap_io_flow_server_t *a_server, void *a_inheritor)
+{
+    if (a_server) {
+        a_server->_inheritor = a_inheritor;
+    }
+}
+
+/**
+ * @brief Get inheritor (user data) from flow server
+ */
+void* dap_io_flow_server_get_inheritor(dap_io_flow_server_t *a_server)
+{
+    return a_server ? a_server->_inheritor : NULL;
 }
 

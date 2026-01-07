@@ -307,6 +307,7 @@ struct dap_io_flow_server {
     char *name;                             ///< Server name (for logging)
     dap_io_flow_ops_t *ops;                 ///< Protocol operations (VTable)
     dap_io_flow_boundary_type_t boundary_type;  ///< Data boundary type
+    void *_inheritor;                       ///< User data (protocol-specific server)
     
     dap_server_t *dap_server;               ///< Underlying DAP server
     
@@ -381,6 +382,24 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server);
  * @param a_server Server instance
  */
 void dap_io_flow_server_delete(dap_io_flow_server_t *a_server);
+
+/**
+ * @brief Set inheritor (user data) for flow server
+ * 
+ * This allows protocol implementations to associate custom data with the server.
+ * 
+ * @param a_server Flow server
+ * @param a_inheritor User data pointer
+ */
+void dap_io_flow_server_set_inheritor(dap_io_flow_server_t *a_server, void *a_inheritor);
+
+/**
+ * @brief Get inheritor (user data) from flow server
+ * 
+ * @param a_server Flow server
+ * @return User data pointer or NULL
+ */
+void* dap_io_flow_server_get_inheritor(dap_io_flow_server_t *a_server);
 
 /**
  * @brief Find flow by remote address

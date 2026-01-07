@@ -98,10 +98,12 @@ struct dap_io_flow_udp_ops {
      * UDP layer will initialize common fields (remote_addr, listener_es, etc).
      * Protocol should only initialize its specific fields.
      * 
+     * @param a_server Flow server instance (can access a_server->_inheritor for protocol-specific server data)
      * @param a_flow NULL (ignored, kept for API consistency)
      * @return Allocated dap_io_flow_udp_t* (or extended structure) or NULL
      */
-    dap_io_flow_udp_t* (*protocol_create)(dap_io_flow_udp_t *a_flow);
+    dap_io_flow_udp_t* (*protocol_create)(dap_io_flow_server_t *a_server,
+                                           dap_io_flow_udp_t *a_flow);
     
     /**
      * @brief Finalize protocol-specific initialization

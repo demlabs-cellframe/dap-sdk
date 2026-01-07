@@ -45,6 +45,9 @@
 // Global debug flag
 static bool s_debug_more = false;
 
+// Thread-local context for passing UDP server to protocol_create callback
+static _Thread_local dap_net_trans_udp_server_t *s_tls_current_server = NULL;
+
 /**
  * @brief Protocol-specific session extension (extends dap_io_flow_udp_t)
  */
@@ -90,7 +93,8 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
 static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
                                     const uint8_t *a_data,
                                     size_t a_size);
-static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow);
+static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
+                                                     dap_io_flow_udp_t *a_flow);
 static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow);
 static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow);
 
@@ -205,6 +209,9 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
             return -2;
         }
         
+        // CRITICAL: Store UDP server pointer in flow server for protocol callbacks!
+        dap_io_flow_server_set_inheritor(l_flow_server, l_udp_server);
+        
         debug_if(s_debug_more, L_DEBUG, "Flow server '%s' created, starting listener", l_flow_name);
         
         // Start listener on this flow server
@@ -302,6 +309,14 @@ dap_net_trans_udp_server_t* dap_net_trans_udp_server_new(const char *a_name)
     snprintf(l_server->server_name, sizeof(l_server->server_name), "%s", a_name);
     l_server->flow_servers = NULL;
     l_server->flow_servers_count = 0;
+    
+    // CRITICAL: Get trans from registry (it's already registered at this point!)
+    l_server->trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
+    if (!l_server->trans) {
+        log_it(L_WARNING, "UDP trans not found in registry during server creation");
+    } else {
+        log_it(L_DEBUG, "UDP server '%s' linked to trans %p", a_name, l_server->trans);
+    }
     
     log_it(L_NOTICE, "Created Stream UDP server '%s'", a_name);
     
@@ -544,9 +559,17 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
 /**
  * @brief Protocol create callback - allocate stream_udp_session_t
  */
-static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow)
+static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
+                                                     dap_io_flow_udp_t *a_flow)
 {
     UNUSED(a_flow);  // We allocate fresh structure
+    
+    // Get UDP server from flow server's _inheritor
+    dap_net_trans_udp_server_t *l_udp_server = (dap_net_trans_udp_server_t*)dap_io_flow_server_get_inheritor(a_server);
+    if (!l_udp_server) {
+        log_it(L_ERROR, "Flow server has no UDP server in _inheritor");
+        return NULL;
+    }
     
     // Allocate FULL structure (stream_udp_session_t extends dap_io_flow_udp_t)
     stream_udp_session_t *l_session = DAP_NEW_Z(stream_udp_session_t);
@@ -564,6 +587,12 @@ static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_udp_t *a_flow)
         log_it(L_CRITICAL, "Failed to allocate stream");
         DAP_DELETE(l_session);
         return NULL;
+    }
+    
+    // CRITICAL: Set trans from UDP server so stream can use trans->ops->write for sending packets!
+    l_session->stream->trans = l_udp_server->trans;
+    if (!l_session->stream->trans) {
+        log_it(L_WARNING, "UDP server has no trans configured");
     }
     
     // stream_worker will be set in finalize callback after listener_es is available
