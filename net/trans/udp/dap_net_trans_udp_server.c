@@ -1087,22 +1087,28 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         return -6;
     }
     
-    // Replace handshake key with session key
-    dap_enc_key_delete(a_session->encryption_key);
-    a_session->encryption_key = l_session_key;
     
     log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
     
-    // Send SESSION_CREATE response with KDF counter (UNENCRYPTED!)
-    // Client will use this counter to derive the same session key via KDF
-    // This provides forward secrecy without transmitting the actual key
+    // CRITICAL: Send SESSION_CREATE response BEFORE replacing handshake key!
+    // Client still uses handshake key for decryption, session key will be derived after receiving counter
     uint64_t l_counter_be = htobe64(l_kdf_counter);
     
     int l_ret = s_send_udp_packet(a_session,
                                   DAP_STREAM_UDP_PKT_SESSION_CREATE,
                                   (const uint8_t*)&l_counter_be, sizeof(l_counter_be));
     
-    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE response sent (ret=%d)", l_ret);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to send SESSION_CREATE response: %d", l_ret);
+        dap_enc_key_delete(l_session_key);
+        return l_ret;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE response sent (ret=%d), now replacing keys", l_ret);
+    
+    // NOW replace handshake key with session key (after sending response)
+    dap_enc_key_delete(a_session->encryption_key);
+    a_session->encryption_key = l_session_key;
     
     return l_ret;
 }

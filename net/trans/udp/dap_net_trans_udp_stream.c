@@ -1403,10 +1403,6 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                      "CLIENT: derived SESSION key (counter=%lu) from Kyber shared secret chain",
                      l_kdf_counter);
             
-            // Replace handshake_key with session_key
-            dap_enc_key_delete(l_udp_ctx->handshake_key);
-            l_udp_ctx->handshake_key = l_session_key;
-            
             debug_if(s_debug_more, L_DEBUG, "CLIENT: session key established");
             
             // CRITICAL: Call session_create callback to notify dap_client!
@@ -1420,6 +1416,11 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             } else {
                 log_it(L_WARNING, "CLIENT: no session_create_cb registered! l_ctx=%p", l_ctx);
             }
+            
+            // NOW replace handshake_key with session_key (after callback)
+            // This ensures future packets are encrypted/decrypted with session key
+            dap_enc_key_delete(l_udp_ctx->handshake_key);
+            l_udp_ctx->handshake_key = l_session_key;
             
             break;
         }
