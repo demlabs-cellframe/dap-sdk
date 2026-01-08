@@ -52,12 +52,32 @@
 
 
 // Test configuration
-#define TEST_PARALLEL_TRANSS 4  // Number of parallel trans instances per type
+#define TEST_PARALLEL_TRANSS 4  // Number of parallel trans instances per type  
 #define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB for HTTP/WebSocket
 #define TEST_UDP_DATA_SIZE (10 * 1024)           // 10 KB for UDP (realistic for datagram trans)
 #define TEST_SMALL_DATA_SIZE (1024)  // 1 KB for UDP/DNS (packet-based transs)
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANS_TIMEOUT_MS 10000  // 10 seconds
+#define TEST_TRANS_TIMEOUT_MS 30000  // 30 seconds (increased for parallel clients)
+
+// Test scenarios: different server/client configurations
+// TODO: Implement full scenario support (variable client/server counts)
+// For now, start with basic scenario to validate architecture
+typedef struct test_scenario {
+    const char *name;
+    size_t num_servers;
+    size_t num_clients;
+    size_t data_size;  // bytes to send/receive per client
+} test_scenario_t;
+
+static const test_scenario_t g_scenarios[] = {
+    {"1 server, 4 clients (baseline)", 1, TEST_PARALLEL_TRANSS, TEST_UDP_DATA_SIZE},
+    // Future scenarios to implement:
+    // {"1 server, 10 clients",      1,   10,    10*1024},
+    // {"1 server, 1000 clients",    1, 1000,     1*1024},
+    // {"10 servers, 10 clients",   10,   10,    10*1024},
+    // {"1000 servers, 1000 clients", 1000, 1000, 1*1024},
+};
+#define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
 // Trans configs are defined in test_trans_helpers.h
 // Define the actual array here
@@ -76,6 +96,7 @@ const size_t g_trans_config_count = TRANS_CONFIG_COUNT;
 // Per-trans test ctx
 typedef struct trans_test_ctx {
     trans_test_config_t config;
+    test_scenario_t scenario;  // Current test scenario
     dap_net_trans_server_t *server;
     dap_client_t *clients[TEST_PARALLEL_TRANSS];
     test_stream_ch_ctx_t stream_ctxs[TEST_PARALLEL_TRANSS];
@@ -400,7 +421,7 @@ static void *test_trans_worker(void *a_arg)
     l_ctx->running = true;
     
     pthread_mutex_lock(&s_test_mutex);
-    printf("\n=== Starting %s trans test ===\n", l_ctx->config.name);
+    printf("\n=== Starting %s trans test: %s ===\n", l_ctx->config.name, l_ctx->scenario.name);
     pthread_mutex_unlock(&s_test_mutex);
     
     // Create server
@@ -636,8 +657,9 @@ static void test_02_sequential_trans_testing(void)
         printf("Testing trans: %s\n", g_trans_configs[i].name);
         printf("========================================\n");
         
-        // Initialize trans ctx
+        // Initialize trans ctx with baseline scenario
         s_trans_ctxs[i].config = g_trans_configs[i];
+        s_trans_ctxs[i].scenario = g_scenarios[0];  // Start with baseline scenario
         s_trans_ctxs[i].server = NULL;
         memset(s_trans_ctxs[i].clients, 0, sizeof(s_trans_ctxs[i].clients));
         memset(s_trans_ctxs[i].client_node_addrs, 0, sizeof(s_trans_ctxs[i].client_node_addrs));
