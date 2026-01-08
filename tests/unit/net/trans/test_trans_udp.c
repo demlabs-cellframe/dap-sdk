@@ -64,11 +64,15 @@
 #include "dap_enc_kdf.h"
 #include "dap_serialize.h"
 #include "dap_transport_obfuscation.h"
+#include "dap_rand.h"
 #include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
 #include "dap_trans_test_udp_helpers.h"
 
 #define LOG_TAG "test_trans_udp"
+
+// Crypto constants
+#define DAP_ENC_STANDARD_KEY_SIZE 32  // SALSA20 key size
 
 // Note: Common mocks are now in dap_trans_test_mocks.h/c
 // UDP-specific mocks (dap_events_socket_write_unsafe) are in dap_trans_test_udp_helpers.h
@@ -1211,7 +1215,7 @@ static void test_15_stream_session(void)
     
     l_udp_ctx->session_id = 0x1234567890ABCDEF;
     l_udp_ctx->seq_num = 1;
-    l_udp_ctx->handshake_key = dap_enc_key_copy(l_handshake_key); // Client has handshake key
+    l_udp_ctx->handshake_key = dap_enc_key_dup(l_handshake_key); // Client has handshake key
     l_udp_ctx->stream = l_mock_stream;
     l_udp_ctx->esocket = l_mock_trans_ctx->esocket;
     
@@ -1280,29 +1284,38 @@ static void test_15_stream_session(void)
     // ========================================================================
     
     const char l_test_message[] = "Data encrypted with session key after SESSION_CREATE";
-    size_t l_encrypted_size = 0;
-    uint8_t *l_encrypted = dap_enc_code(
+    
+    // Allocate buffer for encryption
+    size_t l_encrypt_buf_size = sizeof(l_test_message) + 256; // Extra space for encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_encrypted, "Encryption buffer allocation should succeed");
+    
+    size_t l_encrypted_size = dap_enc_code(
         l_session_key,
         (const uint8_t*)l_test_message,
         sizeof(l_test_message),
-        &l_encrypted_size,
+        l_encrypted,
+        l_encrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
-    TEST_ASSERT_NOT_NULL(l_encrypted, "Encryption with session key should succeed");
-    TEST_ASSERT(l_encrypted_size > 0, "Encrypted size should be positive");
+    TEST_ASSERT(l_encrypted_size > 0, "Encryption with session key should succeed (returned %zu bytes)", l_encrypted_size);
     
     // Decrypt with session_key
-    size_t l_decrypted_size = 0;
-    uint8_t *l_decrypted = dap_enc_decode(
+    size_t l_decrypt_buf_size = l_encrypted_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption buffer allocation should succeed");
+    
+    size_t l_decrypted_size = dap_enc_decode(
         l_session_key,
         l_encrypted,
         l_encrypted_size,
-        &l_decrypted_size,
+        l_decrypted,
+        l_decrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
-    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption with session key should succeed");
+    TEST_ASSERT(l_decrypted_size > 0, "Decryption with session key should succeed (returned %zu bytes)", l_decrypted_size);
     TEST_ASSERT(l_decrypted_size == sizeof(l_test_message),
                 "Decrypted size should match original");
     TEST_ASSERT(memcmp(l_decrypted, l_test_message, sizeof(l_test_message)) == 0,
@@ -1315,23 +1328,27 @@ static void test_15_stream_session(void)
     // ========================================================================
     
     // Try to decrypt session-encrypted data with handshake key - should fail
-    size_t l_wrong_decrypted_size = 0;
-    uint8_t *l_wrong_decrypted = dap_enc_decode(
+    size_t l_wrong_decrypt_buf_size = l_encrypted_size + 256;
+    uint8_t *l_wrong_decrypted = DAP_NEW_SIZE(uint8_t, l_wrong_decrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_wrong_decrypted, "Wrong key decryption buffer allocation should succeed");
+    
+    size_t l_wrong_decrypted_size = dap_enc_decode(
         l_handshake_key,
         l_encrypted,
         l_encrypted_size,
-        &l_wrong_decrypted_size,
+        l_wrong_decrypted,
+        l_wrong_decrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
     // Decryption may succeed but content should be garbage
-    if (l_wrong_decrypted) {
+    if (l_wrong_decrypted_size > 0) {
         bool l_content_differs = (l_wrong_decrypted_size != sizeof(l_test_message)) ||
                                  (memcmp(l_wrong_decrypted, l_test_message, sizeof(l_test_message)) != 0);
         TEST_ASSERT(l_content_differs,
                     "Decryption with wrong key should produce garbage (key rotation enforced)");
-        DAP_DELETE(l_wrong_decrypted);
     }
+    DAP_DELETE(l_wrong_decrypted);
     
     TEST_INFO("✅ Key isolation validated: old handshake_key cannot decrypt new session data");
     
