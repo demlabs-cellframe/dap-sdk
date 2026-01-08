@@ -34,6 +34,32 @@
 #define LOG_TAG "dap_json_numeric_tests"
 
 /**
+ * @brief Check if double is infinity (IEEE 754) without using isinf()
+ * @details -ffast-math breaks isinf(), so we check bit pattern directly
+ */
+static inline bool s_is_inf(double a_value) {
+    union { double d; uint64_t u; } conv = { .d = a_value };
+    // IEEE 754: inf has exponent = 0x7FF and mantissa = 0
+    // +inf: 0x7FF0000000000000
+    // -inf: 0xFFF0000000000000
+    uint64_t exp = (conv.u >> 52) & 0x7FF;
+    uint64_t mantissa = conv.u & 0xFFFFFFFFFFFFFULL;
+    return (exp == 0x7FF) && (mantissa == 0);
+}
+
+/**
+ * @brief Check if double is NaN (IEEE 754) without using isnan()
+ * @details -ffast-math breaks isnan(), so we check bit pattern directly
+ */
+static inline bool s_is_nan(double a_value) {
+    union { double d; uint64_t u; } conv = { .d = a_value };
+    // IEEE 754: NaN has exponent = 0x7FF and mantissa != 0
+    uint64_t exp = (conv.u >> 52) & 0x7FF;
+    uint64_t mantissa = conv.u & 0xFFFFFFFFFFFFFULL;
+    return (exp == 0x7FF) && (mantissa != 0);
+}
+
+/**
  * @brief Test INT64_MIN boundary
  */
 static bool s_test_int64_min(void) {
@@ -188,10 +214,19 @@ static bool s_test_float_infinity(void) {
     
     // Positive infinity
     double l_pos_inf = INFINITY;
+    int l_isinf_before = s_is_inf(l_pos_inf);
+    union { double d; uint64_t u; } l_pos_conv = { .d = l_pos_inf };
+    log_it(L_DEBUG, "Adding pos_inf: %f (s_is_inf_before=%d, hex=%016lx)", 
+           l_pos_inf, l_isinf_before, l_pos_conv.u);
     dap_json_object_add_double(l_json, "pos_inf", l_pos_inf);
     
     double l_retrieved_pos = dap_json_object_get_double(l_json, "pos_inf");
-    DAP_TEST_FAIL_IF(!isinf(l_retrieved_pos) || l_retrieved_pos < 0, 
+    int l_isinf_after = s_is_inf(l_retrieved_pos);
+    union { double d; uint64_t u; } l_retr_conv = { .d = l_retrieved_pos };
+    log_it(L_DEBUG, "Retrieved pos_inf: %f (s_is_inf_after=%d, <0=%d, hex=%016lx)", 
+           l_retrieved_pos, l_isinf_after, l_retrieved_pos < 0, l_retr_conv.u);
+    
+    DAP_TEST_FAIL_IF(!s_is_inf(l_retrieved_pos) || l_retrieved_pos < 0, 
                      "Positive infinity round-trip");
     
     // Negative infinity
@@ -199,7 +234,7 @@ static bool s_test_float_infinity(void) {
     dap_json_object_add_double(l_json, "neg_inf", l_neg_inf);
     
     double l_retrieved_neg = dap_json_object_get_double(l_json, "neg_inf");
-    DAP_TEST_FAIL_IF(!isinf(l_retrieved_neg) || l_retrieved_neg > 0, 
+    DAP_TEST_FAIL_IF(!s_is_inf(l_retrieved_neg) || l_retrieved_neg > 0, 
                      "Negative infinity round-trip");
     
     result = true;
@@ -226,7 +261,7 @@ static bool s_test_float_nan(void) {
     dap_json_object_add_double(l_json, "nan", l_nan);
     
     double l_retrieved = dap_json_object_get_double(l_json, "nan");
-    DAP_TEST_FAIL_IF(!isnan(l_retrieved), "NaN round-trip");
+    DAP_TEST_FAIL_IF(!s_is_nan(l_retrieved), "NaN round-trip");
     
     result = true;
     log_it(L_DEBUG, "NaN test passed");

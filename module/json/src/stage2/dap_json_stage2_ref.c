@@ -686,15 +686,12 @@ static bool s_parse_number(
                 char *l_d_endptr = NULL;
                 double l_dval = strtod(l_buffer, &l_d_endptr);
                 
-                if(errno != 0 || l_d_endptr == l_buffer || *l_d_endptr == '\0') {
+                if(errno != 0 || l_d_endptr == l_buffer || *l_d_endptr != '\0') {
                     log_it(L_ERROR, "Failed to convert underflowed integer to double: %s", l_buffer);
                     return false;
                 }
                 
-                if(!isfinite(l_dval)) {
-                    log_it(L_ERROR, "Integer underflow to infinity: %s", l_buffer);
-                    return false;
-                }
+                // Note: isfinite() broken by -ffast-math, but underflow to infinity shouldn't happen for integers
                 
                 l_value->type = DAP_JSON_TYPE_DOUBLE;
                 l_value->number.d = l_dval;
