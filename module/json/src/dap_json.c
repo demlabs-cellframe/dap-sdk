@@ -49,6 +49,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <errno.h>
+#include <math.h>
 
 #define LOG_TAG "dap_json"
 
@@ -607,12 +609,42 @@ int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_v
  */
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value)
 {
-    // Store as int64 if fits, otherwise as double
-    if (a_value <= INT64_MAX) {
-        return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
-    } else {
-        return dap_json_object_add_double(a_json, a_key, (double)a_value);
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "NULL object or key");
+        return -1;
     }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
+        return -1;
+    }
+    
+    dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate value");
+        return -1;
+    }
+    
+    // Store as int64 if fits (no cast needed for get operations)
+    if (a_value <= INT64_MAX) {
+        l_value->type = DAP_JSON_TYPE_INT;
+        l_value->number.i = (int64_t)a_value;
+        l_value->number.is_double = false;
+    } else {
+        // uint64 > INT64_MAX: use native uint64 type
+        l_value->type = DAP_JSON_TYPE_UINT64;
+        l_value->number.u64 = a_value;
+        l_value->number.is_double = false;
+    }
+    
+    if (!dap_json_object_v2_add(l_obj, a_key, l_value)) {
+        dap_json_value_v2_free(l_value);
+        log_it(L_ERROR, "Failed to add value to object");
+        return -1;
+    }
+    
+    return 0;
 }
 
 /**
@@ -620,11 +652,34 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
  */
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value)
 {
-    // Convert uint256 to hex string representation
-    char l_str[128]; // 0x + 64 hex chars + null
-    snprintf(l_str, sizeof(l_str), "0x%016" PRIx64 "%016" PRIx64, 
-             (uint64_t)(a_value.hi), (uint64_t)(a_value.lo));
-    return dap_json_object_add_string(a_json, a_key, l_str);
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "NULL object or key");
+        return -1;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
+        return -1;
+    }
+    
+    dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate value");
+        return -1;
+    }
+    
+    l_value->type = DAP_JSON_TYPE_UINT256;
+    l_value->number.u256 = a_value;
+    l_value->number.is_double = false;
+    
+    if (!dap_json_object_v2_add(l_obj, a_key, l_value)) {
+        dap_json_value_v2_free(l_value);
+        log_it(L_ERROR, "Failed to add value to object");
+        return -1;
+    }
+    
+    return 0;
 }
 
 /**
@@ -860,9 +915,30 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
     if (l_value->type == DAP_JSON_TYPE_INT) {
         *a_out = (uint64_t)l_value->number.i;
         return true;
+    } else if (l_value->type == DAP_JSON_TYPE_UINT64) {
+        *a_out = l_value->number.u64;
+        return true;
+    } else if (l_value->type == DAP_JSON_TYPE_UINT128) {
+        // Truncate to lower 64 bits
+        *a_out = (uint64_t)l_value->number.u128;
+        return true;
+    } else if (l_value->type == DAP_JSON_TYPE_UINT256) {
+        // Truncate to lower 64 bits
+        *a_out = (uint64_t)l_value->number.u256.lo;
+        return true;
     } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         *a_out = (uint64_t)l_value->number.d;
         return true;
+    } else if (l_value->type == DAP_JSON_TYPE_STRING) {
+        // Parse string as uint64 (for legacy/compatibility)
+        char *l_endptr = NULL;
+        errno = 0;
+        unsigned long long l_val = strtoull(l_value->string.data, &l_endptr, 10);
+        
+        if (errno == 0 && l_endptr != l_value->string.data && *l_endptr == '\0') {
+            *a_out = (uint64_t)l_val;
+            return true;
+        }
     }
     
     return false;
@@ -881,13 +957,26 @@ int dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key, uint256_t
         return -1;
     }
     
-    const char *l_str = dap_json_object_get_string(a_json, a_key);
-    if (!l_str) {
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return -1;
     }
     
-    *a_out = dap_uint256_scan_uninteger(l_str);
-    return 0;
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value) {
+        return -1;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_UINT256) {
+        *a_out = l_value->number.u256;
+        return 0;
+    } else if (l_value->type == DAP_JSON_TYPE_STRING) {
+        // Fallback: parse hex string (for compatibility)
+        *a_out = dap_uint256_scan_uninteger(l_value->string.data);
+        return 0;
+    }
+    
+    return -1;
 }
 
 /**
@@ -913,6 +1002,16 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
         return l_value->number.d;
     } else if (l_value->type == DAP_JSON_TYPE_INT) {
         return (double)l_value->number.i;
+    } else if (l_value->type == DAP_JSON_TYPE_STRING) {
+        // Check for special string values: "Infinity", "-Infinity", "NaN"
+        const char *l_str = l_value->string.data;
+        if (strcmp(l_str, "Infinity") == 0) {
+            return INFINITY;
+        } else if (strcmp(l_str, "-Infinity") == 0) {
+            return -INFINITY;
+        } else if (strcmp(l_str, "NaN") == 0) {
+            return NAN;
+        }
     }
     
     return 0.0;

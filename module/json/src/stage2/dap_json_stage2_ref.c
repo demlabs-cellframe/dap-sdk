@@ -605,13 +605,22 @@ static bool s_parse_number(
         errno = 0;
         double l_dval = strtod(l_buffer, &l_endptr);
         
-        if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
-            log_it(L_ERROR, "Invalid double: %s", l_buffer);
+        // Check for valid conversion
+        if(l_endptr == l_buffer || *l_endptr != '\0') {
+            log_it(L_ERROR, "Invalid double format: %s", l_buffer);
             return false;
         }
         
+        // Allow underflow to zero (denormalized numbers like 1e-308)
+        // But reject overflow to infinity
+        if(errno == ERANGE && !isfinite(l_dval)) {
+            log_it(L_ERROR, "Double overflow to infinity: %s", l_buffer);
+            return false;
+        }
+        
+        // Accept denormalized numbers and zero
         if(!isfinite(l_dval)) {
-            log_it(L_ERROR, "Double out of range: %s", l_buffer);
+            log_it(L_ERROR, "Double is NaN or Inf: %s", l_buffer);
             return false;
         }
         
@@ -631,25 +640,66 @@ static bool s_parse_number(
             return false;
         }
         
-        // Handle overflow/underflow - convert to double
+        // Handle overflow/underflow
         if(errno == ERANGE) {
-            log_it(L_DEBUG, "Integer overflow/underflow, converting to double: %s", l_buffer);
-            errno = 0;
-            double l_dval = strtod(l_buffer, &l_endptr);
-            
-            if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
-                log_it(L_ERROR, "Failed to convert overflowed integer to double: %s", l_buffer);
-                return false;
+            // strtoll overflow - try parsing as unsigned uint64
+            if(l_buffer[0] != '-') { // Positive number
+                errno = 0;
+                char *l_u_endptr = NULL;
+                unsigned long long l_uval = strtoull(l_buffer, &l_u_endptr, 10);
+                
+                if(errno == 0 && l_u_endptr != l_buffer && *l_u_endptr == '\0') {
+                    // Successfully parsed as uint64
+                    if(l_uval <= UINT64_MAX) {
+                        l_value->type = DAP_JSON_TYPE_UINT64;
+                        l_value->number.u64 = (uint64_t)l_uval;
+                        l_value->number.is_double = false;
+                    } else {
+                        // > UINT64_MAX: try uint128/uint256 (future)
+                        log_it(L_ERROR, "Number exceeds UINT64_MAX: %s", l_buffer);
+                        return false;
+                    }
+                } else {
+                    // strtoull also failed - convert to double as last resort
+                    log_it(L_DEBUG, "Integer overflow, converting to double: %s", l_buffer);
+                    errno = 0;
+                    double l_dval = strtod(l_buffer, &l_u_endptr);
+                    
+                    if(errno != 0 || l_u_endptr == l_buffer || *l_u_endptr == '\0') {
+                        log_it(L_ERROR, "Failed to convert overflowed integer to double: %s", l_buffer);
+                        return false;
+                    }
+                    
+                    if(!isfinite(l_dval)) {
+                        log_it(L_ERROR, "Integer overflow to infinity: %s", l_buffer);
+                        return false;
+                    }
+                    
+                    l_value->type = DAP_JSON_TYPE_DOUBLE;
+                    l_value->number.d = l_dval;
+                    l_value->number.is_double = true;
+                }
+            } else {
+                // Negative overflow (< INT64_MIN) - convert to double
+                log_it(L_DEBUG, "Negative integer underflow, converting to double: %s", l_buffer);
+                errno = 0;
+                char *l_d_endptr = NULL;
+                double l_dval = strtod(l_buffer, &l_d_endptr);
+                
+                if(errno != 0 || l_d_endptr == l_buffer || *l_d_endptr == '\0') {
+                    log_it(L_ERROR, "Failed to convert underflowed integer to double: %s", l_buffer);
+                    return false;
+                }
+                
+                if(!isfinite(l_dval)) {
+                    log_it(L_ERROR, "Integer underflow to infinity: %s", l_buffer);
+                    return false;
+                }
+                
+                l_value->type = DAP_JSON_TYPE_DOUBLE;
+                l_value->number.d = l_dval;
+                l_value->number.is_double = true;
             }
-            
-            if(!isfinite(l_dval)) {
-                log_it(L_ERROR, "Integer overflow to infinity: %s", l_buffer);
-                return false;
-            }
-            
-            l_value->type = DAP_JSON_TYPE_DOUBLE;
-            l_value->number.d = l_dval;
-            l_value->number.is_double = true;
         }
         else {
             // Normal int64 range

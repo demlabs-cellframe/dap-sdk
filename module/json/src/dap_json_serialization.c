@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <math.h>
 
 /* ========================================================================== */
 /*                     JSON SERIALIZATION IMPLEMENTATION                      */
@@ -227,9 +228,42 @@ static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t
             snprintf(l_buf, sizeof(l_buf), "%" PRId64, a_value->number.i);
             return s_append_string(a_buffer, a_size, a_capacity, l_buf);
             
+        case DAP_JSON_TYPE_UINT64:
+            snprintf(l_buf, sizeof(l_buf), "%" PRIu64, a_value->number.u64);
+            return s_append_string(a_buffer, a_size, a_capacity, l_buf);
+            
+        case DAP_JSON_TYPE_UINT128: {
+            // Serialize uint128 as hex string quoted (for JSON compatibility)
+            uint128_t l_u128 = a_value->number.u128;
+            uint64_t l_hi = (uint64_t)(l_u128 >> 64);
+            uint64_t l_lo = (uint64_t)l_u128;
+            char l_u128_str[48];
+            snprintf(l_u128_str, sizeof(l_u128_str), "\"0x%016" PRIx64 "%016" PRIx64 "\"", l_hi, l_lo);
+            return s_append_string(a_buffer, a_size, a_capacity, l_u128_str);
+        }
+            
+        case DAP_JSON_TYPE_UINT256: {
+            // Serialize uint256 as hex string quoted
+            uint256_t l_u256 = a_value->number.u256;
+            char l_u256_str[128];
+            snprintf(l_u256_str, sizeof(l_u256_str), "\"0x%016" PRIx64 "%016" PRIx64 "\"",
+                     (uint64_t)(l_u256.hi), (uint64_t)(l_u256.lo));
+            return s_append_string(a_buffer, a_size, a_capacity, l_u256_str);
+        }
+            
         case DAP_JSON_TYPE_DOUBLE: {
             // Format double with appropriate precision
             double d = a_value->number.d;
+            
+            // Handle Infinity and NaN (not standard JSON, but useful)
+            if (isinf(d)) {
+                return s_append_string(a_buffer, a_size, a_capacity, 
+                                      d > 0 ? "\"Infinity\"" : "\"-Infinity\"");
+            }
+            if (isnan(d)) {
+                return s_append_string(a_buffer, a_size, a_capacity, "\"NaN\"");
+            }
+            
             if (d == (int64_t)d) {
                 snprintf(l_buf, sizeof(l_buf), "%.1f", d); // e.g., 3.0
             } else {

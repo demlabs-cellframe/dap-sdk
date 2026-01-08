@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>  // for size_t
+#include "dap_math_ops.h"  // for uint128_t, uint256_t
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,7 +52,10 @@ typedef enum {
     DAP_JSON_TYPE_NULL = 0,      /**< null */
     DAP_JSON_TYPE_BOOLEAN,       /**< true or false */
     DAP_JSON_TYPE_DOUBLE,        /**< floating point number */
-    DAP_JSON_TYPE_INT,           /**< integer number */
+    DAP_JSON_TYPE_INT,           /**< int64_t integer */
+    DAP_JSON_TYPE_UINT64,        /**< uint64_t unsigned integer */
+    DAP_JSON_TYPE_UINT128,       /**< uint128_t large unsigned integer */
+    DAP_JSON_TYPE_UINT256,       /**< uint256_t very large unsigned integer */
     DAP_JSON_TYPE_OBJECT,        /**< object (key-value pairs) */
     DAP_JSON_TYPE_ARRAY,         /**< array (ordered list) */
     DAP_JSON_TYPE_STRING         /**< string */
@@ -59,14 +63,17 @@ typedef enum {
 
 /**
  * @brief JSON number representation
- * @details Stores both int64 and double for optimal representation
+ * @details Supports int64, uint64, uint128, uint256, and double
  */
 typedef struct {
     union {
-        int64_t i;     /**< Integer value */
-        double d;      /**< Double value */
+        int64_t i;        /**< Signed 64-bit integer */
+        uint64_t u64;     /**< Unsigned 64-bit integer */
+        uint128_t u128;   /**< Unsigned 128-bit integer */
+        uint256_t u256;   /**< Unsigned 256-bit integer */
+        double d;         /**< IEEE 754 double precision */
     };
-    bool is_double;    /**< true if double, false if int64 */
+    bool is_double;       /**< true if double, false otherwise (check type) */
 } dap_json_number_t;
 
 /**
