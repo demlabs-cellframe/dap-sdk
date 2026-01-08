@@ -27,7 +27,7 @@ static void test_string_pool_new_free(void)
 {
     dap_print_module_name("String pool new/free");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     dap_string_pool_stats_t stats;
@@ -44,7 +44,7 @@ static void test_string_pool_intern_basic(void)
 {
     dap_print_module_name("Basic string interning");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     const char *s1 = dap_string_pool_intern(pool, "test");
@@ -71,7 +71,7 @@ static void test_string_pool_intern_n(void)
 {
     dap_print_module_name("String interning with length");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     const char *s1 = dap_string_pool_intern_n(pool, "hello_world", 5); // Only "hello"
@@ -92,7 +92,7 @@ static void test_string_pool_multiple_strings(void)
 {
     dap_print_module_name("Multiple different strings");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     const char *strings[] = {"name", "value", "id", "type", "data"};
@@ -125,7 +125,7 @@ static void test_string_pool_contains(void)
 {
     dap_print_module_name("String pool contains");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     dap_string_pool_intern(pool, "exists");
@@ -146,7 +146,7 @@ static void test_string_pool_clear(void)
 {
     dap_print_module_name("String pool clear");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     for (int i = 0; i < 10; i++) {
@@ -215,7 +215,7 @@ static void test_string_pool_memory_efficiency(void)
 {
     dap_print_module_name("Memory efficiency");
     
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     dap_assert(pool != NULL, "Pool creation");
     
     // Intern same string many times
@@ -249,7 +249,7 @@ static void test_string_pool_null_handling(void)
     dap_assert(s == NULL, "NULL pool returns NULL");
     
     // NULL string
-    dap_string_pool_t *pool = dap_string_pool_new(128);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 128);
     s = dap_string_pool_intern(pool, NULL);
     dap_assert(s == NULL, "NULL string returns NULL");
     

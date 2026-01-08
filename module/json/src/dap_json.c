@@ -61,9 +61,10 @@
  * @details Wraps dap_json_value_t for backward compatibility with old API
  */
 struct dap_json {
-    dap_json_value_t *value;     /**< Internal native value */
-    int ref_count;               /**< Reference counter for dap_json_object_ref */
-    bool owns_value;             /**< True if wrapper owns value and should free it */
+    dap_json_value_t *value;         /**< Internal native value */
+    dap_json_stage2_t *stage2_parser; /**< Stage 2 parser (owns Arena with all values) */
+    int ref_count;                   /**< Reference counter for dap_json_object_ref */
+    bool owns_value;                 /**< True if wrapper owns value and should free it */
 };
 
 /* ========================================================================== */
@@ -185,11 +186,11 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
         return NULL;
     }
     
-    // Wrap for public API
-    dap_json_t *l_result = s_wrap_value(l_root);
+    // Wrap for public API (keep Stage 2 parser alive - it owns the Arena)
+    dap_json_t *l_result = s_wrap_value_ex(l_root, true); // owns_value = true
+    l_result->stage2_parser = l_stage2; // Keep Stage 2 alive for Arena lifetime
     
-    // Cleanup parsers (value is now owned by wrapper)
-    dap_json_stage2_free(l_stage2);
+    // Cleanup Stage 1 only (Stage 2 will be freed when l_result is freed)
     dap_json_stage1_free(l_stage1);
     
     return l_result;
@@ -272,15 +273,21 @@ void dap_json_object_free(dap_json_t* a_json)
     }
     
     // Decrement reference count
-    a_json->ref_count--;
     if (a_json->ref_count > 0) {
-        return; // Still referenced
+        a_json->ref_count--;
+        if (a_json->ref_count > 0) {
+            return; // Still referenced
+        }
     }
     
-    // Free internal value only if we own it
-    if (a_json->owns_value && a_json->value) {
-        dap_json_value_v2_free(a_json->value);
+    // Free Stage 2 parser if we own it (this frees the Arena and all values)
+    if (a_json->stage2_parser) {
+        dap_json_stage2_free(a_json->stage2_parser);
+        a_json->stage2_parser = NULL;
     }
+    
+    // NOTE: dap_json_value_v2_free is NO-OP when using Arena
+    // Memory is freed by dap_json_stage2_free which calls dap_arena_free
     
     // Free wrapper
     DAP_DELETE(a_json);

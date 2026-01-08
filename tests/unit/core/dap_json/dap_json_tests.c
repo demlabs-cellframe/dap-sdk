@@ -1155,6 +1155,8 @@ int main(void) {
         return -1;
     }
     
+    dap_json_init(); // Initialize Stage 1 dispatch
+    
     bool l_all_passed = true;
     
     // Basic functionality tests

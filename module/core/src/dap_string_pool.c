@@ -58,6 +58,7 @@ struct dap_string_pool {
     size_t capacity;                         // Table capacity
     size_t count;                            // Number of strings
     dap_arena_t *arena;                      // Arena for string storage
+    bool owns_arena;                         // True if arena should be freed on cleanup
     bool thread_safe;                        // Thread-safe flag
     pthread_mutex_t mutex;                   // Mutex for thread safety
     
@@ -177,7 +178,7 @@ static bool s_rehash(dap_string_pool_t *a_pool)
 /**
  * @brief Create new string pool
  */
-dap_string_pool_t *dap_string_pool_new(size_t a_initial_capacity)
+dap_string_pool_t *dap_string_pool_new(dap_arena_t *a_arena, size_t a_initial_capacity)
 {
     if (a_initial_capacity == 0) {
         a_initial_capacity = DAP_STRING_POOL_DEFAULT_CAPACITY;
@@ -209,13 +210,19 @@ dap_string_pool_t *dap_string_pool_new(size_t a_initial_capacity)
         return NULL;
     }
     
-    // Create arena for string storage
-    l_pool->arena = dap_arena_new(4096);
-    if (!l_pool->arena) {
-        log_it(L_ERROR, "Failed to create arena");
-        DAP_DELETE(l_pool->table);
-        DAP_DELETE(l_pool);
-        return NULL;
+    // Use provided arena or create internal one
+    if (a_arena) {
+        l_pool->arena = a_arena;
+        l_pool->owns_arena = false;
+    } else {
+        l_pool->arena = dap_arena_new(4096);
+        if (!l_pool->arena) {
+            log_it(L_ERROR, "Failed to create arena");
+            DAP_DELETE(l_pool->table);
+            DAP_DELETE(l_pool);
+            return NULL;
+        }
+        l_pool->owns_arena = true;
     }
     
     l_pool->capacity = a_initial_capacity;
@@ -235,7 +242,7 @@ dap_string_pool_t *dap_string_pool_new(size_t a_initial_capacity)
  */
 dap_string_pool_t *dap_string_pool_new_thread_safe(size_t a_initial_capacity)
 {
-    dap_string_pool_t *l_pool = dap_string_pool_new(a_initial_capacity);
+    dap_string_pool_t *l_pool = dap_string_pool_new(NULL, a_initial_capacity); // NULL = create internal arena
     if (!l_pool) {
         return NULL;
     }
@@ -459,7 +466,11 @@ void dap_string_pool_free(dap_string_pool_t *a_pool)
         pthread_mutex_destroy(&a_pool->mutex);
     }
     
-    dap_arena_free(a_pool->arena);
+    // Only free arena if we own it
+    if (a_pool->owns_arena && a_pool->arena) {
+        dap_arena_free(a_pool->arena);
+    }
+    
     DAP_DELETE(a_pool->table);
     DAP_DELETE(a_pool);
     

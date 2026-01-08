@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "dap_arena.h"  // For dap_arena_t parameter
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,10 +77,11 @@ typedef struct {
 /**
  * @brief Create new string pool
  * 
+ * @param[in] a_arena Arena allocator for all pool allocations (if NULL, creates internal arena)
  * @param[in] a_initial_capacity Initial hash table capacity (power of 2 recommended)
  * @return New string pool, or NULL on allocation failure
  */
-dap_string_pool_t *dap_string_pool_new(size_t a_initial_capacity);
+dap_string_pool_t *dap_string_pool_new(dap_arena_t *a_arena, size_t a_initial_capacity);
 
 /**
  * @brief Create thread-safe string pool

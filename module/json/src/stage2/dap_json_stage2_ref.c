@@ -369,41 +369,16 @@ dap_json_value_t *dap_json_value_v2_create_object(void)
 
 /**
  * @brief Free JSON value recursively
+ * 
+ * @note When using Arena allocator (Phase 1.5), this function is a NO-OP.
+ *       All memory is owned by the Arena and will be freed when the Arena is freed.
+ *       This function is kept for API compatibility but does nothing.
  */
 void dap_json_value_v2_free(dap_json_value_t *a_value)
 {
-    if(!a_value) {
-        return;
-    }
-    
-    switch(a_value->type) {
-        case DAP_JSON_TYPE_STRING:
-            if(a_value->string.needs_free && a_value->string.data) {
-                DAP_DELETE(a_value->string.data);
-            }
-            break;
-        
-        case DAP_JSON_TYPE_ARRAY:
-            for(size_t i = 0; i < a_value->array.count; i++) {
-                dap_json_value_v2_free(a_value->array.elements[i]);
-            }
-            DAP_DELETE(a_value->array.elements);
-            break;
-        
-        case DAP_JSON_TYPE_OBJECT:
-            for(size_t i = 0; i < a_value->object.count; i++) {
-                DAP_DELETE(a_value->object.pairs[i].key);
-                dap_json_value_v2_free(a_value->object.pairs[i].value);
-            }
-            DAP_DELETE(a_value->object.pairs);
-            break;
-        
-        default:
-            // NULL, BOOL, NUMBER - no cleanup needed
-            break;
-    }
-    
-    DAP_DELETE(a_value);
+    // NO-OP: All memory is managed by Arena allocator
+    // Memory will be freed when dap_arena_free() is called
+    (void)a_value;
 }
 
 /* ========================================================================== */
@@ -973,12 +948,13 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     }
     
     // Create String Pool for object keys (estimate: token_count / 4)
+    // String Pool will use the same Arena for all allocations
     size_t l_string_pool_capacity = a_stage1->indices_count / 4;
     if (l_string_pool_capacity < 32) {
         l_string_pool_capacity = 32;
     }
     
-    l_stage2->string_pool = dap_string_pool_new(l_string_pool_capacity);
+    l_stage2->string_pool = dap_string_pool_new(l_stage2->arena, l_string_pool_capacity);
     if (!l_stage2->string_pool) {
         log_it(L_ERROR, "Failed to create String Pool");
         dap_arena_free(l_stage2->arena);

@@ -418,6 +418,7 @@ int dap_json_invalid_tests_run(void) {
  */
 int main(void) {
     dap_print_module_name("DAP JSON Invalid Format Tests");
+    dap_json_init(); // Initialize Stage 1 dispatch
     return dap_json_invalid_tests_run();
 }
 
