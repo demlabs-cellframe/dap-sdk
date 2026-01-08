@@ -170,3 +170,25 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     LABELS "unit;core;arena;memory"
 )
 
+# ============================================================================
+# Test: DAP String Pool
+# ============================================================================
+project(test_dap_string_pool)
+
+add_executable(${PROJECT_NAME}
+    test_dap_string_pool.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;string_pool;memory"
+)
+
