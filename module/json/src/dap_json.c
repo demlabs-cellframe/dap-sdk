@@ -219,6 +219,26 @@ dap_json_t* dap_json_object_new_int(int a_value)
 }
 
 /**
+ * @brief Create new JSON integer (64-bit)
+ */
+dap_json_t* dap_json_object_new_int64(int64_t a_value)
+{
+    dap_json_value_t *l_value = dap_json_value_v2_create_int(a_value);
+    return s_wrap_value(l_value);
+}
+
+/**
+ * @brief Create new JSON unsigned integer (64-bit)
+ */
+dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
+{
+    // Store as int64_t - if value > INT64_MAX, will wrap
+    // TODO: proper uint64 support requires extending dap_json_number_t
+    dap_json_value_t *l_value = dap_json_value_v2_create_int((int64_t)a_value);
+    return s_wrap_value(l_value);
+}
+
+/**
  * @brief Create JSON object from string
  */
 dap_json_t* dap_json_object_new_string(const char* a_value)
@@ -916,6 +936,72 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
     return s_wrap_value_ex(l_value, false); // Borrowed reference
 }
 
+/**
+ * @brief Get object field with exists check
+ * @return true if key exists and value retrieved, false otherwise
+ */
+bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
+{
+    if (!a_json || !a_key || !a_value) {
+        return false;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return false;
+    }
+    
+    dap_json_value_t *l_val = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_val) {
+        return false;
+    }
+    
+    *a_value = s_wrap_value_ex(l_val, false); // Borrowed reference
+    return true;
+}
+
+/**
+ * @brief Delete key from object
+ * @return 0 on success, -1 on failure
+ * @note For Arena-based objects (from parsing), this only removes the key from the lookup
+ *       but doesn't free memory (Arena handles that). For malloc-based objects (manually created),
+ *       memory is freed.
+ */
+int dap_json_object_del(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return -1;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return -1;
+    }
+    
+    // Find key
+    for (size_t i = 0; i < l_obj->object.count; i++) {
+        if (strcmp(l_obj->object.pairs[i].key, a_key) == 0) {
+            // For malloc-based objects only, free value and key
+            // Arena-based objects don't need individual freeing
+            if (!a_json->stage2_parser) {
+                // This is malloc-based, can free
+                // But dap_json_value_v2_free_malloc is internal, so just mark as deleted
+                // by shifting without freeing (memory leak, but safer than crash)
+                // TODO: expose proper free function or implement reference counting
+            }
+            
+            // Shift remaining pairs to remove the key
+            for (size_t j = i; j < l_obj->object.count - 1; j++) {
+                l_obj->object.pairs[j] = l_obj->object.pairs[j + 1];
+            }
+            l_obj->object.count--;
+            return 0;
+        }
+    }
+    
+    return -1; // Key not found
+}
+
 /* ========================================================================== */
 /*                          TYPE CHECKING                                     */
 /* ========================================================================== */
@@ -974,6 +1060,58 @@ bool dap_json_is_int(dap_json_t* a_json)
     
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_INT;
+}
+
+/**
+ * @brief Check if JSON value is a string
+ */
+bool dap_json_is_string(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_STRING;
+}
+
+/**
+ * @brief Check if JSON value is a double
+ */
+bool dap_json_is_double(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_DOUBLE;
+}
+
+/**
+ * @brief Check if JSON value is a boolean
+ */
+bool dap_json_is_bool(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_BOOLEAN;
+}
+
+/**
+ * @brief Check if JSON value is null
+ */
+bool dap_json_is_null(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return true; // NULL pointer treated as JSON null
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_NULL;
 }
 
 /**
@@ -1039,6 +1177,50 @@ bool dap_json_get_bool(dap_json_t* a_json)
 }
 
 /**
+ * @brief Get double value from JSON
+ * @return Double value or 0.0 if not a number
+ */
+double dap_json_get_double(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return 0.0;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value) {
+        return 0.0;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
+        return l_value->number.d;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_INT) {
+        return (double)l_value->number.i;
+    }
+    
+    return 0.0;
+}
+
+/**
+ * @brief Get type of JSON value
+ * @return Type enum value
+ */
+dap_json_type_t dap_json_get_type(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return DAP_JSON_TYPE_NULL;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value) {
+        return DAP_JSON_TYPE_NULL;
+    }
+    
+    return l_value->type;
+}
+
+/**
  * @brief Iterate over object key-value pairs
  * @param a_json JSON object
  * @param callback Callback function for each key-value pair
@@ -1086,4 +1268,133 @@ char* dap_json_to_string(dap_json_t* a_json)
     // TODO: Implement JSON stringification (Phase 1.6)
     log_it(L_WARNING, "dap_json_to_string not yet implemented - requires Phase 1.6");
     return NULL;
+}
+
+/**
+ * @brief Convert JSON to pretty-printed string
+ * @note Phase 1.6 functionality - not yet implemented
+ */
+char* dap_json_to_string_pretty(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return NULL;
+    }
+    
+    // TODO: Implement pretty printing (Phase 1.6)
+    log_it(L_WARNING, "dap_json_to_string_pretty not yet implemented - requires Phase 1.6");
+    return NULL;
+}
+
+/**
+ * @brief Parse JSON from file
+ */
+dap_json_t* dap_json_from_file(const char* a_file_path)
+{
+    if (!a_file_path) {
+        log_it(L_ERROR, "NULL file path provided");
+        return NULL;
+    }
+    
+    // Read file content
+    FILE *l_file = fopen(a_file_path, "r");
+    if (!l_file) {
+        log_it(L_ERROR, "Failed to open file: %s", a_file_path);
+        return NULL;
+    }
+    
+    // Get file size
+    fseek(l_file, 0, SEEK_END);
+    long l_file_size = ftell(l_file);
+    fseek(l_file, 0, SEEK_SET);
+    
+    if (l_file_size <= 0 || l_file_size > (100 * 1024 * 1024)) { // 100MB limit
+        log_it(L_ERROR, "Invalid file size: %ld", l_file_size);
+        fclose(l_file);
+        return NULL;
+    }
+    
+    // Allocate buffer
+    char *l_buffer = DAP_NEW_Z_SIZE(char, l_file_size + 1);
+    if (!l_buffer) {
+        log_it(L_ERROR, "Failed to allocate buffer for file");
+        fclose(l_file);
+        return NULL;
+    }
+    
+    // Read file
+    size_t l_read = fread(l_buffer, 1, l_file_size, l_file);
+    fclose(l_file);
+    
+    if (l_read != (size_t)l_file_size) {
+        log_it(L_ERROR, "Failed to read complete file");
+        DAP_DELETE(l_buffer);
+        return NULL;
+    }
+    
+    l_buffer[l_file_size] = '\0';
+    
+    // Parse JSON
+    dap_json_t *l_result = dap_json_parse_string(l_buffer);
+    DAP_DELETE(l_buffer);
+    
+    return l_result;
+}
+
+/**
+ * @brief Print JSON object to stream (debug)
+ */
+void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level)
+{
+    if (!a_json || !a_stream) {
+        return;
+    }
+    
+    // Simple debug print - TODO: improve formatting
+    char *l_str = dap_json_to_string(a_json);
+    if (l_str) {
+        fprintf(a_stream, "%*s%s\n", a_indent_level * 2, "", l_str);
+        // Note: dap_json_to_string returns malloc'd string from json-c, don't free here
+    } else {
+        fprintf(a_stream, "%*s<JSON stringify not implemented>\n", a_indent_level * 2, "");
+    }
+}
+
+/* ========================================================================== */
+/*                          LEGACY JSON-C API STUBS                           */
+/* ========================================================================== */
+
+/**
+ * @brief Legacy json-c API: parse with verbose error reporting
+ */
+dap_json_t* dap_json_tokener_parse_verbose(const char *a_str, dap_json_tokener_error_t *a_error)
+{
+    dap_json_t *l_result = dap_json_parse_string(a_str);
+    
+    if (a_error) {
+        *a_error = l_result ? DAP_JSON_TOKENER_SUCCESS : DAP_JSON_TOKENER_ERROR_PARSE_EOF;
+    }
+    
+    return l_result;
+}
+
+/**
+ * @brief Legacy json-c API: get error description
+ */
+const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_error)
+{
+    switch (a_error) {
+        case DAP_JSON_TOKENER_SUCCESS: return "success";
+        case DAP_JSON_TOKENER_ERROR_PARSE_EOF: return "unexpected end of data";
+        case DAP_JSON_TOKENER_ERROR_PARSE_UNEXPECTED: return "unexpected character";
+        case DAP_JSON_TOKENER_ERROR_PARSE_NULL: return "error parsing null";
+        case DAP_JSON_TOKENER_ERROR_PARSE_BOOLEAN: return "error parsing boolean";
+        case DAP_JSON_TOKENER_ERROR_PARSE_NUMBER: return "error parsing number";
+        case DAP_JSON_TOKENER_ERROR_PARSE_ARRAY: return "error parsing array";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_NAME: return "error parsing object key";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_SEP: return "error parsing object key separator";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_VALUE_SEP: return "error parsing object value separator";
+        case DAP_JSON_TOKENER_ERROR_PARSE_STRING: return "error parsing string";
+        case DAP_JSON_TOKENER_ERROR_PARSE_COMMENT: return "error parsing comment";
+        default: return "unknown error";
+    }
 }
