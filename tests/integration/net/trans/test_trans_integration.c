@@ -179,18 +179,24 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     
     log_it(L_DEBUG, "Cleaning up test context for scenario '%s'", a_ctx->scenario.name);
     
-    // Cleanup clients
+    // Cleanup clients - MUST wait for async deletion!
     if (a_ctx->clients) {
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->clients[i]) {
+                // Start async deletion
                 dap_client_delete_mt(a_ctx->clients[i]);
+                
+                // CRITICAL: Wait for deletion to complete before freeing associated data
+                if (!test_wait_for_client_deleted(&a_ctx->clients[i], 2000)) {
+                    log_it(L_WARNING, "Client #%zu deletion timeout", i);
+                }
                 a_ctx->clients[i] = NULL;
             }
         }
         DAP_DEL_Z(a_ctx->clients);
     }
     
-    // Cleanup stream contexts
+    // NOW safe to cleanup stream contexts (clients are fully deleted)
     if (a_ctx->stream_ctxs) {
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->stream_ctxs[i].sent_data) {
