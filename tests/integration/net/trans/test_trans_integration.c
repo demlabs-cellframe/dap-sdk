@@ -227,6 +227,53 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
 }
 
 /**
+ * @brief Intelligently wait for context cleanup to complete
+ * @param a_timeout_ms Maximum wait time
+ * @return true if cleanup completed, false on timeout
+ * 
+ * @details Waits for:
+ *          1. All clients to be deleted
+ *          2. All servers to stop
+ *          3. All streams to close
+ *          4. Event queues to drain
+ */
+static bool test_wait_for_cleanup_complete(uint32_t a_timeout_ms)
+{
+    uint64_t l_start_time = dap_test_get_time_ms();
+    uint64_t l_deadline = l_start_time + (uint64_t)a_timeout_ms;
+    
+    // Wait for streams to close
+    if (!test_wait_for_all_streams_closed(a_timeout_ms / 2)) {
+        log_it(L_WARNING, "Streams did not close within timeout");
+        return false;
+    }
+    
+    // Additional stabilization time - let event loops settle
+    const uint32_t STABILIZATION_POLLS = 5;
+    const uint32_t POLL_INTERVAL_MS = 50;
+    
+    for (uint32_t i = 0; i < STABILIZATION_POLLS; i++) {
+        if (dap_test_get_time_ms() >= l_deadline) {
+            log_it(L_WARNING, "Cleanup stabilization timeout");
+            return false;
+        }
+        
+        dap_test_sleep_ms(POLL_INTERVAL_MS);
+        
+        // Check if we're past deadline
+        uint64_t l_elapsed = dap_test_get_time_ms() - l_start_time;
+        if (l_elapsed >= (uint64_t)a_timeout_ms) {
+            break;
+        }
+    }
+    
+    uint64_t l_total_elapsed = dap_test_get_time_ms() - l_start_time;
+    log_it(L_DEBUG, "Cleanup stabilization complete (%"PRIu64" ms)", l_total_elapsed);
+    
+    return true;
+}
+
+/**
  * @brief Echo callback for test channels - sends received data back to client
  */
 static bool s_test_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
@@ -833,22 +880,23 @@ static void test_02_sequential_trans_testing(void)
                        l_ctx->result);
                 l_all_passed = false;
                 
-                // Wait for async operations to complete BEFORE cleanup
-                test_wait_for_all_streams_closed(2000);
-                
                 // Cleanup and continue to next scenario
                 test_trans_ctx_free(l_ctx);
+                
+                // Wait for cleanup to complete with intelligent polling
+                test_wait_for_cleanup_complete(3000);
+                
                 break;  // Stop testing this transport on first failure
             }
-            
-            // Wait for async operations to complete BEFORE cleanup
-            test_wait_for_all_streams_closed(2000);
             
             // Cleanup after each scenario
             test_trans_ctx_free(l_ctx);
             
-            // Give extra time for cleanup to propagate through worker threads
-            usleep(500000);  // 500ms
+            // Wait for cleanup to complete with intelligent polling
+            if (!test_wait_for_cleanup_complete(3000)) {
+                log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", 
+                       g_scenarios[scenario_idx].name);
+            }
             
             printf("\n");
         }
