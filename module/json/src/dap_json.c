@@ -3,637 +3,914 @@
  * Dmitry Gerasimov <ceo@cellframe.net>
  * DeM Labs Inc.   https://demlabs.net
  * DAP SDK  https://gitlab.demlabs.net/dap/dap-sdk
- * Copyright  (c) 2025
+ * Copyright  (c) 2025-2026
  * All rights reserved.
+ *
+ * This file is part of DAP SDK the open source project
+ *
+ *    DAP SDK is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ *
+ *    DAP SDK is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    GNU General Public License for more details.
+ *
+ *    You should have received a copy of the GNU General Public License
+ *    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
- This file is part of DAP SDK the open source project
+/**
+ * @file dap_json.c
+ * @brief Native JSON Parser - Public API Adapter
+ * @details Adapter layer между старым dap_json API и новым native parser (Stage 1 + Stage 2)
+ * 
+ * Architecture:
+ *   dap_json.h (public API)
+ *      ↓
+ *   dap_json.c (THIS FILE - adapter)
+ *      ↓
+ *   Stage 1 (tokenization) + Stage 2 (DOM building)
+ * 
+ * Key design decisions:
+ * - dap_json_t wraps dap_json_value_t from Stage 2
+ * - Parse operations use Stage 1 → Stage 2 pipeline
+ * - Creation operations directly create dap_json_value_t
+ * - Zero json-c dependencies
+ */
 
-    DAP SDK is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP SDK is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
+#include "dap_common.h"
 #include "dap_json.h"
-#include "dap_strfuncs.h"
-#include "json.h"
-#include "json_object.h"
-#include "internal/dap_json_stage1.h"  // For Stage 1 dispatch init
+#include "dap_json_type.h"
+#include "internal/dap_json_stage1.h"
+#include "internal/dap_json_stage2.h"
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 
 #define LOG_TAG "dap_json"
 
+/* ========================================================================== */
+/*                          INTERNAL STRUCTURES                               */
+/* ========================================================================== */
+
 /**
- * @brief Initialize dap_json module (call once at startup)
- * @details Initializes CPU feature detection for optimal SIMD dispatch
+ * @brief Wrapper structure for public API
+ * @details Wraps dap_json_value_t for backward compatibility with old API
+ */
+struct dap_json {
+    dap_json_value_t *value;     /**< Internal native value */
+    int ref_count;               /**< Reference counter for dap_json_object_ref */
+    bool owns_value;             /**< True if wrapper owns value and should free it */
+};
+
+/* ========================================================================== */
+/*                          MODULE INITIALIZATION                             */
+/* ========================================================================== */
+
+/**
+ * @brief Initialize JSON module
  */
 void dap_json_init(void)
 {
+    // Initialize Stage 1 dispatch (CPU detection)
     dap_json_stage1_init_dispatch();
+    
+    log_it(L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
+           dap_json_get_arch_name(dap_json_get_simd_arch()));
+}
+
+/* ========================================================================== */
+/*                          HELPER FUNCTIONS                                  */
+/* ========================================================================== */
+
+// Forward declaration
+static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns);
+
+/**
+ * @brief Wrap dap_json_value_t into dap_json_t (with ownership)
+ */
+static inline dap_json_t* s_wrap_value(dap_json_value_t *a_value)
+{
+    return s_wrap_value_ex(a_value, true);
 }
 
 /**
- * @brief Internal DAP JSON structure - opaque to users
- * Can represent both JSON objects and arrays internally
+ * @brief Wrap dap_json_value_t into dap_json_t (with optional ownership)
  */
-struct dap_json {
-    void *pvt;      // Internal json-c object pointer (struct json_object*)
-};
-
-static void s_json_object_feee_cb(struct json_object *a_json_obj, void *a_userdata)
+static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns)
 {
-    DAP_FREE(a_userdata);
-}
-
-// Helper functions for internal type conversion
-static inline struct json_object* _dap_json_to_json_c(dap_json_t* a_dap_json) {
-    return a_dap_json ? (struct json_object*)a_dap_json->pvt : NULL;
-}
-
-static inline dap_json_t* _json_c_to_dap_json(struct json_object* a_json_obj)
-{
-    dap_return_val_if_fail(a_json_obj, NULL);
-
-    if (json_object_get_userdata(a_json_obj))
-        return (dap_json_t*)json_object_get_userdata(a_json_obj);
+    if (!a_value) {
+        return NULL;
+    }
     
-    dap_json_t *l_dap_json = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_t, NULL);
-    l_dap_json->pvt = a_json_obj;
-    json_object_set_userdata(a_json_obj, l_dap_json, s_json_object_feee_cb);
-
-    return l_dap_json;
+    dap_json_t *l_json = DAP_NEW_Z(dap_json_t);
+    if (!l_json) {
+        log_it(L_ERROR, "Failed to allocate dap_json_t wrapper");
+        return NULL;
+    }
+    
+    l_json->value = a_value;
+    l_json->ref_count = 1;
+    l_json->owns_value = a_owns;
+    return l_json;
 }
 
-// Object creation and destruction
-dap_json_t* dap_json_object_new(void)
+/**
+ * @brief Unwrap dap_json_t to get dap_json_value_t
+ */
+static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 {
-    struct json_object* l_json_obj = json_object_new_object();
-    return _json_c_to_dap_json(l_json_obj);
+    return a_json ? a_json->value : NULL;
 }
 
+/* ========================================================================== */
+/*                          PARSING FUNCTIONS                                 */
+/* ========================================================================== */
+
+/**
+ * @brief Parse JSON string using native parser (Stage 1 + Stage 2)
+ */
 dap_json_t* dap_json_parse_string(const char* a_json_string)
 {
     if (!a_json_string) {
-        log_it(L_ERROR, "JSON string is NULL");
+        log_it(L_ERROR, "NULL JSON string");
         return NULL;
     }
     
-    enum json_tokener_error jerr;
-    struct json_object *l_json = json_tokener_parse_verbose(a_json_string, &jerr);
-    
-    if (jerr != json_tokener_success) {
-        log_it(L_ERROR, "Failed to parse JSON: %s", json_tokener_error_desc(jerr));
+    size_t l_len = strlen(a_json_string);
+    if (l_len == 0) {
+        log_it(L_ERROR, "Empty JSON string");
         return NULL;
     }
     
-    return _json_c_to_dap_json(l_json);
+    // Stage 1: Tokenization
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_init((const uint8_t*)a_json_string, l_len);
+    if (!l_stage1) {
+        log_it(L_ERROR, "Failed to initialize Stage 1");
+        return NULL;
+    }
+    
+    int l_ret = dap_json_stage1_run(l_stage1);
+    if (l_ret != STAGE1_SUCCESS) {
+        log_it(L_ERROR, "Stage 1 tokenization failed: error %d", l_ret);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+    
+    // Stage 2: DOM Building
+    dap_json_stage2_t *l_stage2 = dap_json_stage2_init(l_stage1);
+    if (!l_stage2) {
+        log_it(L_ERROR, "Failed to initialize Stage 2");
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+    
+    dap_json_stage2_error_t l_err = dap_json_stage2_run(l_stage2);
+    if (l_err != STAGE2_SUCCESS) {
+        log_it(L_ERROR, "Failed to parse JSON: %s", dap_json_stage2_error_to_string(l_err));
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+    
+    // Get root value
+    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
+    if (!l_root) {
+        log_it(L_ERROR, "Stage 2 returned NULL root");
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+    
+    // Wrap for public API
+    dap_json_t *l_result = s_wrap_value(l_root);
+    
+    // Cleanup parsers (value is now owned by wrapper)
+    dap_json_stage2_free(l_stage2);
+    dap_json_stage1_free(l_stage1);
+    
+    return l_result;
 }
 
+/* ========================================================================== */
+/*                          OBJECT CREATION                                   */
+/* ========================================================================== */
+
+/**
+ * @brief Create new empty JSON object
+ */
+dap_json_t* dap_json_object_new(void)
+{
+    dap_json_value_t *l_value = dap_json_value_v2_create_object();
+    return s_wrap_value(l_value);
+}
+
+/**
+ * @brief Create JSON object from integer
+ */
+dap_json_t* dap_json_object_new_int(int a_value)
+{
+    dap_json_value_t *l_value = dap_json_value_v2_create_int((int64_t)a_value);
+    return s_wrap_value(l_value);
+}
+
+/**
+ * @brief Create JSON object from string
+ */
+dap_json_t* dap_json_object_new_string(const char* a_value)
+{
+    if (!a_value) {
+        return NULL;
+    }
+    return dap_json_object_new_string_len(a_value, (int)strlen(a_value));
+}
+
+/**
+ * @brief Create JSON object from string with length
+ */
+dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
+{
+    if (!a_value || a_len < 0) {
+        return NULL;
+    }
+    dap_json_value_t *l_value = dap_json_value_v2_create_string(a_value, (size_t)a_len);
+    return s_wrap_value(l_value);
+}
+
+/**
+ * @brief Create JSON object from double
+ */
+dap_json_t* dap_json_object_new_double(double a_value)
+{
+    dap_json_value_t *l_value = dap_json_value_v2_create_double(a_value);
+    return s_wrap_value(l_value);
+}
+
+/**
+ * @brief Create JSON object from boolean
+ */
+dap_json_t* dap_json_object_new_bool(bool a_value)
+{
+    dap_json_value_t *l_value = dap_json_value_v2_create_bool(a_value);
+    return s_wrap_value(l_value);
+}
+
+/* ========================================================================== */
+/*                          OBJECT DESTRUCTION                                */
+/* ========================================================================== */
+
+/**
+ * @brief Free JSON object
+ */
 void dap_json_object_free(dap_json_t* a_json)
 {
-    if (a_json) {
-        struct json_object* l_json_obj = _dap_json_to_json_c(a_json);
-        json_object_put(l_json_obj);
-        // NOT freeing the wrapper itself, it will be freed by the callback
+    if (!a_json) {
+        return;
     }
+    
+    // Decrement reference count
+    a_json->ref_count--;
+    if (a_json->ref_count > 0) {
+        return; // Still referenced
+    }
+    
+    // Free internal value only if we own it
+    if (a_json->owns_value && a_json->value) {
+        dap_json_value_v2_free(a_json->value);
+    }
+    
+    // Free wrapper
+    DAP_DELETE(a_json);
 }
 
-// Array creation and manipulation
+/**
+ * @brief Increment reference count
+ */
+dap_json_t* dap_json_object_ref(dap_json_t* a_json)
+{
+    if (a_json) {
+        a_json->ref_count++;
+    }
+    return a_json;
+}
+
+/* ========================================================================== */
+/*                          ARRAY CREATION                                    */
+/* ========================================================================== */
+
+/**
+ * @brief Create new empty JSON array
+ */
 dap_json_t* dap_json_array_new(void)
 {
-    struct json_object* l_json_array = json_object_new_array();
-    return _json_c_to_dap_json(l_json_array);
+    dap_json_value_t *l_value = dap_json_value_v2_create_array();
+    return s_wrap_value(l_value);
 }
 
+/* ========================================================================== */
+/*                          ARRAY MANIPULATION                                */
+/* ========================================================================== */
+
+/**
+ * @brief Add item to array
+ */
 int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 {
     if (!a_array || !a_item) {
-        log_it(L_ERROR, "Array or item is NULL");
-        return -1;
-    }
-
-    return json_object_array_add(_dap_json_to_json_c(a_array), _dap_json_to_json_c(a_item));
-}
-
-int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
-{
-    if (!a_array) {
-        log_it(L_ERROR, "Array is NULL");
+        log_it(L_ERROR, "NULL array or item");
         return -1;
     }
     
-    json_object *l_arr = _dap_json_to_json_c(a_array);
-    if (!l_arr) return -1;
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    dap_json_value_t *l_item = s_unwrap_value(a_item);
     
-    // Delete elements one by one
-    for (size_t i = 0; i < a_count; i++) {
-        json_object_array_del_idx(l_arr, a_idx, 1);
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        log_it(L_ERROR, "Not an array");
+        return -1;
     }
     
-    return 0;
+    if (!l_item) {
+        log_it(L_ERROR, "NULL item value");
+        return -1;
+    }
+    
+    return dap_json_array_v2_add(l_array, l_item) ? 0 : -1;
 }
 
+/**
+ * @brief Get array length
+ */
 size_t dap_json_array_length(dap_json_t* a_array)
 {
     if (!a_array) {
         return 0;
     }
     
-    return json_object_array_length(_dap_json_to_json_c(a_array));
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        return 0;
+    }
+    
+    return l_array->array.count;
 }
 
+/**
+ * @brief Get array element by index
+ */
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
 {
     if (!a_array) {
         return NULL;
     }
     
-    return _json_c_to_dap_json(json_object_array_get_idx(_dap_json_to_json_c(a_array), a_idx));
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        return NULL;
+    }
+    
+    if (a_idx >= l_array->array.count) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = l_array->array.elements[a_idx];
+    return s_wrap_value_ex(l_value, false); // Borrowed reference
 }
 
-static int s_sort_fn_wrapper(const void *a, const void *b, void *a_user_arg)
+/**
+ * @brief Delete array elements
+ */
+int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
 {
-    dap_json_sort_fn_t l_sort_fn = (dap_json_sort_fn_t)a_user_arg;
-    struct json_object *obj_a = *(struct json_object **)a;
-    struct json_object *obj_b = *(struct json_object **)b;
-    return l_sort_fn(_json_c_to_dap_json(obj_a), _json_c_to_dap_json(obj_b));
+    if (!a_array) {
+        return -1;
+    }
+    
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        return -1;
+    }
+    
+    if (a_idx >= l_array->array.count || a_count == 0) {
+        return -1;
+    }
+    
+    // Limit count to available elements
+    if (a_idx + a_count > l_array->array.count) {
+        a_count = l_array->array.count - a_idx;
+    }
+    
+    // Free elements
+    for (size_t i = 0; i < a_count; i++) {
+        dap_json_value_v2_free(l_array->array.elements[a_idx + i]);
+    }
+    
+    // Shift remaining elements
+    if (a_idx + a_count < l_array->array.count) {
+        memmove(&l_array->array.elements[a_idx],
+                &l_array->array.elements[a_idx + a_count],
+                (l_array->array.count - a_idx - a_count) * sizeof(dap_json_value_t*));
+    }
+    
+    l_array->array.count -= a_count;
+    
+    return 0;
 }
 
+/**
+ * @brief Sort array
+ */
 void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
 {
-    if (!a_array || !a_sort_fn)
+    if (!a_array || !a_sort_fn) {
         return;
-    json_object_array_sort_r(_dap_json_to_json_c(a_array), s_sort_fn_wrapper, (void *)a_sort_fn);
+    }
+    
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        return;
+    }
+    
+    // TODO: Implement sorting using a_sort_fn
+    // For now, not implemented
+    log_it(L_WARNING, "dap_json_array_sort not yet implemented in native parser");
 }
 
-// Object field manipulation
+/* ========================================================================== */
+/*                          OBJECT FIELD ADDITION                             */
+/* ========================================================================== */
+
+/**
+ * @brief Add string field to object
+ */
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value)
 {
-    if (!a_json || !a_key || !a_value) {
-        log_it(L_ERROR, "JSON object, key or value is NULL");
-        return -1;
+    if (!a_value) {
+        return dap_json_object_add_null(a_json, a_key);
     }
-    
-    struct json_object *l_string = json_object_new_string(a_value);
-    if (!l_string) {
-        log_it(L_ERROR, "Failed to create JSON string object");
-        return -1;
-    }
-    
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+    return dap_json_object_add_string_len(a_json, a_key, a_value, (int)strlen(a_value));
 }
 
+/**
+ * @brief Add string field with length to object
+ */
 int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len)
 {
-    if (!a_json || !a_key || !a_value) {
-        log_it(L_ERROR, "JSON object, key or value is NULL");
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "NULL object or key");
         return -1;
     }
     
-    struct json_object *l_string = json_object_new_string_len(a_value, a_len);
-    if (!l_string) {
-        log_it(L_ERROR, "Failed to create JSON string object");
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
         return -1;
     }
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+    dap_json_value_t *l_value = a_value ? 
+        dap_json_value_v2_create_string(a_value, (size_t)a_len) :
+        dap_json_value_v2_create_null();
+    
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to create string value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
 }
 
+/**
+ * @brief Add integer field to object
+ */
 int dap_json_object_add_int(dap_json_t* a_json, const char* a_key, int a_value)
 {
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
-    }
-    
-    struct json_object *l_int = json_object_new_int(a_value);
-    if (!l_int) {
-        log_it(L_ERROR, "Failed to create JSON int object");
-        return -1;
-    }
-    
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_int);
+    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
 }
 
+/**
+ * @brief Add int64 field to object
+ */
 int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
+        log_it(L_ERROR, "NULL object or key");
         return -1;
     }
     
-    struct json_object *l_int64 = json_object_new_int64(a_value);
-    if (!l_int64) {
-        log_it(L_ERROR, "Failed to create JSON int64 object");
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
         return -1;
     }
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_int64);
+    dap_json_value_t *l_value = dap_json_value_v2_create_int(a_value);
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to create int value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
 }
 
+/**
+ * @brief Add uint64 field to object
+ */
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value)
 {
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
+    // Store as int64 if fits, otherwise as double
+    if (a_value <= INT64_MAX) {
+        return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
+    } else {
+        return dap_json_object_add_double(a_json, a_key, (double)a_value);
     }
-    
-    struct json_object *l_uint64 = json_object_new_uint64(a_value);
-    if (!l_uint64) {
-        log_it(L_ERROR, "Failed to create JSON uint64 object");
-        return -1;
-    }
-    
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_uint64);
 }
 
+/**
+ * @brief Add uint256 field to object
+ */
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value)
 {
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
-    }
-    
-    // Convert uint256 to string representation
-    char *l_str = dap_uint256_uninteger_to_char(a_value);
-    if (!l_str) {
-        log_it(L_ERROR, "Failed to convert uint256 to string");
-        return -1;
-    }
-    
-    struct json_object *l_string = json_object_new_string(l_str);
-    DAP_DELETE(l_str);
-    
-    if (!l_string) {
-        log_it(L_ERROR, "Failed to create JSON string object for uint256");
-        return -1;
-    }
-    
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_string);
+    // Convert uint256 to hex string representation
+    char l_str[128]; // 0x + 64 hex chars + null
+    snprintf(l_str, sizeof(l_str), "0x%016" PRIx64 "%016" PRIx64, 
+             (uint64_t)(a_value.hi), (uint64_t)(a_value.lo));
+    return dap_json_object_add_string(a_json, a_key, l_str);
 }
 
+/**
+ * @brief Add double field to object
+ */
 int dap_json_object_add_double(dap_json_t* a_json, const char* a_key, double a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
+        log_it(L_ERROR, "NULL object or key");
         return -1;
     }
     
-    struct json_object *l_double = json_object_new_double(a_value);
-    if (!l_double) {
-        log_it(L_ERROR, "Failed to create JSON double object");
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
         return -1;
     }
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_double);
+    dap_json_value_t *l_value = dap_json_value_v2_create_double(a_value);
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to create double value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
 }
 
+/**
+ * @brief Add boolean field to object
+ */
 int dap_json_object_add_bool(dap_json_t* a_json, const char* a_key, bool a_value)
 {
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
+        log_it(L_ERROR, "NULL object or key");
         return -1;
     }
     
-    struct json_object *l_bool = json_object_new_boolean(a_value);
-    if (!l_bool) {
-        log_it(L_ERROR, "Failed to create JSON boolean object");
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
         return -1;
     }
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, l_bool);
+    dap_json_value_t *l_value = dap_json_value_v2_create_bool(a_value);
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to create bool value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
 }
 
+/**
+ * @brief Add nanotime field to object
+ */
 int dap_json_object_add_nanotime(dap_json_t* a_json, const char* a_key, dap_nanotime_t a_value)
 {
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
-    }
-    
-    // Store as int64 for compatibility
-    return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
+    // Convert nanotime to uint64 and store
+    return dap_json_object_add_uint64(a_json, a_key, (uint64_t)a_value);
 }
 
+/**
+ * @brief Add time field to object
+ */
 int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a_value)
 {
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
-    }
-    
-    // Store as int64 for compatibility
+    // Convert time_t to int64 and store
     return dap_json_object_add_int64(a_json, a_key, (int64_t)a_value);
 }
 
+/**
+ * @brief Add null field to object
+ */
+int dap_json_object_add_null(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        log_it(L_ERROR, "NULL object or key");
+        return -1;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
+        return -1;
+    }
+    
+    dap_json_value_t *l_value = dap_json_value_v2_create_null();
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to create null value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
+}
+
+/**
+ * @brief Add object field to object
+ */
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value)
 {
     if (!a_json || !a_key || !a_value) {
-        log_it(L_ERROR, "JSON object, key or value is NULL");
+        log_it(L_ERROR, "NULL object, key or value");
         return -1;
     }
     
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_value));
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    dap_json_value_t *l_value = s_unwrap_value(a_value);
+    
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Not an object");
+        return -1;
+    }
+    
+    if (!l_value) {
+        log_it(L_ERROR, "NULL value");
+        return -1;
+    }
+    
+    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
 }
 
+/**
+ * @brief Add array field to object
+ */
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array)
 {
-    if (!a_json || !a_key || !a_array) {
-        log_it(L_ERROR, "JSON object, key or array is NULL");
-        return -1;
-    }
-    
-    return json_object_object_add(_dap_json_to_json_c(a_json), a_key, _dap_json_to_json_c(a_array));
+    return dap_json_object_add_object(a_json, a_key, a_array);
 }
 
-// Object field access
+/* ========================================================================== */
+/*                          OBJECT FIELD ACCESS                               */
+/* ========================================================================== */
+
+/**
+ * @brief Get string field from object
+ */
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
         return NULL;
     }
     
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return NULL;
     }
     
-    return json_object_get_string(l_obj);
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    
+    return l_value->string.data;
 }
 
+/**
+ * @brief Get integer field from object
+ */
 int dap_json_object_get_int(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json || !a_key) {
-        return 0;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return 0;
-    }
-    
-    return json_object_get_int(l_obj);
+    return (int)dap_json_object_get_int64(a_json, a_key);
 }
 
+/**
+ * @brief Get int64 field from object
+ */
 int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json || !a_key) {
-        return 0;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return 0;
-    }
-    
-    return json_object_get_int64(l_obj);
+    int64_t l_result = 0;
+    dap_json_object_get_int64_ext(a_json, a_key, &l_result);
+    return l_result;
 }
 
+/**
+ * @brief Get uint64 field from object
+ */
 uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json || !a_key) {
-        return 0;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return 0;
-    }
-    
-    return json_object_get_uint64(l_obj);
+    uint64_t l_result = 0;
+    dap_json_object_get_uint64_ext(a_json, a_key, &l_result);
+    return l_result;
 }
 
+/**
+ * @brief Get int64 field with error checking
+ */
 bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_t *a_out)
 {
-    dap_return_val_if_pass(!a_json || !a_key, false);
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return false;
-    }
-    if (a_out)
-        *a_out = json_object_get_int64(l_obj);
-    return true;
-}
-
-bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out)
-{
-    dap_return_val_if_pass(!a_json || !a_key, false);
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return false;
-    }
-    if (a_out)
-        *a_out = json_object_get_uint64(l_obj);
-    return true;
-}
-
-uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        return uint256_0;  // Return zero value for uint256
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return uint256_0;
-    }
-    
-    const char *l_str = json_object_get_string(l_obj);
-    if (!l_str) {
-        return uint256_0;
-    }
-    
-    return dap_uint256_scan_uninteger(l_str);
-}
-
-double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        return 0.0;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return 0.0;
-    }
-    
-    return json_object_get_double(l_obj);
-}
-
-bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
+    if (!a_json || !a_key || !a_out) {
         return false;
     }
     
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return false;
     }
     
-    return json_object_get_boolean(l_obj);
-}
-
-dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        return NULL;
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value) {
+        return false;
     }
     
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return NULL;
-    }
-    
-    return _json_c_to_dap_json(l_obj);
-}
-
-dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        return NULL;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return NULL;
-    }
-        
-    return _json_c_to_dap_json(l_obj);
-}
-
-// String conversion
-char* dap_json_to_string(dap_json_t* a_json)
-{
-    if (!a_json) {
-        return NULL;
-    }
-    
-    const char* l_json_str = json_object_to_json_string(_dap_json_to_json_c(a_json));
-    return l_json_str ? dap_strdup(l_json_str) : NULL;
-}
-
-char* dap_json_to_string_pretty(dap_json_t* a_json)
-{
-    if (!a_json) {
-        return NULL;
-    }
-    
-    const char *l_json_str = json_object_to_json_string_ext(_dap_json_to_json_c(a_json), JSON_C_TO_STRING_PRETTY);
-    return l_json_str ? dap_strdup(l_json_str) : NULL;
-}
-
-// Type checking
-bool dap_json_is_null(dap_json_t* a_json)
-{
-    if (!a_json) {
+    if (l_value->type == DAP_JSON_TYPE_INT) {
+        *a_out = l_value->number.i;
+        return true;
+    } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
+        *a_out = (int64_t)l_value->number.d;
         return true;
     }
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_null);
+    return false;
 }
 
-bool dap_json_is_string(dap_json_t* a_json)
+/**
+ * @brief Get uint64 field with error checking
+ */
+bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out)
 {
-    if (!a_json) {
+    if (!a_json || !a_key || !a_out) {
         return false;
     }
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_string);
-}
-
-bool dap_json_is_int(dap_json_t* a_json)
-{
-    if (!a_json) {
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return false;
     }
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_int);
-}
-
-bool dap_json_is_double(dap_json_t* a_json)
-{
-    if (!a_json) {
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value) {
         return false;
     }
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_double);
-}
-
-bool dap_json_is_bool(dap_json_t* a_json)
-{
-    if (!a_json) {
-        return false;
+    if (l_value->type == DAP_JSON_TYPE_INT) {
+        *a_out = (uint64_t)l_value->number.i;
+        return true;
+    } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
+        *a_out = (uint64_t)l_value->number.d;
+        return true;
     }
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_boolean);
+    return false;
 }
 
-bool dap_json_is_object(dap_json_t* a_json)
+/**
+ * @brief Get uint256 field from object
+ */
+uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json) {
-        return false;
-    }
+    uint256_t l_result = uint256_0;
     
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_object);
-}
-
-bool dap_json_is_array(dap_json_t* a_json)
-{
-    if (!a_json) {
-        return false;
-    }
-    
-    return json_object_is_type(_dap_json_to_json_c(a_json), json_type_array);
-}
-
-// Advanced object manipulation
-dap_json_t* dap_json_from_file(const char* a_file_path)
-{
-    if (!a_file_path) {
-        log_it(L_ERROR, "File path is NULL");
-        return NULL;
-    }
-    
-    return _json_c_to_dap_json(json_object_from_file(a_file_path));
-}
-
-bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
-{
-    if (!a_json || !a_key || !a_value) {
-        return false;
-    }
-    
-    struct json_object* l_temp_obj = NULL;
-    bool l_result = json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
-    
-    if (l_result && l_temp_obj) {
-        *a_value = _json_c_to_dap_json(l_temp_obj);
-    } else {
-        *a_value = NULL;
+    const char *l_str = dap_json_object_get_string(a_json, a_key);
+    if (l_str) {
+        l_result = dap_uint256_scan_uninteger(l_str);
     }
     
     return l_result;
 }
 
 /**
- * @brief Convenience function to check if a key exists in JSON object
- * @param a_json JSON object to check
- * @param a_key Key name to check for
- * @return true if key exists, false otherwise
- * 
- * This is a lightweight alternative to dap_json_object_get_ex() when you only
- * need to check key existence without retrieving the value.
+ * @brief Get double field from object
+ */
+double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return 0.0;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return 0.0;
+    }
+    
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value) {
+        return 0.0;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
+        return l_value->number.d;
+    } else if (l_value->type == DAP_JSON_TYPE_INT) {
+        return (double)l_value->number.i;
+    }
+    
+    return 0.0;
+}
+
+/**
+ * @brief Get boolean field from object
+ */
+bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return false;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_BOOLEAN) {
+        return false;
+    }
+    
+    return l_value->boolean;
+}
+
+/**
+ * @brief Get nanotime field from object
+ */
+dap_nanotime_t dap_json_object_get_nanotime(dap_json_t* a_json, const char* a_key)
+{
+    return (dap_nanotime_t)dap_json_object_get_uint64(a_json, a_key);
+}
+
+/**
+ * @brief Get time field from object
+ */
+dap_time_t dap_json_object_get_time(dap_json_t* a_json, const char* a_key)
+{
+    return (dap_time_t)dap_json_object_get_int64(a_json, a_key);
+}
+
+/**
+ * @brief Get object field from object
+ */
+dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    
+    return s_wrap_value_ex(l_value, false); // Borrowed reference
+}
+
+/**
+ * @brief Get array field from object
+ */
+dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
+{
+    if (!a_json || !a_key) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_ARRAY) {
+        return NULL;
+    }
+    
+    return s_wrap_value_ex(l_value, false); // Borrowed reference
+}
+
+/* ========================================================================== */
+/*                          TYPE CHECKING                                     */
+/* ========================================================================== */
+
+/**
+ * @brief Check if object has a key
  */
 bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key)
 {
@@ -641,473 +918,55 @@ bool dap_json_object_has_key(dap_json_t* a_json, const char* a_key)
         return false;
     }
     
-    struct json_object* l_temp_obj = NULL;
-    return json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_temp_obj);
-}
- 
-
-int dap_json_object_del(dap_json_t* a_json, const char* a_key)
-{
-    if (!a_json || !a_key) {
-        log_it(L_ERROR, "JSON object or key is NULL");
-        return -1;
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return false;
     }
     
-    json_object_object_del(_dap_json_to_json_c(a_json), a_key);
-    return 0;
+    return dap_json_object_v2_get(l_obj, a_key) != NULL;
 }
 
-// Extended value getters with default
-const char* dap_json_object_get_string_default(dap_json_t* a_json, const char* a_key, const char* a_default)
-{
-    const char* l_value = dap_json_object_get_string(a_json, a_key);
-    return l_value ? l_value : a_default;
-}
-
-int dap_json_object_get_int_default(dap_json_t* a_json, const char* a_key, int a_default)
-{
-    if (!a_json || !a_key) {
-        return a_default;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return a_default;
-    }
-    
-    return json_object_get_int(l_obj);
-}
-
-int64_t dap_json_object_get_int64_default(dap_json_t* a_json, const char* a_key, int64_t a_default)
-{
-    if (!a_json || !a_key) {
-        return a_default;
-    }
-    
-    struct json_object *l_obj = NULL;
-    if (!json_object_object_get_ex(_dap_json_to_json_c(a_json), a_key, &l_obj)) {
-        return a_default;
-    }
-    
-    return json_object_get_int64(l_obj);
-}
-
-dap_json_type_t dap_json_get_type(dap_json_t* a_json)
+/**
+ * @brief Check if value is array
+ */
+bool dap_json_is_array(dap_json_t* a_json)
 {
     if (!a_json) {
-        return DAP_JSON_TYPE_NULL;
+        return false;
     }
     
-    enum json_type l_type = json_object_get_type(_dap_json_to_json_c(a_json));
-    
-    switch (l_type) {
-        case json_type_null:
-            return DAP_JSON_TYPE_NULL;
-        case json_type_boolean:
-            return DAP_JSON_TYPE_BOOLEAN;
-        case json_type_double:
-            return DAP_JSON_TYPE_DOUBLE;
-        case json_type_int:
-            return DAP_JSON_TYPE_INT;
-        case json_type_object:
-            return DAP_JSON_TYPE_OBJECT;
-        case json_type_array:
-            return DAP_JSON_TYPE_ARRAY;
-        case json_type_string:
-            return DAP_JSON_TYPE_STRING;
-        default:
-            return DAP_JSON_TYPE_NULL;
-    }
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_ARRAY;
 }
 
-// Tokener functions for parsing with error handling
-dap_json_t* dap_json_tokener_parse_verbose(const char* a_str, dap_json_tokener_error_t* a_error)
+/**
+ * @brief Check if value is object
+ */
+bool dap_json_is_object(dap_json_t* a_json)
 {
-    if (!a_str) {
-        if (a_error) {
-            *a_error = DAP_JSON_TOKENER_ERROR_PARSE_NULL;
-        }
-        return NULL;
+    if (!a_json) {
+        return false;
     }
     
-    enum json_tokener_error l_jerr;
-    struct json_object *l_json = json_tokener_parse_verbose(a_str, &l_jerr);
-    
-    if (a_error) {
-        // Map json-c error codes to our enum
-        switch (l_jerr) {
-            case json_tokener_success:
-                *a_error = DAP_JSON_TOKENER_SUCCESS;
-                break;
-            case json_tokener_error_depth:
-                *a_error = DAP_JSON_TOKENER_ERROR_DEPTH;
-                break;
-            case json_tokener_error_parse_eof:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_EOF;
-                break;
-            case json_tokener_error_parse_unexpected:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_UNEXPECTED;
-                break;
-            case json_tokener_error_parse_null:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_NULL;
-                break;
-            case json_tokener_error_parse_boolean:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_BOOLEAN;
-                break;
-            case json_tokener_error_parse_number:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_NUMBER;
-                break;
-            case json_tokener_error_parse_array:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_ARRAY;
-                break;
-            case json_tokener_error_parse_object_key_name:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_NAME;
-                break;
-            case json_tokener_error_parse_object_key_sep:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_SEP;
-                break;
-            case json_tokener_error_parse_object_value_sep:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_VALUE_SEP;
-                break;
-            case json_tokener_error_parse_string:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_STRING;
-                break;
-            case json_tokener_error_parse_comment:
-                *a_error = DAP_JSON_TOKENER_ERROR_PARSE_COMMENT;
-                break;
-            default:
-                *a_error = DAP_JSON_TOKENER_ERROR_SIZE;
-                break;
-        }
-    }
-    
-    return _json_c_to_dap_json(l_json);
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_OBJECT;
 }
 
-const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_jerr)
-{
-    // Map our error codes back to json-c for description
-    enum json_tokener_error l_jerr;
-    
-    switch (a_jerr) {
-        case DAP_JSON_TOKENER_SUCCESS:
-            l_jerr = json_tokener_success;
-            break;
-        case DAP_JSON_TOKENER_ERROR_DEPTH:
-            l_jerr = json_tokener_error_depth;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_EOF:
-            l_jerr = json_tokener_error_parse_eof;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_UNEXPECTED:
-            l_jerr = json_tokener_error_parse_unexpected;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_NULL:
-            l_jerr = json_tokener_error_parse_null;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_BOOLEAN:
-            l_jerr = json_tokener_error_parse_boolean;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_NUMBER:
-            l_jerr = json_tokener_error_parse_number;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_ARRAY:
-            l_jerr = json_tokener_error_parse_array;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_NAME:
-            l_jerr = json_tokener_error_parse_object_key_name;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_SEP:
-            l_jerr = json_tokener_error_parse_object_key_sep;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_VALUE_SEP:
-            l_jerr = json_tokener_error_parse_object_value_sep;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_STRING:
-            l_jerr = json_tokener_error_parse_string;
-            break;
-        case DAP_JSON_TOKENER_ERROR_PARSE_COMMENT:
-            l_jerr = json_tokener_error_parse_comment;
-            break;
-        default:
-            l_jerr = json_tokener_error_size;
-            break;
-    }
-    
-    return json_tokener_error_desc(l_jerr);
-}
+/* ========================================================================== */
+/*                          JSON SERIALIZATION (STUB)                         */
+/* ========================================================================== */
 
-// Reference counting (important for json-c compatibility)
-dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
+/**
+ * @brief Convert JSON object to string
+ * @note This is Phase 1.6 functionality - not yet implemented
+ */
+char* dap_json_to_string(dap_json_t* a_json)
 {
     if (!a_json) {
         return NULL;
     }
     
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    json_object_get(l_obj);  // Increment refcount
-    return _json_c_to_dap_json(l_obj);
-}
-
-// Value object creation (for simple types)
-dap_json_t* dap_json_object_new_int(int a_value)
-{
-    return _json_c_to_dap_json(json_object_new_int(a_value));
-}
-
-dap_json_t* dap_json_object_new_int64(int64_t a_value)
-{
-    return _json_c_to_dap_json(json_object_new_int64(a_value));
-}
-
-dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
-{
-    return _json_c_to_dap_json(json_object_new_uint64(a_value));
-}
-
-dap_json_t* dap_json_object_new_uint256(uint256_t a_value)
-{
-    char *l_str = dap_uint256_uninteger_to_char(a_value);
-    if (!l_str) {
-        log_it(L_ERROR, "Failed to convert uint256 to string");
-        return NULL;
-    }
-    
-    struct json_object *l_string = json_object_new_string(l_str);
-    DAP_DELETE(l_str);
-    
-    return _json_c_to_dap_json(l_string);
-}
-
-dap_json_t* dap_json_object_new_string(const char* a_value)
-{
-    if (!a_value) {
-        log_it(L_ERROR, "String value is NULL");
-        return NULL;
-    }
-    
-    return _json_c_to_dap_json(json_object_new_string(a_value));
-}
-
-dap_json_t* dap_json_object_new_string_len(const char* a_value, int a_len)
-{
-    if (!a_value) {
-        log_it(L_ERROR, "String value is NULL");
-        return NULL;
-    }
-    
-    return _json_c_to_dap_json(json_object_new_string_len(a_value, a_len));
-}
-
-dap_json_t* dap_json_object_new_double(double a_value)
-{
-    return _json_c_to_dap_json(json_object_new_double(a_value));
-}
-
-dap_json_t* dap_json_object_new_bool(bool a_value)
-{
-    return _json_c_to_dap_json(json_object_new_boolean(a_value));
-}
-
-#define INDENTATION_LEVEL "    "
-
-static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level);
-
-static void s_json_print_value(json_object *a_raw_obj, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator)
-{
-    enum json_type type = json_object_get_type(a_raw_obj);
-
-    switch (type) {
-        case json_type_string:
-            fprintf(a_stream, a_print_separator ? "%s, " : "%s", json_object_get_string(a_raw_obj));
-            break;
-        case json_type_int:
-            fprintf(a_stream, "%"DAP_INT64_FORMAT, json_object_get_int64(a_raw_obj));
-            break;
-        case json_type_double:
-            fprintf(a_stream, "%lf", json_object_get_double(a_raw_obj));
-            break;
-        case json_type_boolean:
-            fprintf(a_stream, "%s", json_object_get_boolean(a_raw_obj) ? "true" : "false");
-            break;
-        case json_type_object:
-        case json_type_array:
-            fprintf(a_stream, "\n");
-            s_json_print_object(a_raw_obj, a_stream, a_indent_level);
-            break;
-        default:
-            break;
-    }
-}
-
-void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level) {
-    if (!a_json) {
-        return;
-    }
-
-    json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
-    s_json_print_object(raw_obj, a_stream, a_indent_level);
-}
-
-static void s_json_print_object(json_object *a_raw_obj, FILE *a_stream, int a_indent_level)
-{
-    enum json_type type = json_object_get_type(a_raw_obj);
-
-    switch (type) {
-        case json_type_object: {
-            json_object_object_foreach(a_raw_obj, key, val) {
-                for (int i = 0; i <= a_indent_level; i++) {
-                    fprintf(a_stream, INDENTATION_LEVEL);
-                }
-                fprintf(a_stream, "%s: ", key);
-                s_json_print_value(val, key, a_stream, a_indent_level + 1, false);
-                fprintf(a_stream, "\n");
-            }
-            break;
-        }
-        case json_type_array: {
-            int length = json_object_array_length(a_raw_obj);
-            for (int i = 0; i < length; i++) {
-                for (int j = 0; j <= a_indent_level; j++) {
-                    fprintf(a_stream, INDENTATION_LEVEL);
-                }
-                json_object *item = json_object_array_get_idx(a_raw_obj, i);
-                s_json_print_value(item, NULL, a_stream, a_indent_level + 1, length - 1 - i);
-                fprintf(a_stream, "\n");
-            }
-            break;
-        }
-        default:
-            break;
-    }
-}
-
-void dap_json_print_value(dap_json_t *a_json, const char *a_key, FILE *a_stream, int a_indent_level, bool a_print_separator) {
-    if (!a_json) {
-        return;
-    }
-
-    json_object *raw_obj = (json_object*)((struct dap_json*)a_json)->pvt;
-    s_json_print_value(raw_obj, a_key, a_stream, a_indent_level, a_print_separator);
-}
-
-int dap_json_object_add_null(dap_json_t* a_json, const char* a_key) {
-    dap_return_val_if_fail(a_json && a_key, -1);
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) {
-        log_it(L_ERROR, "Failed to convert dap_json to json_object");
-        return -1;
-    }
-    
-    // In this version of json-c, we add NULL directly which represents a null value
-    log_it(L_DEBUG, "Adding null field '%s' to JSON object", a_key);
-    int result = json_object_object_add(l_obj, a_key, NULL);
-    log_it(L_DEBUG, "json_object_object_add with NULL result: %d", result);
-    
-    return result;
-}
-
-dap_json_t* dap_json_object_ref(dap_json_t* a_json) {
-    dap_return_val_if_fail(a_json, NULL);
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return NULL;
-    
-    json_object_get(l_obj); // Increase reference count
-    return a_json;
-}
-
-// Object iteration implementation
-void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data) {
-    if (!a_json || !callback) return;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return;
-    
-    json_object_object_foreach(l_obj, key, val) {
-        dap_json_t *l_dap_val = _json_c_to_dap_json(val);
-        if (l_dap_val) {
-            callback(key, l_dap_val, user_data);
-            // Note: User should free l_dap_val in callback if they want to prevent wrapper leak
-        }
-    }
-}
-
-// Extended value access API implementation
-const char* dap_json_get_string(dap_json_t* a_json) {
-    if (!a_json) return NULL;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return NULL;
-    
-    return json_object_get_string(l_obj);
-}
-
-int64_t dap_json_get_int64(dap_json_t* a_json) {
-    if (!a_json) return 0;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return 0;
-    
-    return json_object_get_int64(l_obj);
-}
-
-double dap_json_get_double(dap_json_t* a_json) {
-    if (!a_json) return 0.0;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return 0.0;
-    
-    return json_object_get_double(l_obj);
-}
-
-bool dap_json_get_bool(dap_json_t* a_json) {
-    if (!a_json) return false;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return false;
-    
-    return json_object_get_boolean(l_obj);
-}
-
-uint64_t dap_json_get_uint64(dap_json_t* a_json) {
-    if (!a_json) return 0;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return 0;
-    
-    return json_object_get_uint64(l_obj);
-}
-
-dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json) {
-    if (!a_json) return 0;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return 0;
-    
-    int64_t l_temp = json_object_get_int64(l_obj);
-    // Handle both nanosecond timestamps and legacy second timestamps
-    return l_temp >> 32 ? (dap_nanotime_t)l_temp : dap_nanotime_from_sec(l_temp);
-}
-
-size_t dap_json_object_length(dap_json_t* a_json) {
-    if (!a_json) return 0;
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return 0;
-    
-    return json_object_object_length(l_obj);
-}
-
-int dap_json_to_file(const char* a_file_path, dap_json_t* a_json) {
-    if (!a_file_path || !a_json) {
-        log_it(L_ERROR, "File path or JSON is NULL");
-        return -1;
-    }
-    
-    json_object *l_obj = _dap_json_to_json_c(a_json);
-    if (!l_obj) return -1;
-    
-    return json_object_to_file(a_file_path, l_obj);
+    // TODO: Implement JSON stringification (Phase 1.6)
+    log_it(L_WARNING, "dap_json_to_string not yet implemented - requires Phase 1.6");
+    return NULL;
 }
