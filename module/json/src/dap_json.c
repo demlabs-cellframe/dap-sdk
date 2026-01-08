@@ -65,6 +65,7 @@ struct dap_json {
     dap_json_stage2_t *stage2_parser; /**< Stage 2 parser (owns Arena with all values) */
     int ref_count;                   /**< Reference counter for dap_json_object_ref */
     bool owns_value;                 /**< True if wrapper owns value and should free it */
+    struct dap_json *parent;         /**< Parent wrapper for borrowed references (keeps parent alive) */
 };
 
 /* ========================================================================== */
@@ -116,6 +117,38 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
     l_json->value = a_value;
     l_json->ref_count = 1;
     l_json->owns_value = a_owns;
+    l_json->parent = NULL;
+    return l_json;
+}
+
+/**
+ * @brief Wrap value as borrowed reference with parent tracking
+ * @param a_value Value to wrap
+ * @param a_parent Parent wrapper (will be ref'd to keep it alive)
+ * @return Borrowed wrapper that keeps parent alive
+ */
+static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_json_t *a_parent)
+{
+    if (!a_value) {
+        return NULL;
+    }
+    
+    dap_json_t *l_json = DAP_NEW_Z(dap_json_t);
+    if (!l_json) {
+        log_it(L_ERROR, "Failed to allocate dap_json_t wrapper");
+        return NULL;
+    }
+    
+    l_json->value = a_value;
+    l_json->ref_count = 1;
+    l_json->owns_value = false; // Borrowed
+    
+    // Keep parent alive by incrementing its refcount
+    if (a_parent) {
+        a_parent->ref_count++;
+        l_json->parent = a_parent;
+    }
+    
     return l_json;
 }
 
@@ -300,6 +333,12 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
+    // If this is a borrowed reference, release parent
+    if (a_json->parent) {
+        dap_json_object_free(a_json->parent);
+        a_json->parent = NULL;
+    }
+    
     // Two allocation strategies:
     // 1. Arena-based (from parsing): stage2_parser != NULL
     // 2. Malloc-based (manually created): stage2_parser == NULL
@@ -407,7 +446,7 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     }
     
     dap_json_value_t *l_value = l_array->array.elements[a_idx];
-    return s_wrap_value_ex(l_value, false); // Borrowed reference
+    return s_wrap_value_borrowed(l_value, a_array); // Borrowed reference with parent tracking
 }
 
 /**
@@ -491,6 +530,11 @@ int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const 
 {
     if (!a_json || !a_key) {
         log_it(L_ERROR, "NULL object or key");
+        return -1;
+    }
+    
+    if (a_len < 0) {
+        log_it(L_ERROR, "Invalid length: %d", a_len);
         return -1;
     }
     
@@ -911,7 +955,7 @@ dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    return s_wrap_value_ex(l_value, false); // Borrowed reference
+    return s_wrap_value_borrowed(l_value, a_json); // Borrowed reference with parent tracking
 }
 
 /**
@@ -933,7 +977,7 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    return s_wrap_value_ex(l_value, false); // Borrowed reference
+    return s_wrap_value_borrowed(l_value, a_json); // Borrowed reference with parent tracking
 }
 
 /**
@@ -956,7 +1000,7 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    *a_value = s_wrap_value_ex(l_val, false); // Borrowed reference
+    *a_value = s_wrap_value_borrowed(l_val, a_json); // Borrowed reference with parent tracking
     return true;
 }
 
