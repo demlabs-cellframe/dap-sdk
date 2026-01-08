@@ -180,8 +180,21 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
         return NULL;
     }
     
+    // Skip UTF-8 BOM if present (0xEF 0xBB 0xBF)
+    const uint8_t *l_input = (const uint8_t*)a_json_string;
+    if (l_len >= 3 && l_input[0] == 0xEF && l_input[1] == 0xBB && l_input[2] == 0xBF) {
+        log_it(L_DEBUG, "Skipping UTF-8 BOM");
+        l_input += 3;
+        l_len -= 3;
+        
+        if (l_len == 0) {
+            log_it(L_ERROR, "Empty JSON after BOM");
+            return NULL;
+        }
+    }
+    
     // Stage 1: Tokenization
-    dap_json_stage1_t *l_stage1 = dap_json_stage1_init((const uint8_t*)a_json_string, l_len);
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_init(l_input, l_len);
     if (!l_stage1) {
         log_it(L_ERROR, "Failed to initialize Stage 1");
         return NULL;
