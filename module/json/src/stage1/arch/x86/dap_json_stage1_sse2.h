@@ -43,6 +43,12 @@ extern "C" {
  */
 extern int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1);
 
+/**
+ * @brief Enable/disable detailed debug logging for SSE2 implementation
+ * @param a_enable true to enable detailed logging
+ */
+extern void dap_json_stage1_sse2_set_debug(bool a_enable);
+
 #ifdef __cplusplus
 }
 #endif

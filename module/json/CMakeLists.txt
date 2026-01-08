@@ -12,7 +12,14 @@ file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
 file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
-file(GLOB_RECURSE JSON_ARCH_SRCS src/stage1/arch/**/*.c)
+
+# Architecture-specific sources - collect based on target platform
+set(JSON_ARCH_SRCS "")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    file(GLOB JSON_ARCH_SRCS src/stage1/arch/x86/*.c)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
+    file(GLOB JSON_ARCH_SRCS src/stage1/arch/arm/*.c)
+endif()
 
 # Combine all sources
 set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_ARCH_SRCS})

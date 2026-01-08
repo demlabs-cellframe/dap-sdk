@@ -203,6 +203,55 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
+# Test 9: SSE2 Debug Tests (Phase 1.4.2)
+# =========================================
+# Coverage: Детальная отладка SSE2 tokenization
+# Tests: 3 focused debug tests with detailed token comparison
+project(test_json_stage1_sse2_debug)
+
+add_executable(${PROJECT_NAME}
+    test_stage1_sse2_debug.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;json;stage1;sse2;debug"
+)
+
+# =========================================
+# Test 10: UNIVERSAL SIMD String Spanning REGRESSION (Phase 1.4.4)
+# =========================================
+# DO NOT MODIFY - Permanent regression test for ALL architectures
+# Coverage: String tokens crossing chunk boundaries (Reference, SSE2, AVX2, AVX-512, NEON)
+# Tests: 5 cases × all available architectures
+project(test_simd_string_spanning)
+
+add_executable(${PROJECT_NAME}
+    test_simd_string_spanning.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;json;stage1;simd;regression;critical;universal"
+)
+
+# =========================================
 # Summary
 # =========================================
 # Phase 0.2 tests: 55+ test cases across 5 files

@@ -26,14 +26,19 @@
  * @brief Stage 1 JSON tokenization - SSE2 (x86/x64) implementation
  * @details SIMD-optimized structural + value tokenization using SSE2 (16 bytes/iteration)
  * 
- * Architecture: Hybrid SIMD+scalar approach
- * - SIMD: Fast detection of token boundaries (structural chars, strings, numbers, literals)
- * - Scalar: Precise validation (UTF-8, number parsing, literal matching)
+ * Performance target: 1.5-2 GB/s (single-core)
+ * 
+ * Architecture: Zero-Overhead Hybrid SIMD
+ * - SIMD: Parallel classification of all bytes (structural, whitespace, quotes)
+ * - Position-Order Processing: All tokens processed in strict position order
+ * - Fast Path: Tokens within chunk processed immediately with byte-skipping
+ * - Slow Path: Tokens extending beyond chunk deferred to next chunk
+ * - No buffers, no sorting - zero overhead!
  * 
  * SSE2 specific:
- * - Chunk size: 16 bytes
- * - Intrinsics: _mm_* (128-bit)
- * - Available on: All x86-64 CPUs (baseline)
+ * - Chunk size: 16 bytes (128-bit)
+ * - Intrinsics: _mm_* operations
+ * - Available on: All x86-64 CPUs (baseline instruction set)
  */
 
 #include <stdint.h>
@@ -49,6 +54,85 @@
 
 // SSE2 chunk size
 #define SSE2_CHUNK_SIZE 16
+
+// Debug flag for detailed SIMD loop tracing
+static bool s_debug_more = false;
+
+/* ========================================================================== */
+/*            HYBRID: BOUNDARY VALUES (Slow Path Only)                        */
+/* ========================================================================== */
+
+/**
+ * @brief Process boundary values that extended beyond chunk
+ * 
+ * This is the "slow path" of HYBRID approach - processes only values
+ * (numbers/literals) that started in one chunk but extended into next chunk.
+ * 
+ * NOTE: Strings are handled differently - tracked via l_in_string state.
+ * 
+ * @param a_stage1 Stage 1 context
+ * @param a_skip_until Position until which to skip (already processed)
+ * @return Updated skip_until position
+ */
+static size_t s_process_boundary_values(
+    dap_json_stage1_t *a_stage1,
+    size_t a_chunk_start,
+    size_t a_chunk_end,
+    size_t a_skip_until)
+{
+    const uint8_t *l_input = a_stage1->input;
+    size_t l_input_len = a_stage1->input_len;
+    
+    // If we have skip_until from previous chunk, process the boundary value
+    if (a_skip_until > a_chunk_start) {
+        size_t l_start = a_chunk_start;
+        
+        // Find the actual start of the value (it's in previous chunk)
+        while (l_start > 0) {
+            uint8_t l_char = l_input[l_start - 1];
+            if (dap_json_classify_char(l_char) == CHAR_CLASS_WHITESPACE ||
+                dap_json_classify_char(l_char) == CHAR_CLASS_STRUCTURAL ||
+                l_char == '"') {
+                break;
+            }
+            l_start--;
+        }
+        
+        uint8_t l_char = l_input[l_start];
+        
+        // Number
+        if (l_char == '-' || (l_char >= '0' && l_char <= '9')) {
+            size_t l_num_end = dap_json_stage1_scan_number_ref(a_stage1, l_start);
+            if (l_num_end > l_start) {
+                debug_if(s_debug_more, L_DEBUG, "  Boundary number at %zu, len=%zu", 
+                         l_start, l_num_end - l_start);
+                dap_json_stage1_add_token(a_stage1, (uint32_t)l_start,
+                                          (uint32_t)(l_num_end - l_start),
+                                          TOKEN_TYPE_NUMBER, 0);
+                return l_num_end;
+            }
+        }
+        // Literal
+        else if (l_char == 't' || l_char == 'f' || l_char == 'n') {
+            size_t l_lit_end = dap_json_stage1_scan_literal_ref(a_stage1, l_start);
+            if (l_lit_end > l_start) {
+                uint8_t l_lit_type = DAP_JSON_LITERAL_UNKNOWN;
+                if (l_char == 't') l_lit_type = DAP_JSON_LITERAL_TRUE;
+                else if (l_char == 'f') l_lit_type = DAP_JSON_LITERAL_FALSE;
+                else if (l_char == 'n') l_lit_type = DAP_JSON_LITERAL_NULL;
+                
+                debug_if(s_debug_more, L_DEBUG, "  Boundary literal at %zu, len=%zu", 
+                         l_start, l_lit_end - l_start);
+                dap_json_stage1_add_token(a_stage1, (uint32_t)l_start,
+                                          (uint32_t)(l_lit_end - l_start),
+                                          TOKEN_TYPE_LITERAL, l_lit_type);
+                return l_lit_end;
+            }
+        }
+    }
+    
+    return a_skip_until;
+}
 
 /* ========================================================================== */
 /*                        SIMD PRIMITIVES - SSE2                              */
@@ -155,6 +239,15 @@ static inline uint16_t s_compute_escaped_quotes(
 /* ========================================================================== */
 
 /**
+ * @brief Set debug mode for SSE2 implementation
+ * @param a_enable Enable (true) or disable (false) debug logging
+ */
+void dap_json_stage1_sse2_set_debug(bool a_enable)
+{
+    s_debug_more = a_enable ? 1 : 0;
+}
+
+/**
  * @brief SSE2 implementation of Stage 1 tokenization
  * @param a_stage1 Initialized Stage 1 parser
  * @return STAGE1_SUCCESS on success, error code otherwise
@@ -174,9 +267,23 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
     size_t l_pos = 0;
     bool l_in_string = false;
     uint64_t l_prev_backslash_run = 0;
+    size_t l_skip_until = 0;  // Hybrid: track values extending beyond chunk (slow path)
+    
+    debug_if(s_debug_more, L_DEBUG, "SSE2 HYBRID Stage 1: input_len=%zu", l_input_len);
     
     // Main SIMD loop - process 16 bytes at a time
     while (l_pos + SSE2_CHUNK_SIZE <= l_input_len) {
+        debug_if(s_debug_more, L_DEBUG, "Chunk @%zu, skip_until=%zu, in_string=%d", 
+                 l_pos, l_skip_until, l_in_string);
+        
+        // HYBRID SLOW PATH: Process boundary value from previous chunk
+        // NOTE: Don't process if we're inside a string - strings are handled in position loop
+        if (l_skip_until > l_pos && !l_in_string) {
+            l_skip_until = s_process_boundary_values(a_stage1, l_pos, 
+                                                     l_pos + SSE2_CHUNK_SIZE, 
+                                                     l_skip_until);
+        }
+        
         // Load 16 bytes
         __m128i l_chunk = _mm_loadu_si128((const __m128i*)(l_input + l_pos));
         
@@ -199,116 +306,152 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         a_stage1->structural_chars += __builtin_popcount(l_struct_mask);
         a_stage1->whitespace_chars += __builtin_popcount(l_ws_mask);
         
-        // Process quotes to track string state
-        if (l_real_quotes) {
-            int l_bit_idx = __builtin_ctz(l_real_quotes);
-            while (l_bit_idx < 16) {
-                size_t l_abs_pos = l_pos + l_bit_idx;
-                
+        // ZERO-OVERHEAD HYBRID: Process ALL tokens in POSITION ORDER
+        // This ensures correct ordering without any sorting or buffering!
+        for (int i = 0; i < 16; i++) {
+            size_t l_abs_pos = l_pos + i;
+            
+            // Check if we've finished skipping an extended string/value
+            if (l_in_string && l_abs_pos == l_skip_until) {
+                l_in_string = false;  // String ended
+                l_skip_until = 0;     // Reset skip marker
+            }
+            
+            // Skip if already processed by boundary handler or inside extended string
+            if (l_abs_pos < l_skip_until) continue;
+            
+            // Priority 1: Quotes/Strings (can extend beyond chunk, affects state)
+            if (l_real_quotes & (1 << i)) {
                 if (!l_in_string) {
-                    // String start - use reference function for full parsing and validation
+                    // String start
                     size_t l_str_end = dap_json_stage1_scan_string_ref(a_stage1, l_abs_pos);
                     if (l_str_end == l_abs_pos) {
-                        // Error already set by scan_string
                         return a_stage1->error_code;
                     }
                     
-                    size_t l_str_len = l_str_end - l_abs_pos;
-                    dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos, (uint32_t)l_str_len,
-                                              TOKEN_TYPE_STRING, 0);
-                    
-                    // If string extends beyond current chunk, skip to end of string
-                    if (l_str_end >= l_pos + SSE2_CHUNK_SIZE) {
-                        l_pos = l_str_end;
-                        goto next_chunk;
+                    // FAST PATH: String within chunk
+                    if (l_str_end <= l_pos + SSE2_CHUNK_SIZE) {
+                        debug_if(s_debug_more, L_DEBUG, "  FAST: string @%zu len=%zu", 
+                                 l_abs_pos, l_str_end - l_abs_pos);
+                        dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                                  (uint32_t)(l_str_end - l_abs_pos),
+                                                  TOKEN_TYPE_STRING, 0);
+                        // Skip processed bytes (including closing quote)
+                        size_t l_str_len = l_str_end - l_abs_pos;
+                        i += (l_str_len - 1);
                     }
-                    // Otherwise continue processing rest of chunk
+                    // SLOW PATH: String extends beyond chunk
+                    else {
+                        debug_if(s_debug_more, L_DEBUG, "  SLOW: string @%zu extends to %zu", 
+                                 l_abs_pos, l_str_end);
+                        dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                                  (uint32_t)(l_str_end - l_abs_pos),
+                                                  TOKEN_TYPE_STRING, 0);
+                        l_skip_until = l_str_end;
+                        // String extends, so we're inside it for next chunks
+                        l_in_string = true;
+                        break;  // End processing this chunk
+                    }
+                } else {
+                    // String end (closing quote) - already processed when we opened the string
+                    l_in_string = false;
                 }
-                
-                l_in_string = !l_in_string;
-                
-                // Find next quote
-                l_real_quotes &= ~(1 << l_bit_idx);
-                if (!l_real_quotes) break;
-                l_bit_idx = __builtin_ctz(l_real_quotes);
+                continue;
             }
-        }
-        
-        // Process structural characters (outside strings)
-        if (!l_in_string && l_struct_mask) {
-            for (int i = 0; i < 16; i++) {
-                if (l_struct_mask & (1 << i)) {
-                    uint8_t l_char = l_input[l_pos + i];
-                    dap_json_stage1_add_token(a_stage1, (uint32_t)(l_pos + i), 0,
-                                              TOKEN_TYPE_STRUCTURAL, l_char);
-                }
-            }
-        }
-        
-        // Process numbers and literals (outside strings, non-structural, non-whitespace)
-        if (!l_in_string) {
-            uint16_t l_value_mask = ~(l_struct_mask | l_ws_mask | l_quote_mask);
             
-            if (l_value_mask) {
-                for (int i = 0; i < 16; i++) {
-                    if (l_value_mask & (1 << i)) {
-                        size_t l_abs_pos = l_pos + i;
-                        uint8_t l_char = l_input[l_abs_pos];
-                        
-                        // Number detection
-                        if (l_char == '-' || (l_char >= '0' && l_char <= '9')) {
-                            size_t l_num_end = dap_json_stage1_scan_number_ref(a_stage1, l_abs_pos);
-                            if (l_num_end > l_abs_pos) {
-                                dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
-                                                          (uint32_t)(l_num_end - l_abs_pos),
-                                                          TOKEN_TYPE_NUMBER, 0);
-                                // Skip processed bytes within current chunk
-                                size_t l_skip = l_num_end - l_abs_pos - 1;
-                                if (l_num_end >= l_pos + SSE2_CHUNK_SIZE) {
-                                    // Number extends beyond chunk - skip to end of number
-                                    l_pos = l_num_end;
-                                    goto next_chunk;
-                                }
-                                i += l_skip;
-                            }
+            // Skip processing inside strings
+            if (l_in_string) continue;
+            
+            // Priority 2: Structural (always single byte, no boundary issues)
+            if (l_struct_mask & (1 << i)) {
+                uint8_t l_char = l_input[l_abs_pos];
+                dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos, 0,
+                                          TOKEN_TYPE_STRUCTURAL, l_char);
+                continue;  // Next position
+            }
+            
+            // Priority 3: Whitespace (skip)
+            if (l_ws_mask & (1 << i)) {
+                continue;  // Next position
+            }
+                
+                // Priority 4: Numbers/Literals (can extend beyond chunk)
+                uint8_t l_char = l_input[l_abs_pos];
+                
+                // Number
+                if (l_char == '-' || (l_char >= '0' && l_char <= '9')) {
+                    size_t l_num_end = dap_json_stage1_scan_number_ref(a_stage1, l_abs_pos);
+                    if (l_num_end > l_abs_pos) {
+                        // FAST PATH: Number within chunk
+                        if (l_num_end <= l_pos + SSE2_CHUNK_SIZE) {
+                            debug_if(s_debug_more, L_DEBUG, "  FAST: number @%zu len=%zu", 
+                                     l_abs_pos, l_num_end - l_abs_pos);
+                            dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                                      (uint32_t)(l_num_end - l_abs_pos),
+                                                      TOKEN_TYPE_NUMBER, 0);
+                            // Skip processed bytes
+                            i += (l_num_end - l_abs_pos - 1);
                         }
-                        // Literal detection
-                        else if (l_char == 't' || l_char == 'f' || l_char == 'n') {
-                            size_t l_lit_end = dap_json_stage1_scan_literal_ref(a_stage1, l_abs_pos);
-                            if (l_lit_end > l_abs_pos) {
-                                // Determine literal type
-                                uint8_t l_lit_type = DAP_JSON_LITERAL_UNKNOWN;
-                                if (l_char == 't') l_lit_type = DAP_JSON_LITERAL_TRUE;
-                                else if (l_char == 'f') l_lit_type = DAP_JSON_LITERAL_FALSE;
-                                else if (l_char == 'n') l_lit_type = DAP_JSON_LITERAL_NULL;
-                                
-                                dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
-                                                          (uint32_t)(l_lit_end - l_abs_pos),
-                                                          TOKEN_TYPE_LITERAL, l_lit_type);
-                                // Skip processed bytes within current chunk
-                                size_t l_skip = l_lit_end - l_abs_pos - 1;
-                                if (l_lit_end >= l_pos + SSE2_CHUNK_SIZE) {
-                                    // Literal extends beyond chunk - skip to end
-                                    l_pos = l_lit_end;
-                                    goto next_chunk;
-                                }
-                                i += l_skip;
-                            }
+                        // SLOW PATH: Number extends beyond chunk
+                        else {
+                            debug_if(s_debug_more, L_DEBUG, "  SLOW: number @%zu extends to %zu", 
+                                     l_abs_pos, l_num_end);
+                            l_skip_until = l_num_end;
+                            break;  // End processing this chunk
+                        }
+                    }
+                    continue;
+                }
+                
+                // Literal
+                if (l_char == 't' || l_char == 'f' || l_char == 'n') {
+                    size_t l_lit_end = dap_json_stage1_scan_literal_ref(a_stage1, l_abs_pos);
+                    if (l_lit_end > l_abs_pos) {
+                        // FAST PATH: Literal within chunk
+                        if (l_lit_end <= l_pos + SSE2_CHUNK_SIZE) {
+                            uint8_t l_lit_type = DAP_JSON_LITERAL_UNKNOWN;
+                            if (l_char == 't') l_lit_type = DAP_JSON_LITERAL_TRUE;
+                            else if (l_char == 'f') l_lit_type = DAP_JSON_LITERAL_FALSE;
+                            else if (l_char == 'n') l_lit_type = DAP_JSON_LITERAL_NULL;
+                            
+                            debug_if(s_debug_more, L_DEBUG, "  FAST: literal @%zu len=%zu", 
+                                     l_abs_pos, l_lit_end - l_abs_pos);
+                            dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                                      (uint32_t)(l_lit_end - l_abs_pos),
+                                                      TOKEN_TYPE_LITERAL, l_lit_type);
+                            // Skip processed bytes
+                            i += (l_lit_end - l_abs_pos - 1);
+                        }
+                        // SLOW PATH: Literal extends beyond chunk
+                        else {
+                            debug_if(s_debug_more, L_DEBUG, "  SLOW: literal @%zu extends to %zu", 
+                                     l_abs_pos, l_lit_end);
+                            l_skip_until = l_lit_end;
+                            break;  // End processing this chunk
                         }
                     }
                 }
             }
-        }
         
-next_chunk:
+        // Always advance to next chunk
         l_pos += SSE2_CHUNK_SIZE;
     }
     
-    // Process remaining bytes (tail < 16 bytes) using reference implementation
+    // Process remaining bytes (tail < 16 bytes) - full processing
     if (l_pos < l_input_len) {
-        log_it(L_DEBUG, "Processing tail: %zu bytes from position %zu", l_input_len - l_pos, l_pos);
+        debug_if(s_debug_more, L_DEBUG, "Processing tail: %zu bytes from position %zu, skip_until=%zu, in_string=%d", 
+                 l_input_len - l_pos, l_pos, l_skip_until, l_in_string);
+        
+        // First, handle any boundary value from last chunk
+        // NOTE: Don't process if we're inside a string
+        if (l_skip_until > l_pos && !l_in_string) {
+            l_skip_until = s_process_boundary_values(a_stage1, l_pos, l_input_len, l_skip_until);
+        }
         
         for (size_t i = l_pos; i < l_input_len; i++) {
+            // Skip if already processed by boundary handler
+            if (i < l_skip_until) continue;
+            
             uint8_t l_char = l_input[i];
             
             // String
@@ -362,21 +505,8 @@ next_chunk:
         }
     }
     
-    // Count tokens by type for statistics
-    size_t l_str_count = 0, l_num_count = 0, l_lit_count = 0;
-    for (size_t i = 0; i < a_stage1->indices_count; i++) {
-        switch (a_stage1->indices[i].type) {
-            case TOKEN_TYPE_STRING: l_str_count++; break;
-            case TOKEN_TYPE_NUMBER: l_num_count++; break;
-            case TOKEN_TYPE_LITERAL: l_lit_count++; break;
-            default: break;
-        }
-    }
-    
-    log_it(L_INFO, "SSE2 Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
-           a_stage1->indices_count,
-           a_stage1->indices_count - l_str_count - l_num_count - l_lit_count,
-           l_str_count, l_num_count, l_lit_count);
+    debug_if(s_debug_more, L_DEBUG, "SSE2 HYBRID complete: %zu total tokens", 
+             a_stage1->indices_count);
     
     return STAGE1_SUCCESS;
 }

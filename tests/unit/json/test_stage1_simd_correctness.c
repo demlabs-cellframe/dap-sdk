@@ -33,6 +33,17 @@
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
+// Include architecture-specific SIMD headers
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_sse2.h"
+#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_avx2.h"
+#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_avx512.h"
+#endif
+
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
+#include "../../module/json/src/stage1/arch/arm/dap_json_stage1_neon.h"
+#endif
+
 #include <string.h>
 #include <stdio.h>
 
@@ -40,6 +51,9 @@
 
 // Forward declare extern functions
 extern void dap_json_init(void);
+
+// CPU features (from dap_cpu_detect)
+extern dap_cpu_features_t g_dap_json_cpu_features;
 
 // Test cases - various JSON inputs
 static const char* s_test_inputs[] = {
@@ -212,15 +226,16 @@ static bool s_test_avx2_correctness(void)
 {
     log_it(L_DEBUG, "Testing AVX2 correctness");
     
-#if defined(__AVX2__)
-    extern int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1);
-    bool l_result = s_test_simd_impl(dap_json_stage1_run_avx2, "AVX2");
-    dap_assert(l_result, "AVX2 correctness test");
-#else
-    log_it(L_INFO, "AVX2 not available at compile time, skipping");
-#endif
-    
-    return true;
+    // Check if AVX2 is available at RUNTIME (not compile time)
+    if (g_dap_json_cpu_features.has_avx2) {
+        log_it(L_INFO, "Testing AVX2 correctness...");
+        bool l_result = s_test_simd_impl(dap_json_stage1_run_avx2, "AVX2");
+        dap_assert(l_result, "AVX2 correctness test");
+        return l_result;
+    } else {
+        log_it(L_INFO, "AVX2 not available on this CPU, skipping");
+        return true;  // Skip is not a failure
+    }
 }
 
 /**
@@ -230,15 +245,15 @@ static bool s_test_sse2_correctness(void)
 {
     log_it(L_DEBUG, "Testing SSE2 correctness");
     
-#if defined(__SSE2__)
-    extern int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1);
-    bool l_result = s_test_simd_impl(dap_json_stage1_run_sse2, "SSE2");
-    dap_assert(l_result, "SSE2 correctness test");
-#else
-    log_it(L_INFO, "SSE2 not available at compile time, skipping");
-#endif
-    
-    return true;
+    if (g_dap_json_cpu_features.has_sse2) {
+        log_it(L_INFO, "Testing SSE2 correctness...");
+        bool l_result = s_test_simd_impl(dap_json_stage1_run_sse2, "SSE2");
+        dap_assert(l_result, "SSE2 correctness test");
+        return l_result;
+    } else {
+        log_it(L_INFO, "SSE2 not available on this CPU, skipping");
+        return true;
+    }
 }
 
 /**
@@ -248,15 +263,15 @@ static bool s_test_neon_correctness(void)
 {
     log_it(L_DEBUG, "Testing NEON correctness");
     
-#if defined(__ARM_NEON)
-    extern int dap_json_stage1_run_neon(dap_json_stage1_t *a_stage1);
-    bool l_result = s_test_simd_impl(dap_json_stage1_run_neon, "NEON");
-    dap_assert(l_result, "NEON correctness test");
-#else
-    log_it(L_INFO, "NEON not available at compile time, skipping");
-#endif
-    
-    return true;
+    if (g_dap_json_cpu_features.has_neon) {
+        log_it(L_INFO, "Testing NEON correctness...");
+        bool l_result = s_test_simd_impl(dap_json_stage1_run_neon, "NEON");
+        dap_assert(l_result, "NEON correctness test");
+        return l_result;
+    } else {
+        log_it(L_INFO, "NEON not available on this CPU, skipping");
+        return true;
+    }
 }
 
 /**
@@ -266,15 +281,15 @@ static bool s_test_avx512_correctness(void)
 {
     log_it(L_DEBUG, "Testing AVX-512 correctness");
     
-#if defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__AVX512BW__)
-    extern int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1);
-    bool l_result = s_test_simd_impl(dap_json_stage1_run_avx512, "AVX-512");
-    dap_assert(l_result, "AVX-512 correctness test");
-#else
-    log_it(L_INFO, "AVX-512 not available at compile time, skipping");
-#endif
-    
-    return true;
+    if (g_dap_json_cpu_features.has_avx512f) {
+        log_it(L_INFO, "Testing AVX-512 correctness...");
+        bool l_result = s_test_simd_impl(dap_json_stage1_run_avx512, "AVX-512");
+        dap_assert(l_result, "AVX-512 correctness test");
+        return l_result;
+    } else {
+        log_it(L_INFO, "AVX-512 not available on this CPU, skipping");
+        return true;
+    }
 }
 
 int main(void)
@@ -283,10 +298,17 @@ int main(void)
     
     dap_print_module_name("SIMD Correctness Tests (vs Reference)");
     
+    // Test x86/x64 SIMD implementations
+    #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     s_test_avx2_correctness();
     s_test_sse2_correctness();
-    s_test_neon_correctness();
     s_test_avx512_correctness();
+    #endif
+    
+    // Test ARM SIMD implementations
+    #if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
+    s_test_neon_correctness();
+    #endif
     
     log_it(L_INFO, "=== All SIMD Correctness Tests Passed ===");
     

@@ -48,6 +48,23 @@ extern "C" {
 extern int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1);
 
 /**
+ * @brief Add a token to the Stage 1 output array
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @param[in] a_position Token position in input buffer
+ * @param[in] a_length Token length (0 for structural)
+ * @param[in] a_type Token type (structural/string/number/literal)
+ * @param[in] a_character_or_subtype Structural character or literal subtype
+ * @return true on success, false on allocation failure
+ */
+extern bool dap_json_stage1_add_token(
+    dap_json_stage1_t *a_stage1,
+    uint32_t a_position,
+    uint32_t a_length,
+    dap_json_token_type_t a_type,
+    uint8_t a_character_or_subtype
+);
+
+/**
  * @brief Scan string from current position (reference implementation)
  * @param[in,out] a_stage1 Stage 1 parser state
  * @param[in] a_start_pos Position of opening quote

@@ -412,7 +412,7 @@ size_t dap_json_stage1_scan_number_ref(
     
     const uint8_t *l_input = a_stage1->input;
     const size_t l_len = a_stage1->input_len;
-    size_t i = a_stage1->current_pos;
+    size_t i = a_start_pos;  // FIXED: use a_start_pos, not current_pos
     uint32_t l_start = (uint32_t)i;
     
     bool l_has_decimal = false;
@@ -464,16 +464,7 @@ size_t dap_json_stage1_scan_number_ref(
         }
     }
     
-    // Add number token using new unified function
-    uint32_t l_length = (uint32_t)(i - l_start);
-    uint8_t l_subtype = (l_has_decimal || l_has_exponent) ? 2 : 1;
-    
-    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
-                                   TOKEN_TYPE_NUMBER, l_subtype)) {
-        return l_start; // Allocation failure
-    }
-    
-    a_stage1->current_pos = i;
+    // Return position after number
     return i;
 }
 
@@ -495,7 +486,7 @@ size_t dap_json_stage1_scan_literal_ref(
     
     const uint8_t *l_input = a_stage1->input;
     const size_t l_len = a_stage1->input_len;
-    size_t i = a_stage1->current_pos;
+    size_t i = a_start_pos;  // FIXED: use a_start_pos, not current_pos
     uint32_t l_start = (uint32_t)i;
     
     uint8_t l_subtype = 0;
@@ -517,14 +508,8 @@ size_t dap_json_stage1_scan_literal_ref(
         return l_start; // Not a literal
     }
     
-    // Add literal token using new unified function
-    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
-                                   TOKEN_TYPE_LITERAL, l_subtype)) {
-        return l_start; // Allocation failure
-    }
-    
-    a_stage1->current_pos = i + l_length;
-    return a_stage1->current_pos;
+    // Return position after literal
+    return i + l_length;
 }
 
 /**
@@ -544,21 +529,22 @@ size_t dap_json_stage1_scan_string_ref(
         return a_start_pos;
     }
     
-    uint32_t l_start = (uint32_t)a_stage1->current_pos;
+    // Save current_pos and set to a_start_pos for parsing
+    size_t l_saved_pos = a_stage1->current_pos;
+    a_stage1->current_pos = a_start_pos;
     
     // Skip string (existing logic)
     if(!s_skip_string(a_stage1)) {
-        return l_start; // Error
+        a_stage1->current_pos = l_saved_pos;  // Restore on error
+        return a_start_pos; // Error - return start pos to indicate failure
     }
     
-    // Add string token using new unified function
-    uint32_t l_length = (uint32_t)(a_stage1->current_pos - l_start);
-    if(!dap_json_stage1_add_token(a_stage1, l_start, l_length, 
-                                   TOKEN_TYPE_STRING, 0)) {
-        return l_start; // Allocation failure
-    }
+    // Get end position
+    size_t l_end = a_stage1->current_pos;
     
-    return a_stage1->current_pos;
+    // Restore current_pos
+    a_stage1->current_pos = l_saved_pos;
+    return l_end;
 }
 
 /* ========================================================================== */
@@ -620,7 +606,16 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                                a_stage1->error_position, a_stage1->error_message);
                         return a_stage1->error_code;
                     }
-                    // Position already updated by scan_string
+                    
+                    // Add string token
+                    uint32_t l_length = (uint32_t)(l_new_pos - l_old_pos);
+                    if(!dap_json_stage1_add_token(a_stage1, (uint32_t)l_old_pos, l_length,
+                                                   TOKEN_TYPE_STRING, 0)) {
+                        return a_stage1->error_code;
+                    }
+                    
+                    // Update position
+                    a_stage1->current_pos = l_new_pos;
                 }
                 break;
             
@@ -645,7 +640,16 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                         a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
                         return a_stage1->error_code;
                     }
-                    // Position already updated by scan_number
+                    
+                    // Add number token
+                    uint32_t l_length = (uint32_t)(l_new_pos - l_old_pos);
+                    if(!dap_json_stage1_add_token(a_stage1, (uint32_t)l_old_pos, l_length,
+                                                   TOKEN_TYPE_NUMBER, 0)) {
+                        return a_stage1->error_code;
+                    }
+                    
+                    // Update position
+                    a_stage1->current_pos = l_new_pos;
                 }
                 break;
             
@@ -659,7 +663,22 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                         a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
                         return a_stage1->error_code;
                     }
-                    // Position already updated by scan_literal
+                    
+                    // Determine literal type and add token
+                    uint8_t l_lit_type = DAP_JSON_LITERAL_UNKNOWN;
+                    uint8_t l_first = l_input[l_old_pos];
+                    if (l_first == 't') l_lit_type = DAP_JSON_LITERAL_TRUE;
+                    else if (l_first == 'f') l_lit_type = DAP_JSON_LITERAL_FALSE;
+                    else if (l_first == 'n') l_lit_type = DAP_JSON_LITERAL_NULL;
+                    
+                    uint32_t l_length = (uint32_t)(l_new_pos - l_old_pos);
+                    if(!dap_json_stage1_add_token(a_stage1, (uint32_t)l_old_pos, l_length,
+                                                   TOKEN_TYPE_LITERAL, l_lit_type)) {
+                        return a_stage1->error_code;
+                    }
+                    
+                    // Update position
+                    a_stage1->current_pos = l_new_pos;
                 }
                 break;
             
