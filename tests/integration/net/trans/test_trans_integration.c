@@ -205,10 +205,11 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
         DAP_DEL_Z(a_ctx->stream_ctxs);
     }
     
-    // Cleanup servers
+    // Cleanup servers - MUST stop before delete
     if (a_ctx->servers) {
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i]) {
+                dap_net_trans_server_stop(a_ctx->servers[i]);
                 dap_net_trans_server_delete(a_ctx->servers[i]);
                 a_ctx->servers[i] = NULL;
             }
@@ -832,16 +833,22 @@ static void test_02_sequential_trans_testing(void)
                        l_ctx->result);
                 l_all_passed = false;
                 
+                // Wait for async operations to complete BEFORE cleanup
+                test_wait_for_all_streams_closed(2000);
+                
                 // Cleanup and continue to next scenario
                 test_trans_ctx_free(l_ctx);
                 break;  // Stop testing this transport on first failure
             }
             
+            // Wait for async operations to complete BEFORE cleanup
+            test_wait_for_all_streams_closed(2000);
+            
             // Cleanup after each scenario
             test_trans_ctx_free(l_ctx);
             
-            // Wait for cleanup to complete
-            test_wait_for_all_streams_closed(2000);
+            // Give extra time for cleanup to propagate through worker threads
+            usleep(500000);  // 500ms
             
             printf("\n");
         }
