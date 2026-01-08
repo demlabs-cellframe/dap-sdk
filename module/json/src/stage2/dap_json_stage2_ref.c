@@ -66,6 +66,137 @@
 #define MAX_NESTING_DEPTH 1000
 
 /* ========================================================================== */
+/*                    INTERNAL ARENA-BASED HELPERS                            */
+/* ========================================================================== */
+
+/**
+ * @brief Add element to array using Arena (copy-on-grow pattern)
+ * @details Internal function for Stage 2 parsing only
+ */
+static bool s_array_add_arena(
+    dap_arena_t *a_arena,
+    dap_json_value_t *a_array,
+    dap_json_value_t *a_element
+)
+{
+    if(!a_array || a_array->type != DAP_JSON_TYPE_ARRAY) {
+        log_it(L_ERROR, "Invalid array");
+        return false;
+    }
+    
+    if(!a_element) {
+        log_it(L_ERROR, "NULL element");
+        return false;
+    }
+    
+    // Grow if needed
+    if(a_array->array.count >= a_array->array.capacity) {
+        size_t l_new_capacity = (a_array->array.capacity == 0) ? 
+            INITIAL_ARRAY_CAPACITY : 
+            (a_array->array.capacity * ARRAY_GROWTH_FACTOR);
+        
+        // Allocate new array in Arena
+        dap_json_value_t **l_new_elements = (dap_json_value_t **)dap_arena_alloc(
+            a_arena,
+            l_new_capacity * sizeof(dap_json_value_t*)
+        );
+        
+        if(!l_new_elements) {
+            log_it(L_ERROR, "Arena allocation failed for array growth to %zu elements", l_new_capacity);
+            return false;
+        }
+        
+        // Copy old elements
+        if(a_array->array.elements && a_array->array.count > 0) {
+            memcpy(l_new_elements, a_array->array.elements,
+                   a_array->array.count * sizeof(dap_json_value_t*));
+        }
+        
+        // Old array becomes garbage in Arena (no free needed)
+        a_array->array.elements = l_new_elements;
+        a_array->array.capacity = l_new_capacity;
+    }
+    
+    a_array->array.elements[a_array->array.count++] = a_element;
+    return true;
+}
+
+/**
+ * @brief Add key-value pair to object using Arena + String Pool
+ * @details Internal function for Stage 2 parsing only
+ */
+static bool s_object_add_arena(
+    dap_arena_t *a_arena,
+    dap_string_pool_t *a_string_pool,
+    dap_json_value_t *a_object,
+    const char *a_key,
+    dap_json_value_t *a_value
+)
+{
+    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Invalid object");
+        return false;
+    }
+    
+    if(!a_key || !a_value) {
+        log_it(L_ERROR, "NULL key or value");
+        return false;
+    }
+    
+    // Intern key in String Pool for deduplication
+    const char *l_interned_key = dap_string_pool_intern(a_string_pool, a_key);
+    if (!l_interned_key) {
+        log_it(L_ERROR, "Failed to intern object key");
+        return false;
+    }
+    
+    // Check for duplicate key (O(1) pointer comparison after interning)
+    for(size_t i = 0; i < a_object->object.count; i++) {
+        if(a_object->object.pairs[i].key == l_interned_key) {
+            log_it(L_WARNING, "Duplicate object key: %s", a_key);
+            // Overwrite existing value
+            a_object->object.pairs[i].value = a_value;
+            return true;
+        }
+    }
+    
+    // Grow if needed
+    if(a_object->object.count >= a_object->object.capacity) {
+        size_t l_new_capacity = (a_object->object.capacity == 0) ?
+            INITIAL_OBJECT_CAPACITY :
+            (a_object->object.capacity * OBJECT_GROWTH_FACTOR);
+        
+        // Allocate new pairs array in Arena
+        dap_json_object_pair_t *l_new_pairs = (dap_json_object_pair_t *)dap_arena_alloc(
+            a_arena,
+            l_new_capacity * sizeof(dap_json_object_pair_t)
+        );
+        
+        if(!l_new_pairs) {
+            log_it(L_ERROR, "Arena allocation failed for object growth to %zu pairs", l_new_capacity);
+            return false;
+        }
+        
+        // Copy old pairs
+        if(a_object->object.pairs && a_object->object.count > 0) {
+            memcpy(l_new_pairs, a_object->object.pairs,
+                   a_object->object.count * sizeof(dap_json_object_pair_t));
+        }
+        
+        // Old array becomes garbage in Arena (no free needed)
+        a_object->object.pairs = l_new_pairs;
+        a_object->object.capacity = l_new_capacity;
+    }
+    
+    // Add new pair (key already interned, no strdup needed)
+    a_object->object.pairs[a_object->object.count].key = (char *)l_interned_key;
+    a_object->object.pairs[a_object->object.count].value = a_value;
+    a_object->object.count++;
+    
+    return true;
+}
+
+/* ========================================================================== */
 /*                         VALUE CREATION                                     */
 /* ========================================================================== */
 
@@ -421,13 +552,19 @@ dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const
  * @param[out] a_out_value Output: parsed value
  * @return true on success, false on parse error
  */
+/**
+ * @brief Parse number value
+ * @details Uses Arena for allocation, no malloc
+ */
 static bool s_parse_number(
-    const uint8_t *a_input,
+    dap_json_stage2_t *a_stage2,
     uint32_t a_start,
     uint32_t a_end,
     dap_json_value_t **a_out_value
 )
 {
+    const uint8_t *a_input = a_stage2->input;
+    
     if(!a_input || !a_out_value || a_start >= a_end) {
         return false;
     }
@@ -453,39 +590,50 @@ static bool s_parse_number(
         }
     }
     
+    // Create value using Arena
+    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+    if (!l_value) {
+        return false;
+    }
+    
     if(l_is_double) {
         // Parse as double
         char *l_endptr = NULL;
         errno = 0;
-        double l_value = strtod(l_buffer, &l_endptr);
+        double l_dval = strtod(l_buffer, &l_endptr);
         
         if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
             log_it(L_ERROR, "Invalid double: %s", l_buffer);
             return false;
         }
         
-        if(!isfinite(l_value)) {
+        if(!isfinite(l_dval)) {
             log_it(L_ERROR, "Double out of range: %s", l_buffer);
             return false;
         }
         
-        *a_out_value = dap_json_value_v2_create_double(l_value);
+        l_value->type = DAP_JSON_TYPE_DOUBLE;
+        l_value->number.d = l_dval;
+        l_value->number.is_double = true;
     }
     else {
         // Parse as int64
         char *l_endptr = NULL;
         errno = 0;
-        long long l_value = strtoll(l_buffer, &l_endptr, 10);
+        long long l_ival = strtoll(l_buffer, &l_endptr, 10);
         
         if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
             log_it(L_ERROR, "Invalid integer: %s", l_buffer);
             return false;
         }
         
-        *a_out_value = dap_json_value_v2_create_int((int64_t)l_value);
+        l_value->type = DAP_JSON_TYPE_INT;
+        l_value->number.i = (int64_t)l_ival;
+        l_value->number.is_double = false;
     }
     
-    return (*a_out_value != NULL);
+    *a_out_value = l_value;
+    return true;
 }
 
 /**
@@ -616,14 +764,20 @@ static bool s_unescape_string(
  * @param[out] a_out_end_offset Output: offset after closing quote
  * @return true on success, false on parse error
  */
+/**
+ * @brief Parse string value
+ * @details Uses Arena for allocation, no malloc
+ */
 static bool s_parse_string(
-    const uint8_t *a_input,
+    dap_json_stage2_t *a_stage2,
     uint32_t a_start,
-    size_t a_input_len,
     dap_json_value_t **a_out_value,
     uint32_t *a_out_end_offset
 )
 {
+    const uint8_t *a_input = a_stage2->input;
+    size_t a_input_len = a_stage2->input_len;
+    
     if(!a_input || !a_out_value || !a_out_end_offset) {
         return false;
     }
@@ -642,7 +796,7 @@ static bool s_parse_string(
             // Found closing quote
             uint32_t l_string_end = l_pos;
             
-            // Unescape string
+            // Unescape string - use Arena for temp buffer
             char *l_unescaped = NULL;
             size_t l_unescaped_len = 0;
             
@@ -655,11 +809,28 @@ static bool s_parse_string(
                 return false;
             }
             
-            *a_out_value = dap_json_value_v2_create_string(l_unescaped, l_unescaped_len);
-            DAP_DELETE(l_unescaped);
+            // Create value using Arena
+            dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+            if (!l_value) {
+                DAP_DELETE(l_unescaped);
+                return false;
+            }
             
+            l_value->type = DAP_JSON_TYPE_STRING;
+            // Copy string to Arena
+            l_value->string.data = dap_arena_strndup(a_stage2->arena, l_unescaped, l_unescaped_len);
+            l_value->string.length = l_unescaped_len;
+            l_value->string.needs_free = false; // Arena owns it
+            
+            DAP_DELETE(l_unescaped); // Free temp buffer
+            
+            if (!l_value->string.data) {
+                return false;
+            }
+            
+            *a_out_value = l_value;
             *a_out_end_offset = l_pos + 1; // After closing quote
-            return (*a_out_value != NULL);
+            return true;
         }
         else if(a_input[l_pos] == '\\') {
             // Skip escape sequence
@@ -676,22 +847,18 @@ static bool s_parse_string(
 
 /**
  * @brief Parse literal (true, false, null)
- * 
- * @param[in] a_input Input buffer
- * @param[in] a_start Start offset
- * @param[in] a_input_len Input buffer length
- * @param[out] a_out_value Output: parsed literal value
- * @param[out] a_out_end_offset Output: offset after literal
- * @return true on success, false on parse error
+ * @details Uses Arena for allocation, no malloc
  */
 static bool s_parse_literal(
-    const uint8_t *a_input,
+    dap_json_stage2_t *a_stage2,
     uint32_t a_start,
-    size_t a_input_len,
     dap_json_value_t **a_out_value,
     uint32_t *a_out_end_offset
 )
 {
+    const uint8_t *a_input = a_stage2->input;
+    size_t a_input_len = a_stage2->input_len;
+    
     if(!a_input || !a_out_value || !a_out_end_offset) {
         return false;
     }
@@ -700,28 +867,39 @@ static bool s_parse_literal(
         return false;
     }
     
+    // Create value using Arena
+    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+    if (!l_value) {
+        return false;
+    }
+    
     // Check for "true"
     if(a_start + 4 <= a_input_len &&
        memcmp(a_input + a_start, "true", 4) == 0) {
-        *a_out_value = dap_json_value_v2_create_bool(true);
+        l_value->type = DAP_JSON_TYPE_BOOLEAN;
+        l_value->boolean = true;
+        *a_out_value = l_value;
         *a_out_end_offset = a_start + 4;
-        return (*a_out_value != NULL);
+        return true;
     }
     
     // Check for "false"
     if(a_start + 5 <= a_input_len &&
        memcmp(a_input + a_start, "false", 5) == 0) {
-        *a_out_value = dap_json_value_v2_create_bool(false);
+        l_value->type = DAP_JSON_TYPE_BOOLEAN;
+        l_value->boolean = false;
+        *a_out_value = l_value;
         *a_out_end_offset = a_start + 5;
-        return (*a_out_value != NULL);
+        return true;
     }
     
     // Check for "null"
     if(a_start + 4 <= a_input_len &&
        memcmp(a_input + a_start, "null", 4) == 0) {
-        *a_out_value = dap_json_value_v2_create_null();
+        l_value->type = DAP_JSON_TYPE_NULL;
+        *a_out_value = l_value;
         *a_out_end_offset = a_start + 4;
-        return (*a_out_value != NULL);
+        return true;
     }
     
     log_it(L_ERROR, "Invalid literal at offset %u", a_start);
@@ -896,15 +1074,21 @@ static dap_json_value_t *s_parse_array(
     
     a_stage2->current_depth++;
     
-    dap_json_value_t *l_array = dap_json_value_v2_create_array();
+    // Create array value using Arena
+    dap_json_value_t *l_array = s_create_value_arena(a_stage2->arena);
     if(!l_array) {
         a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
         a_stage2->current_depth--;
         return NULL;
     }
     
+    l_array->type = DAP_JSON_TYPE_ARRAY;
+    l_array->array.elements = NULL;
+    l_array->array.count = 0;
+    l_array->array.capacity = 0;
+    
     a_stage2->arrays_created++;
-    (*a_idx)++; // Skip '[
+    (*a_idx)++; // Skip '['
     
     // Check for empty array
     if(*a_idx < a_stage2->indices_count && 
@@ -924,7 +1108,7 @@ static dap_json_value_t *s_parse_array(
             return NULL;
         }
         
-        if(!dap_json_array_v2_add(l_array, l_element)) {
+        if(!s_array_add_arena(a_stage2->arena, l_array, l_element)) {
             dap_json_value_v2_free(l_element);
             dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
@@ -988,12 +1172,18 @@ static dap_json_value_t *s_parse_object(
     
     a_stage2->current_depth++;
     
-    dap_json_value_t *l_object = dap_json_value_v2_create_object();
+    // Create object value using Arena
+    dap_json_value_t *l_object = s_create_value_arena(a_stage2->arena);
     if(!l_object) {
         a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
         a_stage2->current_depth--;
         return NULL;
     }
+    
+    l_object->type = DAP_JSON_TYPE_OBJECT;
+    l_object->object.pairs = NULL;
+    l_object->object.count = 0;
+    l_object->object.capacity = 0;
     
     a_stage2->objects_created++;
     (*a_idx)++; // Skip '{'
@@ -1022,7 +1212,7 @@ static dap_json_value_t *s_parse_object(
         dap_json_value_t *l_key_value = NULL;
         uint32_t l_key_end = 0;
         
-        if(!s_parse_string(a_stage2->input, l_key_offset, a_stage2->input_len,
+        if(!s_parse_string(a_stage2, l_key_offset,
                            &l_key_value, &l_key_end)) {
             dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_INVALID_STRING;
@@ -1055,8 +1245,8 @@ static dap_json_value_t *s_parse_object(
             return NULL;
         }
         
-        // Add to object
-        if(!dap_json_object_v2_add(l_object, l_key, l_value)) {
+        // Add to object using Arena + String Pool
+        if(!s_object_add_arena(a_stage2->arena, a_stage2->string_pool, l_object, l_key, l_value)) {
             dap_json_value_v2_free(l_value);
             dap_json_value_v2_free(l_key_value);
             dap_json_value_v2_free(l_object);
@@ -1065,7 +1255,9 @@ static dap_json_value_t *s_parse_object(
             return NULL;
         }
         
-        dap_json_value_v2_free(l_key_value); // Key copied by object_add
+        // Key now interned in String Pool, key_value can be freed
+        // (но Arena owns it, так что просто забудем про него)
+        // dap_json_value_v2_free(l_key_value); - не нужно, Arena owns
         
         // Check next: ',' or '}'
         if(*a_idx >= a_stage2->indices_count) {
@@ -1135,7 +1327,7 @@ static dap_json_value_t *s_parse_value(
     
     // String
     else if(l_char == '"') {
-        if(!s_parse_string(a_stage2->input, l_offset, a_stage2->input_len,
+        if(!s_parse_string(a_stage2, l_offset,
                            &l_value, &l_end_offset)) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_STRING;
             a_stage2->error_position = l_offset;
@@ -1161,7 +1353,7 @@ static dap_json_value_t *s_parse_value(
             }
         }
         
-        if(!s_parse_number(a_stage2->input, l_offset, l_number_end, &l_value)) {
+        if(!s_parse_number(a_stage2, l_offset, l_number_end, &l_value)) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_NUMBER;
             a_stage2->error_position = l_offset;
             return NULL;
@@ -1173,7 +1365,7 @@ static dap_json_value_t *s_parse_value(
     
     // Literal (true, false, null)
     else {
-        if(!s_parse_literal(a_stage2->input, l_offset, a_stage2->input_len,
+        if(!s_parse_literal(a_stage2, l_offset,
                             &l_value, &l_end_offset)) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_LITERAL;
             a_stage2->error_position = l_offset;
