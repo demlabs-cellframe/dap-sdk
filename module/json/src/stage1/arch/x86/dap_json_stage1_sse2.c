@@ -217,11 +217,12 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                     dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos, (uint32_t)l_str_len,
                                               TOKEN_TYPE_STRING, 0);
                     
-                    // Skip past this string in main loop
-                    if (l_str_end > l_pos + SSE2_CHUNK_SIZE) {
+                    // If string extends beyond current chunk, skip to end of string
+                    if (l_str_end >= l_pos + SSE2_CHUNK_SIZE) {
                         l_pos = l_str_end;
                         goto next_chunk;
                     }
+                    // Otherwise continue processing rest of chunk
                 }
                 
                 l_in_string = !l_in_string;
@@ -261,8 +262,14 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                                 dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
                                                           (uint32_t)(l_num_end - l_abs_pos),
                                                           TOKEN_TYPE_NUMBER, 0);
-                                // Skip processed bytes
-                                i += (l_num_end - l_abs_pos - 1);
+                                // Skip processed bytes within current chunk
+                                size_t l_skip = l_num_end - l_abs_pos - 1;
+                                if (l_num_end >= l_pos + SSE2_CHUNK_SIZE) {
+                                    // Number extends beyond chunk - skip to end of number
+                                    l_pos = l_num_end;
+                                    goto next_chunk;
+                                }
+                                i += l_skip;
                             }
                         }
                         // Literal detection
@@ -278,8 +285,14 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                                 dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
                                                           (uint32_t)(l_lit_end - l_abs_pos),
                                                           TOKEN_TYPE_LITERAL, l_lit_type);
-                                // Skip processed bytes
-                                i += (l_lit_end - l_abs_pos - 1);
+                                // Skip processed bytes within current chunk
+                                size_t l_skip = l_lit_end - l_abs_pos - 1;
+                                if (l_lit_end >= l_pos + SSE2_CHUNK_SIZE) {
+                                    // Literal extends beyond chunk - skip to end
+                                    l_pos = l_lit_end;
+                                    goto next_chunk;
+                                }
+                                i += l_skip;
                             }
                         }
                     }

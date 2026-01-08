@@ -241,10 +241,12 @@ int dap_json_stage1_run_neon(dap_json_stage1_t *a_stage1)
                     dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos, (uint32_t)l_str_len,
                                               TOKEN_TYPE_STRING, 0);
                     
-                    if (l_str_end > l_pos + NEON_CHUNK_SIZE) {
+                    // If string extends beyond current chunk, skip to end of string
+                    if (l_str_end >= l_pos + NEON_CHUNK_SIZE) {
                         l_pos = l_str_end;
                         goto next_chunk;
                     }
+                    // Otherwise continue processing rest of chunk
                 }
                 
                 l_in_string = !l_in_string;
