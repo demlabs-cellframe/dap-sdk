@@ -81,15 +81,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
-    ${CMAKE_CURRENT_BINARY_DIR}/../../3rdparty/json-c
 )
 
-# Link json-c library (temporary - will be replaced with native implementation)
-add_subdirectory(../../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
-
-# Dependencies - json depends on core and json-c
-set(JSON_LIBRARIES "dap_core;dap_json-c" CACHE INTERNAL "dap_json external dependencies")
+# Dependencies - json depends only on core (json-c REMOVED!)
+set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")
 
 # Link dependencies
 target_link_libraries(${PROJECT_NAME} PUBLIC dap_core PRIVATE ${JSON_LIBRARIES})

@@ -1,6 +1,6 @@
 #include "dap_json_rpc_response.h"
 #include "dap_cli_server.h"
-#include "json.h"
+#include "dap_json.h"
 
 #define LOG_TAG "dap_json_rpc_response"
 #define INDENTATION_LEVEL "    "

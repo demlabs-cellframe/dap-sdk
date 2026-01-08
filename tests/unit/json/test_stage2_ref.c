@@ -64,7 +64,7 @@ static bool s_test_value_creation_bool(void)
 {
     dap_json_value_t *l_true = dap_json_value_v2_create_bool(true);
     dap_assert(l_true != NULL, "Bool(true) creation failed");
-    dap_assert(l_true->type == DAP_JSON_TYPE_BOOL, "Bool type mismatch");
+    dap_assert(l_true->type == DAP_JSON_TYPE_BOOLEAN, "Bool type mismatch");
     dap_assert(l_true->boolean == true, "Bool value mismatch (true)");
     
     dap_json_value_t *l_false = dap_json_value_v2_create_bool(false);
@@ -80,7 +80,7 @@ static bool s_test_value_creation_int(void)
 {
     dap_json_value_t *l_zero = dap_json_value_v2_create_int(0);
     dap_assert(l_zero != NULL, "Int(0) creation failed");
-    dap_assert(l_zero->type == DAP_JSON_TYPE_NUMBER, "Int type mismatch");
+    dap_assert(l_zero->type == DAP_JSON_TYPE_INT, "Int type mismatch");
     dap_assert(l_zero->number.is_double == false, "Int should not be double");
     dap_assert(l_zero->number.i == 0, "Int value mismatch (0)");
     
@@ -102,7 +102,7 @@ static bool s_test_value_creation_double(void)
 {
     dap_json_value_t *l_zero = dap_json_value_v2_create_double(0.0);
     dap_assert(l_zero != NULL, "Double(0.0) creation failed");
-    dap_assert(l_zero->type == DAP_JSON_TYPE_NUMBER, "Double type mismatch");
+    dap_assert(l_zero->type == DAP_JSON_TYPE_INT, "Double type mismatch");
     dap_assert(l_zero->number.is_double == true, "Double should be double");
     dap_assert(l_zero->number.d == 0.0, "Double value mismatch (0.0)");
     
@@ -281,7 +281,7 @@ static bool s_test_parse_simple_values(void)
         dap_assert(dap_json_stage2_run(l_s2) == STAGE2_SUCCESS, "Stage 2 run failed (true)");
         
         dap_json_value_t *l_root = dap_json_stage2_get_root(l_s2);
-        dap_assert(l_root->type == DAP_JSON_TYPE_BOOL, "Expected bool type");
+        dap_assert(l_root->type == DAP_JSON_TYPE_BOOLEAN, "Expected bool type");
         dap_assert(l_root->boolean == true, "Expected true value");
         
         dap_json_value_v2_free(l_root);
@@ -299,7 +299,7 @@ static bool s_test_parse_simple_values(void)
         dap_assert(dap_json_stage2_run(l_s2) == STAGE2_SUCCESS, "Stage 2 run failed (int)");
         
         dap_json_value_t *l_root = dap_json_stage2_get_root(l_s2);
-        dap_assert(l_root->type == DAP_JSON_TYPE_NUMBER, "Expected number type");
+        dap_assert(l_root->type == DAP_JSON_TYPE_INT, "Expected number type");
         dap_assert(l_root->number.is_double == false, "Expected integer");
         dap_assert(l_root->number.i == 42, "Expected 42");
         
