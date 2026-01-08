@@ -462,18 +462,26 @@ void dap_string_pool_free(dap_string_pool_t *a_pool)
         return;
     }
     
+    log_it(L_DEBUG, "String pool free: start (owns_arena=%d, arena=%p, table=%p)", 
+           a_pool->owns_arena, a_pool->arena, a_pool->table);
+    
     if (a_pool->thread_safe) {
         pthread_mutex_destroy(&a_pool->mutex);
     }
     
     // Only free arena if we own it
     if (a_pool->owns_arena && a_pool->arena) {
+        log_it(L_DEBUG, "String pool free: freeing owned Arena");
         dap_arena_free(a_pool->arena);
+    } else {
+        log_it(L_DEBUG, "String pool free: NOT freeing Arena (owns_arena=%d)", a_pool->owns_arena);
     }
     
+    log_it(L_DEBUG, "String pool free: freeing table at %p", a_pool->table);
     DAP_DELETE(a_pool->table);
-    DAP_DELETE(a_pool);
+    log_it(L_DEBUG, "String pool free: table freed");
     
+    DAP_DELETE(a_pool);
     log_it(L_DEBUG, "String pool freed");
 }
 

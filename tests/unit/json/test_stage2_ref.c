@@ -266,7 +266,8 @@ static bool s_test_parse_simple_values(void)
         dap_assert(l_root != NULL, "Root value is NULL");
         dap_assert(l_root->type == DAP_JSON_TYPE_NULL, "Expected null type");
         
-        dap_json_value_v2_free(l_root);
+        // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+        // Arena will free it when dap_json_stage2_free() is called
         dap_json_stage2_free(l_s2);
         dap_json_stage1_free(l_s1);
     }
@@ -284,7 +285,7 @@ static bool s_test_parse_simple_values(void)
         dap_assert(l_root->type == DAP_JSON_TYPE_BOOLEAN, "Expected bool type");
         dap_assert(l_root->boolean == true, "Expected true value");
         
-        dap_json_value_v2_free(l_root);
+        // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
         dap_json_stage2_free(l_s2);
         dap_json_stage1_free(l_s1);
     }
@@ -303,7 +304,8 @@ static bool s_test_parse_simple_values(void)
         dap_assert(l_root->number.is_double == false, "Expected integer");
         dap_assert(l_root->number.i == 42, "Expected 42");
         
-        dap_json_value_v2_free(l_root);
+        // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+        // dap_json_value_v2_free(l_root);
         dap_json_stage2_free(l_s2);
         dap_json_stage1_free(l_s1);
     }
@@ -321,7 +323,8 @@ static bool s_test_parse_simple_values(void)
         dap_assert(l_root->type == DAP_JSON_TYPE_STRING, "Expected string type");
         dap_assert(strcmp(l_root->string.data, "Hello") == 0, "Expected 'Hello'");
         
-        dap_json_value_v2_free(l_root);
+        // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+        // dap_json_value_v2_free(l_root);
         dap_json_stage2_free(l_s2);
         dap_json_stage1_free(l_s1);
     }
@@ -355,7 +358,8 @@ static bool s_test_parse_array(void)
     dap_json_value_t *l_elem2 = dap_json_array_v2_get(l_root, 2);
     dap_assert(l_elem2->number.i == 3, "Expected 3");
     
-    dap_json_value_v2_free(l_root);
+    // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+    // dap_json_value_v2_free(l_root);
     dap_json_stage2_free(l_s2);
     dap_json_stage1_free(l_s1);
     return true;
@@ -386,7 +390,8 @@ static bool s_test_parse_object(void)
     dap_assert(l_age != NULL, "Age not found");
     dap_assert(l_age->number.i == 30, "Expected 30");
     
-    dap_json_value_v2_free(l_root);
+    // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+    // dap_json_value_v2_free(l_root);
     dap_json_stage2_free(l_s2);
     dap_json_stage1_free(l_s1);
     return true;
@@ -419,7 +424,8 @@ static bool s_test_parse_nested(void)
     dap_json_value_t *l_active0 = dap_json_object_v2_get(l_user0, "active");
     dap_assert(l_active0->boolean == true, "Expected true");
     
-    dap_json_value_v2_free(l_root);
+    // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
+    // dap_json_value_v2_free(l_root);
     dap_json_stage2_free(l_s2);
     dap_json_stage1_free(l_s1);
     return true;

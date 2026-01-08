@@ -1038,15 +1038,22 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
         return;
     }
     
+    log_it(L_DEBUG, "Stage 2 free: start");
+    
     // Free Arena (frees all DOM nodes allocated from it)
+    log_it(L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
     dap_arena_free(a_stage2->arena);
+    log_it(L_DEBUG, "Stage 2 free: Arena freed");
     
     // Free String Pool (frees all interned strings)
+    log_it(L_DEBUG, "Stage 2 free: freeing String Pool at %p", a_stage2->string_pool);
     dap_string_pool_free(a_stage2->string_pool);
+    log_it(L_DEBUG, "Stage 2 free: String Pool freed");
     
     // NOTE: root pointer becomes invalid after Arena free
     // Caller should use root BEFORE calling this function
     DAP_DELETE(a_stage2);
+    log_it(L_DEBUG, "Stage 2 free: complete");
 }
 
 /* Forward declaration для recursive parsing */
