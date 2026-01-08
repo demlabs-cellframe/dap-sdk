@@ -625,14 +625,38 @@ static bool s_parse_number(
         errno = 0;
         long long l_ival = strtoll(l_buffer, &l_endptr, 10);
         
-        if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
-            log_it(L_ERROR, "Invalid integer: %s", l_buffer);
+        // Check for valid conversion
+        if(l_endptr == l_buffer || *l_endptr != '\0') {
+            log_it(L_ERROR, "Invalid integer format: %s", l_buffer);
             return false;
         }
         
-        l_value->type = DAP_JSON_TYPE_INT;
-        l_value->number.i = (int64_t)l_ival;
-        l_value->number.is_double = false;
+        // Handle overflow/underflow - convert to double
+        if(errno == ERANGE) {
+            log_it(L_DEBUG, "Integer overflow/underflow, converting to double: %s", l_buffer);
+            errno = 0;
+            double l_dval = strtod(l_buffer, &l_endptr);
+            
+            if(errno != 0 || l_endptr == l_buffer || *l_endptr != '\0') {
+                log_it(L_ERROR, "Failed to convert overflowed integer to double: %s", l_buffer);
+                return false;
+            }
+            
+            if(!isfinite(l_dval)) {
+                log_it(L_ERROR, "Integer overflow to infinity: %s", l_buffer);
+                return false;
+            }
+            
+            l_value->type = DAP_JSON_TYPE_DOUBLE;
+            l_value->number.d = l_dval;
+            l_value->number.is_double = true;
+        }
+        else {
+            // Normal int64 range
+            l_value->type = DAP_JSON_TYPE_INT;
+            l_value->number.i = (int64_t)l_ival;
+            l_value->number.is_double = false;
+        }
     }
     
     *a_out_value = l_value;
@@ -1424,6 +1448,16 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
         log_it(L_ERROR, "Stage 2 parsing failed: %s (position %zu)",
                dap_json_stage2_error_to_string(a_stage2->error_code),
                a_stage2->error_position);
+        return a_stage2->error_code;
+    }
+    
+    // Check for trailing garbage - all structural indices must be consumed
+    if(l_idx < a_stage2->indices_count) {
+        log_it(L_ERROR, "Trailing garbage detected: %zu unused structural indices (used %zu of %zu)",
+               a_stage2->indices_count - l_idx, l_idx, a_stage2->indices_count);
+        a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
+        a_stage2->error_position = (l_idx < a_stage2->indices_count) ? 
+                                   a_stage2->indices[l_idx].position : a_stage2->input_len;
         return a_stage2->error_code;
     }
     

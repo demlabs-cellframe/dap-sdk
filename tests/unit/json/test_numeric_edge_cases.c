@@ -419,7 +419,8 @@ static bool s_test_zero_variants(void) {
     bool result = false;
     dap_json_t *l_json = NULL;
     
-    const char *l_zeros_json = "{\"pos\":+0,\"neg\":-0,\"float\":0.0}";
+    // Note: JSON RFC 8259 does NOT allow explicit '+' sign, so we test only valid forms
+    const char *l_zeros_json = "{\"pos\":0,\"neg\":-0,\"float\":0.0}";
     
     l_json = dap_json_parse_string(l_zeros_json);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse zero variants");
