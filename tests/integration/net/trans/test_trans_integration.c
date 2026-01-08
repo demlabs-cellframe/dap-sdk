@@ -51,31 +51,32 @@
 #define LOG_TAG "test_trans"
 
 
-// Test configuration
-#define TEST_PARALLEL_TRANSS 4  // Number of parallel trans instances per type  
-#define TEST_LARGE_DATA_SIZE (10 * 1024 * 1024)  // 10 MB for HTTP/WebSocket
-#define TEST_UDP_DATA_SIZE (10 * 1024)           // 10 KB for UDP (realistic for datagram trans)
-#define TEST_SMALL_DATA_SIZE (1024)  // 1 KB for UDP/DNS (packet-based transs)
+// Test configuration  
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANS_TIMEOUT_MS 30000  // 30 seconds (increased for parallel clients)
+#define TEST_TRANS_TIMEOUT_MS 30000  // 30 seconds for standard scenarios
+#define TEST_TRANS_TIMEOUT_LARGE_MS 120000  // 2 minutes for large scenarios (1000+ clients/servers)
 
 // Test scenarios: different server/client configurations
-// TODO: Implement full scenario support (variable client/server counts)
-// For now, start with basic scenario to validate architecture
+// Testing progression: start small → scale up → stress test
 typedef struct test_scenario {
     const char *name;
     size_t num_servers;
     size_t num_clients;
     size_t data_size;  // bytes to send/receive per client
+    uint32_t timeout_ms;  // Timeout for this scenario
 } test_scenario_t;
 
 static const test_scenario_t g_scenarios[] = {
-    {"1 server, 4 clients (baseline)", 1, TEST_PARALLEL_TRANSS, TEST_UDP_DATA_SIZE},
-    // Future scenarios to implement:
-    // {"1 server, 10 clients",      1,   10,    10*1024},
-    // {"1 server, 1000 clients",    1, 1000,     1*1024},
-    // {"10 servers, 10 clients",   10,   10,    10*1024},
-    // {"1000 servers, 1000 clients", 1000, 1000, 1*1024},
+    // Basic scenarios - verify functionality
+    {"1 server, 1 client",      1,    1,    10*1024, TEST_TRANS_TIMEOUT_MS},
+    {"1 server, 10 clients",    1,   10,    10*1024, TEST_TRANS_TIMEOUT_MS},
+    
+    // Scaling scenarios - test concurrency
+    {"1 server, 1000 clients",  1, 1000,     1*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
+    {"10 servers, 10 clients", 10,   10,    10*1024, TEST_TRANS_TIMEOUT_MS},
+    
+    // Stress scenario - maximum load
+    {"1000 servers, 1000 clients", 1000, 1000, 1*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
@@ -93,26 +94,136 @@ const trans_test_config_t g_trans_configs[] = {
 // Also export as runtime variable for use in other files
 const size_t g_trans_config_count = TRANS_CONFIG_COUNT;
 
-// Per-trans test ctx
+// Per-trans test ctx with dynamic arrays for scenario support
 typedef struct trans_test_ctx {
     trans_test_config_t config;
     test_scenario_t scenario;  // Current test scenario
-    dap_net_trans_server_t *server;
-    dap_client_t *clients[TEST_PARALLEL_TRANSS];
-    test_stream_ch_ctx_t stream_ctxs[TEST_PARALLEL_TRANSS];
-    dap_stream_node_addr_t client_node_addrs[TEST_PARALLEL_TRANSS];  // Unique client node addresses
+    
+    // Dynamic arrays allocated based on scenario
+    dap_net_trans_server_t **servers;           // array of num_servers server pointers
+    dap_client_t **clients;                     // array of num_clients client pointers
+    test_stream_ch_ctx_t *stream_ctxs;          // array of num_clients stream contexts
+    dap_stream_node_addr_t *client_node_addrs;  // array of num_clients node addresses
+    
     pthread_t thread;
     int result;
     bool running;
 } trans_test_ctx_t;
 
-// Global test state
-static trans_test_ctx_t s_trans_ctxs[TRANS_CONFIG_COUNT];
+// Global test state - no longer fixed array, will be allocated dynamically
 static pthread_mutex_t s_test_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // =======================================================================================
 // HELPER FUNCTIONS
 // =======================================================================================
+
+/**
+ * @brief Allocate and initialize test context for a scenario
+ * @param a_config Transport configuration
+ * @param a_scenario Test scenario (determines array sizes)
+ * @return Allocated context or NULL on error
+ */
+static trans_test_ctx_t* test_trans_ctx_alloc(const trans_test_config_t *a_config,
+                                                const test_scenario_t *a_scenario)
+{
+    if (!a_config || !a_scenario) {
+        log_it(L_ERROR, "Invalid arguments for test context allocation");
+        return NULL;
+    }
+    
+    trans_test_ctx_t *l_ctx = DAP_NEW_Z(trans_test_ctx_t);
+    if (!l_ctx) {
+        log_it(L_ERROR, "Failed to allocate test context");
+        return NULL;
+    }
+    
+    // Copy config and scenario
+    l_ctx->config = *a_config;
+    l_ctx->scenario = *a_scenario;
+    l_ctx->result = 0;
+    l_ctx->running = false;
+    
+    // Allocate dynamic arrays based on scenario
+    l_ctx->servers = DAP_NEW_Z_COUNT(dap_net_trans_server_t*, a_scenario->num_servers);
+    l_ctx->clients = DAP_NEW_Z_COUNT(dap_client_t*, a_scenario->num_clients);
+    l_ctx->stream_ctxs = DAP_NEW_Z_COUNT(test_stream_ch_ctx_t, a_scenario->num_clients);
+    l_ctx->client_node_addrs = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, a_scenario->num_clients);
+    
+    if (!l_ctx->servers || !l_ctx->clients || !l_ctx->stream_ctxs || !l_ctx->client_node_addrs) {
+        log_it(L_ERROR, "Failed to allocate dynamic arrays for scenario '%s': %zu servers, %zu clients",
+               a_scenario->name, a_scenario->num_servers, a_scenario->num_clients);
+        
+        // Cleanup on error
+        DAP_DEL_Z(l_ctx->servers);
+        DAP_DEL_Z(l_ctx->clients);
+        DAP_DEL_Z(l_ctx->stream_ctxs);
+        DAP_DEL_Z(l_ctx->client_node_addrs);
+        DAP_DEL_Z(l_ctx);
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "Allocated test context for scenario '%s': %zu servers, %zu clients",
+           a_scenario->name, a_scenario->num_servers, a_scenario->num_clients);
+    
+    return l_ctx;
+}
+
+/**
+ * @brief Cleanup and free test context
+ * @param a_ctx Context to cleanup
+ */
+static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
+{
+    if (!a_ctx)
+        return;
+    
+    log_it(L_DEBUG, "Cleaning up test context for scenario '%s'", a_ctx->scenario.name);
+    
+    // Cleanup clients
+    if (a_ctx->clients) {
+        for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
+            if (a_ctx->clients[i]) {
+                dap_client_delete_mt(a_ctx->clients[i]);
+                a_ctx->clients[i] = NULL;
+            }
+        }
+        DAP_DEL_Z(a_ctx->clients);
+    }
+    
+    // Cleanup stream contexts
+    if (a_ctx->stream_ctxs) {
+        for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
+            if (a_ctx->stream_ctxs[i].sent_data) {
+                DAP_DELETE(a_ctx->stream_ctxs[i].sent_data);
+                a_ctx->stream_ctxs[i].sent_data = NULL;
+            }
+            if (a_ctx->stream_ctxs[i].received_data) {
+                DAP_DELETE(a_ctx->stream_ctxs[i].received_data);
+                a_ctx->stream_ctxs[i].received_data = NULL;
+            }
+        }
+        DAP_DEL_Z(a_ctx->stream_ctxs);
+    }
+    
+    // Cleanup servers
+    if (a_ctx->servers) {
+        for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+            if (a_ctx->servers[i]) {
+                dap_net_trans_server_delete(a_ctx->servers[i]);
+                a_ctx->servers[i] = NULL;
+            }
+        }
+        DAP_DEL_Z(a_ctx->servers);
+    }
+    
+    // Cleanup node addresses array
+    DAP_DEL_Z(a_ctx->client_node_addrs);
+    
+    // Free the context itself
+    DAP_DEL_Z(a_ctx);
+    
+    log_it(L_DEBUG, "Test context cleanup complete");
+}
 
 /**
  * @brief Echo callback for test channels - sends received data back to client
@@ -245,16 +356,19 @@ static int test_init_all_transs(void)
 /**
  * @brief Create and start server for a trans type
  */
-static int test_create_trans_server(trans_test_ctx_t *a_ctx)
+/**
+ * @brief Create and start all servers for the scenario
+ * @param a_ctx Test context with scenario configuration
+ * @return 0 on success, negative on error
+ */
+static int test_create_trans_servers(trans_test_ctx_t *a_ctx)
 {
-    if (!a_ctx) {
+    if (!a_ctx || !a_ctx->servers) {
+        log_it(L_ERROR, "Invalid arguments for server creation");
         return -1;
     }
     
-    char l_server_name[256];
-    snprintf(l_server_name, sizeof(l_server_name), "test_%s_server", a_ctx->config.name);
-    
-    // Verify server operations are registered before creating server
+    // Verify server operations are registered
     const dap_net_trans_server_ops_t *l_ops = dap_net_trans_server_get_ops(a_ctx->config.trans_type);
     if (!l_ops) {
         TEST_ERROR("Server operations not registered for %s trans (type: %d)", 
@@ -262,32 +376,43 @@ static int test_create_trans_server(trans_test_ctx_t *a_ctx)
         return -1;
     }
     
-    // Create server instance
-    a_ctx->server = dap_net_trans_server_new(a_ctx->config.trans_type, l_server_name);
-    if (!a_ctx->server) {
-        TEST_ERROR("Failed to create %s server", a_ctx->config.name);
-        return -1;
+    log_it(L_INFO, "Creating %zu server(s) for %s", a_ctx->scenario.num_servers, a_ctx->config.name);
+    
+    // Create all servers
+    for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+        char l_server_name[256];
+        snprintf(l_server_name, sizeof(l_server_name), "test_%s_server_%zu", 
+                 a_ctx->config.name, i);
+        
+        a_ctx->servers[i] = dap_net_trans_server_new(a_ctx->config.trans_type, l_server_name);
+        if (!a_ctx->servers[i]) {
+            TEST_ERROR("Failed to create %s server #%zu", a_ctx->config.name, i);
+            return -1;
+        }
+        
+        // Start server on unique port
+        const char *l_addr = a_ctx->config.address;
+        uint16_t l_port = a_ctx->config.base_port + (uint16_t)i;
+        
+        int l_ret = dap_net_trans_server_start(a_ctx->servers[i], NULL, &l_addr, &l_port, 1);
+        if (l_ret != 0) {
+            TEST_ERROR("Failed to start %s server #%zu on %s:%u", 
+                       a_ctx->config.name, i, l_addr, l_port);
+            return -2;
+        }
+        
+        // Wait for server to be ready
+        if (!test_wait_for_server_ready(a_ctx->servers[i], 2000)) {
+            TEST_ERROR("Server #%zu not ready within timeout", i);
+            return -3;
+        }
+        
+        log_it(L_INFO, "%s server #%zu started on %s:%u", 
+               a_ctx->config.name, i, l_addr, l_port);
     }
     
-    // Start server
-    const char *l_addr = a_ctx->config.address;
-    uint16_t l_port = a_ctx->config.base_port;
-    
-    int l_ret = dap_net_trans_server_start(a_ctx->server, NULL, &l_addr, &l_port, 1);
-    if (l_ret != 0) {
-        TEST_ERROR("Failed to start %s server on %s:%u", a_ctx->config.name, l_addr, l_port);
-        dap_net_trans_server_delete(a_ctx->server);
-        a_ctx->server = NULL;
-        return -2;
-    }
-    
-    // Wait for server to be ready (listening)
-    if (!test_wait_for_server_ready(a_ctx->server, 2000)) {
-        TEST_ERROR("Server not ready within timeout");
-        return -6;
-    }
-    
-    TEST_INFO("%s server started on %s:%u", a_ctx->config.name, l_addr, l_port);
+    TEST_INFO("All %zu %s servers started successfully", 
+              a_ctx->scenario.num_servers, a_ctx->config.name);
     return 0;
 }
 
@@ -316,8 +441,10 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
         // Print stage changes and status updates
         if (l_stage != l_last_stage || l_status != l_last_status) {
             uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
-            printf("  Client %p stage: %d (status: %d, elapsed: %llu ms)\n", 
-                   (void*)a_client, l_stage, l_status, (unsigned long long)l_elapsed);
+
+            log_it(L_DEBUG, "Client %p stage transition: %d->%d, status: %d->%d (elapsed: %llu ms)",
+                   (void*)a_client, l_last_stage, l_stage, l_last_status, l_status, 
+                   (unsigned long long)l_elapsed);
             l_last_stage = l_stage;
             l_last_status = l_status;
         }
@@ -345,7 +472,10 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
     if (!l_success) {
         dap_client_stage_t l_final_stage = dap_client_get_stage(a_client);
         dap_client_stage_status_t l_final_status = dap_client_get_stage_status(a_client);
-        printf("  Timeout reached at stage: %d, status: %d\n", l_final_stage, l_final_status);
+
+        log_it(L_ERROR, "Client %p handshake timeout: final stage=%d, status=%d, expected stage=%d with status=%d or %d",
+               (void*)a_client, l_final_stage, l_final_status, 
+               STAGE_STREAM_STREAMING, STAGE_STATUS_COMPLETE, STAGE_STATUS_DONE);
     }
     
     return l_success;
@@ -354,7 +484,18 @@ static bool test_wait_for_full_handshake(dap_client_t *a_client, uint32_t a_time
 /**
  * @brief Create and configure client for a trans
  */
-static dap_client_t *test_create_trans_client(trans_test_config_t *a_config, uint16_t a_port_offset, dap_stream_node_addr_t *a_client_node_addr)
+/**
+ * @brief Create and configure a client for trans testing
+ * @param a_config Trans configuration
+ * @param a_server_idx Index of server to connect to (for multi-server scenarios)
+ * @param a_client_idx Index of client (for naming/logging)
+ * @param a_client_node_addr Unique node address for this client
+ * @return Created client or NULL on error
+ */
+static dap_client_t *test_create_trans_client(trans_test_config_t *a_config, 
+                                                size_t a_server_idx,
+                                                size_t a_client_idx,
+                                                dap_stream_node_addr_t *a_client_node_addr)
 {
     // Initialize client system (idempotent)
     dap_client_init();
@@ -362,7 +503,7 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config, uin
     // Create client
     dap_client_t *l_client = dap_client_new(NULL, NULL);
     if (!l_client) {
-        TEST_ERROR("Failed to create %s client", a_config->name);
+        TEST_ERROR("Failed to create %s client #%zu", a_config->name, a_client_idx);
         return NULL;
     }
     
@@ -372,36 +513,32 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config, uin
     // Wait for client initialization
     bool l_client_ready = DAP_TEST_WAIT_CLIENT_INITIALIZED(l_client, 2000);
     if (!l_client_ready) {
-        TEST_ERROR("Client initialization timeout");
+        TEST_ERROR("Client #%zu initialization timeout", a_client_idx);
         dap_client_delete_unsafe(l_client);
         return NULL;
     }
     
-    // Set uplink address and port
-    // NOTE: All clients connect to the same server port (base_port)
-    // The server handles multiple clients on the same port
-    // link_info.node_addr should be server's address (g_node_addr)
-    // This will be updated from server signature during handshake
-    uint16_t l_port = a_config->base_port;
-    dap_stream_node_addr_t l_server_node_addr = g_node_addr; // Use server's global node address
+    // Connect to specific server (base_port + server_idx)
+    // This allows load balancing across multiple servers
+    uint16_t l_port = a_config->base_port + (uint16_t)a_server_idx;
+    dap_stream_node_addr_t l_server_node_addr = g_node_addr; // Server's global node address
     dap_client_set_uplink_unsafe(l_client, &l_server_node_addr, a_config->address, l_port);
     
+    log_it(L_DEBUG, "Client #%zu connecting to server #%zu at %s:%u", 
+           a_client_idx, a_server_idx, a_config->address, l_port);
+    
     // Set client's certificate if node address provided
-    // This certificate will be used during handshake to identify client
-    // The address from certificate will be used on server side to identify the stream
     if (a_client_node_addr && a_client_node_addr->uint64 != 0) {
-        // Find certificate by name (it was created by dap_test_generate_unique_node_addr)
-        // Format: "test_client_%s_%zu_%zu"
         char l_cert_name[256];
         snprintf(l_cert_name, sizeof(l_cert_name), "test_client_%s_%zu_%zu", 
-                 a_config->name, (size_t)pthread_self(), (size_t)a_port_offset);
+                 a_config->name, (size_t)pthread_self(), a_client_idx);
         dap_cert_t *l_client_cert = dap_cert_find_by_name(l_cert_name);
         if (l_client_cert) {
             dap_client_set_auth_cert(l_client, l_cert_name);
-            log_it(L_DEBUG, "Set client certificate '%s' for node address "NODE_ADDR_FP_STR, 
-                   l_cert_name, NODE_ADDR_FP_ARGS_S(*a_client_node_addr));
+            log_it(L_DEBUG, "Set client #%zu certificate '%s' for node address "NODE_ADDR_FP_STR, 
+                   a_client_idx, l_cert_name, NODE_ADDR_FP_ARGS_S(*a_client_node_addr));
         } else {
-            log_it(L_WARNING, "Certificate '%s' not found, client address may not be set correctly", l_cert_name);
+            log_it(L_WARNING, "Certificate '%s' not found for client #%zu", l_cert_name, a_client_idx);
         }
     }
     
@@ -412,7 +549,9 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config, uin
 }
 
 /**
- * @brief Test single trans with parallel clients
+ * @brief Test single trans with specified scenario (variable servers/clients)
+ * @param a_arg Pointer to trans_test_ctx_t
+ * @return NULL (always)
  */
 static void *test_trans_worker(void *a_arg)
 {
@@ -422,29 +561,21 @@ static void *test_trans_worker(void *a_arg)
     
     pthread_mutex_lock(&s_test_mutex);
     printf("\n=== Starting %s trans test: %s ===\n", l_ctx->config.name, l_ctx->scenario.name);
+    printf("  Servers: %zu, Clients: %zu, Data size: %zu KB, Timeout: %u ms\n",
+           l_ctx->scenario.num_servers, l_ctx->scenario.num_clients,
+           l_ctx->scenario.data_size / 1024, l_ctx->scenario.timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
     
-    // Create server
-    if (test_create_trans_server(l_ctx) != 0) {
+    // Create all servers
+    if (test_create_trans_servers(l_ctx) != 0) {
         l_ctx->result = -1;
         l_ctx->running = false;
         return NULL;
     }
     
-    // Note: We don't need to generate unique server node address for tests
-    // Server uses g_node_addr which is set from node-addr certificate during dap_stream_init()
-    // Each trans server uses the same g_node_addr
-    // For tests, we generate unique client node addresses to ensure each client has unique identity
-    // But server address is always g_node_addr (the global server node address)
-    
-    // Initialize all client ctxs and generate unique client node addresses
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        // Use smaller data size for UDP to test fragmentation (10KB vs 10MB)
-        size_t l_test_data_size = (l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) 
-                                  ? TEST_UDP_DATA_SIZE 
-                                  : TEST_LARGE_DATA_SIZE;
-        
-        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_test_data_size) != 0) {
+    // Initialize stream contexts and generate unique client node addresses
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_ctx->scenario.data_size) != 0) {
             TEST_ERROR("Failed to initialize stream channel ctx %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -2;
             l_ctx->running = false;
@@ -462,91 +593,127 @@ static void *test_trans_worker(void *a_arg)
             l_ctx->running = false;
             return NULL;
         }
-        log_it(L_DEBUG, "Generated client %zu node address for %s: "NODE_ADDR_FP_STR, 
-               i, l_ctx->config.name, NODE_ADDR_FP_ARGS_S(l_ctx->client_node_addrs[i]));
+        
+        if (i % 100 == 0 && i > 0) {
+            log_it(L_INFO, "Generated %zu/%zu client node addresses", i, l_ctx->scenario.num_clients);
+        }
     }
     
-    // Create all clients with their unique node addresses
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        l_ctx->clients[i] = test_create_trans_client(&l_ctx->config, i, &l_ctx->client_node_addrs[i]);
+    // Create all clients - distribute across servers using round-robin
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+        size_t l_server_idx = i % l_ctx->scenario.num_servers;  // Round-robin server selection
+        
+        l_ctx->clients[i] = test_create_trans_client(&l_ctx->config, l_server_idx, i,
+                                                       &l_ctx->client_node_addrs[i]);
         if (!l_ctx->clients[i]) {
             TEST_ERROR("Failed to create client %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -3;
             l_ctx->running = false;
             return NULL;
         }
+        
+        if (i % 100 == 0 && i > 0) {
+            log_it(L_INFO, "Created %zu/%zu clients", i, l_ctx->scenario.num_clients);
+        }
     }
     
     // Start handshake for all clients
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
+    log_it(L_INFO, "Starting handshake for all %zu clients...", l_ctx->scenario.num_clients);
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         dap_client_go_stage(l_ctx->clients[i], STAGE_STREAM_STREAMING, NULL);
+        
+        if (i % 100 == 0 && i > 0) {
+            log_it(L_INFO, "Started handshake for %zu/%zu clients", i, l_ctx->scenario.num_clients);
+        }
     }
     
     // Wait for all clients to complete handshake
+    log_it(L_INFO, "Waiting for all %zu clients to complete handshake...", l_ctx->scenario.num_clients);
     bool l_all_ready = true;
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        bool l_ready = test_wait_for_full_handshake(l_ctx->clients[i], TEST_TRANS_TIMEOUT_MS);
+    size_t l_handshake_completed = 0;
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+        bool l_ready = test_wait_for_full_handshake(l_ctx->clients[i], l_ctx->scenario.timeout_ms);
         if (!l_ready) {
             TEST_ERROR("Client %zu for %s failed to complete handshake", i, l_ctx->config.name);
             l_all_ready = false;
             l_ctx->result = -4;
             break;
         }
+        
+        l_handshake_completed++;
+        if (l_handshake_completed % 100 == 0) {
+            log_it(L_INFO, "Handshake completed: %zu/%zu clients", 
+                   l_handshake_completed, l_ctx->scenario.num_clients);
+        }
     }
     
     if (!l_all_ready) {
+        log_it(L_ERROR, "Handshake failed after %zu/%zu clients", 
+               l_handshake_completed, l_ctx->scenario.num_clients);
         l_ctx->running = false;
         return NULL;
     }
     
     pthread_mutex_lock(&s_test_mutex);
-    printf("  All %s clients completed handshake successfully\n", l_ctx->config.name);
+    printf("  All %zu %s clients completed handshake successfully\n", 
+           l_ctx->scenario.num_clients, l_ctx->config.name);
     pthread_mutex_unlock(&s_test_mutex);
     
-    // link_info.node_addr should already be set to g_node_addr (server address)
-    // No need to update it after handshake - it's already correct
-    // Server address is used for finding stream on server when registering receivers
-    
-    // Wait for stream connection to complete and channels to be created
-    // Channels are created on server when client connects to stream endpoint
-    // Channels are created on client in STAGE_STREAM_CONNECTED
-    // We need to wait for this before registering receivers
-    TEST_INFO("Waiting for channels for %s...", l_ctx->config.name);
+    // Wait for channels to be created
+    TEST_INFO("Waiting for channels for %zu clients...", l_ctx->scenario.num_clients);
     bool l_all_channels_ready = true;
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
+    size_t l_channels_ready = 0;
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         if (!test_wait_for_stream_channels_ready(l_ctx->clients[i], "ABC", 5000)) {
             TEST_ERROR("Channels not ready for client %zu in %s", i, l_ctx->config.name);
             l_all_channels_ready = false;
+            break;
+        }
+        
+        l_channels_ready++;
+        if (l_channels_ready % 100 == 0) {
+            log_it(L_INFO, "Channels ready: %zu/%zu clients", 
+                   l_channels_ready, l_ctx->scenario.num_clients);
         }
     }
     
     if (!l_all_channels_ready) {
-        TEST_ERROR("Not all channels ready");
-        l_ctx->result = -4;
+        TEST_ERROR("Not all channels ready (only %zu/%zu)", 
+                   l_channels_ready, l_ctx->scenario.num_clients);
+        l_ctx->result = -5;
         l_ctx->running = false;
         return NULL;
     }
     
-    // Register stream channel receivers for all clients
-    TEST_INFO("Registering receivers for %s...", l_ctx->config.name);
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
+    // Register receivers for all clients
+    TEST_INFO("Registering receivers for %zu clients...", l_ctx->scenario.num_clients);
+    size_t l_receivers_registered = 0;
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         int l_ret = test_stream_ch_register_receiver(l_ctx->clients[i], TEST_STREAM_CH_ID, &l_ctx->stream_ctxs[i]);
         if (l_ret != 0) {
             TEST_ERROR("Failed to register receiver for client %zu in %s", i, l_ctx->config.name);
-            l_ctx->result = -5;
+            l_ctx->result = -6;
             l_ctx->running = false;
             return NULL;
         }
+        
+        l_receivers_registered++;
+        if (l_receivers_registered % 100 == 0) {
+            log_it(L_INFO, "Registered receivers: %zu/%zu clients", 
+                   l_receivers_registered, l_ctx->scenario.num_clients);
+        }
     }
     
-    // Send large data volumes for all clients in parallel
-    TEST_INFO("Sending data for %s...", l_ctx->config.name);
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        TEST_INFO("Sending data for client %zu...", i);
-        int l_ret = test_stream_ch_send_and_wait(l_ctx->clients[i], &l_ctx->stream_ctxs[i], TEST_TRANS_TIMEOUT_MS);
+    // Send data for all clients and verify
+    TEST_INFO("Sending data for %zu clients (%zu KB each)...", 
+              l_ctx->scenario.num_clients, l_ctx->scenario.data_size / 1024);
+    size_t l_data_exchanged = 0;
+    for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+        int l_ret = test_stream_ch_send_and_wait(l_ctx->clients[i], &l_ctx->stream_ctxs[i], 
+                                                   l_ctx->scenario.timeout_ms);
         if (l_ret != 0) {
             TEST_ERROR("Data exchange failed for client %zu in %s", i, l_ctx->config.name);
-            l_ctx->result = -6;
+            l_ctx->result = -7;
             l_ctx->running = false;
             return NULL;
         }
@@ -558,31 +725,34 @@ static void *test_trans_worker(void *a_arg)
         
         if (!l_data_received) {
             TEST_ERROR("Data not received for client %zu in %s", i, l_ctx->config.name);
-            l_ctx->result = -7;
+            l_ctx->result = -8;
             l_ctx->running = false;
             return NULL;
         }
         
-        // Verify data integrity
         if (l_ctx->stream_ctxs[i].received_data && l_ctx->stream_ctxs[i].received_data_size > 0) {
             bool l_data_valid = test_trans_verify_data(l_ctx->stream_ctxs[i].sent_data,
-                                                           l_ctx->stream_ctxs[i].received_data,
-                                                           l_ctx->stream_ctxs[i].received_data_size);
+                                                         l_ctx->stream_ctxs[i].received_data,
+                                                         l_ctx->stream_ctxs[i].received_data_size);
             if (!l_data_valid) {
                 TEST_ERROR("Data integrity check failed for client %zu in %s", i, l_ctx->config.name);
-                l_ctx->result = -8;
+                l_ctx->result = -9;
                 l_ctx->running = false;
                 return NULL;
             }
         }
+        
+        l_data_exchanged++;
+        if (l_data_exchanged % 100 == 0) {
+            log_it(L_INFO, "Data exchanged: %zu/%zu clients", 
+                   l_data_exchanged, l_ctx->scenario.num_clients);
+        }
     }
     
     pthread_mutex_lock(&s_test_mutex);
-    size_t l_test_data_size = (l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) 
-                              ? TEST_UDP_DATA_SIZE 
-                              : TEST_LARGE_DATA_SIZE;
-    printf("  All %s clients completed data exchange successfully (%zu KB per client)\n", 
-           l_ctx->config.name, l_test_data_size / 1024);
+    size_t l_total_data_mb = (l_ctx->scenario.num_clients * l_ctx->scenario.data_size) / (1024 * 1024);
+    printf("  All %zu %s clients completed data exchange successfully (%zu MB total)\n", 
+           l_ctx->scenario.num_clients, l_ctx->config.name, l_total_data_mb);
     pthread_mutex_unlock(&s_test_mutex);
     
     l_ctx->result = 0;
@@ -593,35 +763,6 @@ static void *test_trans_worker(void *a_arg)
 /**
  * @brief Cleanup trans test ctx
  */
-static void test_cleanup_trans_ctx(trans_test_ctx_t *a_ctx)
-{
-    if (!a_ctx) {
-        return;
-    }
-    
-    // Cleanup clients
-    for (size_t i = 0; i < TEST_PARALLEL_TRANSS; i++) {
-        if (a_ctx->clients[i]) {
-            // Use mt version to safely delete from any thread
-            dap_client_delete_mt(a_ctx->clients[i]);
-            // Wait for client to be deleted
-            test_wait_for_client_deleted(&a_ctx->clients[i], 1000);
-            a_ctx->clients[i] = NULL;
-        }
-        test_stream_ch_ctx_cleanup(&a_ctx->stream_ctxs[i]);
-    }
-    
-    // Wait for all streams to close
-    test_wait_for_all_streams_closed(1000);
-    
-    // Cleanup server
-    if (a_ctx->server) {
-        dap_net_trans_server_stop(a_ctx->server);
-        dap_net_trans_server_delete(a_ctx->server);
-        a_ctx->server = NULL;
-    }
-}
-
 // =======================================================================================
 // TEST CASES
 // =======================================================================================
@@ -642,62 +783,94 @@ static void test_01_init_all_transs(void)
 }
 
 /**
- * @brief Test 2: Sequential trans testing
+ * @brief Test 2: Sequential trans testing with all scenarios
+ * @details Tests each transport protocol with progressively complex scenarios:
+ *          1. Basic: 1 server, 1 client
+ *          2. Scale: 1 server, 10 clients
+ *          3. Heavy: 1 server, 1000 clients
+ *          4. Multi-server: 10 servers, 10 clients
+ *          5. Stress: 1000 servers, 1000 clients
  */
 static void test_02_sequential_trans_testing(void)
 {
-    TEST_INFO("Test 2: Sequential trans testing with full handshake cycle");
+    TEST_INFO("Test 2: Sequential trans testing with all scenarios");
     
     bool l_all_passed = true;
     
-    // Test each trans sequentially
-    for (size_t i = 0; i < TRANS_CONFIG_COUNT; i++) {
+    // Test each transport protocol
+    for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
         printf("\n");
-        printf("========================================\n");
-        printf("Testing trans: %s\n", g_trans_configs[i].name);
-        printf("========================================\n");
+        printf("╔════════════════════════════════════════════════════════╗\n");
+        printf("║  Testing transport: %-35s║\n", g_trans_configs[trans_idx].name);
+        printf("╚════════════════════════════════════════════════════════╝\n");
         
-        // Initialize trans ctx with baseline scenario
-        s_trans_ctxs[i].config = g_trans_configs[i];
-        s_trans_ctxs[i].scenario = g_scenarios[0];  // Start with baseline scenario
-        s_trans_ctxs[i].server = NULL;
-        memset(s_trans_ctxs[i].clients, 0, sizeof(s_trans_ctxs[i].clients));
-        memset(s_trans_ctxs[i].client_node_addrs, 0, sizeof(s_trans_ctxs[i].client_node_addrs));
-        s_trans_ctxs[i].result = 0;
-        s_trans_ctxs[i].running = false;
-        
-        // Run trans test directly (no threading)
-        test_trans_worker(&s_trans_ctxs[i]);
-        
-        // Check result
-        if (s_trans_ctxs[i].result == 0) {
-            printf("✅ Trans %s: PASSED\n", g_trans_configs[i].name);
-        } else {
-            printf("❌ Trans %s: FAILED (code %d)\n", g_trans_configs[i].name, s_trans_ctxs[i].result);
-            l_all_passed = false;
+        // Test each scenario for this transport
+        for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
+            printf("\n--- Scenario %zu/%zu: %s ---\n", 
+                   scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
+            
+            // Allocate context for this scenario
+            trans_test_ctx_t *l_ctx = test_trans_ctx_alloc(&g_trans_configs[trans_idx],
+                                                             &g_scenarios[scenario_idx]);
+            if (!l_ctx) {
+                TEST_ERROR("Failed to allocate context for scenario '%s'", 
+                          g_scenarios[scenario_idx].name);
+                l_all_passed = false;
+                break;
+            }
+            
+            // Run test for this scenario
+            test_trans_worker(l_ctx);
+            
+            // Check result
+            if (l_ctx->result == 0) {
+                printf("✅ %s - %s: PASSED\n", 
+                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name);
+            } else {
+                printf("❌ %s - %s: FAILED (code %d)\n", 
+                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name, 
+                       l_ctx->result);
+                l_all_passed = false;
+                
+                // Cleanup and continue to next scenario
+                test_trans_ctx_free(l_ctx);
+                break;  // Stop testing this transport on first failure
+            }
+            
+            // Cleanup after each scenario
+            test_trans_ctx_free(l_ctx);
+            
+            // Wait for cleanup to complete
+            test_wait_for_all_streams_closed(2000);
+            
+            printf("\n");
         }
-        
-        // Cleanup after each trans test
-        test_cleanup_trans_ctx(&s_trans_ctxs[i]);
-        
-        // Wait for cleanup to complete
-        test_wait_for_all_streams_closed(1000);
         
         printf("\n");
     }
     
-    printf("========================================\n");
-    printf("Test Summary:\n");
-    for (size_t i = 0; i < TRANS_CONFIG_COUNT; i++) {
-        printf("  %s: %s\n", 
-               g_trans_configs[i].name, 
-               s_trans_ctxs[i].result == 0 ? "✅ PASSED" : "❌ FAILED");
+    // Print final summary
+    printf("\n");
+    printf("╔════════════════════════════════════════════════════════╗\n");
+    printf("║                     TEST SUMMARY                       ║\n");
+    printf("╚════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    
+    for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
+        printf("  %s:\n", g_trans_configs[trans_idx].name);
+        for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
+            printf("    - %s: %s\n", 
+                   g_scenarios[scenario_idx].name,
+                   l_all_passed ? "✅ PASSED" : "❌ FAILED");
+        }
     }
+    
+    printf("\n");
     printf("========================================\n");
     
     TEST_ASSERT(l_all_passed, "All trans tests should pass");
     
-    TEST_SUCCESS("Test 2 passed: All transs tested sequentially");
+    TEST_SUCCESS("Test 2 passed: All transs tested with all scenarios");
 }
 
 /**
