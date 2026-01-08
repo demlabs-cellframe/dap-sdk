@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dap_common.h"
+#include "dap_enc_kdf.h"
 
 #include "dap_enc_iaes.h"
 #include "dap_enc_oaes.h"
@@ -1326,5 +1327,340 @@ int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
     
     return 0;
 }
+
+// ============================================================================
+// HIGH-LEVEL KEM HANDSHAKE API IMPLEMENTATION
+// ============================================================================
+
+/**
+ * @brief Alice: Generate KEM keypair and export public key
+ */
+dap_enc_kem_result_t* dap_enc_kem_alice_generate_keypair(dap_enc_key_type_t a_kem_type)
+{
+    // Validate KEM type
+    if (a_kem_type != DAP_ENC_KEY_TYPE_KEM_KYBER512 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_MLWE_KYBER &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM &&
+        a_kem_type != DAP_ENC_KEY_TYPE_MSRLN &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_MSRLN16 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_BCNS15 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_LWE_FRODO &&
+        a_kem_type != DAP_ENC_KEY_TYPE_CODE_MCBITS &&
+        a_kem_type != DAP_ENC_KEY_TYPE_NTRU) {
+        log_it(L_ERROR, "Invalid KEM type: %d (not a KEM algorithm)", a_kem_type);
+        return NULL;
+    }
+    
+    // Allocate result structure
+    dap_enc_kem_result_t *l_result = DAP_NEW_Z(dap_enc_kem_result_t);
+    if (!l_result) {
+        log_it(L_CRITICAL, "Failed to allocate KEM result");
+        return NULL;
+    }
+    
+    // Generate KEM keypair
+    l_result->kem_key = dap_enc_key_new_generate(a_kem_type, NULL, 0, NULL, 0, 0);
+    if (!l_result->kem_key) {
+        log_it(L_ERROR, "Failed to generate KEM keypair for type %s",
+               dap_enc_get_type_name(a_kem_type));
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Validate that key has public key data
+    if (!l_result->kem_key->pub_key_data || l_result->kem_key->pub_key_data_size == 0) {
+        log_it(L_ERROR, "Generated KEM key has no public key data");
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Export public key for transmission to Bob
+    l_result->public_data_size = l_result->kem_key->pub_key_data_size;
+    l_result->public_data = DAP_NEW_SIZE(uint8_t, l_result->public_data_size);
+    if (!l_result->public_data) {
+        log_it(L_CRITICAL, "Failed to allocate public key buffer");
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    memcpy(l_result->public_data, l_result->kem_key->pub_key_data, 
+           l_result->public_data_size);
+    
+    log_it(L_DEBUG, "Alice generated %s keypair: pub_key=%zu bytes",
+           dap_enc_get_type_name(a_kem_type), l_result->public_data_size);
+    
+    return l_result;
+}
+
+/**
+ * @brief Bob: Encapsulate shared secret with Alice's public key
+ */
+dap_enc_kem_result_t* dap_enc_kem_bob_encapsulate(
+    dap_enc_key_type_t a_kem_type,
+    const uint8_t *a_alice_public,
+    size_t a_alice_public_size)
+{
+    if (!a_alice_public || a_alice_public_size == 0) {
+        log_it(L_ERROR, "Invalid Alice public key");
+        return NULL;
+    }
+    
+    // Validate KEM type (same validation as Alice)
+    if (a_kem_type != DAP_ENC_KEY_TYPE_KEM_KYBER512 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_MLWE_KYBER &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM &&
+        a_kem_type != DAP_ENC_KEY_TYPE_MSRLN &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_MSRLN16 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_RLWE_BCNS15 &&
+        a_kem_type != DAP_ENC_KEY_TYPE_LWE_FRODO &&
+        a_kem_type != DAP_ENC_KEY_TYPE_CODE_MCBITS &&
+        a_kem_type != DAP_ENC_KEY_TYPE_NTRU) {
+        log_it(L_ERROR, "Invalid KEM type: %d", a_kem_type);
+        return NULL;
+    }
+    
+    // Allocate result structure
+    dap_enc_kem_result_t *l_result = DAP_NEW_Z(dap_enc_kem_result_t);
+    if (!l_result) {
+        log_it(L_CRITICAL, "Failed to allocate KEM result");
+        return NULL;
+    }
+    
+    // Create KEM key object
+    l_result->kem_key = dap_enc_key_new(a_kem_type);
+    if (!l_result->kem_key) {
+        log_it(L_ERROR, "Failed to create KEM key for type %s",
+               dap_enc_get_type_name(a_kem_type));
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Validate that key has gen_bob_shared_key callback
+    if (!l_result->kem_key->gen_bob_shared_key) {
+        log_it(L_ERROR, "KEM type %s has no gen_bob_shared_key callback",
+               dap_enc_get_type_name(a_kem_type));
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Call gen_bob_shared_key to:
+    // 1. Encapsulate shared secret using Alice's public key
+    // 2. Generate ciphertext (Bob's public data)
+    // 3. Store shared secret in kem_key->priv_key_data
+    uint8_t *l_ciphertext = NULL;
+    size_t l_ciphertext_size = l_result->kem_key->gen_bob_shared_key(
+        l_result->kem_key,
+        a_alice_public,
+        a_alice_public_size,
+        (void**)&l_ciphertext  // Bob's ciphertext for Alice
+    );
+    
+    if (l_ciphertext_size == 0 || !l_ciphertext) {
+        log_it(L_ERROR, "Failed to encapsulate shared secret");
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Validate that shared secret was generated
+    if (!l_result->kem_key->priv_key_data || l_result->kem_key->priv_key_data_size == 0) {
+        log_it(L_ERROR, "gen_bob_shared_key did not generate shared secret");
+        DAP_DELETE(l_ciphertext);
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    // Copy shared secret to result (separate from kem_key for clarity)
+    l_result->shared_secret_size = l_result->kem_key->priv_key_data_size;
+    l_result->shared_secret = DAP_NEW_SIZE(uint8_t, l_result->shared_secret_size);
+    if (!l_result->shared_secret) {
+        log_it(L_CRITICAL, "Failed to allocate shared secret buffer");
+        DAP_DELETE(l_ciphertext);
+        dap_enc_key_delete(l_result->kem_key);
+        DAP_DELETE(l_result);
+        return NULL;
+    }
+    
+    memcpy(l_result->shared_secret, l_result->kem_key->priv_key_data,
+           l_result->shared_secret_size);
+    
+    // Copy ciphertext to public_data
+    l_result->public_data_size = l_ciphertext_size;
+    l_result->public_data = l_ciphertext;  // Transfer ownership
+    
+    log_it(L_DEBUG, "Bob encapsulated shared secret: ciphertext=%zu bytes, secret=%zu bytes",
+           l_result->public_data_size, l_result->shared_secret_size);
+    
+    return l_result;
+}
+
+/**
+ * @brief Alice: Decapsulate Bob's ciphertext to derive shared secret
+ */
+int dap_enc_kem_alice_decapsulate(
+    dap_enc_kem_result_t *a_alice_kem,
+    const uint8_t *a_bob_ciphertext,
+    size_t a_bob_ciphertext_size)
+{
+    if (!a_alice_kem || !a_alice_kem->kem_key || 
+        !a_bob_ciphertext || a_bob_ciphertext_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for decapsulation");
+        return -1;
+    }
+    
+    // Validate that key has gen_alice_shared_key callback
+    if (!a_alice_kem->kem_key->gen_alice_shared_key) {
+        log_it(L_ERROR, "KEM key has no gen_alice_shared_key callback");
+        return -1;
+    }
+    
+    // Validate that key has private key data
+    if (!a_alice_kem->kem_key->priv_key_data || 
+        a_alice_kem->kem_key->priv_key_data_size == 0) {
+        log_it(L_ERROR, "Alice KEM key has no private key");
+        return -1;
+    }
+    
+    // Call gen_alice_shared_key to:
+    // 1. Decapsulate Bob's ciphertext using Alice's private key
+    // 2. Derive same shared secret as Bob
+    // 3. Store shared secret in kem_key->priv_key_data (OVERWRITES private key!)
+    size_t l_secret_size = a_alice_kem->kem_key->gen_alice_shared_key(
+        a_alice_kem->kem_key,
+        a_alice_kem->kem_key->priv_key_data,  // Alice's private key
+        a_bob_ciphertext_size,
+        (uint8_t*)a_bob_ciphertext  // Bob's ciphertext
+    );
+    
+    if (l_secret_size == 0) {
+        log_it(L_ERROR, "Failed to decapsulate shared secret");
+        return -1;
+    }
+    
+    // Validate that shared secret was generated
+    if (!a_alice_kem->kem_key->priv_key_data || 
+        a_alice_kem->kem_key->priv_key_data_size == 0) {
+        log_it(L_ERROR, "gen_alice_shared_key did not generate shared secret");
+        return -1;
+    }
+    
+    // Copy shared secret to result
+    a_alice_kem->shared_secret_size = a_alice_kem->kem_key->priv_key_data_size;
+    a_alice_kem->shared_secret = DAP_NEW_SIZE(uint8_t, a_alice_kem->shared_secret_size);
+    if (!a_alice_kem->shared_secret) {
+        log_it(L_CRITICAL, "Failed to allocate shared secret buffer");
+        return -1;
+    }
+    
+    memcpy(a_alice_kem->shared_secret, a_alice_kem->kem_key->priv_key_data,
+           a_alice_kem->shared_secret_size);
+    
+    log_it(L_DEBUG, "Alice decapsulated shared secret: %zu bytes",
+           a_alice_kem->shared_secret_size);
+    
+    return 0;
+}
+
+/**
+ * @brief Free KEM result structure with secure wiping
+ */
+void dap_enc_kem_result_free(dap_enc_kem_result_t *a_result)
+{
+    if (!a_result) {
+        return;
+    }
+    
+    // Securely wipe shared secret
+    if (a_result->shared_secret) {
+        memset(a_result->shared_secret, 0, a_result->shared_secret_size);
+        DAP_DELETE(a_result->shared_secret);
+        a_result->shared_secret = NULL;
+        a_result->shared_secret_size = 0;
+    }
+    
+    // Delete KEM key (contains private key)
+    if (a_result->kem_key) {
+        dap_enc_key_delete(a_result->kem_key);
+        a_result->kem_key = NULL;
+    }
+    
+    // Free public data buffer
+    if (a_result->public_data) {
+        DAP_DELETE(a_result->public_data);
+        a_result->public_data = NULL;
+        a_result->public_data_size = 0;
+    }
+    
+    DAP_DELETE(a_result);
+}
+
+/**
+ * @brief Derive encryption key from shared secret using KDF
+ */
+dap_enc_key_t* dap_enc_kem_derive_key(
+    const uint8_t *a_shared_secret,
+    size_t a_shared_secret_size,
+    const char *a_context,
+    uint64_t a_counter,
+    dap_enc_key_type_t a_cipher_type,
+    size_t a_key_size)
+{
+    if (!a_shared_secret || a_shared_secret_size == 0 || 
+        !a_context || a_key_size == 0) {
+        log_it(L_ERROR, "Invalid parameters for key derivation");
+        return NULL;
+    }
+    
+    // Allocate buffer for derived key
+    uint8_t *l_derived_key = DAP_NEW_SIZE(uint8_t, a_key_size);
+    if (!l_derived_key) {
+        log_it(L_CRITICAL, "Failed to allocate derived key buffer");
+        return NULL;
+    }
+    
+    // Derive key using KDF-SHAKE256
+    int l_ret = dap_enc_kdf_derive(
+        a_shared_secret,
+        a_shared_secret_size,
+        a_context,
+        strlen(a_context),
+        a_counter,
+        l_derived_key,
+        a_key_size
+    );
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "KDF derivation failed: context=%s, counter=%lu",
+               a_context, a_counter);
+        DAP_DELETE(l_derived_key);
+        return NULL;
+    }
+    
+    // Create encryption key from derived bytes
+    dap_enc_key_t *l_key = dap_enc_key_new_from_raw_bytes(
+        a_cipher_type,
+        l_derived_key,
+        a_key_size
+    );
+    
+    // Securely wipe intermediate buffer
+    memset(l_derived_key, 0, a_key_size);
+    DAP_DELETE(l_derived_key);
+    
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to create encryption key from KDF output");
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "Derived %s key: context=%s, counter=%lu, size=%zu",
+           dap_enc_get_type_name(a_cipher_type), a_context, a_counter, a_key_size);
+    
+    return l_key;
+}
+
 
 

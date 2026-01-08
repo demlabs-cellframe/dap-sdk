@@ -386,6 +386,141 @@ int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
                                        const void *a_raw_key_bytes,
                                        size_t a_key_size);
 
+// ============================================================================
+// HIGH-LEVEL KEM HANDSHAKE API
+// ============================================================================
+
+/**
+ * @brief Result of KEM handshake operation
+ * 
+ * Clearly separates different types of cryptographic material:
+ * - Public/private keys (ephemeral, for KEM only)
+ * - Shared secret (output of KEM, never used directly!)
+ * - Derived keys (from shared secret via KDF, for actual encryption)
+ */
+typedef struct dap_enc_kem_result {
+    // KEM keypair (ephemeral, discarded after handshake)
+    dap_enc_key_t *kem_key;              ///< Ephemeral KEM keypair
+    
+    // Shared secret (NEVER use directly for encryption!)
+    uint8_t *shared_secret;              ///< Raw shared secret from KEM
+    size_t shared_secret_size;           ///< Size of shared secret
+    
+    // Public key exchange data
+    uint8_t *public_data;                ///< Data to send to peer (Alice: pub_key, Bob: ciphertext)
+    size_t public_data_size;             ///< Size of public data
+} dap_enc_kem_result_t;
+
+/**
+ * @brief Alice: Generate KEM keypair and public key
+ * 
+ * STEP 1 of KEM handshake (client side):
+ * - Generates ephemeral KEM keypair
+ * - Exports public key to send to Bob
+ * 
+ * @param a_kem_type KEM algorithm (e.g., DAP_ENC_KEY_TYPE_KEM_KYBER512)
+ * @return KEM result with public key, or NULL on error
+ * 
+ * @note Caller must later call dap_enc_kem_alice_derive_secret() to complete handshake
+ * @note Cleanup: dap_enc_kem_result_free()
+ */
+dap_enc_kem_result_t* dap_enc_kem_alice_generate_keypair(dap_enc_key_type_t a_kem_type);
+
+/**
+ * @brief Bob: Process Alice's public key and generate shared secret
+ * 
+ * STEP 2 of KEM handshake (server side):
+ * - Receives Alice's public key
+ * - Generates own ephemeral keypair
+ * - Encapsulates shared secret
+ * - Returns ciphertext to send back to Alice
+ * 
+ * @param a_kem_type KEM algorithm (must match Alice's)
+ * @param a_alice_public Alice's public key
+ * @param a_alice_public_size Size of Alice's public key
+ * @return KEM result with shared secret and ciphertext, or NULL on error
+ * 
+ * @note Bob's shared_secret is immediately usable for key derivation
+ * @note Cleanup: dap_enc_kem_result_free()
+ */
+dap_enc_kem_result_t* dap_enc_kem_bob_encapsulate(
+    dap_enc_key_type_t a_kem_type,
+    const uint8_t *a_alice_public,
+    size_t a_alice_public_size
+);
+
+/**
+ * @brief Alice: Decapsulate Bob's ciphertext to derive shared secret
+ * 
+ * STEP 3 of KEM handshake (client side):
+ * - Receives Bob's ciphertext
+ * - Uses own private key to decapsulate
+ * - Derives same shared secret as Bob
+ * 
+ * @param a_alice_kem Alice's KEM result from dap_enc_kem_alice_generate_keypair()
+ * @param a_bob_ciphertext Bob's ciphertext
+ * @param a_bob_ciphertext_size Size of Bob's ciphertext
+ * @return 0 on success, -1 on error
+ * 
+ * @note After success, a_alice_kem->shared_secret contains the secret
+ * @note Alice and Bob now have identical shared_secret
+ */
+int dap_enc_kem_alice_decapsulate(
+    dap_enc_kem_result_t *a_alice_kem,
+    const uint8_t *a_bob_ciphertext,
+    size_t a_bob_ciphertext_size
+);
+
+/**
+ * @brief Free KEM result structure
+ * 
+ * Securely wipes all sensitive data:
+ * - Shared secret (if present)
+ * - KEM private key (if present)
+ * - Public data buffer
+ * 
+ * @param a_result KEM result to free
+ */
+void dap_enc_kem_result_free(dap_enc_kem_result_t *a_result);
+
+/**
+ * @brief Derive encryption key from shared secret using KDF
+ * 
+ * FINAL STEP: Convert shared secret to actual encryption key.
+ * 
+ * CRITICAL: Never use shared_secret directly for encryption!
+ * Always derive keys through KDF with unique context strings.
+ * 
+ * @param a_shared_secret Shared secret from KEM handshake
+ * @param a_shared_secret_size Size of shared secret
+ * @param a_context Context string (e.g., "udp_handshake", "udp_session")
+ * @param a_counter Counter for key ratcheting (0 for first key, 1+ for derived)
+ * @param a_cipher_type Cipher type for final key (e.g., DAP_ENC_KEY_TYPE_SALSA2012)
+ * @param a_key_size Desired key size (e.g., 32 for SALSA2012)
+ * @return Encryption key ready for use, or NULL on error
+ * 
+ * @note Cleanup: dap_enc_key_delete()
+ * 
+ * @example
+ *   // Derive handshake key
+ *   dap_enc_key_t *handshake_key = dap_enc_kem_derive_key(
+ *       kem_result->shared_secret, kem_result->shared_secret_size,
+ *       "udp_handshake", 0, DAP_ENC_KEY_TYPE_SALSA2012, 32);
+ *   
+ *   // Derive session key (ratcheting)
+ *   dap_enc_key_t *session_key = dap_enc_kem_derive_key(
+ *       kem_result->shared_secret, kem_result->shared_secret_size,
+ *       "udp_session", 1, DAP_ENC_KEY_TYPE_SALSA2012, 32);
+ */
+dap_enc_key_t* dap_enc_kem_derive_key(
+    const uint8_t *a_shared_secret,
+    size_t a_shared_secret_size,
+    const char *a_context,
+    uint64_t a_counter,
+    dap_enc_key_type_t a_cipher_type,
+    size_t a_key_size
+);
+
 #ifdef __cplusplus
 }
 #endif
