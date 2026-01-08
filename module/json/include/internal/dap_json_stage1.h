@@ -21,6 +21,10 @@
 
 #include "dap_cpu_detect.h"  // Runtime CPU feature detection
 
+// Import dap_json.h for dap_cpu_arch_t and manual selection API
+// This header already includes dap_cpu_arch.h from core
+#include "dap_json.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -183,11 +187,43 @@ typedef enum {
 dap_json_stage1_t *dap_json_stage1_init(const uint8_t *input, size_t input_len);
 
 /**
+ * @brief Create Stage 1 parser without input buffer
+ * 
+ * Allocates parser for later use with dap_json_stage1_reset().
+ * Useful for benchmarking where same parser is reused.
+ * 
+ * @param capacity Initial capacity for indices array (0 = default)
+ * @return Allocated parser, or NULL on error
+ */
+dap_json_stage1_t *dap_json_stage1_new(size_t capacity);
+
+/**
+ * @brief Reset Stage 1 parser with new input
+ * 
+ * Reuses existing parser with new input buffer.
+ * Resets all state but keeps allocated indices array.
+ * 
+ * @param stage1 Stage 1 parser
+ * @param input New JSON input buffer
+ * @param input_len Input buffer length
+ * @return true on success, false on error
+ */
+bool dap_json_stage1_reset(dap_json_stage1_t *stage1, const uint8_t *input, size_t input_len);
+
+/**
  * @brief Free Stage 1 parser
  * 
  * @param stage1 Stage 1 parser to free (can be NULL)
  */
 void dap_json_stage1_free(dap_json_stage1_t *stage1);
+
+/**
+ * @brief Get token count
+ * 
+ * @param stage1 Stage 1 parser
+ * @return Number of tokens found
+ */
+size_t dap_json_stage1_get_token_count(const dap_json_stage1_t *stage1);
 
 /**
  * @brief Get structural indices array
@@ -359,12 +395,6 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 /*            DISPATCH MECHANISM (static inline for zero overhead)            */
 /* ========================================================================== */
 
-// Include arch-specific headers for SIMD implementations (always include all)
-#include "../../src/stage1/arch/x86/dap_json_stage1_avx512.h"
-#include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
-#include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
-#include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
-
 /* ========================================================================== */
 /*                          DISPATCH MECHANISM                                */
 /* ========================================================================== */
@@ -375,7 +405,7 @@ extern bool g_dap_json_cpu_features_initialized;
 
 /**
  * @brief Initialize CPU features detection for Stage 1 dispatch
- * @details Must be called once at startup before any Stage 1 operations
+ * @details Called automatically by dap_json_init(), but can be called explicitly
  * 
  * This function performs runtime CPU detection and caches the results
  * in global variables for fast dispatch in dap_json_stage1_run().
@@ -383,7 +413,21 @@ extern bool g_dap_json_cpu_features_initialized;
  * Thread-safety: Not thread-safe, must be called from single thread
  * during initialization phase.
  */
+extern void dap_json_stage1_init_dispatch(void);
 void dap_json_stage1_init_dispatch(void);
+
+
+// Include architecture-specific implementations for static inline dispatch
+// These must be included AFTER all typedefs are complete
+#include "dap_json_stage1_ref.h"
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
+#include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
+#include "../../src/stage1/arch/x86/dap_json_stage1_avx512.h"
+#elif defined(__arm__) || defined(__aarch64__)
+#include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
+#endif
 
 
 /**
@@ -396,34 +440,44 @@ void dap_json_stage1_init_dispatch(void);
  * 
  * NOTE: Call dap_json_stage1_init_dispatch() once at startup before using this function.
  */
+/**
+ * @brief Main entry point for Stage 1 tokenization with automatic SIMD dispatch
+ * @details Automatically selects best available SIMD implementation based on CPU features
+ *          or manual override set via dap_json_set_simd_arch().
+ * 
+ * Dispatch priority (when AUTO):
+ *   x86/x64: AVX-512 → AVX2 → SSE2 → Reference C
+ *   ARM:     NEON → Reference C
+ * 
+ * @param[in,out] a_stage1 Initialized Stage 1 parser
+ * @return STAGE1_SUCCESS on success, error code otherwise
+ */
 static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
 {
     if (!a_stage1) {
         return STAGE1_ERROR_INVALID_INPUT;
     }
     
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    // x86/x64 architecture - check for AVX-512, AVX2, SSE2, then fallback
-    if (g_dap_json_cpu_features.has_avx512f && 
-        g_dap_json_cpu_features.has_avx512dq && 
-        g_dap_json_cpu_features.has_avx512bw) {
-        return dap_json_stage1_run_avx512(a_stage1);
-    }
-    if (g_dap_json_cpu_features.has_avx2) {
-        return dap_json_stage1_run_avx2(a_stage1);
-    }
-    if (g_dap_json_cpu_features.has_sse2) {
-        return dap_json_stage1_run_sse2(a_stage1);
-    }
-#elif defined(__ARM_NEON) || defined(__aarch64__)
-    // ARM architecture - check for NEON, then fallback
-    if (g_dap_json_cpu_features.has_neon) {
-        return dap_json_stage1_run_neon(a_stage1);
-    }
-#endif
+    // Get current architecture (respects manual override if set)
+    dap_cpu_arch_t arch = dap_json_get_simd_arch();
     
-    // Fallback to portable reference implementation
-    return dap_json_stage1_run_ref(a_stage1);
+    switch (arch) {
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+        case DAP_CPU_ARCH_SSE2:
+            return dap_json_stage1_run_sse2(a_stage1);
+        case DAP_CPU_ARCH_AVX2:
+            return dap_json_stage1_run_avx2(a_stage1);
+        case DAP_CPU_ARCH_AVX512:
+            return dap_json_stage1_run_avx512(a_stage1);
+#elif defined(__arm__) || defined(__aarch64__)
+        case DAP_CPU_ARCH_NEON:
+            return dap_json_stage1_run_neon(a_stage1);
+#endif
+        case DAP_CPU_ARCH_REFERENCE:
+        case DAP_CPU_ARCH_AUTO:
+        default:
+            return dap_json_stage1_run_ref(a_stage1);
+    }
 }
 
 /**
@@ -432,27 +486,13 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
  */
 static inline const char* dap_json_stage1_get_dispatch_name(void)
 {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    if (g_dap_json_cpu_features.has_avx512f && 
-        g_dap_json_cpu_features.has_avx512dq && 
-        g_dap_json_cpu_features.has_avx512bw) {
-        return "AVX-512 (64 bytes/iteration)";
-    }
-    if (g_dap_json_cpu_features.has_avx2) {
-        return "AVX2 (32 bytes/iteration)";
-    }
-    if (g_dap_json_cpu_features.has_sse2) {
-        return "SSE2 (16 bytes/iteration)";
-    }
-#elif defined(__ARM_NEON) || defined(__aarch64__)
-    if (g_dap_json_cpu_features.has_neon) {
-        return "ARM NEON (16 bytes/iteration)";
-    }
-#endif
-    return "Reference C (portable)";
+    dap_cpu_arch_t arch = dap_json_get_simd_arch();
+    return dap_json_get_arch_name(arch);
 }
 
-
+#ifdef __cplusplus
+}
+#endif
 #ifdef __cplusplus
 }
 #endif

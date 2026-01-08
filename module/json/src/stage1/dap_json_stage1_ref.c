@@ -787,6 +787,109 @@ void dap_json_stage1_free(dap_json_stage1_t *a_stage1)
 }
 
 /**
+ * @brief Create new Stage 1 parser (without input buffer)
+ * @details Allocates Stage 1 parser for later use with dap_json_stage1_reset().
+ *          Use this for benchmarking where same parser is reused.
+ * @param[in] a_capacity Initial capacity for indices array
+ * @return Allocated parser, or NULL on error
+ */
+dap_json_stage1_t *dap_json_stage1_new(size_t a_capacity)
+{
+    if(a_capacity == 0) {
+        a_capacity = INITIAL_INDICES_CAPACITY;
+    }
+    
+    // Allocate parser state
+    dap_json_stage1_t *l_stage1 = DAP_NEW_Z(dap_json_stage1_t);
+    if(!l_stage1) {
+        log_it(L_ERROR, "Failed to allocate Stage 1 parser");
+        return NULL;
+    }
+    
+    // Allocate indices array
+    l_stage1->indices_capacity = a_capacity;
+    l_stage1->indices = DAP_NEW_Z_SIZE(dap_json_struct_index_t,
+                                       l_stage1->indices_capacity * sizeof(dap_json_struct_index_t));
+    
+    if(!l_stage1->indices) {
+        log_it(L_ERROR, "Failed to allocate indices array");
+        DAP_DELETE(l_stage1);
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "Stage 1 parser created (%zu initial capacity)", a_capacity);
+    
+    return l_stage1;
+}
+
+/**
+ * @brief Reset Stage 1 parser with new input
+ * @details Reuses existing parser with new input buffer.
+ *          Resets all state but keeps allocated indices array.
+ * @param[in,out] a_stage1 Stage 1 parser
+ * @param[in] a_input New JSON input buffer
+ * @param[in] a_input_len Input buffer length
+ * @return true on success, false on error
+ */
+bool dap_json_stage1_reset(dap_json_stage1_t *a_stage1, const uint8_t *a_input, size_t a_input_len)
+{
+    if(!a_stage1) {
+        log_it(L_ERROR, "NULL stage1 pointer");
+        return false;
+    }
+    
+    if(!a_input) {
+        log_it(L_ERROR, "NULL input pointer");
+        return false;
+    }
+    
+    if(a_input_len == 0) {
+        log_it(L_ERROR, "Zero length input");
+        return false;
+    }
+    
+    // Update input
+    a_stage1->input = a_input;
+    a_stage1->input_len = a_input_len;
+    
+    // Reset state
+    a_stage1->indices_count = 0;
+    a_stage1->current_pos = 0;
+    a_stage1->in_string = false;
+    a_stage1->escape_next = false;
+    a_stage1->in_number = false;
+    a_stage1->number_start = 0;
+    a_stage1->number_has_decimal = false;
+    a_stage1->number_has_exponent = false;
+    a_stage1->string_start = 0;
+    a_stage1->value_start = 0;
+    a_stage1->string_count = 0;
+    a_stage1->number_count = 0;
+    a_stage1->literal_count = 0;
+    a_stage1->string_chars = 0;
+    a_stage1->whitespace_chars = 0;
+    a_stage1->structural_chars = 0;
+    a_stage1->error_code = STAGE1_SUCCESS;
+    a_stage1->error_position = 0;
+    a_stage1->error_message[0] = '\0';
+    
+    return true;
+}
+
+/**
+ * @brief Get token count
+ * @param[in] a_stage1 Stage 1 parser
+ * @return Number of tokens found
+ */
+size_t dap_json_stage1_get_token_count(const dap_json_stage1_t *a_stage1)
+{
+    if(!a_stage1) {
+        return 0;
+    }
+    return a_stage1->indices_count;
+}
+
+/**
  * @brief Get structural indices array
  * @details Returns pointer to structural indices array.
  *          Array is valid until dap_json_stage1_free() or next dap_json_stage1_run().

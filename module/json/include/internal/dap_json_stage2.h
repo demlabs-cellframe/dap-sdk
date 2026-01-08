@@ -48,92 +48,22 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "internal/dap_json_stage1.h"
-
+#include "../dap_json_type.h"
+#include "dap_json_stage1.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
 typedef struct dap_json_stage2 dap_json_stage2_t;
-typedef struct dap_json_value dap_json_value_t;
+/* dap_json_value_t is defined in dap_json_type.h */
 
 /* ========================================================================== */
 /*                           JSON VALUE TYPES                                 */
 /* ========================================================================== */
 
-/**
- * @brief JSON value types
- */
-typedef enum {
-    DAP_JSON_TYPE_NULL = 0,      /**< null */
-    DAP_JSON_TYPE_BOOL,          /**< true or false */
-    DAP_JSON_TYPE_NUMBER,        /**< number (integer or double) */
-    DAP_JSON_TYPE_STRING,        /**< string */
-    DAP_JSON_TYPE_ARRAY,         /**< array */
-    DAP_JSON_TYPE_OBJECT         /**< object */
-} dap_json_type_t;
-
-/**
- * @brief JSON number representation
- * @details Хранит как int64 так и double для оптимального представления
- */
-typedef struct {
-    union {
-        int64_t i;     /**< Integer value */
-        double d;      /**< Double value */
-    };
-    bool is_double;    /**< true если double, false если int64 */
-} dap_json_number_t;
-
-/**
- * @brief JSON string representation
- */
-typedef struct {
-    char *data;        /**< String data (null-terminated) */
-    size_t length;     /**< String length (excluding null terminator) */
-    bool needs_free;   /**< true если нужно освободить data */
-} dap_json_string_t;
-
-/**
- * @brief JSON array representation
- */
-typedef struct {
-    dap_json_value_t **elements;  /**< Array of value pointers */
-    size_t count;                  /**< Number of elements */
-    size_t capacity;               /**< Allocated capacity */
-} dap_json_array_t;
-
-/**
- * @brief JSON object key-value pair
- */
-typedef struct {
-    char *key;                     /**< Key string (null-terminated) */
-    dap_json_value_t *value;       /**< Value pointer */
-} dap_json_object_pair_t;
-
-/**
- * @brief JSON object representation
- */
-typedef struct {
-    dap_json_object_pair_t *pairs; /**< Array of key-value pairs */
-    size_t count;                   /**< Number of pairs */
-    size_t capacity;                /**< Allocated capacity */
-} dap_json_object_t;
-
-/**
- * @brief JSON value (unified type for all JSON values)
- */
-struct dap_json_value {
-    dap_json_type_t type;          /**< Value type */
-    union {
-        bool boolean;              /**< Boolean value (for TYPE_BOOL) */
-        dap_json_number_t number;  /**< Number value (for TYPE_NUMBER) */
-        dap_json_string_t string;  /**< String value (for TYPE_STRING) */
-        dap_json_array_t array;    /**< Array value (for TYPE_ARRAY) */
-        dap_json_object_t object;  /**< Object value (for TYPE_OBJECT) */
-    };
-};
+// JSON types and structures are defined in dap_json_type.h
+// (included via dap_json_stage1.h -> dap_json.h)
 
 /* ========================================================================== */
 /*                           ERROR CODES                                      */

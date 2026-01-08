@@ -322,7 +322,7 @@ if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
-target_link_libraries(dap_crypto dap_core dap_json-c)
+target_link_libraries(dap_crypto dap_core dap_json dap_json-c)
 
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     target_link_libraries(dap_crypto secp256k1)

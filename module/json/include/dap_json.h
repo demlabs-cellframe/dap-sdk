@@ -28,6 +28,7 @@
 #include "dap_math_ops.h"
 #include "dap_math_convert.h"
 #include "dap_time.h"
+#include "dap_cpu_arch.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -117,16 +118,8 @@ int dap_json_object_get_int_default(dap_json_t* a_json, const char* a_key, int a
 int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key);
 int64_t dap_json_object_get_int64_default(dap_json_t* a_json, const char* a_key, int64_t a_default);
 
-// JSON type enumeration
-typedef enum {
-    DAP_JSON_TYPE_NULL,
-    DAP_JSON_TYPE_BOOLEAN,
-    DAP_JSON_TYPE_DOUBLE,
-    DAP_JSON_TYPE_INT,
-    DAP_JSON_TYPE_OBJECT,
-    DAP_JSON_TYPE_ARRAY,
-    DAP_JSON_TYPE_STRING
-} dap_json_type_t;
+// JSON type definitions (shared across all JSON components)
+#include "dap_json_type.h"
 
 // Type checking
 bool dap_json_is_null(dap_json_t* a_json);
@@ -210,6 +203,54 @@ bool dap_json_get_bool(dap_json_t* a_json);
 uint64_t dap_json_get_uint64(dap_json_t* a_json);
 dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json);
 size_t dap_json_object_length(dap_json_t* a_json);
+
+/* ========================================================================== */
+/*                   SIMD ARCHITECTURE SELECTION API                          */
+/* ========================================================================== */
+
+/**
+ * @brief SIMD Architecture Selection for Stage 1 Tokenization
+ * @details Manual override for testing, benchmarking, and debugging purposes
+ * 
+ * @note Uses universal dap_cpu_arch_t from core module for SDK-wide consistency
+ */
+
+// Import universal CPU architecture definitions from core
+#include "dap_cpu_arch.h"
+
+/**
+ * @brief Set SIMD architecture for JSON Stage 1 tokenization
+ * @param a_arch Architecture to use (DAP_CPU_ARCH_AUTO for auto-detection)
+ * @return true if architecture is available and set successfully, false otherwise
+ * 
+ * @note This is a testing/benchmarking API. For production, use DAP_CPU_ARCH_AUTO.
+ * @warning If requested architecture is not available on current CPU, returns false.
+ * @example
+ *   // Force SSE2 for benchmarking
+ *   if (!dap_json_set_simd_arch(DAP_CPU_ARCH_SSE2)) {
+ *       log_it(L_ERROR, "SSE2 not available");
+ *   }
+ */
+bool dap_json_set_simd_arch(dap_cpu_arch_t a_arch);
+
+/**
+ * @brief Get currently active SIMD architecture
+ * @return Current architecture (after manual selection or auto-detection)
+ * 
+ * @note Returns actual architecture in use, not the requested one.
+ * @example
+ *   dap_cpu_arch_t arch = dap_json_get_simd_arch();
+ *   log_it(L_INFO, "Using: %s", dap_cpu_arch_get_name(arch));
+ */
+dap_cpu_arch_t dap_json_get_simd_arch(void);
+
+/**
+ * @brief Get human-readable name of SIMD architecture
+ * @param a_arch Architecture enum value
+ * @return String name (e.g. "SSE2", "NEON", "Reference C")
+ * @note Wrapper around dap_cpu_arch_get_name() for convenience
+ */
+const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch);
 
 #ifdef __cplusplus
 }

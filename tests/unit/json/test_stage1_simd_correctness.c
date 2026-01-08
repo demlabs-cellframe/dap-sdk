@@ -49,11 +49,6 @@
 
 #define LOG_TAG "test_simd_correctness"
 
-// Forward declare extern functions
-extern void dap_json_init(void);
-
-// CPU features (from dap_cpu_detect)
-extern dap_cpu_features_t g_dap_json_cpu_features;
 
 // Test cases - various JSON inputs
 static const char* s_test_inputs[] = {

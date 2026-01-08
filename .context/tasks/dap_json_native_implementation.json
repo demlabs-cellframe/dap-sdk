@@ -651,8 +651,9 @@
           "name": "Two-Stage Parser: Stage 1 - SIMD Optimization",
           "status": "in_progress",
           "started_date": "2026-01-08T00:10:00Z",
-          "progress": "98%",
-          "current_work": "ZERO-OVERHEAD HYBRID реализован для SSE2, AVX2, AVX-512! Осталось: ARM NEON + Manual API + Benchmarks",
+          "updated_date": "2026-01-08T18:30:00Z",
+          "progress": "99.5%",
+          "current_work": "ВСЕ ЗАГЛУШКИ УДАЛЕНЫ! ZERO-OVERHEAD HYBRID завершён для ВСЕХ архитектур (SSE2, AVX2, AVX-512, NEON)! ARM NEON: 37/37 тестов (100%). Осталось: Manual API + Benchmarks",
           "achievements": {
             "module_cpu_detect": [
               "✅ module/core/include/dap_cpu_detect.h - unified CPU detection",
@@ -686,12 +687,94 @@
               "✅ SSE2 HYBRID (16 bytes/iter) - 513 строк, 100% correctness (37/37)",
               "✅ AVX2 HYBRID (32 bytes/iter) - 554 строки, 100% correctness (37/37)",
               "✅ AVX-512 HYBRID (64 bytes/iter) - 524 строки, 100% correctness (37/37)",
-              "⏳ ARM NEON (16 bytes/iter) - 420 строк, needs HYBRID refactoring",
+              "✅ ARM NEON HYBRID (16 bytes/iter) - 547 строк, 100% correctness (37/37) via QEMU!",
               "✅ Dispatch: AVX-512 → AVX2 → SSE2/NEON → Reference"
+            ],
+            "stub_elimination_critical": [
+              "✅ AVX-512: removed fallback to AVX2, replaced with #error FAIL-FAST",
+              "✅ NEON: removed fallback to Reference, replaced with #error FAIL-FAST",
+              "✅ All headers cleaned from stub implementations",
+              "✅ Principle: НИКАКИХ ЗАГЛУШЕК - только полные реализации или compile error"
+            ],
+            "cmake_architecture_fixes": [
+              "✅ Architecture-specific file compilation (x86 files NOT compiled on ARM)",
+              "✅ Conditional #if in tests to match compile-time architecture",
+              "✅ Proper SIMD flags per architecture (-mavx2, -msse2, -march=armv8-a)",
+              "✅ Clean separation: x86/ vs arm/ directories"
             ],
             "testing_infrastructure": [
               "✅ test_stage1_simd_correctness.c - runtime CPU feature detection",
               "✅ test_simd_string_spanning.c - universal regression (all architectures)",
+              "✅ dap_json_stage1_sse2_set_debug() - debug control API",
+              "✅ Conditional compilation in tests (x86 #if vs ARM #if)",
+              "❌ test_sse2_string_spanning.c - removed (redundant)",
+              "❌ test_string_span_debug.c - removed (temporary debug file)"
+            ],
+            "arm_cross_compilation_infrastructure": [
+              "✅ cmake/toolchains/arm64-linux-gnu.cmake - ARM64 toolchain",
+              "✅ cmake/toolchains/arm32-linux-gnueabihf.cmake - ARM32 toolchain",
+              "✅ scripts/test-arm-cross.sh - automated ARM testing via QEMU",
+              "✅ QEMU-based testing: qemu-aarch64-static, qemu-arm-static",
+              "✅ Cross-compilers: aarch64-linux-gnu-gcc, arm-linux-gnueabihf-gcc"
+            ],
+            "code_quality_audit_completed": [
+              "✅ Removed redundant extern declarations (AVX2, AVX-512)",
+              "✅ Added missing includes (AVX2: dap_json_stage1_ref.h)",
+              "✅ Updated all file headers with Zero-Overhead Hybrid description",
+              "✅ Consistent helper function comments across all architectures",
+              "✅ Removed duplicate/temporary test files",
+              "✅ Updated CMakeLists.txt (removed test_sse2/test_debug)",
+              "✅ Added dap_json_stage1_add_token declaration to dap_json_stage1_ref.h"
+            ]
+          },
+          "deliverables": [
+            "✅ module/core/include/dap_cpu_detect.h",
+            "✅ module/core/src/dap_cpu_detect.c",
+            "✅ module/json/include/dap_json.h - dap_json_init() added",
+            "✅ module/json/src/dap_json.c - init implementation",
+            "✅ module/json/include/internal/dap_json_stage1.h - main header",
+            "✅ module/json/include/internal/dap_json_stage1_ref.h - reference API",
+            "✅ module/json/src/stage1/dap_json_stage1_ref.c - reference impl",
+            "✅ module/json/src/stage1/dap_json_stage1_dispatch.c - globals",
+            "✅ module/json/src/stage1/arch/x86/dap_json_stage1_avx512.c + .h - HYBRID COMPLETE",
+            "✅ module/json/src/stage1/arch/x86/dap_json_stage1_avx2.c + .h - HYBRID COMPLETE",
+            "✅ module/json/src/stage1/arch/x86/dap_json_stage1_sse2.c + .h - HYBRID COMPLETE",
+            "✅ module/json/src/stage1/arch/arm/dap_json_stage1_neon.c + .h - HYBRID COMPLETE",
+            "✅ cmake/toolchains/arm64-linux-gnu.cmake - ARM64 cross-compile",
+            "✅ cmake/toolchains/arm32-linux-gnueabihf.cmake - ARM32 cross-compile",
+            "✅ scripts/test-arm-cross.sh - automated ARM testing",
+            "✅ tests/unit/json/test_stage1_simd_correctness.c - ALL: 37/37 (100%)",
+            "✅ tests/unit/json/test_simd_string_spanning.c - universal regression",
+            "⏳ Субфаза 1.4.1: Manual architecture selection API - pending",
+            "⏳ benchmarks/benchmark_stage1_multi_arch.c - pending"
+          ],
+          "parsing_strategy": {
+            "approach": "simdjson two-stage: Stage 1 = structural+value indexing с полным SIMD",
+            "simd_classification": "Классифицировать ВСЕ байты за один SIMD проход (structural/whitespace/string/number/literal)",
+            "structural_chars": "Найти все позиции {, }, [, ], :, , в документе",
+            "value_tokens": "Найти boundaries для strings, numbers, literals (используя shared functions)",
+            "string_blocks": "s_compute_escaped_quotes() для accurate string boundary detection",
+            "whitespace": "Пропустить весь whitespace через SIMD (AVX2: 32 bytes за раз)",
+            "hybrid_approach": "SIMD для detection, scalar для validation (numbers, literals, UTF-8)",
+            "dispatch": "Static inline в header - zero overhead compile-time dispatch",
+            "output": "Компактный массив dap_json_token_t для Stage 2",
+            "fail_fast_principle": "NO STUBS: #error if SIMD not available - proper architecture detection required"
+          },
+          "next_tasks": [
+            "🟡 Субфаза 1.4.1: Manual architecture selection API (для benchmarks и testing)",
+            "🟡 Multi-architecture benchmarks vs competitors (финальное performance тестирование)",
+            "🟡 Update documentation with HYBRID architecture details"
+          ],
+          "acceptance_criteria": [
+            "✅ All architectures (Reference, SSE2, AVX2, AVX-512, NEON) implemented with HYBRID",
+            "✅ ARM NEON: 100% correctness (37/37 tests via QEMU)",
+            "✅ CPU detect module created and integrated",
+            "✅ Explicit init infrastructure (no lazy)",
+            "✅ Runtime dispatch working (все arch confirmed)",
+            "✅ File structure refactored (_ref postfix, separate headers)",
+            "✅ SSE2: 100% correctness (37/37 tests passing)",
+            "✅ AVX2: 100% correctness (37/37 tests passing)",
+            "✅ AVX-512: 100% correctness (37/37 tests passing)",
               "✅ dap_json_stage1_sse2_set_debug() - debug control API",
               "❌ test_sse2_string_spanning.c - removed (redundant)",
               "❌ test_string_span_debug.c - removed (temporary debug file)"

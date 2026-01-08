@@ -93,7 +93,7 @@ dap_json_value_t *dap_json_value_v2_create_bool(bool a_value)
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_BOOL;
+    l_value->type = DAP_JSON_TYPE_BOOLEAN;
     l_value->boolean = a_value;
     return l_value;
 }
@@ -109,7 +109,7 @@ dap_json_value_t *dap_json_value_v2_create_int(int64_t a_value)
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_NUMBER;
+    l_value->type = DAP_JSON_TYPE_INT;
     l_value->number.i = a_value;
     l_value->number.is_double = false;
     return l_value;
@@ -126,7 +126,7 @@ dap_json_value_t *dap_json_value_v2_create_double(double a_value)
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_NUMBER;
+    l_value->type = DAP_JSON_TYPE_DOUBLE;
     l_value->number.d = a_value;
     l_value->number.is_double = true;
     return l_value;
