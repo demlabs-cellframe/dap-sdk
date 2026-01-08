@@ -225,6 +225,55 @@ bool dap_udp_test_validate_sequence_numbers(
 );
 
 // ============================================================================
+// MOCK CONTEXT CREATION (for tests that need UDP context without real socket)
+// ============================================================================
+
+/**
+ * @brief Create mock UDP client context for testing
+ * 
+ * Allocates and initializes a minimal dap_net_trans_udp_ctx_t with:
+ * - Session ID
+ * - Sequence number (starting at 1)
+ * - Handshake key (generated)
+ * - Mock esocket (for address storage)
+ * - Mock stream
+ * 
+ * @param a_session_id Session ID for this context
+ * @param a_key_type Encryption key type (e.g., DAP_ENC_KEY_TYPE_SALSA2012)
+ * @param a_dest_addr Destination IP address (string)
+ * @param a_dest_port Destination port
+ * @return Allocated context or NULL on error
+ * 
+ * @note Caller must free with dap_udp_test_cleanup_mock_client_ctx()
+ */
+dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_client_ctx(
+    uint64_t a_session_id,
+    dap_enc_key_type_t a_key_type,
+    const char *a_dest_addr,
+    uint16_t a_dest_port
+);
+
+/**
+ * @brief Create mock UDP server context for testing
+ * 
+ * Similar to client context but for server-side testing
+ * 
+ * @param a_session_id Session ID for this context
+ * @param a_key_type Encryption key type
+ * @param a_remote_addr Remote client IP address (string)
+ * @param a_remote_port Remote client port
+ * @return Allocated context or NULL on error
+ * 
+ * @note Caller must free with dap_udp_test_cleanup_mock_client_ctx()
+ */
+dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
+    uint64_t a_session_id,
+    dap_enc_key_type_t a_key_type,
+    const char *a_remote_addr,
+    uint16_t a_remote_port
+);
+
+// ============================================================================
 // DAP_MOCK_CUSTOM DECLARATION
 // ============================================================================
 

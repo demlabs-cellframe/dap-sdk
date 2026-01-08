@@ -1421,15 +1421,20 @@ static void test_17_encrypted_internal_header(void)
     dap_udp_test_captured_packet_t *l_captured = dap_udp_test_get_captured_packet();
     TEST_ASSERT(l_captured->is_valid, "Packet should be captured");
     
-    size_t l_decrypted_size = 0;
-    uint8_t *l_decrypted = dap_enc_decode(
+    // Allocate buffer for decryption (max size)
+    size_t l_decrypt_buf_size = l_captured->size + 256; // Extra space for safety
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption buffer allocation should succeed");
+    
+    size_t l_decrypted_size = dap_enc_decode(
         l_udp_ctx->handshake_key,
         l_captured->data,
         l_captured->size,
-        &l_decrypted_size,
+        l_decrypted,
+        l_decrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
-    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption should succeed");
+    TEST_ASSERT(l_decrypted_size > 0, "Decryption should succeed (returned %zu bytes)", l_decrypted_size);
     
     TEST_INFO("✅ Packet decrypted: %zu bytes", l_decrypted_size);
     
@@ -1543,14 +1548,17 @@ static void test_18_handshake_obfuscation(void)
     // STEP 2: Obfuscate handshake packet
     // ========================================================================
     
+    uint8_t *l_obfuscated = NULL;
     size_t l_obfuscated_size = 0;
-    uint8_t *l_obfuscated = dap_transport_obfuscate_handshake(
+    int l_ret = dap_transport_obfuscate_handshake(
         l_alice_key->pub_key_data,
         l_alice_key->pub_key_data_size,
+        &l_obfuscated,
         &l_obfuscated_size
     );
     
-    TEST_ASSERT_NOT_NULL(l_obfuscated, "Handshake obfuscation should succeed");
+    TEST_ASSERT(l_ret == 0, "Handshake obfuscation should succeed (returned %d)", l_ret);
+    TEST_ASSERT_NOT_NULL(l_obfuscated, "Obfuscated data should be allocated");
     TEST_ASSERT(l_obfuscated_size > l_alice_key->pub_key_data_size,
                 "Obfuscated size should be larger (includes padding)");
     TEST_ASSERT(l_obfuscated_size >= DAP_TRANSPORT_OBFUSCATION_MIN_SIZE &&
@@ -1585,14 +1593,17 @@ static void test_18_handshake_obfuscation(void)
     // STEP 4: Deobfuscate handshake packet
     // ========================================================================
     
+    uint8_t *l_deobfuscated = NULL;
     size_t l_deobfuscated_size = 0;
-    uint8_t *l_deobfuscated = dap_transport_deobfuscate_handshake(
+    l_ret = dap_transport_deobfuscate_handshake(
         l_obfuscated,
         l_obfuscated_size,
+        &l_deobfuscated,
         &l_deobfuscated_size
     );
     
-    TEST_ASSERT_NOT_NULL(l_deobfuscated, "Handshake deobfuscation should succeed");
+    TEST_ASSERT(l_ret == 0, "Handshake deobfuscation should succeed (returned %d)", l_ret);
+    TEST_ASSERT_NOT_NULL(l_deobfuscated, "Deobfuscated data should be allocated");
     TEST_ASSERT(l_deobfuscated_size == l_alice_key->pub_key_data_size,
                 "Deobfuscated size should match original");
     TEST_ASSERT(memcmp(l_deobfuscated, l_alice_key->pub_key_data,
@@ -1608,14 +1619,17 @@ static void test_18_handshake_obfuscation(void)
     
     // Obfuscate SAME data again - should produce DIFFERENT obfuscated packet
     // (random padding changes the size, which changes the obfuscation key)
+    uint8_t *l_obfuscated2 = NULL;
     size_t l_obfuscated2_size = 0;
-    uint8_t *l_obfuscated2 = dap_transport_obfuscate_handshake(
+    l_ret = dap_transport_obfuscate_handshake(
         l_alice_key->pub_key_data,
         l_alice_key->pub_key_data_size,
+        &l_obfuscated2,
         &l_obfuscated2_size
     );
     
-    TEST_ASSERT_NOT_NULL(l_obfuscated2, "Second obfuscation should succeed");
+    TEST_ASSERT(l_ret == 0, "Second obfuscation should succeed (returned %d)", l_ret);
+    TEST_ASSERT_NOT_NULL(l_obfuscated2, "Second obfuscated data should be allocated");
     
     // Sizes may differ (random padding)
     bool l_sizes_differ = (l_obfuscated_size != l_obfuscated2_size);
@@ -1636,14 +1650,17 @@ static void test_18_handshake_obfuscation(void)
     // STEP 6: Validate deobfuscation of second packet
     // ========================================================================
     
+    uint8_t *l_deobfuscated2 = NULL;
     size_t l_deobfuscated2_size = 0;
-    uint8_t *l_deobfuscated2 = dap_transport_deobfuscate_handshake(
+    l_ret = dap_transport_deobfuscate_handshake(
         l_obfuscated2,
         l_obfuscated2_size,
+        &l_deobfuscated2,
         &l_deobfuscated2_size
     );
     
-    TEST_ASSERT_NOT_NULL(l_deobfuscated2, "Second deobfuscation should succeed");
+    TEST_ASSERT(l_ret == 0, "Second deobfuscation should succeed (returned %d)", l_ret);
+    TEST_ASSERT_NOT_NULL(l_deobfuscated2, "Second deobfuscated data should be allocated");
     TEST_ASSERT(l_deobfuscated2_size == l_alice_key->pub_key_data_size,
                 "Second deobfuscated size should match original");
     TEST_ASSERT(memcmp(l_deobfuscated2, l_alice_key->pub_key_data,
@@ -1734,15 +1751,19 @@ static void test_19_replay_protection(void)
         TEST_ASSERT(l_captured->is_valid, "Packet %d should be captured", i + 1);
         
         // Decrypt and validate sequence number
-        size_t l_decrypted_size = 0;
-        uint8_t *l_decrypted = dap_enc_decode(
+        size_t l_decrypt_buf_size = l_captured->size + 256;
+        uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
+        TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption buffer allocation should succeed");
+        
+        size_t l_decrypted_size = dap_enc_decode(
             l_udp_ctx->handshake_key,
             l_captured->data,
             l_captured->size,
-            &l_decrypted_size,
+            l_decrypted,
+            l_decrypt_buf_size,
             DAP_ENC_DATA_TYPE_RAW
         );
-        TEST_ASSERT_NOT_NULL(l_decrypted, "Packet %d decryption should succeed", i + 1);
+        TEST_ASSERT(l_decrypted_size > 0, "Packet %d decryption should succeed", i + 1);
         
         dap_stream_trans_udp_internal_header_t *l_header =
             (dap_stream_trans_udp_internal_header_t*)l_decrypted;

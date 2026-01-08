@@ -213,6 +213,7 @@ typedef struct dap_net_trans_udp_ctx {
     void *client_ctx;                   ///< dap_client_t* from stage_prepare (if any)
     dap_stream_t *stream;               ///< Associated stream (back-reference)
     dap_events_socket_t *listener_esocket; ///< Server: Listener esocket for sendto (server-side only)
+    dap_events_socket_t *esocket;       ///< Client: Client esocket (for unit tests compatibility)
 } dap_net_trans_udp_ctx_t;
 
 /**
