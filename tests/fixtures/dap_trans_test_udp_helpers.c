@@ -33,6 +33,9 @@
 
 #define LOG_TAG "test_udp_helpers"
 
+// Declare mock for write_unsafe to capture packets
+DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
+
 // ============================================================================
 // PACKET CAPTURE STORAGE
 // ============================================================================
@@ -189,17 +192,17 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
     }
     
     // Create mock listener esocket
-    l_ctx->listener_es = DAP_NEW_Z(dap_events_socket_t);
-    if (!l_ctx->listener_es) {
+    l_ctx->listener_esocket = DAP_NEW_Z(dap_events_socket_t);
+    if (!l_ctx->listener_esocket) {
         log_it(L_ERROR, "Failed to allocate listener esocket");
         dap_enc_key_delete(l_ctx->handshake_key);
         DAP_DELETE(l_ctx);
         return NULL;
     }
     
-    l_ctx->listener_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-    l_ctx->listener_es->socket = 200; // Mock FD
-    l_ctx->listener_es->flags = DAP_SOCK_READY_TO_WRITE;
+    l_ctx->listener_esocket->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+    l_ctx->listener_esocket->socket = 200; // Mock FD
+    l_ctx->listener_esocket->flags = DAP_SOCK_READY_TO_WRITE;
     
     log_it(L_DEBUG, "Created mock server UDP context: session_id=0x%lx, remote=%s:%u",
            a_session_id, a_remote_addr, a_remote_port);
@@ -221,8 +224,8 @@ void dap_udp_test_delete_mock_ctx(dap_net_trans_udp_ctx_t *a_ctx)
         DAP_DELETE(a_ctx->esocket);
     }
     
-    if (a_ctx->listener_es) {
-        DAP_DELETE(a_ctx->listener_es);
+    if (a_ctx->listener_esocket) {
+        DAP_DELETE(a_ctx->listener_esocket);
     }
     
     if (a_ctx->stream) {
@@ -306,11 +309,19 @@ int dap_udp_test_decrypt_and_parse_packet(
     }
     
     // Decrypt packet
-    size_t l_decrypted_size = 0;
-    uint8_t *l_decrypted = dap_enc_decode(a_key, a_packet, a_packet_size, 
-                                          &l_decrypted_size);
+    size_t l_decrypt_buf_size = a_packet_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
     if (!l_decrypted) {
+        log_it(L_ERROR, "Failed to allocate decryption buffer");
+        return -1;
+    }
+    
+    size_t l_decrypted_size = dap_enc_decode(a_key, a_packet, a_packet_size, 
+                                          l_decrypted, l_decrypt_buf_size,
+                                          DAP_ENC_DATA_TYPE_RAW);
+    if (l_decrypted_size == 0) {
         log_it(L_ERROR, "Failed to decrypt packet");
+        DAP_DELETE(l_decrypted);
         return -1;
     }
     
@@ -433,13 +444,22 @@ int dap_udp_test_create_encrypted_packet(
     }
     
     // Encrypt
-    size_t l_encrypted_size = 0;
-    uint8_t *l_encrypted = dap_enc_code(a_key, l_plaintext, l_plaintext_size,
-                                        &l_encrypted_size);
+    size_t l_encrypt_buf_size = l_plaintext_size + 256;
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypt_buf_size);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "Failed to allocate encryption buffer");
+        DAP_DELETE(l_plaintext);
+        return -1;
+    }
+    
+    size_t l_encrypted_size = dap_enc_code(a_key, l_plaintext, l_plaintext_size,
+                                        l_encrypted, l_encrypt_buf_size,
+                                        DAP_ENC_DATA_TYPE_RAW);
     DAP_DELETE(l_plaintext);
     
-    if (!l_encrypted) {
+    if (l_encrypted_size == 0) {
         log_it(L_ERROR, "Failed to encrypt packet");
+        DAP_DELETE(l_encrypted);
         return -1;
     }
     
@@ -466,6 +486,9 @@ int dap_udp_test_create_encrypted_packet(
 // HANDSHAKE TEST HELPERS
 // ============================================================================
 
+/**
+ * @brief Simulate full Kyber512 handshake using new KEM API
+ */
 int dap_udp_test_simulate_kyber_handshake(
     dap_enc_key_t **a_out_handshake_key,
     uint8_t **a_out_alice_pubkey,
@@ -478,95 +501,93 @@ int dap_udp_test_simulate_kyber_handshake(
         return -1;
     }
     
-    // Generate key pairs
-    dap_enc_key_t *l_alice_key = NULL;
-    dap_enc_key_t *l_bob_key = NULL;
-    
-    if (dap_udp_test_generate_kyber_keypair(&l_alice_key, &l_bob_key) != 0) {
+    // STEP 1: Alice generates keypair
+    dap_enc_kem_result_t *l_alice_kem = dap_enc_kem_alice_generate_keypair(DAP_ENC_KEY_TYPE_KEM_KYBER512);
+    if (!l_alice_kem) {
+        log_it(L_ERROR, "Failed to generate Alice's Kyber512 keypair");
         return -1;
     }
     
-    // Alice: export public key
-    *a_out_alice_pubkey = DAP_NEW_Z_SIZE(uint8_t, l_alice_key->pub_key_data_size);
+    // Export Alice's public key
+    *a_out_alice_pubkey_size = l_alice_kem->public_data_size;
+    *a_out_alice_pubkey = DAP_NEW_SIZE(uint8_t, *a_out_alice_pubkey_size);
     if (!*a_out_alice_pubkey) {
         log_it(L_ERROR, "Failed to allocate Alice's public key buffer");
-        dap_enc_key_delete(l_alice_key);
-        dap_enc_key_delete(l_bob_key);
+        dap_enc_kem_result_free(l_alice_kem);
         return -1;
     }
-    memcpy(*a_out_alice_pubkey, l_alice_key->pub_key_data, 
-           l_alice_key->pub_key_data_size);
-    *a_out_alice_pubkey_size = l_alice_key->pub_key_data_size;
+    memcpy(*a_out_alice_pubkey, l_alice_kem->public_data, *a_out_alice_pubkey_size);
     
-    // Bob: generate shared secret and ciphertext
-    uint8_t l_bob_shared[32] = {0};
-    size_t l_bob_ciphertext_size = l_bob_key->gen_bob_shared_key(
-        l_bob_key, l_alice_key->pub_key_data, l_alice_key->pub_key_data_size,
-        NULL, 0, l_bob_shared, sizeof(l_bob_shared));
+    // STEP 2: Bob encapsulates shared secret
+    dap_enc_kem_result_t *l_bob_kem = dap_enc_kem_bob_encapsulate(
+        DAP_ENC_KEY_TYPE_KEM_KYBER512,
+        *a_out_alice_pubkey,
+        *a_out_alice_pubkey_size
+    );
     
-    if (l_bob_ciphertext_size == 0) {
-        log_it(L_ERROR, "Bob failed to generate shared secret");
+    if (!l_bob_kem) {
+        log_it(L_ERROR, "Failed to encapsulate shared secret");
         DAP_DELETE(*a_out_alice_pubkey);
         *a_out_alice_pubkey = NULL;
-        dap_enc_key_delete(l_alice_key);
-        dap_enc_key_delete(l_bob_key);
+        dap_enc_kem_result_free(l_alice_kem);
         return -1;
     }
     
     // Export Bob's ciphertext
-    *a_out_bob_ciphertext = DAP_NEW_Z_SIZE(uint8_t, l_bob_ciphertext_size);
+    *a_out_bob_ciphertext_size = l_bob_kem->public_data_size;
+    *a_out_bob_ciphertext = DAP_NEW_SIZE(uint8_t, *a_out_bob_ciphertext_size);
     if (!*a_out_bob_ciphertext) {
         log_it(L_ERROR, "Failed to allocate Bob's ciphertext buffer");
         DAP_DELETE(*a_out_alice_pubkey);
         *a_out_alice_pubkey = NULL;
-        dap_enc_key_delete(l_alice_key);
-        dap_enc_key_delete(l_bob_key);
+        dap_enc_kem_result_free(l_bob_kem);
+        dap_enc_kem_result_free(l_alice_kem);
         return -1;
     }
-    memcpy(*a_out_bob_ciphertext, l_bob_key->priv_key_data, l_bob_ciphertext_size);
-    *a_out_bob_ciphertext_size = l_bob_ciphertext_size;
+    memcpy(*a_out_bob_ciphertext, l_bob_kem->public_data, *a_out_bob_ciphertext_size);
     
-    // Alice: derive shared secret from ciphertext
-    uint8_t l_alice_shared[32] = {0};
-    int l_ret = l_alice_key->gen_alice_shared_key(
-        l_alice_key, *a_out_bob_ciphertext, l_bob_ciphertext_size,
-        l_alice_shared, sizeof(l_alice_shared));
+    // STEP 3: Alice decapsulates to get shared secret
+    int l_ret = dap_enc_kem_alice_decapsulate(
+        l_alice_kem,
+        *a_out_bob_ciphertext,
+        *a_out_bob_ciphertext_size
+    );
     
     if (l_ret != 0) {
-        log_it(L_ERROR, "Alice failed to derive shared secret");
+        log_it(L_ERROR, "Failed to decapsulate shared secret");
         DAP_DELETE(*a_out_alice_pubkey);
         DAP_DELETE(*a_out_bob_ciphertext);
         *a_out_alice_pubkey = NULL;
         *a_out_bob_ciphertext = NULL;
-        dap_enc_key_delete(l_alice_key);
-        dap_enc_key_delete(l_bob_key);
+        dap_enc_kem_result_free(l_bob_kem);
+        dap_enc_kem_result_free(l_alice_kem);
         return -1;
     }
     
-    // Derive handshake key using KDF-SHAKE256
-    uint8_t l_kdf_key[32];
-    dap_enc_kdf_shake256(l_alice_shared, sizeof(l_alice_shared),
-                         "udp_handshake", strlen("udp_handshake"),
-                         0, l_kdf_key, sizeof(l_kdf_key));
-    
-    // Create SALSA2012 key from KDF output
-    *a_out_handshake_key = dap_enc_key_new_from_raw_bytes(
-        DAP_ENC_KEY_TYPE_SALSA2012, l_kdf_key, sizeof(l_kdf_key), 0);
+    // STEP 4: Derive handshake key from shared secret
+    *a_out_handshake_key = dap_enc_kem_derive_key(
+        l_alice_kem->shared_secret,
+        l_alice_kem->shared_secret_size,
+        "udp_handshake",
+        0,  // counter = 0 for handshake
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        32  // SALSA2012 key size
+    );
     
     if (!*a_out_handshake_key) {
-        log_it(L_ERROR, "Failed to create handshake key from KDF output");
+        log_it(L_ERROR, "Failed to derive handshake key");
         DAP_DELETE(*a_out_alice_pubkey);
         DAP_DELETE(*a_out_bob_ciphertext);
         *a_out_alice_pubkey = NULL;
         *a_out_bob_ciphertext = NULL;
-        dap_enc_key_delete(l_alice_key);
-        dap_enc_key_delete(l_bob_key);
+        dap_enc_kem_result_free(l_bob_kem);
+        dap_enc_kem_result_free(l_alice_kem);
         return -1;
     }
     
     // Cleanup
-    dap_enc_key_delete(l_alice_key);
-    dap_enc_key_delete(l_bob_key);
+    dap_enc_kem_result_free(l_bob_kem);
+    dap_enc_kem_result_free(l_alice_kem);
     
     log_it(L_DEBUG, "Simulated Kyber512 handshake: alice_pubkey=%zu bytes, bob_ciphertext=%zu bytes",
            *a_out_alice_pubkey_size, *a_out_bob_ciphertext_size);
@@ -578,6 +599,9 @@ int dap_udp_test_simulate_kyber_handshake(
 // SESSION TEST HELPERS
 // ============================================================================
 
+/**
+ * @brief Derive session key using new KEM API
+ */
 dap_enc_key_t* dap_udp_test_derive_session_key(
     dap_enc_key_t *a_handshake_key,
     uint64_t a_counter,
@@ -593,20 +617,18 @@ dap_enc_key_t* dap_udp_test_derive_session_key(
         return NULL;
     }
     
-    // Derive session key using KDF with counter
-    uint8_t l_session_key_data[32];
-    dap_enc_kdf_shake256(a_handshake_key->priv_key_data, 
-                         a_handshake_key->priv_key_data_size,
-                         a_context, strlen(a_context),
-                         a_counter,
-                         l_session_key_data, sizeof(l_session_key_data));
-    
-    // Create SALSA2012 key from derived data
-    dap_enc_key_t *l_session_key = dap_enc_key_new_from_raw_bytes(
-        DAP_ENC_KEY_TYPE_SALSA2012, l_session_key_data, sizeof(l_session_key_data), 0);
+    // Derive session key using new API
+    dap_enc_key_t *l_session_key = dap_enc_kem_derive_key(
+        a_handshake_key->priv_key_data,
+        a_handshake_key->priv_key_data_size,
+        a_context,
+        a_counter,
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        32  // SALSA2012 key size
+    );
     
     if (!l_session_key) {
-        log_it(L_ERROR, "Failed to create session key from KDF output");
+        log_it(L_ERROR, "Failed to derive session key");
         return NULL;
     }
     
@@ -633,20 +655,22 @@ int dap_udp_test_obfuscation_roundtrip(
     }
     
     // Obfuscate
-    *a_out_obfuscated = dap_transport_obfuscate_handshake(
-        a_handshake, a_handshake_size, a_out_obfuscated_size);
+    int l_ret = dap_transport_obfuscate_handshake(
+        a_handshake, a_handshake_size, 
+        a_out_obfuscated, a_out_obfuscated_size);
     
-    if (!*a_out_obfuscated) {
-        log_it(L_ERROR, "Failed to obfuscate handshake");
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to obfuscate handshake: %d", l_ret);
         return -1;
     }
     
     // Deobfuscate
-    *a_out_deobfuscated = dap_transport_deobfuscate_handshake(
-        *a_out_obfuscated, *a_out_obfuscated_size, a_out_deobfuscated_size);
+    l_ret = dap_transport_deobfuscate_handshake(
+        *a_out_obfuscated, *a_out_obfuscated_size,
+        a_out_deobfuscated, a_out_deobfuscated_size);
     
-    if (!*a_out_deobfuscated) {
-        log_it(L_ERROR, "Failed to deobfuscate handshake");
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to deobfuscate handshake: %d", l_ret);
         DAP_DELETE(*a_out_obfuscated);
         *a_out_obfuscated = NULL;
         return -1;

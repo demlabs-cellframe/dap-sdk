@@ -184,8 +184,11 @@ add_executable(${PROJECT_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_udp_helpers.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_udp_helpers.h
 )
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h PROPERTIES HEADER_FILE_ONLY TRUE)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_udp_helpers.h PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # Link dependencies
 dap_test_link_libraries(${PROJECT_NAME})

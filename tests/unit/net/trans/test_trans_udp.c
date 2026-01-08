@@ -81,8 +81,8 @@
 // UDP-specific mocks
 DAP_MOCK_DECLARE(dap_stream_add_proc_udp, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_enc_server_process_request, DAP_MOCK_CONFIG_PASSTHROUGH);
+DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
 // Note: NOT mocking randombytes - it's a system crypto function that should work correctly
-// Note: dap_events_socket_write_unsafe mock is in dap_trans_test_udp_helpers.h
 DAP_MOCK_DECLARE(dap_events_socket_create, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_events_socket_create_platform, DAP_MOCK_CONFIG_PASSTHROUGH);
 DAP_MOCK_DECLARE(dap_events_socket_delete_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
@@ -852,16 +852,20 @@ static void test_13_stream_write(void)
     // ========================================================================
     
     // Decrypt the captured packet
-    size_t l_decrypted_size = 0;
-    uint8_t *l_decrypted = dap_enc_decode(
+    size_t l_decrypt_buf_size = l_captured->size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption buffer allocation should succeed");
+    
+    size_t l_decrypted_size = dap_enc_decode(
         l_udp_ctx->handshake_key,
         l_captured->data,
         l_captured->size,
-        &l_decrypted_size,
+        l_decrypted,
+        l_decrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
-    TEST_ASSERT_NOT_NULL(l_decrypted, "Packet decryption should succeed");
+    TEST_ASSERT(l_decrypted_size > 0, "Packet decryption should succeed (returned %zu bytes)", l_decrypted_size);
     TEST_ASSERT(l_decrypted_size >= DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size,
                 "Decrypted size should include internal header + payload");
     
@@ -1029,7 +1033,7 @@ static void test_14_stream_handshake(void)
     // STEP 6: Alice decapsulates Bob's ciphertext (client-side)
     // ========================================================================
     
-    uint8_t l_alice_shared_secret[CRYPTO_BYTES];
+    uint8_t *l_alice_shared_secret = NULL;  // Will point to l_alice_key->priv_key_data after decapsulation
     
     TEST_ASSERT(l_alice_key->gen_alice_shared_key != NULL,
                 "Alice should have decapsulation function");
@@ -1038,11 +1042,13 @@ static void test_14_stream_handshake(void)
         l_alice_key,
         l_bob_ciphertext,
         l_bob_ciphertext_size,
-        l_alice_shared_secret,
-        sizeof(l_alice_shared_secret)
+        l_alice_key->pub_key_data  // Bob's public key (reusing Alice's key object)
     );
     
     TEST_ASSERT(l_ret == CRYPTO_BYTES, "Alice decapsulation should return shared secret size");
+    
+    // Shared secret is now stored in l_alice_key->priv_key_data
+    l_alice_shared_secret = l_alice_key->priv_key_data;  // Update pointer to actual data
     
     TEST_INFO("✅ Alice decapsulated shared secret: %d bytes", CRYPTO_BYTES);
     
@@ -1055,10 +1061,11 @@ static void test_14_stream_handshake(void)
     // Counter: 0
     uint8_t l_alice_handshake_key[DAP_ENC_STANDARD_KEY_SIZE];
     
-    l_ret = dap_kdf_init(
+    l_ret = dap_enc_kdf_derive(
         l_alice_shared_secret,
         CRYPTO_BYTES,
         "udp_handshake",
+        strlen("udp_handshake"),
         0,  // counter = 0 for handshake
         l_alice_handshake_key,
         DAP_ENC_STANDARD_KEY_SIZE
@@ -1094,29 +1101,38 @@ static void test_14_stream_handshake(void)
     
     // Test encryption/decryption roundtrip
     const char l_test_message[] = "Test message for handshake key validation";
-    size_t l_encrypted_size = 0;
-    uint8_t *l_encrypted = dap_enc_code(
+    
+    // Allocate buffer for encryption
+    size_t l_encrypt_buf_size = sizeof(l_test_message) + 256;
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_encrypted, "Encryption buffer allocation should succeed");
+    
+    size_t l_encrypted_size = dap_enc_code(
         l_alice_enc_key,
         (const uint8_t*)l_test_message,
         sizeof(l_test_message),
-        &l_encrypted_size,
+        l_encrypted,
+        l_encrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
-    TEST_ASSERT_NOT_NULL(l_encrypted, "Encryption with handshake key should succeed");
-    TEST_ASSERT(l_encrypted_size > 0, "Encrypted size should be positive");
+    TEST_ASSERT(l_encrypted_size > 0, "Encryption with handshake key should succeed (returned %zu bytes)", l_encrypted_size);
     
     // Decrypt
-    size_t l_decrypted_size = 0;
-    uint8_t *l_decrypted = dap_enc_decode(
+    size_t l_decrypt_buf_size = l_encrypted_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypt_buf_size);
+    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption buffer allocation should succeed");
+    
+    size_t l_decrypted_size = dap_enc_decode(
         l_alice_enc_key,
         l_encrypted,
         l_encrypted_size,
-        &l_decrypted_size,
+        l_decrypted,
+        l_decrypt_buf_size,
         DAP_ENC_DATA_TYPE_RAW
     );
     
-    TEST_ASSERT_NOT_NULL(l_decrypted, "Decryption should succeed");
+    TEST_ASSERT(l_decrypted_size > 0, "Decryption should succeed (returned %zu bytes)", l_decrypted_size);
     TEST_ASSERT(l_decrypted_size == sizeof(l_test_message),
                 "Decrypted size should match original");
     TEST_ASSERT(memcmp(l_decrypted, l_test_message, sizeof(l_test_message)) == 0,
@@ -1176,10 +1192,11 @@ static void test_15_stream_session(void)
     
     // Derive handshake key via KDF-SHAKE256 (counter=0)
     uint8_t l_handshake_key_data[DAP_ENC_STANDARD_KEY_SIZE];
-    int l_ret = dap_kdf_init(
+    int l_ret = dap_enc_kdf_derive(
         l_shared_secret,
         sizeof(l_shared_secret),
         "udp_handshake",
+        strlen("udp_handshake"),
         0,  // counter = 0 for handshake
         l_handshake_key_data,
         DAP_ENC_STANDARD_KEY_SIZE
@@ -1244,10 +1261,11 @@ static void test_15_stream_session(void)
     // Counter: 1 (ratcheting from handshake counter=0)
     uint8_t l_session_key_data[DAP_ENC_STANDARD_KEY_SIZE];
     
-    l_ret = dap_kdf_init(
+    l_ret = dap_enc_kdf_derive(
         l_shared_secret,
         sizeof(l_shared_secret),
         "udp_session",
+        strlen("udp_session"),
         1,  // counter = 1 for session (ratcheting!)
         l_session_key_data,
         DAP_ENC_STANDARD_KEY_SIZE

@@ -301,7 +301,6 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
  * TEST_ASSERT(packet->is_valid, "Packet should be captured");
  * ```
  */
-DAP_MOCK_DECLARE(dap_events_socket_write_unsafe);
 
 /**
  * @brief Cleanup mock UDP client context and free all resources
