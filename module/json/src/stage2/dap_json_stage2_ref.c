@@ -788,23 +788,90 @@ static bool s_unescape_string(
                     
                     i += 4; // Skip hex digits
                     
-                    // Encode as UTF-8
+                    // Check for surrogate pairs (U+D800..U+DFFF)
+                    if(l_codepoint >= 0xD800 && l_codepoint <= 0xDBFF) {
+                        // High surrogate - must be followed by low surrogate
+                        if(i + 6 >= a_length || a_input[i + 1] != '\\' || a_input[i + 2] != 'u') {
+                            log_it(L_ERROR, "Unpaired high surrogate U+%04X", l_codepoint);
+                            DAP_DELETE(l_output);
+                            return false;
+                        }
+                        
+                        // Parse low surrogate
+                        i += 2; // Skip \u
+                        uint32_t l_low_surrogate = 0;
+                        for(int j = 0; j < 4; j++) {
+                            char l_c = a_input[i + 1 + j];
+                            uint32_t l_digit;
+                            
+                            if(l_c >= '0' && l_c <= '9') {
+                                l_digit = l_c - '0';
+                            }
+                            else if(l_c >= 'a' && l_c <= 'f') {
+                                l_digit = 10 + (l_c - 'a');
+                            }
+                            else if(l_c >= 'A' && l_c <= 'F') {
+                                l_digit = 10 + (l_c - 'A');
+                            }
+                            else {
+                                log_it(L_ERROR, "Invalid hex digit in low surrogate: %c", l_c);
+                                DAP_DELETE(l_output);
+                                return false;
+                            }
+                            
+                            l_low_surrogate = (l_low_surrogate << 4) | l_digit;
+                        }
+                        
+                        i += 4; // Skip hex digits
+                        
+                        // Validate low surrogate range
+                        if(l_low_surrogate < 0xDC00 || l_low_surrogate > 0xDFFF) {
+                            log_it(L_ERROR, "Invalid low surrogate U+%04X (expected U+DC00..U+DFFF)", l_low_surrogate);
+                            DAP_DELETE(l_output);
+                            return false;
+                        }
+                        
+                        // Decode surrogate pair to codepoint
+                        // Formula: (high - 0xD800) * 0x400 + (low - 0xDC00) + 0x10000
+                        l_codepoint = ((l_codepoint - 0xD800) << 10) + (l_low_surrogate - 0xDC00) + 0x10000;
+                    }
+                    else if(l_codepoint >= 0xDC00 && l_codepoint <= 0xDFFF) {
+                        // Lone low surrogate - invalid
+                        log_it(L_ERROR, "Unpaired low surrogate U+%04X", l_codepoint);
+                        DAP_DELETE(l_output);
+                        return false;
+                    }
+                    // else: regular codepoint (not surrogate)
+                    
+                    // Encode codepoint as UTF-8
                     if(l_codepoint <= 0x7F) {
-                        // 1-byte UTF-8
+                        // 1-byte UTF-8: 0xxxxxxx
                         l_output[l_out_pos++] = (char)l_codepoint;
                     }
                     else if(l_codepoint <= 0x7FF) {
-                        // 2-byte UTF-8
+                        // 2-byte UTF-8: 110xxxxx 10xxxxxx
                         l_output[l_out_pos++] = (char)(0xC0 | (l_codepoint >> 6));
                         l_output[l_out_pos++] = (char)(0x80 | (l_codepoint & 0x3F));
                     }
                     else if(l_codepoint <= 0xFFFF) {
-                        // 3-byte UTF-8
+                        // 3-byte UTF-8: 1110xxxx 10xxxxxx 10xxxxxx
                         l_output[l_out_pos++] = (char)(0xE0 | (l_codepoint >> 12));
                         l_output[l_out_pos++] = (char)(0x80 | ((l_codepoint >> 6) & 0x3F));
                         l_output[l_out_pos++] = (char)(0x80 | (l_codepoint & 0x3F));
                     }
-                    // NOTE: Full surrogate pair handling будет добавлен позже
+                    else if(l_codepoint <= 0x10FFFF) {
+                        // 4-byte UTF-8: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+                        l_output[l_out_pos++] = (char)(0xF0 | (l_codepoint >> 18));
+                        l_output[l_out_pos++] = (char)(0x80 | ((l_codepoint >> 12) & 0x3F));
+                        l_output[l_out_pos++] = (char)(0x80 | ((l_codepoint >> 6) & 0x3F));
+                        l_output[l_out_pos++] = (char)(0x80 | (l_codepoint & 0x3F));
+                    }
+                    else {
+                        // Invalid codepoint (> U+10FFFF)
+                        log_it(L_ERROR, "Invalid Unicode codepoint U+%06X", l_codepoint);
+                        DAP_DELETE(l_output);
+                        return false;
+                    }
                     
                     break;
                 }
@@ -816,6 +883,13 @@ static bool s_unescape_string(
             }
         }
         else {
+            // Check for unescaped control characters (U+0000..U+001F)
+            // RFC 8259: control characters MUST be escaped
+            if(a_input[i] < 0x20) {
+                log_it(L_ERROR, "Unescaped control character 0x%02X in string", (unsigned char)a_input[i]);
+                DAP_DELETE(l_output);
+                return false;
+            }
             l_output[l_out_pos++] = a_input[i];
         }
     }

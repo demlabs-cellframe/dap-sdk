@@ -368,12 +368,12 @@ static bool s_skip_string(dap_json_stage1_t *a_stage1)
                     return false;
                 }
                 
-                // Skip hex digits (validation can be done in Stage 2)
-                i += 4;
+                // Skip 4 hex digits (validation done in Stage 2)
+                i += 4; // Now i points to last hex digit
             }
             
             a_stage1->string_chars++;
-            i++;
+            i++; // Move to next character after escape sequence
             continue;
         }
         
