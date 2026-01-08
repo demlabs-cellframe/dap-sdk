@@ -1065,6 +1065,15 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                    
+                    // DEBUG: Check notifiers status
+                    size_t l_notifier_count = dap_list_length(l_ch->packet_in_notifiers);
+                    debug_if(s_dump_packet_headers, L_INFO, 
+                             "Channel '%c' notifiers: count=%zu, security_passed=%s, closing=%s",
+                             (char)l_ch->proc->id, l_notifier_count,
+                             l_security_check_passed ? "YES" : "NO",
+                             l_ch->closing ? "YES" : "NO");
+                    
                     for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; it = it->next) {
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);

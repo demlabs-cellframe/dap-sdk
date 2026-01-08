@@ -116,6 +116,9 @@ void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
         return;
     }
     
+    log_it(L_INFO, "test_stream_ch_receive_callback: RECEIVED %zu bytes on channel '%c', type=0x%02x", 
+           a_data_size, a_ch->proc->id, a_type);
+    
     pthread_mutex_lock(&l_ctx->mutex);
     
     // Allocate buffer for received data
@@ -194,7 +197,10 @@ int test_stream_ch_send_and_wait(dap_client_t *a_client,
     }
     pthread_mutex_unlock(&a_ctx->mutex);
     
-    // Send data
+    log_it(L_INFO, "test_stream_ch_send_and_wait: START sending %zu bytes on channel '%c'",
+           a_ctx->sent_data_size, a_ctx->channel_id);
+    
+    // Send data (without mutex - dap_client_write_mt is thread-safe)
     int l_sent = dap_client_write_mt(a_client, a_ctx->channel_id, 
                                      a_ctx->packet_type,
                                      a_ctx->sent_data, a_ctx->sent_data_size);
@@ -203,8 +209,13 @@ int test_stream_ch_send_and_wait(dap_client_t *a_client,
         return -1;
     }
     
-    // Wait for response
+    log_it(L_INFO, "test_stream_ch_send_and_wait: Data sent, waiting for response...");
+    
+    // Wait for response with proper condition variable pattern
+    // CRITICAL: Check condition BEFORE entering wait to prevent lost wakeup!
     pthread_mutex_lock(&a_ctx->mutex);
+    
+    // Prepare timeout
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += a_timeout_ms / 1000;
@@ -215,16 +226,39 @@ int test_stream_ch_send_and_wait(dap_client_t *a_client,
     }
     
     int l_ret = 0;
-    while (!a_ctx->data_received) {
-        int l_cond_ret = pthread_cond_timedwait(&a_ctx->cond, &a_ctx->mutex, &l_timeout);
-        if (l_cond_ret == ETIMEDOUT) {
-            log_it(L_ERROR, "test_stream_ch_send_and_wait: timeout waiting for response");
-            l_ret = -1;
-            break;
+    
+    // Check condition FIRST - response may have arrived during send!
+    // This prevents lost wakeup if pthread_cond_signal came before pthread_cond_timedwait
+    if (!a_ctx->data_received) {
+        log_it(L_INFO, "test_stream_ch_send_and_wait: Entering wait loop, data_received=%s",
+               a_ctx->data_received ? "true" : "false");
+        // Only wait if data not yet received
+        while (!a_ctx->data_received) {
+            int l_cond_ret = pthread_cond_timedwait(&a_ctx->cond, &a_ctx->mutex, &l_timeout);
+            if (l_cond_ret == ETIMEDOUT) {
+                log_it(L_ERROR, "test_stream_ch_send_and_wait: timeout waiting for response (data_received=%s)",
+                       a_ctx->data_received ? "true" : "false");
+                l_ret = -1;
+                break;
+            } else if (l_cond_ret != 0 && l_cond_ret != ETIMEDOUT) {
+                // Other errors (EINVAL, etc.)
+                log_it(L_ERROR, "test_stream_ch_send_and_wait: pthread_cond_timedwait error: %d", l_cond_ret);
+                l_ret = -1;
+                break;
+            }
+            // Spurious wakeup protection: loop continues if data_received is still false
+            log_it(L_DEBUG, "test_stream_ch_send_and_wait: Woke up, data_received=%s",
+                   a_ctx->data_received ? "true" : "false");
         }
+    } else {
+        // Data already received during send - no need to wait!
+        log_it(L_INFO, "test_stream_ch_send_and_wait: data already received (fast response)");
     }
     
     pthread_mutex_unlock(&a_ctx->mutex);
+    
+    log_it(L_INFO, "test_stream_ch_send_and_wait: DONE, ret=%d, data_received=%s",
+           l_ret, a_ctx->data_received ? "true" : "false");
     
     return l_ret;
 }
