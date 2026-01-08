@@ -132,6 +132,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/dap_json/dap_json_tests.c)
     register_dap_test(test_unit_dap_json "unit;core")
 endif()
 
+# Core module unit tests (Arena, String Pool, etc.)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/CMakeLists.txt)
+    add_subdirectory(unit/core)
+    message("[+] Core module unit tests configured (Arena, etc.)")
+endif()
+
 # JSON module unit tests (Phase 0.2 + Phase 1.1)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/json/CMakeLists.txt)
     add_subdirectory(unit/json)

@@ -148,3 +148,25 @@ if(UNIX)
     )
 endif()
 
+# ============================================================================
+# Test: DAP Arena Allocator
+# ============================================================================
+project(test_dap_arena)
+
+add_executable(${PROJECT_NAME}
+    test_dap_arena.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;arena;memory"
+)
+
