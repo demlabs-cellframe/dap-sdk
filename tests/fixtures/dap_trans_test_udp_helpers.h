@@ -51,6 +51,7 @@
 #include "dap_events_socket.h"
 #include "dap_stream.h"
 #include "dap_net_trans_udp_stream.h"
+#include "dap_mock.h"  // For dap_mock_function_state_t
 
 #ifdef __cplusplus
 extern "C" {
@@ -273,6 +274,55 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
     uint16_t a_remote_port
 );
 
+/**
+ * @brief Setup mock stream with UDP context and session for write operations
+ * 
+ * This is a HIGH-LEVEL helper that properly configures a mock stream for
+ * UDP transport write operations. It handles all the boilerplate:
+ * - Resets trans_ctx to clean state
+ * - Links UDP context via trans_ctx->_inheritor
+ * - Creates stream->session with encryption key from UDP context
+ * - Links stream to trans
+ * 
+ * USE THIS instead of manually setting up stream/trans_ctx/session in tests!
+ * 
+ * @param a_trans UDP transport instance
+ * @param a_udp_ctx UDP context with encryption key
+ * @return Configured mock stream ready for write operations
+ * 
+ * @note Caller must cleanup with dap_udp_test_cleanup_mock_stream() after test
+ * 
+ * @example
+ * dap_net_trans_t *trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
+ * dap_net_trans_udp_ctx_t *udp_ctx = dap_udp_test_create_mock_client_ctx(...);
+ * dap_stream_t *stream = dap_udp_test_setup_mock_stream_with_session(trans, udp_ctx);
+ * 
+ * // Use stream for write operations
+ * trans->ops->write(stream, data, size);
+ * 
+ * // Cleanup
+ * dap_udp_test_cleanup_mock_stream(stream);
+ * dap_udp_test_cleanup_mock_client_ctx(udp_ctx);
+ */
+dap_stream_t* dap_udp_test_setup_mock_stream_with_session(
+    dap_net_trans_t *a_trans,
+    dap_net_trans_udp_ctx_t *a_udp_ctx
+);
+
+/**
+ * @brief Cleanup mock stream after test (clears session and trans_ctx)
+ * 
+ * Properly cleans up mock stream state:
+ * - Deletes stream->session (but NOT the key - it belongs to UDP context)
+ * - Resets trans_ctx to zero
+ * - Does NOT delete stream itself (it's a global singleton)
+ * 
+ * ALWAYS call this at the end of tests that used dap_udp_test_setup_mock_stream_with_session()
+ * 
+ * @param a_stream Mock stream to cleanup
+ */
+void dap_udp_test_cleanup_mock_stream(dap_stream_t *a_stream);
+
 // ============================================================================
 // DAP_MOCK_CUSTOM DECLARATION
 // ============================================================================
@@ -301,6 +351,10 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
  * TEST_ASSERT(packet->is_valid, "Packet should be captured");
  * ```
  */
+
+// Mock declaration for dap_events_socket_write_unsafe
+// The wrapper implementation is in dap_trans_test_udp_helpers.c
+DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
 
 /**
  * @brief Cleanup mock UDP client context and free all resources

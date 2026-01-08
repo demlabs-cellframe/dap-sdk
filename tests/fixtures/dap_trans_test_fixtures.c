@@ -67,9 +67,25 @@ int dap_trans_test_setup(void)
         return -1;
     }
 
-    // Don't try to open config for tests - just use NULL (defaults)
-    // Config loading requires config files to exist, which is not needed for unit tests
-    g_config = NULL;
+    // CRITICAL: Enable log output to stderr (otherwise logs go to /dev/null!)
+    dap_log_set_external_output(LOGGER_OUTPUT_STDERR, NULL);
+
+    // Don't try to open config from file for tests, but create an empty config
+    // and set debug flags for better test visibility
+    g_config = DAP_NEW_Z(dap_config_t);
+    if (g_config) {
+        // Enable debug logging for tests
+        dap_trans_test_config_set_bool(g_config, "general", "debug_more", true);
+        dap_trans_test_config_set_int(g_config, "general", "log_level", L_DEBUG);
+    }
+    
+    // Set log level directly (config setting alone may not be enough)
+    dap_log_level_set(L_DEBUG);
+    log_it(L_NOTICE, "=== Log level set to L_DEBUG ===");
+    
+    // Enable SALSA2012 debug output
+    extern void dap_enc_salsa2012_set_debug(bool);
+    dap_enc_salsa2012_set_debug(true);
 
     // Initialize encryption system
     dap_enc_init();
@@ -102,7 +118,8 @@ void dap_trans_test_suite_cleanup(void)
 
     // Close config
     if (g_config) {
-        dap_config_close(g_config);
+        // Just free the config structure (items are internally managed)
+        DAP_DELETE(g_config);
         g_config = NULL;
     }
 

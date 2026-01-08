@@ -23,9 +23,11 @@
  */
 
 #include "dap_trans_test_udp_helpers.h"
+#include "dap_trans_test_fixtures.h"  // For dap_trans_test_get_mock_stream/ctx
 #include "dap_common.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
+#include "dap_enc_kdf.h"
 #include "dap_transport_obfuscation.h"
 #include "dap_mock.h"
 #include <string.h>
@@ -33,8 +35,8 @@
 
 #define LOG_TAG "test_udp_helpers"
 
-// Declare mock for write_unsafe to capture packets
-DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
+// NOTE: DAP_MOCK_DECLARE is in dap_trans_test_udp_helpers.h (not here!)
+// This ensures the mock state is globally visible to all test files
 
 // ============================================================================
 // PACKET CAPTURE STORAGE
@@ -236,6 +238,78 @@ void dap_udp_test_delete_mock_ctx(dap_net_trans_udp_ctx_t *a_ctx)
 }
 
 // ============================================================================
+// MOCK STREAM SETUP WITH SESSION (High-level helpers for write tests)
+// ============================================================================
+
+dap_stream_t* dap_udp_test_setup_mock_stream_with_session(
+    dap_net_trans_t *a_trans,
+    dap_net_trans_udp_ctx_t *a_udp_ctx)
+{
+    if (!a_trans || !a_udp_ctx) {
+        log_it(L_ERROR, "Invalid parameters for mock stream setup");
+        return NULL;
+    }
+    
+    if (!a_udp_ctx->handshake_key) {
+        log_it(L_ERROR, "UDP context must have handshake_key for session");
+        return NULL;
+    }
+    
+    // Get global mock instances
+    dap_stream_t *l_stream = dap_trans_test_get_mock_stream();
+    dap_net_trans_ctx_t *l_trans_ctx = dap_trans_test_get_mock_trans_ctx();
+    
+    // Reset trans_ctx to clean state (critical for test isolation!)
+    memset(l_trans_ctx, 0, sizeof(*l_trans_ctx));
+    
+    // Setup trans_ctx with UDP context
+    l_trans_ctx->esocket = a_udp_ctx->esocket;
+    l_trans_ctx->_inheritor = a_udp_ctx;  // UDP context is in _inheritor
+    
+    // Link stream to trans and trans_ctx
+    l_stream->trans = a_trans;
+    l_stream->trans_ctx = l_trans_ctx;
+    
+    // Create session with encryption key
+    // NOTE: We reuse existing session if present, just update fields
+    if (!l_stream->session) {
+        l_stream->session = DAP_NEW_Z(dap_stream_session_t);
+        if (!l_stream->session) {
+            log_it(L_ERROR, "Failed to allocate stream session");
+            return NULL;
+        }
+    }
+    
+    l_stream->session->key = a_udp_ctx->handshake_key;  // Link to UDP context key
+    l_stream->session->id = (uint32_t)a_udp_ctx->session_id;
+    
+    log_it(L_DEBUG, "Setup mock stream with session: session_id=0x%lx, key=%p",
+           a_udp_ctx->session_id, a_udp_ctx->handshake_key);
+    
+    return l_stream;
+}
+
+void dap_udp_test_cleanup_mock_stream(dap_stream_t *a_stream)
+{
+    if (!a_stream) {
+        return;
+    }
+    
+    // Cleanup session (but DON'T delete the key - it belongs to UDP context)
+    if (a_stream->session) {
+        a_stream->session->key = NULL;  // Clear pointer, key is owned by UDP context
+        DAP_DELETE(a_stream->session);
+        a_stream->session = NULL;
+    }
+    
+    // Reset trans_ctx to clean state for next test
+    dap_net_trans_ctx_t *l_trans_ctx = dap_trans_test_get_mock_trans_ctx();
+    memset(l_trans_ctx, 0, sizeof(*l_trans_ctx));
+    
+    log_it(L_DEBUG, "Cleaned up mock stream and trans_ctx");
+}
+
+// ============================================================================
 // CRYPTO KEY HELPERS
 // ============================================================================
 
@@ -327,8 +401,8 @@ int dap_udp_test_decrypt_and_parse_packet(
     
     // Validate minimum size for internal header
     if (l_decrypted_size < DAP_STREAM_UDP_INTERNAL_HEADER_SIZE) {
-        log_it(L_ERROR, "Decrypted packet too small: %zu < %u",
-               l_decrypted_size, DAP_STREAM_UDP_INTERNAL_HEADER_SIZE);
+        log_it(L_ERROR, "Decrypted packet too small: %zu < %zu",
+               l_decrypted_size, (size_t)DAP_STREAM_UDP_INTERNAL_HEADER_SIZE);
         DAP_DELETE(l_decrypted);
         return -1;
     }
