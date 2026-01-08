@@ -175,6 +175,8 @@ static bool s_test_comments_invalid(void) {
     const char *l_invalid1 = "{\"a\":1, // comment\n\"b\":2}";
     l_json = dap_json_parse_string(l_invalid1);
     DAP_TEST_FAIL_IF(l_json != NULL, "Parser rejects // comments");
+    dap_json_object_free(l_json); // Free if it somehow was created
+    l_json = NULL;
     
     // C style comment (invalid in JSON, valid in JSONC/JSON5)
     const char *l_invalid2 = "{\"a\":1, /* comment */ \"b\":2}";
@@ -289,6 +291,8 @@ static bool s_test_mismatched_brackets(void) {
     const char *l_invalid1 = "{\"key\":\"value\"]";
     l_json = dap_json_parse_string(l_invalid1);
     DAP_TEST_FAIL_IF(l_json != NULL, "Parser rejects { closed with ]");
+    dap_json_object_free(l_json); // Free if it somehow was created
+    l_json = NULL;
     
     // Array opened, object closed
     const char *l_invalid2 = "[1,2,3}";
@@ -317,16 +321,18 @@ static bool s_test_bare_values(void) {
     // This may or may not be accepted depending on parser strictness
     // Just ensure it doesn't crash
     dap_json_object_free(l_json);
+    l_json = NULL; // Reset pointer after free
     
     // Bare number
     const char *l_bare_number = "42";
     l_json = dap_json_parse_string(l_bare_number);
     dap_json_object_free(l_json);
+    l_json = NULL; // Reset pointer after free
     
     result = true;
     log_it(L_DEBUG, "Bare values test passed");
     
-    dap_json_object_free(l_json);
+    // l_json already freed above
     return result;
 }
 
