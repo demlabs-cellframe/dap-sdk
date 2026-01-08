@@ -368,17 +368,45 @@ dap_json_value_t *dap_json_value_v2_create_object(void)
 }
 
 /**
- * @brief Free JSON value recursively
+ * @brief Free JSON value recursively (malloc-based allocation)
  * 
- * @note When using Arena allocator (Phase 1.5), this function is a NO-OP.
- *       All memory is owned by the Arena and will be freed when the Arena is freed.
- *       This function is kept for API compatibility but does nothing.
+ * Used for manually created JSON objects (dap_json_object_new, etc.)
+ * that were NOT allocated from Arena.
  */
 void dap_json_value_v2_free(dap_json_value_t *a_value)
 {
-    // NO-OP: All memory is managed by Arena allocator
-    // Memory will be freed when dap_arena_free() is called
-    (void)a_value;
+    if(!a_value) {
+        return;
+    }
+    
+    switch(a_value->type) {
+        case DAP_JSON_TYPE_STRING:
+            if(a_value->string.needs_free && a_value->string.data) {
+                DAP_DELETE(a_value->string.data);
+            }
+            break;
+        
+        case DAP_JSON_TYPE_ARRAY:
+            for(size_t i = 0; i < a_value->array.count; i++) {
+                dap_json_value_v2_free(a_value->array.elements[i]);
+            }
+            DAP_DELETE(a_value->array.elements);
+            break;
+        
+        case DAP_JSON_TYPE_OBJECT:
+            for(size_t i = 0; i < a_value->object.count; i++) {
+                DAP_DELETE(a_value->object.pairs[i].key);
+                dap_json_value_v2_free(a_value->object.pairs[i].value);
+            }
+            DAP_DELETE(a_value->object.pairs);
+            break;
+        
+        default:
+            // NULL, BOOL, NUMBER - no cleanup needed
+            break;
+    }
+    
+    DAP_DELETE(a_value);
 }
 
 /* ========================================================================== */
@@ -1079,14 +1107,16 @@ static dap_json_value_t *s_parse_array(
         // Parse value
         dap_json_value_t *l_element = s_parse_value(a_stage2, a_idx);
         if(!l_element) {
-            dap_json_value_v2_free(l_array);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_array);
             a_stage2->current_depth--;
             return NULL;
         }
         
         if(!s_array_add_arena(a_stage2->arena, l_array, l_element)) {
-            dap_json_value_v2_free(l_element);
-            dap_json_value_v2_free(l_array);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_element);
+            // dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
             a_stage2->current_depth--;
             return NULL;
@@ -1094,7 +1124,8 @@ static dap_json_value_t *s_parse_array(
         
         // Check next: ',' or ']'
         if(*a_idx >= a_stage2->indices_count) {
-            dap_json_value_v2_free(l_array);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
             a_stage2->current_depth--;
             return NULL;
@@ -1112,14 +1143,16 @@ static dap_json_value_t *s_parse_array(
             continue;
         }
         else {
-            dap_json_value_v2_free(l_array);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->current_depth--;
             return NULL;
         }
     }
     
-    dap_json_value_v2_free(l_array);
+    // NOTE: Arena owns all memory - no need to free
+    // dap_json_value_v2_free(l_array);
     a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
     a_stage2->current_depth--;
     return NULL;
@@ -1178,7 +1211,8 @@ static dap_json_value_t *s_parse_object(
         uint32_t l_key_offset = a_stage2->indices[*a_idx].position;
         
         if(a_stage2->input[l_key_offset] != '"') {
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->error_position = l_key_offset;
             a_stage2->current_depth--;
@@ -1190,7 +1224,8 @@ static dap_json_value_t *s_parse_object(
         
         if(!s_parse_string(a_stage2, l_key_offset,
                            &l_key_value, &l_key_end)) {
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_INVALID_STRING;
             a_stage2->error_position = l_key_offset;
             a_stage2->current_depth--;
@@ -1203,8 +1238,9 @@ static dap_json_value_t *s_parse_object(
         // Expect ':'
         if(*a_idx >= a_stage2->indices_count ||
            a_stage2->indices[*a_idx].character != ':') {
-            dap_json_value_v2_free(l_key_value);
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_key_value);
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_MISSING_COLON;
             a_stage2->current_depth--;
             return NULL;
@@ -1215,17 +1251,19 @@ static dap_json_value_t *s_parse_object(
         // Parse value
         dap_json_value_t *l_value = s_parse_value(a_stage2, a_idx);
         if(!l_value) {
-            dap_json_value_v2_free(l_key_value);
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_key_value);
+            // dap_json_value_v2_free(l_object);
             a_stage2->current_depth--;
             return NULL;
         }
         
         // Add to object using Arena + String Pool
         if(!s_object_add_arena(a_stage2->arena, a_stage2->string_pool, l_object, l_key, l_value)) {
-            dap_json_value_v2_free(l_value);
-            dap_json_value_v2_free(l_key_value);
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_value);
+            // dap_json_value_v2_free(l_key_value);
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_DUPLICATE_KEY;
             a_stage2->current_depth--;
             return NULL;
@@ -1237,7 +1275,8 @@ static dap_json_value_t *s_parse_object(
         
         // Check next: ',' or '}'
         if(*a_idx >= a_stage2->indices_count) {
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
             a_stage2->current_depth--;
             return NULL;
@@ -1255,14 +1294,16 @@ static dap_json_value_t *s_parse_object(
             continue;
         }
         else {
-            dap_json_value_v2_free(l_object);
+            // NOTE: Arena owns all memory - no need to free
+            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->current_depth--;
             return NULL;
         }
     }
     
-    dap_json_value_v2_free(l_object);
+    // NOTE: Arena owns all memory - no need to free
+    // dap_json_value_v2_free(l_object);
     a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
     a_stage2->current_depth--;
     return NULL;

@@ -102,7 +102,7 @@ static bool s_test_value_creation_double(void)
 {
     dap_json_value_t *l_zero = dap_json_value_v2_create_double(0.0);
     dap_assert(l_zero != NULL, "Double(0.0) creation failed");
-    dap_assert(l_zero->type == DAP_JSON_TYPE_INT, "Double type mismatch");
+    dap_assert(l_zero->type == DAP_JSON_TYPE_DOUBLE, "Double type mismatch");
     dap_assert(l_zero->number.is_double == true, "Double should be double");
     dap_assert(l_zero->number.d == 0.0, "Double value mismatch (0.0)");
     

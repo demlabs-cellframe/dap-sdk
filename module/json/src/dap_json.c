@@ -280,14 +280,18 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // Free Stage 2 parser if we own it (this frees the Arena and all values)
+    // Two allocation strategies:
+    // 1. Arena-based (from parsing): stage2_parser != NULL
+    // 2. Malloc-based (manually created): stage2_parser == NULL
+    
     if (a_json->stage2_parser) {
+        // Strategy 1: Arena-based - free Stage 2 parser (frees Arena and all values)
         dap_json_stage2_free(a_json->stage2_parser);
         a_json->stage2_parser = NULL;
+    } else if (a_json->owns_value && a_json->value) {
+        // Strategy 2: Malloc-based - free value recursively
+        dap_json_value_v2_free(a_json->value);
     }
-    
-    // NOTE: dap_json_value_v2_free is NO-OP when using Arena
-    // Memory is freed by dap_json_stage2_free which calls dap_arena_free
     
     // Free wrapper
     DAP_DELETE(a_json);
