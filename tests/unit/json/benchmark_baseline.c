@@ -98,8 +98,7 @@ static bool s_benchmark_parse_medium(void) {
     }
     
     dap_json_object_add_array(l_root, "items", l_array);
-    const char *l_serialized = dap_json_get_string(l_root);
-    l_medium_json = (char*)l_serialized;  // Cast away const
+    l_medium_json = dap_json_to_string(l_root);  // Creates new string (must be freed)
     dap_json_object_free(l_root);
     
     if (!l_medium_json) {
@@ -134,7 +133,7 @@ static bool s_benchmark_parse_medium(void) {
     result = true;
     
 cleanup:
-    if (l_medium_json) free(l_medium_json);
+    if (l_medium_json) DAP_DELETE(l_medium_json);
     return result;
 }
 
@@ -164,12 +163,12 @@ static bool s_benchmark_serialization(void) {
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
-        const char *l_str_const = dap_json_get_string(l_json);
-        if (!l_str_const) {
+        char *l_str = dap_json_to_string(l_json);
+        if (!l_str) {
             log_it(L_ERROR, "Serialization failed at iteration %d", i);
             goto cleanup;
         }
-        free((void*)l_str_const);  // Cast away const for free
+        DAP_DELETE(l_str);
     }
     
     uint64_t l_end = get_time_usec();
@@ -267,6 +266,7 @@ static bool s_benchmark_memory_usage(void) {
     for (int i = 0; i < l_count; i++) {
         if (l_objects[i]) {
             dap_json_object_free(l_objects[i]);
+            l_objects[i] = NULL;  // Prevent double-free in cleanup
         }
     }
     
