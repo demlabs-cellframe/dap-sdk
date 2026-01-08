@@ -1210,6 +1210,14 @@ int64_t dap_json_get_int64(dap_json_t* a_json)
 }
 
 /**
+ * @brief Get int value (32-bit wrapper for int64)
+ */
+int dap_json_get_int(dap_json_t* a_json)
+{
+    return (int)dap_json_get_int64(a_json);
+}
+
+/**
  * @brief Get boolean value from JSON
  * @return Boolean value or false if not a boolean
  */

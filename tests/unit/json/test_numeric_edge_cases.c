@@ -150,7 +150,7 @@ static bool s_test_uint256_boundaries(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Create JSON object");
     
     // uint256_t max value (all bits set)
-    uint256_t l_max_256 = UINT256_MAX;
+    uint256_t l_max_256 = uint256_max;
     dap_json_object_add_uint256(l_json, "max256", l_max_256);
     
     uint256_t l_retrieved;

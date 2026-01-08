@@ -105,6 +105,12 @@ extern const uint128_t uint128_0;
 extern const uint128_t uint128_1;
 extern const uint128_t uint128_max;
 extern const uint256_t uint256_0;
+
+// Maximum uint128_t value (all bits set to 1)
+#define UINT128_MAX ((uint128_t)(((__uint128_t)UINT64_MAX << 64) | UINT64_MAX))
+
+// Maximum uint256_t value (all bits set to 1)
+#define UINT256_MAX ((uint256_t){.lo = UINT128_MAX, .hi = UINT128_MAX})
 extern const uint256_t uint256_1;
 extern const uint256_t uint256_max;
 

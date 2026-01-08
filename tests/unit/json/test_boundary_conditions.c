@@ -63,7 +63,7 @@ static bool s_test_very_long_string(void) {
     DAP_TEST_FAIL_IF(strcmp(l_retrieved, l_long_string) != 0, "Long string content preserved");
     
     // Test serialization and parsing back
-    l_json_str = dap_json_get_string(l_json);
+    l_json_str = dap_json_to_string(l_json);
     DAP_TEST_FAIL_IF_NULL(l_json_str, "Serialize JSON with long string");
     
     dap_json_t *l_json2 = dap_json_parse_string(l_json_str);
@@ -162,7 +162,7 @@ static bool s_test_deep_nesting(void) {
     DAP_TEST_FAIL_IF(l_value != 42, "Get value from deep nesting");
     
     // Test serialization and parsing
-    char *l_json_str = dap_json_get_string(l_root);
+    char *l_json_str = dap_json_to_string(l_root);
     DAP_TEST_FAIL_IF_NULL(l_json_str, "Serialize deeply nested JSON");
     
     l_json = dap_json_parse_string(l_json_str);
@@ -351,7 +351,7 @@ static bool s_test_empty_key(void) {
     DAP_TEST_FAIL_IF(strcmp(l_value, "empty_key_value") != 0, "Empty key value");
     
     // Test serialization
-    char *l_json_str = dap_json_get_string(l_json);
+    char *l_json_str = dap_json_to_string(l_json);
     DAP_TEST_FAIL_IF_NULL(l_json_str, "Serialize JSON with empty key");
     
     // Should contain {"":"empty_key_value"}
