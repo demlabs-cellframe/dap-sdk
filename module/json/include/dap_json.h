@@ -95,7 +95,7 @@ int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key);
 uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key);
 bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_t *a_out);
 bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out);
-uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key);
+int dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key, uint256_t *a_out);
 double dap_json_object_get_double(dap_json_t* a_json, const char* a_key);
 bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key);
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key);

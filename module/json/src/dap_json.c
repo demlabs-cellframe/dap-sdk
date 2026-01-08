@@ -858,16 +858,23 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
 /**
  * @brief Get uint256 field from object
  */
-uint256_t dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key)
+/**
+ * @brief Get uint256 field from object
+ * @return 0 on success, -1 on failure
+ */
+int dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key, uint256_t *a_out)
 {
-    uint256_t l_result = uint256_0;
-    
-    const char *l_str = dap_json_object_get_string(a_json, a_key);
-    if (l_str) {
-        l_result = dap_uint256_scan_uninteger(l_str);
+    if (!a_json || !a_key || !a_out) {
+        return -1;
     }
     
-    return l_result;
+    const char *l_str = dap_json_object_get_string(a_json, a_key);
+    if (!l_str) {
+        return -1;
+    }
+    
+    *a_out = dap_uint256_scan_uninteger(l_str);
+    return 0;
 }
 
 /**
@@ -1296,12 +1303,14 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
 }
 
 /* ========================================================================== */
-/*                          JSON SERIALIZATION (STUB)                         */
+/* ========================================================================== */
+/*                          JSON SERIALIZATION                                */
 /* ========================================================================== */
 
+#include "internal/dap_json_serialization.h"
+
 /**
- * @brief Convert JSON object to string
- * @note This is Phase 1.6 functionality - not yet implemented
+ * @brief Convert JSON object to string (compact format)
  */
 char* dap_json_to_string(dap_json_t* a_json)
 {
@@ -1309,14 +1318,12 @@ char* dap_json_to_string(dap_json_t* a_json)
         return NULL;
     }
     
-    // TODO: Implement JSON stringification (Phase 1.6)
-    log_it(L_WARNING, "dap_json_to_string not yet implemented - requires Phase 1.6");
-    return NULL;
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return dap_json_value_serialize(l_value);
 }
 
 /**
  * @brief Convert JSON to pretty-printed string
- * @note Phase 1.6 functionality - not yet implemented
  */
 char* dap_json_to_string_pretty(dap_json_t* a_json)
 {
@@ -1324,9 +1331,8 @@ char* dap_json_to_string_pretty(dap_json_t* a_json)
         return NULL;
     }
     
-    // TODO: Implement pretty printing (Phase 1.6)
-    log_it(L_WARNING, "dap_json_to_string_pretty not yet implemented - requires Phase 1.6");
-    return NULL;
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return dap_json_value_serialize_pretty(l_value);
 }
 
 /**
