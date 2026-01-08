@@ -43,6 +43,8 @@
 
 #include "dap_common.h"
 #include "internal/dap_json_stage2.h"
+#include "dap_arena.h"
+#include "dap_string_pool.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -762,8 +764,35 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     l_stage2->indices_count = a_stage1->indices_count;
     l_stage2->max_depth = MAX_NESTING_DEPTH;
     
-    log_it(L_DEBUG, "Stage 2 initialized with %zu structural indices", 
-           l_stage2->indices_count);
+    // Create Arena for DOM nodes (estimate: ~100 bytes per token)
+    size_t l_estimated_size = a_stage1->indices_count * 100;
+    if (l_estimated_size < 4096) {
+        l_estimated_size = 4096;
+    }
+    
+    l_stage2->arena = dap_arena_new(l_estimated_size);
+    if (!l_stage2->arena) {
+        log_it(L_ERROR, "Failed to create Arena allocator");
+        DAP_DELETE(l_stage2);
+        return NULL;
+    }
+    
+    // Create String Pool for object keys (estimate: token_count / 4)
+    size_t l_string_pool_capacity = a_stage1->indices_count / 4;
+    if (l_string_pool_capacity < 32) {
+        l_string_pool_capacity = 32;
+    }
+    
+    l_stage2->string_pool = dap_string_pool_new(l_string_pool_capacity);
+    if (!l_stage2->string_pool) {
+        log_it(L_ERROR, "Failed to create String Pool");
+        dap_arena_free(l_stage2->arena);
+        DAP_DELETE(l_stage2);
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "Stage 2 initialized with %zu indices, Arena: %zu bytes, String Pool: %zu capacity", 
+           l_stage2->indices_count, l_estimated_size, l_string_pool_capacity);
     
     return l_stage2;
 }
@@ -810,7 +839,14 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
         return;
     }
     
-    // NOTE: root is NOT freed here - caller must free it explicitly
+    // Free Arena (frees all DOM nodes allocated from it)
+    dap_arena_free(a_stage2->arena);
+    
+    // Free String Pool (frees all interned strings)
+    dap_string_pool_free(a_stage2->string_pool);
+    
+    // NOTE: root pointer becomes invalid after Arena free
+    // Caller should use root BEFORE calling this function
     DAP_DELETE(a_stage2);
 }
 

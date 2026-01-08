@@ -110,6 +110,10 @@ struct dap_json_stage2 {
     /* Output */
     dap_json_value_t *root;                  /**< Root value (result of parsing) */
     
+    /* High-performance memory management (Phase 1.1) */
+    struct dap_arena *arena;                 /**< Arena allocator for DOM nodes */
+    struct dap_string_pool *string_pool;     /**< String pool for object keys */
+    
     /* Error handling */
     dap_json_stage2_error_t error_code;      /**< Last error code */
     size_t error_position;                   /**< Position of error in input */
