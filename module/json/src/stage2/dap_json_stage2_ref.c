@@ -70,7 +70,24 @@
 /* ========================================================================== */
 
 /**
- * @brief Create null value
+ * @brief Create value using Arena allocator (internal, high-performance)
+ */
+static inline dap_json_value_t *s_create_value_arena(dap_arena_t *a_arena)
+{
+    dap_json_value_t *l_value = (dap_json_value_t *)dap_arena_alloc_zero(
+        a_arena, 
+        sizeof(dap_json_value_t)
+    );
+    
+    if (!l_value) {
+        log_it(L_ERROR, "Arena allocation failed for value");
+    }
+    
+    return l_value;
+}
+
+/**
+ * @brief Create null value (public API - uses malloc)
  */
 dap_json_value_t *dap_json_value_v2_create_null(void)
 {
