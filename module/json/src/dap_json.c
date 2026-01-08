@@ -952,6 +952,112 @@ bool dap_json_is_object(dap_json_t* a_json)
     return l_value && l_value->type == DAP_JSON_TYPE_OBJECT;
 }
 
+/**
+ * @brief Check if JSON value is an integer
+ */
+bool dap_json_is_int(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    return l_value && l_value->type == DAP_JSON_TYPE_INT;
+}
+
+/**
+ * @brief Get string value from JSON
+ * @return String value or NULL if not a string
+ */
+const char* dap_json_get_string(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    
+    return l_value->string.data;
+}
+
+/**
+ * @brief Get int64 value from JSON
+ * @return Integer value or 0 if not an integer
+ */
+int64_t dap_json_get_int64(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return 0;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value) {
+        return 0;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_INT) {
+        return l_value->number.i;
+    }
+    
+    if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
+        return (int64_t)l_value->number.d;
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief Get boolean value from JSON
+ * @return Boolean value or false if not a boolean
+ */
+bool dap_json_get_bool(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return false;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_BOOLEAN) {
+        return false;
+    }
+    
+    return l_value->boolean;
+}
+
+/**
+ * @brief Iterate over object key-value pairs
+ * @param a_json JSON object
+ * @param callback Callback function for each key-value pair
+ * @param user_data User data passed to callback
+ */
+void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callback_t callback, void* user_data)
+{
+    if (!a_json || !callback) {
+        return;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_OBJECT) {
+        return;
+    }
+    
+    // Iterate over all key-value pairs
+    for (size_t i = 0; i < l_value->object.count; i++) {
+        const char *l_key = l_value->object.pairs[i].key;
+        dap_json_value_t *l_pair_value = l_value->object.pairs[i].value;
+        
+        // Wrap value for callback
+        dap_json_t *l_wrapped = s_wrap_value(l_pair_value); // Borrowed reference
+        if (l_wrapped) {
+            callback(l_key, l_wrapped, user_data);
+            // Don't free wrapped value - it's borrowed
+        }
+    }
+}
+
 /* ========================================================================== */
 /*                          JSON SERIALIZATION (STUB)                         */
 /* ========================================================================== */
