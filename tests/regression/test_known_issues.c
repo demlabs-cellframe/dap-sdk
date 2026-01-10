@@ -194,7 +194,7 @@ static bool s_test_json_parsing_edge_cases_regression(void) {
         {"{\"null\":null}", true, "Object with null"},
         {"{\"nested\":{\"inner\":\"value\"}}", true, "Nested object"},
         {"{\"array\":[1,2,3]}", true, "Object with array"},
-        {"{\"key\":\"value\",}", true, "Trailing comma (json-c tolerates this)"},
+        {"{\"key\":\"value\",}", false, "Trailing comma (strict JSON: invalid)"},
         {"{\"key\":}", false, "Missing value (invalid)"},
         {"{\"key\":\"unclosed string}", false, "Unclosed string (invalid)"},
         {"", false, "Empty string (invalid)"},
