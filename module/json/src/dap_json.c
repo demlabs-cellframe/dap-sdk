@@ -81,11 +81,11 @@ struct dap_json {
  */
 void dap_json_init(void)
 {
-    // Initialize Stage 1 dispatch (CPU detection)
-    dap_json_stage1_init_dispatch();
+    // Initialize Stage 1 (CPU detection)
+    dap_json_stage1_init_cpu();
     
     log_it(L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
-           dap_json_get_arch_name(dap_json_get_arch()));
+           dap_cpu_arch_get_name(dap_cpu_arch_get()));
 }
 
 /* ========================================================================== */
@@ -94,20 +94,20 @@ void dap_json_init(void)
 
 /**
  * @brief Set SIMD architecture manually (for testing/benchmarking)
- * @details Moved to dap_json level - affects all JSON components (Stage 1, Stage 2, etc)
+ * @details Wrapper for dap_cpu_arch_set() - affects ALL DAP SDK modules
  */
 int dap_json_set_arch(dap_cpu_arch_t a_arch)
 {
-    return dap_json_stage1_set_arch(a_arch);
+    return dap_cpu_arch_set(a_arch);
 }
 
 /**
  * @brief Get currently selected SIMD architecture
- * @details Moved to dap_json level - global for all JSON components
+ * @details Wrapper for dap_cpu_arch_get() - global for entire DAP SDK
  */
 dap_cpu_arch_t dap_json_get_arch(void)
 {
-    return dap_json_stage1_get_arch();
+    return dap_cpu_arch_get();
 }
 
 /**

@@ -118,6 +118,49 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch);
  */
 dap_cpu_arch_t dap_cpu_arch_get_best(void);
 
+/* ========================================================================== */
+/*                   GLOBAL ARCHITECTURE STATE MANAGEMENT                     */
+/* ========================================================================== */
+
+/**
+ * @brief Set manual architecture override for DAP SDK
+ * @details Overrides automatic CPU detection. Returns -1 if requested
+ *          architecture is not available on current CPU.
+ * 
+ * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
+ * @return 0 on success, -1 if not available
+ * 
+ * @note Setting DAP_CPU_ARCH_AUTO resets to automatic detection
+ * @note This affects ALL DAP SDK modules (JSON, Crypto, Network, etc.)
+ * @note Thread-safe: uses atomic operations
+ * 
+ * @code
+ *   // Force SSE2 for testing
+ *   if (dap_cpu_arch_set(DAP_CPU_ARCH_SSE2) != 0) {
+ *       printf("SSE2 not available\n");
+ *   }
+ *   
+ *   // Reset to auto-detection
+ *   dap_cpu_arch_set(DAP_CPU_ARCH_AUTO);
+ * @endcode
+ */
+int dap_cpu_arch_set(dap_cpu_arch_t a_arch);
+
+/**
+ * @brief Get currently selected architecture
+ * @return Current architecture (respects manual override if set)
+ * 
+ * @note If manual override is set (via dap_cpu_arch_set), returns that
+ * @note Otherwise returns best available architecture for current CPU
+ * @note Thread-safe: uses atomic operations
+ * 
+ * @code
+ *   dap_cpu_arch_t arch = dap_cpu_arch_get();
+ *   printf("Using: %s\n", dap_cpu_arch_get_name(arch));
+ * @endcode
+ */
+dap_cpu_arch_t dap_cpu_arch_get(void);
+
 #ifdef __cplusplus
 }
 #endif

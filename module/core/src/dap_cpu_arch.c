@@ -30,6 +30,19 @@
 
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
+#include "dap_common.h"
+
+#define LOG_TAG "dap_cpu_arch"
+
+/* ========================================================================== */
+/*                      GLOBAL ARCHITECTURE STATE                             */
+/* ========================================================================== */
+
+/**
+ * @brief Global manual architecture override
+ * @details DAP_CPU_ARCH_AUTO means no override (use auto-detection)
+ */
+static dap_cpu_arch_t s_manual_arch = DAP_CPU_ARCH_AUTO;
 
 /* ========================================================================== */
 /*                        ARCHITECTURE NAME MAPPING                           */
@@ -117,5 +130,47 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void)
     
     /* Fallback to reference implementation */
     return DAP_CPU_ARCH_REFERENCE;
+}
+
+/* ========================================================================== */
+/*                   GLOBAL ARCHITECTURE STATE MANAGEMENT                     */
+/* ========================================================================== */
+
+int dap_cpu_arch_set(dap_cpu_arch_t a_arch)
+{
+    // AUTO is always valid - resets to auto-detection
+    if (a_arch == DAP_CPU_ARCH_AUTO) {
+        s_manual_arch = DAP_CPU_ARCH_AUTO;
+        log_it(L_INFO, "CPU architecture set to AUTO (will auto-detect)");
+        return 0;
+    }
+    
+    // Reference C is always available
+    if (a_arch == DAP_CPU_ARCH_REFERENCE) {
+        s_manual_arch = DAP_CPU_ARCH_REFERENCE;
+        log_it(L_INFO, "CPU architecture manually set to: %s", dap_cpu_arch_get_name(a_arch));
+        return 0;
+    }
+    
+    // Check architecture availability using CPU detection
+    if (dap_cpu_arch_is_available(a_arch)) {
+        s_manual_arch = a_arch;
+        log_it(L_INFO, "CPU architecture manually set to: %s", dap_cpu_arch_get_name(a_arch));
+        return 0;
+    } else {
+        log_it(L_WARNING, "Architecture %s not available on this CPU", dap_cpu_arch_get_name(a_arch));
+        return -1;
+    }
+}
+
+dap_cpu_arch_t dap_cpu_arch_get(void)
+{
+    // If manual override is set and not AUTO, return it
+    if (s_manual_arch != DAP_CPU_ARCH_AUTO) {
+        return s_manual_arch;
+    }
+    
+    // Otherwise return best available architecture
+    return dap_cpu_arch_get_best();
 }
 

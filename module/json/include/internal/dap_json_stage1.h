@@ -25,6 +25,7 @@
 // This header already includes dap_cpu_arch.h from core
 #include "dap_json.h"
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -391,45 +392,8 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 }
 
 /* ========================================================================== */
-/* ========================================================================== */
-/*            DISPATCH MECHANISM (static inline for zero overhead)            */
-/* ========================================================================== */
-
-/* ========================================================================== */
 /*                          DISPATCH MECHANISM                                */
 /* ========================================================================== */
-
-// Global CPU features cache (initialized once)
-extern dap_cpu_features_t g_dap_json_cpu_features;
-extern bool g_dap_json_cpu_features_initialized;
-
-/**
- * @brief Initialize CPU features detection for Stage 1 dispatch
- * @details Called automatically by dap_json_init(), but can be called explicitly
- * 
- * This function performs runtime CPU detection and caches the results
- * in global variables for fast dispatch in dap_json_stage1_run().
- * 
- * Thread-safety: Not thread-safe, must be called from single thread
- * during initialization phase.
- */
-void dap_json_stage1_init_dispatch(void);
-
-/**
- * @brief Manually set SIMD architecture for Stage 1 tokenization
- * @details Overrides automatic CPU detection. Returns -1 if requested architecture
- *          is not available/compiled. Call this AFTER dap_json_stage1_init_dispatch().
- * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
- * @return 0 on success, -1 if not available
- */
-int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch);
-
-/**
- * @brief Get currently selected SIMD architecture for Stage 1
- * @return Current architecture (DAP_CPU_ARCH_* constant)
- */
-dap_cpu_arch_t dap_json_stage1_get_arch(void);
-
 
 // Include architecture-specific implementations for static inline dispatch
 // These must be included AFTER all typedefs are complete
@@ -443,6 +407,33 @@ dap_cpu_arch_t dap_json_stage1_get_arch(void);
 #include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
 #endif
 
+/**
+ * @brief Initialize CPU features detection for Stage 1
+ * @details Called automatically by dap_json_init(), but can be called explicitly
+ * 
+ * This function performs runtime CPU detection and caches the results
+ * in global variables for fast dispatch in dap_json_stage1_run().
+ * 
+ * Thread-safety: Not thread-safe, must be called from single thread
+ * during initialization phase.
+ */
+void dap_json_stage1_init_cpu(void);
+
+/**
+ * @brief Manually set SIMD architecture for Stage 1 tokenization
+ * @details Overrides automatic CPU detection. Returns -1 if requested architecture
+ *          is not available/compiled.
+ * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
+ * @return 0 on success, -1 if not available
+ */
+int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch);
+
+/**
+ * @brief Get currently selected SIMD architecture for Stage 1
+ * @return Current architecture (DAP_CPU_ARCH_* constant)
+ */
+dap_cpu_arch_t dap_json_stage1_get_arch(void);
+
 
 /**
  * @brief Main Stage 1 tokenization entry point (dispatched to optimal implementation)
@@ -452,7 +443,7 @@ dap_cpu_arch_t dap_json_stage1_get_arch(void);
  * This function uses runtime dispatch to select the best available
  * SIMD implementation for the current CPU architecture.
  * 
- * NOTE: Call dap_json_stage1_init_dispatch() once at startup before using this function.
+ * NOTE: Call dap_json_stage1_init_cpu() once at startup before using this function.
  */
 /**
  * @brief Main entry point for Stage 1 tokenization with automatic SIMD dispatch
