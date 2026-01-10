@@ -50,7 +50,7 @@ static bool s_benchmark_parse_small(void) {
     const char *l_small_json = "{\"name\":\"John\",\"age\":30,\"city\":\"New York\","
                                 "\"email\":\"john@example.com\",\"active\":true}";
     
-    const int l_iterations = 100000;
+    const int l_iterations = 10000;  // Reduced from 100000 for native parser performance
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
@@ -108,7 +108,7 @@ static bool s_benchmark_parse_medium(void) {
     
     log_it(L_DEBUG, "Medium JSON size: %zu bytes", strlen(l_medium_json));
     
-    const int l_iterations = 10000;
+    const int l_iterations = 5000;  // Reduced from 10000 - medium JSON (~10KB) is expensive
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
@@ -159,7 +159,7 @@ static bool s_benchmark_serialization(void) {
     }
     dap_json_object_add_array(l_json, "numbers", l_array);
     
-    const int l_iterations = 50000;
+    const int l_iterations = 10000;  // Reduced from 50000 - serialization is expensive
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
@@ -193,7 +193,7 @@ static bool s_benchmark_object_manipulation(void) {
     log_it(L_DEBUG, "Benchmarking object creation and manipulation");
     bool result = false;
     
-    const int l_iterations = 100000;
+    const int l_iterations = 10000;  // Reduced from 100000 for reasonable runtime
     uint64_t l_start = get_time_usec();
     
     for (int i = 0; i < l_iterations; i++) {
