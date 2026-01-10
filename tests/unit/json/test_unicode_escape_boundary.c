@@ -75,7 +75,6 @@ static bool s_test_exact_boundary_sizes(void) {
     log_it(L_DEBUG, "Exact boundary test passed");
     
 cleanup:
-    (void)result; // Suppress unused label warning
     return result;
 }
 
@@ -119,7 +118,6 @@ static bool s_test_66_byte_bug(void) {
     log_it(L_DEBUG, "66-byte bug case test passed (known failures documented)");
     
 cleanup:
-    (void)result;
     return result;
 }
 
@@ -244,7 +242,6 @@ static bool s_test_original_failing_case(void) {
     log_it(L_DEBUG, "Original failing case test passed");
     
 cleanup:
-    (void)result;
     return result;
 }
 
