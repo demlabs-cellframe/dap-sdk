@@ -43,9 +43,9 @@ extern "C" {
 void dap_json_init(void);
 
 /**
- * @brief Manually set SIMD architecture for JSON parsing
- * @details Overrides automatic CPU detection. Useful for testing, benchmarking,
- *          and edge cases where auto-detection may not work correctly.
+ * @brief Manually set SIMD architecture for JSON module
+ * @details Overrides automatic CPU detection. Affects all JSON components (Stage 1, Stage 2, etc).
+ *          Useful for testing, benchmarking, and edge cases where auto-detection may not work.
  *          Must be called AFTER dap_json_init().
  * @param a_arch Desired architecture (use DAP_CPU_ARCH_* constants from dap_cpu_arch.h)
  *               DAP_CPU_ARCH_AUTO = automatic (default behavior)
@@ -57,13 +57,21 @@ void dap_json_init(void);
  * @return 0 on success, -1 if requested architecture is not available/compiled
  * @note If requested architecture is not available, the call fails and current selection remains unchanged
  */
-int dap_json_set_simd_arch(dap_cpu_arch_t a_arch);
+int dap_json_set_arch(dap_cpu_arch_t a_arch);
 
 /**
- * @brief Get currently selected SIMD architecture
+ * @brief Get currently selected SIMD architecture for JSON module
  * @return Current architecture (DAP_CPU_ARCH_* constant)
  */
-dap_cpu_arch_t dap_json_get_simd_arch(void);
+dap_cpu_arch_t dap_json_get_arch(void);
+
+/**
+ * @brief Get human-readable name of SIMD architecture
+ * @param a_arch Architecture enum value
+ * @return String name (e.g. "SSE2", "NEON", "Reference C")
+ * @note Wrapper around dap_cpu_arch_get_name() for convenience
+ */
+const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch);
 
 /**
  * @brief Opaque DAP JSON type - hides internal json-c implementation

@@ -473,7 +473,7 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     }
     
     // Get current architecture (respects manual override if set)
-    dap_cpu_arch_t arch = dap_json_get_simd_arch();
+    dap_cpu_arch_t arch = dap_json_get_arch();
     
     switch (arch) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
@@ -500,7 +500,7 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
  */
 static inline const char* dap_json_stage1_get_dispatch_name(void)
 {
-    dap_cpu_arch_t arch = dap_json_get_simd_arch();
+    dap_cpu_arch_t arch = dap_json_get_arch();
     return dap_json_get_arch_name(arch);
 }
 

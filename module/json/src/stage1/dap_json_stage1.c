@@ -92,14 +92,15 @@ void dap_json_stage1_init_dispatch(void)
 }
 
 /* ========================================================================== */
-/*                  MANUAL ARCHITECTURE SELECTION API                         */
+/*                  ARCHITECTURE SELECTION (INTERNAL)                         */
 /* ========================================================================== */
 
 /**
- * @brief Get currently selected SIMD architecture
+ * @brief Get currently selected SIMD architecture (internal getter)
  * @details Returns manual override if set, otherwise returns auto-detected
+ * @note This is called by dap_json_get_arch() at the top level
  */
-dap_cpu_arch_t dap_json_get_simd_arch(void)
+dap_cpu_arch_t dap_json_stage1_get_arch(void)
 {
     // If manual override is set and not AUTO, return it
     if (s_manual_arch != DAP_CPU_ARCH_AUTO) {
@@ -131,9 +132,10 @@ dap_cpu_arch_t dap_json_get_simd_arch(void)
 }
 
 /**
- * @brief Set SIMD architecture manually (for testing/benchmarking)
+ * @brief Set SIMD architecture manually (internal setter)
  * @param a_arch Architecture to use
  * @return 0 on success, -1 if not available
+ * @note This is called by dap_json_set_arch() at the top level
  */
 int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch)
 {
@@ -168,22 +170,5 @@ int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch)
         log_it(L_WARNING, "Architecture %s not available on this CPU", arch_name);
         return -1;
     }
-}
-
-/**
- * @brief Get currently selected SIMD architecture
- */
-dap_cpu_arch_t dap_json_stage1_get_arch(void)
-{
-    return dap_json_get_simd_arch();
-}
-
-/**
- * @brief Get human-readable name of architecture
- * @note Wrapper around dap_cpu_arch_get_name from core module
- */
-const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch)
-{
-    return dap_cpu_arch_get_name(a_arch);
 }
 

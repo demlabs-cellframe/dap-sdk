@@ -85,17 +85,38 @@ void dap_json_init(void)
     dap_json_stage1_init_dispatch();
     
     log_it(L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
-           dap_json_get_arch_name(dap_json_get_simd_arch()));
+           dap_json_get_arch_name(dap_json_get_arch()));
 }
 
-int dap_json_set_simd_arch(dap_cpu_arch_t a_arch)
+/* ========================================================================== */
+/*                    ARCHITECTURE SELECTION API                              */
+/* ========================================================================== */
+
+/**
+ * @brief Set SIMD architecture manually (for testing/benchmarking)
+ * @details Moved to dap_json level - affects all JSON components (Stage 1, Stage 2, etc)
+ */
+int dap_json_set_arch(dap_cpu_arch_t a_arch)
 {
     return dap_json_stage1_set_arch(a_arch);
 }
 
-dap_cpu_arch_t dap_json_get_simd_arch(void)
+/**
+ * @brief Get currently selected SIMD architecture
+ * @details Moved to dap_json level - global for all JSON components
+ */
+dap_cpu_arch_t dap_json_get_arch(void)
 {
     return dap_json_stage1_get_arch();
+}
+
+/**
+ * @brief Get human-readable name of architecture
+ * @details Convenience wrapper for dap_cpu_arch_get_name()
+ */
+const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch)
+{
+    return dap_cpu_arch_get_name(a_arch);
 }
 
 /* ========================================================================== */
