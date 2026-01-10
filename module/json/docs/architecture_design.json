@@ -1,16 +1,24 @@
 {
   "document_info": {
     "title": "dap_json_native Architecture Design Specification",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "status": "completed",
     "created": "2025-01-07",
-    "completed": "2025-01-07",
-    "phase": "0.4",
+    "last_updated": "2026-01-10",
+    "phase": "1.4.1",
+    "phase_name": "Manual Architecture Selection API - COMPLETED",
     "purpose": "Детальная спецификация архитектуры самого быстрого JSON парсера в мире",
     "review_status": "reviewed_and_enhanced",
-    "review_date": "2025-01-07",
+    "review_date": "2026-01-10",
     "sections_count": 18,
-    "lines_count": 1039
+    "lines_count": 1039,
+    "recent_changes": [
+      "✅ Phase 1.4.1: Manual Architecture Selection API completed",
+      "✅ Consolidation: dap_json_stage1_dispatch.c → dap_json_stage1.c",
+      "✅ Top-level API: dap_json_set_arch/get_arch/get_arch_name",
+      "✅ Critical bugs fixed: AVX-512/SSE2 Unicode (66+ bytes), Multi-encoding support",
+      "✅ Documentation: PHASE_1.4.1_ARCHITECTURE_SELECTION_API.md (375 lines)"
+    ]
   },
   
   "design_goals": {
