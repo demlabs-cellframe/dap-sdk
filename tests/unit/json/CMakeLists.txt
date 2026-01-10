@@ -349,3 +349,38 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 300  # Longer timeout for comprehensive benchmarks
     LABELS "unit;json;benchmark;performance;simd;multi_arch"
 )
+
+# =========================================
+# Test 16: SimdJSON Stage 1 Tests (Phase 2.1)
+# =========================================
+# Coverage: SimdJSON-style Stage 1 implementation
+# Tests: Correctness tests + Performance benchmarks
+# Target: 4-5 GB/s throughput (AVX2), 6-8 GB/s (AVX-512)
+project(test_simdjson_stage1)
+
+add_executable(${PROJECT_NAME}
+    test_simdjson_stage1.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+# Enable AVX2 for this test
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    if(MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2)
+    else()
+        target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
+    endif()
+endif()
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 300
+    LABELS "unit;json;stage1;simdjson;phase2;performance;critical"
+)
+
