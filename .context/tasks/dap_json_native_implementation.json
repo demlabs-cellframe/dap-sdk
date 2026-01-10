@@ -809,20 +809,35 @@
           "subphases": [
             {
               "id": "1.4.1",
-              "name": "Manual Architecture Selection API",
+              "name": "Manual Architecture Selection API + Global CPU State",
               "status": "completed",
-              "completed_date": "2026-01-10T23:10:00Z",
-              "description": "Возможность принудительного выбора SIMD архитектуры + Top-Level API",
-              "why": "Необходимо для тестирования, бенчмаркинга и edge cases. API на уровне модуля для Stage 2 и будущих компонентов",
+              "completed_date": "2026-01-11T00:30:00Z",
+              "description": "Глобальная архитектура CPU state в core module + Manual selection API",
+              "why": "Необходимо для тестирования, бенчмаркинга и edge cases. Глобальный state для ВСЕХ SDK модулей",
               "deliverables": [
-                "✅ dap_json_set_arch(dap_cpu_arch_t) - Public top-level API",
-                "✅ dap_json_get_arch() - Get current architecture",
-                "✅ dap_json_get_arch_name() - Get architecture name string",
-                "✅ dap_json_stage1_set_arch() - Internal Stage 1 wrapper",
-                "✅ dap_json_stage1_get_arch() - Internal Stage 1 wrapper",
-                "✅ Consolidation: dap_json_stage1_dispatch.c → dap_json_stage1.c",
-                "✅ Zero overhead dispatch (static inline)",
+                "✅ dap_cpu_arch_set(arch) - Core module API (global for entire SDK)",
+                "✅ dap_cpu_arch_get() - Core module API (respects manual override)",
+                "✅ dap_json_set_arch() - JSON wrapper → calls dap_cpu_arch_set()",
+                "✅ dap_json_get_arch() - JSON wrapper → calls dap_cpu_arch_get()",
+                "✅ dap_json_stage1_create() - Renamed from _init() to avoid conflict",
+                "✅ dap_json_stage1_init() - CPU initialization (no conflict now)",
+                "✅ Removed all wrapper functions in stage1 (direct core calls)",
+                "✅ Tests updated to use dap_cpu_arch_is_available()",
                 "✅ Documentation: PHASE_1.4.1_ARCHITECTURE_SELECTION_API.md (375 lines)"
+              ],
+              "architecture_improvements": [
+                "✅ Single Source of Truth: s_manual_arch in dap_cpu_arch.c (core)",
+                "✅ SDK-Wide Consistency: одна настройка для JSON, Crypto, Network, etc.",
+                "✅ No redundant wrappers: прямые вызовы core API",
+                "✅ Clean separation: core отвечает за CPU, JSON за парсинг"
+              ],
+              "git_commits": [
+                "a22d3e28: Clean up dap_json_stage1.h - remove duplicates",
+                "0ca47dd1: Update architecture_design.json to v1.1.0",
+                "5f72a787: Actualize Phase 1.4 in SLC task",
+                "53686ba0: Move global CPU arch state to dap_cpu_arch module",
+                "28ad907b: Remove wrapper functions, use dap_cpu_arch_* directly",
+                "be75a162: Fix tests to use dap_cpu_arch_* API"
               ]
             },
             {
