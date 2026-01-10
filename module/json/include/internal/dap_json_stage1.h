@@ -413,7 +413,6 @@ extern bool g_dap_json_cpu_features_initialized;
  * Thread-safety: Not thread-safe, must be called from single thread
  * during initialization phase.
  */
-extern void dap_json_stage1_init_dispatch(void);
 void dap_json_stage1_init_dispatch(void);
 
 /**
@@ -423,13 +422,13 @@ void dap_json_stage1_init_dispatch(void);
  * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
  * @return 0 on success, -1 if not available
  */
-int dap_json_stage1_dispatch_set_arch(dap_cpu_arch_t a_arch);
+int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch);
 
 /**
  * @brief Get currently selected SIMD architecture for Stage 1
  * @return Current architecture (DAP_CPU_ARCH_* constant)
  */
-dap_cpu_arch_t dap_json_stage1_dispatch_get_arch(void);
+dap_cpu_arch_t dap_json_stage1_get_arch(void);
 
 
 // Include architecture-specific implementations for static inline dispatch

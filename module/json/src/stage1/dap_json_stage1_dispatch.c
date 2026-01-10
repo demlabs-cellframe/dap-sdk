@@ -122,7 +122,7 @@ dap_cpu_arch_t dap_json_get_simd_arch(void)
  * @param a_arch Architecture to use
  * @return 0 on success, -1 if not available
  */
-int dap_json_stage1_dispatch_set_arch(dap_cpu_arch_t a_arch)
+int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch)
 {
     // Initialize CPU detection if not done yet
     if (!g_dap_json_cpu_features_initialized) {
@@ -160,7 +160,7 @@ int dap_json_stage1_dispatch_set_arch(dap_cpu_arch_t a_arch)
 /**
  * @brief Get currently selected SIMD architecture
  */
-dap_cpu_arch_t dap_json_stage1_dispatch_get_arch(void)
+dap_cpu_arch_t dap_json_stage1_get_arch(void)
 {
     return dap_json_get_simd_arch();
 }
