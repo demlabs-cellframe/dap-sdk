@@ -701,7 +701,7 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
  * @param[in] a_input_len Input buffer length in bytes
  * @return Initialized Stage 1 parser, or NULL on error
  */
-dap_json_stage1_t *dap_json_stage1_init(const uint8_t *a_input, size_t a_input_len)
+dap_json_stage1_t *dap_json_stage1_create(const uint8_t *a_input, size_t a_input_len)
 {
     if(!a_input) {
         log_it(L_ERROR, "NULL input pointer");

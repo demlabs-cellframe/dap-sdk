@@ -168,7 +168,7 @@ static bool s_test_simd_impl(
         size_t l_len = strlen(l_input);
         
         // Run reference
-        dap_json_stage1_t *l_ref = dap_json_stage1_init((const uint8_t*)l_input, l_len);
+        dap_json_stage1_t *l_ref = dap_json_stage1_create((const uint8_t*)l_input, l_len);
         if (!l_ref) {
             log_it(L_ERROR, "[%s] Reference init failed for: %s", a_simd_name, l_input);
             continue;
@@ -182,7 +182,7 @@ static bool s_test_simd_impl(
         }
         
         // Run SIMD
-        dap_json_stage1_t *l_simd = dap_json_stage1_init((const uint8_t*)l_input, l_len);
+        dap_json_stage1_t *l_simd = dap_json_stage1_create((const uint8_t*)l_input, l_len);
         if (!l_simd) {
             log_it(L_ERROR, "[%s] SIMD init failed for: %s", a_simd_name, l_input);
             dap_json_stage1_free(l_ref);

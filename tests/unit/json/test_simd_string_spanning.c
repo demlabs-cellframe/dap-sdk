@@ -79,7 +79,7 @@ static bool s_test_string_spanning_case(const char *input, const char *test_name
     log_it(L_DEBUG, "  [%s] %s", arch->name, test_name);
     
     // Reference
-    dap_json_stage1_t *ref = dap_json_stage1_init((const uint8_t*)input, strlen(input));
+    dap_json_stage1_t *ref = dap_json_stage1_create((const uint8_t*)input, strlen(input));
     int ref_result = dap_json_stage1_run_ref(ref);
     if (ref_result != 0) {
         log_it(L_ERROR, "  REF failed: %d", ref_result);
@@ -88,7 +88,7 @@ static bool s_test_string_spanning_case(const char *input, const char *test_name
     }
     
     // Implementation
-    dap_json_stage1_t *impl = dap_json_stage1_init((const uint8_t*)input, strlen(input));
+    dap_json_stage1_t *impl = dap_json_stage1_create((const uint8_t*)input, strlen(input));
     int impl_result = arch->impl(impl);
     if (impl_result != 0) {
         log_it(L_ERROR, "  %s failed: %d", arch->name, impl_result);

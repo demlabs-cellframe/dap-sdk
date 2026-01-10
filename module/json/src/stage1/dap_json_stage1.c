@@ -53,7 +53,7 @@ bool g_dap_json_cpu_features_initialized = false;
 /**
  * @brief Initialize CPU features detection for Stage 1
  */
-void dap_json_stage1_init_cpu(void)
+void dap_json_stage1_init(void)
 {
     if (g_dap_json_cpu_features_initialized) {
         log_it(L_WARNING, "Stage 1 already initialized, skipping");
@@ -65,30 +65,5 @@ void dap_json_stage1_init_cpu(void)
     
     dap_cpu_arch_t arch = dap_cpu_arch_get();
     log_it(L_INFO, "Stage 1 initialized (arch: %s)", dap_cpu_arch_get_name(arch));
-}
-
-/* ========================================================================== */
-/*                  ARCHITECTURE SELECTION (WRAPPERS)                         */
-/* ========================================================================== */
-
-/**
- * @brief Get currently selected SIMD architecture (wrapper)
- * @details Calls dap_cpu_arch_get() from core module
- * @note This is called by dap_json_stage1_run() dispatch
- */
-dap_cpu_arch_t dap_json_stage1_get_arch(void)
-{
-    return dap_cpu_arch_get();
-}
-
-/**
- * @brief Set SIMD architecture manually (wrapper)
- * @param a_arch Architecture to use
- * @return 0 on success, -1 if not available
- * @note This is called by dap_json_set_arch() at the top level
- */
-int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch)
-{
-    return dap_cpu_arch_set(a_arch);
 }
 

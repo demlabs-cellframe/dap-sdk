@@ -185,7 +185,7 @@ typedef enum {
  * @param input_len Input buffer length in bytes
  * @return Initialized Stage 1 parser, or NULL on error
  */
-dap_json_stage1_t *dap_json_stage1_init(const uint8_t *input, size_t input_len);
+dap_json_stage1_t *dap_json_stage1_create(const uint8_t *input, size_t input_len);
 
 /**
  * @brief Create Stage 1 parser without input buffer
@@ -417,22 +417,7 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
  * Thread-safety: Not thread-safe, must be called from single thread
  * during initialization phase.
  */
-void dap_json_stage1_init_cpu(void);
-
-/**
- * @brief Manually set SIMD architecture for Stage 1 tokenization
- * @details Overrides automatic CPU detection. Returns -1 if requested architecture
- *          is not available/compiled.
- * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
- * @return 0 on success, -1 if not available
- */
-int dap_json_stage1_set_arch(dap_cpu_arch_t a_arch);
-
-/**
- * @brief Get currently selected SIMD architecture for Stage 1
- * @return Current architecture (DAP_CPU_ARCH_* constant)
- */
-dap_cpu_arch_t dap_json_stage1_get_arch(void);
+void dap_json_stage1_init(void);
 
 
 /**
@@ -443,7 +428,7 @@ dap_cpu_arch_t dap_json_stage1_get_arch(void);
  * This function uses runtime dispatch to select the best available
  * SIMD implementation for the current CPU architecture.
  * 
- * NOTE: Call dap_json_stage1_init_cpu() once at startup before using this function.
+ * NOTE: Call dap_json_stage1_init() once at startup before using this function.
  */
 /**
  * @brief Main entry point for Stage 1 tokenization with automatic SIMD dispatch
@@ -464,7 +449,7 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     }
     
     // Get current architecture (respects manual override if set)
-    dap_cpu_arch_t arch = dap_json_get_arch();
+    dap_cpu_arch_t arch = dap_cpu_arch_get();
     
     switch (arch) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
@@ -491,8 +476,8 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
  */
 static inline const char* dap_json_stage1_get_name(void)
 {
-    dap_cpu_arch_t arch = dap_json_get_arch();
-    return dap_json_get_arch_name(arch);
+    dap_cpu_arch_t arch = dap_cpu_arch_get();
+    return dap_cpu_arch_get_name(arch);
 }
 
 #ifdef __cplusplus

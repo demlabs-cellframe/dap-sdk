@@ -254,7 +254,7 @@ static bool s_test_parse_simple_values(void)
     // Test null
     {
         const char *l_json = "null";
-        dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+        dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
         dap_assert(l_s1 != NULL, "Stage 1 init failed (null)");
         dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed (null)");
         
@@ -275,7 +275,7 @@ static bool s_test_parse_simple_values(void)
     // Test true
     {
         const char *l_json = "true";
-        dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+        dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
         dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed (true)");
         
         dap_json_stage2_t *l_s2 = dap_json_stage2_init(l_s1);
@@ -293,7 +293,7 @@ static bool s_test_parse_simple_values(void)
     // Test integer
     {
         const char *l_json = "42";
-        dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+        dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
         dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed (int)");
         
         dap_json_stage2_t *l_s2 = dap_json_stage2_init(l_s1);
@@ -313,7 +313,7 @@ static bool s_test_parse_simple_values(void)
     // Test string
     {
         const char *l_json = "\"Hello\"";
-        dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+        dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
         dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed (string)");
         
         dap_json_stage2_t *l_s2 = dap_json_stage2_init(l_s1);
@@ -336,7 +336,7 @@ static bool s_test_parse_array(void)
 {
     const char *l_json = "[1, 2, 3]";
     
-    dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+    dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
     dap_assert(l_s1 != NULL, "Stage 1 init failed");
     dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed");
     
@@ -369,7 +369,7 @@ static bool s_test_parse_object(void)
 {
     const char *l_json = "{\"name\": \"Alice\", \"age\": 30}";
     
-    dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+    dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
     dap_assert(l_s1 != NULL, "Stage 1 init failed");
     dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed");
     
@@ -401,7 +401,7 @@ static bool s_test_parse_nested(void)
 {
     const char *l_json = "{\"users\": [{\"name\": \"Bob\", \"active\": true}, {\"name\": \"Carol\", \"active\": false}]}";
     
-    dap_json_stage1_t *l_s1 = dap_json_stage1_init((const uint8_t*)l_json, strlen(l_json));
+    dap_json_stage1_t *l_s1 = dap_json_stage1_create((const uint8_t*)l_json, strlen(l_json));
     dap_assert(dap_json_stage1_run(l_s1) == STAGE1_SUCCESS, "Stage 1 run failed");
     
     dap_json_stage2_t *l_s2 = dap_json_stage2_init(l_s1);

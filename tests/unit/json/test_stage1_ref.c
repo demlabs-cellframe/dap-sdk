@@ -172,7 +172,7 @@ static bool s_test_stage1_empty_object(void) {
     bool result = false;
     
     const char *json = "{}";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -200,7 +200,7 @@ static bool s_test_stage1_simple_object(void) {
     bool result = false;
     
     const char *json = "{\"key\":\"value\"}";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -227,7 +227,7 @@ static bool s_test_stage1_simple_array(void) {
     bool result = false;
     
     const char *json = "[1,2,3]";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -253,7 +253,7 @@ static bool s_test_stage1_nested_structures(void) {
     bool result = false;
     
     const char *json = "{\"a\":[1,2],\"b\":{\"c\":3}}";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -278,7 +278,7 @@ static bool s_test_stage1_whitespace_skipping(void) {
     bool result = false;
     
     const char *json = "  {  \"key\"  :  \"value\"  }  ";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -309,7 +309,7 @@ static bool s_test_stage1_string_with_structural_chars(void) {
     
     /* Structural chars inside strings should be ignored */
     const char *json = "{\"key\":\"value{with[symbols]:,}\"}";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -335,7 +335,7 @@ static bool s_test_stage1_string_with_escapes(void) {
     bool result = false;
     
     const char *json = "{\"key\":\"value\\\"with\\\\escapes\"}";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -364,7 +364,7 @@ static bool s_test_stage1_unterminated_string(void) {
     bool result = false;
     
     const char *json = "{\"key\":\"value";
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);
@@ -384,7 +384,7 @@ static bool s_test_stage1_invalid_escape(void) {
     bool result = false;
     
     const char *json = "{\"key\":\"\\x41\"}"; /* \x is invalid */
-    dap_json_stage1_t *stage1 = dap_json_stage1_init((const uint8_t *)json, strlen(json));
+    dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)json, strlen(json));
     DAP_TEST_FAIL_IF_NULL(stage1, "Stage 1 init");
     
     int run_result = dap_json_stage1_run(stage1);

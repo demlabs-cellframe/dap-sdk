@@ -132,7 +132,7 @@ static bool s_test_simple_number_array(void)
     log_it(L_INFO, "Input: '%s' (%zu bytes)", input, len);
     
     // Reference
-    dap_json_stage1_t *ref = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *ref = dap_json_stage1_create((const uint8_t*)input, len);
     if (!ref) {
         log_it(L_ERROR, "Reference init failed");
         return false;
@@ -146,7 +146,7 @@ static bool s_test_simple_number_array(void)
     }
     
     // SSE2
-    dap_json_stage1_t *sse2 = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *sse2 = dap_json_stage1_create((const uint8_t*)input, len);
     if (!sse2) {
         log_it(L_ERROR, "SSE2 init failed");
         dap_json_stage1_free(ref);
@@ -184,7 +184,7 @@ static bool s_test_long_number_array(void)
     log_it(L_INFO, "Input: '%s' (%zu bytes)", input, len);
     
     // Reference
-    dap_json_stage1_t *ref = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *ref = dap_json_stage1_create((const uint8_t*)input, len);
     if (!ref) return false;
     
     int ref_err = dap_json_stage1_run_ref(ref);
@@ -194,7 +194,7 @@ static bool s_test_long_number_array(void)
     }
     
     // SSE2
-    dap_json_stage1_t *sse2 = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *sse2 = dap_json_stage1_create((const uint8_t*)input, len);
     if (!sse2) {
         dap_json_stage1_free(ref);
         return false;
@@ -230,7 +230,7 @@ static bool s_test_object_with_numbers(void)
     log_it(L_INFO, "Input: '%s' (%zu bytes)", input, len);
     
     // Reference
-    dap_json_stage1_t *ref = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *ref = dap_json_stage1_create((const uint8_t*)input, len);
     if (!ref) return false;
     
     int ref_err = dap_json_stage1_run_ref(ref);
@@ -240,7 +240,7 @@ static bool s_test_object_with_numbers(void)
     }
     
     // SSE2
-    dap_json_stage1_t *sse2 = dap_json_stage1_init((const uint8_t*)input, len);
+    dap_json_stage1_t *sse2 = dap_json_stage1_create((const uint8_t*)input, len);
     if (!sse2) {
         dap_json_stage1_free(ref);
         return false;

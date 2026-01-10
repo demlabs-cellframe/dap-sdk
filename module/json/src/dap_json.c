@@ -82,7 +82,7 @@ struct dap_json {
 void dap_json_init(void)
 {
     // Initialize Stage 1 (CPU detection)
-    dap_json_stage1_init_cpu();
+    dap_json_stage1_init();
     
     log_it(L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
            dap_cpu_arch_get_name(dap_cpu_arch_get()));
@@ -254,7 +254,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     }
     
     // Stage 1: Tokenization (UTF-8 only)
-    dap_json_stage1_t *l_stage1 = dap_json_stage1_init(l_parse_input, l_parse_len);
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_create(l_parse_input, l_parse_len);
     if (!l_stage1) {
         log_it(L_ERROR, "Failed to initialize Stage 1");
         if (l_transcoded) DAP_DELETE(l_transcoded);
