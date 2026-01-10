@@ -180,7 +180,7 @@ static void test_string_pool_collisions(void)
     dap_print_module_name("Hash collisions handling");
     
     // Small capacity to force collisions
-    dap_string_pool_t *pool = dap_string_pool_new(16);
+    dap_string_pool_t *pool = dap_string_pool_new(NULL, 16);
     dap_assert(pool != NULL, "Pool creation");
     
     // Intern many strings (will cause collisions)
