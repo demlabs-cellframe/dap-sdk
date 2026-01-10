@@ -107,7 +107,32 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 5: Performance Baseline Benchmarks
+# Test 5: Unicode Escape Boundary Edge Cases
+# =========================================
+# Coverage: Unicode \uXXXX escapes crossing SIMD chunk boundaries
+# Tests: Known AVX-512/SSE2 bug with JSON >= 66 bytes
+# Bug: Multiple Unicode escapes in JSON >= 66 bytes fail in AVX-512/SSE2
+project(test_unicode_escape_boundary)
+
+add_executable(${PROJECT_NAME}
+    test_unicode_escape_boundary.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;json;unicode;boundary;edge_case;critical"
+)
+
+# =========================================
+# Test 6: Performance Baseline Benchmarks
 # =========================================
 # Coverage: Parsing speed, serialization, memory usage
 # Benchmarks: 5 benchmark suites
@@ -131,7 +156,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 6: Stage 1 Reference Implementation
+# Test 7: Stage 1 Reference Implementation
 # =========================================
 # Coverage: Structural indexing, UTF-8 validation, character classification
 # Tests: 25+ test cases (Phase 1.1)
@@ -155,7 +180,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 7: Stage 2 Reference Implementation
+# Test 8: Stage 2 Reference Implementation
 # =========================================
 # Coverage: DOM building, value parsing, tree assembly
 # Tests: 13+ test cases (Phase 1.2)
@@ -179,7 +204,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 8: SIMD Correctness Tests (Phase 1.4)
+# Test 9: SIMD Correctness Tests (Phase 1.4)
 # =========================================
 # Coverage: Compare SIMD implementations (AVX2, SSE2, NEON, AVX-512) vs reference
 # Tests: 40+ test cases × 4 implementations = 160+ comparisons
