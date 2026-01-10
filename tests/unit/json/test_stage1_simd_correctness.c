@@ -222,7 +222,7 @@ static bool s_test_avx2_correctness(void)
     log_it(L_DEBUG, "Testing AVX2 correctness");
     
     // Check if AVX2 is available at RUNTIME (not compile time)
-    if (g_dap_json_cpu_features.has_avx2) {
+    if (dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2)) {
         log_it(L_INFO, "Testing AVX2 correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_avx2, "AVX2");
         dap_assert(l_result, "AVX2 correctness test");
@@ -240,7 +240,7 @@ static bool s_test_sse2_correctness(void)
 {
     log_it(L_DEBUG, "Testing SSE2 correctness");
     
-    if (g_dap_json_cpu_features.has_sse2) {
+    if (dap_cpu_arch_is_available(DAP_CPU_ARCH_SSE2)) {
         log_it(L_INFO, "Testing SSE2 correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_sse2, "SSE2");
         dap_assert(l_result, "SSE2 correctness test");
@@ -259,7 +259,7 @@ static bool s_test_neon_correctness(void)
     log_it(L_DEBUG, "Testing NEON correctness");
     
 #if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
-    if (g_dap_json_cpu_features.has_neon) {
+    if (dap_cpu_arch_is_available(DAP_CPU_ARCH_NEON)) {
         log_it(L_INFO, "Testing NEON correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_neon, "NEON");
         dap_assert(l_result, "NEON correctness test");
@@ -281,7 +281,7 @@ static bool s_test_avx512_correctness(void)
 {
     log_it(L_DEBUG, "Testing AVX-512 correctness");
     
-    if (g_dap_json_cpu_features.has_avx512f) {
+    if (dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512)) {
         log_it(L_INFO, "Testing AVX-512 correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_avx512, "AVX-512");
         dap_assert(l_result, "AVX-512 correctness test");

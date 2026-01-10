@@ -31,7 +31,7 @@ static bool s_test_with_arch(const char *a_json, dap_cpu_arch_t a_arch, const ch
     const char *l_arch_name = dap_json_get_arch_name(a_arch);
     log_it(L_DEBUG, "Testing with %s: %s", l_arch_name, a_desc);
     
-    dap_json_set_simd_arch(a_arch);
+    dap_cpu_arch_set(a_arch);
     dap_json_t *l_json = dap_json_parse_string(a_json);
     
     bool l_success = (l_json != NULL);
