@@ -156,7 +156,31 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 7: Stage 1 Reference Implementation
+# Test 11: Manual Architecture Selection API
+# =========================================
+# Coverage: dap_cpu_arch_set/get, manual override, correctness per arch
+# Tests: Phase 1.4.2 - Manual architecture selection API testing
+project(test_manual_arch_selection)
+
+add_executable(${PROJECT_NAME}
+    test_manual_arch_selection.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 60
+    LABELS "unit;json;arch;selection;api;critical"
+)
+
+# =========================================
+# Test 11: Stage 1 Reference Implementation
 # =========================================
 # Coverage: Structural indexing, UTF-8 validation, character classification
 # Tests: 25+ test cases (Phase 1.1)
@@ -180,7 +204,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 8: Stage 2 Reference Implementation
+# Test 11: Stage 2 Reference Implementation
 # =========================================
 # Coverage: DOM building, value parsing, tree assembly
 # Tests: 13+ test cases (Phase 1.2)
@@ -204,7 +228,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 9: SIMD Correctness Tests (Phase 1.4)
+# Test 11: SIMD Correctness Tests (Phase 1.4)
 # =========================================
 # Coverage: Compare SIMD implementations (AVX2, SSE2, NEON, AVX-512) vs reference
 # Tests: 40+ test cases × 4 implementations = 160+ comparisons
@@ -228,7 +252,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 9: SSE2 Debug Tests (Phase 1.4.2)
+# Test 11: SSE2 Debug Tests (Phase 1.4.2)
 # =========================================
 # Coverage: Детальная отладка SSE2 tokenization
 # Tests: 3 focused debug tests with detailed token comparison
@@ -252,7 +276,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 10: UNIVERSAL SIMD String Spanning REGRESSION (Phase 1.4.4)
+# Test 11: UNIVERSAL SIMD String Spanning REGRESSION (Phase 1.4.4)
 # =========================================
 # DO NOT MODIFY - Permanent regression test for ALL architectures
 # Coverage: String tokens crossing chunk boundaries (Reference, SSE2, AVX2, AVX-512, NEON)
