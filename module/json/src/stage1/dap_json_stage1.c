@@ -4,7 +4,7 @@
  * DeM Labs Inc.   https://demlabs.net
  * Copyright  (c) 2026
  * All rights reserved.
-
+ *
  This file is part of DAP (Distributed Applications Platform) the open source project
 
     DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
@@ -22,8 +22,13 @@
 */
 
 /**
- * @file dap_json_stage1_dispatch.c
- * @brief Global CPU features cache for Stage 1 dispatch
+ * @file dap_json_stage1.c
+ * @brief Stage 1 dispatch and common functionality
+ * 
+ * This file contains:
+ * - CPU feature detection and caching
+ * - SIMD architecture selection (auto and manual)
+ * - Global state for Stage 1 dispatch
  */
 
 #include "internal/dap_json_stage1.h"
@@ -31,7 +36,11 @@
 #include "dap_json.h"
 #include "dap_cpu_arch.h"
 
-#define LOG_TAG "dap_json_stage1_dispatch"
+#define LOG_TAG "dap_json_stage1"
+
+/* ========================================================================== */
+/*                          GLOBAL STATE                                      */
+/* ========================================================================== */
 
 // Global CPU features cache (initialized once at startup or on first use)
 dap_cpu_features_t g_dap_json_cpu_features = {0};
@@ -39,6 +48,10 @@ bool g_dap_json_cpu_features_initialized = false;
 
 // Manual architecture override (DAP_CPU_ARCH_AUTO = no override)
 static dap_cpu_arch_t s_manual_arch = DAP_CPU_ARCH_AUTO;
+
+/* ========================================================================== */
+/*                     INITIALIZATION & DISPATCH                              */
+/* ========================================================================== */
 
 /**
  * @brief Initialize CPU features detection for Stage 1 dispatch
@@ -79,7 +92,7 @@ void dap_json_stage1_init_dispatch(void)
 }
 
 /* ========================================================================== */
-/*                  Manual Architecture Selection API                         */
+/*                  MANUAL ARCHITECTURE SELECTION API                         */
 /* ========================================================================== */
 
 /**
@@ -173,3 +186,4 @@ const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch)
 {
     return dap_cpu_arch_get_name(a_arch);
 }
+
