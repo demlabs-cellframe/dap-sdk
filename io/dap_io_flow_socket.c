@@ -27,6 +27,7 @@
 #include "dap_common.h"
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
+#include "dap_io_flow_ebpf.h"
 #include "dap_worker.h"
 #include "dap_server.h"
 #include "dap_proc_thread.h"
@@ -193,9 +194,20 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     }
     
     uint32_t l_worker_count = dap_proc_thread_get_count();
-    bool l_enable_sharding = (l_worker_count > 1);
+    bool l_enable_sharding = (l_worker_count > 1 && a_socket_type == SOCK_DGRAM);
     
-    // Create listener socket for each worker
+    // CRITICAL: Check eBPF availability BEFORE enabling sharding
+    if (l_enable_sharding) {
+        if (dap_io_flow_ebpf_is_available()) {
+            log_it(L_NOTICE, "eBPF available - enabling UDP sharding with sticky sessions");
+        } else {
+            log_it(L_CRITICAL, "eBPF NOT available - DISABLING sharding to prevent duplicate flows");
+            l_enable_sharding = false;
+            l_worker_count = 1;  // Force single socket
+        }
+    }
+    
+    // Create listener socket for each worker (or single socket if no sharding)
     for (uint32_t i = 0; i < l_worker_count; i++) {
         dap_worker_t *l_worker = dap_events_worker_get(i);
         if (!l_worker) {
@@ -262,6 +274,19 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
             close(l_socket);
             return -4;
+        }
+        
+        // Attach eBPF sticky sessions (first socket only, if sharding enabled)
+        // eBPF program is shared across all SO_REUSEPORT sockets in the group
+        if (i == 0 && l_enable_sharding && a_socket_type == SOCK_DGRAM) {
+            if (dap_io_flow_ebpf_attach_socket(l_socket) != 0) {
+                log_it(L_CRITICAL, "FATAL: eBPF attach failed but sharding was enabled");
+                log_it(L_CRITICAL, "This is a logic error - eBPF check should have disabled sharding");
+                close(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "eBPF consistent hashing attached to %s:%u", 
+                   a_addr ? a_addr : "0.0.0.0", a_port);
         }
         
         // Wrap socket in esocket

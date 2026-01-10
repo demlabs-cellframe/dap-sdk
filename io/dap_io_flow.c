@@ -159,6 +159,12 @@ dap_io_flow_server_t* dap_io_flow_server_new(
         l_server->flows_per_worker[i] = NULL;  // uthash starts with NULL
     }
     
+    // Initialize cleanup synchronization
+    pthread_mutex_init(&l_server->cleanup_mutex, NULL);
+    pthread_cond_init(&l_server->cleanup_cond, NULL);
+    atomic_init(&l_server->pending_cleanups, 0);
+    atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
+    
     log_it(L_INFO, "Created flow server '%s' with %u workers, boundary_type=%d",
            a_name, l_worker_count, a_boundary_type);
     
@@ -210,7 +216,8 @@ int dap_io_flow_server_listen(
         }
     }
     
-    // Create sharded listeners
+    // Create sharded listeners (or single socket if eBPF unavailable)
+    // dap_io_flow_socket_create_sharded_listeners handles eBPF check internally
     int l_ret = dap_io_flow_socket_create_sharded_listeners(
         a_server->dap_server,
         a_addr,
@@ -240,7 +247,9 @@ int dap_io_flow_server_listen(
 }
 
 /**
- * @brief Stop IO flow server
+ * @brief Stop IO flow server synchronously
+ * 
+ * Closes listener sockets. Workers continue processing but no new connections accepted.
  */
 void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
 {
@@ -265,7 +274,89 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
 }
 
 /**
+ * @brief Callback argument for queue input cleanup
+ */
+typedef struct queue_input_cleanup_arg {
+    dap_events_socket_t *queue_input;      ///< Queue input to delete
+    dap_io_flow_server_t *server;          ///< Server for synchronization
+    uint32_t worker_id;                    ///< Worker ID (for logging)
+} queue_input_cleanup_arg_t;
+
+/**
+ * @brief Callback to delete queue input on its native worker
+ * 
+ * Called via dap_proc_thread_callback_add to ensure queue_input is deleted
+ * in the correct worker context. Decrements pending counter and signals
+ * condition variable when all deletions complete.
+ * 
+ * @param a_arg queue_input_cleanup_arg_t* (freed by this callback)
+ * @return false (one-shot callback)
+ */
+static bool s_queue_input_delete_callback(void *a_arg)
+{
+    queue_input_cleanup_arg_t *l_arg = (queue_input_cleanup_arg_t*)a_arg;
+    
+    if (!l_arg) {
+        log_it(L_ERROR, "queue cleanup callback: NULL argument");
+        // NOTE: This should NEVER happen as we always allocate l_arg before scheduling
+        // But if it does, we still need to decrement active_callbacks
+        // (we don't have server pointer, so this is a leak - but prevents hang)
+        return false;
+    }
+    
+    // NOTE: active_callbacks was already incremented BEFORE scheduling this callback
+    // (in dap_io_flow_server_delete loop, before dap_proc_thread_callback_add)
+    // This prevents main thread from destroying sync primitives before we start
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "Deleting queue_input %p on worker %u (native context)", 
+             l_arg->queue_input, l_arg->worker_id);
+    
+    // Delete queue_input in its native worker context
+    // CRITICAL: Pass true for a_preserve_inheritor to prevent deletion of server!
+    // queue_input->_inheritor points to dap_io_flow_server_t, which we're deleting
+    // separately in dap_io_flow_server_delete. If we don't preserve it here,
+    // the server will be freed while we're still in this callback → use-after-free!
+    if (l_arg->queue_input) {
+        dap_events_socket_delete_unsafe(l_arg->queue_input, true);  // PRESERVE INHERITOR!
+    }
+    
+    // Decrement pending counter and signal if all done
+    if (l_arg->server) {
+        uint32_t l_remaining = atomic_fetch_sub(&l_arg->server->pending_cleanups, 1) - 1;
+        
+        debug_if(s_debug_more, L_DEBUG, 
+                 "Queue input deleted on worker %u, remaining=%u", 
+                 l_arg->worker_id, l_remaining);
+        
+        if (l_remaining == 0) {
+            // All queue_inputs deleted - signal waiting thread
+            pthread_mutex_lock(&l_arg->server->cleanup_mutex);
+            pthread_cond_signal(&l_arg->server->cleanup_cond);
+            pthread_mutex_unlock(&l_arg->server->cleanup_mutex);
+            
+            log_it(L_DEBUG, "All queue_inputs deleted, signaled main thread");
+        }
+        
+        // CRITICAL: Decrement active_callbacks counter LAST (before return)
+        // This tells main thread that we're done using sync primitives
+        // MUST be called on ALL code paths to match the increment before scheduling
+        atomic_fetch_sub(&l_arg->server->active_callbacks, 1);
+    }
+    
+    DAP_DELETE(l_arg);
+    return false; // One-shot callback
+}
+
+/**
  * @brief Delete IO flow server and cleanup all resources
+ * 
+ * CORRECT ORDER (all dap_io_flow resources deleted BEFORE stop):
+ * 1. Cleanup flows (user data)
+ * 2. Delete inter_worker_queues (outputs)
+ * 3. Delete queue_inputs via proc_thread callbacks (pthread_cond wait)
+ * 4. Stop server (listeners) - NOW safe, all flow resources deleted
+ * 5. Free structures
  */
 void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
 {
@@ -273,13 +364,22 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         return;
     }
     
-    // Stop server if running
-    if (a_server->is_running) {
-        dap_io_flow_server_stop(a_server);
+    // Double-delete protection
+    static _Atomic(uintptr_t) s_deleting_server = 0;
+    uintptr_t l_server_addr = (uintptr_t)a_server;
+    uintptr_t l_expected = 0;
+    
+    if (!atomic_compare_exchange_strong(&s_deleting_server, &l_expected, l_server_addr)) {
+        if (s_deleting_server == l_server_addr) {
+            log_it(L_WARNING, "Double-delete detected for server %p - ignoring", a_server);
+            return;
+        }
     }
     
-    // Cleanup all flows
     uint32_t l_worker_count = dap_proc_thread_get_count();
+    
+    // Step 1: Cleanup all flows (user data)
+    log_it(L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
         
@@ -294,20 +394,17 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
         
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
-        pthread_rwlock_destroy(&a_server->flow_locks_per_worker[i]);
     }
     
-    // Cleanup per-worker structures
-    DAP_DELETE(a_server->flows_per_worker);
-    DAP_DELETE(a_server->flow_locks_per_worker);
-    
-    // Cleanup inter-worker pipes
+    // Step 2: Delete inter_worker_queues (outputs) - close write ends of pipes
     if (a_server->inter_worker_queues) {
+        log_it(L_DEBUG, "Deleting inter-worker queue OUTPUTS (write ends)");
         for (uint32_t i = 0; i < l_worker_count; i++) {
             if (a_server->inter_worker_queues[i]) {
                 for (uint32_t j = 0; j < l_worker_count; j++) {
                     if (i != j && a_server->inter_worker_queues[i][j]) {
                         dap_events_socket_delete_unsafe(a_server->inter_worker_queues[i][j], false);
+                        a_server->inter_worker_queues[i][j] = NULL;
                     }
                 }
                 DAP_DELETE(a_server->inter_worker_queues[i]);
@@ -316,13 +413,174 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         DAP_DELETE(a_server->inter_worker_queues);
     }
     
-    // Free ops structure if it was heap-allocated (e.g. by UDP wrapper)
-    DAP_DELETE(a_server->ops);
+    // Step 3: Delete queue_inputs (read ends) - wait for graceful cleanup
+    // These esockets are on workers, need to schedule deletion via worker callbacks
+    if (a_server->queue_inputs) {
+        log_it(L_DEBUG, "Scheduling queue_inputs deletion via worker callbacks");
+        
+        // Count non-NULL queue_inputs
+        uint32_t l_pending_count = 0;
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            if (a_server->queue_inputs[i]) {
+                l_pending_count++;
+            }
+        }
+        
+        if (l_pending_count > 0) {
+            // Set pending counter
+            atomic_store(&a_server->pending_cleanups, l_pending_count);
+            
+            // Schedule deletions on each worker via proc_thread callbacks
+            for (uint32_t i = 0; i < l_worker_count; i++) {
+                if (a_server->queue_inputs[i]) {
+                    dap_worker_t *l_worker = dap_events_worker_get(i);
+                    if (!l_worker || !l_worker->proc_queue_input) {
+                        log_it(L_ERROR, "Worker %u or its proc_queue not found", i);
+                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
+                        continue;
+                    }
+                    
+                    queue_input_cleanup_arg_t *l_arg = DAP_NEW_Z(queue_input_cleanup_arg_t);
+                    if (!l_arg) {
+                        log_it(L_ERROR, "Failed to allocate cleanup arg for worker %u", i);
+                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
+                        continue;
+                    }
+                    
+                    l_arg->queue_input = a_server->queue_inputs[i];
+                    l_arg->server = a_server;
+                    l_arg->worker_id = i;
+                    
+                    // CRITICAL RACE FIX: Increment active_callbacks BEFORE scheduling callback
+                    // This ensures main thread won't destroy sync primitives before callback starts
+                    atomic_fetch_add(&a_server->active_callbacks, 1);
+                    
+                    // Schedule callback on worker's proc_thread queue
+                    int l_ret = dap_proc_thread_callback_add(l_worker->proc_queue_input, 
+                                                              s_queue_input_delete_callback, 
+                                                              l_arg);
+                    if (l_ret != 0) {
+                        log_it(L_ERROR, "Failed to schedule cleanup callback for worker %u: %d", i, l_ret);
+                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
+                        atomic_fetch_sub(&a_server->active_callbacks, 1); // Rollback
+                        DAP_DELETE(l_arg);
+                        continue;
+                    }
+                    
+                    a_server->queue_inputs[i] = NULL; // Marked for deletion
+                }
+            }
+            
+            // Wait for all deletions to complete
+            log_it(L_DEBUG, "Waiting for %u queue_inputs to be deleted...", l_pending_count);
+            pthread_mutex_lock(&a_server->cleanup_mutex);
+            
+            struct timespec l_timeout;
+            clock_gettime(CLOCK_REALTIME, &l_timeout);
+            l_timeout.tv_sec += 10; // 10 second timeout
+            
+            // STEP 1: Wait for all callbacks to be scheduled and signal (pending_cleanups==0)
+            while (atomic_load(&a_server->pending_cleanups) > 0) {
+                int l_ret = pthread_cond_timedwait(&a_server->cleanup_cond,
+                                                   &a_server->cleanup_mutex,
+                                                   &l_timeout);
+                if (l_ret == ETIMEDOUT) {
+                    uint32_t l_still_pending = atomic_load(&a_server->pending_cleanups);
+                    log_it(L_WARNING, "Timeout waiting for queue_inputs deletion, %u still pending",
+                           l_still_pending);
+                    break;
+                }
+            }
+            
+            log_it(L_DEBUG, "All queue_inputs deleted (pending_cleanups==0)");
+            
+            // STEP 2: Wait for ALL callbacks to FULLY COMPLETE execution (active_callbacks==0)
+            // CRITICAL RACE CONDITION FIX:
+            // Even after pending_cleanups==0, callbacks might still be executing
+            // their cleanup code (pthread_mutex_lock/unlock/signal)
+            // We MUST wait for active_callbacks==0 before destroying sync primitives!
+            
+            // Keep mutex LOCKED during wait to prevent callbacks from accessing sync primitives
+            // Callbacks will increment active_callbacks BEFORE using sync primitives,
+            // and decrement AFTER they're done
+            
+            struct timespec l_active_timeout;
+            clock_gettime(CLOCK_REALTIME, &l_active_timeout);
+            l_active_timeout.tv_sec += 5; // 5 second timeout for callbacks to exit
+            
+            while (atomic_load(&a_server->active_callbacks) > 0) {
+                // Use pthread_cond_timedwait to wait efficiently
+                // This will spurious wakeup periodically to check active_callbacks
+                struct timespec l_short_wait;
+                clock_gettime(CLOCK_REALTIME, &l_short_wait);
+                l_short_wait.tv_nsec += 10000000; // 10ms
+                if (l_short_wait.tv_nsec >= 1000000000) {
+                    l_short_wait.tv_sec += 1;
+                    l_short_wait.tv_nsec -= 1000000000;
+                }
+                
+                pthread_cond_timedwait(&a_server->cleanup_cond, 
+                                      &a_server->cleanup_mutex, 
+                                      &l_short_wait);
+                
+                // Check timeout
+                struct timespec l_now;
+                clock_gettime(CLOCK_REALTIME, &l_now);
+                if (l_now.tv_sec >= l_active_timeout.tv_sec) {
+                    uint32_t l_still_active = atomic_load(&a_server->active_callbacks);
+                    log_it(L_WARNING, "Timeout waiting for %u active callbacks to exit", l_still_active);
+                    break;
+                }
+            }
+            
+            pthread_mutex_unlock(&a_server->cleanup_mutex);
+            log_it(L_DEBUG, "All callbacks fully exited (active_callbacks==0), safe to destroy sync");
+            
+            // Memory barrier to ensure all callback writes are visible
+            __atomic_thread_fence(__ATOMIC_SEQ_CST);
+        }
+        
+        log_it(L_DEBUG, "Freeing queue_inputs array");
+        DAP_DELETE(a_server->queue_inputs);
+        log_it(L_DEBUG, "queue_inputs array freed");
+    }
     
+    // Step 4: Stop server (listeners) - NOW it's safe
+    if (a_server->is_running) {
+        log_it(L_DEBUG, "Stopping server listeners");
+        dap_io_flow_server_stop(a_server);
+        log_it(L_DEBUG, "Server listeners stopped");
+    }
+    
+    // Step 5: Free structures
+    log_it(L_DEBUG, "Destroying %u flow locks", l_worker_count);
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        pthread_rwlock_destroy(&a_server->flow_locks_per_worker[i]);
+    }
+    log_it(L_DEBUG, "Flow locks destroyed");
+    
+    log_it(L_DEBUG, "Freeing flows_per_worker and flow_locks_per_worker");
+    DAP_DELETE(a_server->flows_per_worker);
+    DAP_DELETE(a_server->flow_locks_per_worker);
+    log_it(L_DEBUG, "Per-worker structures freed");
+    
+    log_it(L_DEBUG, "Destroying cleanup synchronization");
+    pthread_mutex_destroy(&a_server->cleanup_mutex);
+    pthread_cond_destroy(&a_server->cleanup_cond);
+    log_it(L_DEBUG, "Cleanup synchronization destroyed");
+    
+    // Preserve name pointer before freeing (for logging)
+    char *l_name_copy = a_server->name ? dap_strdup(a_server->name) : NULL;
+    
+    log_it(L_DEBUG, "Freeing server name and object");
     DAP_DELETE(a_server->name);
+    
+    // Mark server as freed (helps detect use-after-free)
+    memset(a_server, 0xDE, sizeof(*a_server)); // Fill with 0xDE (dead) pattern
     DAP_DELETE(a_server);
     
-    log_it(L_INFO, "Server deleted");
+    log_it(L_INFO, "Server '%s' deleted", l_name_copy ? l_name_copy : "unknown");
+    DAP_DELETE(l_name_copy);
 }
 
 /**

@@ -163,7 +163,8 @@ dap_context_t* dap_context_current();
 /// ALL THIS FUNCTIONS ARE UNSAFE AND SHOULD BE MOVED TO DAP_WORKER SUBTYPE! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
 
 int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es );
-int dap_context_remove( dap_events_socket_t * a_es);
+int dap_context_remove_from_polling(dap_events_socket_t * a_es);  // Remove from epoll/kqueue/poll only
+int dap_context_remove(dap_events_socket_t * a_es);  // Complete removal (hash + polling)
 int dap_context_poll_update(dap_events_socket_t * a_es);
 dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_socket_uuid_t a_es_uuid );
 dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback);

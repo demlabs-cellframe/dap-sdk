@@ -402,10 +402,16 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
  */
 static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
 {
+    log_it(L_NOTICE, "s_queue_callback_callback CALLED with arg=%p", a_arg);
+    
     dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
     assert(l_msg);
     assert(l_msg->callback);
+    
+    log_it(L_NOTICE, "Calling callback=%p with arg=%p", l_msg->callback, l_msg->arg);
     l_msg->callback(l_msg->arg);
+    
+    log_it(L_NOTICE, "Callback completed");
     DAP_DELETE(l_msg);
 }
 
@@ -524,10 +530,17 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
     }
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;
-    if ( dap_events_socket_queue_ptr_send_to_input (a_es_input ,l_msg ) )
+    
+    log_it(L_DEBUG, "dap_worker_exec_callback_inter: sending callback=%p arg=%p to queue %p",
+           a_callback, a_arg, a_es_input);
+    
+    int l_ret = dap_events_socket_queue_ptr_send_to_input(a_es_input, l_msg);
+    if (l_ret) {
         log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
                         dap_strerror(errno), errno);
-
+    } else {
+        log_it(L_DEBUG, "Successfully sent callback to queue %p", a_es_input);
+    }
 }
 #endif
 

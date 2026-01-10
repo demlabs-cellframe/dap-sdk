@@ -904,9 +904,22 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     break;
                 }
-                default:
+                case DESCRIPTOR_TYPE_QUEUE:
+                case DESCRIPTOR_TYPE_PIPE:
+                case DESCRIPTOR_TYPE_EVENT:
+                    // Internal pipes/queues with HUP - CRITICAL: Remove from polling!
+                    // OUTPUT end was closed, INPUT end receives HUP
+                    // We MUST remove from epoll immediately to prevent INFINITE HUP events
+                    // The esocket will be deleted later via worker callback
                     if(g_debug_reactor)
-                        log_it(L_WARNING, "HUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type );
+                        log_it(L_DEBUG, "HUP on internal esocket %p (%"DAP_FORMAT_SOCKET") type %d - removing from polling", 
+                               l_cur, l_cur->socket, l_cur->type);
+                    
+                    dap_context_remove_from_polling(l_cur);
+                    l_cur->flags &= ~(DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE);
+                    break;
+                default:
+                    log_it(L_INFO, "Connection is closed, HUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type );
                 }
             }
 
@@ -1775,119 +1788,165 @@ lb_exit:
 }
 
 /**
- * @brief dap_context_remove Removes esocket from its own context
- * @param a_esocket Esocket to remove from its own context (if present
- * @return Zero if everything is ok, others if error
+ * @brief dap_context_remove_from_polling
+ * Removes esocket from polling mechanism (epoll/kqueue/poll/iocp) but keeps it in hash table
+ * Used for internal QUEUE/PIPE/EVENT sockets that get HUP but should not be fully deleted
+ * Also used as a building block for dap_context_remove()
+ * @param a_es Esocket to remove from polling
+ * @return Zero if everything is ok, non-zero if error
  */
-int dap_context_remove( dap_events_socket_t * a_es)
+int dap_context_remove_from_polling(dap_events_socket_t * a_es)
 {
     dap_context_t * l_context = a_es->context;
-    int l_ret = 0;
     if (!l_context) {
         log_it(L_WARNING, "No context assigned to esocket %"DAP_FORMAT_SOCKET, a_es->socket);
         return -1;
     }
-    dap_events_socket_t *l_es = NULL;
-    HASH_FIND_BYHASHVALUE(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es);
-    if (!l_es || l_es != a_es)
-        log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
-    else {
-        l_context->event_sockets_count--;
-        HASH_DELETE(hh, l_context->esockets, a_es);
-    }
 
 #if defined DAP_EVENTS_CAPS_IOCP
     /* TODO: there's a weird undocumented technique of "removing" from IOCP, but we barely need it */
+    return 0;
+    
 #elif defined(DAP_EVENTS_CAPS_EPOLL)
-
-    //Check if its present on current selection
-    for (ssize_t n = l_context->esocket_current + 1; n< l_context->esockets_selected; n++ ){
+    // Check if its present on current selection
+    for (ssize_t n = l_context->esocket_current + 1; n < l_context->esockets_selected; n++) {
         struct epoll_event * l_event = &l_context->epoll_events[n];
-        if ( l_event->data.ptr == a_es ) // Found in selection
+        if (l_event->data.ptr == a_es) // Found in selection
             l_event->data.ptr = NULL; // signal to skip on its iteration
     }
 
-    // remove from epoll
-    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 )
-        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE" \"%s\" (%d)",
-                l_context->epoll_fd, dap_strerror(errno), errno), -1;
+    // Remove from epoll
+    if (epoll_ctl(l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1) {
+        int l_errno = errno;
+        if (l_errno != ENOENT) {  // ENOENT = already removed, not an error
+            log_it(L_WARNING, "Error removing esocket %p from epoll: %s (%d)",
+                   a_es, dap_strerror(l_errno), l_errno);
+            return -1;
+        }
+    }
+    return 0;
+    
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
+        return -1;
     } else if (a_es->type == DESCRIPTOR_TYPE_EVENT || a_es->type == DESCRIPTOR_TYPE_QUEUE) {
-        log_it(L_ERROR, "Removing non-kqueue socket from context %u is impossible", l_context->id);
+        log_it(L_DEBUG, "Skipping kqueue removal for internal socket type %d", a_es->type);
+        return 0;  // These types can't be removed from kqueue on BSD
     } else if (a_es->type == DESCRIPTOR_TYPE_TIMER && a_es->kqueue_base_filter == EVFILT_EMPTY) {
         // Nothing to do, it was already removed from kqueue cause of one shot strategy
+        return 0;
     } else {
-        for (ssize_t n = l_context->esocket_current+1; n< l_context->esockets_selected; n++ ){
+        // Clear this esocket from current selection
+        for (ssize_t n = l_context->esocket_current + 1; n < l_context->esockets_selected; n++) {
             struct kevent * l_kevent_selected = &l_context->kqueue_events_selected[n];
             dap_events_socket_t * l_cur = NULL;
 
             // Extract current esocket
-            if ( l_kevent_selected->filter == EVFILT_USER){
+            if (l_kevent_selected->filter == EVFILT_USER) {
                 dap_events_socket_w_data_t * l_es_w_data = (dap_events_socket_w_data_t *) l_kevent_selected->udata;
-                if(l_es_w_data){
+                if (l_es_w_data) {
                     l_cur = l_es_w_data->esocket;
                 }
-            }else{
+            } else {
                 l_cur = (dap_events_socket_t*) l_kevent_selected->udata;
             }
 
             // Compare it with current thats removing
-            if (l_cur == a_es){
-                l_kevent_selected->udata = NULL; // Singal to the loop to remove it from processing
+            if (l_cur == a_es) {
+                l_kevent_selected->udata = NULL; // Signal to the loop to remove it from processing
             }
-
         }
 
         // Delete from kqueue
         struct kevent * l_event = &a_es->kqueue_event;
         EV_SET(l_event, a_es->socket, a_es->kqueue_base_filter, EV_DELETE, 0, 0, a_es);
-        if (a_es->kqueue_base_filter){
-            if ( kevent( l_context->kqueue_fd,l_event,1,NULL,0,NULL) == -1 ) {
+        if (a_es->kqueue_base_filter) {
+            if (kevent(l_context->kqueue_fd, l_event, 1, NULL, 0, NULL) == -1) {
                 int l_errno = errno;
                 char l_errbuf[128];
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                log_it( L_ERROR,"Can't remove event socket's handler %d from the kqueue %d filter %d \"%s\" (%d)", a_es->socket,
-                    l_context->kqueue_fd,a_es->kqueue_base_filter,  l_errbuf, l_errno);
+                strerror_r(l_errno, l_errbuf, sizeof(l_errbuf));
+                log_it(L_WARNING, "Can't remove event socket's handler %d from the kqueue %d filter %d \"%s\" (%d)", 
+                       a_es->socket, l_context->kqueue_fd, a_es->kqueue_base_filter, l_errbuf, l_errno);
+                return -1;
             }
         }
-        // Delete from flags ready
-        if(a_es->flags & DAP_SOCK_READY_TO_WRITE){
+        
+        // Delete from flags ready (WRITE)
+        if (a_es->flags & DAP_SOCK_READY_TO_WRITE) {
             l_event->filter = EVFILT_WRITE;
-            if ( kevent( l_context->kqueue_fd,l_event,1,NULL,0,NULL) == -1 ) {
+            if (kevent(l_context->kqueue_fd, l_event, 1, NULL, 0, NULL) == -1) {
                 int l_errno = errno;
                 char l_errbuf[128];
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                log_it( L_ERROR,"Can't remove event socket's handler %d from the kqueue %d filter EVFILT_WRITE \"%s\" (%d)", a_es->socket,
-                    l_context->kqueue_fd, l_errbuf, l_errno);
+                strerror_r(l_errno, l_errbuf, sizeof(l_errbuf));
+                log_it(L_WARNING, "Can't remove event socket's WRITE handler %d from the kqueue %d \"%s\" (%d)", 
+                       a_es->socket, l_context->kqueue_fd, l_errbuf, l_errno);
+                return -1;
             }
         }
-        if(a_es->flags & DAP_SOCK_READY_TO_READ){
+        
+        // Delete from flags ready (READ)
+        if (a_es->flags & DAP_SOCK_READY_TO_READ) {
             l_event->filter = EVFILT_READ;
-            if ( kevent( l_context->kqueue_fd,l_event,1,NULL,0,NULL) == -1 ) {
+            if (kevent(l_context->kqueue_fd, l_event, 1, NULL, 0, NULL) == -1) {
                 int l_errno = errno;
                 char l_errbuf[128];
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                log_it( L_ERROR,"Can't remove event socket's handler %d from the kqueue %d filter EVFILT_READ \"%s\" (%d)", a_es->socket,
-                    l_context->kqueue_fd, l_errbuf, l_errno);
+                strerror_r(l_errno, l_errbuf, sizeof(l_errbuf));
+                log_it(L_WARNING, "Can't remove event socket's READ handler %d from the kqueue %d \"%s\" (%d)", 
+                       a_es->socket, l_context->kqueue_fd, l_errbuf, l_errno);
+                return -1;
             }
         }
+    }
+    return 0;
+    
+#elif defined (DAP_EVENTS_CAPS_POLL)
+    if (a_es->poll_index < l_context->poll_count) {
+        l_context->poll[a_es->poll_index].fd = -1;
+        a_es->context->poll_esocket[a_es->poll_index] = NULL;
+        l_context->poll_compress = true;
+        return 0;
+    } else {
+        log_it(L_ERROR, "Wrong poll index when remove from polling: %u when total count %u", 
+               a_es->poll_index, l_context->poll_count);
+        return -2;
+    }
+    
+#else
+#error "Unimplemented dap_context_remove_from_polling for current platform"
+#endif
+}
+
+/**
+ * @brief dap_context_remove
+ * Removes esocket from its own context completely (from hash table AND from polling)
+ * @param a_es Esocket to remove from its own context (if present)
+ * @return Zero if everything is ok, others if error
+ */
+int dap_context_remove(dap_events_socket_t * a_es)
+{
+    dap_context_t * l_context = a_es->context;
+    if (!l_context) {
+        log_it(L_WARNING, "No context assigned to esocket %"DAP_FORMAT_SOCKET, a_es->socket);
+        return -1;
+    }
+    
+    // Remove from hash table
+    dap_events_socket_t *l_es = NULL;
+    HASH_FIND_BYHASHVALUE(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es);
+    if (!l_es || l_es != a_es) {
+        log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
+    } else {
+        l_context->event_sockets_count--;
+        HASH_DELETE(hh, l_context->esockets, a_es);
     }
 
-#elif defined (DAP_EVENTS_CAPS_POLL)
-    if (a_es->poll_index < l_context->poll_count ){
-        l_context->poll[a_es->poll_index].fd = -1;
-        a_es->context->poll_esocket[a_es->poll_index]=NULL;
-        l_context->poll_compress = true;
-    }else{
-        log_it(L_ERROR, "Wrong poll index when remove from worker (unsafe): %u when total count %u", a_es->poll_index, l_context->poll_count);
-        l_ret = -2;
-    }
-#else
-#error "Unimplemented new esocket on worker callback for current platform"
-#endif
+    // Remove from polling mechanism (epoll/kqueue/poll/iocp)
+    int l_ret = dap_context_remove_from_polling(a_es);
+    
+    // Clear context pointer
     a_es->context = NULL;
+    
     return l_ret;
 }
 

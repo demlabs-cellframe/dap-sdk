@@ -319,6 +319,12 @@ struct dap_io_flow_server {
     dap_events_socket_t ***inter_worker_queues;  ///< Queue outputs [src_worker][dst_worker]
     dap_events_socket_t **queue_inputs;     ///< Queue inputs [worker_id]
     
+    // Synchronization for graceful cleanup
+    pthread_mutex_t cleanup_mutex;          ///< Mutex for cleanup synchronization
+    pthread_cond_t cleanup_cond;            ///< Condition variable for cleanup completion
+    _Atomic uint32_t pending_cleanups;      ///< Number of pending cleanup operations (scheduled)
+    _Atomic uint32_t active_callbacks;      ///< Number of callbacks CURRENTLY executing (not yet returned)
+    
     // Statistics
     _Atomic size_t local_hits;              ///< Local flow lookups
     _Atomic size_t remote_hits;             ///< Remote flow lookups
