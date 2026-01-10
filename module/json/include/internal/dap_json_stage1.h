@@ -495,18 +495,15 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
 }
 
 /**
- * @brief Get dispatch implementation name (for debugging)
+ * @brief Get current implementation name (for debugging)
  * @return String description of active implementation
  */
-static inline const char* dap_json_stage1_get_dispatch_name(void)
+static inline const char* dap_json_stage1_get_name(void)
 {
     dap_cpu_arch_t arch = dap_json_get_arch();
     return dap_json_get_arch_name(arch);
 }
 
-#ifdef __cplusplus
-}
-#endif
 #ifdef __cplusplus
 }
 #endif
