@@ -120,9 +120,9 @@ dap_cpu_arch_t dap_json_get_simd_arch(void)
 /**
  * @brief Set SIMD architecture manually (for testing/benchmarking)
  * @param a_arch Architecture to use
- * @return true if architecture is available and set, false otherwise
+ * @return 0 on success, -1 if not available
  */
-bool dap_json_set_simd_arch(dap_cpu_arch_t a_arch)
+int dap_json_stage1_dispatch_set_arch(dap_cpu_arch_t a_arch)
 {
     // Initialize CPU detection if not done yet
     if (!g_dap_json_cpu_features_initialized) {
@@ -133,14 +133,14 @@ bool dap_json_set_simd_arch(dap_cpu_arch_t a_arch)
     if (a_arch == DAP_CPU_ARCH_AUTO) {
         s_manual_arch = DAP_CPU_ARCH_AUTO;
         log_it(L_INFO, "SIMD architecture set to AUTO (will auto-detect)");
-        return true;
+        return 0;
     }
     
     // Reference C is always available
     if (a_arch == DAP_CPU_ARCH_REFERENCE) {
         s_manual_arch = DAP_CPU_ARCH_REFERENCE;
         log_it(L_INFO, "SIMD architecture manually set to: Reference C");
-        return true;
+        return 0;
     }
     
     // Check architecture availability using core module
@@ -150,11 +150,19 @@ bool dap_json_set_simd_arch(dap_cpu_arch_t a_arch)
     if (available) {
         s_manual_arch = a_arch;
         log_it(L_INFO, "SIMD architecture manually set to: %s", arch_name);
-        return true;
+        return 0;
     } else {
         log_it(L_WARNING, "Architecture %s not available on this CPU", arch_name);
-        return false;
+        return -1;
     }
+}
+
+/**
+ * @brief Get currently selected SIMD architecture
+ */
+dap_cpu_arch_t dap_json_stage1_dispatch_get_arch(void)
+{
+    return dap_json_get_simd_arch();
 }
 
 /**

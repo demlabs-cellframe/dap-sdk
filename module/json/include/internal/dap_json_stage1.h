@@ -416,6 +416,21 @@ extern bool g_dap_json_cpu_features_initialized;
 extern void dap_json_stage1_init_dispatch(void);
 void dap_json_stage1_init_dispatch(void);
 
+/**
+ * @brief Manually set SIMD architecture for Stage 1 tokenization
+ * @details Overrides automatic CPU detection. Returns -1 if requested architecture
+ *          is not available/compiled. Call this AFTER dap_json_stage1_init_dispatch().
+ * @param a_arch Desired architecture (DAP_CPU_ARCH_* constant)
+ * @return 0 on success, -1 if not available
+ */
+int dap_json_stage1_dispatch_set_arch(dap_cpu_arch_t a_arch);
+
+/**
+ * @brief Get currently selected SIMD architecture for Stage 1
+ * @return Current architecture (DAP_CPU_ARCH_* constant)
+ */
+dap_cpu_arch_t dap_json_stage1_dispatch_get_arch(void);
+
 
 // Include architecture-specific implementations for static inline dispatch
 // These must be included AFTER all typedefs are complete

@@ -43,6 +43,29 @@ extern "C" {
 void dap_json_init(void);
 
 /**
+ * @brief Manually set SIMD architecture for JSON parsing
+ * @details Overrides automatic CPU detection. Useful for testing, benchmarking,
+ *          and edge cases where auto-detection may not work correctly.
+ *          Must be called AFTER dap_json_init().
+ * @param a_arch Desired architecture (use DAP_CPU_ARCH_* constants from dap_cpu_arch.h)
+ *               DAP_CPU_ARCH_AUTO = automatic (default behavior)
+ *               DAP_CPU_ARCH_REFERENCE = pure C reference
+ *               DAP_CPU_ARCH_X86_SSE2 = SSE2 (x86)
+ *               DAP_CPU_ARCH_X86_AVX2 = AVX2 (x86)
+ *               DAP_CPU_ARCH_X86_AVX512 = AVX-512 (x86)
+ *               DAP_CPU_ARCH_ARM_NEON = NEON (ARM)
+ * @return 0 on success, -1 if requested architecture is not available/compiled
+ * @note If requested architecture is not available, the call fails and current selection remains unchanged
+ */
+int dap_json_set_simd_arch(dap_cpu_arch_t a_arch);
+
+/**
+ * @brief Get currently selected SIMD architecture
+ * @return Current architecture (DAP_CPU_ARCH_* constant)
+ */
+dap_cpu_arch_t dap_json_get_simd_arch(void);
+
+/**
  * @brief Opaque DAP JSON type - hides internal json-c implementation
  * Can represent both JSON objects and arrays internally
  */
@@ -227,32 +250,6 @@ size_t dap_json_object_length(dap_json_t* a_json);
 
 // Import universal CPU architecture definitions from core
 #include "dap_cpu_arch.h"
-
-/**
- * @brief Set SIMD architecture for JSON Stage 1 tokenization
- * @param a_arch Architecture to use (DAP_CPU_ARCH_AUTO for auto-detection)
- * @return true if architecture is available and set successfully, false otherwise
- * 
- * @note This is a testing/benchmarking API. For production, use DAP_CPU_ARCH_AUTO.
- * @warning If requested architecture is not available on current CPU, returns false.
- * @example
- *   // Force SSE2 for benchmarking
- *   if (!dap_json_set_simd_arch(DAP_CPU_ARCH_SSE2)) {
- *       log_it(L_ERROR, "SSE2 not available");
- *   }
- */
-bool dap_json_set_simd_arch(dap_cpu_arch_t a_arch);
-
-/**
- * @brief Get currently active SIMD architecture
- * @return Current architecture (after manual selection or auto-detection)
- * 
- * @note Returns actual architecture in use, not the requested one.
- * @example
- *   dap_cpu_arch_t arch = dap_json_get_simd_arch();
- *   log_it(L_INFO, "Using: %s", dap_cpu_arch_get_name(arch));
- */
-dap_cpu_arch_t dap_json_get_simd_arch(void);
 
 /**
  * @brief Get human-readable name of SIMD architecture

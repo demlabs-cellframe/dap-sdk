@@ -88,6 +88,16 @@ void dap_json_init(void)
            dap_json_get_arch_name(dap_json_get_simd_arch()));
 }
 
+int dap_json_set_simd_arch(dap_cpu_arch_t a_arch)
+{
+    return dap_json_stage1_dispatch_set_arch(a_arch);
+}
+
+dap_cpu_arch_t dap_json_get_simd_arch(void)
+{
+    return dap_json_stage1_dispatch_get_arch();
+}
+
 /* ========================================================================== */
 /*                          HELPER FUNCTIONS                                  */
 /* ========================================================================== */
