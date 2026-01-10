@@ -853,6 +853,30 @@
               ]
             },
             {
+              "id": "1.4.2a",
+              "name": "Tests for Manual Architecture Selection API",
+              "status": "completed",
+              "completed_date": "2026-01-11T00:50:00Z",
+              "description": "Unit tests для manual architecture selection API (Phase 1.4.2 follow-up)",
+              "deliverables": [
+                "✅ tests/unit/json/test_manual_arch_selection.c (400 lines)",
+                "✅ 5 comprehensive test suites (100% pass rate)",
+                "✅ Test AUTO → SSE2 → AVX2 → AVX-512 → AUTO cycle",
+                "✅ Test invalid architecture rejection",
+                "✅ Test persistence of manual override",
+                "✅ Test correctness with each architecture",
+                "✅ Test JSON module wrappers (dap_json_set_arch, etc.)"
+              ],
+              "test_results": {
+                "total_suites": 5,
+                "passed": 5,
+                "failed": 0,
+                "pass_rate": "100%",
+                "runtime": "~0.05 sec"
+              },
+              "git_commit": "b1b634e5"
+            },
+            {
               "id": "1.4.4",
               "name": "Zero-Overhead HYBRID Architecture Implementation",
               "status": "90% complete",
