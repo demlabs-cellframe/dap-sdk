@@ -258,6 +258,7 @@ static bool s_test_neon_correctness(void)
 {
     log_it(L_DEBUG, "Testing NEON correctness");
     
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
     if (g_dap_json_cpu_features.has_neon) {
         log_it(L_INFO, "Testing NEON correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_neon, "NEON");
@@ -267,6 +268,10 @@ static bool s_test_neon_correctness(void)
         log_it(L_INFO, "NEON not available on this CPU, skipping");
         return true;
     }
+#else
+    log_it(L_INFO, "NEON not available on this architecture (x86/x64), skipping");
+    return true;
+#endif
 }
 
 /**
