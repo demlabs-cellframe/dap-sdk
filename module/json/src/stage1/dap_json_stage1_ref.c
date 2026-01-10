@@ -415,9 +415,6 @@ size_t dap_json_stage1_scan_number_ref(
     size_t i = a_start_pos;  // FIXED: use a_start_pos, not current_pos
     uint32_t l_start = (uint32_t)i;
     
-    bool l_has_decimal = false;
-    bool l_has_exponent = false;
-    
     // Optional minus
     if(i < l_len && l_input[i] == '-') {
         i++;
@@ -439,7 +436,6 @@ size_t dap_json_stage1_scan_number_ref(
     
     // Optional decimal
     if(i < l_len && l_input[i] == '.') {
-        l_has_decimal = true;
         i++;
         if(i >= l_len || !(l_input[i] >= '0' && l_input[i] <= '9')) {
             return l_start; // Error
@@ -451,7 +447,6 @@ size_t dap_json_stage1_scan_number_ref(
     
     // Optional exponent
     if(i < l_len && (l_input[i] == 'e' || l_input[i] == 'E')) {
-        l_has_exponent = true;
         i++;
         if(i < l_len && (l_input[i] == '+' || l_input[i] == '-')) {
             i++;
@@ -489,19 +484,15 @@ size_t dap_json_stage1_scan_literal_ref(
     size_t i = a_start_pos;  // FIXED: use a_start_pos, not current_pos
     uint32_t l_start = (uint32_t)i;
     
-    uint8_t l_subtype = 0;
     uint32_t l_length = 0;
     
     if(i + 4 <= l_len && memcmp(l_input + i, "true", 4) == 0) {
-        l_subtype = 1;
         l_length = 4;
     }
     else if(i + 5 <= l_len && memcmp(l_input + i, "false", 5) == 0) {
-        l_subtype = 2;
         l_length = 5;
     }
     else if(i + 4 <= l_len && memcmp(l_input + i, "null", 4) == 0) {
-        l_subtype = 3;
         l_length = 4;
     }
     else {

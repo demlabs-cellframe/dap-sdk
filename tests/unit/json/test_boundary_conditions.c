@@ -263,7 +263,7 @@ static bool s_test_huge_array(void) {
     
     log_it(L_DEBUG, "Verifying array length...");
     size_t l_length = dap_json_array_length(l_array);
-    DAP_TEST_FAIL_IF(l_length != l_count, "Array length matches");
+    DAP_TEST_FAIL_IF(l_length != (size_t)l_count, "Array length matches");
     
     // Verify first and last elements
     dap_json_t *l_first = dap_json_array_get_idx(l_array, 0);

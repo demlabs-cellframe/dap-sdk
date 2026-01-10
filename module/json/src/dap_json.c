@@ -46,6 +46,8 @@
 #include "dap_json_type.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
+#include "internal/dap_json_encoding.h"
+#include "internal/dap_json_transcode.h"
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -167,9 +169,118 @@ static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 /* ========================================================================== */
 
 /**
+ * @brief Parse JSON from binary buffer with explicit length
+ * @details Supports UTF-8, UTF-16LE/BE, UTF-32LE/BE (auto-detection)
+ */
+dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len)
+{
+    if (!a_json_buffer) {
+        log_it(L_ERROR, "NULL JSON buffer");
+        return NULL;
+    }
+    
+    if (a_buffer_len == 0) {
+        log_it(L_ERROR, "Empty JSON buffer");
+        return NULL;
+    }
+    
+    // Detect encoding (BOM + heuristics)
+    dap_json_encoding_info_t l_enc_info;
+    const uint8_t *l_input = (const uint8_t*)a_json_buffer;
+    
+    if (!dap_json_detect_encoding(l_input, a_buffer_len, &l_enc_info)) {
+        log_it(L_ERROR, "Failed to detect encoding");
+        return NULL;
+    }
+    
+    // Fast path: UTF-8 (most common, ~99.9% of JSON)
+    // Branch prediction hint: UTF-8 is likely
+    uint8_t *l_transcoded = NULL;
+    const uint8_t *l_parse_input = NULL;
+    size_t l_parse_len = 0;
+    
+    if (__builtin_expect(l_enc_info.encoding == DAP_JSON_ENCODING_UTF8, 1)) {
+        // Zero-copy: parse directly
+        l_parse_input = l_enc_info.data_start;
+        l_parse_len = l_enc_info.data_len;
+        log_it(L_DEBUG, "UTF-8 fast path (zero-copy)");
+    } else {
+        // Slow path: transcode UTF-16/32 → UTF-8
+        log_it(L_DEBUG, "Non-UTF-8 encoding detected: %s (transcoding required)",
+               dap_json_encoding_name(l_enc_info.encoding));
+        
+        if (!dap_json_transcode_to_utf8(l_enc_info.data_start, l_enc_info.data_len,
+                                        l_enc_info.encoding,
+                                        &l_transcoded, &l_parse_len)) {
+            log_it(L_ERROR, "Failed to transcode %s to UTF-8",
+                   dap_json_encoding_name(l_enc_info.encoding));
+            return NULL;
+        }
+        
+        l_parse_input = l_transcoded;
+        log_it(L_DEBUG, "Transcoded %s → UTF-8 (%zu bytes)",
+               dap_json_encoding_name(l_enc_info.encoding), l_parse_len);
+    }
+    
+    // Stage 1: Tokenization (UTF-8 only)
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_init(l_parse_input, l_parse_len);
+    if (!l_stage1) {
+        log_it(L_ERROR, "Failed to initialize Stage 1");
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
+    int l_ret = dap_json_stage1_run(l_stage1);
+    if (l_ret != STAGE1_SUCCESS) {
+        log_it(L_ERROR, "Stage 1 tokenization failed: error %d", l_ret);
+        dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
+    // Stage 2: DOM Building
+    dap_json_stage2_t *l_stage2 = dap_json_stage2_init(l_stage1);
+    if (!l_stage2) {
+        log_it(L_ERROR, "Failed to initialize Stage 2");
+        dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
+    dap_json_stage2_error_t l_err = dap_json_stage2_run(l_stage2);
+    if (l_err != STAGE2_SUCCESS) {
+        log_it(L_ERROR, "Failed to parse JSON: %s", dap_json_stage2_error_to_string(l_err));
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
+    // Get root value
+    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
+    if (!l_root) {
+        log_it(L_ERROR, "Stage 2 returned NULL root");
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
+    // Wrap for public API (keep Stage 2 parser alive - it owns the Arena)
+    dap_json_t *l_result = s_wrap_value_ex(l_root, true); // owns_value = true
+    l_result->stage2_parser = l_stage2; // Keep Stage 2 alive for Arena lifetime
+    
+    // Cleanup Stage 1 and transcoded buffer (if any)
+    dap_json_stage1_free(l_stage1);
+    if (l_transcoded) DAP_DELETE(l_transcoded);
+    
+    return l_result;
+}
+
+/**
  * @brief Parse JSON string using native parser (Stage 1 + Stage 2)
  */
-dap_json_t* dap_json_parse_string(const char* a_json_string)
+dap_json_t* dap_json_parse_string(const char *a_json_string)
 {
     if (!a_json_string) {
         log_it(L_ERROR, "NULL JSON string");
@@ -182,66 +293,7 @@ dap_json_t* dap_json_parse_string(const char* a_json_string)
         return NULL;
     }
     
-    // Skip UTF-8 BOM if present (0xEF 0xBB 0xBF)
-    const uint8_t *l_input = (const uint8_t*)a_json_string;
-    if (l_len >= 3 && l_input[0] == 0xEF && l_input[1] == 0xBB && l_input[2] == 0xBF) {
-        log_it(L_DEBUG, "Skipping UTF-8 BOM");
-        l_input += 3;
-        l_len -= 3;
-        
-        if (l_len == 0) {
-            log_it(L_ERROR, "Empty JSON after BOM");
-            return NULL;
-        }
-    }
-    
-    // Stage 1: Tokenization
-    dap_json_stage1_t *l_stage1 = dap_json_stage1_init(l_input, l_len);
-    if (!l_stage1) {
-        log_it(L_ERROR, "Failed to initialize Stage 1");
-        return NULL;
-    }
-    
-    int l_ret = dap_json_stage1_run(l_stage1);
-    if (l_ret != STAGE1_SUCCESS) {
-        log_it(L_ERROR, "Stage 1 tokenization failed: error %d", l_ret);
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    
-    // Stage 2: DOM Building
-    dap_json_stage2_t *l_stage2 = dap_json_stage2_init(l_stage1);
-    if (!l_stage2) {
-        log_it(L_ERROR, "Failed to initialize Stage 2");
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    
-    dap_json_stage2_error_t l_err = dap_json_stage2_run(l_stage2);
-    if (l_err != STAGE2_SUCCESS) {
-        log_it(L_ERROR, "Failed to parse JSON: %s", dap_json_stage2_error_to_string(l_err));
-        dap_json_stage2_free(l_stage2);
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    
-    // Get root value
-    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
-    if (!l_root) {
-        log_it(L_ERROR, "Stage 2 returned NULL root");
-        dap_json_stage2_free(l_stage2);
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    
-    // Wrap for public API (keep Stage 2 parser alive - it owns the Arena)
-    dap_json_t *l_result = s_wrap_value_ex(l_root, true); // owns_value = true
-    l_result->stage2_parser = l_stage2; // Keep Stage 2 alive for Arena lifetime
-    
-    // Cleanup Stage 1 only (Stage 2 will be freed when l_result is freed)
-    dap_json_stage1_free(l_stage1);
-    
-    return l_result;
+    return dap_json_parse_buffer(a_json_string, l_len);
 }
 
 /* ========================================================================== */

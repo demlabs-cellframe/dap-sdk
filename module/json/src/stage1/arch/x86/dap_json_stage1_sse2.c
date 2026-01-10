@@ -266,7 +266,6 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
     // Process in 16-byte chunks
     size_t l_pos = 0;
     bool l_in_string = false;
-    uint64_t l_prev_backslash_run = 0;
     size_t l_skip_until = 0;  // Hybrid: track values extending beyond chunk (slow path)
     
     debug_if(s_debug_more, L_DEBUG, "SSE2 HYBRID Stage 1: input_len=%zu", l_input_len);
@@ -297,10 +296,12 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         uint16_t l_struct_mask = (uint16_t)_mm_movemask_epi8(l_structural);
         uint16_t l_ws_mask     = (uint16_t)_mm_movemask_epi8(l_whitespace);
         uint16_t l_quote_mask  = (uint16_t)_mm_movemask_epi8(l_quotes);
-        uint16_t l_bs_mask     = (uint16_t)_mm_movemask_epi8(l_backslashes);
         
-        // Compute real quotes (not escaped)
-        uint16_t l_real_quotes = s_compute_escaped_quotes(l_quote_mask, l_bs_mask, &l_prev_backslash_run);
+        // NOTE: We DON'T use s_compute_escaped_quotes here!
+        // Why? The algorithm doesn't know context (inside/outside string).
+        // It incorrectly marks opening quotes as "escaped" when followed by backslash.
+        // Example: "\"\\uXXXX" - opening quote is marked as escaped!
+        // Solution: Process quotes in position order with state tracking.
         
         // Update statistics
         a_stage1->structural_chars += __builtin_popcount(l_struct_mask);
@@ -311,50 +312,52 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         for (int i = 0; i < 16; i++) {
             size_t l_abs_pos = l_pos + i;
             
-            // Check if we've finished skipping an extended string/value
+            // Skip if already processed by boundary handler
+            if (l_abs_pos < l_skip_until) {
+                continue;
+            }
+            
+            // Check if we've finished skipping an extended string
             if (l_in_string && l_abs_pos == l_skip_until) {
-                l_in_string = false;  // String ended
+                l_in_string = false;  // String ended at previous position
                 l_skip_until = 0;     // Reset skip marker
             }
             
-            // Skip if already processed by boundary handler or inside extended string
-            if (l_abs_pos < l_skip_until) continue;
-            
             // Priority 1: Quotes/Strings (can extend beyond chunk, affects state)
-            if (l_real_quotes & (1 << i)) {
-                if (!l_in_string) {
-                    // String start
-                    size_t l_str_end = dap_json_stage1_scan_string_ref(a_stage1, l_abs_pos);
-                    if (l_str_end == l_abs_pos) {
-                        return a_stage1->error_code;
-                    }
-                    
-                    // FAST PATH: String within chunk
-                    if (l_str_end <= l_pos + SSE2_CHUNK_SIZE) {
-                        debug_if(s_debug_more, L_DEBUG, "  FAST: string @%zu len=%zu", 
-                                 l_abs_pos, l_str_end - l_abs_pos);
-                        dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
-                                                  (uint32_t)(l_str_end - l_abs_pos),
-                                                  TOKEN_TYPE_STRING, 0);
-                        // Skip processed bytes (including closing quote)
-                        size_t l_str_len = l_str_end - l_abs_pos;
-                        i += (l_str_len - 1);
-                    }
-                    // SLOW PATH: String extends beyond chunk
-                    else {
-                        debug_if(s_debug_more, L_DEBUG, "  SLOW: string @%zu extends to %zu", 
-                                 l_abs_pos, l_str_end);
-                        dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
-                                                  (uint32_t)(l_str_end - l_abs_pos),
-                                                  TOKEN_TYPE_STRING, 0);
-                        l_skip_until = l_str_end;
-                        // String extends, so we're inside it for next chunks
-                        l_in_string = true;
-                        break;  // End processing this chunk
-                    }
-                } else {
-                    // String end (closing quote) - already processed when we opened the string
-                    l_in_string = false;
+            // Check quote_mask (not real_quotes!) and validate with state
+            if (l_quote_mask & (1 << i)) {
+                // Skip quotes inside extended strings - they're part of string content
+                if (l_in_string) {
+                    continue;  // Inside extended string, ignore all quotes
+                }
+                
+                // This is an opening quote (we're outside string)
+                size_t l_str_end = dap_json_stage1_scan_string_ref(a_stage1, l_abs_pos);
+                if (l_str_end == l_abs_pos) {
+                    return a_stage1->error_code;
+                }
+                
+                // FAST PATH: String within chunk
+                if (l_str_end <= l_pos + SSE2_CHUNK_SIZE) {
+                    debug_if(s_debug_more, L_DEBUG, "  FAST: string @%zu len=%zu", 
+                             l_abs_pos, l_str_end - l_abs_pos);
+                    dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                              (uint32_t)(l_str_end - l_abs_pos),
+                                              TOKEN_TYPE_STRING, 0);
+                    // Skip processed bytes (including closing quote)
+                    size_t l_str_len = l_str_end - l_abs_pos;
+                    i += (l_str_len - 1);
+                }
+                // SLOW PATH: String extends beyond chunk
+                else {
+                    debug_if(s_debug_more, L_DEBUG, "  SLOW: string @%zu extends to %zu", 
+                             l_abs_pos, l_str_end);
+                    dap_json_stage1_add_token(a_stage1, (uint32_t)l_abs_pos,
+                                              (uint32_t)(l_str_end - l_abs_pos),
+                                              TOKEN_TYPE_STRING, 0);
+                    l_skip_until = l_str_end;
+                    l_in_string = true;  // String extends, mark as inside
+                    break;  // End processing this chunk
                 }
                 continue;
             }

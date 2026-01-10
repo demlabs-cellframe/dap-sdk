@@ -156,6 +156,15 @@ typedef enum {
 dap_json_t* dap_json_tokener_parse_verbose(const char* a_str, dap_json_tokener_error_t* a_error);
 const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_jerr);
 
+/**
+ * @brief Parse JSON from binary buffer with explicit length
+ * @details Supports UTF-8, UTF-16LE/BE, UTF-32LE/BE (auto-detection via BOM or heuristics)
+ * @param[in] a_json_buffer Buffer containing JSON data
+ * @param[in] a_buffer_len Buffer length in bytes
+ * @return Parsed JSON object, or NULL on error
+ */
+dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len);
+
 // Reference counting (important for json-c compatibility)
 dap_json_t* dap_json_object_get_ref(dap_json_t* a_json);
 

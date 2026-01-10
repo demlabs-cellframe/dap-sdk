@@ -472,10 +472,9 @@ static bool s_test_unicode_serialization(void) {
     
     dap_json_object_add_string(l_json, "unicode", "Привет 世界 😀");
     
-    // Serialize to string
-    const char *l_serialized_const = dap_json_get_string(l_json);
-    DAP_TEST_FAIL_IF_NULL(l_serialized_const, "Serialize JSON with Unicode");
-    l_serialized = (char*)l_serialized_const;  // Safe cast for cleanup
+    // Serialize to string (use dap_json_to_string, not dap_json_get_string!)
+    l_serialized = dap_json_to_string(l_json);
+    DAP_TEST_FAIL_IF_NULL(l_serialized, "Serialize JSON with Unicode");
     
     log_it(L_DEBUG, "Serialized JSON: %s", l_serialized);
     
@@ -512,10 +511,11 @@ static bool s_test_utf16le_bom(void) {
     const unsigned char l_utf16le_json[] = {
         0xFF, 0xFE,  // BOM
         '{', 0x00, '"', 0x00, 'a', 0x00, '"', 0x00, ':', 0x00,
-        '"', 0x00, 'b', 0x00, '"', 0x00, '}', 0x00, 0x00
+        '"', 0x00, 'b', 0x00, '"', 0x00, '}', 0x00
     };
+    size_t l_len = sizeof(l_utf16le_json);
     
-    l_json = dap_json_parse_string((const char*)l_utf16le_json);
+    l_json = dap_json_parse_buffer((const char*)l_utf16le_json, l_len);
     // Parser should detect UTF-16LE and convert to UTF-8 internally
     // OR reject non-UTF-8 input (depending on implementation)
     // At minimum, should not crash
@@ -547,10 +547,11 @@ static bool s_test_utf16be_bom(void) {
     const unsigned char l_utf16be_json[] = {
         0xFE, 0xFF,  // BOM
         0x00, '{', 0x00, '"', 0x00, 'a', 0x00, '"', 0x00, ':',
-        0x00, '"', 0x00, 'b', 0x00, '"', 0x00, '}', 0x00
+        0x00, '"', 0x00, 'b', 0x00, '"', 0x00, '}'
     };
+    size_t l_len = sizeof(l_utf16be_json);
     
-    l_json = dap_json_parse_string((const char*)l_utf16be_json);
+    l_json = dap_json_parse_buffer((const char*)l_utf16be_json, l_len);
     // Parser should detect UTF-16BE and convert to UTF-8 internally
     // OR reject non-UTF-8 input
     DAP_TEST_FAIL_IF_NULL(l_json, "Parser handles UTF-16BE input");
