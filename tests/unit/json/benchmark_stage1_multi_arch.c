@@ -255,6 +255,86 @@ static void s_print_results_table(
 }
 
 /**
+ * @brief Print summary table with all results
+ */
+static void s_print_summary_table(
+    dap_bench_result_t *a_small_results,
+    dap_bench_result_t *a_medium_results,
+    int a_num_archs
+)
+{
+    log_it(L_INFO, " ");
+    log_it(L_INFO, "====================================================================");
+    log_it(L_INFO, "                         SUMMARY TABLE                              ");
+    log_it(L_INFO, "====================================================================");
+    log_it(L_INFO, "%-20s %15s %15s %15s",
+           "Architecture", "Small JSON", "Medium JSON", "Best Use Case");
+    log_it(L_INFO, "%-20s %15s %15s %15s",
+           "--------------------", "---------------", "---------------", "---------------");
+    
+    for (int i = 0; i < a_num_archs; i++) {
+        if (!a_small_results[i].available) {
+            log_it(L_INFO, "%-20s %15s %15s %15s",
+                   a_small_results[i].arch_name, "-", "-", "Not available");
+            continue;
+        }
+        
+        char small_str[32], medium_str[32];
+        snprintf(small_str, sizeof(small_str), "%.2f GB/s", a_small_results[i].throughput_gbps);
+        snprintf(medium_str, sizeof(medium_str), "%.2f GB/s", a_medium_results[i].throughput_gbps);
+        
+        // Determine best use case
+        const char *use_case;
+        if (i == 0) {
+            use_case = "Fallback";
+        } else {
+            double small_speedup = a_small_results[i].throughput_gbps / a_small_results[0].throughput_gbps;
+            double medium_speedup = a_medium_results[i].throughput_gbps / a_medium_results[0].throughput_gbps;
+            
+            if (small_speedup > 1.2 && medium_speedup > 2.0) {
+                use_case = "All sizes";
+            } else if (medium_speedup > 2.0) {
+                use_case = "Large JSON";
+            } else if (small_speedup > 1.0) {
+                use_case = "Small JSON";
+            } else {
+                use_case = "Limited";
+            }
+        }
+        
+        log_it(L_INFO, "%-20s %15s %15s %15s",
+               a_small_results[i].arch_name, small_str, medium_str, use_case);
+    }
+    
+    log_it(L_INFO, "====================================================================");
+    log_it(L_INFO, " ");
+    
+    // Print speedup summary
+    log_it(L_INFO, "Speedup Summary (vs Reference C):");
+    log_it(L_INFO, " ");
+    log_it(L_INFO, "%-20s %15s %15s",
+           "Architecture", "Small JSON", "Medium JSON");
+    log_it(L_INFO, "%-20s %15s %15s",
+           "--------------------", "---------------", "---------------");
+    
+    for (int i = 1; i < a_num_archs; i++) {
+        if (!a_small_results[i].available) continue;
+        
+        double small_speedup = a_small_results[i].throughput_gbps / a_small_results[0].throughput_gbps;
+        double medium_speedup = a_medium_results[i].throughput_gbps / a_medium_results[0].throughput_gbps;
+        
+        char small_str[32], medium_str[32];
+        snprintf(small_str, sizeof(small_str), "%.2fx", small_speedup);
+        snprintf(medium_str, sizeof(medium_str), "%.2fx", medium_speedup);
+        
+        log_it(L_INFO, "%-20s %15s %15s",
+               a_small_results[i].arch_name, small_str, medium_str);
+    }
+    
+    log_it(L_INFO, " ");
+}
+
+/**
  * @brief Main benchmark runner
  */
 static int s_run_benchmarks(void)
@@ -275,31 +355,36 @@ static int s_run_benchmarks(void)
     };
     int num_archs = sizeof(archs) / sizeof(archs[0]);
     
+    // Storage for all results
+    dap_bench_result_t small_results[5] = {0};
+    dap_bench_result_t medium_results[5] = {0};
+    
     // Small JSON benchmark (10,000 iterations)
     {
-        dap_bench_result_t results[5] = {0};
         size_t json_len = strlen(s_small_json);
         int iterations = 10000;
         
         for (int i = 0; i < num_archs; i++) {
-            s_benchmark_stage1(s_small_json, json_len, iterations, archs[i], &results[i]);
+            s_benchmark_stage1(s_small_json, json_len, iterations, archs[i], &small_results[i]);
         }
         
-        s_print_results_table("Small JSON", json_len, iterations, results, num_archs);
+        s_print_results_table("Small JSON", json_len, iterations, small_results, num_archs);
     }
     
     // Medium JSON benchmark (5,000 iterations)
     {
-        dap_bench_result_t results[5] = {0};
         size_t json_len = strlen(s_medium_json);
         int iterations = 5000;
         
         for (int i = 0; i < num_archs; i++) {
-            s_benchmark_stage1(s_medium_json, json_len, iterations, archs[i], &results[i]);
+            s_benchmark_stage1(s_medium_json, json_len, iterations, archs[i], &medium_results[i]);
         }
         
-        s_print_results_table("Medium JSON", json_len, iterations, results, num_archs);
+        s_print_results_table("Medium JSON", json_len, iterations, medium_results, num_archs);
     }
+    
+    // Print summary table
+    s_print_summary_table(small_results, medium_results, num_archs);
     
     log_it(L_INFO, "====================================================================");
     log_it(L_INFO, "Benchmarks Complete");
