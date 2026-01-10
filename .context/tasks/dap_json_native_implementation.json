@@ -4,7 +4,7 @@
   "description": "Создание САМОГО БЫСТРОГО и НАИБОЛЕЕ ПОЛНОГО JSON парсера в мире, ПРЕВОСХОДЯЩЕГО simdjson (>6-10 GB/s). FEATURES: Standard JSON RFC 8259 + JSON5 + JSONC + Streaming + JSONPath (с JIT) + JSON Schema. АРХИТЕКТУРА: Enhanced simdjson two-stage + parallel Stage 2 + predictive parsing + hardware prefetching. INFRASTRUCTURE: 5 переиспользуемых компонентов в module/core для всего SDK. ЦЕЛЬ: World record performance + complete feature set + reusable infrastructure. КРИТИЧНО: TDD подход - comprehensive test suite ДО реализации.",
   "status": "in_progress",
   "current_phase": "phase-1",
-  "current_subphase": "1.4",
+  "current_subphase": "1.6",
   "created": "2025-01-07T00:00:00Z",
   "updated": "2026-01-08T21:10:00Z",
   "priority": "critical",
@@ -649,7 +649,7 @@
         {
           "id": "1.4",
           "name": "Two-Stage Parser: Stage 1 - SIMD Optimization",
-          "status": "in_progress",
+          "status": "completed",
           "started_date": "2026-01-08T00:10:00Z",
           "updated_date": "2026-01-10T23:10:00Z",
           "progress": "100%",
@@ -879,14 +879,14 @@
             {
               "id": "1.4.4",
               "name": "Zero-Overhead HYBRID Architecture Implementation",
-              "status": "90% complete",
+              "status": "100% complete (x86)",
               "description": "Рефакторинг всех SIMD impl к HYBRID для правильного ordering",
               "why": "Старый byte-by-byte подход давал неправильный ordering когда values span chunks. HYBRID решает это архитектурно.",
               "deliverables": [
                 "✅ SSE2 HYBRID: 513 lines, 100% correctness (37/37)",
                 "✅ AVX2 HYBRID: 554 lines, 100% correctness (37/37)",
                 "✅ AVX-512 HYBRID: 524 lines, 100% correctness (37/37)",
-                "⏳ ARM NEON HYBRID: needs refactoring",
+                "⏸️ ARM NEON HYBRID: deferred (no ARM environment available)",
                 "✅ test_simd_string_spanning.c - universal regression tests",
                 "✅ Code quality audit (removed redundancies, updated docs)"
               ],
@@ -931,7 +931,9 @@
               "completed_date": "2026-01-11T01:00:00Z",
               "git_commit": "a7b606ef"
             }
-          ]
+          ],
+          "completed_date": "2026-01-11T01:10:00Z",
+          "notes": "Все x86 архитектуры (Reference C, SSE2, AVX2, AVX-512) завершены и протестированы. ARM NEON отложен до доступности ARM окружения."
         },
         {
           "id": "1.4.4",
