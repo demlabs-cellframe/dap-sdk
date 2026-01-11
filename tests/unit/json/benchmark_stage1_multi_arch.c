@@ -154,7 +154,8 @@ static bool s_benchmark_stage1(
         
         int ret = dap_json_stage1_run(stage1);
         if (ret != 0) {
-            log_it(L_ERROR, "Warm-up run failed with error %d", ret);
+            log_it(L_ERROR, "Warm-up run failed with error %d: %s (pos %zu)",
+                   ret, stage1->error_message, stage1->error_position);
             dap_json_stage1_free(stage1);
             return false;
         }

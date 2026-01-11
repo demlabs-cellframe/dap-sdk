@@ -200,7 +200,12 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
         
         // Process chunk sequentially in position order, using bitmaps as hints
         size_t chunk_pos = pos;
-        const size_t chunk_limit = pos + AVX2_CHUNK_SIZE;
+        size_t chunk_limit = pos + AVX2_CHUNK_SIZE;
+        
+        // CRITICAL: Clamp chunk_limit to input_len to avoid reading beyond buffer
+        if (chunk_limit > input_len) {
+            chunk_limit = input_len;
+        }
         
         while (chunk_pos < chunk_limit) {
             uint8_t c = input[chunk_pos];
@@ -321,6 +326,9 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
     }
     
     // Phase 3: Tail processing (< 32 bytes)
+    debug_if(dap_json_get_debug(), "Tail processing: pos=%zu, input_len=%zu, remaining=%zu",
+             pos, input_len, input_len - pos);
+    
     while (pos < input_len) {
         // Skip whitespace
         while (pos < input_len && (input[pos] == ' ' || input[pos] == '\t' ||
@@ -331,6 +339,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
         if (pos >= input_len) break;
         
         uint8_t c = input[pos];
+        debug_if(dap_json_get_debug(), "Tail [%zu]: c='%c' (0x%02X)", pos, c, c);
         
         // Structural
         if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',') {
