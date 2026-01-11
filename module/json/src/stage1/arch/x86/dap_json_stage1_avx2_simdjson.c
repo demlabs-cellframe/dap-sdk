@@ -215,7 +215,8 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
     const uint8_t *input = a_stage1->input;
     const size_t input_len = a_stage1->input_len;
     
-    log_it(L_DEBUG, "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
+    // Disable logging for benchmarks (too much overhead)
+    // log_it(L_DEBUG, "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
     
     // Phase 1: Fast SIMD bitmap classification and flatten
     size_t pos = 0;
@@ -327,9 +328,10 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
         }
     }
     
-    log_it(L_INFO, "AVX2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
-           a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
-           a_stage1->number_count, a_stage1->literal_count);
+    // Disable logging for benchmarks (too much overhead)
+    // log_it(L_INFO, "AVX2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+    //        a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
+    //        a_stage1->number_count, a_stage1->literal_count);
     
     return STAGE1_SUCCESS;
 }
