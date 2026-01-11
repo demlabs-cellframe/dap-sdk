@@ -75,6 +75,10 @@ static const test_scenario_t g_scenarios[] = {
     {"1 server, 100 clients",   1,  100,     5*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
     {"10 servers, 10 clients", 10,   10,    10*1024, TEST_TRANS_TIMEOUT_MS},
     {"10 servers, 100 clients", 10, 100,     5*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
+    
+    // Stress scenarios - test system limits
+    {"1 server, 1000 clients",  1, 1000,     1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 2},
+    {"10 servers, 1000 clients", 10, 1000,   1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 2},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
