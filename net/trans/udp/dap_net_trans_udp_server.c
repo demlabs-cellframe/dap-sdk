@@ -575,6 +575,19 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
     
     log_it(L_NOTICE, "Deleting Stream UDP server '%s'", a_server->server_name);
     
+    // CRITICAL: Delete all flows BEFORE deleting flow servers!
+    // This prevents use-after-free when flows hold pointers to listener_es
+    // that will be freed when flow server is deleted.
+    if (a_server->flow_servers) {
+        for (size_t i = 0; i < a_server->flow_servers_count; i++) {
+            if (a_server->flow_servers[i]) {
+                int l_deleted = dap_io_flow_delete_all_flows(a_server->flow_servers[i]);
+                debug_if(s_debug_more, L_DEBUG, 
+                         "Deleted %d flows for flow_server[%zu]", l_deleted, i);
+            }
+        }
+    }
+    
     // Delete all flow servers
     if (a_server->flow_servers) {
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
@@ -776,6 +789,13 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow)
     }
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    
+    // CRITICAL: Delete Flow Control FIRST to stop retransmits!
+    // This prevents use-after-free when FC tries to send after flow is deleted.
+    if (l_session->flow_ctrl) {
+        dap_io_flow_ctrl_delete(l_session->flow_ctrl);
+        l_session->flow_ctrl = NULL;
+    }
     
     if (l_session->stream) {
         DAP_DELETE(l_session->stream);

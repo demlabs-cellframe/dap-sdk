@@ -422,6 +422,23 @@ dap_io_flow_t* dap_io_flow_find(
     const struct sockaddr_storage *a_remote_addr);
 
 /**
+ * @brief Delete all flows for this server
+ * 
+ * Iterates all worker hash tables and calls flow_destroy callback for each flow.
+ * This ensures proper cleanup of flows before server deletion, preventing
+ * use-after-free when flows hold pointers to server resources (e.g., listener_es).
+ * 
+ * CRITICAL: Must be called BEFORE dap_io_flow_server_delete() to avoid dangling
+ * pointers in flows that might still be referenced (e.g., by retransmit timers).
+ * 
+ * Thread-safe: Acquires write locks on all worker hash tables.
+ * 
+ * @param a_server Server instance
+ * @return Number of flows deleted, or -1 on error
+ */
+int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server);
+
+/**
  * @brief Send data to flow's remote address
  * 
  * Queues data for sending via appropriate listener socket.

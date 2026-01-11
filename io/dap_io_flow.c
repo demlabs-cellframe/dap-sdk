@@ -639,6 +639,67 @@ dap_io_flow_t* dap_io_flow_find(
 }
 
 /**
+ * @brief Delete all flows for this server
+ * 
+ * Critical for preventing use-after-free when server resources (e.g., listener sockets)
+ * are deleted while flows still hold pointers to them.
+ * 
+ * Iterates all worker hash tables and calls flow_destroy callback for each flow.
+ * 
+ * @param a_server Server instance
+ * @return Number of flows deleted, or -1 on error
+ */
+int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        log_it(L_ERROR, "dap_io_flow_delete_all_flows: NULL server");
+        return -1;
+    }
+    
+    if (!a_server->ops || !a_server->ops->flow_destroy) {
+        log_it(L_WARNING, "dap_io_flow_delete_all_flows: No flow_destroy callback, skipping");
+        return 0;
+    }
+    
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    int l_total_deleted = 0;
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "dap_io_flow_delete_all_flows: Deleting flows for server '%s' across %u workers",
+             a_server->name ? a_server->name : "NULL", l_worker_count);
+    
+    // Iterate all workers and delete their flows
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
+        
+        dap_io_flow_t *l_flow = NULL;
+        dap_io_flow_t *l_tmp = NULL;
+        
+        // Use HASH_ITER for safe iteration with deletion
+        HASH_ITER(hh, a_server->flows_per_worker[i], l_flow, l_tmp) {
+            // Remove from hash table BEFORE destroying (flow_destroy may free memory)
+            HASH_DELETE(hh, a_server->flows_per_worker[i], l_flow);
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "Deleting flow on worker %u: remote=%s",
+                     i, dap_io_flow_socket_addr_to_string(&l_flow->remote_addr));
+            
+            // Call protocol-specific destructor
+            a_server->ops->flow_destroy(l_flow);
+            
+            l_total_deleted++;
+        }
+        
+        pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
+    }
+    
+    log_it(L_INFO, "dap_io_flow_delete_all_flows: Deleted %d flows for server '%s'",
+           l_total_deleted, a_server->name ? a_server->name : "NULL");
+    
+    return l_total_deleted;
+}
+
+/**
  * @brief Send data to flow's remote address
  */
 int dap_io_flow_send(
