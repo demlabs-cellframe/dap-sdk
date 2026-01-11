@@ -129,6 +129,7 @@ typedef struct dap_client_http {
     // Request vars
     dap_worker_t *worker;
     dap_timerfd_t *timer;
+    dap_events_socket_uuid_t timer_uuid; // Cached UUID for MT-safe deletion
     dap_events_socket_t *es;
 
 } dap_client_http_t;

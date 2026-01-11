@@ -77,6 +77,7 @@ typedef struct dap_client_pvt {
 
     dap_list_t *pkt_queue;
     dap_timerfd_t *reconnect_timer;
+    dap_events_socket_uuid_t reconnect_timer_uuid; // Cached UUID for MT-safe deletion
     
     // Transport fallback support - track tried transports
     dap_net_trans_type_t *tried_transports; // Already tried transport types (dynamic array)

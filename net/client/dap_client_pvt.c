@@ -453,9 +453,22 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 
 static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 {
-    if (a_client_pvt->reconnect_timer) {
-        dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
+    if (a_client_pvt->reconnect_timer_uuid) {
+        // Use cached UUID for MT-safe deletion
+        dap_worker_t *l_timer_worker = a_client_pvt->worker; // Timer is on client's worker
+        dap_worker_t *l_current_worker = dap_worker_get_current();
+        
+        if (l_timer_worker && l_timer_worker == l_current_worker) {
+            // Same worker - safe to delete directly if timer still exists
+            if (a_client_pvt->reconnect_timer) {
+                dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
+            }
+        } else if (l_timer_worker) {
+            // Different worker - use MT-safe deletion by cached UUID
+            dap_timerfd_delete_mt(l_timer_worker, a_client_pvt->reconnect_timer_uuid);
+        }
         a_client_pvt->reconnect_timer = NULL;
+        a_client_pvt->reconnect_timer_uuid = 0;
     }
     // Transport-specific resources are managed by transport layer
     if (a_client_pvt->stream_es) {
@@ -953,9 +966,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
-                        
+
                         // Copy stream_key into new session
-                        a_client_pvt->stream->session->key = a_client_pvt->stream_key;
+                    a_client_pvt->stream->session->key = a_client_pvt->stream_key;
                     } else {
                         log_it(L_INFO, "Session already created with key by transport, reusing it");
                     }
@@ -1106,14 +1119,22 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // small delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
                                 a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
-                    if (!a_client_pvt->reconnect_timer)
+                    if (!a_client_pvt->reconnect_timer) {
                         log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
+                    } else {
+                        // Cache UUID for MT-safe deletion
+                        a_client_pvt->reconnect_timer_uuid = a_client_pvt->reconnect_timer->events_socket->uuid;
+                    }
                 } else {
                     // bigger delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
                                 a_client_pvt->worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
-                    if (!a_client_pvt->reconnect_timer)
+                    if (!a_client_pvt->reconnect_timer) {
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
+                    } else {
+                        // Cache UUID for MT-safe deletion
+                        a_client_pvt->reconnect_timer_uuid = a_client_pvt->reconnect_timer->events_socket->uuid;
+                    }
                 }
             } else {
                 // Final error without reconnection - clean up resources

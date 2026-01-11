@@ -62,6 +62,32 @@ add_test(
 # Set test timeout (5 minutes)
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 300)
 
+# ============================================================================
+# Test: IO Flow Concurrent Sessions
+# ============================================================================
+project(test_io_flow_concurrent)
+
+add_executable(${PROJECT_NAME}
+    io/test_io_flow_concurrent.c
+)
+
+# Link all DAP SDK libraries using helper function
+dap_test_link_libraries(${PROJECT_NAME})
+
+# Add all DAP SDK includes using helper function
+dap_test_add_includes(${PROJECT_NAME})
+
+# Automatic linker wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+# Add to CTest
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+# Set test timeout (2 minutes - shorter for unit test)
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120)
 
 
 # ============================================================================

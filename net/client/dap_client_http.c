@@ -992,6 +992,9 @@ static dap_client_http_t* s_client_http_create_and_connect(
         log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
                l_client_http->worker->id, *l_ev_uuid_ptr);
         DAP_DEL_Z(l_ev_uuid_ptr);
+    } else {
+        // Cache UUID for MT-safe deletion
+        l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
     }
     
     *a_error_code = 0;
@@ -1050,8 +1053,11 @@ static dap_client_http_t* s_client_http_create_and_connect(
         if (!l_client_http->timer) {
             log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
                    l_client_http->worker->id, *l_ev_uuid_ptr);
-        DAP_DEL_Z(l_ev_uuid_ptr);
-    }
+            DAP_DEL_Z(l_ev_uuid_ptr);
+        } else {
+            // Cache UUID for MT-safe deletion
+            l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
+        }
         *a_error_code = 0;
         return l_client_http;
 #endif
@@ -1153,6 +1159,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
         return;
     }
+    // Cache UUID for MT-safe deletion
+    l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
 
     // Send HTTP request with properly formatted headers
     s_send_http_request(a_esocket, l_client_http);
@@ -1704,9 +1712,24 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
 {
     dap_return_if_fail(a_client_http);
     debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
-    if (a_client_http->timer) {
+    if (a_client_http->timer_uuid) {
         DAP_DEL_Z(a_client_http->timer->callback_arg);
-        dap_timerfd_delete_unsafe(a_client_http->timer);
+        
+        // Use cached UUID for MT-safe deletion
+        dap_worker_t *l_timer_worker = a_client_http->timer ? a_client_http->timer->events_socket->worker : NULL;
+        dap_worker_t *l_current_worker = dap_worker_get_current();
+        
+        if (l_timer_worker && l_timer_worker == l_current_worker) {
+            // Same worker - safe to delete directly if timer still exists
+            if (a_client_http->timer) {
+                dap_timerfd_delete_unsafe(a_client_http->timer);
+            }
+        } else if (l_timer_worker) {
+            // Different worker - use MT-safe deletion by cached UUID
+            dap_timerfd_delete_mt(l_timer_worker, a_client_http->timer_uuid);
+        }
+        a_client_http->timer = NULL;
+        a_client_http->timer_uuid = 0;
     }
     
     // Clean up response headers
@@ -1822,6 +1845,8 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
         log_it(L_ERROR, "Can't run timer on worker %u for SSL connection timeout check", l_client_http->worker->id);
         return;
     }
+    // Cache UUID for MT-safe deletion
+    l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
 }
 #endif
 

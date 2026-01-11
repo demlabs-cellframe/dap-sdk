@@ -381,6 +381,160 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
 }
 
 /**
+ * @brief Calculate size for raw serialization (fields only, no header)
+ */
+size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
+                                   const dap_serialize_size_params_t *a_params,
+                                   const void *a_object,
+                                   void *a_context)
+{
+    if (!a_schema) {
+        return 0;
+    }
+    
+    size_t l_total_size = 0;
+    
+    // Calculate size of each field (no header!)
+    for (size_t i = 0; i < a_schema->field_count; i++) {
+        const dap_serialize_field_t *field = &a_schema->fields[i];
+        
+        // Check condition
+        if (a_object && !s_check_condition(field, a_object, a_context)) {
+            continue;
+        }
+        
+        size_t l_field_size = s_calc_field_size(field, a_object, a_params, i, a_context, a_schema);
+        l_total_size += l_field_size;
+    }
+    
+    return l_total_size;
+}
+
+/**
+ * @brief Serialize object to buffer WITHOUT metadata header (raw fields only)
+ */
+dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                   const void *a_object,
+                                                   uint8_t *a_buffer,
+                                                   size_t a_buffer_size,
+                                                   void *a_context)
+{
+    dap_serialize_result_t result = {0};
+    
+    if (!a_schema || !a_object || !a_buffer) {
+        result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+        result.error_message = "Invalid parameters";
+        return result;
+    }
+    
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
+        result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+        result.error_message = "Invalid schema magic number";
+        return result;
+    }
+    
+    // Validate object if validation function provided
+    if (a_schema->validate_func && !a_schema->validate_func(a_object)) {
+        result.error_code = DAP_SERIALIZE_ERROR_INVALID_OBJECT;
+        result.error_message = "Object validation failed";
+        return result;
+    }
+    
+    // Initialize context (NO HEADER!)
+    dap_serialize_context_t ctx = {
+        .buffer = a_buffer,
+        .buffer_size = a_buffer_size,
+        .offset = 0,
+        .version = a_schema->version,
+        .user_context = a_context,
+        .is_deserializing = false,
+        .objects_serialized = 0,
+        .bytes_processed = 0
+    };
+    
+    // Serialize each field (NO HEADER!)
+    for (size_t i = 0; i < a_schema->field_count; i++) {
+        const dap_serialize_field_t *field = &a_schema->fields[i];
+        
+        // Check if field should be included
+        if (!s_check_condition(field, a_object, a_context)) {
+            continue;
+        }
+        
+        int l_field_result = s_serialize_field(field, a_object, &ctx);
+        if (l_field_result != 0) {
+            result.error_code = l_field_result;
+            result.error_message = "Field serialization failed";
+            result.failed_field = field->name;
+            return result;
+        }
+        
+        ctx.objects_serialized++;
+    }
+    
+    result.error_code = DAP_SERIALIZE_ERROR_SUCCESS;
+    result.bytes_written = ctx.offset;
+    
+    return result;
+}
+
+/**
+ * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                     const uint8_t *a_buffer,
+                                                     size_t a_buffer_size,
+                                                     void *a_object,
+                                                     void *a_context)
+{
+    dap_serialize_result_t result = {0};
+    
+    if (!a_schema || !a_buffer || !a_object) {
+        result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+        result.error_message = "Invalid parameters";
+        return result;
+    }
+    
+    // Initialize context (NO HEADER PARSING!)
+    dap_serialize_context_t ctx = {
+        .buffer = (uint8_t*)a_buffer,
+        .buffer_size = a_buffer_size,
+        .offset = 0,
+        .version = a_schema->version,
+        .user_context = a_context,
+        .is_deserializing = true,
+        .objects_serialized = 0,
+        .bytes_processed = 0
+    };
+    
+    // Initialize object memory
+    memset(a_object, 0, a_schema->struct_size);
+    
+    // Deserialize each field (NO HEADER!)
+    for (size_t i = 0; i < a_schema->field_count; i++) {
+        const dap_serialize_field_t *field = &a_schema->fields[i];
+        
+        // Check condition (during deserialization, some conditionals might not apply)
+        // For raw deserialization, we deserialize all fields present
+        
+        int l_field_result = s_deserialize_field(field, a_object, &ctx);
+        if (l_field_result != 0) {
+            result.error_code = l_field_result;
+            result.error_message = "Field deserialization failed";
+            result.failed_field = field->name;
+            return result;
+        }
+        
+        ctx.objects_serialized++;
+    }
+    
+    result.error_code = DAP_SERIALIZE_ERROR_SUCCESS;
+    result.bytes_read = ctx.offset;
+    
+    return result;
+}
+
+/**
  * @brief Deserialize object from buffer
  */
 dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a_schema,

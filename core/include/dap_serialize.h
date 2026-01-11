@@ -264,6 +264,36 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
                                                void *a_context);
 
 /**
+ * @brief Serialize object to buffer WITHOUT metadata header (raw fields only)
+ * @details Serializes only field data without magic/version/field_count header.
+ *          Useful for network protocols where metadata is external.
+ * @param a_schema Serialization schema
+ * @param a_object Object to serialize
+ * @param a_buffer Output buffer
+ * @param a_buffer_size Buffer size
+ * @param a_context User context (optional)
+ * @return Serialization result
+ */
+dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                   const void *a_object,
+                                                   uint8_t *a_buffer,
+                                                   size_t a_buffer_size,
+                                                   void *a_context);
+
+/**
+ * @brief Calculate size for raw serialization (fields only, no header)
+ * @param a_schema Serialization schema
+ * @param a_params Size parameters (optional)
+ * @param a_object Object to calculate size for (optional)
+ * @param a_context User context (optional)
+ * @return Size in bytes, or 0 on error
+ */
+size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
+                                   const dap_serialize_size_params_t *a_params,
+                                   const void *a_object,
+                                   void *a_context);
+
+/**
  * @brief Deserialize object from buffer
  * @param a_schema Serialization schema
  * @param a_buffer Input buffer
@@ -277,6 +307,22 @@ dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a
                                                  size_t a_buffer_size,
                                                  void *a_object,
                                                  void *a_context);
+
+/**
+ * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
+ * @details Deserializes only field data, assumes no magic/version/field_count header.
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                     const uint8_t *a_buffer,
+                                                     size_t a_buffer_size,
+                                                     void *a_object,
+                                                     void *a_context);
 
 /**
  * @brief Validate serialized data
