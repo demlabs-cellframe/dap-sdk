@@ -400,23 +400,23 @@ int dap_udp_test_decrypt_and_parse_packet(
     }
     
     // Validate minimum size for internal header
-    if (l_decrypted_size < DAP_STREAM_UDP_INTERNAL_HEADER_SIZE) {
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
         log_it(L_ERROR, "Decrypted packet too small: %zu < %zu",
-               l_decrypted_size, (size_t)DAP_STREAM_UDP_INTERNAL_HEADER_SIZE);
+               l_decrypted_size, (size_t)sizeof(dap_stream_trans_udp_encrypted_header_t));
         DAP_DELETE(l_decrypted);
         return -1;
     }
     
     // Parse internal header
-    dap_stream_trans_udp_internal_header_t *l_hdr = 
-        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    dap_stream_trans_udp_encrypted_header_t *l_hdr = 
+        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
     
     *a_out_type = l_hdr->type;
     *a_out_seq_num = be32toh(l_hdr->seq_num);
     *a_out_session_id = be64toh(l_hdr->session_id);
     
     // Extract payload
-    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
     if (l_payload_size > 0) {
         *a_out_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
         if (!*a_out_payload) {
@@ -424,7 +424,7 @@ int dap_udp_test_decrypt_and_parse_packet(
             DAP_DELETE(l_decrypted);
             return -1;
         }
-        memcpy(*a_out_payload, l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE, 
+        memcpy(*a_out_payload, l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t), 
                l_payload_size);
         *a_out_payload_size = l_payload_size;
     } else {
@@ -497,7 +497,7 @@ int dap_udp_test_create_encrypted_packet(
     }
     
     // Calculate plaintext size
-    size_t l_plaintext_size = DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + a_payload_size;
+    size_t l_plaintext_size = sizeof(dap_stream_trans_udp_encrypted_header_t) + a_payload_size;
     uint8_t *l_plaintext = DAP_NEW_Z_SIZE(uint8_t, l_plaintext_size);
     if (!l_plaintext) {
         log_it(L_ERROR, "Failed to allocate plaintext buffer");
@@ -505,15 +505,15 @@ int dap_udp_test_create_encrypted_packet(
     }
     
     // Build internal header
-    dap_stream_trans_udp_internal_header_t *l_hdr = 
-        (dap_stream_trans_udp_internal_header_t*)l_plaintext;
+    dap_stream_trans_udp_encrypted_header_t *l_hdr = 
+        (dap_stream_trans_udp_encrypted_header_t*)l_plaintext;
     l_hdr->type = a_type;
     l_hdr->seq_num = htobe32(a_seq_num);
     l_hdr->session_id = htobe64(a_session_id);
     
     // Copy payload
     if (a_payload && a_payload_size > 0) {
-        memcpy(l_plaintext + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE, 
+        memcpy(l_plaintext + sizeof(dap_stream_trans_udp_encrypted_header_t), 
                a_payload, a_payload_size);
     }
     

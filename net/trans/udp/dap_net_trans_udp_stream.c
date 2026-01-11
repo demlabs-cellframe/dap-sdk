@@ -1340,22 +1340,22 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
              l_decrypted_size, l_es->buf_in_size);
     
     // Parse internal header: [type(1) + seq(4) + session_id(8) + payload]
-    if (l_decrypted_size < DAP_STREAM_UDP_INTERNAL_HEADER_SIZE) {
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
         log_it(L_ERROR, "CLIENT: decrypted packet too small (%zu < %zu)",
-               l_decrypted_size, (size_t)DAP_STREAM_UDP_INTERNAL_HEADER_SIZE);
+               l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t));
         DAP_DELETE(l_decrypted);
         return -1;
     }
     
-    dap_stream_trans_udp_internal_header_t *l_header =
-        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    const dap_stream_trans_udp_encrypted_header_t *l_header =
+        (const dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
     
     uint8_t l_type = l_header->type;
     uint32_t l_seq_num = ntohl(l_header->seq_num);
     uint64_t l_session_id = be64toh(l_header->session_id);
     
-    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
-    uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
+    uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
     
     debug_if(s_debug_more, L_DEBUG,
              "CLIENT: packet type=0x%02x, seq=%u, session=0x%lx, payload=%zu bytes",

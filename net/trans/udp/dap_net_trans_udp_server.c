@@ -46,6 +46,94 @@
 // Global debug flag
 static bool s_debug_more = false;
 
+//===================================================================
+// UDP EXTENDED FLOW CONTROL HEADER SCHEMA (dap_serialize)
+//===================================================================
+
+/**
+ * @brief UDP Extended Flow Control Header Serialization Schema
+ * 
+ * Расширяет базовую FC схему (dap_io_flow_ctrl_base_fields) с UDP-специфичными полями.
+ * Эта схема используется для (де)сериализации полного UDP заголовка.
+ * 
+ * КРИТИЧЕСКИ ВАЖНО: Вся структура шифруется целиком!
+ * DPI не видит ни одного байта этого заголовка.
+ */
+const dap_serialize_field_t g_udp_full_header_fields[] = {
+    // ===== БАЗОВЫЕ FC ПОЛЯ (наследуются от g_dap_io_flow_ctrl_base_fields) =====
+    {
+        .name = "seq_num",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, seq_num),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "ack_seq",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, ack_seq),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "timestamp_ms",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, timestamp_ms),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "fc_flags",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, fc_flags),
+        .size = sizeof(uint8_t),
+    },
+    
+    // ===== UDP-СПЕЦИФИЧНЫЕ ПОЛЯ (расширение) =====
+    {
+        .name = "type",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, type),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "session_id",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, session_id),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "legacy_seq_num",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_stream_trans_udp_full_header_t, legacy_seq_num),
+        .size = sizeof(uint32_t),
+    },
+};
+
+const size_t g_udp_full_header_field_count = 
+    sizeof(g_udp_full_header_fields) / sizeof(g_udp_full_header_fields[0]);
+
+/**
+ * @brief UDP Extended FC schema definition
+ */
+const dap_serialize_schema_t g_udp_full_header_schema = {
+    .name = "udp_full_header",
+    .version = 1,
+    .struct_size = sizeof(dap_stream_trans_udp_full_header_t),
+    .field_count = g_udp_full_header_field_count,
+    .fields = g_udp_full_header_fields,
+    .magic = DAP_STREAM_UDP_FULL_HEADER_MAGIC,
+    .validate_func = NULL,
+};
+
+//===================================================================
+// PROTOCOL SESSION STRUCTURE
+//===================================================================
+
 // Thread-local context for passing UDP server to protocol_create callback
 static _Thread_local dap_net_trans_udp_server_t *s_tls_current_server = NULL;
 
@@ -63,6 +151,10 @@ typedef struct stream_udp_session {
     
     // Flow control (reliable delivery)
     dap_io_flow_ctrl_t *flow_ctrl;      // Flow control handle (NULL if disabled)
+    
+    // Packet type tracking (for FC callbacks)
+    _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
+    _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
 } stream_udp_session_t;
 
 // Forward declarations for protocol handlers
@@ -932,39 +1024,86 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         return 0;
     }
     
-    // ALL OTHER PACKETS: Encrypt entire packet
+    // ALL OTHER PACKETS: ВСЕГДА используем новую схему (FC+UDP full_header)!
     
-    if (!a_session->encryption_key) {
-        log_it(L_ERROR, "No encryption key for sending encrypted packet (type=%u)", a_type);
+    if (!a_session->encryption_key && !a_session->flow_ctrl) {
+        log_it(L_ERROR, "No encryption key and no Flow Control for sending packet (type=%u)", a_type);
         return -4;
     }
     
-    // Build encrypted header
-    dap_stream_trans_udp_encrypted_header_t l_header;
-    l_header.type = a_type;
-    l_header.seq_num = htonl(l_seq_num);
-    l_header.session_id = htobe64(a_session->session_id);
+    int l_ret;
     
-    // Build cleartext packet (header + payload)
-    size_t l_cleartext_size = sizeof(l_header) + a_payload_size;
-    uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
-    if (!l_cleartext) {
-        log_it(L_ERROR, "Failed to allocate cleartext buffer");
+    // If Flow Control is enabled: send PURE PAYLOAD
+    // FC callback построит full_header и зашифрует
+    if (a_session->flow_ctrl) {
+        atomic_store(&a_session->last_send_type, a_type);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Sending PURE PAYLOAD to FC: type=%u, payload_size=%zu", a_type, a_payload_size);
+        
+        l_ret = dap_io_flow_ctrl_send(a_session->flow_ctrl, a_payload, a_payload_size);
+        
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Flow Control send failed (type=%u): ret=%d", a_type, l_ret);
+            return -8;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Payload sent via FC: type=%u, seq=%u, session=0x%lx",
+                 a_type, l_seq_num, a_session->session_id);
+        return 0;
+    }
+    
+    // FLOW CONTROL DISABLED: Используем ТУ ЖЕ схему (full_header), шифруем вручную
+    if (!a_session->encryption_key) {
+        log_it(L_ERROR, "No encryption key for direct send (type=%u)", a_type);
         return -5;
     }
     
-    memcpy(l_cleartext, &l_header, sizeof(l_header));
-    if (a_payload && a_payload_size > 0) {
-        memcpy(l_cleartext + sizeof(l_header), a_payload, a_payload_size);
+    // Build full header (ТА ЖЕ структура что и в FC!)
+    dap_stream_trans_udp_full_header_t l_full_hdr = {
+        .seq_num = l_seq_num,
+        .ack_seq = 0,
+        .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
+        .fc_flags = 0,
+        .type = a_type,
+        .session_id = a_session->session_id,
+        .legacy_seq_num = l_seq_num,
+    };
+    
+    // Serialize using dap_serialize
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema, &l_full_hdr, l_hdr_buffer, l_hdr_size, NULL);
+    
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to serialize full header: %s",
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+        return -6;
     }
     
-    // Encrypt entire packet
-    size_t l_encrypted_max = l_cleartext_size + 256;  // Extra space for encryption overhead
+    // Build cleartext: [serialized_header + payload]
+    size_t l_cleartext_size = l_hdr_size + a_payload_size;
+    uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
+    if (!l_cleartext) {
+        log_it(L_ERROR, "Failed to allocate cleartext buffer");
+        return -7;
+    }
+    
+    memcpy(l_cleartext, l_hdr_buffer, l_hdr_size);
+    if (a_payload && a_payload_size > 0) {
+        memcpy(l_cleartext + l_hdr_size, a_payload, a_payload_size);
+    }
+    
+    // Encrypt
+    size_t l_encrypted_max = l_cleartext_size + 256;
     uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
     if (!l_encrypted) {
         log_it(L_ERROR, "Failed to allocate encryption buffer");
         DAP_DELETE(l_cleartext);
-        return -6;
+        return -8;
     }
     
     size_t l_encrypted_size = dap_enc_code(a_session->encryption_key,
@@ -977,42 +1116,20 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     if (l_encrypted_size == 0) {
         log_it(L_ERROR, "Failed to encrypt packet (type=%u)", a_type);
         DAP_DELETE(l_encrypted);
-        return -7;
+        return -9;
     }
     
-    // Send encrypted blob (no headers, no magic, just encrypted data)
-    // 
-    // If Flow Control is enabled: use flow control layer (adds sequence, ACK, retransmission)
-    // Otherwise: send directly via UDP
+    // Send
+    debug_if(s_debug_more, L_DEBUG,
+             "Sending ENCRYPTED (FC disabled): type=%u, size=%zu", a_type, l_encrypted_size);
     
-    int l_ret;
-    
-    if (a_session->flow_ctrl) {
-        // FLOW CONTROL ENABLED: Use flow control for reliable delivery
-        debug_if(s_debug_more, L_DEBUG,
-                 "Sending packet via Flow Control: type=%u, size=%zu", a_type, l_encrypted_size);
-        
-        l_ret = dap_io_flow_ctrl_send(a_session->flow_ctrl, l_encrypted, l_encrypted_size);
-        if (l_ret != 0) {
-            log_it(L_ERROR, "Flow Control send failed (type=%u): ret=%d", a_type, l_ret);
-            DAP_DELETE(l_encrypted);
-            return -8;
-        }
-    } else {
-        // FLOW CONTROL DISABLED: Send directly via UDP
-        debug_if(s_debug_more, L_DEBUG,
-                 "Sending packet directly via UDP (Flow Control disabled): type=%u, size=%zu",
-                 a_type, l_encrypted_size);
-        
-        l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
-        if (l_ret < 0) {
-            log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_type);
-            DAP_DELETE(l_encrypted);
-            return -8;
-        }
-    }
-    
+    l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
     DAP_DELETE(l_encrypted);
+    
+    if (l_ret < 0) {
+        log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_type);
+        return -10;
+    }
     
     debug_if(s_debug_more, L_DEBUG,
              "Encrypted packet sent: type=%u, seq=%u, session=0x%lx, encrypted_size=%zu",
@@ -1495,16 +1612,25 @@ static int s_handle_close(stream_udp_session_t *a_session)
 //===================================================================
 
 /**
- * @brief Prepare packet with Flow Control header
+ * @brief Prepare packet with Flow Control header (NEW ARCHITECTURE)
  * 
- * Uses dap_serialize for proper endianness handling.
+ * КРИТИЧЕСКИ ВАЖНО: Этот callback ШИФРУЕТ весь пакет!
+ * 
+ * Архитектура:
+ * 1. Payload приходит УЖЕ в виде [UDP old header + data] (НЕ ЗАШИФРОВАН!)
+ * 2. Мы строим [FC+UDP full header]
+ * 3. Собираем: [FC+UDP full header] + [legacy UDP header + data]
+ * 4. ШИФРУЕМ весь блок
+ * 5. Возвращаем зашифрованный пакет
+ * 
+ * DPI видит: случайные байты
  * 
  * @param a_flow Flow instance
- * @param a_metadata Flow control metadata (seq_num, ack_seq, timestamp, flags)
- * @param a_payload Encrypted UDP packet
+ * @param a_metadata Flow control metadata (seq_num, ack_seq, etc)
+ * @param a_payload CLEARTEXT payload (old UDP header + data)
  * @param a_payload_size Payload size
- * @param a_packet_out [out] Allocated packet buffer
- * @param a_packet_size_out [out] Total packet size
+ * @param[out] a_packet_out ENCRYPTED packet buffer
+ * @param[out] a_packet_size_out ENCRYPTED packet size
  * @param a_arg User argument (NULL for UDP)
  * @return 0 on success, negative on error
  */
@@ -1520,73 +1646,127 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
         return -1;
     }
     
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
+    
     // Keepalive packets have no payload
     if (!a_payload) {
         a_payload_size = 0;
     }
     
-    // Prepare header structure
-    dap_stream_trans_udp_flow_header_t l_hdr = {
+    // Build full UDP header (FC fields + UDP fields)
+    // ВАЖНО: Payload содержит ЧИСТЫЙ DATA (без old_header)!
+    // Type и session_id берём из session context!
+    
+    dap_stream_trans_udp_full_header_t l_full_hdr = {
+        // FC fields
         .seq_num = a_metadata->seq_num,
         .ack_seq = a_metadata->ack_seq,
         .timestamp_ms = a_metadata->timestamp_ms,
-        .flags = 0,
-        .reserved = {0, 0, 0}
+        .fc_flags = 0,
+        
+        // UDP fields (из session context)
+        .type = atomic_load(&l_session->last_send_type),
+        .session_id = l_session->session_id,
+        .legacy_seq_num = (uint32_t)a_metadata->seq_num,  // Deprecated, но для полноты
     };
     
-    // Set flags
+    // Set FC flags
     if (a_metadata->is_keepalive) {
-        l_hdr.flags |= DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE;
+        l_full_hdr.fc_flags |= DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE;
     }
     if (a_metadata->is_retransmit) {
-        l_hdr.flags |= DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT;
+        l_full_hdr.fc_flags |= DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT;
     }
     
-    // Calculate header size
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_flow_header_t);
+    // Serialize full header to network byte order using dap_serialize
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
     
-    // Allocate packet buffer (header + payload)
-    size_t l_packet_size = l_hdr_size + a_payload_size;
-    uint8_t *l_packet = DAP_NEW_SIZE(uint8_t, l_packet_size);
-    if (!l_packet) {
-        log_it(L_ERROR, "Failed to allocate Flow Control packet (%zu bytes)", l_packet_size);
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema,
+        &l_full_hdr,
+        l_hdr_buffer,
+        l_hdr_size,
+        NULL  // no context
+    );
+    
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to serialize UDP full header: %s", 
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown error");
         return -2;
     }
     
-    // Serialize header manually (network byte order)
-    dap_stream_trans_udp_flow_header_t *l_hdr_net = (dap_stream_trans_udp_flow_header_t *)l_packet;
-    l_hdr_net->seq_num = htobe64(l_hdr.seq_num);
-    l_hdr_net->ack_seq = htobe64(l_hdr.ack_seq);
-    l_hdr_net->timestamp_ms = htonl(l_hdr.timestamp_ms);
-    l_hdr_net->flags = l_hdr.flags;
-    memcpy(l_hdr_net->reserved, l_hdr.reserved, sizeof(l_hdr.reserved));
-    
-    // Copy payload after header
-    if (a_payload_size > 0) {
-        memcpy(l_packet + l_hdr_size, a_payload, a_payload_size);
+    // Build cleartext packet: [serialized_header] + [payload]
+    size_t l_cleartext_size = l_hdr_size + a_payload_size;
+    uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
+    if (!l_cleartext) {
+        log_it(L_ERROR, "Failed to allocate cleartext buffer (%zu bytes)", l_cleartext_size);
+        return -3;
     }
     
-    *a_packet_out = l_packet;
-    *a_packet_size_out = l_packet_size;
+    memcpy(l_cleartext, l_hdr_buffer, l_hdr_size);
+    if (a_payload_size > 0) {
+        memcpy(l_cleartext + l_hdr_size, a_payload, a_payload_size);
+    }
+    
+    // ENCRYPT entire packet
+    if (!l_session->encryption_key) {
+        log_it(L_ERROR, "No encryption key for FC packet prepare");
+        DAP_DELETE(l_cleartext);
+        return -3;
+    }
+    
+    size_t l_encrypted_max = l_cleartext_size + 256;  // Encryption overhead
+    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "Failed to allocate encryption buffer");
+        DAP_DELETE(l_cleartext);
+        return -4;
+    }
+    
+    size_t l_encrypted_size = dap_enc_code(l_session->encryption_key,
+                                           l_cleartext, l_cleartext_size,
+                                           l_encrypted, l_encrypted_max,
+                                           DAP_ENC_DATA_TYPE_RAW);
+    DAP_DELETE(l_cleartext);
+    
+    if (l_encrypted_size == 0) {
+        log_it(L_ERROR, "Failed to encrypt FC packet");
+        DAP_DELETE(l_encrypted);
+        return -5;
+    }
+    
+    *a_packet_out = l_encrypted;
+    *a_packet_size_out = l_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Prepared Flow Control packet: seq=%lu, ack=%lu, flags=0x%02x, size=%zu",
-             a_metadata->seq_num, a_metadata->ack_seq, l_hdr.flags, l_packet_size);
+             "Prepared ENCRYPTED FC packet: seq=%lu, ack=%lu, type=%u, encrypted_size=%zu",
+             l_full_hdr.seq_num, l_full_hdr.ack_seq, l_full_hdr.type, l_encrypted_size);
     
     return 0;
 }
 
 /**
- * @brief Parse packet and extract Flow Control header
+ * @brief Parse packet and extract Flow Control header (NEW ARCHITECTURE)
  * 
- * Uses dap_serialize for proper endianness handling.
+ * КРИТИЧЕСКИ ВАЖНО: Этот callback ДЕШИФРУЕТ весь пакет!
+ * 
+ * Архитектура:
+ * 1. Входной a_packet - ЗАШИФРОВАННЫЙ блок
+ * 2. ДЕШИФРУЕМ его
+ * 3. Парсим [FC+UDP full header]
+ * 4. Возвращаем DECRYPTED payload
+ * 5. Metadata заполняем из FC+UDP header
+ * 
+ * ВАЖНО: Дешифрованный буфер НЕ освобождается здесь!
+ * Он передаётся через a_payload_out и будет освобождён позже.
  * 
  * @param a_flow Flow instance
- * @param a_packet Received packet
- * @param a_packet_size Packet size
- * @param a_metadata [out] Parsed metadata
- * @param a_payload_out [out] Payload pointer (into a_packet)
- * @param a_payload_size_out [out] Payload size
+ * @param a_packet ENCRYPTED packet
+ * @param a_packet_size ENCRYPTED packet size
+ * @param a_metadata [out] Parsed metadata (FC + UDP info)
+ * @param a_payload_out [out] DECRYPTED payload pointer
+ * @param a_payload_size_out [out] DECRYPTED payload size
  * @param a_arg User argument (NULL for UDP)
  * @return 0 on success, negative on error
  */
@@ -1596,47 +1776,85 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
                                         const void **a_payload_out, size_t *a_payload_size_out,
                                         void *a_arg)
 {
-    UNUSED(a_flow);
     UNUSED(a_arg);
     
-    if (!a_packet || !a_metadata || !a_payload_out || !a_payload_size_out) {
+    if (!a_flow || !a_packet || !a_metadata || !a_payload_out || !a_payload_size_out) {
         return -1;
     }
     
-    // Calculate expected header size
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_flow_header_t);
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
     
-    if (a_packet_size < l_hdr_size) {
-        log_it(L_WARNING, "Packet too small for Flow Control header: %zu < %zu", 
-               a_packet_size, l_hdr_size);
+    // DECRYPT entire packet
+    if (!l_session->encryption_key) {
+        log_it(L_WARNING, "No encryption key for FC packet parse");
         return -2;
     }
     
-    // Deserialize header manually (network byte order)
-    const dap_stream_trans_udp_flow_header_t *l_hdr_net = 
-        (const dap_stream_trans_udp_flow_header_t *)a_packet;
+    size_t l_decrypted_max = a_packet_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
+    if (!l_decrypted) {
+        log_it(L_ERROR, "Failed to allocate decryption buffer");
+        return -3;
+    }
     
-    dap_stream_trans_udp_flow_header_t l_hdr;
-    l_hdr.seq_num = be64toh(l_hdr_net->seq_num);
-    l_hdr.ack_seq = be64toh(l_hdr_net->ack_seq);
-    l_hdr.timestamp_ms = ntohl(l_hdr_net->timestamp_ms);
-    l_hdr.flags = l_hdr_net->flags;
-    memcpy(l_hdr.reserved, l_hdr_net->reserved, sizeof(l_hdr.reserved));
+    size_t l_decrypted_size = dap_enc_decode(l_session->encryption_key,
+                                             a_packet, a_packet_size,
+                                             l_decrypted, l_decrypted_max,
+                                             DAP_ENC_DATA_TYPE_RAW);
+    if (l_decrypted_size == 0) {
+        log_it(L_ERROR, "Failed to decrypt FC packet");
+        DAP_DELETE(l_decrypted);
+        return -4;
+    }
     
-    // Fill metadata
+    // Check size
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+        log_it(L_WARNING, "Decrypted packet too small for full header: %zu < %zu",
+               l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t));
+        DAP_DELETE(l_decrypted);
+        return -5;
+    }
+    
+    // Parse full header using dap_serialize (network byte order → host)
+    dap_stream_trans_udp_full_header_t l_hdr;
+    dap_serialize_result_t l_deser_result = dap_serialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL  // no context
+    );
+    
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to deserialize UDP full header: %s",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown error");
+        DAP_DELETE(l_decrypted);
+        return -6;
+    }
+    
+    // Fill metadata (FC fields)
     a_metadata->seq_num = l_hdr.seq_num;
     a_metadata->ack_seq = l_hdr.ack_seq;
     a_metadata->timestamp_ms = l_hdr.timestamp_ms;
-    a_metadata->is_keepalive = (l_hdr.flags & DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE) != 0;
-    a_metadata->is_retransmit = (l_hdr.flags & DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT) != 0;
+    a_metadata->is_keepalive = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE) != 0;
+    a_metadata->is_retransmit = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT) != 0;
     
-    // Payload starts after header
-    *a_payload_out = (const uint8_t *)a_packet + l_hdr_size;
-    *a_payload_size_out = a_packet_size - l_hdr_size;
+    // Store UDP-specific info in session (для payload_deliver callback)
+    atomic_store(&l_session->last_recv_type, l_hdr.type);
+    
+    // Payload starts after full header
+    *a_payload_out = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
+    *a_payload_size_out = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    
+    // ВАЖНО: l_decrypted НЕ освобождаем здесь!
+    // Он содержит payload, который передаётся через *a_payload_out
+    // Освобождение произойдёт в:
+    // 1. payload_deliver callback (если обработка успешна)
+    // 2. flow_ctrl cleanup (если ошибка доставки)
     
     debug_if(s_debug_more, L_DEBUG,
-             "Parsed Flow Control packet: seq=%lu, ack=%lu, flags=0x%02x, payload_size=%zu",
-             a_metadata->seq_num, a_metadata->ack_seq, l_hdr.flags, *a_payload_size_out);
+             "Parsed DECRYPTED FC packet: seq=%lu, ack=%lu, type=%u, session=0x%lx, payload_size=%zu",
+             l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, l_hdr.session_id, *a_payload_size_out);
     
     return 0;
 }
@@ -1687,10 +1905,20 @@ static void s_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
 }
 
 /**
- * @brief Deliver in-order payload to upper layer
+ * @brief Deliver in-order payload to upper layer (NEW ARCHITECTURE)
+ * 
+ * КРИТИЧЕСКИ ВАЖНО: Payload УЖЕ ДЕШИФРОВАН в parse_cb!
+ * 
+ * Payload содержит: [старый UDP encrypted header] + [data]
+ * Но это УЖЕ расшифрованный блок!
+ * 
+ * Нам нужно:
+ * 1. Парсить старый UDP header (type, session_id)
+ * 2. Dispatch к protocol handlers
+ * 3. ОСВОБОДИТЬ буфер (выделенный в parse_cb)
  * 
  * @param a_flow Flow instance (cast to stream_udp_session_t)
- * @param a_payload Payload data (encrypted UDP packet)
+ * @param a_payload DECRYPTED payload ([old UDP header] + [data])
  * @param a_payload_size Payload size
  * @param a_arg User argument (NULL for UDP)
  * @return 0 on success
@@ -1706,12 +1934,43 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Delivering reordered payload: size=%zu", a_payload_size);
+    debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED reordered payload: size=%zu", a_payload_size);
     
-    // Process encrypted UDP packet (decrypt + dispatch to protocol handlers)
-    s_process_encrypted_udp_packet(l_session, a_payload, a_payload_size);
+    // Get type from session (stored by parse_cb)
+    uint8_t l_type = atomic_load(&l_session->last_recv_type);
     
-    return 0;
+    debug_if(s_debug_more, L_DEBUG,
+             "Delivering payload: type=%u, session=0x%lx, size=%zu",
+             l_type, l_session->session_id, a_payload_size);
+    
+    // Dispatch to protocol handlers (payload is PURE DATA, no headers!)
+    int l_ret = 0;
+    switch (l_type) {
+        case DAP_STREAM_UDP_PKT_SESSION_CREATE:
+            l_ret = s_handle_session_create(l_session, a_payload, a_payload_size);
+            break;
+        case DAP_STREAM_UDP_PKT_DATA:
+            l_ret = s_handle_data(l_session, a_payload, a_payload_size);
+            break;
+        case DAP_STREAM_UDP_PKT_KEEPALIVE:
+            l_ret = s_handle_keepalive(l_session);
+            break;
+        case DAP_STREAM_UDP_PKT_CLOSE:
+            l_ret = s_handle_close(l_session);
+            break;
+        default:
+            log_it(L_WARNING, "Unknown packet type in FC payload: %u", l_type);
+            l_ret = -3;
+            break;
+    }
+    
+    // Освобождаем буфер (выделен в parse_cb)
+    // ВАЖНО: a_payload указывает внутрь буфера (после full_header)!
+    // Начало буфера = a_payload - sizeof(full_header)
+    uint8_t *l_buffer_start = (uint8_t *)a_payload - sizeof(dap_stream_trans_udp_full_header_t);
+    DAP_DELETE(l_buffer_start);
+    
+    return l_ret;
 }
 
 /**

@@ -131,40 +131,65 @@ typedef enum dap_stream_trans_udp_pkt_type {
 } dap_stream_trans_udp_pkt_type_t;
 
 /**
- * @brief Encrypted packet payload header (13 bytes, INSIDE encrypted blob)
+ * @brief UDP Packet Structure (ENCRYPTED!)
  * 
- * This header exists ONLY inside the encrypted payload.
- * It is NEVER transmitted in plaintext.
+ * КРИТИЧЕСКИ ВАЖНО: Весь пакет ЗАШИФРОВАН целиком!
+ * DPI видит только: случайные байты переменной длины
  * 
- * Packet routing is done SOLELY by (remote_addr, remote_port).
- * No magic numbers, no version bytes, no plaintext metadata.
+ * Packet routing: ТОЛЬКО по (remote_addr, remote_port)
+ * Никаких plaintext заголовков, magic numbers, version bytes!
  * 
- * HANDSHAKE packets are the ONLY exception - they contain just
- * the raw Kyber512 public key (800 bytes) with no header.
+ * HANDSHAKE packets - исключение: obfuscated Kyber512 public key
  */
+
 /**
- * @brief Flow Control header (for reliable delivery)
+ * @brief UDP Full Header (FC + UDP, INSIDE encryption!)
  * 
- * Prepended to encrypted header when Flow Control is enabled.
- * This provides retransmission, reordering, and ACK mechanisms.
+ * Эта структура РАСШИРЯЕТ базовую Flow Control header с UDP-специфичными полями.
+ * Весь пакет шифруется целиком:
+ * 
+ * Wire format: encrypt([Full_Header] + [Payload])
+ * 
+ * Структура:
+ * - Базовые FC поля: seq_num, ack_seq, timestamp_ms, fc_flags (от dap_io_flow_ctrl_base_header_t)
+ * - UDP-специфичные: type, session_id, legacy_seq_num
+ * 
+ * Сериализация: через dap_serialize с расширенной схемой (см. ниже)
  */
-typedef struct dap_stream_trans_udp_flow_header {
-    uint64_t seq_num;       ///< Sequence number for flow control
-    uint64_t ack_seq;       ///< ACK for highest received in-order sequence
-    uint32_t timestamp_ms;  ///< Timestamp for RTT calculation
-    uint8_t flags;          ///< Flow control flags (keepalive, retransmit, etc)
-    uint8_t reserved[3];    ///< Reserved for future use
-} DAP_ALIGN_PACKED dap_stream_trans_udp_flow_header_t;
+typedef struct dap_stream_trans_udp_full_header {
+    // ===== БАЗОВЫЕ FLOW CONTROL ПОЛЯ (наследуются от dap_io_flow_ctrl_base_header_t) =====
+    uint64_t seq_num;         ///< FC: Sequence number для flow control
+    uint64_t ack_seq;         ///< FC: ACK для highest received in-order sequence
+    uint32_t timestamp_ms;    ///< FC: Timestamp для RTT calculation
+    uint8_t  fc_flags;        ///< FC: Flow control flags (keepalive, retransmit, FIN)
+    
+    // ===== UDP-СПЕЦИФИЧНЫЕ ПОЛЯ (расширение) =====
+    uint8_t  type;            ///< UDP: Packet type (HANDSHAKE, SESSION_CREATE, DATA, KEEPALIVE, CLOSE)
+    uint64_t session_id;      ///< UDP: Session ID (unique per connection)
+    uint32_t legacy_seq_num;  ///< UDP: Legacy sequence number (backward compat, deprecated)
+} DAP_ALIGN_PACKED dap_stream_trans_udp_full_header_t;
 
-// Flow control flags
-#define DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE  0x01  ///< Keep-alive packet
-#define DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT 0x04  ///< Retransmitted packet
+#define DAP_STREAM_UDP_FULL_HEADER_SIZE sizeof(dap_stream_trans_udp_full_header_t)
 
+/**
+ * @brief Serialization schemas (объявление, определение в .c файле)
+ */
+extern const dap_serialize_field_t g_udp_full_header_fields[];
+extern const size_t g_udp_full_header_field_count;
+extern const dap_serialize_schema_t g_udp_full_header_schema;
+
+#define DAP_STREAM_UDP_FULL_HEADER_MAGIC 0xFC00DA73U  ///< Magic для UDP extended FC schema
+
+/**
+ * @brief Legacy encrypted header (DEPRECATED, для backward compat)
+ * 
+ * Старая структура без Flow Control. Сохранена для совместимости.
+ * Новый код НЕ ДОЛЖЕН использовать эту структуру!
+ */
 typedef struct dap_stream_trans_udp_encrypted_header {
     uint8_t type;           ///< Packet type (dap_stream_trans_udp_pkt_type_t)
-    uint32_t seq_num;       ///< Sequence number (network byte order) - LEGACY, kept for compatibility
+    uint32_t seq_num;       ///< Sequence number (network byte order) - LEGACY
     uint64_t session_id;    ///< Session ID (network byte order)
-    // Followed by payload data
 } DAP_ALIGN_PACKED dap_stream_trans_udp_encrypted_header_t;
 
 // HANDSHAKE packet size (Kyber512 public key)
@@ -182,20 +207,6 @@ typedef struct dap_stream_trans_udp_encrypted_header {
  *       = ~1200 bytes safe payload
  */
 #define DAP_STREAM_UDP_MAX_PAYLOAD_SIZE 1200
-
-/**
- * @brief Internal encrypted header (INSIDE encrypted payload)
- * 
- * This header is part of the encrypted blob!
- * Format: [type(1) + seq_num(4) + session_id(8)] + payload
- */
-typedef struct dap_stream_trans_udp_internal_header {
-    uint8_t type;           // Packet type
-    uint32_t seq_num;       // Sequence number (network byte order)
-    uint64_t session_id;    // Session ID (network byte order)
-} DAP_ALIGN_PACKED dap_stream_trans_udp_internal_header_t;
-
-#define DAP_STREAM_UDP_INTERNAL_HEADER_SIZE sizeof(dap_stream_trans_udp_internal_header_t)
 
 /**
  * @brief UDP trans configuration

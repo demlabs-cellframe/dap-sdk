@@ -841,7 +841,7 @@ static void test_13_stream_write(void)
     // Internal header = 1 + 4 + 8 = 13 bytes
     // Encrypted size may be larger due to padding/overhead
     
-    size_t l_min_expected_size = DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size;
+    size_t l_min_expected_size = sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size;
     TEST_ASSERT((size_t)l_bytes_written >= l_min_expected_size,
                 "Packet size should be at least internal header + payload");
     
@@ -911,15 +911,15 @@ static void test_13_stream_write(void)
     log_it(L_INFO, "TEST DEBUG: dap_enc_decode returned %zu bytes", l_decrypted_size);
     
     TEST_INFO("DEBUG: l_decrypted_size=%zu, expected_min=%zu", 
-              l_decrypted_size, DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size);
+              l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size);
     
     TEST_ASSERT(l_decrypted_size > 0, "Packet decryption should succeed (returned %zu bytes)", l_decrypted_size);
     
     // NOTE: SALSA2012 stream cipher may return aligned size, not exact cleartext size
     // For now, we accept any non-zero size and validate structure instead
-    if (l_decrypted_size < DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size) {
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size) {
         TEST_INFO("⚠️  Decrypted size (%zu) is less than expected (%zu) - may be SALSA2012 alignment",
-                  l_decrypted_size, DAP_STREAM_UDP_INTERNAL_HEADER_SIZE + l_test_data_size);
+                  l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size);
     }
     
     TEST_INFO("✅ Packet decrypted: %zu bytes", l_decrypted_size);
@@ -931,8 +931,8 @@ static void test_13_stream_write(void)
     }
     
     // Parse internal header
-    dap_stream_trans_udp_internal_header_t *l_header = 
-        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    dap_stream_trans_udp_encrypted_header_t *l_header = 
+        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
     
     // Convert from network byte order
     uint32_t l_seq_num = ntohl(l_header->seq_num);
@@ -949,8 +949,8 @@ static void test_13_stream_write(void)
               l_header->type, l_seq_num, l_sess_id);
     
     // Validate payload
-    const uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
-    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
     
     TEST_ASSERT(l_payload_size == l_test_data_size,
                 "Payload size should match original data");
@@ -1057,11 +1057,11 @@ static void test_15_encrypted_internal_header(void)
     // STEP 4: Parse and validate internal header
     // ========================================================================
     
-    TEST_ASSERT(l_decrypted_size >= DAP_STREAM_UDP_INTERNAL_HEADER_SIZE,
+    TEST_ASSERT(l_decrypted_size >= sizeof(dap_stream_trans_udp_encrypted_header_t),
                 "Decrypted size should include internal header");
     
-    dap_stream_trans_udp_internal_header_t *l_header =
-        (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+    dap_stream_trans_udp_encrypted_header_t *l_header =
+        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
     
     // Convert from network byte order
     uint32_t l_seq_num = ntohl(l_header->seq_num);
@@ -1081,8 +1081,8 @@ static void test_15_encrypted_internal_header(void)
     // STEP 5: Validate payload integrity
     // ========================================================================
     
-    const uint8_t *l_decrypted_payload = l_decrypted + DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
-    size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_INTERNAL_HEADER_SIZE;
+    const uint8_t *l_decrypted_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
     
     TEST_ASSERT(l_payload_size == sizeof(l_payload),
                 "Payload size should match original");
@@ -1380,8 +1380,8 @@ static void test_17_replay_protection(void)
         );
         TEST_ASSERT(l_decrypted_size > 0, "Packet %d decryption should succeed", i + 1);
         
-        dap_stream_trans_udp_internal_header_t *l_header =
-            (dap_stream_trans_udp_internal_header_t*)l_decrypted;
+        dap_stream_trans_udp_encrypted_header_t *l_header =
+            (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
         
         // Parse internal header fields in network byte order
         uint32_t l_seq_num = ntohl(l_header->seq_num);
