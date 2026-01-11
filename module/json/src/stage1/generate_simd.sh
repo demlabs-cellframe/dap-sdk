@@ -180,7 +180,7 @@ case "${ARCH}" in
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
             "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve(void) { return svcntb(); }
 #define CHUNK_SIZE_VALUE get_chunk_size_sve()" \
-            "USE_SVE_PREDICATES=1" \
+            "USE_SVE_PREDICATES=YES" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
             "LOADU=svld1_u8" \
@@ -207,7 +207,7 @@ case "${ARCH}" in
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
             "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve2(void) { return svcntb(); }
 #define CHUNK_SIZE_VALUE get_chunk_size_sve2()" \
-            "USE_SVE_PREDICATES=1" \
+            "USE_SVE_PREDICATES=YES" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
             "LOADU=svld1_u8" \

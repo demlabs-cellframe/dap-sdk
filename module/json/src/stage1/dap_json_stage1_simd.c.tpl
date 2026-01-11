@@ -64,14 +64,14 @@
 #include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
 {{/if}}
 
-{{#if USE_SVE_PREDICATES}}
+{{#if ARCH_LOWER == "sve" || ARCH_LOWER == "sve2"}}
 // ============================================================================
 // ARM SVE/SVE2 Predicate Support
 // SVE requires predicates for all operations - create unified API via macros
 // ============================================================================
 #include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
 
-// Unified SIMD operation macros for SVE
+// Unified SIMD operation macros for SVE/SVE2
 // Note: sve_ptrue must be created locally in each function (cannot be global)
 #define SIMD_LOAD(pg, ptr)       svld1_u8((pg), (const uint8_t *)(ptr))
 #define SIMD_SET1(val)           svdup_u8((val))
@@ -79,11 +79,12 @@
 #define SIMD_OR_PRED(pg, p1, p2) svorr_b_z((pg), (p1), (p2))
 #define SIMD_PRED_TO_VEC(pred)   svdup_u8_z((pred), 0xFF)  // Convert predicate to vector
 
-// For SVE, comparison returns predicate (svbool_t), not vector
+// For SVE/SVE2, comparison returns predicate (svbool_t), not vector
 // Store predicates directly, convert to bitmask later
 #define COMPARISON_RESULT_TYPE   svbool_t
 
-{{else}}
+{{/if}}
+{{#if ARCH_LOWER != "sve" && ARCH_LOWER != "sve2"}}
 // ============================================================================
 // Non-SVE SIMD (SSE2, AVX2, AVX-512, NEON): Direct vector operations
 // ============================================================================
@@ -123,7 +124,7 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
 {
     dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = {0};
     
-{{#if USE_SVE_PREDICATES}}
+{{#if ARCH_LOWER == "sve" || ARCH_LOWER == "sve2"}}
     // ========================================================================
     // ARM SVE/SVE2: Predicate-based comparisons
     // ========================================================================
@@ -170,7 +171,8 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     bitmaps.backslash = (MASK_TYPE){{MOVEMASK_EPI8}}(backslash);
     bitmaps.structural = (MASK_TYPE){{MOVEMASK_EPI8}}(structural);
     
-{{#else}}
+{{/if}}  // ARCH_LOWER == "sve" || == "sve2"
+{{#if ARCH_LOWER != "sve" && ARCH_LOWER != "sve2"}}
     // ========================================================================
     // Non-SVE: Vector-based comparisons (SSE2, AVX2, AVX-512, NEON)
     // ========================================================================
@@ -237,7 +239,7 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     bitmaps.backslash = (MASK_TYPE){{MOVEMASK_EPI8}}(backslash);
     bitmaps.structural = (MASK_TYPE){{MOVEMASK_EPI8}}(structural);
 {{/if}}  // USE_AVX512_MASK
-{{/if}}  // USE_SVE_PREDICATES
+{{/if}}  // ARCH_LOWER != "sve" && != "sve2"
     
     return bitmaps;
 }
