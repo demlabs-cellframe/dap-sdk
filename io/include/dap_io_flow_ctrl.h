@@ -31,14 +31,20 @@
 
 /**
  * @file dap_io_flow_ctrl.h
- * @brief Flow Control for Datagram Protocols (UDP, SCTP)
+ * @brief Flow Control Mechanisms for Datagram Protocols (UDP, SCTP)
  * 
- * Provides reliable delivery over unreliable datagram protocols:
+ * Provides reliable delivery mechanisms over unreliable datagram protocols:
  * - Packet tracking and retransmission (ACK-based)
  * - Sequence tracking and reordering (out-of-order delivery)
  * - Keep-alive mechanism (connection liveness)
  * 
- * All mechanisms are optional and can be enabled/disabled dynamically via flags.
+ * ARCHITECTURE:
+ * - Flow Control provides MECHANISMS (windows, timers, tracking)
+ * - Transport protocols provide PACKET FORMAT (headers, serialization)
+ * - Separation via CALLBACKS - transport decides how to pack/unpack data
+ * 
+ * This allows each protocol (UDP, SCTP, future protocols) to use its own
+ * packet format while reusing the same flow control logic.
  */
 
 // Forward declarations
@@ -62,30 +68,121 @@ typedef enum {
 } dap_io_flow_ctrl_flags_t;
 
 /**
- * @brief Flow control packet types
- */
-typedef enum {
-    DAP_IO_FLOW_PKT_DATA            = 0x00,   ///< Regular data packet
-    DAP_IO_FLOW_PKT_KEEPALIVE       = 0x01,   ///< Keep-alive ping
-    DAP_IO_FLOW_PKT_ACK_ONLY        = 0x02,   ///< Pure ACK (no payload)
-    DAP_IO_FLOW_PKT_RETRANSMIT      = 0x04,   ///< Retransmitted packet
-} dap_io_flow_pkt_type_t;
-
-/**
- * @brief Flow control header (prepended to all packets)
+ * @brief Packet metadata for flow control
  * 
- * Size: 24 bytes (aligned)
+ * Transport protocol extracts this info from its packet format.
  */
-typedef struct dap_io_flow_header {
+typedef struct dap_io_flow_pkt_metadata {
     uint64_t seq_num;         ///< Sequence number of this packet
     uint64_t ack_seq;         ///< ACK for highest received in-order sequence
-    uint32_t timestamp_ms;    ///< Timestamp for RTT calculation
-    uint8_t flags;            ///< Packet type flags
-    uint8_t reserved[3];      ///< Reserved for future use
-} __attribute__((packed)) dap_io_flow_header_t;
+    uint32_t timestamp_ms;    ///< Timestamp for RTT calculation (optional)
+    bool is_keepalive;        ///< Is this a keep-alive packet?
+    bool is_retransmit;       ///< Is this a retransmitted packet?
+} dap_io_flow_pkt_metadata_t;
 
 /**
- * @brief Keep-alive callback
+ * @brief Callback: Prepare packet for sending
+ * 
+ * Called by flow control before sending packet. Transport should:
+ * 1. Allocate buffer for packet (header + payload)
+ * 2. Add protocol-specific header with seq_num, ack_seq, etc
+ * 3. Copy payload after header
+ * 4. Return pointer to full packet and its size
+ * 
+ * @param a_flow Flow that is sending
+ * @param a_metadata Flow control metadata (seq_num, ack_seq, etc)
+ * @param a_payload Payload data to send
+ * @param a_payload_size Payload size
+ * @param[out] a_packet_out Pointer to full packet (header + payload)
+ * @param[out] a_packet_size_out Full packet size
+ * @param a_arg User argument
+ * @return 0 on success, negative on error
+ */
+typedef int (*dap_io_flow_ctrl_packet_prepare_cb_t)(
+    dap_io_flow_t *a_flow,
+    const dap_io_flow_pkt_metadata_t *a_metadata,
+    const void *a_payload,
+    size_t a_payload_size,
+    void **a_packet_out,
+    size_t *a_packet_size_out,
+    void *a_arg);
+
+/**
+ * @brief Callback: Parse received packet
+ * 
+ * Called by flow control when packet arrives. Transport should:
+ * 1. Parse protocol-specific header
+ * 2. Extract seq_num, ack_seq, flags into metadata
+ * 3. Return pointer to payload (after header) and its size
+ * 
+ * @param a_flow Flow that received packet
+ * @param a_packet Full packet (header + payload)
+ * @param a_packet_size Full packet size
+ * @param[out] a_metadata Flow control metadata extracted from header
+ * @param[out] a_payload_out Pointer to payload (inside a_packet)
+ * @param[out] a_payload_size_out Payload size
+ * @param a_arg User argument
+ * @return 0 on success, negative on error
+ */
+typedef int (*dap_io_flow_ctrl_packet_parse_cb_t)(
+    dap_io_flow_t *a_flow,
+    const void *a_packet,
+    size_t a_packet_size,
+    dap_io_flow_pkt_metadata_t *a_metadata,
+    const void **a_payload_out,
+    size_t *a_payload_size_out,
+    void *a_arg);
+
+/**
+ * @brief Callback: Send packet to network
+ * 
+ * Called by flow control (original send + retransmits). Transport should
+ * send packet via its native send function (sendto, sctp_sendmsg, etc).
+ * 
+ * @param a_flow Flow to send on
+ * @param a_packet Packet to send (already prepared with header)
+ * @param a_packet_size Packet size
+ * @param a_arg User argument
+ * @return 0 on success, negative on error
+ */
+typedef int (*dap_io_flow_ctrl_packet_send_cb_t)(
+    dap_io_flow_t *a_flow,
+    const void *a_packet,
+    size_t a_packet_size,
+    void *a_arg);
+
+/**
+ * @brief Callback: Free packet buffer
+ * 
+ * Called by flow control to free packet allocated by prepare callback.
+ * 
+ * @param a_packet Packet buffer to free
+ * @param a_arg User argument
+ */
+typedef void (*dap_io_flow_ctrl_packet_free_cb_t)(
+    void *a_packet,
+    void *a_arg);
+
+/**
+ * @brief Callback: Deliver payload to upper layer
+ * 
+ * Called by flow control when in-order payload is ready. Transport should
+ * deliver to stream layer or application.
+ * 
+ * @param a_flow Flow that received data
+ * @param a_payload Payload data (validated and in-order)
+ * @param a_payload_size Payload size
+ * @param a_arg User argument
+ * @return 0 on success, negative on error
+ */
+typedef int (*dap_io_flow_ctrl_payload_deliver_cb_t)(
+    dap_io_flow_t *a_flow,
+    const void *a_payload,
+    size_t a_payload_size,
+    void *a_arg);
+
+/**
+ * @brief Callback: Keep-alive timeout
  * 
  * Called when keep-alive timeout expires (connection considered dead).
  * Protocol can decide what to do: close, reconnect, notify user, etc.
@@ -93,7 +190,24 @@ typedef struct dap_io_flow_header {
  * @param a_flow Flow that timed out
  * @param a_arg User argument
  */
-typedef void (*dap_io_flow_keepalive_cb_t)(dap_io_flow_t *a_flow, void *a_arg);
+typedef void (*dap_io_flow_ctrl_keepalive_timeout_cb_t)(
+    dap_io_flow_t *a_flow,
+    void *a_arg);
+
+/**
+ * @brief Flow control callbacks (transport-provided)
+ * 
+ * Transport protocol implements these to integrate with flow control.
+ */
+typedef struct dap_io_flow_ctrl_callbacks {
+    dap_io_flow_ctrl_packet_prepare_cb_t packet_prepare;     ///< Add header before send
+    dap_io_flow_ctrl_packet_parse_cb_t packet_parse;         ///< Parse header on receive
+    dap_io_flow_ctrl_packet_send_cb_t packet_send;           ///< Send to network
+    dap_io_flow_ctrl_packet_free_cb_t packet_free;           ///< Free packet buffer
+    dap_io_flow_ctrl_payload_deliver_cb_t payload_deliver;   ///< Deliver to upper layer
+    dap_io_flow_ctrl_keepalive_timeout_cb_t keepalive_timeout; ///< Keep-alive timeout
+    void *arg;                                                 ///< User argument for all callbacks
+} dap_io_flow_ctrl_callbacks_t;
 
 /**
  * @brief Configuration for flow control
@@ -111,8 +225,6 @@ typedef struct dap_io_flow_ctrl_config {
     // Keep-alive settings
     uint32_t keepalive_interval_ms;   ///< Keep-alive send interval (default: 5000ms)
     uint32_t keepalive_timeout_ms;    ///< Consider dead after this (default: 15000ms)
-    dap_io_flow_keepalive_cb_t keepalive_callback;  ///< Timeout callback
-    void *keepalive_arg;              ///< User argument for callback
 } dap_io_flow_ctrl_config_t;
 
 /**
@@ -135,12 +247,14 @@ void dap_io_flow_ctrl_deinit(void);
  * @param a_flow Flow to attach control to
  * @param a_flags Initial flags (can be changed later)
  * @param a_config Configuration (NULL for defaults)
+ * @param a_callbacks Transport callbacks (required)
  * @return Opaque flow control handle, NULL on error
  */
 dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     dap_io_flow_t *a_flow,
     dap_io_flow_ctrl_flags_t a_flags,
-    const dap_io_flow_ctrl_config_t *a_config);
+    const dap_io_flow_ctrl_config_t *a_config,
+    const dap_io_flow_ctrl_callbacks_t *a_callbacks);
 
 /**
  * @brief Destroy flow control
@@ -169,35 +283,47 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
 dap_io_flow_ctrl_flags_t dap_io_flow_ctrl_get_flags(dap_io_flow_ctrl_t *a_ctrl);
 
 /**
- * @brief Send packet with flow control
+ * @brief Send payload with flow control
  * 
- * Adds flow control header, tracks for retransmission if enabled.
+ * Flow control will:
+ * 1. Call packet_prepare callback to add header
+ * 2. Track packet for retransmission if enabled
+ * 3. Call packet_send callback to send to network
  * 
  * @param a_ctrl Flow control
- * @param a_data Payload data
- * @param a_size Payload size
+ * @param a_payload Payload data (transport-specific data, no header)
+ * @param a_payload_size Payload size
  * @return 0 on success, negative on error
  */
-int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_data, size_t a_size);
+int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, size_t a_payload_size);
 
 /**
  * @brief Process received packet
  * 
- * Parses flow control header, handles ACKs, reordering, delivers to upper layer.
+ * Flow control will:
+ * 1. Call packet_parse callback to extract metadata
+ * 2. Process ACKs for sent packets
+ * 3. Handle reordering if enabled
+ * 4. Call payload_deliver callback for in-order data
  * 
  * @param a_ctrl Flow control
- * @param a_packet Received packet (with flow control header)
- * @param a_size Packet size
- * @param[out] a_payload Pointer to payload data (after header)
- * @param[out] a_payload_size Payload size
- * @return 0 on success and payload available, 1 if buffered (out-of-order), negative on error
+ * @param a_packet Received packet (with transport-specific header)
+ * @param a_packet_size Packet size
+ * @return 0 on success and delivered, 1 if buffered (out-of-order), negative on error
  */
 int dap_io_flow_ctrl_recv(
     dap_io_flow_ctrl_t *a_ctrl,
     const void *a_packet,
-    size_t a_size,
-    const void **a_payload,
-    size_t *a_payload_size);
+    size_t a_packet_size);
+
+/**
+ * @brief Update keep-alive activity
+ * 
+ * Call this when ANY packet arrives (data or keep-alive) to reset timeout.
+ * 
+ * @param a_ctrl Flow control
+ */
+void dap_io_flow_ctrl_keepalive_activity(dap_io_flow_ctrl_t *a_ctrl);
 
 /**
  * @brief Get statistics for flow control
@@ -227,4 +353,3 @@ void dap_io_flow_ctrl_get_stats(
 void dap_io_flow_ctrl_get_default_config(dap_io_flow_ctrl_config_t *a_config);
 
 #endif // DAP_IO_FLOW_CTRL_H
-
