@@ -316,9 +316,15 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
                 size_t end = dap_json_stage1_scan_literal_ref(a_stage1, chunk_pos);
                 if (end == chunk_pos) return a_stage1->error_code;
                 
+                // Determine literal type from first character
+                uint8_t lit_type = DAP_JSON_LITERAL_UNKNOWN;
+                if (c == 't') lit_type = DAP_JSON_LITERAL_TRUE;
+                else if (c == 'f') lit_type = DAP_JSON_LITERAL_FALSE;
+                else if (c == 'n') lit_type = DAP_JSON_LITERAL_NULL;
+                
                 size_t lit_len = end - chunk_pos;
                 int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, (uint32_t)lit_len,
-                                     TOKEN_TYPE_LITERAL, 0);
+                                     TOKEN_TYPE_LITERAL, lit_type);
                 if (ret != STAGE1_SUCCESS) return ret;
                 
                 a_stage1->literal_count++;
@@ -397,9 +403,15 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
             size_t end = dap_json_stage1_scan_literal_ref(a_stage1, pos);
             if (end == pos) return a_stage1->error_code;
             
+            // Determine literal type from first character
+            uint8_t lit_type = DAP_JSON_LITERAL_UNKNOWN;
+            if (c == 't') lit_type = DAP_JSON_LITERAL_TRUE;
+            else if (c == 'f') lit_type = DAP_JSON_LITERAL_FALSE;
+            else if (c == 'n') lit_type = DAP_JSON_LITERAL_NULL;
+            
             size_t lit_len = end - pos;
             int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)pos, (uint32_t)lit_len,
-                                 TOKEN_TYPE_LITERAL, 0);
+                                 TOKEN_TYPE_LITERAL, lit_type);
             if (ret != STAGE1_SUCCESS) return ret;
             
             a_stage1->literal_count++;

@@ -154,45 +154,52 @@ static bool s_test_simd_impl(
     
     size_t l_total = 0;
     size_t l_passed = 0;
+    size_t l_failed = 0;
     
     for (const char **p = s_test_inputs; *p != NULL; p++) {
         const char *l_input = *p;
         size_t l_len = strlen(l_input);
+        l_total++; // Count ALL tests, even those that error
         
         // Run reference
         dap_json_stage1_t *l_ref = dap_json_stage1_create((const uint8_t*)l_input, l_len);
         if (!l_ref) {
-            log_it(L_ERROR, "[%s] Reference init failed for: %s", a_simd_name, l_input);
+            log_it(L_ERROR, "[%s] Test #%zu FAILED: Reference init failed for: %s", a_simd_name, l_total, l_input);
+            l_failed++;
             continue;
         }
         
         int l_ref_err = dap_json_stage1_run_ref(l_ref);
         if (l_ref_err != STAGE1_SUCCESS) {
-            log_it(L_ERROR, "[%s] Reference run failed for: %s", a_simd_name, l_input);
+            log_it(L_ERROR, "[%s] Test #%zu FAILED: Reference run failed for: %s", a_simd_name, l_total, l_input);
             dap_json_stage1_free(l_ref);
+            l_failed++;
             continue;
         }
         
         // Run SIMD
         dap_json_stage1_t *l_simd = dap_json_stage1_create((const uint8_t*)l_input, l_len);
         if (!l_simd) {
-            log_it(L_ERROR, "[%s] SIMD init failed for: %s", a_simd_name, l_input);
+            log_it(L_ERROR, "[%s] Test #%zu FAILED: SIMD init failed for: %s", a_simd_name, l_total, l_input);
             dap_json_stage1_free(l_ref);
+            l_failed++;
             continue;
         }
         
         int l_simd_err = a_simd_run(l_simd);
         if (l_simd_err != STAGE1_SUCCESS) {
-            log_it(L_ERROR, "[%s] SIMD run failed for: %s (error=%d)", a_simd_name, l_input, l_simd_err);
+            log_it(L_ERROR, "[%s] Test #%zu FAILED: SIMD run failed for: %s (error=%d)", a_simd_name, l_total, l_input, l_simd_err);
             dap_json_stage1_free(l_ref);
             dap_json_stage1_free(l_simd);
+            l_failed++;
             continue;
         }
         
         // Compare
-        l_total++;
         if (s_compare_stage1_results(l_ref, l_simd, a_simd_name, l_input)) {
             l_passed++;
+        } else {
+            l_failed++;
         }
         
         // Cleanup
@@ -200,8 +207,8 @@ static bool s_test_simd_impl(
         dap_json_stage1_free(l_simd);
     }
     
-    log_it(L_INFO, "[%s] Results: %zu/%zu tests passed (%.1f%%)",
-           a_simd_name, l_passed, l_total, (100.0 * l_passed) / l_total);
+    log_it(L_INFO, "[%s] Results: %zu/%zu tests passed (%.1f%%), %zu failed",
+           a_simd_name, l_passed, l_total, (100.0 * l_passed) / l_total, l_failed);
     
     return l_passed == l_total;
 }
