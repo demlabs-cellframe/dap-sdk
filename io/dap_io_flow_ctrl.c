@@ -578,6 +578,37 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
     }
     
+    // CRITICAL: Send ACK for received data packet
+    // If retransmission is enabled, sender needs ACK to stop retransmitting!
+    if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.seq_num > 0 && !l_metadata.is_keepalive) {
+        // Prepare ACK-only packet (no payload)
+        dap_io_flow_pkt_metadata_t l_ack_metadata = {
+            .seq_num = 0,  // ACK-only packets don't need seq_num
+            .ack_seq = (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) ? a_ctrl->recv_seq_expected - 1 : l_metadata.seq_num,
+            .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
+            .is_keepalive = false,
+            .is_retransmit = false,
+        };
+        
+        void *l_ack_packet = NULL;
+        size_t l_ack_packet_size = 0;
+        int l_ack_ret = a_ctrl->callbacks.packet_prepare(a_ctrl->flow, &l_ack_metadata, NULL, 0,
+                                                          &l_ack_packet, &l_ack_packet_size, a_ctrl->callbacks.arg);
+        if (l_ack_ret == 0 && l_ack_packet) {
+            l_ack_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_ack_packet, l_ack_packet_size,
+                                                       a_ctrl->callbacks.arg);
+            a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
+            
+            if (l_ack_ret == 0) {
+                debug_if(true, L_DEBUG, "Sent ACK: ack_seq=%lu", l_ack_metadata.ack_seq);
+            } else {
+                log_it(L_WARNING, "Failed to send ACK: ret=%d", l_ack_ret);
+            }
+        } else {
+            log_it(L_WARNING, "Failed to prepare ACK packet: ret=%d", l_ack_ret);
+        }
+    }
+    
     return 0;
 }
 
