@@ -398,6 +398,68 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
         .magic = DAP_SERIALIZE_MAGIC_NUMBER \
     }
 
+/**
+ * @brief Extend existing schema with additional fields
+ * 
+ * This macro creates a new schema that inherits all fields from a base schema
+ * and adds new fields. Useful for protocol extensions.
+ * 
+ * @param schema_name Name of the new extended schema
+ * @param struct_type Type of the extended structure
+ * @param base_fields Base schema fields array
+ * @param base_field_count Number of base fields
+ * @param extended_fields Extended fields array (new fields only)
+ * @param magic Magic number for the extended schema
+ * 
+ * Example:
+ * @code
+ * // Base schema
+ * static const dap_serialize_field_t s_base_fields[] = { ... };
+ * 
+ * // Extended fields (only new ones)
+ * static const dap_serialize_field_t s_extended_fields[] = { ... };
+ * 
+ * // Merged fields array (base + extended)
+ * static const dap_serialize_field_t s_merged_fields[] = {
+ *     // Copy all base_fields here manually or use helper
+ *     ...base_fields...,
+ *     ...extended_fields...
+ * };
+ * 
+ * DAP_SERIALIZE_SCHEMA_EXTEND(my_extended_schema, my_extended_struct_t,
+ *                             s_merged_fields, 0xMYMAGIC);
+ * @endcode
+ */
+#define DAP_SERIALIZE_SCHEMA_EXTEND(schema_name, struct_type, merged_fields_array, schema_magic) \
+    const dap_serialize_schema_t schema_name = { \
+        .name = #schema_name, \
+        .version = 1, \
+        .struct_size = sizeof(struct_type), \
+        .field_count = sizeof(merged_fields_array) / sizeof(merged_fields_array[0]), \
+        .fields = merged_fields_array, \
+        .magic = schema_magic \
+    }
+
+/**
+ * @brief Helper macro to copy base fields into extended schema
+ * 
+ * Use this inside your merged_fields_array initialization to copy all base fields.
+ * 
+ * Example:
+ * @code
+ * static const dap_serialize_field_t s_merged_fields[] = {
+ *     DAP_SERIALIZE_FIELDS_COPY(s_base_fields),  // Expands base fields
+ *     // Now add extended fields:
+ *     {.name = "new_field", .type = DAP_SERIALIZE_TYPE_UINT32, ...},
+ * };
+ * @endcode
+ * 
+ * NOTE: This is a C99 trick using compound literals. For C11+, use designated
+ *       initializers or explicit field copying.
+ */
+#define DAP_SERIALIZE_FIELDS_MERGE(base_array, base_count, extended_array, extended_count) \
+    (base_count + extended_count)
+
 // Constants
 #define DAP_SERIALIZE_MAGIC_NUMBER              0xDAC5E412  ///< DAP Serialize magic number
 

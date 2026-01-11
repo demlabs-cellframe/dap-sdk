@@ -26,7 +26,8 @@
 #include "dap_net_trans.h"
 #include "dap_server.h"
 #include "dap_events_socket.h"
-#include "dap_serialize.h"  // For Flow Control header serialization
+#include "dap_serialize.h"
+#include "dap_io_flow_ctrl.h"  // For base Flow Control header
 
 /**
  * @file dap_net_trans_udp_stream.h

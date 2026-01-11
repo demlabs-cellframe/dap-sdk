@@ -24,6 +24,54 @@
 
 #define LOG_TAG "dap_io_flow_ctrl"
 
+//===================================================================
+// BASE FLOW CONTROL HEADER SCHEMA
+//===================================================================
+
+/**
+ * @brief Base Flow Control header serialization schema
+ * 
+ * Protocols can extend this schema with additional fields using
+ * DAP_SERIALIZE_SCHEMA_EXTEND() macro.
+ */
+const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[] = {
+    {
+        .name = "seq_num",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_io_flow_ctrl_base_header_t, seq_num),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "ack_seq",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_io_flow_ctrl_base_header_t, ack_seq),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "timestamp_ms",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
+        .offset = offsetof(dap_io_flow_ctrl_base_header_t, timestamp_ms),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "flags",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_io_flow_ctrl_base_header_t, flags),
+        .size = sizeof(uint8_t),
+    },
+};
+
+const size_t g_dap_io_flow_ctrl_base_field_count = 
+    sizeof(g_dap_io_flow_ctrl_base_fields) / sizeof(g_dap_io_flow_ctrl_base_fields[0]);
+
+//===================================================================
+// INTERNAL STRUCTURES
+//===================================================================
+
 // Internal structures
 
 typedef struct send_window_entry {

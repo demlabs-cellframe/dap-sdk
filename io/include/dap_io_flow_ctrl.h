@@ -28,6 +28,7 @@
 #include <pthread.h>
 #include "dap_common.h"
 #include "dap_timerfd.h"
+#include "dap_serialize.h"
 
 /**
  * @file dap_io_flow_ctrl.h
@@ -45,7 +46,53 @@
  * 
  * This allows each protocol (UDP, SCTP, future protocols) to use its own
  * packet format while reusing the same flow control logic.
+ * 
+ * PROTOCOL EXTENSION:
+ * ------------------
+ * Protocols can extend the base Flow Control header structure with additional
+ * fields using dap_serialize schema extension. Example in dap_net_trans_udp_stream.h.
  */
+
+//===================================================================
+// FLOW CONTROL BASE HEADER (extensible via dap_serialize)
+//===================================================================
+
+/**
+ * @brief Base Flow Control Header
+ * 
+ * This is the BASE structure for Flow Control. Protocols can extend it by:
+ * 1. Including these fields at the start of their struct
+ * 2. Adding protocol-specific fields after
+ * 3. Using DAP_SERIALIZE_SCHEMA_EXTEND() to merge schemas
+ * 
+ * IMPORTANT: This header MUST be placed INSIDE encrypted payload!
+ * It's part of the encrypted packet, NOT a plaintext outer header.
+ */
+typedef struct dap_io_flow_ctrl_base_header {
+    uint64_t seq_num;         ///< Sequence number of this packet
+    uint64_t ack_seq;         ///< ACK for highest received in-order sequence
+    uint32_t timestamp_ms;    ///< Timestamp for RTT calculation
+    uint8_t  flags;           ///< Flow control flags
+} DAP_ALIGN_PACKED dap_io_flow_ctrl_base_header_t;
+
+/**
+ * @brief Flow Control header flags
+ */
+#define DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE   (1 << 0)
+#define DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT  (1 << 1)
+#define DAP_IO_FLOW_CTRL_HDR_FLAG_FIN         (1 << 2)
+
+/**
+ * @brief Base Flow Control serialization schema (for extension)
+ */
+extern const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[];
+extern const size_t g_dap_io_flow_ctrl_base_field_count;
+
+#define DAP_IO_FLOW_CTRL_BASE_MAGIC   0xFC000000U
+
+//===================================================================
+// FLOW CONTROL RUNTIME (flags, config, etc)
+//===================================================================
 
 // Forward declarations
 typedef struct dap_io_flow dap_io_flow_t;
