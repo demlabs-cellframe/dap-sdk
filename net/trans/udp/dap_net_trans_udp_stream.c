@@ -1339,27 +1339,40 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
              "CLIENT: decrypted %zu bytes from %zu bytes encrypted",
              l_decrypted_size, l_es->buf_in_size);
     
-    // Parse internal header: [type(1) + seq(4) + session_id(8) + payload]
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
+    // Parse NEW full header: [FC fields + UDP fields]
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
         log_it(L_ERROR, "CLIENT: decrypted packet too small (%zu < %zu)",
-               l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t));
+               l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t));
         DAP_DELETE(l_decrypted);
         return -1;
     }
     
-    const dap_stream_trans_udp_encrypted_header_t *l_header =
-        (const dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    // Deserialize using dap_serialize
+    dap_stream_trans_udp_full_header_t l_header;
+    dap_serialize_result_t l_deser_result = dap_serialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_header,
+        NULL
+    );
     
-    uint8_t l_type = l_header->type;
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_session_id = be64toh(l_header->session_id);
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT: failed to deserialize header: %s",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return -1;
+    }
     
-    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
-    uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
+    uint8_t l_type = l_header.type;
+    uint64_t l_session_id = l_header.session_id;
+    
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: packet type=0x%02x, seq=%u, session=0x%lx, payload=%zu bytes",
-             l_type, l_seq_num, l_session_id, l_payload_size);
+             "CLIENT: packet type=0x%02x, seq_fc=%lu, session=0x%lx, payload=%zu bytes",
+             l_type, l_header.seq_num, l_session_id, l_payload_size);
     
     // Validate session_id
     if (l_udp_ctx->session_id != 0 && l_udp_ctx->session_id != l_session_id) {
