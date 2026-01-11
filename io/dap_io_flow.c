@@ -747,9 +747,75 @@ void dap_io_flow_server_get_stats(
 // =============================================================================
 
 /**
- * @brief Main read callback for flow server listeners
+ * @brief Common logic for processing incoming flow packets
+ * 
+ * Shared between UDP listener callback and queue callback.
+ * Finds or creates flow, calls protocol handler.
+ * 
+ * @param a_server Flow server
+ * @param a_data Packet data
+ * @param a_data_size Data size
+ * @param a_remote_addr Remote address
+ * @param a_listener_es REAL UDP listener socket (not queue!)
  */
-static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
+static void s_process_flow_packet_common(
+    dap_io_flow_server_t *a_server,
+    const uint8_t *a_data,
+    size_t a_data_size,
+    const struct sockaddr_storage *a_remote_addr,
+    socklen_t a_remote_addr_len,
+    dap_events_socket_t *a_listener_es)
+{
+    if (!a_server || !a_data || !a_remote_addr || !a_listener_es) {
+        return;
+    }
+    
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker) {
+        log_it(L_WARNING, "s_process_flow_packet_common: no current worker");
+        return;
+    }
+    
+    // Find or create flow
+    dap_io_flow_t *l_flow = dap_io_flow_find(a_server, a_remote_addr);
+    
+    if (!l_flow) {
+        // Create new flow
+        l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
+        
+        if (l_flow) {
+            // Add to local worker's hash table
+            memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+            l_flow->remote_addr_len = a_remote_addr_len;
+            l_flow->owner_worker_id = l_worker->id;
+            l_flow->last_activity = time(NULL);
+            l_flow->boundary_type = a_server->boundary_type;
+            
+            pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
+            HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
+                     sizeof(struct sockaddr_storage), l_flow);
+            pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
+            
+            debug_if(s_debug_more, L_DEBUG, "Created new flow for %s in worker %u",
+                     dap_io_flow_socket_addr_to_string(a_remote_addr), l_worker->id);
+        }
+    }
+    
+    // Call protocol's packet_received callback
+    if (a_server->ops->packet_received) {
+        a_server->ops->packet_received(a_server, l_flow,
+                                       a_data, a_data_size,
+                                       a_remote_addr, a_listener_es);
+    }
+}
+
+/**
+ * @brief Read callback for UDP listener sockets
+ * 
+ * Handles packets arriving directly on UDP listener.
+ * Separated from queue callback for architectural clarity.
+ */
+static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
 {
     dap_io_flow_server_t *l_server = (dap_io_flow_server_t*)a_arg;
     
@@ -757,90 +823,35 @@ static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     
-    dap_worker_t *l_worker = dap_worker_get_current();
-    
     // Process incoming data from socket
     if (a_es->buf_in_size == 0) {
         return;
     }
     
     // DEBUG: Log socket type and addr_storage details
-    log_it(L_DEBUG, "Flow server received %zu bytes on fd=%d, type=%d, addr_family=%d, addr_size=%u",
-           a_es->buf_in_size, a_es->fd, a_es->type, 
-           a_es->addr_storage.ss_family, a_es->addr_size);
-    
-    debug_if(s_debug_more, L_DEBUG, "Flow server received %zu bytes from %s",
-             a_es->buf_in_size,
+    debug_if(s_debug_more, L_DEBUG, 
+             "Listener received %zu bytes on fd=%d, type=%d, from %s",
+             a_es->buf_in_size, a_es->fd, a_es->type,
              dap_io_flow_socket_addr_to_string(&a_es->addr_storage));
     
-    // Find or create flow
-    dap_io_flow_t *l_flow = dap_io_flow_find(l_server, &a_es->addr_storage);
-    
-    if (!l_flow && l_worker) {
-        // Create new flow
-        // CRITICAL: For UDP, a_es might be a QUEUE socket (inter-worker forwarding)!
-        // We need to pass the REAL UDP listener socket, not the queue.
-        // Find the UDP listener for this worker from server's listener list.
-        dap_events_socket_t *l_real_listener = NULL;
-        
-        if (a_es->type == DESCRIPTOR_TYPE_QUEUE) {
-            // This is inter-worker forwarding via queue
-            // Find the UDP listener for the current worker
-            dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
-            while (l_listener_item) {
-                dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;
-                if (l_listener && l_listener->worker == l_worker &&
-                    (l_listener->type == DESCRIPTOR_TYPE_SOCKET_UDP || 
-                     l_listener->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)) {
-                    l_real_listener = l_listener;
-                    break;
-                }
-                l_listener_item = l_listener_item->next;
-            }
-            
-            if (!l_real_listener) {
-                log_it(L_ERROR, "Failed to find UDP listener for worker %u (a_es type=%d)",
-                       l_worker->id, a_es->type);
-                return;
-            }
-            
-            debug_if(s_debug_more, L_DEBUG, 
-                     "Inter-worker flow creation: using real listener fd=%d (type=%d) instead of queue fd=%d",
-                     l_real_listener->fd, l_real_listener->type, a_es->fd);
-        } else {
-            // Direct packet on UDP listener - use a_es as-is
-            l_real_listener = a_es;
-        }
-        
-        l_flow = l_server->ops->flow_create(l_server, &a_es->addr_storage, l_real_listener);
-        
-        if (l_flow) {
-            // Add to local worker's hash table
-            memcpy(&l_flow->remote_addr, &a_es->addr_storage, sizeof(struct sockaddr_storage));
-            l_flow->remote_addr_len = a_es->addr_size;
-            l_flow->owner_worker_id = l_worker->id;
-            l_flow->last_activity = time(NULL);
-            l_flow->boundary_type = l_server->boundary_type;
-            
-            pthread_rwlock_wrlock(&l_server->flow_locks_per_worker[l_worker->id]);
-            HASH_ADD(hh, l_server->flows_per_worker[l_worker->id], remote_addr,
-                     sizeof(struct sockaddr_storage), l_flow);
-            pthread_rwlock_unlock(&l_server->flow_locks_per_worker[l_worker->id]);
-            
-            debug_if(s_debug_more, L_DEBUG, "Created new flow for %s in worker %u",
-                     dap_io_flow_socket_addr_to_string(&a_es->addr_storage), l_worker->id);
-        }
-    }
-    
-    // Call protocol's packet_received callback
-    if (l_server->ops->packet_received) {
-        l_server->ops->packet_received(l_server, l_flow,
-                                       a_es->buf_in, a_es->buf_in_size,
-                                       &a_es->addr_storage, a_es);
-    }
+    // Process via common handler (listener_es = a_es itself)
+    s_process_flow_packet_common(l_server, a_es->buf_in, a_es->buf_in_size,
+                                  &a_es->addr_storage, a_es->addr_size, a_es);
     
     // Clear input buffer
     a_es->buf_in_size = 0;
+}
+
+/**
+ * @brief Main read callback for flow server listeners (DEPRECATED - use s_listener_read_callback)
+ * 
+ * This function is kept for backward compatibility but should not be used for new code.
+ * Use s_listener_read_callback instead.
+ */
+static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
+{
+    // Just forward to new listener callback
+    s_listener_read_callback(a_es, a_arg);
 }
 
 /**
