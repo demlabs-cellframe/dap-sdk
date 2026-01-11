@@ -38,9 +38,8 @@
 #include <string.h>
 #include <stdio.h>
 
-/* Forward declaration for AVX2 SimdJSON function */
-int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1);
-int dap_json_stage1_run_avx2_simdjson_v2(dap_json_stage1_t *a_stage1);
+/* Forward declaration for AVX2 function */
+int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1);
 
 /* ========================================================================== */
 /*                          TEST DATA                                         */
@@ -76,6 +75,12 @@ static bool s_test_correctness(const char *a_json, const char *a_description)
     
     size_t json_len = strlen(a_json);
     
+    // TEMP: Enable debug for Medium JSON
+    if (strstr(a_description, "Medium")) {
+        dap_json_set_debug(true);
+        dap_log_level_set(L_DEBUG);
+    }
+    
     // Run reference implementation
     dap_json_stage1_t *ref_stage1 = dap_json_stage1_create((const uint8_t *)a_json, json_len);
     if (!ref_stage1) {
@@ -98,9 +103,9 @@ static bool s_test_correctness(const char *a_json, const char *a_description)
         return false;
     }
     
-    int simd_result = dap_json_stage1_run_avx2_simdjson_v2(simd_stage1);
+    int simd_result = dap_json_stage1_run_avx2(simd_stage1);
     if (simd_result != STAGE1_SUCCESS) {
-        log_it(L_ERROR, "SimdJSON Stage 1 failed: error %d", simd_result);
+        log_it(L_ERROR, "AVX2 Stage 1 failed: error %d", simd_result);
         dap_json_stage1_free(ref_stage1);
         dap_json_stage1_free(simd_stage1);
         return false;
@@ -110,6 +115,23 @@ static bool s_test_correctness(const char *a_json, const char *a_description)
     if (ref_stage1->indices_count != simd_stage1->indices_count) {
         log_it(L_ERROR, "Token count mismatch: ref=%zu, simd=%zu",
                ref_stage1->indices_count, simd_stage1->indices_count);
+        
+        // Debug: Print all tokens from both parsers
+        log_it(L_DEBUG, "=== Reference tokens ===");
+        for (size_t i = 0; i < ref_stage1->indices_count && i < 20; i++) {
+            dap_json_struct_index_t *t = &ref_stage1->indices[i];
+            log_it(L_DEBUG, "  [%zu] pos=%u, len=%u, type=%d, char='%c' (0x%02X)",
+                   i, t->position, t->length, t->type, 
+                   t->character ? t->character : '?', t->character);
+        }
+        log_it(L_DEBUG, "=== SimdJSON tokens ===");
+        for (size_t i = 0; i < simd_stage1->indices_count && i < 20; i++) {
+            dap_json_struct_index_t *t = &simd_stage1->indices[i];
+            log_it(L_DEBUG, "  [%zu] pos=%u, len=%u, type=%d, char='%c' (0x%02X)",
+                   i, t->position, t->length, t->type,
+                   t->character ? t->character : '?', t->character);
+        }
+        
         dap_json_stage1_free(ref_stage1);
         dap_json_stage1_free(simd_stage1);
         return false;
@@ -120,12 +142,29 @@ static bool s_test_correctness(const char *a_json, const char *a_description)
         dap_json_struct_index_t *ref_token = &ref_stage1->indices[i];
         dap_json_struct_index_t *simd_token = &simd_stage1->indices[i];
         
-        if (ref_token->position != simd_token->position ||
+        if (ref_token->position != simd_token->position || 
             ref_token->type != simd_token->type ||
             ref_token->character != simd_token->character) {
             log_it(L_ERROR, "Token %zu mismatch: ref={pos=%u,type=%d,char='%c'}, simd={pos=%u,type=%d,char='%c'}",
                    i, ref_token->position, ref_token->type, ref_token->character,
                    simd_token->position, simd_token->type, simd_token->character);
+            
+            // Debug: Print context tokens
+            log_it(L_DEBUG, "=== Reference tokens (context) ===");
+            for (size_t j = (i > 3 ? i - 3 : 0); j < i + 4 && j < ref_stage1->indices_count; j++) {
+                dap_json_struct_index_t *t = &ref_stage1->indices[j];
+                log_it(L_DEBUG, "  [%zu]%s pos=%u, len=%u, type=%d, char='%c' (0x%02X)",
+                       j, (j == i ? " <--" : "    "), t->position, t->length, t->type,
+                       t->character ? t->character : '?', t->character);
+            }
+            log_it(L_DEBUG, "=== SimdJSON tokens (context) ===");
+            for (size_t j = (i > 3 ? i - 3 : 0); j < i + 4 && j < simd_stage1->indices_count; j++) {
+                dap_json_struct_index_t *t = &simd_stage1->indices[j];
+                log_it(L_DEBUG, "  [%zu]%s pos=%u, len=%u, type=%d, char='%c' (0x%02X)",
+                       j, (j == i ? " <--" : "    "), t->position, t->length, t->type,
+                       t->character ? t->character : '?', t->character);
+            }
+            
             dap_json_stage1_free(ref_stage1);
             dap_json_stage1_free(simd_stage1);
             return false;
@@ -191,7 +230,7 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     // Warmup (1000 iterations)
     for (int i = 0; i < 1000; i++) {
         dap_json_stage1_reset(stage1, (const uint8_t *)a_json, json_len);
-        dap_json_stage1_run_avx2_simdjson_v2(stage1);
+        dap_json_stage1_run_avx2(stage1);
     }
     
     // Time-based benchmark: run for fixed duration
@@ -202,7 +241,7 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     while (elapsed_ns < target_duration_ns) {
         // Reset parser for next iteration (simulates streaming)
         dap_json_stage1_reset(stage1, (const uint8_t *)a_json, json_len);
-        dap_json_stage1_run_avx2_simdjson_v2(stage1);
+        dap_json_stage1_run_avx2(stage1);
         
         iterations++;
         
