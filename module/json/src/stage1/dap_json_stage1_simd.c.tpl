@@ -71,6 +71,49 @@ static inline size_t get_chunk_size_{{ARCH_LOWER}}(void) {
 #include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
 {{/if}}
 
+{{#if USE_SVE_PREDICATES}}
+// ============================================================================
+// ARM SVE/SVE2 Predicate Support
+// SVE requires predicates for all operations - create unified API via macros
+// ============================================================================
+#include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
+
+// SVE: All lanes active predicate (cached for performance)
+static svbool_t s_sve_ptrue_b8;
+
+// Initialize SVE predicates (call once)
+static inline void s_init_sve_predicates_{{ARCH_LOWER}}(void) {
+    s_sve_ptrue_b8 = svptrue_b8();  // All bytes active
+}
+
+// Unified SIMD operation macros for SVE
+// These wrap SVE intrinsics to match non-SVE API signature
+#define SIMD_LOAD(ptr)           svld1_u8(s_sve_ptrue_b8, (ptr))
+#define SIMD_SET1(val)           svdup_u8((val))
+#define SIMD_CMP_EQ(a, b)        svcmpeq_u8(s_sve_ptrue_b8, (a), (b))
+#define SIMD_OR_PRED(p1, p2)     svorr_b_z(s_sve_ptrue_b8, (p1), (p2))
+#define SIMD_PRED_TO_VEC(pred)   svdup_u8_z((pred), 0xFF)  // Convert predicate to vector
+
+// For SVE, comparison returns predicate (svbool_t), not vector
+// Store predicates directly, convert to bitmask later
+#define COMPARISON_RESULT_TYPE   svbool_t
+
+{{#else}}
+// ============================================================================
+// Non-SVE SIMD (SSE2, AVX2, AVX-512, NEON): Direct vector operations
+// ============================================================================
+
+// Unified SIMD operation macros for non-SVE
+#define SIMD_LOAD(ptr)           {{LOADU}}((const VECTOR_TYPE *)(ptr))
+#define SIMD_SET1(val)           {{SET1_EPI8}}((val))
+#define SIMD_CMP_EQ(a, b)        {{CMPEQ_EPI8}}((a), (b))
+#define SIMD_OR_VEC(a, b)        {{OR}}((a), (b))
+
+// For non-SVE, comparison returns vector with 0xFF/-1 for matches
+#define COMPARISON_RESULT_TYPE   VECTOR_TYPE
+
+{{/if}}
+
 /**
  * @brief Bitmap masks for character classification
  */
@@ -94,6 +137,55 @@ __attribute__((target("{{TARGET_ATTR}}")))
 static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const uint8_t *a_chunk)
 {
     dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = {0};
+    
+{{#if USE_SVE_PREDICATES}}
+    // ========================================================================
+    // ARM SVE/SVE2: Predicate-based comparisons
+    // ========================================================================
+    
+    // Load chunk with predicate
+    VECTOR_TYPE chunk = SIMD_LOAD(a_chunk);
+    
+    // Create comparison constants
+    VECTOR_TYPE v_space = SIMD_SET1(' ');
+    VECTOR_TYPE v_tab = SIMD_SET1('\t');
+    VECTOR_TYPE v_cr = SIMD_SET1('\r');
+    VECTOR_TYPE v_lf = SIMD_SET1('\n');
+    VECTOR_TYPE v_quote = SIMD_SET1('"');
+    VECTOR_TYPE v_backslash = SIMD_SET1('\\');
+    VECTOR_TYPE v_op_brace = SIMD_SET1('{');
+    VECTOR_TYPE v_cl_brace = SIMD_SET1('}');
+    VECTOR_TYPE v_op_bracket = SIMD_SET1('[');
+    VECTOR_TYPE v_cl_bracket = SIMD_SET1(']');
+    VECTOR_TYPE v_colon = SIMD_SET1(':');
+    VECTOR_TYPE v_comma = SIMD_SET1(',');
+    
+    // SVE: Comparisons return predicates (svbool_t), OR combines predicates
+    svbool_t whitespace = SIMD_CMP_EQ(chunk, v_space);
+    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_tab));
+    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_cr));
+    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_lf));
+    
+    svbool_t quote = SIMD_CMP_EQ(chunk, v_quote);
+    svbool_t backslash = SIMD_CMP_EQ(chunk, v_backslash);
+    
+    svbool_t structural = SIMD_CMP_EQ(chunk, v_op_brace);
+    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_cl_brace));
+    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_op_bracket));
+    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_cl_bracket));
+    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_colon));
+    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_comma));
+    
+    // Convert predicates to bitmasks (arch-specific helper)
+    bitmaps.whitespace = (MASK_TYPE){{MOVEMASK_EPI8}}(whitespace);
+    bitmaps.quote = (MASK_TYPE){{MOVEMASK_EPI8}}(quote);
+    bitmaps.backslash = (MASK_TYPE){{MOVEMASK_EPI8}}(backslash);
+    bitmaps.structural = (MASK_TYPE){{MOVEMASK_EPI8}}(structural);
+    
+{{#else}}
+    // ========================================================================
+    // Non-SVE: Vector-based comparisons (SSE2, AVX2, AVX-512, NEON)
+    // ========================================================================
     
     // Load chunk
     VECTOR_TYPE chunk = {{LOADU}}((const VECTOR_TYPE *)a_chunk);
@@ -156,7 +248,8 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     bitmaps.quote = (MASK_TYPE){{MOVEMASK_EPI8}}(quote);
     bitmaps.backslash = (MASK_TYPE){{MOVEMASK_EPI8}}(backslash);
     bitmaps.structural = (MASK_TYPE){{MOVEMASK_EPI8}}(structural);
-{{/if}}
+{{/if}}  // USE_AVX512_MASK
+{{/if}}  // USE_SVE_PREDICATES
     
     return bitmaps;
 }
@@ -214,6 +307,11 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
     if (!a_stage1 || !a_stage1->input) {
         return STAGE1_ERROR_INVALID_INPUT;
     }
+    
+{{#if USE_SVE_PREDICATES}}
+    // Initialize SVE predicates (once per run)
+    s_init_sve_predicates_{{ARCH_LOWER}}();
+{{/if}}
     
     const uint8_t *input = a_stage1->input;
     const size_t input_len = a_stage1->input_len;
