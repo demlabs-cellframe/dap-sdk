@@ -48,6 +48,9 @@ generate_arch() {
     local output_h="$2"
     shift 2
     
+    # Create output directory if needed
+    mkdir -p "$(dirname "$output_c")"
+    
     # Generate .c file
     replace_template_placeholders "$TPL_C" "$output_c" "$@"
     echo "  Generated: $output_c"
@@ -55,6 +58,20 @@ generate_arch() {
     # Generate .h file
     replace_template_placeholders "$TPL_H" "$output_h" "$@"
     echo "  Generated: $output_h"
+}
+
+# Helper to generate arch-specific helper header
+generate_arch_helpers() {
+    local output_helpers_h="$1"
+    local arch_tpl="$2"
+    
+    if [ -f "$arch_tpl" ]; then
+        # Simply copy arch-specific template to output as .h file
+        cp "$arch_tpl" "$output_helpers_h"
+        echo "  Generated arch helpers: $output_helpers_h"
+    else
+        echo "  WARNING: Arch-specific template not found: $arch_tpl"
+    fi
 }
 
 # ========================================================================
@@ -147,6 +164,11 @@ case "${ARCH}" in
             "PERF_TARGET=1+ GB/s (single-core)" \
             "TARGET_ATTR=" \
             "USE_NEON_HELPER=1"
+        
+        # Generate ARM-specific arch helpers header (movemask, etc)
+        generate_arch_helpers \
+            "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
+            "${SCRIPT_DIR}/arch_specific/arm/movemask_neon.tpl"
         ;;
     
     *)

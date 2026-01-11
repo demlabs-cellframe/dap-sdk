@@ -54,32 +54,11 @@
 #define MASK_TYPE {{MASK_TYPE}}
 
 {{#if USE_NEON_HELPER}}
-/**
- * @brief NEON helper: Convert vector to bitmask (no native movemask in NEON)
- * @details Extracts MSB from each byte and packs into 16-bit mask
- * 
- * Intel _mm_movemask_epi8 semantics:
- *   Extract bit 7 (MSB) from each of 16 bytes
- *   Pack into 16-bit result: bit 0 = byte 0 MSB, bit 1 = byte 1 MSB, etc.
- * 
- * NEON doesn't have native movemask, so we use scalar extraction.
- * This is slower than x86 movemask but unavoidable on ARM.
- */
-static inline uint16_t dap_neon_movemask_u8(uint8x16_t a_input)
-{
-    // Direct scalar approach: extract each byte's MSB
-    // Store vector to array for easy access
-    uint8_t bytes[16];
-    vst1q_u8(bytes, a_input);
-    
-    uint16_t result = 0;
-    for (int i = 0; i < 16; i++) {
-        // Extract bit 7 (MSB) from each byte
-        result |= ((bytes[i] >> 7) & 1) << i;
-    }
-    
-    return result;
-}
+// ============================================================================
+// ARM NEON-specific arch helpers
+// Separate header for architecture-specific optimizations (movemask, etc)
+// ============================================================================
+#include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
 {{/if}}
 
 /**
