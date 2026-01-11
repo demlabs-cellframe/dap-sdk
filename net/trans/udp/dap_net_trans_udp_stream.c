@@ -1569,6 +1569,52 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 
     log_it(L_DEBUG, "UDP session start: session_id=%u", a_session_id);
     
+    // Get UDP context
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
+    if (!l_udp_ctx) {
+        log_it(L_ERROR, "Failed to get UDP context for session start");
+        return -2;
+    }
+    
+    // Create Flow Control for reliable delivery (client-side)
+    // NOTE: We don't have dap_io_flow_t on client, so we pass NULL as flow
+    // and use l_udp_ctx as callback arg
+    dap_io_flow_ctrl_config_t l_fc_config = {
+        .retransmit_timeout_ms = 500,   // 500ms retransmit timeout
+        .max_retransmit_count = 3,      // Max 3 retries
+        .send_window_size = 256,        // 256 packets in-flight
+        .recv_window_size = 256,        // 256 packets reorder buffer
+        .keepalive_timeout_ms = 30000,  // 30s keepalive
+    };
+    
+    dap_io_flow_ctrl_callbacks_t l_fc_callbacks = {
+        .packet_prepare = s_client_flow_ctrl_packet_prepare_cb,
+        .packet_parse = s_client_flow_ctrl_packet_parse_cb,
+        .packet_send = s_client_flow_ctrl_packet_send_cb,
+        .payload_deliver = s_client_flow_ctrl_payload_deliver_cb,
+        .packet_free = s_client_flow_ctrl_packet_free_cb,
+        .arg = l_udp_ctx,
+    };
+    
+    dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 
+                                           DAP_IO_FLOW_CTRL_REORDER;
+    // NOTE: No KEEPALIVE flag - dap_stream has its own keep-alive!
+    
+    l_udp_ctx->flow_ctrl = dap_io_flow_ctrl_create(
+        NULL,  // No dap_io_flow_t on client
+        l_fc_flags,
+        &l_fc_config,
+        &l_fc_callbacks
+    );
+    
+    if (!l_udp_ctx->flow_ctrl) {
+        log_it(L_ERROR, "Failed to create Flow Control for client UDP");
+        return -3;
+    }
+    
+    log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
+           l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
+    
     // Call callback immediately (UDP session ready)
     if (a_callback) {
         a_callback(a_stream, 0);
