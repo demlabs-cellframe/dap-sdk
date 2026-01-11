@@ -35,6 +35,7 @@
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "json.h"  // For json-c API
+#include "dap_io_flow.h"        // For dap_io_flow_t
 #include "dap_io_flow_ctrl.h"  // For Flow Control
 
 #ifdef DAP_OS_WINDOWS
@@ -199,11 +200,10 @@ static int s_client_flow_ctrl_packet_prepare_cb(
     // Serialize header into cleartext
     dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
         &g_udp_full_header_schema,
-        NULL,
         &l_hdr,
-        NULL,
         l_cleartext,
-        l_hdr_size
+        l_hdr_size,
+        NULL  // context
     );
     if (l_ser_result.error_code != 0) {
         log_it(L_ERROR, "CLIENT FC prepare: failed to serialize header: %s",
@@ -359,14 +359,21 @@ static int s_client_flow_ctrl_packet_send_cb(
     void *a_arg)
 {
     (void)a_flow;
-    dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->esocket) {
-        log_it(L_ERROR, "CLIENT FC send: invalid context or no esocket");
+    dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    if (!l_udp_ctx || !l_udp_ctx->stream) {
+        log_it(L_ERROR, "CLIENT FC send: invalid context or no stream");
+        return -1;
+    }
+    
+    // Get esocket from stream->trans_ctx (not from UDP ctx!)
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
+    if (!l_trans_ctx || !l_trans_ctx->esocket) {
+        log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
         return -1;
     }
     
     // Write to esocket's buf_out (will be sent by s_udp_client_write_callback)
-    dap_events_socket_write_unsafe(l_ctx->esocket, a_packet, a_packet_size);
+    dap_events_socket_write_unsafe(l_trans_ctx->esocket, a_packet, a_packet_size);
     
     debug_if(s_debug_more, L_DEBUG,
              "CLIENT FC send: wrote %zu bytes to esocket buf_out", a_packet_size);
@@ -377,7 +384,7 @@ static int s_client_flow_ctrl_packet_send_cb(
 /**
  * @brief Flow Control: Deliver payload (call protocol handler)
  */
-static void s_client_flow_ctrl_payload_deliver_cb(
+static int s_client_flow_ctrl_payload_deliver_cb(
     dap_io_flow_t *a_flow,
     const void *a_payload,
     size_t a_payload_size,
@@ -387,7 +394,7 @@ static void s_client_flow_ctrl_payload_deliver_cb(
     dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
     if (!l_ctx || !l_ctx->stream) {
         log_it(L_ERROR, "CLIENT FC deliver: invalid context or no stream");
-        return;
+        return -1;
     }
     
     uint8_t l_type = l_ctx->last_recv_type;
@@ -408,12 +415,12 @@ static void s_client_flow_ctrl_payload_deliver_cb(
             if (!l_trans_ctx || !l_trans_ctx->session_create_cb) {
                 debug_if(s_debug_more, L_DEBUG,
                          "CLIENT FC deliver: ignoring duplicate SESSION_CREATE");
-                return;
+                return 0;
             }
             
             if (a_payload_size != sizeof(uint64_t)) {
                 log_it(L_ERROR, "CLIENT FC deliver: invalid SESSION_CREATE size: %zu", a_payload_size);
-                return;
+                return -1;
             }
             
             // Extract KDF counter
@@ -436,7 +443,7 @@ static void s_client_flow_ctrl_payload_deliver_cb(
             
             if (!l_session_key) {
                 log_it(L_ERROR, "CLIENT FC deliver: failed to derive session key");
-                return;
+                return -1;
             }
             
             debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key established");
@@ -447,7 +454,7 @@ static void s_client_flow_ctrl_payload_deliver_cb(
                 if (!l_stream->session) {
                     log_it(L_ERROR, "CLIENT FC deliver: failed to create stream session");
                     dap_enc_key_delete(l_session_key);
-                    return;
+                    return -1;
                 }
             }
             
@@ -503,8 +510,10 @@ static void s_client_flow_ctrl_payload_deliver_cb(
         
         default:
             log_it(L_WARNING, "CLIENT FC deliver: unknown packet type 0x%02x", l_type);
-            break;
+            return -1;
     }
+    
+    return 0;
 }
 
 /**
@@ -516,6 +525,20 @@ static void s_client_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
     if (a_packet) {
         DAP_DELETE(a_packet);
     }
+}
+
+/**
+ * @brief Flow Control: Keepalive timeout callback
+ * 
+ * Called when keepalive timeout expires (no activity for keepalive_timeout_ms).
+ * For UDP client, we don't use FC keepalive - dap_stream has its own mechanism.
+ */
+static void s_client_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
+{
+    (void)a_flow;
+    (void)a_arg;
+    // Not used - dap_stream handles keepalive
+    debug_if(s_debug_more, L_DEBUG, "CLIENT FC keepalive timeout (ignored - dap_stream handles it)");
 }
 
 /**
@@ -1577,14 +1600,32 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     }
     
     // Create Flow Control for reliable delivery (client-side)
-    // NOTE: We don't have dap_io_flow_t on client, so we pass NULL as flow
-    // and use l_udp_ctx as callback arg
+    // Allocate base dap_io_flow_t for Flow Control integration
+    if (!l_udp_ctx->base) {
+        l_udp_ctx->base = DAP_NEW_Z(dap_io_flow_t);
+        if (!l_udp_ctx->base) {
+            log_it(L_ERROR, "Failed to allocate base flow for client UDP");
+            return -2;
+        }
+        
+        // Initialize base flow fields (for Flow Control)
+        memcpy(&l_udp_ctx->base->remote_addr, &l_udp_ctx->remote_addr, 
+               sizeof(l_udp_ctx->remote_addr));
+        l_udp_ctx->base->remote_addr_len = l_udp_ctx->remote_addr_len;
+        l_udp_ctx->base->last_activity = time(NULL);
+        l_udp_ctx->base->boundary_type = DAP_IO_FLOW_BOUNDARY_DATAGRAM;
+        
+        log_it(L_DEBUG, "CLIENT: Created base flow for Flow Control");
+    }
+    
     dap_io_flow_ctrl_config_t l_fc_config = {
-        .retransmit_timeout_ms = 500,   // 500ms retransmit timeout
+        .retransmit_timeout_ms = 1000,  // 1 second retransmit timeout
         .max_retransmit_count = 3,      // Max 3 retries
         .send_window_size = 256,        // 256 packets in-flight
         .recv_window_size = 256,        // 256 packets reorder buffer
-        .keepalive_timeout_ms = 30000,  // 30s keepalive
+        .max_out_of_order_delay_ms = 5000,  // 5 seconds out-of-order window
+        .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
+        .keepalive_timeout_ms = 0,      // Not used
     };
     
     dap_io_flow_ctrl_callbacks_t l_fc_callbacks = {
@@ -1593,6 +1634,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         .packet_send = s_client_flow_ctrl_packet_send_cb,
         .payload_deliver = s_client_flow_ctrl_payload_deliver_cb,
         .packet_free = s_client_flow_ctrl_packet_free_cb,
+        .keepalive_timeout = s_client_flow_ctrl_keepalive_timeout_cb,
         .arg = l_udp_ctx,
     };
     
@@ -1601,7 +1643,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     // NOTE: No KEEPALIVE flag - dap_stream has its own keep-alive!
     
     l_udp_ctx->flow_ctrl = dap_io_flow_ctrl_create(
-        NULL,  // No dap_io_flow_t on client
+        l_udp_ctx->base,  // Client flow = allocated base dap_io_flow_t
         l_fc_flags,
         &l_fc_config,
         &l_fc_callbacks
@@ -1738,8 +1780,36 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         // Continue to decrypt with session key
     }
     
-    // ENCRYPTED PACKET: Decrypt with session key (derived from Kyber!)
-    // NO obfuscation keys here - they were discarded after handshake!
+    // ENCRYPTED PACKET: Process via Flow Control OR direct (fallback)
+    
+    // FLOW CONTROL PATH (NEW): Pass encrypted packet to FC
+    if (l_udp_ctx->flow_ctrl) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: passing encrypted packet to Flow Control (%zu bytes)", l_es->buf_in_size);
+        
+        int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
+        if (l_ret != 0) {
+            log_it(L_WARNING, "CLIENT: Flow Control packet processing failed: ret=%d", l_ret);
+            dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
+            return -1;
+        }
+        
+        // Clear buffer - packet consumed by FC
+        size_t l_consumed = l_es->buf_in_size;
+        dap_events_socket_shrink_buf_in(l_es, l_consumed);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: Flow Control consumed %zu bytes", l_consumed);
+        
+        return l_consumed;
+    }
+    
+    // FALLBACK PATH (NO FLOW CONTROL): Direct decryption + processing
+    // This is for backward compatibility or if FC is disabled
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: Flow Control DISABLED - using direct processing");
+    
     if (!l_udp_ctx->handshake_key) {
         log_it(L_ERROR, "CLIENT: no session key for decrypting packet");
         return -1;
@@ -2059,7 +2129,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return l_sent;
     }
     
-    // ALL OTHER PACKETS: Build full_header + payload using NEW scheme
+    // ALL OTHER PACKETS: Send via Flow Control OR direct (fallback)
     
     debug_if(s_debug_more, L_DEBUG, "Checking encryption keys for packet type %u", a_pkt_type);
     
@@ -2068,11 +2138,39 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
     
+    // FLOW CONTROL PATH (NEW): Send via FC
+    if (l_udp_ctx->flow_ctrl) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: sending packet via Flow Control: type=%u, size=%zu", a_pkt_type, a_size);
+        
+        // Store packet type for prepare callback
+        l_udp_ctx->last_send_type = a_pkt_type;
+        
+        // Send PURE PAYLOAD via Flow Control
+        // FC will call s_client_flow_ctrl_packet_prepare_cb to add headers + encrypt
+        int l_ret = dap_io_flow_ctrl_send(l_udp_ctx->flow_ctrl, a_data, a_size);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "CLIENT: Flow Control send failed: ret=%d, type=%u", l_ret, a_pkt_type);
+            return -1;
+        }
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "CLIENT: Flow Control sent %zu bytes (type=%u)", a_size, a_pkt_type);
+        
+        return a_size;
+    }
+    
+    // FALLBACK PATH (NO FLOW CONTROL): Direct encryption + send
+    // This is for backward compatibility or if FC is disabled
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT: Flow Control DISABLED - using direct send");
+    
     // Build full UDP header (FC fields + UDP fields)
-    // NOTE: Client doesn't use Flow Control, so FC fields are zeroed
+    // NOTE: Client doesn't use Flow Control in fallback mode, so FC fields are zeroed
     dap_stream_trans_udp_full_header_t l_full_hdr = {
         .seq_num = l_udp_ctx->seq_num++,
-        .ack_seq = 0,  // No FC on client
+        .ack_seq = 0,  // No FC in fallback
         .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
         .fc_flags = 0,  // No FC flags
         .type = a_pkt_type,
@@ -2208,6 +2306,20 @@ static void s_udp_close(dap_stream_t *a_stream)
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
         log_it(L_INFO, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
+        
+        // Clean up Flow Control if present
+        if (l_udp_ctx->flow_ctrl) {
+            debug_if(s_debug_more, L_DEBUG, "Deleting client-side Flow Control");
+            dap_io_flow_ctrl_delete(l_udp_ctx->flow_ctrl);
+            l_udp_ctx->flow_ctrl = NULL;
+        }
+        
+        // Clean up base flow if present
+        if (l_udp_ctx->base) {
+            debug_if(s_debug_more, L_DEBUG, "Freeing base flow structure");
+            DAP_DELETE(l_udp_ctx->base);
+            l_udp_ctx->base = NULL;
+        }
         
         // Clean up alice_key if present
         if (l_udp_ctx->alice_key) {

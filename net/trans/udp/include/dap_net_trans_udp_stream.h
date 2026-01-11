@@ -234,6 +234,7 @@ typedef struct dap_stream_trans_udp_private {
  * This allows multiple concurrent UDP connections to share one transport.
  */
 typedef struct dap_net_trans_udp_ctx {
+    dap_io_flow_t *base;                ///< Base flow structure (for Flow Control integration, allocated separately)
     uint64_t session_id;                ///< Session ID for this stream
     uint32_t seq_num;                   ///< Sequence number for this stream
     struct sockaddr_storage remote_addr; ///< Remote peer address
