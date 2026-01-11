@@ -35,6 +35,7 @@
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "json.h"  // For json-c API
+#include "dap_io_flow_ctrl.h"  // For Flow Control
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -134,6 +135,388 @@ static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
 // Made non-static for server.c to create UDP context for server-side streams
 dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
 static int s_udp_handshake_response(dap_stream_t *a_stream, const void *a_data, size_t a_data_size);
+
+//===================================================================
+// CLIENT-SIDE FLOW CONTROL CALLBACKS
+//===================================================================
+
+/**
+ * @brief Flow Control: Prepare packet (add FC+UDP header + encrypt)
+ * 
+ * This is called by dap_io_flow_ctrl_send() to wrap the payload
+ * in a full packet with FC header + UDP header, then encrypt.
+ * 
+ * @param a_flow Flow Control instance (unused here, we use arg)
+ * @param a_metadata FC metadata (seq_num, ack_seq, etc.)
+ * @param a_payload Pure payload (no headers)
+ * @param a_payload_size Payload size
+ * @param a_packet_out [OUT] Fully prepared packet (allocated by us)
+ * @param a_packet_size_out [OUT] Total packet size
+ * @param a_arg dap_net_trans_udp_ctx_t*
+ * @return 0 on success, negative on error
+ */
+static int s_client_flow_ctrl_packet_prepare_cb(
+    dap_io_flow_t *a_flow,
+    const dap_io_flow_pkt_metadata_t *a_metadata,
+    const void *a_payload,
+    size_t a_payload_size,
+    void **a_packet_out,
+    size_t *a_packet_size_out,
+    void *a_arg)
+{
+    (void)a_flow;
+    dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    if (!l_ctx || !a_metadata) {
+        log_it(L_ERROR, "CLIENT FC prepare: invalid arguments");
+        return -1;
+    }
+    
+    // Build full UDP header (FC + UDP fields)
+    dap_stream_trans_udp_full_header_t l_hdr = {
+        .seq_num = a_metadata->seq_num,
+        .ack_seq = a_metadata->ack_seq,
+        .timestamp_ms = a_metadata->timestamp_ms,
+        .fc_flags = 0,
+        .type = l_ctx->last_send_type,  // Retrieved from context
+        .session_id = l_ctx->session_id,
+    };
+    
+    // Serialize header
+    size_t l_hdr_size = dap_serialize_calc_size_raw(&g_udp_full_header_schema, NULL, &l_hdr, NULL);
+    if (l_hdr_size == 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: failed to calc header size");
+        return -2;
+    }
+    
+    // Allocate [header + payload]
+    size_t l_cleartext_size = l_hdr_size + a_payload_size;
+    uint8_t *l_cleartext = DAP_NEW_Z_SIZE(uint8_t, l_cleartext_size);
+    if (!l_cleartext) {
+        log_it(L_ERROR, "CLIENT FC prepare: OOM for cleartext (%zu bytes)", l_cleartext_size);
+        return -3;
+    }
+    
+    // Serialize header into cleartext
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema,
+        NULL,
+        &l_hdr,
+        NULL,
+        l_cleartext,
+        l_hdr_size
+    );
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: failed to serialize header: %s",
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+        DAP_DELETE(l_cleartext);
+        return -4;
+    }
+    
+    // Copy payload after header
+    if (a_payload_size > 0) {
+        memcpy(l_cleartext + l_hdr_size, a_payload, a_payload_size);
+    }
+    
+    // ENCRYPT entire [header + payload]
+    if (!l_ctx->handshake_key) {
+        log_it(L_ERROR, "CLIENT FC prepare: no encryption key");
+        DAP_DELETE(l_cleartext);
+        return -5;
+    }
+    
+    size_t l_encrypted_size = l_cleartext_size + 256;  // Extra space for enc overhead
+    uint8_t *l_encrypted = DAP_NEW_Z_SIZE(uint8_t, l_encrypted_size);
+    if (!l_encrypted) {
+        log_it(L_ERROR, "CLIENT FC prepare: OOM for encrypted");
+        DAP_DELETE(l_cleartext);
+        return -6;
+    }
+    
+    size_t l_final_encrypted_size = dap_enc_code(
+        l_ctx->handshake_key,
+        l_cleartext,
+        l_cleartext_size,
+        l_encrypted,
+        l_encrypted_size,
+        DAP_ENC_DATA_TYPE_RAW
+    );
+    
+    DAP_DEL_Z(l_cleartext);  // Free cleartext
+    
+    if (l_final_encrypted_size == 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: encryption failed");
+        DAP_DELETE(l_encrypted);
+        return -7;
+    }
+    
+    // Return encrypted packet
+    *a_packet_out = l_encrypted;
+    *a_packet_size_out = l_final_encrypted_size;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT FC prepare: seq=%lu, ack=%lu, type=%u, payload=%zu → packet=%zu bytes",
+             a_metadata->seq_num, a_metadata->ack_seq, l_hdr.type, a_payload_size, l_final_encrypted_size);
+    
+    return 0;
+}
+
+/**
+ * @brief Flow Control: Parse packet (decrypt + extract FC+UDP header)
+ */
+static int s_client_flow_ctrl_packet_parse_cb(
+    dap_io_flow_t *a_flow,
+    const void *a_packet,
+    size_t a_packet_size,
+    dap_io_flow_pkt_metadata_t *a_metadata_out,
+    const void **a_payload_out,
+    size_t *a_payload_size_out,
+    void *a_arg)
+{
+    (void)a_flow;
+    dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    if (!l_ctx || !a_packet || !a_metadata_out) {
+        log_it(L_ERROR, "CLIENT FC parse: invalid arguments");
+        return -1;
+    }
+    
+    // DECRYPT entire packet
+    if (!l_ctx->handshake_key) {
+        log_it(L_ERROR, "CLIENT FC parse: no decryption key");
+        return -2;
+    }
+    
+    size_t l_decrypted_size = a_packet_size + 256;
+    uint8_t *l_decrypted = DAP_NEW_Z_SIZE(uint8_t, l_decrypted_size);
+    if (!l_decrypted) {
+        log_it(L_ERROR, "CLIENT FC parse: OOM for decrypted");
+        return -3;
+    }
+    
+    size_t l_final_decrypted_size = dap_enc_decode(
+        l_ctx->handshake_key,
+        a_packet,
+        a_packet_size,
+        l_decrypted,
+        l_decrypted_size,
+        DAP_ENC_DATA_TYPE_RAW
+    );
+    
+    if (l_final_decrypted_size == 0) {
+        log_it(L_ERROR, "CLIENT FC parse: decryption failed");
+        DAP_DELETE(l_decrypted);
+        return -4;
+    }
+    
+    // Deserialize full header
+    dap_stream_trans_udp_full_header_t l_hdr;
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL
+    );
+    
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "CLIENT FC parse: failed to deserialize header: %s",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return -5;
+    }
+    
+    // Fill metadata
+    a_metadata_out->seq_num = l_hdr.seq_num;
+    a_metadata_out->ack_seq = l_hdr.ack_seq;
+    a_metadata_out->timestamp_ms = l_hdr.timestamp_ms;
+    a_metadata_out->is_keepalive = (l_hdr.type == DAP_STREAM_UDP_PKT_KEEPALIVE);
+    a_metadata_out->is_retransmit = false;  // TODO: detect retransmits
+    
+    // Store type for deliver callback
+    l_ctx->last_recv_type = l_hdr.type;
+    
+    // Payload starts after header
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    *a_payload_out = l_decrypted + l_hdr_size;
+    *a_payload_size_out = (l_final_decrypted_size > l_hdr_size) ? 
+                          (l_final_decrypted_size - l_hdr_size) : 0;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT FC parse: seq=%lu, ack=%lu, type=%u, payload=%zu bytes",
+             l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, *a_payload_size_out);
+    
+    // NOTE: l_decrypted is NOT freed here! It's owned by FC and will be freed after deliver callback.
+    
+    return 0;
+}
+
+/**
+ * @brief Flow Control: Send packet (low-level send via esocket)
+ */
+static int s_client_flow_ctrl_packet_send_cb(
+    dap_io_flow_t *a_flow,
+    const void *a_packet,
+    size_t a_packet_size,
+    void *a_arg)
+{
+    (void)a_flow;
+    dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->esocket) {
+        log_it(L_ERROR, "CLIENT FC send: invalid context or no esocket");
+        return -1;
+    }
+    
+    // Write to esocket's buf_out (will be sent by s_udp_client_write_callback)
+    dap_events_socket_write_unsafe(l_ctx->esocket, a_packet, a_packet_size);
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT FC send: wrote %zu bytes to esocket buf_out", a_packet_size);
+    
+    return 0;
+}
+
+/**
+ * @brief Flow Control: Deliver payload (call protocol handler)
+ */
+static void s_client_flow_ctrl_payload_deliver_cb(
+    dap_io_flow_t *a_flow,
+    const void *a_payload,
+    size_t a_payload_size,
+    void *a_arg)
+{
+    (void)a_flow;
+    dap_net_trans_udp_ctx_t *l_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->stream) {
+        log_it(L_ERROR, "CLIENT FC deliver: invalid context or no stream");
+        return;
+    }
+    
+    uint8_t l_type = l_ctx->last_recv_type;
+    dap_stream_t *l_stream = l_ctx->stream;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "CLIENT FC deliver: type=%u, payload=%zu bytes", l_type, a_payload_size);
+    
+    // Dispatch based on packet type
+    switch (l_type) {
+        case DAP_STREAM_UDP_PKT_SESSION_CREATE: {
+            // SESSION_CREATE response
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT FC deliver: SESSION_CREATE response (%zu bytes)", a_payload_size);
+            
+            // Check if session already has session key
+            dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_stream->trans_ctx;
+            if (!l_trans_ctx || !l_trans_ctx->session_create_cb) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT FC deliver: ignoring duplicate SESSION_CREATE");
+                return;
+            }
+            
+            if (a_payload_size != sizeof(uint64_t)) {
+                log_it(L_ERROR, "CLIENT FC deliver: invalid SESSION_CREATE size: %zu", a_payload_size);
+                return;
+            }
+            
+            // Extract KDF counter
+            uint64_t l_counter_be;
+            memcpy(&l_counter_be, a_payload, sizeof(l_counter_be));
+            uint64_t l_kdf_counter = be64toh(l_counter_be);
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT FC deliver: KDF counter=%lu", l_kdf_counter);
+            
+            // Derive session key
+            dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
+                l_ctx->handshake_key,
+                DAP_ENC_KEY_TYPE_SALSA2012,
+                "udp_session",
+                11,
+                l_kdf_counter,
+                32
+            );
+            
+            if (!l_session_key) {
+                log_it(L_ERROR, "CLIENT FC deliver: failed to derive session key");
+                return;
+            }
+            
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key established");
+            
+            // Set session key in stream->session
+            if (!l_stream->session) {
+                l_stream->session = dap_stream_session_pure_new();
+                if (!l_stream->session) {
+                    log_it(L_ERROR, "CLIENT FC deliver: failed to create stream session");
+                    dap_enc_key_delete(l_session_key);
+                    return;
+                }
+            }
+            
+            if (l_stream->session->key) {
+                dap_enc_key_delete(l_stream->session->key);
+            }
+            l_stream->session->key = l_session_key;
+            l_stream->session->id = l_ctx->session_id;
+            
+            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
+            
+            // Call session_create callback
+            if (l_trans_ctx->session_create_cb) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "CLIENT FC deliver: calling session_create_cb");
+                l_trans_ctx->session_create_cb(l_stream, (uint32_t)l_ctx->session_id, NULL, 0, 0);
+                l_trans_ctx->session_create_cb = NULL;
+            }
+            
+            // Replace handshake_key with session_key
+            dap_enc_key_delete(l_ctx->handshake_key);
+            l_ctx->handshake_key = l_session_key;
+            
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_DATA: {
+            // DATA packet
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT FC deliver: DATA packet (%zu bytes)", a_payload_size);
+            
+            if (a_payload_size > 0) {
+                dap_stream_data_proc_read_ext(l_stream, (const uint8_t*)a_payload, a_payload_size);
+            }
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_KEEPALIVE: {
+            // KEEPALIVE
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: KEEPALIVE");
+            break;
+        }
+        
+        case DAP_STREAM_UDP_PKT_CLOSE: {
+            // CLOSE
+            log_it(L_INFO, "CLIENT FC deliver: CLOSE from server");
+            l_stream->is_active = false;
+            if (l_stream->trans && l_stream->trans->ops && l_stream->trans->ops->close) {
+                l_stream->trans->ops->close(l_stream);
+            }
+            break;
+        }
+        
+        default:
+            log_it(L_WARNING, "CLIENT FC deliver: unknown packet type 0x%02x", l_type);
+            break;
+    }
+}
+
+/**
+ * @brief Flow Control: Free packet callback
+ */
+static void s_client_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
+{
+    (void)a_arg;
+    if (a_packet) {
+        DAP_DELETE(a_packet);
+    }
+}
 
 /**
  * @brief UDP write callback for client esockets
