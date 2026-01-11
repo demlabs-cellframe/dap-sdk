@@ -92,7 +92,7 @@ case "${ARCH}" in
             "ARCH_NAME=SSE2" \
             "ARCH_LOWER=sse2" \
             "ARCH_INCLUDES=#include <emmintrin.h>  // SSE2" \
-            "CHUNK_SIZE=16" \
+            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
             "VECTOR_TYPE=__m128i" \
             "MASK_TYPE=uint16_t" \
             "LOADU=_mm_loadu_si128" \
@@ -111,7 +111,7 @@ case "${ARCH}" in
             "ARCH_NAME=AVX2" \
             "ARCH_LOWER=avx2" \
             "ARCH_INCLUDES=#include <immintrin.h>  // AVX2" \
-            "CHUNK_SIZE=32" \
+            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)32)" \
             "VECTOR_TYPE=__m256i" \
             "MASK_TYPE=uint32_t" \
             "LOADU=_mm256_loadu_si256" \
@@ -130,7 +130,7 @@ case "${ARCH}" in
             "ARCH_NAME=AVX-512" \
             "ARCH_LOWER=avx512" \
             "ARCH_INCLUDES=#include <immintrin.h>  // AVX-512" \
-            "CHUNK_SIZE=64" \
+            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)64)" \
             "VECTOR_TYPE=__m512i" \
             "MASK_TYPE=uint64_t" \
             "LOADU=_mm512_loadu_si512" \
@@ -153,7 +153,7 @@ case "${ARCH}" in
             "ARCH_NAME=NEON" \
             "ARCH_LOWER=neon" \
             "ARCH_INCLUDES=#include <arm_neon.h>  // ARM NEON" \
-            "CHUNK_SIZE=16" \
+            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
             "VECTOR_TYPE=uint8x16_t" \
             "MASK_TYPE=uint16_t" \
             "LOADU=vld1q_u8" \
@@ -178,8 +178,8 @@ case "${ARCH}" in
             "ARCH_NAME=SVE" \
             "ARCH_LOWER=sve" \
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
-            "CHUNK_SIZE=variable" \
-            "RUNTIME_CHUNK_SIZE=1" \
+            "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve(void) { return svcntb(); }
+#define CHUNK_SIZE_VALUE get_chunk_size_sve()" \
             "USE_SVE_PREDICATES=1" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
@@ -205,8 +205,8 @@ case "${ARCH}" in
             "ARCH_NAME=SVE2" \
             "ARCH_LOWER=sve2" \
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
-            "CHUNK_SIZE=variable" \
-            "RUNTIME_CHUNK_SIZE=1" \
+            "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve2(void) { return svcntb(); }
+#define CHUNK_SIZE_VALUE get_chunk_size_sve2()" \
             "USE_SVE_PREDICATES=1" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
