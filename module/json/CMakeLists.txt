@@ -31,7 +31,7 @@ dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_
 # This enables compile-time dispatch based on available instruction sets
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     # x86/x64 architecture
-    file(GLOB AVX2_SRCS src/stage1/arch/x86/*avx2.c)
+    file(GLOB AVX2_SRCS src/stage1/arch/x86/*avx2*.c)
     file(GLOB SSE2_SRCS src/stage1/arch/x86/*sse2.c)
     file(GLOB AVX512_SRCS src/stage1/arch/x86/*avx512.c)
     

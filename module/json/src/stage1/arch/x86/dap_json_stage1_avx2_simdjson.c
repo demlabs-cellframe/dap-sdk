@@ -235,11 +235,98 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
     
     debug_if(dap_json_get_debug(), "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
     
-    // Phase 1: Fast SIMD bitmap classification and flatten
+    // Phase 1: SIMD chunk processing - extract ALL tokens in position order
+    // Strategy: Process chunk by chunk, handle all token types sequentially within each chunk
     size_t pos = 0;
+    const size_t chunk_end = (input_len / AVX2_CHUNK_SIZE) * AVX2_CHUNK_SIZE;
     
+    // Process full 32-byte chunks with SIMD
+    while (pos < chunk_end) {
+        // Classify entire chunk in parallel (32 bytes -> bitmaps)
+        dap_json_bitmaps_t bitmaps = s_classify_chunk_avx2(input + pos);
+        
+        // Process structural characters from bitmap
+        uint32_t struct_mask = bitmaps.structural;
+        while (struct_mask) {
+            // Find next set bit (trailing zero count)
+            int bit_pos = __builtin_ctz(struct_mask);
+            size_t abs_pos = pos + bit_pos;
+            
+            // Ensure capacity
+            if (a_stage1->indices_count >= a_stage1->indices_capacity) {
+                size_t new_capacity = a_stage1->indices_capacity * 2;
+                dap_json_struct_index_t *new_indices = DAP_NEW_SIZE(dap_json_struct_index_t, 
+                                                                     new_capacity * sizeof(dap_json_struct_index_t));
+                if (!new_indices) {
+                    return STAGE1_ERROR_OUT_OF_MEMORY;
+                }
+                memcpy(new_indices, a_stage1->indices, 
+                       a_stage1->indices_count * sizeof(dap_json_struct_index_t));
+                DAP_DELETE(a_stage1->indices);
+                a_stage1->indices = new_indices;
+                a_stage1->indices_capacity = new_capacity;
+            }
+            
+            // Add structural token
+            a_stage1->indices[a_stage1->indices_count].position = (uint32_t)abs_pos;
+            a_stage1->indices[a_stage1->indices_count].length = 0;
+            a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRUCTURAL;
+            a_stage1->indices[a_stage1->indices_count].character = input[abs_pos];
+            a_stage1->indices_count++;
+            a_stage1->structural_chars++;
+            
+            // Clear lowest bit
+            struct_mask &= (struct_mask - 1);
+        }
+        
+        // Process quotes (strings) from bitmap
+        uint32_t quote_mask = bitmaps.quote;
+        while (quote_mask) {
+            int bit_pos = __builtin_ctz(quote_mask);
+            size_t abs_pos = pos + bit_pos;
+            
+            // Ensure capacity
+            if (a_stage1->indices_count >= a_stage1->indices_capacity) {
+                size_t new_capacity = a_stage1->indices_capacity * 2;
+                dap_json_struct_index_t *new_indices = DAP_NEW_SIZE(dap_json_struct_index_t, 
+                                                                     new_capacity * sizeof(dap_json_struct_index_t));
+                if (!new_indices) {
+                    return STAGE1_ERROR_OUT_OF_MEMORY;
+                }
+                memcpy(new_indices, a_stage1->indices, 
+                       a_stage1->indices_count * sizeof(dap_json_struct_index_t));
+                DAP_DELETE(a_stage1->indices);
+                a_stage1->indices = new_indices;
+                a_stage1->indices_capacity = new_capacity;
+            }
+            
+            // Scan string (use reference for now)
+            size_t end = dap_json_stage1_scan_string_ref(a_stage1, abs_pos);
+            if (end == abs_pos) {
+                return a_stage1->error_code;
+            }
+            
+            size_t str_len = end - abs_pos;
+            
+            a_stage1->indices[a_stage1->indices_count].position = (uint32_t)abs_pos;
+            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)str_len;
+            a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRING;
+            a_stage1->indices[a_stage1->indices_count].character = 0;
+            a_stage1->indices_count++;
+            a_stage1->string_count++;
+            a_stage1->string_chars += str_len;
+            
+            // Clear bit
+            quote_mask &= (quote_mask - 1);
+        }
+        
+        // Move to next chunk
+        pos += AVX2_CHUNK_SIZE;
+    }
+    
+    // Phase 2: Tail processing (< 32 bytes, sequential)
     while (pos < input_len) {
-        // Skip whitespace fast (no tokens needed)
+        // Skip whitespace
         while (pos < input_len && (input[pos] == ' ' || input[pos] == '\t' || 
                                    input[pos] == '\r' || input[pos] == '\n')) {
             pos++;
@@ -249,9 +336,6 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
         
         uint8_t c = input[pos];
         
-        // Debug logging (only if enabled)
-        debug_if(dap_json_get_debug(), "  pos=%zu, char='%c' (0x%02X)", pos, (c >= 32 && c < 127) ? c : '?', c);
-        
         // Ensure capacity
         if (a_stage1->indices_count >= a_stage1->indices_capacity) {
             size_t new_capacity = a_stage1->indices_capacity * 2;
@@ -260,7 +344,6 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
             if (!new_indices) {
                 return STAGE1_ERROR_OUT_OF_MEMORY;
             }
-            
             memcpy(new_indices, a_stage1->indices, 
                    a_stage1->indices_count * sizeof(dap_json_struct_index_t));
             DAP_DELETE(a_stage1->indices);
@@ -268,7 +351,7 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
             a_stage1->indices_capacity = new_capacity;
         }
         
-        // Structural characters
+        // Structural
         if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',') {
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
             a_stage1->indices[a_stage1->indices_count].length = 0;
@@ -278,17 +361,12 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
             a_stage1->structural_chars++;
             pos++;
         }
-        // Strings
+        // String
         else if (c == '"') {
             size_t end = dap_json_stage1_scan_string_ref(a_stage1, pos);
-            if (end == pos) {
-                return a_stage1->error_code;
-            }
+            if (end == pos) return a_stage1->error_code;
             
-            // scan_string_ref returns position AFTER closing quote
-            // Calculate string length (including quotes)
             size_t str_len = end - pos;
-            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
             a_stage1->indices[a_stage1->indices_count].length = (uint32_t)str_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRING;
@@ -296,43 +374,35 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
             a_stage1->indices_count++;
             a_stage1->string_count++;
             a_stage1->string_chars += str_len;
-            pos = end; // Position AFTER closing quote
+            pos = end;
         }
-        // Numbers (starting with digit or minus)
+        // Number
         else if (c == '-' || (c >= '0' && c <= '9')) {
             size_t end = dap_json_stage1_scan_number_ref(a_stage1, pos);
-            if (end == pos) {
-                return a_stage1->error_code;
-            }
+            if (end == pos) return a_stage1->error_code;
             
-            // scan_number_ref returns position AFTER last digit
             size_t num_len = end - pos;
-            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
             a_stage1->indices[a_stage1->indices_count].length = (uint32_t)num_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_NUMBER;
             a_stage1->indices[a_stage1->indices_count].character = 0;
             a_stage1->indices_count++;
             a_stage1->number_count++;
-            pos = end; // Position AFTER number
+            pos = end;
         }
-        // Literals (true, false, null)
+        // Literal
         else if (c == 't' || c == 'f' || c == 'n') {
             size_t end = dap_json_stage1_scan_literal_ref(a_stage1, pos);
-            if (end == pos) {
-                return a_stage1->error_code;
-            }
+            if (end == pos) return a_stage1->error_code;
             
-            // scan_literal_ref returns position AFTER literal
             size_t lit_len = end - pos;
-            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
             a_stage1->indices[a_stage1->indices_count].length = (uint32_t)lit_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_LITERAL;
             a_stage1->indices[a_stage1->indices_count].character = 0;
             a_stage1->indices_count++;
             a_stage1->literal_count++;
-            pos = end; // Position AFTER literal
+            pos = end;
         }
         else {
             a_stage1->error_code = STAGE1_ERROR_INVALID_UTF8;

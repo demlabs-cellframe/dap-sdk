@@ -40,6 +40,7 @@
 
 /* Forward declaration for AVX2 SimdJSON function */
 int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1);
+int dap_json_stage1_run_avx2_simdjson_v2(dap_json_stage1_t *a_stage1);
 
 /* ========================================================================== */
 /*                          TEST DATA                                         */
@@ -97,7 +98,7 @@ static bool s_test_correctness(const char *a_json, const char *a_description)
         return false;
     }
     
-    int simd_result = dap_json_stage1_run_avx2_simdjson(simd_stage1);
+    int simd_result = dap_json_stage1_run_avx2_simdjson_v2(simd_stage1);
     if (simd_result != STAGE1_SUCCESS) {
         log_it(L_ERROR, "SimdJSON Stage 1 failed: error %d", simd_result);
         dap_json_stage1_free(ref_stage1);
@@ -190,7 +191,7 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     // Warmup (1000 iterations)
     for (int i = 0; i < 1000; i++) {
         dap_json_stage1_reset(stage1, (const uint8_t *)a_json, json_len);
-        dap_json_stage1_run_avx2_simdjson(stage1);
+        dap_json_stage1_run_avx2_simdjson_v2(stage1);
     }
     
     // Time-based benchmark: run for fixed duration
@@ -201,7 +202,7 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     while (elapsed_ns < target_duration_ns) {
         // Reset parser for next iteration (simulates streaming)
         dap_json_stage1_reset(stage1, (const uint8_t *)a_json, json_len);
-        dap_json_stage1_run_avx2_simdjson(stage1);
+        dap_json_stage1_run_avx2_simdjson_v2(stage1);
         
         iterations++;
         
