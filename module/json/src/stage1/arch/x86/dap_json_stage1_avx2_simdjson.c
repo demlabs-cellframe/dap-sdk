@@ -231,6 +231,11 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
         
         uint8_t c = input[pos];
         
+        // Debug logging (only in debug mode, skipped in benchmarks)
+        // #ifdef DAP_DEBUG
+        // log_it(L_DEBUG, "  pos=%zu, char='%c' (0x%02X)", pos, (c >= 32 && c < 127) ? c : '?', c);
+        // #endif
+        
         // Ensure capacity
         if (a_stage1->indices_count >= a_stage1->indices_capacity) {
             size_t new_capacity = a_stage1->indices_capacity * 2;
@@ -264,14 +269,18 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
                 return a_stage1->error_code;
             }
             
+            // scan_string_ref returns position AFTER closing quote
+            // Calculate string length (including quotes)
+            size_t str_len = end - pos;
+            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
-            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)(end - pos + 1);
+            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)str_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_STRING;
             a_stage1->indices[a_stage1->indices_count].character = 0;
             a_stage1->indices_count++;
             a_stage1->string_count++;
-            a_stage1->string_chars += (end - pos + 1);
-            pos = end + 1;
+            a_stage1->string_chars += str_len;
+            pos = end; // Position AFTER closing quote
         }
         // Numbers (starting with digit or minus)
         else if (c == '-' || (c >= '0' && c <= '9')) {
@@ -280,13 +289,16 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
                 return a_stage1->error_code;
             }
             
+            // scan_number_ref returns position AFTER last digit
+            size_t num_len = end - pos;
+            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
-            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)(end - pos + 1);
+            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)num_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_NUMBER;
             a_stage1->indices[a_stage1->indices_count].character = 0;
             a_stage1->indices_count++;
             a_stage1->number_count++;
-            pos = end + 1;
+            pos = end; // Position AFTER number
         }
         // Literals (true, false, null)
         else if (c == 't' || c == 'f' || c == 'n') {
@@ -295,13 +307,16 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
                 return a_stage1->error_code;
             }
             
+            // scan_literal_ref returns position AFTER literal
+            size_t lit_len = end - pos;
+            
             a_stage1->indices[a_stage1->indices_count].position = (uint32_t)pos;
-            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)(end - pos + 1);
+            a_stage1->indices[a_stage1->indices_count].length = (uint32_t)lit_len;
             a_stage1->indices[a_stage1->indices_count].type = TOKEN_TYPE_LITERAL;
             a_stage1->indices[a_stage1->indices_count].character = 0;
             a_stage1->indices_count++;
             a_stage1->literal_count++;
-            pos = end + 1;
+            pos = end; // Position AFTER literal
         }
         else {
             a_stage1->error_code = STAGE1_ERROR_INVALID_UTF8;
