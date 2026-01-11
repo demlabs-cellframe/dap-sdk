@@ -14,9 +14,16 @@ file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
 file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
 
 # Generate SIMD implementations from templates at configure time
+# Generated files go to build directory to keep source tree clean
+set(SIMD_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/simd_gen")
+file(MAKE_DIRECTORY ${SIMD_GEN_DIR})
+
 message(STATUS "[dap_json] Generating SIMD implementations from templates...")
+message(STATUS "[dap_json] Output directory: ${SIMD_GEN_DIR}")
+
+# Update generate_simd.sh to output to build directory
 execute_process(
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1/generate_simd.sh
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1/generate_simd.sh ${SIMD_GEN_DIR}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1
     RESULT_VARIABLE CODEGEN_RESULT
     OUTPUT_VARIABLE CODEGEN_OUTPUT
@@ -28,13 +35,9 @@ else()
     message(STATUS "[dap_json] SIMD codegen completed successfully")
 endif()
 
-# Architecture-specific sources - collect based on target platform
+# Architecture-specific sources - collect from GENERATED directory in build
 set(JSON_ARCH_SRCS "")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-    file(GLOB JSON_ARCH_SRCS src/stage1/arch/x86/*.c)
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
-    file(GLOB JSON_ARCH_SRCS src/stage1/arch/arm/*.c)
-endif()
+file(GLOB JSON_ARCH_SRCS ${SIMD_GEN_DIR}/*.c)
 
 # Combine all sources
 set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_ARCH_SRCS})
@@ -97,6 +100,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
 )
+
+# Add include directory for generated SIMD headers
+target_include_directories(${PROJECT_NAME} PRIVATE ${SIMD_GEN_DIR})
 
 # Dependencies - json depends only on core (json-c REMOVED!)
 set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")

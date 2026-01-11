@@ -400,15 +400,12 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 #include "dap_json_stage1_ref.h"
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-#include "../../src/stage1/arch/x86/dap_json_stage1_sse2.h"
-#include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
-#include "../../src/stage1/arch/x86/dap_json_stage1_avx512.h"
-
-/* AVX2 SIMD implementation */
-#include "../../src/stage1/arch/x86/dap_json_stage1_avx2.h"
+#include "dap_json_stage1_sse2.h"
+#include "dap_json_stage1_avx2.h"
+#include "dap_json_stage1_avx512.h"
 
 #elif defined(__arm__) || defined(__aarch64__)
-#include "../../src/stage1/arch/arm/dap_json_stage1_neon.h"
+#include "dap_json_stage1_neon.h"
 #endif
 
 /**
