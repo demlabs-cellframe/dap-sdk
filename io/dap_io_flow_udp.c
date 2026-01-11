@@ -136,6 +136,12 @@ int dap_io_flow_udp_send(dap_io_flow_udp_t *a_flow,
     // For now, just send data as-is (protocol can add its own framing)
     
     // Send via socket
+    debug_if(s_debug_more, L_DEBUG,
+             "dap_io_flow_udp_send: BEFORE send, listener_es=%p, fd=%d, type=%u",
+             a_flow->listener_es, 
+             a_flow->listener_es ? a_flow->listener_es->fd : -1,
+             a_flow->listener_es ? (unsigned)a_flow->listener_es->type : 0);
+    
     int l_ret = dap_io_flow_socket_send_to(
         a_flow->listener_es,
         a_data,
@@ -258,6 +264,12 @@ static dap_io_flow_t* s_udp_flow_create_wrapper(dap_io_flow_server_t *a_srv,
         ? sizeof(struct sockaddr_in) 
         : sizeof(struct sockaddr_in6);
     l_udp_flow->listener_es = a_listener_es;
+    
+    // DEBUG: Log listener_es at creation
+    log_it(L_INFO, "UDP flow created: listener_es=%p, fd=%d, type=%u",
+           a_listener_es, a_listener_es ? a_listener_es->fd : -1,
+           a_listener_es ? (unsigned)a_listener_es->type : 0);
+    
     l_udp_flow->seq_num_out = 0;
     l_udp_flow->last_seq_num_in = 0;
     l_udp_flow->last_activity = time(NULL);
