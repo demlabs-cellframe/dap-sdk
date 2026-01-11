@@ -69,10 +69,11 @@ typedef enum {
     
     /* ====== ARM Architectures ====== */
     DAP_CPU_ARCH_NEON       = 5,  ///< ARM NEON (16 bytes/iteration, ARM32/64)
-    DAP_CPU_ARCH_SVE        = 6,  ///< ARM SVE (scalable vector, ARM64 future)
+    DAP_CPU_ARCH_SVE        = 6,  ///< ARM SVE (128-2048 bits variable, ARM64 v8.2+)
+    DAP_CPU_ARCH_SVE2       = 7,  ///< ARM SVE2 (enhanced SVE, ARM64 v9.0+)
     
     /* ====== Future Extensions ====== */
-    DAP_CPU_ARCH_RISC_V     = 7,  ///< RISC-V Vector Extension (future)
+    DAP_CPU_ARCH_RISC_V     = 8,  ///< RISC-V Vector Extension (future)
     
     DAP_CPU_ARCH_MAX              ///< Sentinel value, not a valid architecture
 } dap_cpu_arch_t;
@@ -114,7 +115,7 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch);
  * 
  * Priority order (highest to lowest):
  *   x86/x64: AVX-512 > AVX2 > SSE2 > Reference
- *   ARM:     SVE > NEON > Reference
+ *   ARM:     SVE2 > SVE > NEON > Reference
  */
 dap_cpu_arch_t dap_cpu_arch_get_best(void);
 

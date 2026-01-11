@@ -58,6 +58,7 @@ const char* dap_cpu_arch_get_name(dap_cpu_arch_t a_arch)
         case DAP_CPU_ARCH_AVX512:    return "AVX-512";
         case DAP_CPU_ARCH_NEON:      return "NEON";
         case DAP_CPU_ARCH_SVE:       return "SVE";
+        case DAP_CPU_ARCH_SVE2:      return "SVE2";
         case DAP_CPU_ARCH_RISC_V:    return "RISC-V";
         default:                     return "Unknown";
     }
@@ -91,6 +92,9 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch)
         case DAP_CPU_ARCH_SVE:
             return features.has_sve;
             
+        case DAP_CPU_ARCH_SVE2:
+            return features.has_sve2;
+            
         case DAP_CPU_ARCH_RISC_V:
             return false;  // Not yet implemented
             
@@ -119,7 +123,10 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void)
         return DAP_CPU_ARCH_SSE2;
     }
 #elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
-    /* ARM priority: SVE > NEON > Reference */
+    /* ARM priority: SVE2 > SVE > NEON > Reference */
+    if (features.has_sve2) {
+        return DAP_CPU_ARCH_SVE2;
+    }
     if (features.has_sve) {
         return DAP_CPU_ARCH_SVE;
     }

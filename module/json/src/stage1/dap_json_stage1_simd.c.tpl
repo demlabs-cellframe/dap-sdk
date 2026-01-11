@@ -49,7 +49,17 @@
 /*                    {{ARCH_NAME}}-SPECIFIC CONFIGURATION                    */
 /* ========================================================================== */
 
-#define CHUNK_SIZE {{CHUNK_SIZE}}
+{{#if RUNTIME_CHUNK_SIZE}}
+// SVE/SVE2: Runtime-determined vector length
+// CHUNK_SIZE is a function call that returns actual vector length
+static inline size_t get_chunk_size_{{ARCH_LOWER}}(void) {
+    return svcntb();  // SVE: Get vector length in bytes at runtime
+}
+#define CHUNK_SIZE_VALUE get_chunk_size_{{ARCH_LOWER}}()
+{{#else}}
+// Fixed vector length architectures (SSE2, AVX2, AVX-512, NEON)
+#define CHUNK_SIZE_VALUE {{CHUNK_SIZE}}
+{{/if}}
 #define VECTOR_TYPE {{VECTOR_TYPE}}
 #define MASK_TYPE {{MASK_TYPE}}
 
@@ -227,7 +237,8 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
     
     // Phase 1 & 2: SIMD-accelerated chunk processing
     size_t pos = 0;
-    const size_t chunk_end = (input_len / CHUNK_SIZE) * CHUNK_SIZE;
+    const size_t chunk_size = CHUNK_SIZE_VALUE;  // Cache for performance (const in loop)
+    const size_t chunk_end = (input_len / chunk_size) * chunk_size;
     
     while (pos < chunk_end) {
         // SIMD: Classify chunk in parallel
@@ -235,7 +246,7 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
         
         // Process chunk sequentially in position order, using bitmaps as hints
         size_t chunk_pos = pos;
-        size_t chunk_limit = pos + CHUNK_SIZE;
+        size_t chunk_limit = pos + chunk_size;
         
         // CRITICAL: Clamp chunk_limit to input_len to avoid reading beyond buffer
         if (chunk_limit > input_len) {
@@ -247,13 +258,13 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
             size_t bit_offset = chunk_pos - pos;
             
             // Fast path: Check bitmap for whitespace (skip without token)
-            if (bit_offset < CHUNK_SIZE && (bitmaps.whitespace & (((MASK_TYPE)1) << bit_offset))) {
+            if (bit_offset < chunk_size && (bitmaps.whitespace & (((MASK_TYPE)1) << bit_offset))) {
                 chunk_pos++;
                 continue;
             }
             
             // Fast path: Check bitmap for structural (add token immediately)
-            if (bit_offset < CHUNK_SIZE && (bitmaps.structural & (((MASK_TYPE)1) << bit_offset))) {
+            if (bit_offset < chunk_size && (bitmaps.structural & (((MASK_TYPE)1) << bit_offset))) {
                 int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, 0, TOKEN_TYPE_STRUCTURAL, c);
                 if (ret != STAGE1_SUCCESS) return ret;
                 a_stage1->structural_chars++;
@@ -352,7 +363,7 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
         }
     }
     
-    // Phase 3: Tail processing (< CHUNK_SIZE bytes)
+    // Phase 3: Tail processing (< chunk_size bytes)
     while (pos < input_len) {
         // Skip whitespace
         while (pos < input_len && (input[pos] == ' ' || input[pos] == '\t' ||

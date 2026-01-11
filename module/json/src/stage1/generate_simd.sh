@@ -169,6 +169,58 @@ case "${ARCH}" in
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
             "${SCRIPT_DIR}/arch_specific/arm/movemask_neon.tpl"
+        
+        echo ""
+        echo "Generating ARM SVE..."
+        generate_arch \
+            "${OUTPUT_DIR}/dap_json_stage1_sve.c" \
+            "${OUTPUT_DIR}/dap_json_stage1_sve.h" \
+            "ARCH_NAME=SVE" \
+            "ARCH_LOWER=sve" \
+            "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
+            "CHUNK_SIZE=variable" \
+            "RUNTIME_CHUNK_SIZE=1" \
+            "VECTOR_TYPE=svuint8_t" \
+            "MASK_TYPE=uint64_t" \
+            "LOADU=svld1_u8" \
+            "SET1_EPI8=svdup_u8" \
+            "CMPEQ_EPI8=svcmpeq_u8" \
+            "OR=svorr_u8_z" \
+            "MOVEMASK_EPI8=dap_sve_movemask_u8" \
+            "PERF_TARGET=2+ GB/s (single-core, scalable)" \
+            "TARGET_ATTR=+sve" \
+            "USE_SVE_HELPER=1"
+        
+        # Generate SVE-specific arch helpers header
+        generate_arch_helpers \
+            "${OUTPUT_DIR}/dap_json_stage1_sve_arch.h" \
+            "${SCRIPT_DIR}/arch_specific/arm/movemask_sve.tpl"
+        
+        echo ""
+        echo "Generating ARM SVE2..."
+        generate_arch \
+            "${OUTPUT_DIR}/dap_json_stage1_sve2.c" \
+            "${OUTPUT_DIR}/dap_json_stage1_sve2.h" \
+            "ARCH_NAME=SVE2" \
+            "ARCH_LOWER=sve2" \
+            "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
+            "CHUNK_SIZE=variable" \
+            "RUNTIME_CHUNK_SIZE=1" \
+            "VECTOR_TYPE=svuint8_t" \
+            "MASK_TYPE=uint64_t" \
+            "LOADU=svld1_u8" \
+            "SET1_EPI8=svdup_u8" \
+            "CMPEQ_EPI8=svcmpeq_u8" \
+            "OR=svorr_u8_z" \
+            "MOVEMASK_EPI8=dap_sve2_movemask_u8" \
+            "PERF_TARGET=3+ GB/s (single-core, enhanced SVE)" \
+            "TARGET_ATTR=+sve2" \
+            "USE_SVE2_HELPER=1"
+        
+        # Generate SVE2-specific arch helpers header (same as SVE for now)
+        generate_arch_helpers \
+            "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
+            "${SCRIPT_DIR}/arch_specific/arm/movemask_sve.tpl"
         ;;
     
     *)
