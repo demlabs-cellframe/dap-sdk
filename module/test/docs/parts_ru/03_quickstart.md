@@ -29,9 +29,26 @@ int main() {
 
 ```cmake
 add_executable(my_test my_test.c)
+
+# Простой способ: линковка одной библиотеки
 target_link_libraries(my_test dap_core)
+
 add_test(NAME my_test COMMAND my_test)
 ```
+
+**Шаг 2 (альтернатива):** Автоматическая линковка всех модулей SDK
+
+```cmake
+add_executable(my_test my_test.c)
+
+# Универсальный способ: автоматически линкует ВСЕ модули DAP SDK
+# + все внешние зависимости (XKCP, Kyber, SQLite, PostgreSQL и т.д.)
+dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES)
+
+add_test(NAME my_test COMMAND my_test)
+```
+
+> **Преимущество:** `dap_link_all_sdk_modules()` автоматически подключает все модули SDK и их внешние зависимости. Не нужно перечислять десятки библиотек вручную!
 
 **Шаг 3:** Соберите и запустите
 
@@ -73,6 +90,9 @@ int main() {
 ```cmake
 # Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
 target_link_libraries(my_test dap_test dap_core pthread)
+
+# Или используйте универсальный способ (автоматически подключит dap_core + все зависимости):
+# dap_link_all_sdk_modules(my_test DAP_INTERNAL_MODULES LINK_LIBRARIES dap_test)
 ```
 
 ### 2.3 Добавление моков (5 минут)
@@ -85,8 +105,8 @@ target_link_libraries(my_test dap_test dap_core pthread)
 
 #define LOG_TAG "my_test"
 
-// Объявите мок
-DAP_MOCK_DECLARE(external_api_call);
+// Объявите мок (РЕКОМЕНДУЕТСЯ: просто и чисто)
+DAP_MOCK(external_api_call);
 
 int main() {
     dap_common_init("my_test", NULL);
@@ -111,18 +131,68 @@ int main() {
 }
 ```
 
-Обновите CMakeLists.txt:
+**Обновите CMakeLists.txt:**
+
 ```cmake
-include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
-# Подключите библиотеку test-framework (включает dap_test, dap_mock и т.д.)
-target_link_libraries(my_test dap_test dap_core pthread)
+add_executable(my_test my_test.c)
 
-# Автогенерация --wrap флагов линкера
+# Шаг 1: Подключить все SDK модули как STATIC библиотеки
+dap_test_link_libraries(my_test)
+
+# Шаг 2: Добавить все необходимые include директории
+dap_test_add_includes(my_test)
+
+# Шаг 3: Включить автоматическое мокирование (сканирует исходники, оборачивает библиотеки, готово!)
 dap_mock_autowrap(my_test)
-
-# Если нужно мокировать функции в статических библиотеках:
-# dap_mock_autowrap_with_static(my_test dap_static_lib)
 ```
+
+**Что происходит автоматически:**
+1. ✅ Все SDK модули линкуются как **STATIC библиотеки** (`*_static.a`) - необходимо для `--wrap`
+2. ✅ `--wrap` флаги генерируются для всех функций с `DAP_MOCK_DECLARE`
+3. ✅ Статические библиотеки **автоматически оборачиваются** `--whole-archive`
+4. ✅ Внешние зависимости (sqlite3, json-c, ssl) подключаются транзитивно
+5. ✅ Добавляются все include директории
+
+**Почему STATIC библиотеки?**
+- `--wrap` работает только со статическими библиотеками (`.a`), НЕ с объектными файлами (`.o`)
+- Объектные файлы, слинкованные напрямую, имеют разрешённые символы - нет способа перехватить вызовы
+
+### 2.4 Универсальная настройка тестов (РЕКОМЕНДУЕТСЯ)
+
+**Полная минимальная настройка теста (4 строки CMake):**
+```cmake
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
+
+add_executable(my_test my_test.c)
+dap_test_link_libraries(my_test)  # Линкует SDK как STATIC библиотеки
+dap_test_add_includes(my_test)    # Добавляет все includes
+dap_mock_autowrap(my_test)        # Автоматическое мокирование!
+```
+
+**Что делает `dap_test_link_libraries()`:**
+1. ✅ Линкует все SDK модули как **STATIC библиотеки** (`*_static.a`) - необходимо для `--wrap`
+2. ✅ Автоматически пробрасывает зависимости между модулями с суффиксом `_static`
+3. ✅ Находит и линкует внешние библиотеки (XKCP, Kyber, SQLite, PostgreSQL, MDBX, json-c)
+4. ✅ Подключает test framework библиотеку (`libdap_test.a`)
+5. ✅ Все конструкторы вызываются автоматически
+
+**Что делает `dap_mock_autowrap()`:**
+1. ✅ Сканирует исходники тестов на паттерны `DAP_MOCK_DECLARE`
+2. ✅ Генерирует `-Wl,--wrap=function_name` для каждой мокируемой функции
+3. ✅ **Автоматически обнаруживает** все `*_static.a` библиотеки
+4. ✅ **Автоматически оборачивает** их через `--whole-archive` и `--start-group`
+5. ✅ Добавляет `--allow-multiple-definition` для дублирующихся символов
+
+**Преимущества:**
+- 🚀 **3-4 строки** вместо десятков `target_link_libraries` и ручной настройки `--wrap`
+- 🔄 **Автоматическое обновление** при добавлении новых SDK модулей
+- ✅ **Правильная поддержка `--wrap`** для мокирования внутренних вызовов между модулями
+- 🎯 **Корректная обработка** транзитивных зависимостей
+- 🧪 **Автоматическое `--whole-archive`** оборачивание - без ручной настройки
+- 📦 **Статические библиотеки** создаются автоматически из объектных библиотек
 
 \newpage

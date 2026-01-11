@@ -83,12 +83,18 @@ void dap_mock_deinit(void);
 
 #### Mock Declaration Macros
 
-**Simple Declaration (auto-enabled, return 0):**
+**Simple Mock (RECOMMENDED for basic mocks):**
 ```c
-DAP_MOCK_DECLARE(function_name);
+DAP_MOCK(function_name);
+// Auto-enabled, returns 0 by default
+// Wrapper automatically generated - no need to write manually!
+
+DAP_MOCK(function_name, return_value);
+// With optional return value (intptr_t cast)
+// Example: DAP_MOCK(dap_net_tun_create, 0xABCDEF00);
 ```
 
-**With Configuration Structure:**
+**With Configuration Structure (for advanced configuration):**
 ```c
 DAP_MOCK_DECLARE(function_name, {
     .enabled = true,
@@ -98,6 +104,7 @@ DAP_MOCK_DECLARE(function_name, {
         .fixed_us = 1000
     }
 });
+// Note: Wrapper automatically generated for DAP_MOCK_DECLARE
 ```
 
 **With Inline Callback:**
@@ -112,14 +119,33 @@ DAP_MOCK_DECLARE(function_name, {.return_value.i = 0}, {
 });
 ```
 
-**For Custom Wrapper (no auto-wrapper generation):**
+**Custom Mock with Full Control (RECOMMENDED for custom wrappers):**
 ```c
-DAP_MOCK_DECLARE_CUSTOM(function_name, {
-    .delay = {
-        .type = DAP_MOCK_DELAY_VARIANCE,
-        .variance = {.center_us = 100000, .variance_us = 50000}
-    }
-});
+DAP_MOCK_CUSTOM(return_type, function_name,
+    PARAM(type1, name1),
+    PARAM(type2, name2),
+    ...
+) {
+    // Custom mock logic here
+    // Automatically registers mock AND creates wrapper
+    // No need to write DAP_MOCK_DECLARE separately!
+}
+```
+
+**Example of DAP_MOCK_CUSTOM:**
+```c
+DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,
+    PARAM(dap_enc_key_t*, a_key),
+    PARAM(size_t, a_buf_in_size),
+    PARAM(dap_enc_data_type_t, type)
+) {
+    // Custom mock logic
+    size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) 
+        ? a_buf_in_size 
+        : (a_buf_in_size * 4 / 3 + 100);
+    return (size_t)(intptr_t)(g_mock_dap_enc_code_out_size->return_value.ptr 
+        ?: (void*)(intptr_t)l_result);
+}
 ```
 
 #### Configuration Structures
@@ -255,35 +281,38 @@ typedef void* (*dap_mock_callback_t)(
 );
 ```
 
-### 3.3 Custom Linker Wrapper API
+### 3.3 Custom Mock API
 
-**Header:** `dap_mock_linker_wrapper.h`
+**Header:** `dap_mock.h`
 
-#### DAP_MOCK_WRAPPER_CUSTOM Macro
+#### DAP_MOCK_CUSTOM Macro (RECOMMENDED)
 
-Creates custom linker wrapper with PARAM syntax:
+Unified macro that combines mock declaration and custom wrapper implementation:
 
 ```c
-DAP_MOCK_WRAPPER_CUSTOM(return_type, function_name,
+DAP_MOCK_CUSTOM(return_type, function_name,
     PARAM(type1, name1),
     PARAM(type2, name2),
     ...
 ) {
-    // Custom wrapper implementation
+    // Custom mock logic here
+    // Automatically registers mock AND creates wrapper
 }
 ```
 
 **Features:**
-- Automatically generates function signature
-- Automatically creates void* argument array with proper casts
-- Automatically checks if mock is enabled
-- Automatically executes configured delay
-- Automatically records call
-- Calls real function if mock disabled
+- ✅ Combines `DAP_MOCK_DECLARE_CUSTOM` and `DAP_MOCK_WRAPPER_CUSTOM` in one macro
+- ✅ No need to write `DAP_MOCK_DECLARE` separately - everything in one place
+- ✅ Automatically registers mock with framework
+- ✅ Automatically generates function signature
+- ✅ Automatically checks if mock is enabled
+- ✅ Automatically executes configured delay
+- ✅ Automatically records call
+- ✅ Calls real function if mock disabled
 
 **Example:**
 ```c
-DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
+DAP_MOCK_CUSTOM(int, my_function,
     PARAM(const char*, path),
     PARAM(int, flags),
     PARAM(mode_t, mode)
@@ -302,17 +331,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, my_function,
 - Handles casting to void* correctly
 - Uses `uintptr_t` for safe casting of pointers and integer types
 
-#### Simpler Wrapper Macros
-
-For common return types:
-
-```c
-DAP_MOCK_WRAPPER_INT(func_name, (params), (args))
-DAP_MOCK_WRAPPER_PTR(func_name, (params), (args))
-DAP_MOCK_WRAPPER_VOID_FUNC(func_name, (params), (args))
-DAP_MOCK_WRAPPER_BOOL(func_name, (params), (args))
-DAP_MOCK_WRAPPER_SIZE_T(func_name, (params), (args))
-```
+**Note:** For simple mocks without custom logic, use `DAP_MOCK()` instead - wrappers are automatically generated!
 
 ### 3.4 CMake Integration
 
@@ -329,79 +348,80 @@ dap_mock_autowrap(TARGET target_name SOURCE file1.c file2.c)
 ```
 
 **How it works:**
-1. Scans source files for `DAP_MOCK_DECLARE` patterns
+1. Scans source files for `DAP_MOCK`, `DAP_MOCK_DECLARE`, and `DAP_MOCK_CUSTOM` patterns
 2. Extracts function names
 3. Adds `-Wl,--wrap=function_name` to linker flags
 4. Works with GCC, Clang, MinGW
 
-#### Mocking Functions in Static Libraries
+#### Mocking Functions in Static Libraries (FULLY AUTOMATIC)
 
-**Problem:** When linking static libraries (`lib*.a`), functions may be excluded from the final executable if they are not directly used. This causes `--wrap` flags to not work for functions inside static libraries.
+**Background:** The `--wrap` linker flag only works with static libraries (`.a`), not with object files (`.o`). When SDK modules are linked as object files, `--wrap` cannot intercept internal function calls between modules.
 
-**Solution:** Use the `dap_mock_autowrap_with_static()` function to wrap static libraries with `--whole-archive` flags, which forces the linker to include all symbols from the static library.
+**Problem:** Functions inside static libraries may be excluded from the final executable if not directly used, causing `--wrap` to fail.
+
+**Solution (FULLY AUTOMATIC):** The `dap_mock_autowrap()` function now **automatically** handles everything:
+1. ✅ Detects all `*_static.a` libraries in the project
+2. ✅ Wraps them with `--whole-archive` flags  
+3. ✅ Adds `--allow-multiple-definition` for duplicate symbols
+4. ✅ No manual configuration needed!
 
 **Usage Example:**
 
 ```cmake
 include(${CMAKE_SOURCE_DIR}/dap-sdk/test-framework/mocks/DAPMockAutoWrap.cmake)
+include(${CMAKE_SOURCE_DIR}/dap-sdk/tests/cmake/dap_test_helpers.cmake)
 
 add_executable(test_http_client 
     test_http_client.c
-    test_http_client_mocks.c
 )
 
-# Normal linking
-target_link_libraries(test_http_client
-    dap_test           # Test framework
-    dap_core           # Core library
-    dap_http_server   # Static library to mock
-    pthread
-)
+# Link using helper function (automatically uses STATIC libraries)
+dap_test_link_libraries(test_http_client)
 
-# Auto-generate --wrap flags from test sources
+# Include directories
+dap_test_add_includes(test_http_client)
+
+# Auto-generate --wrap flags AND automatically wrap all *_static libraries
+# That's it! One function call does everything!
 dap_mock_autowrap(test_http_client)
-
-# Important: wrap static library with --whole-archive AFTER dap_mock_autowrap!
-# This forces linker to include all symbols from dap_http_server,
-# including those only used internally
-dap_mock_autowrap_with_static(test_http_client dap_http_server)
 ```
 
-**What `dap_mock_autowrap_with_static` does:**
-1. Rebuilds the link libraries list
-2. Wraps specified static libraries with flags:
-   - `-Wl,--whole-archive` (before library)
-   - `<library_name>` (the library itself)
-   - `-Wl,--no-whole-archive` (after library)
-3. Adds `-Wl,--allow-multiple-definition` to handle duplicate symbols
+**What happens automatically:**
+
+1. `dap_test_link_libraries()` links all SDK modules as **STATIC libraries** (`*_static.a`)
+2. `dap_mock_autowrap()` scans sources for `DAP_MOCK`, `DAP_MOCK_DECLARE`, and `DAP_MOCK_CUSTOM` and generates `--wrap` flags
+3. `dap_mock_autowrap()` **automatically** detects all `*_static.a` libraries and wraps them:
+   ```
+   -Wl,--start-group
+   -Wl,--whole-archive libdap_io_static.a -Wl,--no-whole-archive
+   -Wl,--whole-archive libdap_http_server_static.a -Wl,--no-whole-archive
+   ...other libraries...
+   -Wl,--end-group
+   ```
+4. Adds `-Wl,--allow-multiple-definition` to handle duplicate symbols
 
 **Important Notes:**
 
-1. **Order of calls matters:**
+1. **Only ONE function call needed:**
    ```cmake
-   # Correct:
-   dap_mock_autowrap(test_target)                    # First auto-generation
-   dap_mock_autowrap_with_static(test_target lib)    # Then --whole-archive
+   # Modern approach (RECOMMENDED):
+   dap_mock_autowrap(test_target)  # Everything automatic!
    
-   # Incorrect:
-   dap_mock_autowrap_with_static(test_target lib)    # This overwrites previous setup
+   # Legacy approach (still works, but not needed):
    dap_mock_autowrap(test_target)
+   dap_mock_autowrap_with_static(test_target lib)  # Optional override
    ```
 
-2. **Multiple libraries:**
-   ```cmake
-   # Can wrap multiple static libraries at once
-   dap_mock_autowrap_with_static(test_target 
-       dap_http_server
-       dap_stream
-       dap_crypto
-   )
-   ```
+2. **Static libraries are created automatically:**
+   - All SDK modules have `*_static.a` versions (created from object libraries)
+   - Created in main `dap-sdk/CMakeLists.txt` when tests are enabled
+   - All dependencies properly propagated with `_static` suffix
 
-3. **Limitations:**
-   - Works only with GCC, Clang, and MinGW
-   - May increase executable size
-   - Do not use for shared libraries (`.so`, `.dll`)
+3. **Technical requirements:**
+   - **Compiler:** GCC, Clang, or MinGW (MSVC not supported for `--wrap`)
+   - **Helper function:** Must use `dap_test_link_libraries()` for static library linking
+   - **Critical:** `--wrap` does NOT work with object files (`.o`) - only static libraries (`.a`)
+   - **Why:** Object files linked directly have resolved symbols - no indirection for `--wrap` to intercept
 
 **Complete Configuration Example:**
 
@@ -501,29 +521,30 @@ bool dap_mock_async_wait_all(int a_timeout_ms);
 
 #### Async Mock Configuration
 
-To enable async execution for a mock, set `.async = true` in config:
+To enable async execution for a mock, use `DAP_MOCK_DECLARE` with `.async = true` in config:
 
 ```c
-// Async mock with delay
-DAP_MOCK_DECLARE_CUSTOM(dap_client_http_request, {
+// Async mock with delay and custom callback
+DAP_MOCK_DECLARE(dap_client_http_request, {
     .enabled = true,
     .async = true,  // Execute callback asynchronously
     .delay = {
         .type = DAP_MOCK_DELAY_FIXED,
         .fixed_us = 50000  // 50ms
     }
+}, {
+    // Custom callback logic - executes asynchronously in worker thread
+    // This code runs after delay
+    if (a_arg_count >= 2 && a_args[1]) {
+        callback_t callback = (callback_t)a_args[1];
+        callback("response data", 200, a_args[2]);  // a_args[2] is user_data
+    }
+    return (void*)(intptr_t)0;  // Success
 });
-
-// Mock wrapper (executes asynchronously if dap_mock_async_init() was called)
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_client_http_request,
-    PARAM(const char*, a_url),
-    PARAM(callback_t, a_callback),
-    PARAM(void*, a_arg)
-) {
-    // This code runs in worker thread after delay
-    a_callback("response data", 200, a_arg);
-}
+// Note: Wrapper is automatically generated - no need to write DAP_MOCK_CUSTOM!
 ```
+
+**Alternative:** For async mocks with custom wrapper logic, you can use `DAP_MOCK_DECLARE_CUSTOM` + `DAP_MOCK_WRAPPER_CUSTOM` (legacy approach), but `DAP_MOCK_DECLARE` with callback is recommended.
 
 #### Utility Functions
 
