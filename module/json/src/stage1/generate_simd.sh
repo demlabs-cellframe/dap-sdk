@@ -32,9 +32,12 @@ source "${DAP_TPL_DIR}/dap_tpl.sh"
 echo "=== Generating SIMD implementations using dap_tpl ==="
 echo "Output directory: ${OUTPUT_DIR}"
 
-# Detect current architecture
-ARCH=$(uname -m)
-echo "Detected architecture: ${ARCH}"
+# Detect target architecture
+# CMAKE_SYSTEM_PROCESSOR can be passed from CMake for cross-compilation
+# Otherwise, fallback to uname -m (native build)
+ARCH="${CMAKE_SYSTEM_PROCESSOR:-$(uname -m)}"
+echo "Target architecture: ${ARCH}"
+echo "  (CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR:-<not set>})"
 
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"
@@ -142,7 +145,8 @@ case "${ARCH}" in
             "OR=vorrq_u8" \
             "MOVEMASK_EPI8=dap_neon_movemask_u8" \
             "PERF_TARGET=1+ GB/s (single-core)" \
-            "TARGET_ATTR="
+            "TARGET_ATTR=" \
+            "USE_NEON_HELPER=1"
         ;;
     
     *)

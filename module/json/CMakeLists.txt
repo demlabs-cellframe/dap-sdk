@@ -23,11 +23,13 @@ message(STATUS "[dap_json] Output directory: ${SIMD_GEN_DIR}")
 
 # Prepare environment for generator script
 # DAP_TPL_DIR can be set externally (e.g., when dap-sdk is a submodule in another project)
-set(CODEGEN_ENV "")
+# CMAKE_SYSTEM_PROCESSOR is passed for correct cross-compilation support
+set(CODEGEN_ENV "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}")
 if(DEFINED DAP_TPL_DIR)
     message(STATUS "[dap_json] Using external dap_tpl from: ${DAP_TPL_DIR}")
     list(APPEND CODEGEN_ENV "DAP_TPL_DIR=${DAP_TPL_DIR}")
 endif()
+message(STATUS "[dap_json] Target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 
 # Run code generation
 execute_process(
