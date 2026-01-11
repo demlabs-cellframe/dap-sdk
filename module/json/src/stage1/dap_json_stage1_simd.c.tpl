@@ -71,20 +71,12 @@
 // ============================================================================
 #include "dap_json_stage1_{{ARCH_LOWER}}_arch.h"
 
-// SVE: All lanes active predicate (cached for performance)
-static svbool_t s_sve_ptrue_b8;
-
-// Initialize SVE predicates (call once)
-static inline void s_init_sve_predicates_{{ARCH_LOWER}}(void) {
-    s_sve_ptrue_b8 = svptrue_b8();  // All bytes active
-}
-
 // Unified SIMD operation macros for SVE
-// These wrap SVE intrinsics to match non-SVE API signature
-#define SIMD_LOAD(ptr)           svld1_u8(s_sve_ptrue_b8, (ptr))
+// Note: sve_ptrue must be created locally in each function (cannot be global)
+#define SIMD_LOAD(pg, ptr)       svld1_u8((pg), (const uint8_t *)(ptr))
 #define SIMD_SET1(val)           svdup_u8((val))
-#define SIMD_CMP_EQ(a, b)        svcmpeq_u8(s_sve_ptrue_b8, (a), (b))
-#define SIMD_OR_PRED(p1, p2)     svorr_b_z(s_sve_ptrue_b8, (p1), (p2))
+#define SIMD_CMP_EQ(pg, a, b)    svcmpeq_u8((pg), (a), (b))
+#define SIMD_OR_PRED(pg, p1, p2) svorr_b_z((pg), (p1), (p2))
 #define SIMD_PRED_TO_VEC(pred)   svdup_u8_z((pred), 0xFF)  // Convert predicate to vector
 
 // For SVE, comparison returns predicate (svbool_t), not vector
@@ -136,8 +128,11 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     // ARM SVE/SVE2: Predicate-based comparisons
     // ========================================================================
     
+    // Create all-lanes-active predicate for this function
+    svbool_t pg = svptrue_b8();
+    
     // Load chunk with predicate
-    VECTOR_TYPE chunk = SIMD_LOAD(a_chunk);
+    VECTOR_TYPE chunk = SIMD_LOAD(pg, a_chunk);
     
     // Create comparison constants
     VECTOR_TYPE v_space = SIMD_SET1(' ');
@@ -154,20 +149,20 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     VECTOR_TYPE v_comma = SIMD_SET1(',');
     
     // SVE: Comparisons return predicates (svbool_t), OR combines predicates
-    svbool_t whitespace = SIMD_CMP_EQ(chunk, v_space);
-    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_tab));
-    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_cr));
-    whitespace = SIMD_OR_PRED(whitespace, SIMD_CMP_EQ(chunk, v_lf));
+    svbool_t whitespace = SIMD_CMP_EQ(pg, chunk, v_space);
+    whitespace = SIMD_OR_PRED(pg, whitespace, SIMD_CMP_EQ(pg, chunk, v_tab));
+    whitespace = SIMD_OR_PRED(pg, whitespace, SIMD_CMP_EQ(pg, chunk, v_cr));
+    whitespace = SIMD_OR_PRED(pg, whitespace, SIMD_CMP_EQ(pg, chunk, v_lf));
     
-    svbool_t quote = SIMD_CMP_EQ(chunk, v_quote);
-    svbool_t backslash = SIMD_CMP_EQ(chunk, v_backslash);
+    svbool_t quote = SIMD_CMP_EQ(pg, chunk, v_quote);
+    svbool_t backslash = SIMD_CMP_EQ(pg, chunk, v_backslash);
     
-    svbool_t structural = SIMD_CMP_EQ(chunk, v_op_brace);
-    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_cl_brace));
-    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_op_bracket));
-    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_cl_bracket));
-    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_colon));
-    structural = SIMD_OR_PRED(structural, SIMD_CMP_EQ(chunk, v_comma));
+    svbool_t structural = SIMD_CMP_EQ(pg, chunk, v_op_brace);
+    structural = SIMD_OR_PRED(pg, structural, SIMD_CMP_EQ(pg, chunk, v_cl_brace));
+    structural = SIMD_OR_PRED(pg, structural, SIMD_CMP_EQ(pg, chunk, v_op_bracket));
+    structural = SIMD_OR_PRED(pg, structural, SIMD_CMP_EQ(pg, chunk, v_cl_bracket));
+    structural = SIMD_OR_PRED(pg, structural, SIMD_CMP_EQ(pg, chunk, v_colon));
+    structural = SIMD_OR_PRED(pg, structural, SIMD_CMP_EQ(pg, chunk, v_comma));
     
     // Convert predicates to bitmasks (arch-specific helper)
     bitmaps.whitespace = (MASK_TYPE){{MOVEMASK_EPI8}}(whitespace);
