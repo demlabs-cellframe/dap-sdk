@@ -177,6 +177,17 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     
     log_it(L_DEBUG, "Cleaning up test context for scenario '%s'", a_ctx->scenario.name);
     
+    // Cleanup client certificates FIRST (before clients)
+    if (a_ctx->clients) {
+        for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
+            char l_cert_name[256];
+            snprintf(l_cert_name, sizeof(l_cert_name), "test_client_%s_%zu_%zu", 
+                     a_ctx->config.name, (size_t)pthread_self(), i);
+            dap_cert_delete_by_name(l_cert_name);
+            log_it(L_DEBUG, "Deleted certificate '%s'", l_cert_name);
+        }
+    }
+    
     // Cleanup clients - MUST wait for async deletion!
     if (a_ctx->clients) {
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
@@ -981,25 +992,25 @@ int main(void)
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
                                  "[general]\n"
-                                 "debug_reactor=true\n"
+                                 "debug_reactor=false\n"
                                  "[dap_client]\n"
                                  "max_tries=5\n"
                                  "timeout=60\n"
-                                 "debug_more=true\n"
+                                 "debug_more=false\n"
                                  "timeout_active_after_connect=60\n"
                                  "[stream]\n"
-                                 "debug_more=true\n"
+                                 "debug_more=false\n"
                                  "debug_channels=false\n"
-                                 "debug_dump_stream_headers=true\n"
+                                 "debug_dump_stream_headers=false\n"
                                  "[stream_udp]\n"
-                                 "debug_more=true\n";
+                                 "debug_more=false\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout and level to DEBUG (before dap_common_init)
+    // Set logging output to stdout and level to INFO (before dap_common_init)
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     dap_log_level_set(L_DEBUG);
     
