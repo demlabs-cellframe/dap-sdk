@@ -1630,7 +1630,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return l_sent;
     }
     
-    // ALL OTHER PACKETS: Encrypt entire packet
+    // ALL OTHER PACKETS: Build full_header + payload using NEW scheme
     
     debug_if(s_debug_more, L_DEBUG, "Checking encryption keys for packet type %u", a_pkt_type);
     
@@ -1639,22 +1639,47 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
     
-    // Build encrypted header
-    dap_stream_trans_udp_encrypted_header_t l_header;
-    l_header.type = a_pkt_type;
-    l_header.seq_num = htonl(l_udp_ctx->seq_num++);
-    l_header.session_id = htobe64(l_udp_ctx->session_id);
+    // Build full UDP header (FC fields + UDP fields)
+    // NOTE: Client doesn't use Flow Control, so FC fields are zeroed
+    dap_stream_trans_udp_full_header_t l_full_hdr = {
+        .seq_num = l_udp_ctx->seq_num++,
+        .ack_seq = 0,  // No FC on client
+        .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
+        .fc_flags = 0,  // No FC flags
+        .type = a_pkt_type,
+        .session_id = l_udp_ctx->session_id,
+    };
     
-    // Build cleartext packet (header + payload)
-    size_t l_cleartext_size = sizeof(l_header) + a_size;
+    // Serialize using dap_serialize
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    
+    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
+        &g_udp_full_header_schema,
+        &l_full_hdr,
+        l_hdr_buffer,
+        l_hdr_size,
+        NULL
+    );
+    
+    if (l_ser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to serialize full header: %s",
+               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+        return -1;
+    }
+    
+    // Build cleartext packet: [serialized_header + payload]
+    size_t l_cleartext_size = l_hdr_size + a_size;
     uint8_t *l_cleartext = DAP_NEW_SIZE(uint8_t, l_cleartext_size);
     if (!l_cleartext) {
         log_it(L_ERROR, "Failed to allocate cleartext buffer");
         return -1;
     }
     
-    memcpy(l_cleartext, &l_header, sizeof(l_header));
-    memcpy(l_cleartext + sizeof(l_header), a_data, a_size);
+    memcpy(l_cleartext, l_hdr_buffer, l_hdr_size);
+    if (a_size > 0) {
+        memcpy(l_cleartext + l_hdr_size, a_data, a_size);
+    }
     
     // Encrypt entire packet
     size_t l_encrypted_max = l_cleartext_size + 256;  // Extra space for encryption overhead
