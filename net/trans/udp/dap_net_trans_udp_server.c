@@ -1185,20 +1185,34 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
         return -5;
     }
     
-    // Parse encrypted header (inside decrypted payload)
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
-        log_it(L_ERROR, "Decrypted packet too small for header (%zu bytes)", l_decrypted_size);
+    // Parse NEW full header using dap_serialize
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+        log_it(L_ERROR, "Decrypted packet too small for full header (%zu bytes)", l_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -6;
     }
     
-    dap_stream_trans_udp_encrypted_header_t *l_header = 
-        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    // Deserialize full header
+    dap_stream_trans_udp_full_header_t l_hdr;
+    dap_serialize_result_t l_deser_result = dap_serialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL
+    );
+    
+    if (l_deser_result.error_code != 0) {
+        log_it(L_ERROR, "Failed to deserialize full header: %s",
+               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return -6;
+    }
     
     // Extract and validate fields
-    uint8_t l_type = l_header->type;
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_session_id = be64toh(l_header->session_id);
+    uint8_t l_type = l_hdr.type;
+    uint64_t l_seq_num = l_hdr.seq_num;
+    uint64_t l_session_id = l_hdr.session_id;
     
     // Validate packet type
     if (l_type < DAP_STREAM_UDP_PKT_SESSION_CREATE || l_type > DAP_STREAM_UDP_PKT_CLOSE) {
@@ -1219,14 +1233,14 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     // NOTE: If Flow Control is enabled, replay protection is handled by flow control layer
     // This is legacy protection for when Flow Control is disabled
     if (!a_session->flow_ctrl) {
-        uint32_t l_last_seq = atomic_load(&a_session->base.last_seq_num_in);
+        uint64_t l_last_seq = atomic_load(&a_session->base.last_seq_num_in);
         
         // Check for sequence number advance (handle wraparound)
-        int32_t l_seq_diff = (int32_t)(l_seq_num - l_last_seq);
+        int64_t l_seq_diff = (int64_t)(l_seq_num - l_last_seq);
         
         if (l_seq_diff <= 0 && l_last_seq != 0) {
             // seq_num is less than or equal to last seen seq_num (possible replay)
-            log_it(L_WARNING, "Replay attack detected: seq_num=%u, last_seq=%u (session=0x%lx)",
+            log_it(L_WARNING, "Replay attack detected: seq_num=%lu, last_seq=%lu (session=0x%lx)",
                    l_seq_num, l_last_seq, l_session_id);
             DAP_DELETE(l_decrypted);
             return -9;
@@ -1237,12 +1251,12 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Decrypted packet: type=%u, seq=%u, session=0x%lx",
+             "Decrypted packet: type=%u, seq=%lu, session=0x%lx",
              l_type, l_seq_num, l_session_id);
     
-    // Extract payload (after encrypted header)
-    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
-    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
+    // Extract payload (after full header)
+    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
     
     // Dispatch by packet type
     int l_result = 0;
