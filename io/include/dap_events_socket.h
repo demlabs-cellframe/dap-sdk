@@ -473,9 +473,6 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
 
-// Delayed removed
-void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor);
-
 // Just close socket descriptor
 int dap_events_socket_close_descriptor(SOCKET a_socket);
 void dap_events_socket_close(dap_events_socket_t *a_socket);

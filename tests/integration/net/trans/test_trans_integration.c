@@ -897,9 +897,7 @@ static void test_02_sequential_trans_testing(void)
             test_trans_ctx_free(l_ctx);
             
             // Wait for cleanup to complete with intelligent polling
-            // CRITICAL: Must wait LONGER than s_delayed_ops_timeout_ms (5000ms)
-            // PLUS extra time for HUP events processing on all workers
-            // For scenarios with many clients, need even more time
+            // For scenarios with many clients, need more time for async cleanup
             uint32_t l_cleanup_timeout = (g_scenarios[scenario_idx].num_clients > 100) ? 15000 : 10000;
             if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
                 log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", 

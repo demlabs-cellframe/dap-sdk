@@ -272,9 +272,6 @@ struct queue_ptr_input_pvt{
 };
 #define PVT_QUEUE_PTR_INPUT(a) ( (struct queue_ptr_input_pvt*) (a)->_pvt )
 
-static uint64_t s_delayed_ops_timeout_ms = 5000;
-bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg);
-
 static pthread_attr_t s_attr_detached;                                      /* Thread's creation attribute = DETACHED ! */
 
 
@@ -1495,48 +1492,6 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
     l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
     return l_es;
-}
-
-/**
- * @brief s_remove_and_delete_unsafe_delayed_delete_callback
- * @param arg
- * @return
- */
-bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg)
-{
-    dap_worker_t * l_worker = dap_worker_get_current();
-    dap_events_socket_uuid_w_data_t * l_es_handler = (dap_events_socket_uuid_w_data_t*) a_arg;
-    assert(l_es_handler);
-    assert(l_worker);
-    dap_events_socket_t * l_es;
-    if( (l_es = dap_context_find(l_worker->context, l_es_handler->esocket_uuid)) != NULL)
-        dap_events_socket_remove_and_delete_unsafe( l_es, l_es_handler->value == 1);
-    DAP_DELETE(l_es_handler);
-
-    return false;
-}
-
-/**
- * @brief dap_events_socket_remove_and_delete_unsafe_delayed
- * @param a_es
- * @param a_preserve_inheritor
- */
-void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor )
-{
-    dap_events_socket_uuid_w_data_t * l_es_handler = DAP_NEW_Z(dap_events_socket_uuid_w_data_t);
-    if (!l_es_handler) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
-    }
-    l_es_handler->esocket_uuid = a_es->uuid;
-    l_es_handler->value = a_preserve_inheritor ? 1 : 0;
-    //dap_events_socket_descriptor_close(a_es);
-
-    dap_worker_t * l_worker = a_es->worker;
-    dap_context_remove(a_es);
-    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-    dap_timerfd_start_on_worker(l_worker, s_delayed_ops_timeout_ms,
-                                s_remove_and_delete_unsafe_delayed_delete_callback, l_es_handler );
 }
 
 /**
