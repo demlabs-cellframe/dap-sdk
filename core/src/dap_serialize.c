@@ -307,9 +307,12 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
         return result;
     }
     
-    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
+    // Validate schema magic: accept both standard and custom magic numbers
+    // Standard magic (DAP_SERIALIZE_MAGIC_NUMBER) is always valid
+    // Custom magic numbers (non-zero) are also valid for extended schemas
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER && a_schema->magic == 0) {
         result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
-        result.error_message = "Invalid schema magic number";
+        result.error_message = "Schema magic must be either DAP_SERIALIZE_MAGIC_NUMBER or custom (non-zero)";
         return result;
     }
     
@@ -427,9 +430,12 @@ dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t 
         return result;
     }
     
-    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
+    // Validate schema magic: accept both standard and custom magic numbers
+    // Standard magic (DAP_SERIALIZE_MAGIC_NUMBER) is always valid
+    // Custom magic numbers (non-zero) are also valid for extended schemas
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER && a_schema->magic == 0) {
         result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
-        result.error_message = "Invalid schema magic number";
+        result.error_message = "Schema magic must be either DAP_SERIALIZE_MAGIC_NUMBER or custom (non-zero)";
         return result;
     }
     

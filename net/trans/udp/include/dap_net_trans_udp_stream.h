@@ -166,7 +166,6 @@ typedef struct dap_stream_trans_udp_full_header {
     // ===== UDP-СПЕЦИФИЧНЫЕ ПОЛЯ (расширение) =====
     uint8_t  type;            ///< UDP: Packet type (HANDSHAKE, SESSION_CREATE, DATA, KEEPALIVE, CLOSE)
     uint64_t session_id;      ///< UDP: Session ID (unique per connection)
-    uint32_t legacy_seq_num;  ///< UDP: Legacy sequence number (backward compat, deprecated)
 } DAP_ALIGN_PACKED dap_stream_trans_udp_full_header_t;
 
 #define DAP_STREAM_UDP_FULL_HEADER_SIZE sizeof(dap_stream_trans_udp_full_header_t)

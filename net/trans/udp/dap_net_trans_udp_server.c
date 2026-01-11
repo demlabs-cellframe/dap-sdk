@@ -105,13 +105,6 @@ const dap_serialize_field_t g_udp_full_header_fields[] = {
         .offset = offsetof(dap_stream_trans_udp_full_header_t, session_id),
         .size = sizeof(uint64_t),
     },
-    {
-        .name = "legacy_seq_num",
-        .type = DAP_SERIALIZE_TYPE_UINT32,
-        .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_stream_trans_udp_full_header_t, legacy_seq_num),
-        .size = sizeof(uint32_t),
-    },
 };
 
 const size_t g_udp_full_header_field_count = 
@@ -126,7 +119,7 @@ const dap_serialize_schema_t g_udp_full_header_schema = {
     .struct_size = sizeof(dap_stream_trans_udp_full_header_t),
     .field_count = g_udp_full_header_field_count,
     .fields = g_udp_full_header_fields,
-    .magic = DAP_STREAM_UDP_FULL_HEADER_MAGIC,
+    .magic = DAP_STREAM_UDP_FULL_HEADER_MAGIC,  // Custom magic for UDP extended FC schema
     .validate_func = NULL,
 };
 
@@ -1068,7 +1061,6 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         .fc_flags = 0,
         .type = a_type,
         .session_id = a_session->session_id,
-        .legacy_seq_num = l_seq_num,
     };
     
     // Serialize using dap_serialize
@@ -1667,7 +1659,6 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
         // UDP fields (из session context)
         .type = atomic_load(&l_session->last_send_type),
         .session_id = l_session->session_id,
-        .legacy_seq_num = (uint32_t)a_metadata->seq_num,  // Deprecated, но для полноты
     };
     
     // Set FC flags
