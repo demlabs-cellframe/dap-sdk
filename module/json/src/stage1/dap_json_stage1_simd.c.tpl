@@ -57,46 +57,26 @@
 /**
  * @brief NEON helper: Convert vector to bitmask (no native movemask in NEON)
  * @details Extracts MSB from each byte and packs into 16-bit mask
+ * 
+ * Intel _mm_movemask_epi8 semantics:
+ *   Extract bit 7 (MSB) from each of 16 bytes
+ *   Pack into 16-bit result: bit 0 = byte 0 MSB, bit 1 = byte 1 MSB, etc.
+ * 
+ * NEON doesn't have native movemask, so we use scalar extraction.
+ * This is slower than x86 movemask but unavoidable on ARM.
  */
 static inline uint16_t dap_neon_movemask_u8(uint8x16_t a_input)
 {
-    // ARM NEON doesn't have direct movemask, we need to extract MSBs manually
-    // Strategy: Shift right by 7 to get MSB, then pack into narrow types
+    // Direct scalar approach: extract each byte's MSB
+    // Store vector to array for easy access
+    uint8_t bytes[16];
+    vst1q_u8(bytes, a_input);
     
-    // Get MSBs by shifting right 7 bits
-    uint8x16_t msbs = vshrq_n_u8(a_input, 7);
-    
-    // Pack into 16-bit mask using horizontal add and bit manipulation
-    // Split into low/high 8 bytes
-    uint8x8_t low = vget_low_u8(msbs);
-    uint8x8_t high = vget_high_u8(msbs);
-    
-    // Convert to 16-bit and shift
-    uint16x8_t low16 = vmovl_u8(low);
-    uint16x8_t high16 = vmovl_u8(high);
-    
-    // Shift each byte position into its final bit position
-    const uint16_t shifts_low[8] = {0, 1, 2, 3, 4, 5, 6, 7};
-    const uint16_t shifts_high[8] = {8, 9, 10, 11, 12, 13, 14, 15};
-    uint16x8_t vshift_low = vld1q_u16(shifts_low);
-    uint16x8_t vshift_high = vld1q_u16(shifts_high);
-    
-    low16 = vshlq_u16(low16, vreinterpretq_s16_u16(vshift_low));
-    high16 = vshlq_u16(high16, vreinterpretq_s16_u16(vshift_high));
-    
-    // Combine with OR
-    uint16x8_t combined = vorrq_u16(low16, high16);
-    
-    // Horizontal OR reduction
     uint16_t result = 0;
-    result |= vgetq_lane_u16(combined, 0);
-    result |= vgetq_lane_u16(combined, 1);
-    result |= vgetq_lane_u16(combined, 2);
-    result |= vgetq_lane_u16(combined, 3);
-    result |= vgetq_lane_u16(combined, 4);
-    result |= vgetq_lane_u16(combined, 5);
-    result |= vgetq_lane_u16(combined, 6);
-    result |= vgetq_lane_u16(combined, 7);
+    for (int i = 0; i < 16; i++) {
+        // Extract bit 7 (MSB) from each byte
+        result |= ((bytes[i] >> 7) & 1) << i;
+    }
     
     return result;
 }
