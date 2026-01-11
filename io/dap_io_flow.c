@@ -884,7 +884,38 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     // Increment statistics
     atomic_fetch_add(&l_server->cross_worker_packets, 1);
     
-    // Call protocol's packet handler
+    // CRITICAL: Find REAL UDP listener for current worker!
+    // Do NOT pass queue esocket (a_es) - it's type=10 (QUEUE), not type=4 (UDP)!
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_events_socket_t *l_real_listener = NULL;
+    
+    if (l_worker) {
+        dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
+        while (l_listener_item) {
+            dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;
+            if (l_listener && l_listener->worker == l_worker &&
+                (l_listener->type == DESCRIPTOR_TYPE_SOCKET_UDP || 
+                 l_listener->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)) {
+                l_real_listener = l_listener;
+                break;
+            }
+            l_listener_item = l_listener_item->next;
+        }
+    }
+    
+    if (!l_real_listener) {
+        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (queue fd=%d, type=%d)",
+               l_worker ? l_worker->id : 999, a_es->fd, a_es->type);
+        DAP_DELETE(l_packet->data);
+        DAP_DELETE(l_packet);
+        return;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "Queue callback: forwarding to protocol with real listener fd=%d (type=%d) instead of queue fd=%d (type=%d)",
+             l_real_listener->fd, l_real_listener->type, a_es->fd, a_es->type);
+    
+    // Call protocol's packet handler with REAL UDP listener
     if (l_server->ops && l_server->ops->packet_received) {
         l_server->ops->packet_received(
             l_server,
@@ -892,7 +923,7 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
             l_packet->data,
             l_packet->size,
             &l_packet->remote_addr,
-            a_es  // Pass queue esocket as listener
+            l_real_listener  // Pass REAL UDP listener, not queue!
         );
     }
     
