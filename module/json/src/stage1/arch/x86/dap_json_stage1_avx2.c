@@ -23,8 +23,8 @@
 
 /**
  * @file dap_json_stage1_avx2.c
- * @brief SimdJSON-style Stage 1 tokenization with AVX2 SIMD optimization
- * @details True SimdJSON algorithm with maximum performance:
+ * @brief simd Stage 1 tokenization with AVX2 SIMD optimization
+ * @details simd algorithm with maximum performance:
  *          - Parallel 32-byte chunk classification (~10 cycles/chunk)
  *          - Bitmap-guided token extraction
  *          - Proper spanning token handling
