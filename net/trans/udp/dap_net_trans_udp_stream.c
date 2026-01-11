@@ -359,16 +359,37 @@ static int s_client_flow_ctrl_packet_send_cb(
     void *a_arg)
 {
     (void)a_flow;
+    
+    log_it(L_DEBUG, "CLIENT FC send CALLED: arg=%p, packet=%p, size=%zu", 
+           a_arg, a_packet, a_packet_size);
+    
     dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
-    if (!l_udp_ctx || !l_udp_ctx->stream) {
-        log_it(L_ERROR, "CLIENT FC send: invalid context or no stream");
+    if (!l_udp_ctx) {
+        log_it(L_ERROR, "CLIENT FC send: NULL udp_ctx");
+        return -1;
+    }
+    
+    log_it(L_DEBUG, "CLIENT FC send: udp_ctx=%p, stream=%p", l_udp_ctx, l_udp_ctx->stream);
+    
+    if (!l_udp_ctx->stream) {
+        log_it(L_ERROR, "CLIENT FC send: no stream in udp_ctx");
         return -1;
     }
     
     // Get esocket from stream->trans_ctx (not from UDP ctx!)
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx || !l_trans_ctx->esocket) {
-        log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
+    
+    log_it(L_DEBUG, "CLIENT FC send: trans_ctx=%p", l_trans_ctx);
+    
+    if (!l_trans_ctx) {
+        log_it(L_ERROR, "CLIENT FC send: no trans_ctx");
+        return -1;
+    }
+    
+    log_it(L_DEBUG, "CLIENT FC send: esocket=%p", l_trans_ctx->esocket);
+    
+    if (!l_trans_ctx->esocket) {
+        log_it(L_ERROR, "CLIENT FC send: no esocket in trans_ctx");
         return -1;
     }
     
@@ -1599,6 +1620,9 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -2;
     }
     
+    log_it(L_NOTICE, "SESSION_START: udp_ctx=%p, stream=%p, flow_ctrl=%p (BEFORE FC create)", 
+           l_udp_ctx, a_stream, l_udp_ctx->flow_ctrl);
+    
     // Create Flow Control for reliable delivery (client-side)
     // Allocate base dap_io_flow_t for Flow Control integration
     if (!l_udp_ctx->base) {
@@ -1653,6 +1677,9 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         log_it(L_ERROR, "Failed to create Flow Control for client UDP");
         return -3;
     }
+    
+    log_it(L_NOTICE, "SESSION_START: FC CREATED: udp_ctx=%p, flow_ctrl=%p", 
+           l_udp_ctx, l_udp_ctx->flow_ctrl);
     
     log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
            l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
@@ -1735,6 +1762,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
     
+    log_it(L_DEBUG, "UDP_READ: udp_ctx=%p, stream=%p, flow_ctrl=%p", 
+           l_udp_ctx, a_stream, l_udp_ctx->flow_ctrl);
+    
     // TRY DEOBFUSCATE AS HANDSHAKE (size 600-900 bytes)
     // Obfuscation key is EPHEMERAL - used only for transport masking!
     if (dap_transport_is_obfuscated_handshake_size(l_es->buf_in_size)) {
@@ -1782,6 +1812,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     // ENCRYPTED PACKET: Process via Flow Control OR direct (fallback)
     
+    log_it(L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p", l_udp_ctx, l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL);
+    
     // FLOW CONTROL PATH (NEW): Pass encrypted packet to FC
     if (l_udp_ctx->flow_ctrl) {
         debug_if(s_debug_more, L_DEBUG,
@@ -1802,6 +1834,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                  "CLIENT: Flow Control consumed %zu bytes", l_consumed);
         
         return l_consumed;
+    } else {
+        log_it(L_DEBUG, "CLIENT: Flow Control DISABLED (flow_ctrl=%p) - using fallback", l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL);
     }
     
     // FALLBACK PATH (NO FLOW CONTROL): Direct decryption + processing
