@@ -88,9 +88,13 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
         return -1;
     }
     
+    // DEBUG: Always log socket type
+    log_it(L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d (UDP=%d, CLIENT=%d)",
+           a_es, a_es->fd, a_es->type, DESCRIPTOR_TYPE_SOCKET_UDP, DESCRIPTOR_TYPE_SOCKET_CLIENT);
+    
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
-        log_it(L_ERROR, "Socket is not datagram type");
+        log_it(L_ERROR, "Socket is not datagram type (esocket=%p, fd=%d, type=%d)", a_es, a_es->fd, a_es->type);
         return -2;
     }
     
