@@ -111,7 +111,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 # Add include directory for generated SIMD headers
-target_include_directories(${PROJECT_NAME} PRIVATE ${SIMD_GEN_DIR})
+target_include_directories(${PROJECT_NAME} PUBLIC ${SIMD_GEN_DIR})
 
 # Dependencies - json depends only on core (json-c REMOVED!)
 set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")

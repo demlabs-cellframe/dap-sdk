@@ -25,22 +25,7 @@
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
-// Architecture-specific headers
-#ifdef __SSE2__
-#include "stage1/arch/x86/dap_json_stage1_sse2.h"
-#endif
-
-#ifdef __AVX2__
-#include "stage1/arch/x86/dap_json_stage1_avx2.h"
-#endif
-
-#ifdef __AVX512F__
-#include "stage1/arch/x86/dap_json_stage1_avx512.h"
-#endif
-
-#ifdef __ARM_NEON
-#include "stage1/arch/arm/dap_json_stage1_neon.h"
-#endif
+// Note: Architecture-specific SIMD headers are now included via dap_json_stage1.h
 
 extern void dap_json_init(void);
 

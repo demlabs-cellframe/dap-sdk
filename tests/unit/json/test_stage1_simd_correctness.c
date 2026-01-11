@@ -33,16 +33,8 @@
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
-// Include architecture-specific SIMD headers
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_sse2.h"
-#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_avx2.h"
-#include "../../module/json/src/stage1/arch/x86/dap_json_stage1_avx512.h"
-#endif
-
-#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
-#include "../../module/json/src/stage1/arch/arm/dap_json_stage1_neon.h"
-#endif
+// Note: Architecture-specific SIMD headers are now included via dap_json_stage1.h
+// They are generated into the build directory and exposed as PUBLIC includes
 
 #include <string.h>
 #include <stdio.h>
