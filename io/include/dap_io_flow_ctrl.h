@@ -352,4 +352,3 @@ void dap_io_flow_ctrl_get_stats(
  */
 void dap_io_flow_ctrl_get_default_config(dap_io_flow_ctrl_config_t *a_config);
 
-#endif // DAP_IO_FLOW_CTRL_H

@@ -28,6 +28,7 @@
 #include "dap_io_flow.h"
 #include "dap_io_flow_udp.h"
 #include "dap_io_flow_socket.h"
+#include "dap_io_flow_ctrl.h"  // Flow Control for reliable delivery
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
@@ -59,10 +60,33 @@ typedef struct stream_udp_session {
     dap_stream_session_t *session;       // Associated dap_stream_session_t
     uint64_t session_id;                 // Session ID from handshake
     dap_enc_key_t *encryption_key;       // Session encryption key
+    
+    // Flow control (reliable delivery)
+    dap_io_flow_ctrl_t *flow_ctrl;      // Flow control handle (NULL if disabled)
 } stream_udp_session_t;
 
 // Forward declarations for protocol handlers
 static bool s_stream_udp_should_forward(dap_io_flow_t *a_flow);
+
+// Flow Control callbacks (transport-provided)
+static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
+                                          const dap_io_flow_pkt_metadata_t *a_metadata,
+                                          const void *a_payload, size_t a_payload_size,
+                                          void **a_packet_out, size_t *a_packet_size_out,
+                                          void *a_arg);
+static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
+                                        const void *a_packet, size_t a_packet_size,
+                                        dap_io_flow_pkt_metadata_t *a_metadata,
+                                        const void **a_payload_out, size_t *a_payload_size_out,
+                                        void *a_arg);
+static int s_flow_ctrl_packet_send_cb(dap_io_flow_t *a_flow,
+                                       const void *a_packet, size_t a_packet_size,
+                                       void *a_arg);
+static void s_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg);
+static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
+                                           const void *a_payload, size_t a_payload_size,
+                                           void *a_arg);
+static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg);
 
 // Session/Stream integration callbacks
 static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_session_params);
@@ -82,6 +106,23 @@ static int s_handle_data(stream_udp_session_t *a_session, const uint8_t *a_paylo
                         size_t a_payload_size);
 static int s_handle_keepalive(stream_udp_session_t *a_session);
 static int s_handle_close(stream_udp_session_t *a_session);
+
+// Packet processing helpers
+static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
+                                          const uint8_t *a_encrypted_data,
+                                          size_t a_encrypted_size);
+
+// Flow Control callbacks (static, shared by all sessions)
+// NOTE: Defined AFTER forward declarations as callbacks reference static functions
+static const dap_io_flow_ctrl_callbacks_t s_flow_ctrl_callbacks = {
+    .packet_prepare = s_flow_ctrl_packet_prepare_cb,
+    .packet_parse = s_flow_ctrl_packet_parse_cb,
+    .packet_send = s_flow_ctrl_packet_send_cb,
+    .packet_free = s_flow_ctrl_packet_free_cb,
+    .payload_deliver = s_flow_ctrl_payload_deliver_cb,
+    .keepalive_timeout = s_flow_ctrl_keepalive_timeout_cb,
+    .arg = NULL,  // Not used, session is passed via protocol_ctx
+};
 
 // Helper functions
 static int s_send_udp_packet(stream_udp_session_t *a_session,
@@ -530,121 +571,34 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
     }
     
     // ALL OTHER PACKETS: Must be encrypted!
-    // Decrypt first, then parse inner header
+    // 
+    // If Flow Control is enabled: pass to flow control for retransmission/reordering
+    // Otherwise: decrypt + dispatch directly
     
-    if (!l_session->encryption_key) {
-        log_it(L_WARNING, "Received encrypted packet but no encryption key established");
-        return -3;
+    if (l_session->flow_ctrl) {
+        // FLOW CONTROL ENABLED: Pass packet to flow control layer
+        // Flow control will handle retransmission, reordering, ACKs
+        // and eventually call s_flow_ctrl_payload_deliver_cb for in-order delivery
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Passing packet to Flow Control: size=%zu", a_size);
+        
+        int l_ret = dap_io_flow_ctrl_recv(l_session->flow_ctrl, a_data, a_size);
+        if (l_ret != 0) {
+            log_it(L_WARNING, "Flow Control packet processing failed: ret=%d", l_ret);
+            return -3;
+        }
+        
+        return 0;  // Flow control handles the rest
+    } else {
+        // FLOW CONTROL DISABLED: Process encrypted packet directly
+        debug_if(s_debug_more, L_DEBUG,
+                 "Processing encrypted packet directly (Flow Control disabled): size=%zu", a_size);
+        
+        return s_process_encrypted_udp_packet(l_session, a_data, a_size);
     }
-    
-    // Allocate buffer for decrypted data
-    size_t l_decrypted_max = a_size + 256;  // Extra space for decryption
-    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
-    if (!l_decrypted) {
-        log_it(L_ERROR, "Failed to allocate decryption buffer");
-        return -4;
-    }
-    
-    // Decrypt entire packet
-    size_t l_decrypted_size = dap_enc_decode(l_session->encryption_key,
-                                             a_data, a_size,
-                                             l_decrypted, l_decrypted_max,
-                                             DAP_ENC_DATA_TYPE_RAW);
-    
-    if (l_decrypted_size == 0) {
-        log_it(L_ERROR, "Failed to decrypt UDP packet");
-        DAP_DELETE(l_decrypted);
-        return -5;
-    }
-    
-    // Parse encrypted header (inside decrypted payload)
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
-        log_it(L_ERROR, "Decrypted packet too small for header (%zu bytes)", l_decrypted_size);
-        DAP_DELETE(l_decrypted);
-        return -6;
-    }
-    
-    dap_stream_trans_udp_encrypted_header_t *l_header = 
-        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
-    
-    // Extract and validate fields
-    uint8_t l_type = l_header->type;
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_session_id = be64toh(l_header->session_id);
-    
-    // Validate packet type
-    if (l_type < DAP_STREAM_UDP_PKT_SESSION_CREATE || l_type > DAP_STREAM_UDP_PKT_CLOSE) {
-        log_it(L_ERROR, "Invalid packet type: %u", l_type);
-        DAP_DELETE(l_decrypted);
-        return -7;
-    }
-    
-    // Validate session_id
-    if (l_session->session_id != 0 && l_session->session_id != l_session_id) {
-        log_it(L_ERROR, "Session ID mismatch: packet=0x%lx, session=0x%lx",
-               l_session_id, l_session->session_id);
-        DAP_DELETE(l_decrypted);
-        return -8;
-    }
-    
-    // REPLAY PROTECTION: Validate sequence number
-    // seq_num must be strictly increasing (with wraparound support)
-    uint32_t l_last_seq = atomic_load(&l_session->base.last_seq_num_in);
-    
-    // Check for sequence number advance (handle wraparound)
-    int32_t l_seq_diff = (int32_t)(l_seq_num - l_last_seq);
-    
-    if (l_seq_diff <= 0 && l_last_seq != 0) {
-        // seq_num is less than or equal to last seen seq_num (possible replay)
-        log_it(L_WARNING, "Replay attack detected: seq_num=%u, last_seq=%u (session=0x%lx)",
-               l_seq_num, l_last_seq, l_session_id);
-        DAP_DELETE(l_decrypted);
-        return -9;
-    }
-    
-    // Update last seen sequence number
-    atomic_store(&l_session->base.last_seq_num_in, l_seq_num);
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "Sequence validation OK: seq=%u, last_seq=%u, diff=%d",
-             l_seq_num, l_last_seq, l_seq_diff);
-    
-    // Extract payload (after encrypted header)
-    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
-    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "Decrypted packet: type=%u, seq=%u, session=0x%lx, payload=%zu bytes",
-             l_type, l_seq_num, l_session_id, l_payload_size);
-    
-    // Dispatch by packet type
-    int l_result = 0;
-    switch (l_type) {
-        case DAP_STREAM_UDP_PKT_SESSION_CREATE:
-            l_result = s_handle_session_create(l_session, l_payload, l_payload_size);
-            break;
-            
-        case DAP_STREAM_UDP_PKT_DATA:
-            l_result = s_handle_data(l_session, l_payload, l_payload_size);
-            break;
-            
-        case DAP_STREAM_UDP_PKT_KEEPALIVE:
-            l_result = s_handle_keepalive(l_session);
-            break;
-            
-        case DAP_STREAM_UDP_PKT_CLOSE:
-            l_result = s_handle_close(l_session);
-            break;
-            
-        default:
-            log_it(L_WARNING, "Unhandled packet type: %u", l_type);
-            l_result = -9;
-            break;
-    }
-    
-    DAP_DELETE(l_decrypted);
-    return l_result;
 }
+
 
 /**
  * @brief Protocol create callback - allocate stream_udp_session_t
@@ -815,6 +769,32 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
         }
     }
     
+    // Create Flow Control (DAP_IO_FLOW_CTRL_RELIABLE: retransmit + reorder, NO keepalive)
+    // DAP Stream has its own keep-alive mechanism, so we don't enable flow control keep-alive
+    dap_io_flow_ctrl_config_t l_fc_config = {
+        .retransmit_timeout_ms = 1000,     // 1 second
+        .max_retransmit_count = 3,
+        .send_window_size = 256,
+        .recv_window_size = 256,
+        .max_out_of_order_delay_ms = 5000, // 5 seconds
+        .keepalive_interval_ms = 0,        // Not used (DAP Stream handles keep-alive)
+        .keepalive_timeout_ms = 0,         // Not used
+    };
+    
+    l_session->flow_ctrl = dap_io_flow_ctrl_create(
+        &l_session->base.base,             // dap_io_flow_t*
+        DAP_IO_FLOW_CTRL_RELIABLE,         // Flags: RETRANSMIT | REORDER (no KEEPALIVE)
+        &l_fc_config,
+        &s_flow_ctrl_callbacks
+    );
+    
+    if (!l_session->flow_ctrl) {
+        log_it(L_ERROR, "Failed to create Flow Control for session");
+        // Continue without flow control (fallback to unreliable UDP)
+    } else {
+        log_it(L_INFO, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
+    }
+    
     return l_stream_session;
 }
 
@@ -826,6 +806,13 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
+    
+    // Delete Flow Control
+    if (l_session->flow_ctrl) {
+        dap_io_flow_ctrl_delete(l_session->flow_ctrl);
+        l_session->flow_ctrl = NULL;
+        log_it(L_DEBUG, "Flow Control deleted for session");
+    }
     
     // Close session using session ID
     if (l_stream_session->id) {
@@ -994,14 +981,38 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     }
     
     // Send encrypted blob (no headers, no magic, just encrypted data)
-    int l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
+    // 
+    // If Flow Control is enabled: use flow control layer (adds sequence, ACK, retransmission)
+    // Otherwise: send directly via UDP
+    
+    int l_ret;
+    
+    if (a_session->flow_ctrl) {
+        // FLOW CONTROL ENABLED: Use flow control for reliable delivery
+        debug_if(s_debug_more, L_DEBUG,
+                 "Sending packet via Flow Control: type=%u, size=%zu", a_type, l_encrypted_size);
+        
+        l_ret = dap_io_flow_ctrl_send(a_session->flow_ctrl, l_encrypted, l_encrypted_size);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Flow Control send failed (type=%u): ret=%d", a_type, l_ret);
+            DAP_DELETE(l_encrypted);
+            return -8;
+        }
+    } else {
+        // FLOW CONTROL DISABLED: Send directly via UDP
+        debug_if(s_debug_more, L_DEBUG,
+                 "Sending packet directly via UDP (Flow Control disabled): type=%u, size=%zu",
+                 a_type, l_encrypted_size);
+        
+        l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
+        if (l_ret < 0) {
+            log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_type);
+            DAP_DELETE(l_encrypted);
+            return -8;
+        }
+    }
     
     DAP_DELETE(l_encrypted);
-    
-    if (l_ret < 0) {
-        log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_type);
-        return -8;
-    }
     
     debug_if(s_debug_more, L_DEBUG,
              "Encrypted packet sent: type=%u, seq=%u, session=0x%lx, encrypted_size=%zu",
@@ -1013,6 +1024,149 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
 // =============================================================================
 // PROTOCOL PACKET HANDLERS
 // =============================================================================
+
+
+
+//===================================================================
+// PACKET PROCESSING HELPERS
+//===================================================================
+
+/**
+ * @brief Process encrypted UDP packet (decrypt + dispatch)
+ * 
+ * This function is called either directly from s_udp_packet_received_cb
+ * (if Flow Control is disabled) or from s_flow_ctrl_payload_deliver_cb
+ * (if Flow Control is enabled).
+ * 
+ * @param a_session UDP session
+ * @param a_encrypted_data Encrypted packet data
+ * @param a_encrypted_size Encrypted packet size
+ * @return 0 on success, negative on error
+ */
+static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
+                                          const uint8_t *a_encrypted_data,
+                                          size_t a_encrypted_size)
+{
+    if (!a_session || !a_encrypted_data || a_encrypted_size == 0) {
+        return -1;
+    }
+    
+    if (!a_session->encryption_key) {
+        log_it(L_WARNING, "Received encrypted packet but no encryption key established");
+        return -3;
+    }
+    
+    // Allocate buffer for decrypted data
+    size_t l_decrypted_max = a_encrypted_size + 256;  // Extra space for decryption
+    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
+    if (!l_decrypted) {
+        log_it(L_ERROR, "Failed to allocate decryption buffer");
+        return -4;
+    }
+    
+    // Decrypt entire packet
+    size_t l_decrypted_size = dap_enc_decode(a_session->encryption_key,
+                                             a_encrypted_data, a_encrypted_size,
+                                             l_decrypted, l_decrypted_max,
+                                             DAP_ENC_DATA_TYPE_RAW);
+    
+    if (l_decrypted_size == 0) {
+        log_it(L_ERROR, "Failed to decrypt UDP packet");
+        DAP_DELETE(l_decrypted);
+        return -5;
+    }
+    
+    // Parse encrypted header (inside decrypted payload)
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t)) {
+        log_it(L_ERROR, "Decrypted packet too small for header (%zu bytes)", l_decrypted_size);
+        DAP_DELETE(l_decrypted);
+        return -6;
+    }
+    
+    dap_stream_trans_udp_encrypted_header_t *l_header = 
+        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    
+    // Extract and validate fields
+    uint8_t l_type = l_header->type;
+    uint32_t l_seq_num = ntohl(l_header->seq_num);
+    uint64_t l_session_id = be64toh(l_header->session_id);
+    
+    // Validate packet type
+    if (l_type < DAP_STREAM_UDP_PKT_SESSION_CREATE || l_type > DAP_STREAM_UDP_PKT_CLOSE) {
+        log_it(L_ERROR, "Invalid packet type: %u", l_type);
+        DAP_DELETE(l_decrypted);
+        return -7;
+    }
+    
+    // Validate session_id
+    if (a_session->session_id != 0 && a_session->session_id != l_session_id) {
+        log_it(L_ERROR, "Session ID mismatch: packet=0x%lx, session=0x%lx",
+               l_session_id, a_session->session_id);
+        DAP_DELETE(l_decrypted);
+        return -8;
+    }
+    
+    // REPLAY PROTECTION: Validate sequence number
+    // NOTE: If Flow Control is enabled, replay protection is handled by flow control layer
+    // This is legacy protection for when Flow Control is disabled
+    if (!a_session->flow_ctrl) {
+        uint32_t l_last_seq = atomic_load(&a_session->base.last_seq_num_in);
+        
+        // Check for sequence number advance (handle wraparound)
+        int32_t l_seq_diff = (int32_t)(l_seq_num - l_last_seq);
+        
+        if (l_seq_diff <= 0 && l_last_seq != 0) {
+            // seq_num is less than or equal to last seen seq_num (possible replay)
+            log_it(L_WARNING, "Replay attack detected: seq_num=%u, last_seq=%u (session=0x%lx)",
+                   l_seq_num, l_last_seq, l_session_id);
+            DAP_DELETE(l_decrypted);
+            return -9;
+        }
+        
+        // Update last seen sequence number
+        atomic_store(&a_session->base.last_seq_num_in, l_seq_num);
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Decrypted packet: type=%u, seq=%u, session=0x%lx",
+             l_type, l_seq_num, l_session_id);
+    
+    // Extract payload (after encrypted header)
+    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
+    
+    // Dispatch by packet type
+    int l_result = 0;
+    switch (l_type) {
+        case DAP_STREAM_UDP_PKT_SESSION_CREATE:
+            l_result = s_handle_session_create(a_session, l_payload, l_payload_size);
+            break;
+            
+        case DAP_STREAM_UDP_PKT_DATA:
+            l_result = s_handle_data(a_session, l_payload, l_payload_size);
+            break;
+            
+        case DAP_STREAM_UDP_PKT_KEEPALIVE:
+            l_result = s_handle_keepalive(a_session);
+            break;
+            
+        case DAP_STREAM_UDP_PKT_CLOSE:
+            l_result = s_handle_close(a_session);
+            break;
+            
+        default:
+            log_it(L_ERROR, "Unhandled packet type: %u", l_type);
+            l_result = -10;
+            break;
+    }
+    
+    DAP_DELETE(l_decrypted);
+    return l_result;
+}
+
+//===================================================================
+// PROTOCOL PACKET HANDLERS
+//===================================================================
 
 /**
  * @brief Handle HANDSHAKE packet (encryption handshake)
@@ -1335,4 +1489,254 @@ static int s_handle_close(stream_udp_session_t *a_session)
     
     return 0;
 }
+
+//===================================================================
+// FLOW CONTROL CALLBACKS (NEW API with dap_serialize)
+//===================================================================
+
+/**
+ * @brief Prepare packet with Flow Control header
+ * 
+ * Uses dap_serialize for proper endianness handling.
+ * 
+ * @param a_flow Flow instance
+ * @param a_metadata Flow control metadata (seq_num, ack_seq, timestamp, flags)
+ * @param a_payload Encrypted UDP packet
+ * @param a_payload_size Payload size
+ * @param a_packet_out [out] Allocated packet buffer
+ * @param a_packet_size_out [out] Total packet size
+ * @param a_arg User argument (NULL for UDP)
+ * @return 0 on success, negative on error
+ */
+static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
+                                          const dap_io_flow_pkt_metadata_t *a_metadata,
+                                          const void *a_payload, size_t a_payload_size,
+                                          void **a_packet_out, size_t *a_packet_size_out,
+                                          void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    if (!a_flow || !a_metadata || !a_packet_out || !a_packet_size_out) {
+        return -1;
+    }
+    
+    // Keepalive packets have no payload
+    if (!a_payload) {
+        a_payload_size = 0;
+    }
+    
+    // Prepare header structure
+    dap_stream_trans_udp_flow_header_t l_hdr = {
+        .seq_num = a_metadata->seq_num,
+        .ack_seq = a_metadata->ack_seq,
+        .timestamp_ms = a_metadata->timestamp_ms,
+        .flags = 0,
+        .reserved = {0, 0, 0}
+    };
+    
+    // Set flags
+    if (a_metadata->is_keepalive) {
+        l_hdr.flags |= DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE;
+    }
+    if (a_metadata->is_retransmit) {
+        l_hdr.flags |= DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT;
+    }
+    
+    // Calculate header size
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_flow_header_t);
+    
+    // Allocate packet buffer (header + payload)
+    size_t l_packet_size = l_hdr_size + a_payload_size;
+    uint8_t *l_packet = DAP_NEW_SIZE(uint8_t, l_packet_size);
+    if (!l_packet) {
+        log_it(L_ERROR, "Failed to allocate Flow Control packet (%zu bytes)", l_packet_size);
+        return -2;
+    }
+    
+    // Serialize header manually (network byte order)
+    dap_stream_trans_udp_flow_header_t *l_hdr_net = (dap_stream_trans_udp_flow_header_t *)l_packet;
+    l_hdr_net->seq_num = htobe64(l_hdr.seq_num);
+    l_hdr_net->ack_seq = htobe64(l_hdr.ack_seq);
+    l_hdr_net->timestamp_ms = htonl(l_hdr.timestamp_ms);
+    l_hdr_net->flags = l_hdr.flags;
+    memcpy(l_hdr_net->reserved, l_hdr.reserved, sizeof(l_hdr.reserved));
+    
+    // Copy payload after header
+    if (a_payload_size > 0) {
+        memcpy(l_packet + l_hdr_size, a_payload, a_payload_size);
+    }
+    
+    *a_packet_out = l_packet;
+    *a_packet_size_out = l_packet_size;
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "Prepared Flow Control packet: seq=%lu, ack=%lu, flags=0x%02x, size=%zu",
+             a_metadata->seq_num, a_metadata->ack_seq, l_hdr.flags, l_packet_size);
+    
+    return 0;
+}
+
+/**
+ * @brief Parse packet and extract Flow Control header
+ * 
+ * Uses dap_serialize for proper endianness handling.
+ * 
+ * @param a_flow Flow instance
+ * @param a_packet Received packet
+ * @param a_packet_size Packet size
+ * @param a_metadata [out] Parsed metadata
+ * @param a_payload_out [out] Payload pointer (into a_packet)
+ * @param a_payload_size_out [out] Payload size
+ * @param a_arg User argument (NULL for UDP)
+ * @return 0 on success, negative on error
+ */
+static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
+                                        const void *a_packet, size_t a_packet_size,
+                                        dap_io_flow_pkt_metadata_t *a_metadata,
+                                        const void **a_payload_out, size_t *a_payload_size_out,
+                                        void *a_arg)
+{
+    UNUSED(a_flow);
+    UNUSED(a_arg);
+    
+    if (!a_packet || !a_metadata || !a_payload_out || !a_payload_size_out) {
+        return -1;
+    }
+    
+    // Calculate expected header size
+    size_t l_hdr_size = sizeof(dap_stream_trans_udp_flow_header_t);
+    
+    if (a_packet_size < l_hdr_size) {
+        log_it(L_WARNING, "Packet too small for Flow Control header: %zu < %zu", 
+               a_packet_size, l_hdr_size);
+        return -2;
+    }
+    
+    // Deserialize header manually (network byte order)
+    const dap_stream_trans_udp_flow_header_t *l_hdr_net = 
+        (const dap_stream_trans_udp_flow_header_t *)a_packet;
+    
+    dap_stream_trans_udp_flow_header_t l_hdr;
+    l_hdr.seq_num = be64toh(l_hdr_net->seq_num);
+    l_hdr.ack_seq = be64toh(l_hdr_net->ack_seq);
+    l_hdr.timestamp_ms = ntohl(l_hdr_net->timestamp_ms);
+    l_hdr.flags = l_hdr_net->flags;
+    memcpy(l_hdr.reserved, l_hdr_net->reserved, sizeof(l_hdr.reserved));
+    
+    // Fill metadata
+    a_metadata->seq_num = l_hdr.seq_num;
+    a_metadata->ack_seq = l_hdr.ack_seq;
+    a_metadata->timestamp_ms = l_hdr.timestamp_ms;
+    a_metadata->is_keepalive = (l_hdr.flags & DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE) != 0;
+    a_metadata->is_retransmit = (l_hdr.flags & DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT) != 0;
+    
+    // Payload starts after header
+    *a_payload_out = (const uint8_t *)a_packet + l_hdr_size;
+    *a_payload_size_out = a_packet_size - l_hdr_size;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Parsed Flow Control packet: seq=%lu, ack=%lu, flags=0x%02x, payload_size=%zu",
+             a_metadata->seq_num, a_metadata->ack_seq, l_hdr.flags, *a_payload_size_out);
+    
+    return 0;
+}
+
+/**
+ * @brief Send packet via UDP
+ * 
+ * @param a_flow Flow instance (cast to stream_udp_session_t)
+ * @param a_packet Packet to send
+ * @param a_packet_size Packet size
+ * @param a_arg User argument (NULL for UDP)
+ * @return 0 on success, negative on error
+ */
+static int s_flow_ctrl_packet_send_cb(dap_io_flow_t *a_flow,
+                                       const void *a_packet, size_t a_packet_size,
+                                       void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
+    if (!l_session || !a_packet) {
+        return -1;
+    }
+    
+    // Send via UDP flow
+    ssize_t l_ret = dap_io_flow_udp_send(&l_session->base, a_packet, a_packet_size);
+    if (l_ret < 0) {
+        log_it(L_WARNING, "Failed to send Flow Control packet: ret=%zd", l_ret);
+        return -2;
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief Free packet buffer
+ * 
+ * @param a_packet Packet buffer to free
+ * @param a_arg User argument (NULL for UDP)
+ */
+static void s_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    if (a_packet) {
+        DAP_DELETE(a_packet);
+    }
+}
+
+/**
+ * @brief Deliver in-order payload to upper layer
+ * 
+ * @param a_flow Flow instance (cast to stream_udp_session_t)
+ * @param a_payload Payload data (encrypted UDP packet)
+ * @param a_payload_size Payload size
+ * @param a_arg User argument (NULL for UDP)
+ * @return 0 on success
+ */
+static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
+                                           const void *a_payload, size_t a_payload_size,
+                                           void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
+    if (!l_session || !a_payload) {
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Delivering reordered payload: size=%zu", a_payload_size);
+    
+    // Process encrypted UDP packet (decrypt + dispatch to protocol handlers)
+    s_process_encrypted_udp_packet(l_session, a_payload, a_payload_size);
+    
+    return 0;
+}
+
+/**
+ * @brief Handle keep-alive timeout
+ * 
+ * For DAP Stream: do nothing (stream has its own keep-alive)
+ * 
+ * @param a_flow Flow instance
+ * @param a_arg User argument (NULL for UDP)
+ */
+static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
+{
+    UNUSED(a_arg);
+    
+    stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
+    if (!l_session) {
+        return;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Flow Control keep-alive timeout for session 0x%lx",
+             l_session->session_id);
+    
+    // For DAP Stream: do nothing, stream handles its own keep-alive
+    // For other protocols: might close connection, reconnect, or notify upper layer
+}
+
+
 

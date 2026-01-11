@@ -26,6 +26,7 @@
 #include "dap_net_trans.h"
 #include "dap_server.h"
 #include "dap_events_socket.h"
+#include "dap_serialize.h"  // For Flow Control header serialization
 
 /**
  * @file dap_net_trans_udp_stream.h
@@ -140,9 +141,27 @@ typedef enum dap_stream_trans_udp_pkt_type {
  * HANDSHAKE packets are the ONLY exception - they contain just
  * the raw Kyber512 public key (800 bytes) with no header.
  */
+/**
+ * @brief Flow Control header (for reliable delivery)
+ * 
+ * Prepended to encrypted header when Flow Control is enabled.
+ * This provides retransmission, reordering, and ACK mechanisms.
+ */
+typedef struct dap_stream_trans_udp_flow_header {
+    uint64_t seq_num;       ///< Sequence number for flow control
+    uint64_t ack_seq;       ///< ACK for highest received in-order sequence
+    uint32_t timestamp_ms;  ///< Timestamp for RTT calculation
+    uint8_t flags;          ///< Flow control flags (keepalive, retransmit, etc)
+    uint8_t reserved[3];    ///< Reserved for future use
+} DAP_ALIGN_PACKED dap_stream_trans_udp_flow_header_t;
+
+// Flow control flags
+#define DAP_STREAM_UDP_FLOW_FLAG_KEEPALIVE  0x01  ///< Keep-alive packet
+#define DAP_STREAM_UDP_FLOW_FLAG_RETRANSMIT 0x04  ///< Retransmitted packet
+
 typedef struct dap_stream_trans_udp_encrypted_header {
     uint8_t type;           ///< Packet type (dap_stream_trans_udp_pkt_type_t)
-    uint32_t seq_num;       ///< Sequence number (network byte order)
+    uint32_t seq_num;       ///< Sequence number (network byte order) - LEGACY, kept for compatibility
     uint64_t session_id;    ///< Session ID (network byte order)
     // Followed by payload data
 } DAP_ALIGN_PACKED dap_stream_trans_udp_encrypted_header_t;
