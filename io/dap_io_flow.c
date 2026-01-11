@@ -717,7 +717,41 @@ static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
     
     if (!l_flow && l_worker) {
         // Create new flow
-        l_flow = l_server->ops->flow_create(l_server, &a_es->addr_storage, a_es);
+        // CRITICAL: For UDP, a_es might be a QUEUE socket (inter-worker forwarding)!
+        // We need to pass the REAL UDP listener socket, not the queue.
+        // Find the UDP listener for this worker from server's listener list.
+        dap_events_socket_t *l_real_listener = NULL;
+        
+        if (a_es->type == DESCRIPTOR_TYPE_QUEUE) {
+            // This is inter-worker forwarding via queue
+            // Find the UDP listener for the current worker
+            dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
+            while (l_listener_item) {
+                dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;
+                if (l_listener && l_listener->worker == l_worker &&
+                    (l_listener->type == DESCRIPTOR_TYPE_SOCKET_UDP || 
+                     l_listener->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)) {
+                    l_real_listener = l_listener;
+                    break;
+                }
+                l_listener_item = l_listener_item->next;
+            }
+            
+            if (!l_real_listener) {
+                log_it(L_ERROR, "Failed to find UDP listener for worker %u (a_es type=%d)",
+                       l_worker->id, a_es->type);
+                return;
+            }
+            
+            debug_if(s_debug_more, L_DEBUG, 
+                     "Inter-worker flow creation: using real listener fd=%d (type=%d) instead of queue fd=%d",
+                     l_real_listener->fd, l_real_listener->type, a_es->fd);
+        } else {
+            // Direct packet on UDP listener - use a_es as-is
+            l_real_listener = a_es;
+        }
+        
+        l_flow = l_server->ops->flow_create(l_server, &a_es->addr_storage, l_real_listener);
         
         if (l_flow) {
             // Add to local worker's hash table
