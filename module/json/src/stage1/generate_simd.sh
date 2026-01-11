@@ -180,6 +180,7 @@ case "${ARCH}" in
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
             "CHUNK_SIZE=variable" \
             "RUNTIME_CHUNK_SIZE=1" \
+            "USE_SVE_PREDICATES=1" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
             "LOADU=svld1_u8" \
@@ -206,6 +207,7 @@ case "${ARCH}" in
             "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
             "CHUNK_SIZE=variable" \
             "RUNTIME_CHUNK_SIZE=1" \
+            "USE_SVE_PREDICATES=1" \
             "VECTOR_TYPE=svuint8_t" \
             "MASK_TYPE=uint64_t" \
             "LOADU=svld1_u8" \
