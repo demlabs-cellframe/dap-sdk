@@ -5,7 +5,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DAP_TPL_DIR="${SCRIPT_DIR}/../../../test/dap_tpl"
+
+# DAP_TPL_DIR can be provided via environment (from CMake) for flexibility
+# This allows using external dap_tpl (e.g., when dap-sdk is a submodule)
+if [[ -n "${DAP_TPL_DIR:-}" ]]; then
+    echo "Using DAP_TPL_DIR from environment: ${DAP_TPL_DIR}"
+else
+    # Default: relative path from this script
+    DAP_TPL_DIR="${SCRIPT_DIR}/../../../test/dap_tpl"
+fi
+
 TPL_C="${SCRIPT_DIR}/dap_json_stage1_simd.c.tpl"
 TPL_H="${SCRIPT_DIR}/dap_json_stage1_simd.h.tpl"
 

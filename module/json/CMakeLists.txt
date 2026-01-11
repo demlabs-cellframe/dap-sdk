@@ -21,9 +21,18 @@ file(MAKE_DIRECTORY ${SIMD_GEN_DIR})
 message(STATUS "[dap_json] Generating SIMD implementations from templates...")
 message(STATUS "[dap_json] Output directory: ${SIMD_GEN_DIR}")
 
-# Update generate_simd.sh to output to build directory
+# Prepare environment for generator script
+# DAP_TPL_DIR can be set externally (e.g., when dap-sdk is a submodule in another project)
+set(CODEGEN_ENV "")
+if(DEFINED DAP_TPL_DIR)
+    message(STATUS "[dap_json] Using external dap_tpl from: ${DAP_TPL_DIR}")
+    list(APPEND CODEGEN_ENV "DAP_TPL_DIR=${DAP_TPL_DIR}")
+endif()
+
+# Run code generation
 execute_process(
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1/generate_simd.sh ${SIMD_GEN_DIR}
+    COMMAND ${CMAKE_COMMAND} -E env ${CODEGEN_ENV}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1/generate_simd.sh ${SIMD_GEN_DIR}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1
     RESULT_VARIABLE CODEGEN_RESULT
     OUTPUT_VARIABLE CODEGEN_OUTPUT
