@@ -188,6 +188,14 @@ typedef struct dap_serialize_result {
 } dap_serialize_result_t;
 
 /**
+ * @brief Semantic alias for deserialization results
+ * 
+ * Same as dap_serialize_result_t but used for deserialization functions
+ * to improve code readability and semantic clarity.
+ */
+typedef dap_serialize_result_t dap_deserialize_result_t;
+
+/**
  * @brief Argument for schema calculations
  */
 typedef struct dap_serialize_arg {
@@ -323,6 +331,52 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
                                                      size_t a_buffer_size,
                                                      void *a_object,
                                                      void *a_context);
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer
+ * 
+ * Deserialize object from buffer with metadata header.
+ * Improves code readability by using "deserialize" naming for clarity.
+ * 
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer_raw
+ * 
+ * Deserialize object from buffer WITHOUT metadata header (raw fields only).
+ * Improves code readability by using "deserialize" naming for clarity.
+ * 
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer_raw(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
 
 /**
  * @brief Validate serialized data

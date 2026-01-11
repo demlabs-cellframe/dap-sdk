@@ -299,7 +299,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     
     // Deserialize header
     obfuscated_header_t l_header;
-    dap_serialize_result_t l_deser_result = dap_serialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
         &s_obfuscated_header_schema,
         l_decrypted,
         l_header_size,

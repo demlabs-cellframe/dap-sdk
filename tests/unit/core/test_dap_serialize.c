@@ -201,7 +201,7 @@ static void test_simple_serialization(void) {
     
     // Deserialize
     test_simple_struct_t deserialized = {0};
-    dap_serialize_result_t deserialize_result = dap_serialize_from_buffer(
+    dap_deserialize_result_t deserialize_result = dap_deserialize_from_buffer(
         &test_simple_schema, buffer, serialize_result.bytes_written, &deserialized, NULL);
     
     assert(deserialize_result.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
@@ -256,7 +256,7 @@ static void test_dynamic_serialization(void) {
     
     // Deserialize
     test_dynamic_struct_t deserialized = {0};
-    dap_serialize_result_t deserialize_result = dap_serialize_from_buffer(
+    dap_deserialize_result_t deserialize_result = dap_deserialize_from_buffer(
         &test_dynamic_schema, buffer, serialize_result.bytes_written, &deserialized, NULL);
     
     assert(deserialize_result.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
@@ -332,12 +332,12 @@ static void test_conditional_serialization(void) {
     
     // Deserialize both
     test_conditional_struct_t deserialized1 = {0};
-    dap_serialize_result_t deser_result1 = dap_serialize_from_buffer(
+    dap_deserialize_result_t deser_result1 = dap_deserialize_from_buffer(
         &test_conditional_schema, buffer1, result1.bytes_written, &deserialized1, NULL);
     assert(deser_result1.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
     
     test_conditional_struct_t deserialized2 = {0};
-    dap_serialize_result_t deser_result2 = dap_serialize_from_buffer(
+    dap_deserialize_result_t deser_result2 = dap_deserialize_from_buffer(
         &test_conditional_schema, buffer2, result2.bytes_written, &deserialized2, NULL);
     assert(deser_result2.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
     
@@ -397,7 +397,7 @@ static void test_error_conditions(void) {
     uint8_t invalid_buffer[] = {0x00, 0x00, 0x00, 0x00};  // Wrong magic
     test_simple_struct_t deser_obj = {0};
     
-    result = dap_serialize_from_buffer(&test_simple_schema, invalid_buffer, sizeof(invalid_buffer), &deser_obj, NULL);
+    result = dap_deserialize_from_buffer(&test_simple_schema, invalid_buffer, sizeof(invalid_buffer), &deser_obj, NULL);
     assert(result.error_code == DAP_SERIALIZE_ERROR_INVALID_DATA);
     log_it(L_DEBUG, "Invalid data test passed: error_code=%d", result.error_code);
     
@@ -489,7 +489,7 @@ static void test_performance(void) {
     
     for (int i = 0; i < iterations; i++) {
         test_dynamic_struct_t deser_obj = {0};
-        dap_serialize_result_t result = dap_serialize_from_buffer(
+        dap_deserialize_result_t result = dap_deserialize_from_buffer(
             &test_dynamic_schema, buffer, required_size, &deser_obj, NULL);
         assert(result.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
         

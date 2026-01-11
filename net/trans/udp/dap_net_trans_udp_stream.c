@@ -1349,7 +1349,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     // Deserialize using dap_serialize
     dap_stream_trans_udp_full_header_t l_header;
-    dap_serialize_result_t l_deser_result = dap_serialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
         &g_udp_full_header_schema,
         l_decrypted,
         sizeof(dap_stream_trans_udp_full_header_t),
