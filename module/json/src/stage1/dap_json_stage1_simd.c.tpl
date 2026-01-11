@@ -22,11 +22,11 @@
 */
 
 /**
- * @file dap_json_stage1_sse2.c
- * @brief SimdJSON-style Stage 1 tokenization with SSE2 SIMD optimization
+ * @file dap_json_stage1_{{ARCH_LOWER}}.c
+ * @brief SimdJSON-style Stage 1 tokenization with {{ARCH_NAME}} SIMD optimization
  * @details Auto-generated from template using dap_tpl
  * 
- * Performance target: 1+ GB/s (single-core)
+ * Performance target: {{PERF_TARGET}}
  * 
  * @date 2026-01-11
  * @generated
@@ -36,22 +36,22 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
-#include <emmintrin.h>  // SSE2
+{{ARCH_INCLUDES}}
 
 #include "dap_common.h"
 #include "dap_json.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
-#define LOG_TAG "dap_json_stage1_sse2"
+#define LOG_TAG "dap_json_stage1_{{ARCH_LOWER}}"
 
 /* ========================================================================== */
-/*                    SSE2-SPECIFIC CONFIGURATION                    */
+/*                    {{ARCH_NAME}}-SPECIFIC CONFIGURATION                    */
 /* ========================================================================== */
 
-#define CHUNK_SIZE 16
-#define VECTOR_TYPE __m128i
-#define MASK_TYPE uint16_t
+#define CHUNK_SIZE {{CHUNK_SIZE}}
+#define VECTOR_TYPE {{VECTOR_TYPE}}
+#define MASK_TYPE {{MASK_TYPE}}
 
 /**
  * @brief Bitmap masks for character classification
@@ -61,61 +61,84 @@ typedef struct {
     MASK_TYPE whitespace;   /* space, tab, \r, \n */
     MASK_TYPE quote;        /* " */
     MASK_TYPE backslash;    /* \ */
-} dap_json_bitmaps_sse2_t;
+} dap_json_bitmaps_{{ARCH_LOWER}}_t;
 
 /* ========================================================================== */
-/*                    SIMD PRIMITIVES - SSE2                         */
+/*                    SIMD PRIMITIVES - {{ARCH_NAME}}                         */
 /* ========================================================================== */
 
 /**
  * @brief SIMD: Classify chunk into bitmaps
  */
-
-static dap_json_bitmaps_sse2_t s_classify_chunk_sse2(const uint8_t *a_chunk)
+{{#if TARGET_ATTR}}
+__attribute__((target("{{TARGET_ATTR}}")))
+{{/if}}
+static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const uint8_t *a_chunk)
 {
-    dap_json_bitmaps_sse2_t bitmaps = {0};
+    dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = {0};
     
     // Load chunk
-    VECTOR_TYPE chunk = _mm_loadu_si128((const VECTOR_TYPE *)a_chunk);
+    VECTOR_TYPE chunk = {{LOADU}}((const VECTOR_TYPE *)a_chunk);
     
     // Create comparison vectors
-    VECTOR_TYPE v_space = _mm_set1_epi8(' ');
-    VECTOR_TYPE v_tab = _mm_set1_epi8('\t');
-    VECTOR_TYPE v_cr = _mm_set1_epi8('\r');
-    VECTOR_TYPE v_lf = _mm_set1_epi8('\n');
-    VECTOR_TYPE v_quote = _mm_set1_epi8('"');
-    VECTOR_TYPE v_backslash = _mm_set1_epi8('\\');
-    VECTOR_TYPE v_op_brace = _mm_set1_epi8('{');
-    VECTOR_TYPE v_cl_brace = _mm_set1_epi8('}');
-    VECTOR_TYPE v_op_bracket = _mm_set1_epi8('[');
-    VECTOR_TYPE v_cl_bracket = _mm_set1_epi8(']');
-    VECTOR_TYPE v_colon = _mm_set1_epi8(':');
-    VECTOR_TYPE v_comma = _mm_set1_epi8(',');
+    VECTOR_TYPE v_space = {{SET1_EPI8}}(' ');
+    VECTOR_TYPE v_tab = {{SET1_EPI8}}('\t');
+    VECTOR_TYPE v_cr = {{SET1_EPI8}}('\r');
+    VECTOR_TYPE v_lf = {{SET1_EPI8}}('\n');
+    VECTOR_TYPE v_quote = {{SET1_EPI8}}('"');
+    VECTOR_TYPE v_backslash = {{SET1_EPI8}}('\\');
+    VECTOR_TYPE v_op_brace = {{SET1_EPI8}}('{');
+    VECTOR_TYPE v_cl_brace = {{SET1_EPI8}}('}');
+    VECTOR_TYPE v_op_bracket = {{SET1_EPI8}}('[');
+    VECTOR_TYPE v_cl_bracket = {{SET1_EPI8}}(']');
+    VECTOR_TYPE v_colon = {{SET1_EPI8}}(':');
+    VECTOR_TYPE v_comma = {{SET1_EPI8}}(',');
     
-
+{{#if USE_AVX512_MASK}}
+    // AVX-512: Direct mask comparisons (no movemask needed)
+    MASK_TYPE whitespace = {{CMPEQ_EPI8_MASK}}(chunk, v_space);
+    whitespace |= {{CMPEQ_EPI8_MASK}}(chunk, v_tab);
+    whitespace |= {{CMPEQ_EPI8_MASK}}(chunk, v_cr);
+    whitespace |= {{CMPEQ_EPI8_MASK}}(chunk, v_lf);
+    
+    MASK_TYPE quote = {{CMPEQ_EPI8_MASK}}(chunk, v_quote);
+    MASK_TYPE backslash = {{CMPEQ_EPI8_MASK}}(chunk, v_backslash);
+    
+    MASK_TYPE structural = {{CMPEQ_EPI8_MASK}}(chunk, v_op_brace);
+    structural |= {{CMPEQ_EPI8_MASK}}(chunk, v_cl_brace);
+    structural |= {{CMPEQ_EPI8_MASK}}(chunk, v_op_bracket);
+    structural |= {{CMPEQ_EPI8_MASK}}(chunk, v_cl_bracket);
+    structural |= {{CMPEQ_EPI8_MASK}}(chunk, v_colon);
+    structural |= {{CMPEQ_EPI8_MASK}}(chunk, v_comma);
+    
+    bitmaps.whitespace = whitespace;
+    bitmaps.quote = quote;
+    bitmaps.backslash = backslash;
+    bitmaps.structural = structural;
+{{else}}
     // SSE2/AVX2/NEON: Vector comparisons + movemask
-    VECTOR_TYPE whitespace = _mm_or_si128(
-        _mm_or_si128(_mm_cmpeq_epi8(chunk, v_space), _mm_cmpeq_epi8(chunk, v_tab)),
-        _mm_or_si128(_mm_cmpeq_epi8(chunk, v_cr), _mm_cmpeq_epi8(chunk, v_lf))
+    VECTOR_TYPE whitespace = {{OR}}(
+        {{OR}}({{CMPEQ_EPI8}}(chunk, v_space), {{CMPEQ_EPI8}}(chunk, v_tab)),
+        {{OR}}({{CMPEQ_EPI8}}(chunk, v_cr), {{CMPEQ_EPI8}}(chunk, v_lf))
     );
     
-    VECTOR_TYPE quote = _mm_cmpeq_epi8(chunk, v_quote);
-    VECTOR_TYPE backslash = _mm_cmpeq_epi8(chunk, v_backslash);
+    VECTOR_TYPE quote = {{CMPEQ_EPI8}}(chunk, v_quote);
+    VECTOR_TYPE backslash = {{CMPEQ_EPI8}}(chunk, v_backslash);
     
-    VECTOR_TYPE structural = _mm_or_si128(
-        _mm_or_si128(
-            _mm_or_si128(_mm_cmpeq_epi8(chunk, v_op_brace), _mm_cmpeq_epi8(chunk, v_cl_brace)),
-            _mm_or_si128(_mm_cmpeq_epi8(chunk, v_op_bracket), _mm_cmpeq_epi8(chunk, v_cl_bracket))
+    VECTOR_TYPE structural = {{OR}}(
+        {{OR}}(
+            {{OR}}({{CMPEQ_EPI8}}(chunk, v_op_brace), {{CMPEQ_EPI8}}(chunk, v_cl_brace)),
+            {{OR}}({{CMPEQ_EPI8}}(chunk, v_op_bracket), {{CMPEQ_EPI8}}(chunk, v_cl_bracket))
         ),
-        _mm_or_si128(_mm_cmpeq_epi8(chunk, v_colon), _mm_cmpeq_epi8(chunk, v_comma))
+        {{OR}}({{CMPEQ_EPI8}}(chunk, v_colon), {{CMPEQ_EPI8}}(chunk, v_comma))
     );
     
     // Convert to bitmasks
-    bitmaps.whitespace = (MASK_TYPE)_mm_movemask_epi8(whitespace);
-    bitmaps.quote = (MASK_TYPE)_mm_movemask_epi8(quote);
-    bitmaps.backslash = (MASK_TYPE)_mm_movemask_epi8(backslash);
-    bitmaps.structural = (MASK_TYPE)_mm_movemask_epi8(structural);
-
+    bitmaps.whitespace = (MASK_TYPE){{MOVEMASK_EPI8}}(whitespace);
+    bitmaps.quote = (MASK_TYPE){{MOVEMASK_EPI8}}(quote);
+    bitmaps.backslash = (MASK_TYPE){{MOVEMASK_EPI8}}(backslash);
+    bitmaps.structural = (MASK_TYPE){{MOVEMASK_EPI8}}(structural);
+{{/if}}
     
     return bitmaps;
 }
@@ -123,7 +146,7 @@ static dap_json_bitmaps_sse2_t s_classify_chunk_sse2(const uint8_t *a_chunk)
 /**
  * @brief Helper: Add token with capacity check (inline for speed)
  */
-static inline int s_add_token_sse2(
+static inline int s_add_token_{{ARCH_LOWER}}(
     dap_json_stage1_t *a_stage1, uint32_t a_pos, uint32_t a_len,
     dap_json_token_type_t a_type, uint8_t a_char)
 {
@@ -153,20 +176,22 @@ static inline int s_add_token_sse2(
 }
 
 /* ========================================================================== */
-/*                    MAIN TOKENIZATION - SSE2                       */
+/*                    MAIN TOKENIZATION - {{ARCH_NAME}}                       */
 /* ========================================================================== */
 
 /**
- * @brief Full SIMD-optimized Stage 1 tokenization (SSE2)
+ * @brief Full SIMD-optimized Stage 1 tokenization ({{ARCH_NAME}})
  * @details Three-phase processing:
  *          Phase 1: SIMD chunk classification + structural extraction
  *          Phase 2: Sequential value token extraction (with SIMD hints)
  *          Phase 3: Tail processing
  * 
- * Performance: 1+ GB/s (single-core)
+ * Performance: {{PERF_TARGET}}
  */
-
-int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
+{{#if TARGET_ATTR}}
+__attribute__((target("{{TARGET_ATTR}}")))
+{{/if}}
+int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
 {
     if (!a_stage1 || !a_stage1->input) {
         return STAGE1_ERROR_INVALID_INPUT;
@@ -190,7 +215,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
     
-    debug_if(dap_json_get_debug(), "Starting SSE2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
+    debug_if(dap_json_get_debug(), "Starting {{ARCH_NAME}} SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
     
     // Phase 1 & 2: SIMD-accelerated chunk processing
     size_t pos = 0;
@@ -198,7 +223,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
     
     while (pos < chunk_end) {
         // SIMD: Classify chunk in parallel
-        dap_json_bitmaps_sse2_t bitmaps = s_classify_chunk_sse2(input + pos);
+        dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = s_classify_chunk_{{ARCH_LOWER}}(input + pos);
         
         // Process chunk sequentially in position order, using bitmaps as hints
         size_t chunk_pos = pos;
@@ -221,7 +246,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
             
             // Fast path: Check bitmap for structural (add token immediately)
             if (bit_offset < CHUNK_SIZE && (bitmaps.structural & (((MASK_TYPE)1) << bit_offset))) {
-                int ret = s_add_token_sse2(a_stage1, (uint32_t)chunk_pos, 0, TOKEN_TYPE_STRUCTURAL, c);
+                int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, 0, TOKEN_TYPE_STRUCTURAL, c);
                 if (ret != STAGE1_SUCCESS) return ret;
                 a_stage1->structural_chars++;
                 chunk_pos++;
@@ -240,7 +265,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                 if (end == chunk_pos) return a_stage1->error_code;
                 
                 size_t str_len = end - chunk_pos;
-                int ret = s_add_token_sse2(a_stage1, (uint32_t)chunk_pos, (uint32_t)str_len,
+                int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, (uint32_t)str_len,
                                      TOKEN_TYPE_STRING, 0);
                 if (ret != STAGE1_SUCCESS) return ret;
                 
@@ -263,7 +288,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                 if (end == chunk_pos) return a_stage1->error_code;
                 
                 size_t num_len = end - chunk_pos;
-                int ret = s_add_token_sse2(a_stage1, (uint32_t)chunk_pos, (uint32_t)num_len,
+                int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, (uint32_t)num_len,
                                      TOKEN_TYPE_NUMBER, 0);
                 if (ret != STAGE1_SUCCESS) return ret;
                 
@@ -284,7 +309,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
                 if (end == chunk_pos) return a_stage1->error_code;
                 
                 size_t lit_len = end - chunk_pos;
-                int ret = s_add_token_sse2(a_stage1, (uint32_t)chunk_pos, (uint32_t)lit_len,
+                int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)chunk_pos, (uint32_t)lit_len,
                                      TOKEN_TYPE_LITERAL, 0);
                 if (ret != STAGE1_SUCCESS) return ret;
                 
@@ -327,7 +352,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         
         // Structural
         if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',') {
-            int ret = s_add_token_sse2(a_stage1, (uint32_t)pos, 0, TOKEN_TYPE_STRUCTURAL, c);
+            int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)pos, 0, TOKEN_TYPE_STRUCTURAL, c);
             if (ret != STAGE1_SUCCESS) return ret;
             a_stage1->structural_chars++;
             pos++;
@@ -338,7 +363,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
             if (end == pos) return a_stage1->error_code;
             
             size_t str_len = end - pos;
-            int ret = s_add_token_sse2(a_stage1, (uint32_t)pos, (uint32_t)str_len,
+            int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)pos, (uint32_t)str_len,
                                  TOKEN_TYPE_STRING, 0);
             if (ret != STAGE1_SUCCESS) return ret;
             
@@ -352,7 +377,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
             if (end == pos) return a_stage1->error_code;
             
             size_t num_len = end - pos;
-            int ret = s_add_token_sse2(a_stage1, (uint32_t)pos, (uint32_t)num_len,
+            int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)pos, (uint32_t)num_len,
                                  TOKEN_TYPE_NUMBER, 0);
             if (ret != STAGE1_SUCCESS) return ret;
             
@@ -365,7 +390,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
             if (end == pos) return a_stage1->error_code;
             
             size_t lit_len = end - pos;
-            int ret = s_add_token_sse2(a_stage1, (uint32_t)pos, (uint32_t)lit_len,
+            int ret = s_add_token_{{ARCH_LOWER}}(a_stage1, (uint32_t)pos, (uint32_t)lit_len,
                                  TOKEN_TYPE_LITERAL, 0);
             if (ret != STAGE1_SUCCESS) return ret;
             
@@ -381,7 +406,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         }
     }
     
-    debug_if(dap_json_get_debug(), "SSE2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+    debug_if(dap_json_get_debug(), "{{ARCH_NAME}} SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
              a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
              a_stage1->number_count, a_stage1->literal_count);
     
@@ -389,12 +414,12 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
 }
 
 /**
- * @brief Enable/disable detailed debug logging for SSE2 implementation
+ * @brief Enable/disable detailed debug logging for {{ARCH_NAME}} implementation
  * @param a_enable true to enable detailed logging
  */
-void dap_json_stage1_sse2_set_debug(bool a_enable)
+void dap_json_stage1_{{ARCH_LOWER}}_set_debug(bool a_enable)
 {
-    // SSE2 now uses global dap_json_get_debug(), no local flag needed
+    // {{ARCH_NAME}} now uses global dap_json_get_debug(), no local flag needed
     (void)a_enable;
 }
 

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Generate SIMD implementations for all architectures using dap_tpl
+# Proper usage of dap_tpl template engine
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DAP_TPL_DIR="${SCRIPT_DIR}/../../../test/dap_tpl"
+TPL_C="${SCRIPT_DIR}/dap_json_stage1_simd.c.tpl"
+TPL_H="${SCRIPT_DIR}/dap_json_stage1_simd.h.tpl"
+
+# Source dap_tpl library
+if [[ ! -f "${DAP_TPL_DIR}/dap_tpl.sh" ]]; then
+    echo "Error: dap_tpl not found at ${DAP_TPL_DIR}/dap_tpl.sh" >&2
+    exit 1
+fi
+
+source "${DAP_TPL_DIR}/dap_tpl.sh"
+
+echo "=== Generating SIMD implementations using dap_tpl ==="
+
+# Helper function to generate from template
+generate_arch() {
+    local output_c="$1"
+    local output_h="$2"
+    shift 2
+    
+    # Generate .c file
+    replace_template_placeholders "$TPL_C" "$output_c" "$@"
+    echo "  Generated: $output_c"
+    
+    # Generate .h file
+    replace_template_placeholders "$TPL_H" "$output_h" "$@"
+    echo "  Generated: $output_h"
+}
+
+# ========================================================================
+# x86/x64 Architectures
+# ========================================================================
+
+echo "Generating SSE2..."
+generate_arch \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_sse2.c" \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_sse2.h" \
+    "ARCH_NAME=SSE2" \
+    "ARCH_LOWER=sse2" \
+    "ARCH_INCLUDES=#include <emmintrin.h>  // SSE2" \
+    "CHUNK_SIZE=16" \
+    "VECTOR_TYPE=__m128i" \
+    "MASK_TYPE=uint16_t" \
+    "LOADU=_mm_loadu_si128" \
+    "SET1_EPI8=_mm_set1_epi8" \
+    "CMPEQ_EPI8=_mm_cmpeq_epi8" \
+    "OR=_mm_or_si128" \
+    "MOVEMASK_EPI8=_mm_movemask_epi8" \
+    "PERF_TARGET=1+ GB/s (single-core)" \
+    "TARGET_ATTR="
+
+echo ""
+echo "Generating AVX2..."
+generate_arch \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_avx2.c" \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_avx2.h" \
+    "ARCH_NAME=AVX2" \
+    "ARCH_LOWER=avx2" \
+    "ARCH_INCLUDES=#include <immintrin.h>  // AVX2" \
+    "CHUNK_SIZE=32" \
+    "VECTOR_TYPE=__m256i" \
+    "MASK_TYPE=uint32_t" \
+    "LOADU=_mm256_loadu_si256" \
+    "SET1_EPI8=_mm256_set1_epi8" \
+    "CMPEQ_EPI8=_mm256_cmpeq_epi8" \
+    "OR=_mm256_or_si256" \
+    "MOVEMASK_EPI8=_mm256_movemask_epi8" \
+    "PERF_TARGET=4-5 GB/s (single-core)" \
+    "TARGET_ATTR=avx2"
+
+echo ""
+echo "Generating AVX-512..."
+generate_arch \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_avx512.c" \
+    "${SCRIPT_DIR}/arch/x86/dap_json_stage1_avx512.h" \
+    "ARCH_NAME=AVX-512" \
+    "ARCH_LOWER=avx512" \
+    "ARCH_INCLUDES=#include <immintrin.h>  // AVX-512" \
+    "CHUNK_SIZE=64" \
+    "VECTOR_TYPE=__m512i" \
+    "MASK_TYPE=uint64_t" \
+    "LOADU=_mm512_loadu_si512" \
+    "SET1_EPI8=_mm512_set1_epi8" \
+    "CMPEQ_EPI8_MASK=_mm512_cmpeq_epi8_mask" \
+    "MOVEMASK_TYPE=__mmask64" \
+    "PERF_TARGET=2+ GB/s (single-core)" \
+    "TARGET_ATTR=avx512f,avx512dq,avx512bw" \
+    "USE_AVX512_MASK=1"
+
+# ========================================================================
+# ARM Architectures (Linux only for now)
+# ========================================================================
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+    echo ""
+    echo "Generating ARM NEON..."
+    generate_arch \
+        "${SCRIPT_DIR}/arch/arm/dap_json_stage1_neon.c" \
+        "${SCRIPT_DIR}/arch/arm/dap_json_stage1_neon.h" \
+        "ARCH_NAME=NEON" \
+        "ARCH_LOWER=neon" \
+        "ARCH_INCLUDES=#include <arm_neon.h>  // ARM NEON" \
+        "CHUNK_SIZE=16" \
+        "VECTOR_TYPE=uint8x16_t" \
+        "MASK_TYPE=uint16_t" \
+        "LOADU=vld1q_u8" \
+        "SET1_EPI8=vdupq_n_u8" \
+        "CMPEQ_EPI8=vceqq_u8" \
+        "OR=vorrq_u8" \
+        "MOVEMASK_EPI8=dap_neon_movemask_u8" \
+        "PERF_TARGET=1+ GB/s (single-core)" \
+        "TARGET_ATTR="
+fi
+
+echo ""
+echo "=== Generation complete! ==="
+echo ""
+echo "Generated files:"
+ls -lh "${SCRIPT_DIR}/arch/x86/"*.c "${SCRIPT_DIR}/arch/x86/"*.h 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
+if [[ "$(uname -s)" == "Linux" ]]; then
+    ls -lh "${SCRIPT_DIR}/arch/arm/"*.c "${SCRIPT_DIR}/arch/arm/"*.h 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}' || true
+fi
+echo ""
+echo "Note: ARM NEON requires custom dap_neon_movemask_u8() helper function"
+echo "      (NEON doesn't have native movemask, need to emulate with bit shifts)"
+echo "Note: AVX-512 uses native kmask operations (_mm512_cmpeq_epi8_mask)"

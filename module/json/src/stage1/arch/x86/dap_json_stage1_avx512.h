@@ -4,19 +4,19 @@
  * DeM Labs Inc.   https://demlabs.net
  * Copyright  (c) 2026
  * All rights reserved.
- 
+ *
  This file is part of DAP (Distributed Applications Platform) the open source project
- 
+
     DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
- 
+
     DAP is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
- 
+
     You should have received a copy of the GNU General Public License
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -24,7 +24,9 @@
 /**
  * @file dap_json_stage1_avx512.h
  * @brief AVX-512-optimized Stage 1 JSON tokenization header
- * @details Entry point for AVX-512 SIMD implementation (64 bytes/iteration)
+ * @details Entry point for AVX-512 SIMD implementation
+ * @generated Auto-generated from template
+ * @date 2026-01-11
  */
 
 #pragma once
@@ -41,10 +43,15 @@ extern "C" {
  * @param[in,out] a_stage1 Stage 1 parser state
  * @return STAGE1_SUCCESS or error code
  * 
- * @note This function will return an error if called on a CPU without AVX-512 support.
- *       Use dap_cpu_detect to check CPU features before calling.
+ * Performance target: 2+ GB/s (single-core)
  */
 extern int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1);
+
+/**
+ * @brief Enable/disable detailed debug logging for AVX-512 implementation
+ * @param a_enable true to enable detailed logging
+ */
+extern void dap_json_stage1_avx512_set_debug(bool a_enable);
 
 #ifdef __cplusplus
 }

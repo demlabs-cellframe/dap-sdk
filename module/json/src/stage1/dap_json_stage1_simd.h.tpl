@@ -22,9 +22,9 @@
 */
 
 /**
- * @file dap_json_stage1_avx2.h
- * @brief AVX2-optimized Stage 1 JSON tokenization header
- * @details Entry point for AVX2 SIMD implementation
+ * @file dap_json_stage1_{{ARCH_LOWER}}.h
+ * @brief {{ARCH_NAME}}-optimized Stage 1 JSON tokenization header
+ * @details Entry point for {{ARCH_NAME}} SIMD implementation
  * @generated Auto-generated from template
  * @date 2026-01-11
  */
@@ -39,19 +39,19 @@ extern "C" {
 #endif
 
 /**
- * @brief AVX2-optimized Stage 1 tokenization (32 bytes per iteration)
+ * @brief {{ARCH_NAME}}-optimized Stage 1 tokenization ({{CHUNK_SIZE}} bytes per iteration)
  * @param[in,out] a_stage1 Stage 1 parser state
  * @return STAGE1_SUCCESS or error code
  * 
- * Performance target: 4-5 GB/s (single-core)
+ * Performance target: {{PERF_TARGET}}
  */
-extern int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1);
+extern int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1);
 
 /**
- * @brief Enable/disable detailed debug logging for AVX2 implementation
+ * @brief Enable/disable detailed debug logging for {{ARCH_NAME}} implementation
  * @param a_enable true to enable detailed logging
  */
-extern void dap_json_stage1_avx2_set_debug(bool a_enable);
+extern void dap_json_stage1_{{ARCH_LOWER}}_set_debug(bool a_enable);
 
 #ifdef __cplusplus
 }
