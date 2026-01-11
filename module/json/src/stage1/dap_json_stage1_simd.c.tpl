@@ -83,7 +83,7 @@
 // Store predicates directly, convert to bitmask later
 #define COMPARISON_RESULT_TYPE   svbool_t
 
-{{#else}}
+{{else}}
 // ============================================================================
 // Non-SVE SIMD (SSE2, AVX2, AVX-512, NEON): Direct vector operations
 // ============================================================================
@@ -295,11 +295,6 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
     if (!a_stage1 || !a_stage1->input) {
         return STAGE1_ERROR_INVALID_INPUT;
     }
-    
-{{#if USE_SVE_PREDICATES}}
-    // Initialize SVE predicates (once per run)
-    s_init_sve_predicates_{{ARCH_LOWER}}();
-{{/if}}
     
     const uint8_t *input = a_stage1->input;
     const size_t input_len = a_stage1->input_len;

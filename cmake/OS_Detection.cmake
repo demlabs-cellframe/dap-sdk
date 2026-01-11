@@ -139,15 +139,6 @@ if(UNIX)
             endif()
         else()
             set(_CCOPT "${CFLAGS_WARNINGS} -fno-ident -ffast-math -ftree-vectorize -fno-asynchronous-unwind-tables -ffunction-sections -Wl,--gc-sections -std=gnu11")
-            
-            # ARM-specific optimizations for Release builds
-            if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
-                # Enable native architecture optimizations
-                # This allows compiler to use all available instructions including NEON/SVE
-                set(_CCOPT "${_CCOPT} -march=native")
-                message("[+] ARM Release: Using -march=native for NEON/SVE/SVE2 support")
-            endif()
-            
             if (DEFINED ENV{DAP_ASAN})
                 message("[!] Address Sanitizer enabled")
                 set(_CCOPT "${_CCOPT} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-common -O2")
