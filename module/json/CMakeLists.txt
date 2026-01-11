@@ -13,6 +13,21 @@ file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
 file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
 
+# Generate SIMD implementations from templates at configure time
+message(STATUS "[dap_json] Generating SIMD implementations from templates...")
+execute_process(
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1/generate_simd.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage1
+    RESULT_VARIABLE CODEGEN_RESULT
+    OUTPUT_VARIABLE CODEGEN_OUTPUT
+    ERROR_VARIABLE CODEGEN_ERROR
+)
+if(NOT CODEGEN_RESULT EQUAL 0)
+    message(WARNING "[dap_json] SIMD codegen failed: ${CODEGEN_ERROR}")
+else()
+    message(STATUS "[dap_json] SIMD codegen completed successfully")
+endif()
+
 # Architecture-specific sources - collect based on target platform
 set(JSON_ARCH_SRCS "")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
