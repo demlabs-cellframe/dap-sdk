@@ -26,10 +26,12 @@
  * @brief Multi-architecture performance benchmarks for Stage 1 tokenization
  * @details Comprehensive benchmarks comparing all SIMD implementations:
  *          - Reference C (-O3 optimized)
- *          - SSE2 (128-bit SIMD)
- *          - AVX2 (256-bit SIMD)
- *          - AVX-512 (512-bit SIMD)
- *          - ARM NEON (128-bit SIMD)
+ *          - SSE2 (128-bit SIMD, x86)
+ *          - AVX2 (256-bit SIMD, x86)
+ *          - AVX-512 (512-bit SIMD, x86)
+ *          - ARM NEON (128-bit SIMD, ARM)
+ *          - ARM SVE (128-2048-bit scalable SIMD, ARM)
+ *          - ARM SVE2 (enhanced SVE, ARM)
  * 
  * Metrics:
  *   - Throughput (GB/s)
@@ -352,16 +354,21 @@ static int s_run_benchmarks(void)
     // Define architectures to test
     dap_cpu_arch_t archs[] = {
         DAP_CPU_ARCH_REFERENCE,
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
         DAP_CPU_ARCH_SSE2,
         DAP_CPU_ARCH_AVX2,
         DAP_CPU_ARCH_AVX512,
-        DAP_CPU_ARCH_NEON
+#elif defined(__arm__) || defined(__aarch64__)
+        DAP_CPU_ARCH_NEON,
+        DAP_CPU_ARCH_SVE,
+        DAP_CPU_ARCH_SVE2,
+#endif
     };
     int num_archs = sizeof(archs) / sizeof(archs[0]);
     
-    // Storage for all results
-    dap_bench_result_t small_results[5] = {0};
-    dap_bench_result_t medium_results[5] = {0};
+    // Storage for all results (max 7 architectures: Ref + 3x x86 OR 3x ARM)
+    dap_bench_result_t small_results[7] = {0};
+    dap_bench_result_t medium_results[7] = {0};
     
     // Small JSON benchmark (10,000 iterations)
     {

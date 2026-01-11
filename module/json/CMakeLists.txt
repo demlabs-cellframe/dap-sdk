@@ -59,10 +59,10 @@ dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_
 # Set architecture-specific compiler flags for SIMD implementations
 # This enables compile-time dispatch based on available instruction sets
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-    # x86/x64 architecture
-    file(GLOB AVX2_SRCS src/stage1/arch/x86/*avx2*.c)
-    file(GLOB SSE2_SRCS src/stage1/arch/x86/*sse2.c)
-    file(GLOB AVX512_SRCS src/stage1/arch/x86/*avx512.c)
+    # x86/x64 architecture - sources are GENERATED, search in build directory
+    file(GLOB AVX2_SRCS ${SIMD_GEN_DIR}/*avx2.c)
+    file(GLOB SSE2_SRCS ${SIMD_GEN_DIR}/*sse2.c)
+    file(GLOB AVX512_SRCS ${SIMD_GEN_DIR}/*avx512.c)
     
     if(AVX2_SRCS)
         set_source_files_properties(${AVX2_SRCS} PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi -mbmi2 -mpopcnt")
@@ -80,9 +80,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     endif()
     
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
-    # ARM architecture
-    file(GLOB NEON_SRCS src/stage1/arch/arm/*neon.c)
-    file(GLOB SVE_SRCS src/stage1/arch/arm/*sve.c)
+    # ARM architecture - sources are GENERATED, search in build directory
+    file(GLOB NEON_SRCS ${SIMD_GEN_DIR}/*neon.c)
+    file(GLOB SVE_SRCS ${SIMD_GEN_DIR}/*sve.c)
+    file(GLOB SVE2_SRCS ${SIMD_GEN_DIR}/*sve2.c)
     
     if(NEON_SRCS)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
@@ -98,6 +99,11 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
     if(SVE_SRCS)
         set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
         message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
+    endif()
+    
+    if(SVE2_SRCS)
+        set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
+        message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
     endif()
 endif()
 

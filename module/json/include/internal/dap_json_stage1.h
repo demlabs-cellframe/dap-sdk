@@ -406,6 +406,8 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 
 #elif defined(__arm__) || defined(__aarch64__)
 #include "dap_json_stage1_neon.h"
+#include "dap_json_stage1_sve.h"
+#include "dap_json_stage1_sve2.h"
 #endif
 
 /**
@@ -438,7 +440,7 @@ void dap_json_stage1_init(void);
  * 
  * Dispatch priority (when AUTO):
  *   x86/x64: AVX-512 → AVX2 → SSE2 → Reference C
- *   ARM:     NEON → Reference C
+ *   ARM:     SVE2 → SVE → NEON → Reference C
  * 
  * @param[in,out] a_stage1 Initialized Stage 1 parser
  * @return STAGE1_SUCCESS on success, error code otherwise
@@ -463,6 +465,10 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
 #elif defined(__arm__) || defined(__aarch64__)
         case DAP_CPU_ARCH_NEON:
             return dap_json_stage1_run_neon(a_stage1);
+        case DAP_CPU_ARCH_SVE:
+            return dap_json_stage1_run_sve(a_stage1);
+        case DAP_CPU_ARCH_SVE2:
+            return dap_json_stage1_run_sve2(a_stage1);
 #endif
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:
