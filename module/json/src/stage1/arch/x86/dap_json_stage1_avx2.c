@@ -53,7 +53,7 @@
 #if defined(__AVX2__)
 #include <immintrin.h>
 
-#define LOG_TAG "dap_json_stage1_avx2_simdjson_v2"
+#define LOG_TAG "dap_json_stage1_avx2"
 
 #define AVX2_CHUNK_SIZE 32
 
@@ -185,7 +185,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
     
-    debug_if(dap_json_get_debug(), "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
+    debug_if(dap_json_get_debug(), "Starting AVX2 Stage 1 tokenization (%zu bytes)", input_len);
     
     // Phase 1 & 2: SIMD-accelerated chunk processing
     size_t pos = 0;
@@ -397,7 +397,7 @@ int dap_json_stage1_run_avx2(dap_json_stage1_t *a_stage1)
         }
     }
     
-    debug_if(dap_json_get_debug(), "AVX2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+    debug_if(dap_json_get_debug(), "AVX2 Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
              a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
              a_stage1->number_count, a_stage1->literal_count);
     
