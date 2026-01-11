@@ -199,8 +199,9 @@ static void test_circular_load(void)
 
         count_write_bytes = rand() % strlen(digits);
         dap_cbuf_push(cb, (void*)digits, count_write_bytes);
-        strncat(expectedBuffer, digits, count_write_bytes);
+        memcpy(expectedBuffer+count_writed_bytes, digits, count_write_bytes);
         count_writed_bytes += count_write_bytes;
+        
     } while (--iterations);
     count_writed_bytes -= count_write_bytes; // last bytes will not be writed
 

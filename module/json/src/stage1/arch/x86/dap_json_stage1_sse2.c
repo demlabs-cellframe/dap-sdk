@@ -47,6 +47,7 @@
 #include <emmintrin.h>  // SSE2
 
 #include "dap_common.h"
+#include "dap_json.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
@@ -261,7 +262,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
     const uint8_t *l_input = a_stage1->input;
     const size_t l_input_len = a_stage1->input_len;
     
-    log_it(L_DEBUG, "Starting SSE2 Stage 1 tokenization (%zu bytes)", l_input_len);
+    debug_if(dap_json_get_debug(), "Starting SSE2 Stage 1 tokenization (%zu bytes)", l_input_len);
     
     // Process in 16-byte chunks
     size_t l_pos = 0;

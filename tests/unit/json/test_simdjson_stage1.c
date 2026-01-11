@@ -175,7 +175,10 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     log_it(L_INFO, "Benchmarking: %s (%d seconds streaming)", a_description, a_duration_sec);
     
     size_t json_len = strlen(a_json);
-    uint64_t target_duration_us = (uint64_t)a_duration_sec * 1000000; // Convert to microseconds
+    uint64_t target_duration_ns = (uint64_t)a_duration_sec * 1000000000ULL; // Nanoseconds
+    
+    // Disable debug logging for benchmarks (critical for performance!)
+    dap_json_set_debug(false);
     
     // Create parser once, reuse for all iterations (simulates streaming)
     dap_json_stage1_t *stage1 = dap_json_stage1_create((const uint8_t *)a_json, json_len);
@@ -191,32 +194,32 @@ static void s_benchmark_simdjson_streaming(const char *a_json, const char *a_des
     }
     
     // Time-based benchmark: run for fixed duration
-    uint64_t start_time = dap_time_now();
+    uint64_t start_time = dap_nanotime_now();
     uint64_t iterations = 0;
-    uint64_t elapsed_us = 0;
+    uint64_t elapsed_ns = 0;
     
-    while (elapsed_us < target_duration_us) {
+    while (elapsed_ns < target_duration_ns) {
         // Reset parser for next iteration (simulates streaming)
         dap_json_stage1_reset(stage1, (const uint8_t *)a_json, json_len);
         dap_json_stage1_run_avx2_simdjson(stage1);
         
         iterations++;
         
-        // Check time every 10000 iterations to reduce overhead
-        if (iterations % 10000 == 0) {
-            elapsed_us = dap_time_now() - start_time;
+        // Check time every 1000 iterations to reduce overhead
+        if (iterations % 1000 == 0) {
+            elapsed_ns = dap_nanotime_now() - start_time;
         }
     }
     
     // Final time measurement
-    uint64_t end_time = dap_time_now();
-    elapsed_us = end_time - start_time;
+    uint64_t end_time = dap_nanotime_now();
+    elapsed_ns = end_time - start_time;
     
     // Free parser
     dap_json_stage1_free(stage1);
     
     // Calculate metrics
-    double elapsed_sec = elapsed_us / 1000000.0;
+    double elapsed_sec = elapsed_ns / 1000000000.0;
     double total_bytes = (double)(json_len * iterations);
     double throughput_mbps = (total_bytes / (1024.0 * 1024.0)) / elapsed_sec;
     double throughput_gbps = throughput_mbps / 1024.0;

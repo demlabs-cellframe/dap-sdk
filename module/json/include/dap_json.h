@@ -152,6 +152,10 @@ int64_t dap_json_object_get_int64_default(dap_json_t* a_json, const char* a_key,
 // JSON type definitions (shared across all JSON components)
 #include "dap_json_type.h"
 
+// Debug control API (for benchmarks)
+void dap_json_set_debug(bool a_enable);
+bool dap_json_get_debug(void);
+
 // Type checking
 bool dap_json_is_null(dap_json_t* a_json);
 bool dap_json_is_string(dap_json_t* a_json);

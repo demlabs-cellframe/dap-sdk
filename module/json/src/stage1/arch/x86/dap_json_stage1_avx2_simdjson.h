@@ -49,3 +49,9 @@
  */
 int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1);
 
+/**
+ * @brief Enable/disable detailed debug logging for AVX2 SimdJSON
+ * @param a_enable true to enable debug logging, false to disable
+ */
+void dap_json_stage1_avx2_simdjson_set_debug(bool a_enable);
+

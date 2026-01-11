@@ -48,11 +48,14 @@
 #define LOG_TAG "dap_json_stage1_avx2_simdjson"
 
 #include "internal/dap_json_stage1.h"
+#include "dap_json.h"
 #include "dap_common.h"
 #include <immintrin.h>
 #include <string.h>
 
+
 #define AVX2_CHUNK_SIZE 32  // Process 32 bytes at a time
+
 
 /**
  * @brief Bitmap masks for character classification
@@ -215,8 +218,22 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
     const uint8_t *input = a_stage1->input;
     const size_t input_len = a_stage1->input_len;
     
-    // Disable logging for benchmarks (too much overhead)
-    // log_it(L_DEBUG, "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
+    // Reset state (CRITICAL for reuse!)
+    a_stage1->indices_count = 0;
+    a_stage1->current_pos = 0;
+    a_stage1->in_string = false;
+    a_stage1->escape_next = false;
+    a_stage1->string_count = 0;
+    a_stage1->number_count = 0;
+    a_stage1->literal_count = 0;
+    a_stage1->string_chars = 0;
+    a_stage1->whitespace_chars = 0;
+    a_stage1->structural_chars = 0;
+    a_stage1->error_code = STAGE1_SUCCESS;
+    a_stage1->error_position = 0;
+    a_stage1->error_message[0] = '\0';
+    
+    debug_if(dap_json_get_debug(), "Starting AVX2 SimdJSON Stage 1 tokenization (%zu bytes)", input_len);
     
     // Phase 1: Fast SIMD bitmap classification and flatten
     size_t pos = 0;
@@ -232,10 +249,8 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
         
         uint8_t c = input[pos];
         
-        // Debug logging (only in debug mode, skipped in benchmarks)
-        // #ifdef DAP_DEBUG
-        // log_it(L_DEBUG, "  pos=%zu, char='%c' (0x%02X)", pos, (c >= 32 && c < 127) ? c : '?', c);
-        // #endif
+        // Debug logging (only if enabled)
+        debug_if(dap_json_get_debug(), "  pos=%zu, char='%c' (0x%02X)", pos, (c >= 32 && c < 127) ? c : '?', c);
         
         // Ensure capacity
         if (a_stage1->indices_count >= a_stage1->indices_capacity) {
@@ -328,10 +343,9 @@ int dap_json_stage1_run_avx2_simdjson(dap_json_stage1_t *a_stage1)
         }
     }
     
-    // Disable logging for benchmarks (too much overhead)
-    // log_it(L_INFO, "AVX2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
-    //        a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
-    //        a_stage1->number_count, a_stage1->literal_count);
+    debug_if(dap_json_get_debug(), "AVX2 SimdJSON Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+             a_stage1->indices_count, a_stage1->structural_chars, a_stage1->string_count,
+             a_stage1->number_count, a_stage1->literal_count);
     
     return STAGE1_SUCCESS;
 }

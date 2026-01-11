@@ -50,6 +50,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_json.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
@@ -249,7 +250,7 @@ int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1)
     const uint8_t *l_input = a_stage1->input;
     const size_t l_input_len = a_stage1->input_len;
     
-    log_it(L_DEBUG, "Starting AVX-512 HYBRID Stage 1 tokenization (%zu bytes)", l_input_len);
+    debug_if(dap_json_get_debug(), "Starting AVX-512 HYBRID Stage 1 tokenization (%zu bytes)", l_input_len);
     
     // State
     bool l_in_string = false;
@@ -511,7 +512,7 @@ int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1)
             }
             
             // Unknown character
-            log_it(L_ERROR, "Unexpected character 0x%02X at position %zu", l_char, l_pos);
+            debug_if(dap_json_get_debug(), "Unexpected character 0x%02X at position %zu", l_char, l_pos);
             a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
             a_stage1->error_position = l_pos;
             snprintf(a_stage1->error_message, sizeof(a_stage1->error_message),
@@ -520,7 +521,7 @@ int dap_json_stage1_run_avx512(dap_json_stage1_t *a_stage1)
         }
     }
     
-    log_it(L_INFO, "AVX-512 HYBRID Stage 1 complete: %zu tokens, %zu structural, %zu whitespace",
+    debug_if(dap_json_get_debug(), "AVX-512 HYBRID Stage 1 complete: %zu tokens, %zu structural, %zu whitespace",
            a_stage1->indices_count,
            a_stage1->structural_chars,
            a_stage1->whitespace_chars);

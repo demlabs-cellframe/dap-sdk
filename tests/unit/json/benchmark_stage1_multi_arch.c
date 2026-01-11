@@ -131,6 +131,9 @@ static bool s_benchmark_stage1(
     dap_bench_result_t *a_result
 )
 {
+    // Disable ALL debug logging for accurate benchmarks (CRITICAL!)
+    dap_json_set_debug(false);
+    
     // Set architecture
     if (dap_cpu_arch_set(a_arch) != 0) {
         a_result->available = false;

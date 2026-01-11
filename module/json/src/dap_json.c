@@ -56,6 +56,27 @@
 
 #define LOG_TAG "dap_json"
 
+/* Global debug flag for detailed logging (for benchmarks) */
+static bool s_debug_more = false;
+
+/**
+ * @brief Enable/disable detailed debug logging for ALL JSON parser components
+ * @param a_enable true to enable debug logging, false to disable (for benchmarks)
+ */
+void dap_json_set_debug(bool a_enable)
+{
+    s_debug_more = a_enable;
+}
+
+/**
+ * @brief Get current debug logging state
+ * @return true if debug logging enabled, false otherwise
+ */
+bool dap_json_get_debug(void)
+{
+    return s_debug_more;
+}
+
 /* ========================================================================== */
 /*                          INTERNAL STRUCTURES                               */
 /* ========================================================================== */
