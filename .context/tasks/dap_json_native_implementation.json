@@ -2118,6 +2118,224 @@
       "status": "pending",
       "subphases": [
         {
+          "id": "2.0",
+          "name": "🔍 CRITICAL BOTTLENECK ANALYSIS - Stage 2 DOM Building",
+          "status": "completed",
+          "completion_date": "2026-01-12T22:30:00Z",
+          "why": "КРИТИЧЕСКИЙ АНАЛИЗ: После создания comprehensive competitive benchmark обнаружено что реальное узкое место - Stage 2 DOM building, а НЕ Stage 1 как предполагалось. SIMD Stage 1 УЖЕ работает и используется в dap_json_parse_buffer()!",
+          "deliverables": [
+            "✅ benchmarks/benchmark_competitive_full.cpp - Competitive benchmark suite",
+            "✅ benchmarks/run_comparison.sh - Automation script",
+            "✅ benchmarks/docs/phase2_analysis.md - Deep performance analysis (640 lines)",
+            "✅ benchmarks/docs/phase2_gaps.md - Gap analysis by scenario (680 lines)",
+            "✅ Измерены точные gaps: 7-21x slower than simdjson",
+            "✅ Профилирован dap_json_parse_buffer() - обнаружен Stage 2 bottleneck",
+            "✅ Идентифицированы root causes всех проблем"
+          ],
+          "key_findings": {
+            "good_news": [
+              "✅ SIMD Stage 1 УЖЕ РАБОТАЕТ в dap_json_parse_buffer()",
+              "✅ AVX2 tokenization активен (~2 GB/s Stage 1)",
+              "✅ CPU dispatch функционирует корректно",
+              "✅ Архитектура правильная - two-stage parsing работает"
+            ],
+            "bad_news": [
+              "❌ Stage 2 DOM building занимает 95% времени парсинга",
+              "❌ Stage 1 SIMD: ~5% времени (быстро)",
+              "❌ Stage 2 Reference: ~95% времени (медленно)",
+              "❌ Итоговая производительность: 0.2 GB/s (ограничена Stage 2)"
+            ]
+          },
+          "performance_breakdown": {
+            "stage1_simd": {
+              "time_percentage": "~5%",
+              "throughput": "~2.0 GB/s (AVX2)",
+              "status": "✅ Отлично работает"
+            },
+            "stage2_dom": {
+              "time_percentage": "~95%",
+              "throughput": "~0.21 GB/s (reference)",
+              "status": "❌ УЗКОЕ МЕСТО - требует оптимизации"
+            },
+            "total": {
+              "throughput": "~0.2 GB/s",
+              "bottleneck": "Stage 2 DOM building"
+            }
+          },
+          "measured_performance_gaps": {
+            "small_json_1kb": {
+              "dap_json": "0.12 GB/s",
+              "simdjson": "1.18 GB/s",
+              "gap": "10x slower",
+              "root_cause": "Allocation overhead dominates for small JSON"
+            },
+            "medium_json_10_100kb": {
+              "dap_json": "0.20 GB/s",
+              "simdjson": "2.42 GB/s",
+              "gap": "12x slower",
+              "root_cause": "Stage 2 allocation storm + string copying"
+            },
+            "large_json_1_10mb": {
+              "dap_json": "0.17 GB/s",
+              "simdjson": "2.26 GB/s",
+              "gap": "13x slower",
+              "root_cause": "Memory bandwidth + scattered allocations"
+            },
+            "deep_nested_500_levels": {
+              "dap_json": "0.18 GB/s",
+              "simdjson": "2.02 GB/s",
+              "gap": "11x slower",
+              "root_cause": "Recursive parsing overhead"
+            },
+            "wide_arrays_100k": {
+              "dap_json": "0.17 GB/s",
+              "simdjson": "1.19 GB/s",
+              "gap": "7x slower",
+              "root_cause": "Array reallocation + element allocation"
+            },
+            "number_heavy_90pct": {
+              "dap_json": "0.13 GB/s",
+              "simdjson": "1.20 GB/s",
+              "gap": "9x slower",
+              "root_cause": "Slow strtod() vs fast_float"
+            },
+            "string_heavy_90pct": {
+              "dap_json": "0.45 GB/s",
+              "simdjson": "9.31 GB/s",
+              "gap": "21x slower - WORST CASE!",
+              "root_cause": "String copying + char-by-char scanning"
+            }
+          },
+          "root_cause_analysis": {
+            "string_parsing_bottleneck": {
+              "problem": "Character-by-character scanning для closing quote и backslash",
+              "current_implementation": "while(c != '\"' && c != '\\\\') { c = *ptr++; }",
+              "performance": "~1 character per cycle",
+              "optimal_solution": "SIMD: find '\"' or '\\\\' in 32 bytes at once",
+              "optimal_performance": "~32 characters per cycle",
+              "expected_impact": "5-10x faster string scanning",
+              "measured_gap": "21x slower for string-heavy JSON"
+            },
+            "string_copying_bottleneck": {
+              "problem": "Копирование каждой строки в heap memory",
+              "current_implementation": "char *str = strndup(json+pos, len)",
+              "overhead": "malloc() + memcpy() for EVERY string",
+              "optimal_solution": "Zero-copy: struct { const char *data; size_t len; }",
+              "expected_impact": "10-20x faster для строк без escapes",
+              "notes": "Strings без escape sequences могут быть просто указателями"
+            },
+            "number_parsing_bottleneck": {
+              "problem": "Медленный generic strtod() из C library",
+              "current_implementation": "strtod(str, &end_ptr)",
+              "performance": "~100-200ns per number",
+              "optimal_solution": "Lemire's fast_float algorithm",
+              "optimal_performance": "~20-40ns per number",
+              "expected_impact": "2-5x faster number parsing",
+              "measured_gap": "9x slower for number-heavy JSON"
+            },
+            "allocation_storm": {
+              "problem": "Множественные malloc() для каждого DOM node",
+              "current_implementation": "value = DAP_NEW(dap_json_value_t) per value",
+              "overhead": "~50-100ns per allocation",
+              "optimal_solution": "Arena allocator (УЖЕ ЕСТЬ, но недостаточно используется)",
+              "expected_impact": "2-3x fewer cache misses"
+            },
+            "recursive_parsing": {
+              "problem": "Рекурсивный парсинг объектов/массивов",
+              "current_implementation": "s_parse_object(stage2, &idx) - recursion",
+              "overhead": "Function call per nesting level (~10ns each)",
+              "optimal_solution": "Iterative parsing с explicit stack",
+              "expected_impact": "2x faster для deep nested JSON",
+              "measured_gap": "11x slower for deep nested"
+            }
+          },
+          "priority_optimizations": {
+            "p0_critical_10_20x_impact": [
+              {
+                "name": "Zero-copy strings",
+                "impact": "+1000-2000%",
+                "effort": "Medium",
+                "why": "String copying worst bottleneck (21x gap)",
+                "implementation": "Store pointers into original JSON buffer"
+              },
+              {
+                "name": "SIMD string scanner",
+                "impact": "+500-1000%",
+                "effort": "Medium",
+                "why": "Find quotes/backslashes 32 bytes at a time",
+                "implementation": "AVX2: _mm256_cmpeq_epi8 + movemask"
+              }
+            ],
+            "p1_important_2_5x_impact": [
+              {
+                "name": "fast_float number parsing",
+                "impact": "+200-500%",
+                "effort": "Low",
+                "why": "Lemire's algorithm 5x faster than strtod()",
+                "implementation": "Port fast_float library"
+              },
+              {
+                "name": "Iterative parsing",
+                "impact": "+100-200%",
+                "effort": "Medium",
+                "why": "Eliminate recursion overhead",
+                "implementation": "Explicit stack for depth tracking"
+              },
+              {
+                "name": "Aggressive arena usage",
+                "impact": "+100-200%",
+                "effort": "Low",
+                "why": "Reduce allocation overhead",
+                "implementation": "Batch allocations in arena"
+              }
+            ],
+            "p2_nice_to_have_10_50pct": [
+              {
+                "name": "Prefetch hints",
+                "impact": "+5-10%",
+                "effort": "Low",
+                "why": "Reduce memory latency",
+                "implementation": "__builtin_prefetch()"
+              },
+              {
+                "name": "Cache-line alignment",
+                "impact": "+5-15%",
+                "effort": "Low",
+                "why": "Better cache utilization",
+                "implementation": "Align hot structures to 64 bytes"
+              }
+            ]
+          },
+          "expected_results_after_optimizations": {
+            "phase1_zero_copy_simd_scanner": {
+              "optimizations": ["Zero-copy strings", "SIMD string scanner"],
+              "expected_throughput": "1.5-2.5 GB/s",
+              "improvement_vs_current": "7-12x",
+              "status_vs_simdjson": "Still 1.5x slower, but close"
+            },
+            "phase2_fast_float_iterative": {
+              "optimizations": ["+ fast_float", "+ iterative parsing"],
+              "expected_throughput": "3.0-4.0 GB/s",
+              "improvement_vs_current": "15-20x",
+              "status_vs_simdjson": "MATCH or EXCEED simdjson!"
+            },
+            "phase3_polish": {
+              "optimizations": ["+ prefetch", "+ cache optimization"],
+              "expected_throughput": "4.0-5.0 GB/s",
+              "improvement_vs_current": "20-25x",
+              "status_vs_simdjson": "BEAT simdjson by 50-100%"
+            }
+          },
+          "acceptance_criteria": [
+            "✅ Bottleneck identified: Stage 2 DOM building (95% времени)",
+            "✅ Root causes documented for all performance gaps",
+            "✅ Priority optimizations определены с expected impact",
+            "✅ Clear roadmap: 0.2 → 2.5 → 4.0 → 5.0 GB/s",
+            "✅ Detailed analysis published in benchmarks/docs/"
+          ],
+          "notes": "КРИТИЧЕСКИЙ ИНСАЙТ: Мы потратили много времени оптимизируя Stage 1 SIMD (и добились 5.6x vs reference!), но реальное узкое место - Stage 2 DOM building который занимает 95% времени. Stage 1 уже достаточно быстрый (~2 GB/s). Теперь нужно сфокусироваться на Stage 2 оптимизации - это даст основной прирост производительности."
+        },
+        {
           "id": "2.1",
           "name": "Advanced Structural Indexing (полная simdjson Stage 1)",
           "status": "80% complete - Algorithm done, performance optimization needed",
@@ -2257,26 +2475,74 @@
         },
         {
           "id": "2.2",
-          "name": "Advanced Number Parsing (Lemire's fast_float + SIMD)",
+          "name": "🚀 P0: Zero-Copy Strings + SIMD String Scanner (CRITICAL!)",
           "status": "pending",
+          "priority": "P0 - HIGHEST IMPACT",
+          "estimated_impact": "+1000-2000% (10-20x) для string-heavy JSON",
+          "effort": "Medium (2-3 days)",
+          "why": "STRING COPYING - самое большое узкое место! Measured 21x gap на string-heavy JSON. Zero-copy + SIMD scanner дадут огромный прирост.",
           "deliverables": [
-            "module/json/src/stage2/number/dap_json_fast_float.c - Lemire's algorithm",
-            "module/json/src/stage2/number/dap_json_fast_int64.c - SIMD int64 parser",
-            "module/json/src/stage2/arch/x86/number_avx2.c - AVX2 digit validation",
-            "Lookup tables для быстрой классификации цифр",
-            "SIMD validation что все байты - digits",
-            "tests/unit/json/test_number_parsing_extreme.c - edge cases",
-            "Benchmark: >= 500 MB/s для number-heavy JSON"
+            "module/json/include/internal/dap_json_string.h - Zero-copy string type",
+            "module/json/src/stage2/string/dap_json_string_scanner.c - SIMD string scanner",
+            "module/json/src/stage2/string/arch/x86/string_avx2.c - AVX2 scanner",
+            "module/json/src/stage2/string/arch/x86/string_sse2.c - SSE2 scanner",
+            "module/json/src/stage2/string/arch/arm/string_neon.c - ARM NEON scanner",
+            "Lazy unescaping - unescape только при доступе к строке",
+            "tests/unit/json/test_zero_copy_strings.c - correctness tests",
+            "tests/unit/json/test_simd_string_scanner.c - SIMD tests",
+            "Benchmark: >= 2 GB/s для string-heavy JSON"
           ],
+          "implementation_details": {
+            "zero_copy_structure": {
+              "description": "Новая структура для zero-copy strings",
+              "code": "typedef struct { const char *data; uint32_t length; bool needs_unescape; char *unescaped; } dap_json_string_t;",
+              "benefits": [
+                "No malloc() для строк без escapes",
+                "No memcpy() - просто указатель",
+                "Lazy unescaping - только если нужно",
+                "Cache-friendly - less memory traffic"
+              ]
+            },
+            "simd_string_scanner_avx2": {
+              "description": "Найти closing quote или backslash в 32 bytes",
+              "algorithm": [
+                "1. Load 32 bytes: chunk = _mm256_loadu_si256(str)",
+                "2. Find quotes: quotes = _mm256_cmpeq_epi8(chunk, '\"')",
+                "3. Find backslash: backslash = _mm256_cmpeq_epi8(chunk, '\\\\')",
+                "4. Combine: mask = _mm256_movemask_epi8(quotes | backslash)",
+                "5. Find first bit: pos = __builtin_ctz(mask)",
+                "6. Process 32 chars at once instead of 1!"
+              ],
+              "performance": "32x faster character scanning",
+              "measured_gap": "21x slower на string-heavy - это исправит!"
+            },
+            "lazy_unescaping": {
+              "description": "Unescape только при реальном доступе",
+              "implementation": "const char* get_cstr(str) { if(needs_unescape && !unescaped) unescape(); return unescaped ? unescaped : data; }",
+              "benefit": "Skip unescaping для неиспользуемых strings"
+            }
+          },
           "acceptance_criteria": [
-            "Int64 parsing без strtod",
-            "Lemire's fast_float для doubles",
-            "SIMD digit validation",
-            "Проходит все edge cases (INT64_MIN/MAX, overflow, etc)"
-          ]
+            "Zero-copy работает для всех strings без escapes",
+            "SIMD scanner находит quotes/backslash в 32 bytes (AVX2)",
+            "Lazy unescaping - unescape только при get()",
+            "String-heavy JSON: >= 2 GB/s (сейчас 0.45 GB/s)",
+            "Correctness == 100% vs current implementation"
+          ],
+          "expected_impact": {
+            "string_heavy_json": "0.45 → 4-6 GB/s (+900-1300%)",
+            "medium_json": "0.20 → 0.8-1.2 GB/s (+300-500%)",
+            "overall_average": "0.21 → 1.5-2.0 GB/s (+600-800%)"
+          }
         },
         {
           "id": "2.3",
+          "name": "🔢 P1: Fast Number Parsing (Lemire's fast_float + Integer Fast Path)",
+          "status": "pending",
+          "priority": "P1 - HIGH IMPACT",
+          "estimated_impact": "+200-500% (2-5x) для number-heavy JSON",
+          "effort": "Low (1 day)",
+          "why": "strtod() медленный (100-200ns per number). fast_float даёт 20-40ns. Measured 9x gap на number-heavy JSON.",
           "name": "Cache Optimization и Memory Layout",
           "status": "pending",
           "deliverables": [

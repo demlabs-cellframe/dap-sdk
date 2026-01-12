@@ -73,36 +73,6 @@ dap_cpu_arch_t dap_json_get_arch(void);
  */
 const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch);
 
-/* ========================================================================== */
-/*                       FAST PARSING API (Phase 2.6+)                        */
-/* ========================================================================== */
-
-/**
- * @brief Parse JSON using optimized two-stage parser (FAST PATH)
- * @details This is the high-performance API that uses:
- *          - Stage 1: SIMD structural indexing (AVX2/SSE2/NEON auto-detected)
- *          - Stage 2: Optimized DOM builder with arena allocation
- *          
- *          Performance: 5-10x faster than dap_json_parse_string() for medium/large JSON
- *          
- * @param[in] a_json JSON string buffer
- * @param[in] a_len Buffer length (must include full JSON, no partial parsing)
- * @return Parsed JSON object, or NULL on error
- * 
- * @note Input buffer must remain valid during parsing (zero-copy strings)
- * @note For small JSON (<1KB), regular API may be faster due to setup overhead
- * @note This API is Phase 2.6+ - uses native two-stage architecture
- * 
- * @example
- *   const char *json = "{\"key\":\"value\"}";
- *   dap_json_t *obj = dap_json_parse_fast(json, strlen(json));
- *   if (obj) {
- *       // Use object...
- *       dap_json_object_free(obj);
- *   }
- */
-dap_json_t* dap_json_parse_fast(const char *a_json, size_t a_len);
-
 /**
  * @brief Opaque DAP JSON type - hides internal json-c implementation
  * Can represent both JSON objects and arrays internally
