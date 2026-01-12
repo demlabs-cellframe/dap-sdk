@@ -73,6 +73,7 @@ static bool s_test_empty_strings(void) {
     DAP_TEST_FAIL_IF(strlen(empty_val) != 0, "Empty string has zero length");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 2: Empty key
     l_json = dap_json_parse_string("{\"\":\"value\"}");
@@ -83,6 +84,7 @@ static bool s_test_empty_strings(void) {
     DAP_TEST_FAIL_IF(strcmp(val, "value") != 0, "Empty key retrieves correct value");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 3: Empty key and empty value
     l_json = dap_json_parse_string("{\"\":\"\"}");
@@ -93,6 +95,7 @@ static bool s_test_empty_strings(void) {
     DAP_TEST_FAIL_IF(strlen(empty_both) != 0, "Both key and value empty");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 4: Empty string in array
     l_json = dap_json_parse_string("[\"\",\"\",\"\"]");
@@ -102,6 +105,7 @@ static bool s_test_empty_strings(void) {
     DAP_TEST_FAIL_IF(arr_len != 3, "Array has 3 empty strings");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 5: Nested empty strings
     l_json = dap_json_parse_string("{\"outer\":{\"inner\":\"\",\"\":\"\"},\"\":{}}");
@@ -138,6 +142,7 @@ static bool s_test_whitespace_only_strings(void) {
     DAP_TEST_FAIL_IF(spaces[0] != ' ', "First character is space");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 2: Tabs only (escaped as \t in JSON)
     l_json = dap_json_parse_string("{\"tabs\":\"\\t\\t\\t\"}");
@@ -148,6 +153,7 @@ static bool s_test_whitespace_only_strings(void) {
     DAP_TEST_FAIL_IF(tabs[0] != '\t', "First character is tab");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 3: Newlines only (escaped as \n in JSON)
     l_json = dap_json_parse_string("{\"newlines\":\"\\n\\n\\n\"}");
@@ -158,6 +164,7 @@ static bool s_test_whitespace_only_strings(void) {
     DAP_TEST_FAIL_IF(newlines[0] != '\n', "First character is newline");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Test 4: Mixed whitespace
     l_json = dap_json_parse_string("{\"mixed\":\" \\t \\n \\r \"}");
@@ -490,8 +497,6 @@ static bool s_test_backslash_at_end(void) {
     const char *valid = dap_json_object_get_string(l_json, "valid");
     DAP_TEST_FAIL_IF_NULL(valid, "Get string with escaped backslash");
     DAP_TEST_FAIL_IF(strcmp(valid, "text\\") != 0, "Backslash at end correct");
-    
-    dap_json_object_free(l_json);
     
     // Test 2: Invalid unescaped backslash at end (should fail)
     // Note: Can't easily test this in C string literal, as "\\" is already escaped
