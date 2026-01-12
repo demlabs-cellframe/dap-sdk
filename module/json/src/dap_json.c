@@ -847,10 +847,18 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
         a_count = l_array->array.count - a_idx;
     }
     
-    // Free elements
-    for (size_t i = 0; i < a_count; i++) {
-        dap_json_value_v2_free(l_array->array.elements[a_idx + i]);
+    // CRITICAL FIX: Only free elements if this is a malloc-based array (manually created)
+    // Arena-based arrays (from parsing) should NOT free individual elements
+    // Check if array came from parsing (has stage2_parser) or manual creation (owns_value)
+    bool should_free_elements = (a_array->stage2_parser == NULL) && a_array->owns_value;
+    
+    if (should_free_elements) {
+        // Free elements only for manually created arrays
+        for (size_t i = 0; i < a_count; i++) {
+            dap_json_value_v2_free(l_array->array.elements[a_idx + i]);
+        }
     }
+    // For Arena-based arrays, just remove references - elements stay in Arena
     
     // Shift remaining elements
     if (a_idx + a_count < l_array->array.count) {
