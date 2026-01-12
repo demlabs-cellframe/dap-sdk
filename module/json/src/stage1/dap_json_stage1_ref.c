@@ -728,8 +728,16 @@ dap_json_stage1_t *dap_json_stage1_create(const uint8_t *a_input, size_t a_input
     l_stage1->input = a_input;
     l_stage1->input_len = a_input_len;
     
-    // Allocate initial indices array
-    l_stage1->indices_capacity = INITIAL_INDICES_CAPACITY;
+    // Allocate initial indices array with smart pre-allocation
+    // Heuristic: typical JSON has ~8-10% structural characters
+    // Pre-allocate input_size / 8 + 256 (safety margin)
+    // This avoids expensive realloc() calls during parsing
+    size_t l_estimated_tokens = (a_input_len / 8) + 256;
+    // Cap at reasonable maximum to avoid excessive memory for huge JSONs
+    if (l_estimated_tokens > 1024 * 1024) {
+        l_estimated_tokens = 1024 * 1024; // 1M tokens max initial
+    }
+    l_stage1->indices_capacity = l_estimated_tokens;
     l_stage1->indices = DAP_NEW_Z_SIZE(dap_json_struct_index_t,
                                        l_stage1->indices_capacity * sizeof(dap_json_struct_index_t));
     

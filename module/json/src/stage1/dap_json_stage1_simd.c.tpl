@@ -333,6 +333,12 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
     const size_t chunk_end = (input_len / chunk_size) * chunk_size;
     
     while (pos < chunk_end) {
+        // Prefetch next chunk while processing current one (software prefetching)
+        // Prefetch 2 chunks ahead to hide memory latency (typical L1 miss ~4 cycles, L2 ~12 cycles)
+        if (pos + 2 * chunk_size < input_len) {
+            __builtin_prefetch(input + pos + 2 * chunk_size, 0, 3); // read, high temporal locality
+        }
+        
         // SIMD: Classify chunk in parallel
         dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = s_classify_chunk_{{ARCH_LOWER}}(input + pos);
         
