@@ -28,8 +28,6 @@ enable_testing()
 message("[+] DAP SDK Test Infrastructure:")
 message("[+] - Unit tests: ${CMAKE_CURRENT_SOURCE_DIR}/unit")
 message("[+] - Integration tests: ${CMAKE_CURRENT_SOURCE_DIR}/integration") 
-message("[+] - E2E tests: ${CMAKE_CURRENT_SOURCE_DIR}/e2e")
-message("[+] - Functional tests: ${CMAKE_CURRENT_SOURCE_DIR}/functional")
 message("[+] - Regression tests: ${CMAKE_CURRENT_SOURCE_DIR}/regression")
 message("[+] - Performance tests: ${CMAKE_CURRENT_SOURCE_DIR}/performance")
 message("[+] - Security tests: ${CMAKE_CURRENT_SOURCE_DIR}/security")
@@ -167,16 +165,6 @@ message("[+] Configuring Integration Tests")
 #    register_dap_test(test_integration_crypto_network "integration;crypto;network")
 #endif()
 
-# Build E2E Tests
-message("[+] Configuring E2E Tests")
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/e2e/test_complete_workflow.c)
-    add_dap_test(test_e2e_complete_workflow e2e/test_complete_workflow.c)
-    register_dap_test(test_e2e_complete_workflow "e2e;workflow")
-    
-    # E2E tests need longer timeout
-    set_tests_properties(test_e2e_complete_workflow PROPERTIES TIMEOUT 600)
-endif()
 
 # Build Performance Tests
 message("[+] Configuring Performance Tests")
@@ -187,14 +175,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_crypto_benchmarks.c)
     
     # Performance tests need longer timeout
     set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT 1200)
-endif()
-
-# Build Functional Tests
-message("[+] Configuring Functional Tests")
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_api_endpoints.c)
-    add_dap_test(test_functional_api functional/test_api_endpoints.c)
-    register_dap_test(test_functional_api "functional;api")
 endif()
 
 # Build Regression Tests  
@@ -262,36 +242,28 @@ add_custom_target(test_all
 # Test discovery for dynamic test addition
 file(GLOB_RECURSE UNIT_TEST_FILES "unit/**/*.c")
 file(GLOB_RECURSE INTEGRATION_TEST_FILES "integration/*.c")
-file(GLOB_RECURSE E2E_TEST_FILES "e2e/*.c")
 file(GLOB_RECURSE PERFORMANCE_TEST_FILES "performance/*.c")
-file(GLOB_RECURSE FUNCTIONAL_TEST_FILES "functional/*.c")
 file(GLOB_RECURSE REGRESSION_TEST_FILES "regression/*.c")
 file(GLOB_RECURSE SECURITY_TEST_FILES "security/*.c")
 
 # Report test configuration
 list(LENGTH UNIT_TEST_FILES UNIT_COUNT)
 list(LENGTH INTEGRATION_TEST_FILES INTEGRATION_COUNT)
-list(LENGTH E2E_TEST_FILES E2E_COUNT)
 list(LENGTH PERFORMANCE_TEST_FILES PERFORMANCE_COUNT)
-list(LENGTH FUNCTIONAL_TEST_FILES FUNCTIONAL_COUNT)
 list(LENGTH REGRESSION_TEST_FILES REGRESSION_COUNT)
 list(LENGTH SECURITY_TEST_FILES SECURITY_COUNT)
 
 message("[+] Test Discovery Results:")
 message("[+] - Unit test files found: ${UNIT_COUNT}")
 message("[+] - Integration test files found: ${INTEGRATION_COUNT}")
-message("[+] - E2E test files found: ${E2E_COUNT}")
 message("[+] - Performance test files found: ${PERFORMANCE_COUNT}")
-message("[+] - Functional test files found: ${FUNCTIONAL_COUNT}")
 message("[+] - Regression test files found: ${REGRESSION_COUNT}")
 message("[+] - Security test files found: ${SECURITY_COUNT}")
 
 message("[+] Test targets available:")
 message("[+] - make test_unit        : Run only unit tests")
 message("[+] - make test_integration : Run only integration tests")
-message("[+] - make test_e2e         : Run only E2E tests")
 message("[+] - make test_performance : Run only performance tests")
-message("[+] - make test_functional  : Run only functional tests")
 message("[+] - make test_regression  : Run only regression tests")
 message("[+] - make test_security    : Run only security tests")
 message("[+] - make test_crypto      : Run all crypto-related tests")

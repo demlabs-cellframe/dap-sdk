@@ -1394,15 +1394,8 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     return l_ret;
 }
 
-// Test helpers (only for builds with tests)
-#ifdef ENABLE_TESTING
-/**
- * @brief Add node to hot list directly (for testing only)
- * @param a_node_addr Node address to add
- * @param a_net_id Network ID
- */
-void dap_link_manager_test_add_to_hot_list(dap_stream_node_addr_t a_node_addr, uint64_t a_net_id)
+// Public API for hot list management (can be used in tests and external modules)
+void dap_link_manager_add_to_hot_list(dap_stream_node_addr_t a_node_addr, uint64_t a_net_id)
 {
     s_node_hot_list_add(a_node_addr, a_net_id);
 }
-#endif

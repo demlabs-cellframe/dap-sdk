@@ -10,7 +10,7 @@ include (src/sig_bliss/sig_bliss.pri)
 include (src/sig_picnic/sig_picnic.pri)
 include (src/sig_tesla/sig_tesla.pri)
 include (src/sig_dilithium/sig_dilithium.pri)
-include (src/ringct20/ringct20.pri)
+# include (src/ringct20/ringct20.pri) # REMOVED: ringct20 module deleted
 include (src/seed/seed.pri)
 include (src/newhope/newhope.pri)
 include (src/Kyber/crypto_kem/kyber512/optimized/kyber512.pri)
@@ -32,7 +32,7 @@ HEADERS += $$PWD/src/XKCP/lib/common/config.h \
     $$PWD/include/dap_enc_tesla.h \
     $$PWD/include/dap_enc_base58.h \
     $$PWD/include/dap_enc_dilithium.h \
-    $$PWD/include/dap_enc_ringct20.h \
+#    $$PWD/include/dap_enc_ringct20.h \ # REMOVED: ringct20 module deleted
     $$PWD/include/dap_enc_salsa2012.h \
     $$PWD/include/dap_enc_SEED.h \
     $$PWD/include/dap_enc_newhope.h \
@@ -65,7 +65,7 @@ SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_enc_base58.c \
     $$PWD/src/dap_enc_dilithium.c \
     $$PWD/src/dap_enc_kyber.c \
-    $$PWD/src/dap_enc_ringct20.c \
+#    $$PWD/src/dap_enc_ringct20.c \ # REMOVED: ringct20 module deleted
     $$PWD/src/dap_enc_salsa2012.c \
     $$PWD/src/dap_enc_ca.c \
     $$PWD/src/dap_cert.c \
