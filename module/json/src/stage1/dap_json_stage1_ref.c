@@ -738,8 +738,9 @@ dap_json_stage1_t *dap_json_stage1_create(const uint8_t *a_input, size_t a_input
         l_estimated_tokens = 1024 * 1024; // 1M tokens max initial
     }
     l_stage1->indices_capacity = l_estimated_tokens;
-    l_stage1->indices = DAP_NEW_Z_SIZE(dap_json_struct_index_t,
-                                       l_stage1->indices_capacity * sizeof(dap_json_struct_index_t));
+    // Use DAP_NEW (not DAP_NEW_Z) - no need to zero, will be filled by add_token
+    l_stage1->indices = DAP_NEW_SIZE(dap_json_struct_index_t,
+                                     l_stage1->indices_capacity * sizeof(dap_json_struct_index_t));
     
     if(!l_stage1->indices) {
         log_it(L_ERROR, "Failed to allocate indices array");
