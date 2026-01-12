@@ -76,7 +76,7 @@ static bool s_test_delete_key_from_object(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse initial JSON");
     
     // Delete key1
-    dap_json_object_delete(l_json, "key1");
+    dap_json_object_del(l_json, "key1");
     
     const char *deleted = dap_json_object_get_string(l_json, "key1");
     DAP_TEST_FAIL_IF(deleted != NULL, "Key1 deleted");
@@ -161,7 +161,7 @@ static bool s_test_remove_element_from_array(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse initial array");
     
     // Remove element at index 1 -> [1,3,4]
-    dap_json_array_remove(l_json, 1);
+    dap_json_array_del_idx(l_json, 1, 1);
     
     size_t len = dap_json_array_length(l_json);
     DAP_TEST_FAIL_IF(len != 3, "Array length decreased");

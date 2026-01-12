@@ -569,6 +569,253 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
 }
 
 /**
+ * @brief Get string element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return String value or NULL if not found or wrong type
+ */
+const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_string(l_elem) : NULL;
+}
+
+/**
+ * @brief Get int element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Integer value or 0 if not found or wrong type
+ */
+int dap_json_array_get_int(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_int(l_elem) : 0;
+}
+
+/**
+ * @brief Get int64 element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Integer value or 0 if not found or wrong type
+ */
+int64_t dap_json_array_get_int64(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_int64(l_elem) : 0;
+}
+
+/**
+ * @brief Get double element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Double value or 0.0 if not found or wrong type
+ */
+double dap_json_array_get_double(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_double(l_elem) : 0.0;
+}
+
+/**
+ * @brief Get bool element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Boolean value or false if not found or wrong type
+ */
+bool dap_json_array_get_bool(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_bool(l_elem) : false;
+}
+
+/**
+ * @brief Get object element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Object or NULL if not found or wrong type
+ */
+dap_json_t* dap_json_array_get_object(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    if (!l_elem || dap_json_get_type(l_elem) != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    return l_elem;
+}
+
+/**
+ * @brief Get array element from array by index
+ * @param a_array Array object
+ * @param a_idx Element index
+ * @return Array or NULL if not found or wrong type
+ */
+dap_json_t* dap_json_array_get_array(dap_json_t* a_array, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    if (!l_elem || dap_json_get_type(l_elem) != DAP_JSON_TYPE_ARRAY) {
+        return NULL;
+    }
+    return l_elem;
+}
+
+/* ========================================================================== */
+/*                      ARRAY ELEMENT INSERTION (TYPED)                       */
+/* ========================================================================== */
+
+/**
+ * @brief Internal helper: insert element into array at specified position
+ * @param a_array Array to insert into
+ * @param a_idx Index where to insert (shifts existing elements right)
+ * @param a_elem Element to insert
+ * @return 0 on success, -1 on error
+ */
+static int s_array_insert_at(dap_json_t* a_array, size_t a_idx, dap_json_t* a_elem)
+{
+    if (!a_array || !a_elem) {
+        log_it(L_ERROR, "NULL array or element");
+        return -1;
+    }
+    
+    dap_json_value_t *l_array = s_unwrap_value(a_array);
+    dap_json_value_t *l_elem = s_unwrap_value(a_elem);
+    
+    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+        log_it(L_ERROR, "Not an array");
+        return -1;
+    }
+    
+    if (!l_elem) {
+        log_it(L_ERROR, "NULL element value");
+        return -1;
+    }
+    
+    size_t l_count = l_array->array.count;
+    
+    // If index is at or past the end, just append
+    if (a_idx >= l_count) {
+        return dap_json_array_v2_add(l_array, l_elem) ? 0 : -1;
+    }
+    
+    // Grow array if needed
+    if (l_count >= l_array->array.capacity) {
+        size_t l_new_capacity = l_array->array.capacity * 2;
+        if (l_new_capacity < 8) {
+            l_new_capacity = 8;
+        }
+        
+        dap_json_value_t **l_new_elements = DAP_REALLOC(
+            l_array->array.elements,
+            l_new_capacity * sizeof(dap_json_value_t*)
+        );
+        
+        if (!l_new_elements) {
+            log_it(L_ERROR, "Failed to grow array to %zu elements", l_new_capacity);
+            return -1;
+        }
+        
+        l_array->array.elements = l_new_elements;
+        l_array->array.capacity = l_new_capacity;
+    }
+    
+    // Shift elements right from insertion point
+    memmove(&l_array->array.elements[a_idx + 1],
+            &l_array->array.elements[a_idx],
+            (l_count - a_idx) * sizeof(dap_json_value_t*));
+    
+    // Insert new element
+    l_array->array.elements[a_idx] = l_elem;
+    l_array->array.count++;
+    
+    return 0;
+}
+
+/**
+ * @brief Insert string element into array at specified index
+ */
+int dap_json_array_insert_string(dap_json_t* a_array, size_t a_idx, const char* a_value)
+{
+    dap_json_t *l_elem = dap_json_object_new_string(a_value);
+    if (!l_elem) {
+        return -1;
+    }
+    
+    int result = s_array_insert_at(a_array, a_idx, l_elem);
+    if (result != 0) {
+        dap_json_object_free(l_elem);
+    }
+    return result;
+}
+
+/**
+ * @brief Insert int element into array at specified index
+ */
+int dap_json_array_insert_int(dap_json_t* a_array, size_t a_idx, int a_value)
+{
+    dap_json_t *l_elem = dap_json_object_new_int(a_value);
+    if (!l_elem) {
+        return -1;
+    }
+    
+    int result = s_array_insert_at(a_array, a_idx, l_elem);
+    if (result != 0) {
+        dap_json_object_free(l_elem);
+    }
+    return result;
+}
+
+/**
+ * @brief Insert double element into array at specified index
+ */
+int dap_json_array_insert_double(dap_json_t* a_array, size_t a_idx, double a_value)
+{
+    dap_json_t *l_elem = dap_json_object_new_double(a_value);
+    if (!l_elem) {
+        return -1;
+    }
+    
+    int result = s_array_insert_at(a_array, a_idx, l_elem);
+    if (result != 0) {
+        dap_json_object_free(l_elem);
+    }
+    return result;
+}
+
+/**
+ * @brief Insert bool element into array at specified index
+ */
+int dap_json_array_insert_bool(dap_json_t* a_array, size_t a_idx, bool a_value)
+{
+    dap_json_t *l_elem = dap_json_object_new_bool(a_value);
+    if (!l_elem) {
+        return -1;
+    }
+    
+    int result = s_array_insert_at(a_array, a_idx, l_elem);
+    if (result != 0) {
+        dap_json_object_free(l_elem);
+    }
+    return result;
+}
+
+/**
+ * @brief Insert object element into array at specified index
+ */
+int dap_json_array_insert_object(dap_json_t* a_array, size_t a_idx, dap_json_t* a_object)
+{
+    return s_array_insert_at(a_array, a_idx, a_object);
+}
+
+/**
+ * @brief Insert array element into array at specified index
+ */
+int dap_json_array_insert_array(dap_json_t* a_array, size_t a_idx, dap_json_t* a_inner_array)
+{
+    return s_array_insert_at(a_array, a_idx, a_inner_array);
+}
+
+
+
+/**
  * @brief Delete array elements
  */
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
@@ -912,6 +1159,48 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
 {
     return dap_json_object_add_object(a_json, a_key, a_array);
 }
+
+/* ========================================================================== */
+/*                      OBJECT FIELD MODIFICATION (SET)                       */
+/* ========================================================================== */
+
+/**
+ * @brief Set/update string field in object (replaces existing value)
+ */
+int dap_json_object_set_string(dap_json_t* a_json, const char* a_key, const char* a_value)
+{
+    // Delete existing key first, then add new value
+    dap_json_object_del(a_json, a_key);
+    return dap_json_object_add_string(a_json, a_key, a_value);
+}
+
+/**
+ * @brief Set/update int field in object (replaces existing value)
+ */
+int dap_json_object_set_int(dap_json_t* a_json, const char* a_key, int a_value)
+{
+    dap_json_object_del(a_json, a_key);
+    return dap_json_object_add_int(a_json, a_key, a_value);
+}
+
+/**
+ * @brief Set/update double field in object (replaces existing value)
+ */
+int dap_json_object_set_double(dap_json_t* a_json, const char* a_key, double a_value)
+{
+    dap_json_object_del(a_json, a_key);
+    return dap_json_object_add_double(a_json, a_key, a_value);
+}
+
+/**
+ * @brief Set/update bool field in object (replaces existing value)
+ */
+int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value)
+{
+    dap_json_object_del(a_json, a_key);
+    return dap_json_object_add_bool(a_json, a_key, a_value);
+}
+
 
 /* ========================================================================== */
 /*                          OBJECT FIELD ACCESS                               */

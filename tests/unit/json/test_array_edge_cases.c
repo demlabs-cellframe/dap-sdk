@@ -129,7 +129,7 @@ static bool s_test_nested_empty_arrays(void) {
     dap_json_t *l_json = NULL;
     
     // Test: [[],[[]],[[[]]]]]
-    const char *json_str = "[[],[[]],[[[]]],[[[[]]]],[[[[[]]]]]]]";
+    const char *json_str = "[[],[[]],[[[]]],[[[[]]]],[[[[[]]]]]]";
     
     l_json = dap_json_parse_string(json_str);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse nested empty arrays depth 5");

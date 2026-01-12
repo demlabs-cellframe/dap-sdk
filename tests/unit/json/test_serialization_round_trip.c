@@ -51,7 +51,7 @@ static bool s_test_simple_object_round_trip(void) {
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse original");
     
     // Serialize
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize");
     
     log_it(L_DEBUG, "Original:   %s", original);
@@ -101,7 +101,7 @@ static bool s_test_whitespace_normalization(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse with excessive whitespace");
     
     // Serialize (should normalize whitespace)
-    serialized = dap_json_serialize(l_json);
+    serialized = dap_json_to_string(l_json);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize");
     
     log_it(L_DEBUG, "Normalized: %s", serialized);
@@ -143,7 +143,7 @@ static bool s_test_key_ordering_preservation(void) {
     l_json = dap_json_parse_string(input);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse with specific key order");
     
-    serialized = dap_json_serialize(l_json);
+    serialized = dap_json_to_string(l_json);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize");
     
     log_it(L_DEBUG, "Input:      %s", input);
@@ -199,7 +199,7 @@ static bool s_test_special_characters_preservation(void) {
     l_json1 = dap_json_parse_string(input);
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse special characters");
     
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize special characters");
     
     log_it(L_DEBUG, "Original:   %s", input);
@@ -266,7 +266,7 @@ static bool s_test_large_data_round_trip(void) {
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse large array");
     
     // Serialize
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize large array");
     
     log_it(L_INFO, "Serialized: %zu bytes", strlen(serialized));
@@ -337,7 +337,7 @@ static bool s_test_deeply_nested_round_trip(void) {
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse deeply nested");
     
     // Serialize
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize deeply nested");
     
     // Re-parse
@@ -383,7 +383,7 @@ static bool s_test_mixed_types_round_trip(void) {
     l_json1 = dap_json_parse_string(input);
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse mixed types");
     
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize mixed types");
     
     l_json2 = dap_json_parse_string(serialized);
@@ -444,7 +444,7 @@ static bool s_test_ieee754_precision_preservation(void) {
     l_json1 = dap_json_parse_string(input);
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse IEEE 754 doubles");
     
-    serialized = dap_json_serialize(l_json1);
+    serialized = dap_json_to_string(l_json1);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize IEEE 754 doubles");
     
     log_it(L_DEBUG, "Serialized: %s", serialized);

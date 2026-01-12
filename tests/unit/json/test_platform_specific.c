@@ -44,6 +44,7 @@ static bool s_test_endianness_independence(void) {
     log_it(L_DEBUG, "Testing endianness independence");
     bool result = false;
     dap_json_t *l_json = NULL;
+    char *serialized = NULL;
     
     // Detect endianness
     uint32_t test_val = 0x12345678;
@@ -67,7 +68,7 @@ static bool s_test_endianness_independence(void) {
     l_json = dap_json_parse_string("{\"value\":305419896}");
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse for serialization");
     
-    char *serialized = dap_json_serialize(l_json);
+    serialized = dap_json_to_string(l_json);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize");
     
     log_it(L_DEBUG, "Serialized: %s", serialized);
@@ -234,7 +235,7 @@ static bool s_test_locale_independence(void) {
                          "JSON uses '.' regardless of locale");
         
         // Serialize
-        serialized = dap_json_serialize(l_json);
+        serialized = dap_json_to_string(l_json);
         DAP_TEST_FAIL_IF_NULL(serialized, "Serialize in comma-decimal locale");
         
         log_it(L_DEBUG, "Serialized in locale: %s", serialized);

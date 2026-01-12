@@ -12,7 +12,7 @@
  * 
  * JSONC is JSON with C-style comments (used by VS Code config files):
  *   1. Single-line comments (//)
- *   2. Multi-line comments (/* ... */)
+ *   2. Multi-line comments (slash-asterisk ... asterisk-slash)
  *   3. Comments in various positions
  *   4. Nested comments (invalid in C, but test anyway)
  *   5. Comments with special characters
@@ -194,7 +194,6 @@ static bool s_test_nested_comments_invalid(void) {
     result = true;
     log_it(L_DEBUG, "JSONC nested comments test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }

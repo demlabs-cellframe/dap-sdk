@@ -104,6 +104,23 @@ size_t dap_json_array_length(dap_json_t* a_array);
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx);
 void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn);
 
+// Array element insertion (typed convenience functions)
+int dap_json_array_insert_string(dap_json_t* a_array, size_t a_idx, const char* a_value);
+int dap_json_array_insert_int(dap_json_t* a_array, size_t a_idx, int a_value);
+int dap_json_array_insert_double(dap_json_t* a_array, size_t a_idx, double a_value);
+int dap_json_array_insert_bool(dap_json_t* a_array, size_t a_idx, bool a_value);
+int dap_json_array_insert_object(dap_json_t* a_array, size_t a_idx, dap_json_t* a_object);
+int dap_json_array_insert_array(dap_json_t* a_array, size_t a_idx, dap_json_t* a_inner_array);
+
+// Typed array element access
+const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx);
+int dap_json_array_get_int(dap_json_t* a_array, size_t a_idx);
+int64_t dap_json_array_get_int64(dap_json_t* a_array, size_t a_idx);
+double dap_json_array_get_double(dap_json_t* a_array, size_t a_idx);
+bool dap_json_array_get_bool(dap_json_t* a_array, size_t a_idx);
+dap_json_t* dap_json_array_get_object(dap_json_t* a_array, size_t a_idx);
+dap_json_t* dap_json_array_get_array(dap_json_t* a_array, size_t a_idx);
+
 // Object field manipulation
 int dap_json_object_add_string(dap_json_t* a_json, const char* a_key, const char* a_value);
 int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const char* a_value, const int a_len);
@@ -118,6 +135,12 @@ int dap_json_object_add_time(dap_json_t* a_json, const char* a_key, dap_time_t a
 int dap_json_object_add_null(dap_json_t* a_json, const char* a_key);
 int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t* a_value);
 int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t* a_array);
+
+// Object field modification (update existing keys)
+int dap_json_object_set_string(dap_json_t* a_json, const char* a_key, const char* a_value);
+int dap_json_object_set_int(dap_json_t* a_json, const char* a_key, int a_value);
+int dap_json_object_set_double(dap_json_t* a_json, const char* a_key, double a_value);
+int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value);
 
 // Object field access
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key);

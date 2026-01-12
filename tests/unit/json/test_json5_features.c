@@ -12,10 +12,10 @@
  * 
  * JSON5 extends JSON with JavaScript-inspired features:
  *   1. Single-line comments (//)
- *   2. Multi-line comments (/* ... */)
+ *   2. Multi-line comments (slash-star ... star-slash)
  *   3. Trailing commas in objects/arrays
  *   4. Unquoted keys (identifier-like keys)
- *   5. Single-quoted strings ('text')
+ *   5. Single-quoted strings (quote with apostrophe)
  *   6. Multi-line strings (with backslash line continuation)
  *   7. Hexadecimal numbers (0xDEADBEEF)
  *   8. Leading/trailing decimal points (.5, 5.)
@@ -238,7 +238,6 @@ static bool s_test_multiline_strings(void) {
     result = true;
     log_it(L_DEBUG, "Multi-line strings test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
@@ -426,7 +425,6 @@ static bool s_test_reserved_word_keys(void) {
     result = true;
     log_it(L_DEBUG, "Reserved word keys test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
@@ -457,7 +455,6 @@ static bool s_test_mixed_json5_json(void) {
     result = true;
     log_it(L_DEBUG, "Mixed JSON5/JSON test passed");
     
-cleanup:
     dap_json_object_free(l_json);
     return result;
 }
