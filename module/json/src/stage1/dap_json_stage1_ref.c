@@ -73,7 +73,7 @@ bool dap_json_stage1_grow_indices_array(dap_json_stage1_t *a_stage1)
     a_stage1->indices = l_new_indices;
     a_stage1->indices_capacity = l_new_capacity;
     
-    debug_if(dap_json_get_debug(), "Grew indices array to %zu entries", l_new_capacity);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Grew indices array to %zu entries", l_new_capacity);
     return true;
 }
 
@@ -515,7 +515,7 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
     
-    debug_if(dap_json_get_debug(), "Starting Stage 1 tokenization (%zu bytes)", l_len);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Starting Stage 1 tokenization (%zu bytes)", l_len);
     
     // Main scanning loop (Phase 1.3: enhanced для value detection)
     while(a_stage1->current_pos < l_len) {
@@ -705,7 +705,7 @@ dap_json_stage1_t *dap_json_stage1_create(const uint8_t *a_input, size_t a_input
     l_stage1->error_position = 0;
     l_stage1->error_message[0] = '\0';
     
-    debug_if(dap_json_get_debug(), "Stage 1 parser initialized (%zu bytes, %zu initial indices capacity)",
+    debug_if(dap_json_get_debug(), L_DEBUG, "Stage 1 parser initialized (%zu bytes, %zu initial indices capacity)",
            a_input_len, l_stage1->indices_capacity);
     
     return l_stage1;
@@ -724,7 +724,7 @@ void dap_json_stage1_free(dap_json_stage1_t *a_stage1)
     DAP_DELETE(a_stage1->indices);
     DAP_DELETE(a_stage1);
     
-    debug_if(dap_json_get_debug(), "Stage 1 parser freed");
+    debug_if(dap_json_get_debug(), L_DEBUG, "Stage 1 parser freed");
 }
 
 /**
@@ -758,7 +758,7 @@ dap_json_stage1_t *dap_json_stage1_new(size_t a_capacity)
         return NULL;
     }
     
-    debug_if(dap_json_get_debug(), "Stage 1 parser created (%zu initial capacity)", a_capacity);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Stage 1 parser created (%zu initial capacity)", a_capacity);
     
     return l_stage1;
 }

@@ -1784,6 +1784,47 @@ double dap_json_get_double(dap_json_t* a_json)
 }
 
 /**
+ * @brief Get uint64_t value from JSON value
+ * @param a_json JSON value (must be an integer)
+ * @return uint64_t value, or 0 if not an integer
+ */
+uint64_t dap_json_get_uint64(dap_json_t* a_json)
+{
+    int64_t l_val = dap_json_get_int64(a_json);
+    return (uint64_t)l_val;
+}
+
+/**
+ * @brief Get nanotime value from JSON value
+ * @param a_json JSON value (must be an integer representing nanoseconds)
+ * @return dap_nanotime_t value, or 0 if not an integer
+ */
+dap_nanotime_t dap_json_get_nanotime(dap_json_t* a_json)
+{
+    int64_t l_val = dap_json_get_int64(a_json);
+    return (dap_nanotime_t)l_val;
+}
+
+/**
+ * @brief Get number of keys in JSON object
+ * @param a_json JSON object
+ * @return Number of keys, or 0 if not an object
+ */
+size_t dap_json_object_length(dap_json_t* a_json)
+{
+    if (!a_json) {
+        return 0;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_OBJECT) {
+        return 0;
+    }
+    
+    return l_value->object.count;
+}
+
+/**
  * @brief Get type of JSON value
  * @return Type enum value
  */
@@ -1918,6 +1959,46 @@ dap_json_t* dap_json_from_file(const char* a_file_path)
     DAP_DELETE(l_buffer);
     
     return l_result;
+}
+
+/**
+ * @brief Write JSON object to file
+ * @param a_file_path File path to write to
+ * @param a_json JSON object to write
+ * @return 0 on success, -1 on error
+ */
+int dap_json_to_file(const char* a_file_path, dap_json_t* a_json)
+{
+    if (!a_file_path || !a_json) {
+        log_it(L_ERROR, "NULL parameter provided");
+        return -1;
+    }
+    
+    // Serialize JSON to string
+    const char *l_json_str = dap_json_to_string(a_json);
+    if (!l_json_str) {
+        log_it(L_ERROR, "Failed to serialize JSON to string");
+        return -1;
+    }
+    
+    // Open file for writing
+    FILE *l_file = fopen(a_file_path, "w");
+    if (!l_file) {
+        log_it(L_ERROR, "Failed to open file for writing: %s", a_file_path);
+        return -1;
+    }
+    
+    // Write to file
+    size_t l_len = strlen(l_json_str);
+    size_t l_written = fwrite(l_json_str, 1, l_len, l_file);
+    fclose(l_file);
+    
+    if (l_written != l_len) {
+        log_it(L_ERROR, "Failed to write complete JSON to file");
+        return -1;
+    }
+    
+    return 0;
 }
 
 /**
