@@ -44,7 +44,7 @@
 #include "dap_common.h"
 #include "internal/dap_json_stage2.h"
 #include "internal/dap_json_string.h"
-#include "internal/dap_json_number_fast.h"
+#include "internal/dap_json_number.h"
 #include "dap_arena.h"
 #include "dap_string_pool.h"
 

@@ -22,7 +22,7 @@
  */
 
 /**
- * @file dap_json_number_fast.h
+ * @file dap_json_number.h
  * @brief Fast number parsing for JSON (integers + doubles)
  * @details Optimized number parsing to replace slow strtod/strtoll:
  *          
@@ -43,8 +43,8 @@
  * @date 2026-01-13
  */
 
-#ifndef DAP_JSON_NUMBER_FAST_H
-#define DAP_JSON_NUMBER_FAST_H
+#ifndef DAP_JSON_NUMBER_H
+#define DAP_JSON_NUMBER_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -119,4 +119,4 @@ bool dap_json_parse_double_fast(const char *a_str, size_t a_len, double *a_out_v
 }
 #endif
 
-#endif // DAP_JSON_NUMBER_FAST_H
+#endif // DAP_JSON_NUMBER_H

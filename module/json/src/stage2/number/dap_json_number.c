@@ -44,7 +44,7 @@
  */
 
 #include "dap_common.h"
-#include "internal/dap_json_number_fast.h"
+#include "internal/dap_json_number.h"
 #include <stdint.h>
 #include <limits.h>
 #include <errno.h>
