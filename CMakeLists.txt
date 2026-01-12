@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(DAP_SDK_NATIVE C)
+project(DAP_SDK_NATIVE C CXX)
 
 # Disable SSL by default - WolfSSL is no longer used
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
