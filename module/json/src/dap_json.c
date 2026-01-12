@@ -452,12 +452,21 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // If this is a borrowed reference, release parent
+    // CRITICAL FIX: Borrowed references should NOT free stage2_parser/Arena
+    // Only the root object (from parsing) should free the stage2_parser/Arena
+    // Borrowed references (child elements) just dec-ref the parent and free wrapper
     if (a_json->parent) {
+        // This is a borrowed reference from parent (e.g., array element, object value)
+        // The value itself lives in parent's Arena, so don't free it
+        // Just dec-ref parent and free this wrapper
         dap_json_object_free(a_json->parent);
         a_json->parent = NULL;
+        // Free only the wrapper struct, not the value (it's in parent's Arena)
+        DAP_DELETE(a_json);
+        return;
     }
     
+    // This is a root object - proceed with full cleanup
     // Two allocation strategies:
     // 1. Arena-based (from parsing): stage2_parser != NULL
     // 2. Malloc-based (manually created): stage2_parser == NULL
