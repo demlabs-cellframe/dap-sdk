@@ -96,10 +96,15 @@ static void *s_parse_thread(void *a_arg)
         dap_json_t *l_json = dap_json_parse_string(s_test_json);
         
         if (l_json) {
-            // Verify data
-            int id = dap_json_object_get_int(l_json, "user.id");
-            if (id == 12345) {
-                atomic_fetch_add(args->success_count, 1);
+            // Verify data (must get nested object first, not use dot notation)
+            dap_json_t *l_user = dap_json_object_get_object(l_json, "user");
+            if (l_user) {
+                int id = dap_json_object_get_int(l_user, "id");
+                if (id == 12345) {
+                    atomic_fetch_add(args->success_count, 1);
+                } else {
+                    atomic_fetch_add(args->failure_count, 1);
+                }
             } else {
                 atomic_fetch_add(args->failure_count, 1);
             }

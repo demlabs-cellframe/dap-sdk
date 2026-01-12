@@ -29,10 +29,43 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
+#include <locale.h>
 
 /* ========================================================================== */
 /*                     JSON SERIALIZATION IMPLEMENTATION                      */
 /* ========================================================================== */
+
+/**
+ * @brief Locale-independent snprintf for doubles
+ * @details JSON always uses '.' as decimal separator, regardless of system locale
+ * @param a_buf Output buffer
+ * @param a_size Buffer size
+ * @param a_format Format string (must contain double format)
+ * @param a_value Double value to format
+ * @return Number of characters written (like snprintf)
+ */
+static int s_snprintf_double_c_locale(char *a_buf, size_t a_size, const char *a_format, double a_value)
+{
+    // Save current locale
+    char *l_old_locale = setlocale(LC_NUMERIC, NULL);
+    if (l_old_locale) {
+        l_old_locale = strdup(l_old_locale);
+    }
+    
+    // Switch to "C" locale for formatting (uses '.' as decimal separator)
+    setlocale(LC_NUMERIC, "C");
+    
+    // Format with standard snprintf
+    int l_result = snprintf(a_buf, a_size, a_format, a_value);
+    
+    // Restore original locale
+    if (l_old_locale) {
+        setlocale(LC_NUMERIC, l_old_locale);
+        free(l_old_locale);
+    }
+    
+    return l_result;
+}
 
 /**
  * @brief Append string to buffer with reallocation if needed
@@ -265,9 +298,11 @@ static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t
             }
             
             if (d == (int64_t)d) {
-                snprintf(l_buf, sizeof(l_buf), "%.1f", d); // e.g., 3.0
+                s_snprintf_double_c_locale(l_buf, sizeof(l_buf), "%.1f", d); // e.g., 3.0
             } else {
-                snprintf(l_buf, sizeof(l_buf), "%.15g", d); // Up to 15 significant digits
+                // IEEE 754 double precision requires 17 significant digits for lossless round-trip
+                // (53 bits mantissa = log10(2^53) ≈ 15.95 digits, need 17 for full precision)
+                s_snprintf_double_c_locale(l_buf, sizeof(l_buf), "%.17g", d);
             }
             return s_append_string(a_buffer, a_size, a_capacity, l_buf);
         }

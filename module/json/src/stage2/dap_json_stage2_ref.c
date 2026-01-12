@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <errno.h>
+#include <locale.h>
 
 #define LOG_TAG "dap_json_stage2_ref"
 
@@ -549,6 +550,36 @@ dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const
 /* ========================================================================== */
 
 /**
+ * @brief Locale-independent strtod wrapper
+ * @details JSON always uses '.' as decimal separator, regardless of system locale
+ * @param a_str String to parse
+ * @param a_endptr End pointer (like strtod)
+ * @return Parsed double value
+ */
+static double s_strtod_c_locale(const char *a_str, char **a_endptr)
+{
+    // Save current locale
+    char *l_old_locale = setlocale(LC_NUMERIC, NULL);
+    if (l_old_locale) {
+        l_old_locale = strdup(l_old_locale);
+    }
+    
+    // Switch to "C" locale for parsing (uses '.' as decimal separator)
+    setlocale(LC_NUMERIC, "C");
+    
+    // Parse with standard strtod
+    double l_result = strtod(a_str, a_endptr);
+    
+    // Restore original locale
+    if (l_old_locale) {
+        setlocale(LC_NUMERIC, l_old_locale);
+        free(l_old_locale);
+    }
+    
+    return l_result;
+}
+
+/**
  * @brief Parse number from input
  * @details Поддерживает integers и floating point
  * 
@@ -603,10 +634,10 @@ static bool s_parse_number(
     }
     
     if(l_is_double) {
-        // Parse as double
+        // Parse as double (locale-independent)
         char *l_endptr = NULL;
         errno = 0;
-        double l_dval = strtod(l_buffer, &l_endptr);
+        double l_dval = s_strtod_c_locale(l_buffer, &l_endptr);
         
         // Check for valid conversion
         if(l_endptr == l_buffer || *l_endptr != '\0') {
@@ -666,7 +697,7 @@ static bool s_parse_number(
                     // strtoull also failed - convert to double as last resort
                     debug_if(s_debug_more, L_DEBUG, "Integer overflow, converting to double: %s", l_buffer);
                     errno = 0;
-                    double l_dval = strtod(l_buffer, &l_u_endptr);
+                    double l_dval = s_strtod_c_locale(l_buffer, &l_u_endptr);
                     
                     if(errno != 0 || l_u_endptr == l_buffer || *l_u_endptr == '\0') {
                         log_it(L_ERROR, "Failed to convert overflowed integer to double: %s", l_buffer);
@@ -687,7 +718,7 @@ static bool s_parse_number(
                 debug_if(s_debug_more, L_DEBUG, "Negative integer underflow, converting to double: %s", l_buffer);
                 errno = 0;
                 char *l_d_endptr = NULL;
-                double l_dval = strtod(l_buffer, &l_d_endptr);
+                double l_dval = s_strtod_c_locale(l_buffer, &l_d_endptr);
                 
                 if(errno != 0 || l_d_endptr == l_buffer || *l_d_endptr != '\0') {
                     log_it(L_ERROR, "Failed to convert underflowed integer to double: %s", l_buffer);
