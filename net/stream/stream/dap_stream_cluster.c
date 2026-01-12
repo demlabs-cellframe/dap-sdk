@@ -308,8 +308,18 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
     assert(l_total_links_count == json_object_array_length(l_jobj_uplinks) + json_object_array_length(l_jobj_downlinks));
-    json_object_object_add( l_jobj_ret, "uplinks", json_object_array_length(l_jobj_uplinks) ? l_jobj_uplinks : json_object_new_null() );
-    json_object_object_add( l_jobj_ret, "downlinks", json_object_array_length(l_jobj_downlinks) ? l_jobj_downlinks : json_object_new_null() );
+    if (json_object_array_length(l_jobj_uplinks)) {
+        json_object_object_add(l_jobj_ret, "uplinks", l_jobj_uplinks);
+    } else {
+        json_object_put(l_jobj_uplinks);
+        json_object_object_add(l_jobj_ret, "uplinks", json_object_new_null());
+    }
+    if (json_object_array_length(l_jobj_downlinks)) {
+        json_object_object_add(l_jobj_ret, "downlinks", l_jobj_downlinks);
+    } else {
+        json_object_put(l_jobj_downlinks);
+        json_object_object_add(l_jobj_ret, "downlinks", json_object_new_null());
+    }
     return l_jobj_ret;
 }
 
