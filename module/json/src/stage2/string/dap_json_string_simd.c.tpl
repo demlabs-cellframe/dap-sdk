@@ -52,7 +52,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-{{#if USE_X86}}
 #ifdef __{{ARCH_UPPER}}__
 #include <immintrin.h>
 
@@ -107,24 +106,14 @@ bool dap_json_string_scan_{{ARCH_LOWER}}(
         {{SIMD_TYPE}} l_backslash_mask = {{CMPEQ_INTRINSIC}}(l_chunk, l_backslash_vec);
         
         // Combine: any quote or backslash
-        {{SIMD_TYPE}} l_combined = {{OR_INTRINSIC}}(l_quote_mask, l_backslash_mask);
+        {{SIMD_TYPE}} l_combined = {{OR_INTRINSIC}}(l_quote_mask, l_backslash_vec);
         
         // Convert to bitmask
-        {{#if USE_AVX512_MASK}}
-        // AVX-512: use native kmask
-        uint64_t l_mask = _mm512_mask_test_epi8_mask(_mm512_set1_epi8(0xFF), l_combined, _mm512_set1_epi8(0xFF));
-        {{else}}
-        // SSE2/AVX2: use movemask
         uint32_t l_mask = (uint32_t){{MOVEMASK_INTRINSIC}}(l_combined);
-        {{/if}}
         
         if (l_mask != 0) {
             // Found quote or backslash
-            {{#if USE_AVX512_MASK}}
-            uint32_t l_first_match = __builtin_ctzll(l_mask);
-            {{else}}
             uint32_t l_first_match = __builtin_ctz(l_mask);
-            {{/if}}
             l_pos += l_first_match;
             
             if (a_input[l_pos] == '"') {
@@ -195,145 +184,3 @@ bool dap_json_string_scan_{{ARCH_LOWER}}(
 }
 
 #endif /* __{{ARCH_UPPER}}__ */
-{{/if}}
-
-{{#if USE_ARM}}
-#if defined(__ARM_NEON) || defined(__aarch64__)
-#include <arm_neon.h>
-
-#define LOG_TAG "dap_json_string_{{ARCH_LOWER}}"
-
-/* ARM NEON movemask helper */
-static inline uint16_t dap_neon_movemask_u8(uint8x16_t a_input) {
-    // Extract high bit from each byte
-    uint8x16_t l_shifted = vshrq_n_u8(a_input, 7);
-    
-    // Multiply by powers of 2 for bit positions
-    const uint8_t l_mult_lut[16] = {
-        1, 2, 4, 8, 16, 32, 64, 128,
-        1, 2, 4, 8, 16, 32, 64, 128
-    };
-    uint8x16_t l_multiplier = vld1q_u8(l_mult_lut);
-    uint8x16_t l_weighted = vmulq_u8(l_shifted, l_multiplier);
-    
-    // Horizontal sum using pairwise additions
-    uint8x8_t l_low = vget_low_u8(l_weighted);
-    uint8x8_t l_high = vget_high_u8(l_weighted);
-    
-    uint8x8_t l_sum1 = vpadd_u8(l_low, l_high);
-    uint8x8_t l_sum2 = vpadd_u8(l_sum1, l_sum1);
-    uint8x8_t l_sum3 = vpadd_u8(l_sum2, l_sum2);
-    uint8x8_t l_sum4 = vpadd_u8(l_sum3, l_sum3);
-    
-    return (uint16_t)vget_lane_u8(l_sum4, 0) | ((uint16_t)vget_lane_u8(l_sum4, 1) << 8);
-}
-
-/**
- * @brief ARM NEON SIMD string scanner
- * @details Processes 16 bytes at once using NEON instructions.
- */
-bool dap_json_string_scan_{{ARCH_LOWER}}(
-    const uint8_t *a_input,
-    size_t a_input_len,
-    dap_json_string_t *a_out_string,
-    uint32_t *a_out_end_offset
-)
-{
-    if (!a_input || !a_out_string || !a_out_end_offset) {
-        return false;
-    }
-    
-    if (a_input_len == 0 || a_input[0] != '"') {
-        log_it(L_ERROR, "Expected opening quote");
-        return false;
-    }
-    
-    const uint32_t l_string_start = 1;
-    uint32_t l_pos = l_string_start;
-    bool l_has_escape = false;
-    
-    const size_t l_chunk_size = 16;
-    
-    // Prepare comparison vectors
-    const uint8x16_t l_quote_vec = vdupq_n_u8('"');
-    const uint8x16_t l_backslash_vec = vdupq_n_u8('\\');
-    
-    // Process 16-byte chunks
-    while (l_pos + l_chunk_size <= a_input_len) {
-        uint8x16_t l_chunk = vld1q_u8(a_input + l_pos);
-        
-        uint8x16_t l_quote_mask = vceqq_u8(l_chunk, l_quote_vec);
-        uint8x16_t l_backslash_mask = vceqq_u8(l_chunk, l_backslash_vec);
-        
-        uint8x16_t l_combined = vorrq_u8(l_quote_mask, l_backslash_mask);
-        
-        uint16_t l_mask = dap_neon_movemask_u8(l_combined);
-        
-        if (l_mask != 0) {
-            uint32_t l_first_match = __builtin_ctz(l_mask);
-            l_pos += l_first_match;
-            
-            if (a_input[l_pos] == '"') {
-                const uint32_t l_string_len = l_pos - l_string_start;
-                
-                a_out_string->data = (const char*)(a_input + l_string_start);
-                a_out_string->length = l_string_len;
-                a_out_string->needs_unescape = l_has_escape;
-                a_out_string->unescaped_valid = false;
-                a_out_string->unescaped = NULL;
-                a_out_string->unescaped_length = 0;
-                a_out_string->reserved = 0;
-                
-                *a_out_end_offset = l_pos + 1;
-                return true;
-            } else if (a_input[l_pos] == '\\') {
-                l_has_escape = true;
-                l_pos++;
-                if (l_pos >= a_input_len) {
-                    log_it(L_ERROR, "Unterminated escape sequence");
-                    return false;
-                }
-                l_pos++;
-            }
-        } else {
-            l_pos += l_chunk_size;
-        }
-    }
-    
-    // Handle remaining bytes
-    while (l_pos < a_input_len) {
-        uint8_t l_byte = a_input[l_pos];
-        
-        if (l_byte == '"') {
-            const uint32_t l_string_len = l_pos - l_string_start;
-            
-            a_out_string->data = (const char*)(a_input + l_string_start);
-            a_out_string->length = l_string_len;
-            a_out_string->needs_unescape = l_has_escape;
-            a_out_string->unescaped_valid = false;
-            a_out_string->unescaped = NULL;
-            a_out_string->unescaped_length = 0;
-            a_out_string->reserved = 0;
-            
-            *a_out_end_offset = l_pos + 1;
-            return true;
-        }
-        
-        if (l_byte == '\\') {
-            l_has_escape = true;
-            l_pos++;
-            if (l_pos >= a_input_len) {
-                log_it(L_ERROR, "Unterminated escape sequence");
-                return false;
-            }
-        }
-        
-        l_pos++;
-    }
-    
-    log_it(L_ERROR, "Unterminated string (missing closing quote)");
-    return false;
-}
-
-#endif /* __ARM_NEON || __aarch64__ */
-{{/if}}

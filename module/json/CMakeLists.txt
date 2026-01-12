@@ -11,7 +11,7 @@ file(GLOB JSON_HEADERS include/*.h)
 file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
-file(GLOB JSON_STAGE2_SRCS src/stage2/*.c)
+file(GLOB JSON_STAGE2_SRCS src/stage2/*.c src/stage2/string/*.c)
 
 # Generate SIMD implementations from templates at configure time
 # Generated files go to build directory to keep source tree clean
@@ -41,9 +41,25 @@ execute_process(
     ERROR_VARIABLE CODEGEN_ERROR
 )
 if(NOT CODEGEN_RESULT EQUAL 0)
-    message(WARNING "[dap_json] SIMD codegen failed: ${CODEGEN_ERROR}")
+    message(WARNING "[dap_json] Stage 1 SIMD codegen failed: ${CODEGEN_ERROR}")
 else()
-    message(STATUS "[dap_json] SIMD codegen completed successfully")
+    message(STATUS "[dap_json] Stage 1 SIMD codegen completed successfully")
+endif()
+
+# Generate Stage 2 String Scanner SIMD implementations
+message(STATUS "[dap_json] Generating Stage 2 String Scanner SIMD implementations...")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env ${CODEGEN_ENV}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2/string/generate_string_simd.sh ${SIMD_GEN_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2/string
+    RESULT_VARIABLE STRING_CODEGEN_RESULT
+    OUTPUT_VARIABLE STRING_CODEGEN_OUTPUT
+    ERROR_VARIABLE STRING_CODEGEN_ERROR
+)
+if(NOT STRING_CODEGEN_RESULT EQUAL 0)
+    message(WARNING "[dap_json] String scanner SIMD codegen failed: ${STRING_CODEGEN_ERROR}")
+else()
+    message(STATUS "[dap_json] String scanner SIMD codegen completed successfully")
 endif()
 
 # Architecture-specific sources - collect from GENERATED directory in build
