@@ -180,7 +180,7 @@ case "${ARCH}" in
         # Generate ARM-specific arch helpers header (movemask, etc)
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
-            "${SCRIPT_DIR}/arch_specific/arm/movemask_neon.tpl"
+            "${SCRIPT_DIR}/arch/arm/movemask_neon.tpl"
         
         echo ""
         echo "Generating ARM SVE..."
@@ -207,7 +207,7 @@ case "${ARCH}" in
         # Generate SVE-specific arch helpers header
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_sve_arch.h" \
-            "${SCRIPT_DIR}/arch_specific/arm/movemask_sve.tpl"
+            "${SCRIPT_DIR}/arch/arm/movemask_sve.tpl"
         
         echo ""
         echo "Generating ARM SVE2..."
@@ -234,7 +234,7 @@ case "${ARCH}" in
         # Generate SVE2-specific arch helpers header (same as SVE for now)
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
-            "${SCRIPT_DIR}/arch_specific/arm/movemask_sve.tpl"
+            "${SCRIPT_DIR}/arch/arm/movemask_sve.tpl"
         ;;
     
     *)
