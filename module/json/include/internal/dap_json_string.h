@@ -84,7 +84,7 @@ typedef struct {
     /* Cold data - rarely accessed */
     char *unescaped;            /**< Unescaped string (allocated lazily on first access) */
     uint32_t unescaped_length;  /**< Length of unescaped string */
-} dap_json_string_t;
+} dap_json_string_zc_t;
 
 /* ========================================================================== */
 /*                        STRING SCANNING API                                 */
@@ -98,7 +98,7 @@ typedef struct {
 bool dap_json_string_scan_ref(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 );
 
@@ -109,7 +109,7 @@ bool dap_json_string_scan_ref(
 bool dap_json_string_scan_sse2(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 );
 #endif
@@ -118,7 +118,7 @@ bool dap_json_string_scan_sse2(
 bool dap_json_string_scan_avx2(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 );
 #endif
@@ -127,7 +127,7 @@ bool dap_json_string_scan_avx2(
 bool dap_json_string_scan_avx512(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 );
 #endif
@@ -138,7 +138,7 @@ bool dap_json_string_scan_avx512(
 bool dap_json_string_scan_neon(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 );
 #endif
@@ -166,7 +166,7 @@ bool dap_json_string_scan_neon(
 static inline bool dap_json_string_scan(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 )
 {
@@ -222,7 +222,7 @@ static inline bool dap_json_string_scan(
  * @return C string pointer (either direct or unescaped)
  */
 const char* dap_json_string_get_cstr(
-    dap_json_string_t *a_string,
+    dap_json_string_zc_t *a_string,
     struct dap_arena *a_arena
 );
 
@@ -233,7 +233,7 @@ const char* dap_json_string_get_cstr(
  * @param[in] a_string Zero-copy string
  * @return String length in bytes
  */
-static inline uint32_t dap_json_string_get_length(const dap_json_string_t *a_string) {
+static inline uint32_t dap_json_string_get_length(const dap_json_string_zc_t *a_string) {
     if (a_string->unescaped_valid) {
         return a_string->unescaped_length;
     }
@@ -245,7 +245,7 @@ static inline uint32_t dap_json_string_get_length(const dap_json_string_t *a_str
  * @param[in] a_string Zero-copy string
  * @return true if string contains escape sequences
  */
-static inline bool dap_json_string_needs_unescape(const dap_json_string_t *a_string) {
+static inline bool dap_json_string_needs_unescape(const dap_json_string_zc_t *a_string) {
     return a_string->needs_unescape;
 }
 
@@ -256,7 +256,7 @@ static inline bool dap_json_string_needs_unescape(const dap_json_string_t *a_str
  * 
  * @param[in,out] a_string Zero-copy string
  */
-void dap_json_string_free(dap_json_string_t *a_string);
+void dap_json_string_free(dap_json_string_zc_t *a_string);
 
 #ifdef __cplusplus
 }

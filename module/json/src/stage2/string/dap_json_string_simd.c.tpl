@@ -70,7 +70,7 @@
 bool dap_json_string_scan_{{ARCH_LOWER}}(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 )
 {

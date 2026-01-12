@@ -160,7 +160,7 @@ static bool s_unescape_string(
 bool dap_json_string_scan_ref(
     const uint8_t *a_input,
     size_t a_input_len,
-    dap_json_string_t *a_out_string,
+    dap_json_string_zc_t *a_out_string,
     uint32_t *a_out_end_offset
 )
 {
@@ -220,7 +220,7 @@ bool dap_json_string_scan_ref(
 /* ========================================================================== */
 
 const char* dap_json_string_get_cstr(
-    dap_json_string_t *a_string,
+    dap_json_string_zc_t *a_string,
     struct dap_arena *a_arena
 )
 {
@@ -264,7 +264,7 @@ const char* dap_json_string_get_cstr(
     return a_string->unescaped;
 }
 
-void dap_json_string_free(dap_json_string_t *a_string)
+void dap_json_string_free(dap_json_string_zc_t *a_string)
 {
     if (!a_string) {
         return;
