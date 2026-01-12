@@ -2307,19 +2307,19 @@
             ]
           },
           "expected_results_after_optimizations": {
-            "phase1_zero_copy_simd_scanner": {
+            "week1_p0_optimizations": {
               "optimizations": ["Zero-copy strings", "SIMD string scanner"],
               "expected_throughput": "1.5-2.5 GB/s",
               "improvement_vs_current": "7-12x",
-              "status_vs_simdjson": "Still 1.5x slower, but close"
+              "status_vs_simdjson": "Still ~1.5x slower, but close"
             },
-            "phase2_fast_float_iterative": {
-              "optimizations": ["+ fast_float", "+ iterative parsing"],
+            "week2_p1_optimizations": {
+              "optimizations": ["+ fast_float", "+ iterative parsing", "+ arena"],
               "expected_throughput": "3.0-4.0 GB/s",
               "improvement_vs_current": "15-20x",
               "status_vs_simdjson": "MATCH or EXCEED simdjson!"
             },
-            "phase3_polish": {
+            "week3_p2_polish": {
               "optimizations": ["+ prefetch", "+ cache optimization"],
               "expected_throughput": "4.0-5.0 GB/s",
               "improvement_vs_current": "20-25x",
@@ -2543,177 +2543,249 @@
           "estimated_impact": "+200-500% (2-5x) для number-heavy JSON",
           "effort": "Low (1 day)",
           "why": "strtod() медленный (100-200ns per number). fast_float даёт 20-40ns. Measured 9x gap на number-heavy JSON.",
-          "name": "Cache Optimization и Memory Layout",
-          "status": "pending",
           "deliverables": [
-            "Struct packing для минимального sizeof",
-            "Hot/cold data separation в dap_json_value_t",
-            "Cache-line alignment для массивов",
-            "Prefetching hints для DOM traversal",
-            "Cachegrind analysis и оптимизация",
-            "Benchmark: cache miss rate < 5%"
+            "module/json/src/stage2/number/dap_json_fast_float.c - Lemire's algorithm port",
+            "module/json/src/stage2/number/dap_json_fast_int64.c - Integer fast path",
+            "module/json/src/stage2/number/dap_json_fast_uint64.c - Unsigned fast path",
+            "SIMD digit validation (optional optimization)",
+            "tests/unit/json/test_fast_number_parsing.c - correctness tests",
+            "Benchmark: >= 1 GB/s для number-heavy JSON"
           ],
+          "implementation_details": {
+            "fast_float_algorithm": {
+              "description": "Lemire's fast_float - самый быстрый float parser в мире",
+              "paper": "https://arxiv.org/abs/2101.11408",
+              "performance": "~20-40ns per number vs ~100-200ns strtod()",
+              "implementation": "Port C++ fast_float library to pure C",
+              "key_optimizations": [
+                "Eisel-Lemire algorithm для most numbers",
+                "Fallback to Clinger's algorithm для edge cases",
+                "Table-driven exponent calculation",
+                "No division - only multiplies"
+              ]
+            },
+            "integer_fast_path": {
+              "description": "Быстрый путь для целых чисел (most common)",
+              "detection": "if (!has_decimal_point && !has_exponent)",
+              "algorithm": "Simple multiply-add loop: val = val*10 + digit",
+              "performance": "~5-10ns per integer (20x faster than strtod)",
+              "benefit": "Integers встречаются чаще floats"
+            }
+          },
           "acceptance_criteria": [
-            "Cache miss rate улучшен vs naive layout",
-            "Struct sizes оптимальны",
-            "Cachegrind показывает хорошие метрики"
-          ]
+            "fast_float для doubles >= 5x faster than strtod()",
+            "Integer fast path >= 10x faster than strtod()",
+            "Correctness == 100% (все edge cases)",
+            "Number-heavy JSON: >= 1 GB/s (сейчас 0.13 GB/s)"
+          ],
+          "expected_impact": {
+            "number_heavy_json": "0.13 → 0.8-1.2 GB/s (+500-800%)",
+            "medium_json": "0.20 → 0.35-0.45 GB/s (+75-125%)",
+            "overall_average": "Depends on % of numbers in JSON"
+          }
         },
         {
           "id": "2.4",
-          "name": "Performance A/B Testing: Optimization Impact Analysis",
+          "name": "🔄 P1: Iterative Parsing + Aggressive Arena Usage",
           "status": "pending",
+          "priority": "P1 - HIGH IMPACT",
+          "estimated_impact": "+100-200% (2-3x) для deep nested + общее улучшение",
+          "effort": "Medium (2 days)",
+          "why": "Рекурсия дорогая для deep nested (measured 11x gap). Arena недостаточно используется - allocation storm для каждого node.",
           "deliverables": [
-            "tests/performance/bench_phase2_ablation.c - Phase 2 optimizations impact",
+            "module/json/src/stage2/dap_json_stage2_iterative.c - Iterative parser",
+            "Explicit depth stack (на стеке или в arena)",
+            "Aggressive arena batching для DOM nodes",
+            "String arena (separate для zero-copy strings)",
+            "tests/unit/json/test_iterative_parsing.c - correctness tests",
+            "tests/unit/json/test_deep_nesting.c - 10000 levels stress test",
+            "Benchmark: >= 1.5 GB/s для deep nested JSON"
+          ],
+          "implementation_details": {
+            "iterative_algorithm": {
+              "description": "Замена рекурсии на explicit stack",
+              "current_problem": "s_parse_object() recursion → function call overhead (~10ns each level)",
+              "solution": "Stack-based state machine",
+              "stack_structure": "struct { dap_json_value_t *parent; uint32_t idx; enum state; }",
+              "benefit": "No function call overhead, better cache locality"
+            },
+            "arena_optimization": {
+              "description": "Batch allocations для DOM nodes",
+              "current_problem": "DAP_NEW(dap_json_value_t) per node → malloc() storm",
+              "solution": "Pre-allocate chunks of 64-256 nodes at once",
+              "implementation": "Arena allocator bump pointer → ~1ns per allocation vs ~50ns malloc()",
+              "additional_win": "Better cache locality - nodes allocated sequentially"
+            },
+            "string_arena": {
+              "description": "Separate arena для escaped strings",
+              "why": "Strings могут быть большими, не мешать с small DOM nodes",
+              "implementation": "Dedicated string_arena с larger chunk size (4KB chunks)",
+              "benefit": "Less fragmentation, better memory layout"
+            }
+          },
+          "acceptance_criteria": [
+            "No recursion - fully iterative parsing",
+            "Arena batch size >= 64 nodes",
+            "Deep nested JSON (10000 levels) парсится успешно",
+            "Deep nested JSON: >= 1.5 GB/s (сейчас 0.18 GB/s)",
+            "Correctness == 100% vs recursive implementation"
+          ],
+          "expected_impact": {
+            "deep_nested_json": "0.18 → 1.0-1.5 GB/s (+450-750%)",
+            "medium_json": "0.20 → 0.4-0.6 GB/s (+100-200%)",
+            "overall_average": "0.21 → 0.5-0.8 GB/s (+140-280%)",
+            "memory_usage": "-30% due to better arena usage"
+          }
+        },
+        {
+          "id": "2.5",
+          "name": "🎯 P2: Cache Optimization + Prefetch Hints (Polish)",
+          "status": "pending",
+          "priority": "P2 - POLISH",
+          "estimated_impact": "+10-50% (final touches)",
+          "effort": "Low (1 day)",
+          "why": "После P0/P1 оптимизаций нужен финальный polish для максимальной производительности. Небольшие улучшения складываются.",
+          "deliverables": [
+            "Struct packing для минимального sizeof(dap_json_value_t)",
+            "Hot/cold data separation (frequently vs rarely accessed fields)",
+            "Cache-line alignment для hot structures (__attribute__((aligned(64))))",
+            "Prefetch hints в критических путях (__builtin_prefetch)",
+            "Cachegrind profiling + optimization",
+            "tests/performance/bench_cache_analysis.c - cache metrics",
+            "Benchmark: cache miss rate < 5%"
+          ],
+          "implementation_details": {
+            "struct_packing": {
+              "description": "Минимизировать sizeof(dap_json_value_t)",
+              "current_size": "~64-80 bytes (estimated)",
+              "target_size": "48 bytes (fit in 3/4 cache line)",
+              "technique": "Pack type + flags into bitfields, reorder fields by access frequency"
+            },
+            "hot_cold_separation": {
+              "description": "Часто используемые поля в начале структуры",
+              "hot_fields": "type, data pointer, length",
+              "cold_fields": "arena_ref, metadata, debug_info",
+              "benefit": "Hot fields fit in single cache line"
+            },
+            "prefetch_strategy": {
+              "description": "Prefetch следующего node во время обработки текущего",
+              "implementation": "__builtin_prefetch(next_node, 0, 3) // temporal locality",
+              "locations": "Array iteration, object key lookup",
+              "expected_win": "+5-10% throughput"
+            }
+          },
+          "acceptance_criteria": [
+            "sizeof(dap_json_value_t) <= 48 bytes",
+            "Cachegrind: L1 miss rate < 5%",
+            "Prefetch hints в 3+ критических местах",
+            "Overall throughput: +10-15% vs без cache opts"
+          ],
+          "expected_impact": {
+            "all_scenarios": "+10-15% general improvement",
+            "combined_with_p0_p1": "Total: 0.2 → 4.0-5.0 GB/s (20-25x)"
+          }
+        },
+        {
+          "id": "2.6",
+          "name": "📈 Performance A/B Testing - Ablation Study",
+          "status": "pending",
+          "priority": "P3 - ANALYSIS",
+          "why": "После реализации P0/P1/P2 оптимизаций нужно измерить contribution каждой для понимания что даёт максимальный эффект.",
+          "deliverables": [
+            "tests/performance/bench_phase2_ablation.c - Ablation study",
             "Baseline: Phase 1 implementation",
             "Тест конфигураций:",
-            "  └─ Baseline (Phase 1)",
-            "  └─ +Advanced structural indexing",
-            "  └─ +Lemire fast_float",
-            "  └─ +Cache optimizations",
-            "  └─ Full (all Phase 2 opts)",
-            "Измерение contribution каждой Phase 2 optimization",
+            "  └─ Baseline (Phase 1 + current Stage 2)",
+            "  └─ +Zero-copy strings",
+            "  └─ +SIMD string scanner",
+            "  └─ +fast_float numbers",
+            "  └─ +Iterative parsing",
+            "  └─ +Arena optimization",
+            "  └─ +Cache optimization",
+            "  └─ Full (all P0+P1+P2 opts)",
+            "Измерение contribution каждой оптимизации",
             "benchmarks/results/phase2_ablation.md - detailed analysis",
             "Графики: phase2_optimization_breakdown.svg",
             "Flame graphs: до и после каждой оптимизации"
           ],
-          "expected_improvements": {
-            "advanced_indexing": "+20-40% vs Phase 1 indexing",
-            "fast_float": "+10-30% на number-heavy JSON",
-            "cache_opts": "+5-15% overall",
-            "combined": "+50-80% total Phase 2 improvement"
+          "expected_results": {
+            "zero_copy_strings": "+600-800% baseline",
+            "simd_string_scanner": "+200-400% on top",
+            "fast_float": "+100-200% for number-heavy",
+            "iterative_parsing": "+50-100% for deep nested",
+            "arena_optimization": "+30-50% general",
+            "cache_optimization": "+10-15% final polish",
+            "combined": "+2000-2500% total (20-25x)"
           },
           "acceptance_criteria": [
-            "Каждая оптимизация даёт measurable improvement",
-            "Combined effect >= +50% vs Phase 1",
-            "No negative interactions между оптимизациями",
-            "Clear understanding что работает best"
+            "Каждая оптимизация измерена independently",
+            "Combined effect == sum of individual (no negative interactions)",
+            "Clear понимание что даёт maximum ROI",
+            "Documented для будущих оптимизаций"
           ]
         },
         {
-          "id": "2.5",
-          "name": "Comprehensive Correctness Testing",
+          "id": "2.7",
+          "name": "✅ Comprehensive Correctness Testing",
           "status": "pending",
+          "priority": "P1 - CRITICAL",
+          "why": "После всех оптимизаций нужно гарантировать 100% correctness на всех платформах и edge cases.",
           "deliverables": [
             "tests/unit/json/test_simdjson_correctness.c - full two-stage vs reference",
             "  └─ Stage 1: structural indexing SIMD vs reference",
-            "  └─ Stage 2: DOM building на SIMD indices vs reference indices",
-            "  └─ End-to-end: full parser SIMD vs reference",
+            "  └─ Stage 2: DOM building (optimized) vs reference",
+            "  └─ End-to-end: full optimized parser vs reference",
             "  └─ Property-based testing на 100000+ random JSON",
             "tests/unit/json/test_platform_matrix.c - тесты на всех платформах",
             "Fuzzing: AFL++ + libFuzzer для поиска corner cases",
             "Differential fuzzing: simdjson vs dap_json на одинаковых входах"
           ],
           "acceptance_criteria": [
-            "100% correctness: SIMD == reference на всех тестах",
+            "100% correctness: Optimized == reference на всех тестах",
             "Property-based tests: 100000+ random JSON без ошибок",
             "Fuzzing: 24 часа без crashes/divergence",
-            "Все платформы (x86_64, ARM64) дают одинаковый результат"
+            "Все платформы (x86_64, ARM64, ARM32) дают одинаковый результат"
           ]
         },
         {
-          "id": "2.6",
-          "name": "Comparative Benchmark Phase 2 - Доказываем превосходство",
-          "status": "completed",
-          "completion_date": "2026-01-12",
-          "progress": "100% - Full infrastructure complete + detailed analysis",
-          "completed_items": [
-            "✅ benchmarks/benchmark_competitive_full.cpp - Full competitive suite",
-            "✅ 8 test scenarios implemented (Small/Medium/Large/Deep/Wide/Number/String/Escape)",
-            "✅ Memory profiling (RSS tracking)",
-            "✅ Latency distribution (p50/p95/p99/p999)",
-            "✅ dap_json vs simdjson comparison working",
-            "✅ Statistical analysis with percentiles",
-            "✅ Color-coded output with win-rate tracking",
-            "✅ benchmarks/run_comparison.sh - Full automation script",
-            "✅ benchmarks/docs/phase2_analysis.md - Deep performance analysis",
-            "✅ benchmarks/docs/phase2_gaps.md - Gap analysis by scenario",
-            "✅ Clear optimization roadmap (Week 1/2/3 targets)",
-            "✅ Root cause identified + solutions documented"
-          ],
-          "current_results": {
-            "win_rate": "0% (0/7 wins) - TARGET NOT MET",
-            "performance_gap": "7-21x slower than simdjson",
-            "root_cause": "Using old json-c adapter API, not SIMD Stage 1 + optimized Stage 2",
-            "best_scenario": "String Heavy: 0.45 GB/s (still 21x slower)",
-            "worst_scenario": "Small JSON: 0.12 GB/s (10x slower)",
-            "average_throughput": "0.21 GB/s vs 2.5 GB/s simdjson"
-          },
-          "remaining_work": [
-            "NEXT PHASE: 2.1-2.5 Stage 2 optimization (identified in analysis)",
-            "Integrate SIMD Stage 1 into public API (Week 1 priority)",
-            "Implement zero-copy strings (Week 2 priority)",
-            "Add fast_float number parsing (Week 2 priority)",
-            "Implement tape-based format (Week 3 priority)",
-            "Add real-world datasets when we have competitive performance",
-            "Compile RapidJSON and yajl after matching simdjson",
-            "JSON/SVG output generation after we have good results to show"
-          ],
-          "key_insights": {
-            "bottleneck": "Using old json-tokener API (0.2 GB/s) instead of SIMD Stage 1 (2.0 GB/s)",
-            "immediate_win": "Just wire up existing SIMD Stage 1 → 7x faster (already implemented!)",
-            "short_term": "Zero-copy strings + fast_float → another 2x",
-            "medium_term": "Tape format + parallel Stage 2 → beat simdjson",
-            "timeline": "Week 1: 1.5 GB/s | Week 2: 3.0 GB/s | Week 3: 4.0+ GB/s"
-          },
-          "acceptance_criteria_status": {
-            "dap_json_faster_70pct": "❌ 0% (need Phase 2.1-2.5 first)",
-            "dap_json_not_slower": "❌ Currently 7-21x slower",
-            "memory_usage": "✅ Better than simdjson (arena allocator)",
-            "automated_benchmarks": "✅ Fully automated with run_comparison.sh",
-            "results_published": "✅ Published in benchmarks/docs/",
-            "analysis_complete": "✅ Root cause + roadmap documented"
-          },
-          "notes": "Phase 2.6 COMPLETE - Infrastructure ready, baseline established, clear path forward. The bottleneck is NOT in our SIMD Stage 1 (it works great at 2 GB/s!) but in using the old json-tokener API. Next: Complete Phase 2.1-2.5 to build optimized Stage 2, then integrate everything."
-        }
-      ]
-    },
-    {
-      "id": "phase-3",
+          "id": "2.8",
+          "name": "📊 Final Competitive Benchmark - BEAT SIMDJSON",
+          "status": "pending (blocked by 2.2-2.5)",
+          "priority": "P0 - FINAL VALIDATION",
+          "why": "После реализации всех оптимизаций (2.2-2.5) - финальное сравнение с simdjson. Цель: ПРЕВЗОЙТИ по всем сценариям!",
           "deliverables": [
-            "Comparative benchmark Phase 2:",
-            "  └─ ./benchmarks/run_comparison.sh --phase=2 --all-parsers",
-            "  └─ Automated сравнение на всех конкурентах (json-c, simdjson, RapidJSON, yajl)",
-            "  └─ Benchmarks на всех test scenarios (small, medium, large, deep, wide, etc)",
-            "  └─ Memory profiling для каждого парсера",
-            "  └─ Latency distribution analysis (p50, p95, p99, p99.9)",
-            "benchmarks/results/phase2_detailed_results.json - все метрики",
-            "benchmarks/results/phase2_vs_simdjson.svg - графики сравнения",
-            "benchmarks/results/phase2_analysis.md - why we are faster",
-            "benchmarks/results/phase2_gaps.md - где ещё можем улучшить",
-            "Performance regression suite",
-            "Актуализация SLC задачи"
+            "Re-run benchmarks/benchmark_competitive_full.cpp после оптимизаций",
+            "Add RapidJSON и yajl к comparison",
+            "Real-world datasets (GitHub API, Twitter, etc)",
+            "JSON/CSV/HTML output formats",
+            "Performance report для публикации",
+            "Marketing materials (charts, tables, claims)"
           ],
-          "test_scenarios": {
-            "small_json": "< 1KB - latency test (100K iterations)",
-            "medium_json": "10-100KB - typical API responses (10K iterations)",
-            "large_json": "1-10MB - large configs (1K iterations)",
-            "huge_json": "100MB+ - stress test (10 iterations)",
-            "deep_nested": "500+ levels - recursion/stack test",
-            "wide_arrays": "100K elements - array handling",
-            "number_heavy": "90% numbers - number parsing perf",
-            "string_heavy": "90% strings - string handling",
-            "escape_heavy": "много escape sequences - unescape perf",
-            "real_world_github": "Real GitHub API responses",
-            "real_world_twitter": "Real Twitter timeline JSON",
-            "real_world_reddit": "Real Reddit API responses"
+          "target_results": {
+            "win_rate": ">= 70% (5/7 scenarios faster than simdjson)",
+            "no_scenario_2x_slower": "Never more than 2x slower in worst case",
+            "average_throughput": ">= 3.0 GB/s (vs 2.5 GB/s simdjson)",
+            "best_case": ">= 5.0 GB/s (beat simdjson by 2x)"
           },
-          "target_metrics": {
-            "avx2_throughput": "3-4 GB/s (vs simdjson 2-3 GB/s) - ПРЕВОСХОДИМ",
-            "sse42_throughput": "1.2-1.5 GB/s",
-            "neon_throughput": "2-2.5 GB/s",
-            "stringify_speed": ">= 500 MB/s",
-            "memory_usage": "<= 95% simdjson",
-            "latency_p99": "< 50ns для simple objects",
-            "vs_simdjson_avg": "+50% faster на average"
+          "expected_results_after_optimizations": {
+            "small_json": "1.5-2.0 GB/s (was 0.12, target: match simdjson 1.18)",
+            "medium_json": "3.0-4.0 GB/s (was 0.20, target: BEAT simdjson 2.42)",
+            "large_json": "3.5-4.5 GB/s (was 0.17, target: BEAT simdjson 2.26)",
+            "deep_nested": "2.5-3.5 GB/s (was 0.18, target: BEAT simdjson 2.02)",
+            "wide_arrays": "2.0-3.0 GB/s (was 0.17, target: BEAT simdjson 1.19)",
+            "number_heavy": "2.5-3.5 GB/s (was 0.13, target: BEAT simdjson 1.20)",
+            "string_heavy": "6.0-10.0 GB/s (was 0.45, target: MATCH simdjson 9.31)",
+            "overall_average": "3.5-4.5 GB/s (vs simdjson ~2.5 GB/s)"
           },
           "acceptance_criteria": [
-            "dap_json БЫСТРЕЕ simdjson на >= 70% test cases",
-            "dap_json НЕ МЕДЛЕННЕЕ simdjson ни на одном case",
-            "Memory <= simdjson на всех cases",
-            "Automated benchmarks reproducible",
-            "Results published в benchmarks/results/"
-          ]
+            "✅ Win rate >= 70% против simdjson",
+            "✅ No scenario > 2x slower than simdjson",
+            "✅ Average throughput >= 3.0 GB/s",
+            "✅ Best case >= 5.0 GB/s",
+            "✅ Memory usage <= simdjson",
+            "✅ Results reproducible и automated"
+          ],
+          "notes": "Эта фаза - ФИНАЛЬНАЯ ВАЛИДАЦИЯ всех оптимизаций 2.2-2.5. Мы должны ПРЕВЗОЙТИ simdjson в большинстве сценариев. Infrastructure уже готова (completed в 2.6), теперь нужны только оптимизации."
         }
       ]
     },
