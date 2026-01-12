@@ -18,8 +18,14 @@ fi
 TPL_C="${SCRIPT_DIR}/dap_json_stage1_simd.c.tpl"
 TPL_H="${SCRIPT_DIR}/dap_json_stage1_simd.h.tpl"
 
-# Output directory - defaults to source tree, but can be overridden (e.g., by CMake)
-OUTPUT_DIR="${1:-${SCRIPT_DIR}/arch}"
+# Output directory - MUST be provided by CMake, no default to avoid source tree pollution
+if [[ -z "${1:-}" ]]; then
+    echo "Error: OUTPUT_DIR must be provided as first argument (e.g., from CMake)" >&2
+    echo "Usage: $0 <output_dir>" >&2
+    echo "Example: $0 /path/to/build/module/json/simd_gen" >&2
+    exit 1
+fi
+OUTPUT_DIR="$1"
 
 # Source dap_tpl library
 if [[ ! -f "${DAP_TPL_DIR}/dap_tpl.sh" ]]; then

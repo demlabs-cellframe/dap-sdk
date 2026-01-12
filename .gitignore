@@ -87,3 +87,6 @@ context/.local/
 *.tmp
 *.download
 
+
+# Generated SIMD implementations (should be in build dir only)
+module/json/src/stage1/arch/
