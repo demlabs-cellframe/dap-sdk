@@ -120,16 +120,12 @@ typedef struct {
 struct dap_json_value {
     dap_json_type_t type;          /**< Value type */
     union {
-        bool boolean;                     /**< Boolean value (for TYPE_BOOLEAN) */
-        dap_json_number_t number;         /**< Number value (for TYPE_INT/TYPE_DOUBLE) */
-        dap_json_string_t string;  /**< String value (for TYPE_STRING) - LEGACY */
-        dap_json_array_t array;           /**< Array value (for TYPE_ARRAY) */
-        dap_json_object_t object;         /**< Object value (for TYPE_OBJECT) */
+        bool boolean;              /**< Boolean value (for TYPE_BOOLEAN) */
+        dap_json_number_t number;  /**< Number value (for TYPE_INT/TYPE_DOUBLE) */
+        dap_json_string_t string;  /**< String value (for TYPE_STRING) */
+        dap_json_array_t array;    /**< Array value (for TYPE_ARRAY) */
+        dap_json_object_t object;  /**< Object value (for TYPE_OBJECT) */
     };
-    
-    // ZERO-COPY STRING METADATA (for P0 optimization)
-    // Only valid when type == DAP_JSON_TYPE_STRING
-    void *string_zero_copy_metadata; /**< Pointer to zero-copy string metadata (internal use) */
 };
 
 #ifdef __cplusplus

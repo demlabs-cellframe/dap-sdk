@@ -66,7 +66,7 @@ static bool s_unescape_string(
     }
     
     // Allocate buffer (worst case: same size as input)
-    char *l_output = (char*)dap_arena_malloc(a_arena, a_input_len + 1);
+    char *l_output = (char*)dap_arena_alloc(a_arena, a_input_len + 1);
     if (!l_output) {
         log_it(L_ERROR, "Failed to allocate %zu bytes for unescaping", a_input_len);
         return false;
