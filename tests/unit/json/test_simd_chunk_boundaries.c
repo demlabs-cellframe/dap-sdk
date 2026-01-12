@@ -375,7 +375,7 @@ static bool s_test_literal_split(dap_cpu_arch_t a_arch)
     bool result = false;
     dap_json_t *l_json = NULL;
     
-    int chunk_size = s_get_chunk_size_for_arch(a_arch));
+    int chunk_size = s_get_chunk_size_for_arch(a_arch);
     
     // Test "true" split as tr|ue
     char json_buf[256];
