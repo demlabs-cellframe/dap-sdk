@@ -345,6 +345,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
             
             // Slow path: Skip whitespace (not in chunk or missed by bitmap)
             if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                a_stage1->whitespace_chars++;
                 chunk_pos++;
                 continue;
             }
@@ -439,6 +440,7 @@ int dap_json_stage1_run_sse2(dap_json_stage1_t *a_stage1)
         // Skip whitespace
         while (pos < input_len && (input[pos] == ' ' || input[pos] == '\t' ||
                                    input[pos] == '\r' || input[pos] == '\n')) {
+            a_stage1->whitespace_chars++;
             pos++;
         }
         

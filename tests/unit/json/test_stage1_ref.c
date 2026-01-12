@@ -293,6 +293,7 @@ static bool s_test_stage1_whitespace_skipping(void) {
     /* Check whitespace statistics */
     size_t whitespace_chars;
     dap_json_stage1_get_stats(stage1, NULL, &whitespace_chars, NULL);
+    log_it(L_INFO, "DEBUG: Whitespace chars = %zu, expected 12", whitespace_chars);
     DAP_TEST_FAIL_IF(whitespace_chars != 12, "Whitespace count == 12");
     
     result = true;
