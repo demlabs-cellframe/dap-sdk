@@ -12,6 +12,8 @@ stages:
 .tests:  
   extends: .ci-polygon
   stage: build
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq gawk || true
   rules:
    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
      when: always
