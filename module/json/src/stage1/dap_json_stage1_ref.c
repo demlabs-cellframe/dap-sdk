@@ -47,11 +47,12 @@ static bool s_debug_more = false;
 
 /**
  * @brief Grow structural indices array
- * @details Doubles the capacity of indices array using realloc
+ * @details Doubles the capacity of indices array using realloc.
+ *          Exported for use in inline add_token function.
  * @param[in,out] a_stage1 Stage 1 parser state
  * @return true on success, false on allocation failure
  */
-static bool s_grow_indices_array(dap_json_stage1_t *a_stage1)
+bool dap_json_stage1_grow_indices_array(dap_json_stage1_t *a_stage1)
 {
     if(!a_stage1) {
         log_it(L_ERROR, "NULL stage1 pointer");
@@ -73,70 +74,6 @@ static bool s_grow_indices_array(dap_json_stage1_t *a_stage1)
     a_stage1->indices_capacity = l_new_capacity;
     
     debug_if(dap_json_get_debug(), "Grew indices array to %zu entries", l_new_capacity);
-    return true;
-}
-
-/**
- * @brief Add token to indices array (exported for SIMD implementations)
- * @details Adds any type of token to indices array. Grows array if necessary.
- * @param[in,out] a_stage1 Stage 1 parser state
- * @param[in] a_position Byte position in input
- * @param[in] a_length Token length (0 for structural chars)
- * @param[in] a_type Token type
- * @param[in] a_character_or_subtype Character for structural, subtype for literal
- * @return true on success, false on allocation failure
- */
-bool dap_json_stage1_add_token(
-    dap_json_stage1_t *a_stage1,
-    uint32_t a_position,
-    uint32_t a_length,
-    dap_json_token_type_t a_type,
-    uint8_t a_character_or_subtype
-)
-{
-    if(!a_stage1) {
-        log_it(L_ERROR, "NULL stage1 pointer");
-        return false;
-    }
-    
-    // Grow array if needed
-    if(a_stage1->indices_count >= a_stage1->indices_capacity) {
-        if(!s_grow_indices_array(a_stage1)) {
-            a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
-            a_stage1->error_position = a_position;
-            snprintf(a_stage1->error_message, sizeof(a_stage1->error_message),
-                     "Out of memory growing indices array");
-            return false;
-        }
-    }
-    
-    // Add token
-    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count];
-    l_token->position = a_position;
-    l_token->length = a_length;
-    l_token->type = a_type;
-    l_token->character = a_character_or_subtype;
-    
-    a_stage1->indices_count++;
-    
-    // Update statistics
-    switch(a_type) {
-        case TOKEN_TYPE_STRUCTURAL:
-            a_stage1->structural_chars++;
-            break;
-        case TOKEN_TYPE_STRING:
-            a_stage1->string_count++;
-            break;
-        case TOKEN_TYPE_NUMBER:
-            a_stage1->number_count++;
-            break;
-        case TOKEN_TYPE_LITERAL:
-            a_stage1->literal_count++;
-            break;
-        default:
-            break;
-    }
-    
     return true;
 }
 

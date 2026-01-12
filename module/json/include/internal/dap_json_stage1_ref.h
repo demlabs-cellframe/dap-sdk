@@ -47,8 +47,23 @@ extern "C" {
  */
 extern int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1);
 
+/* ========================================================================== */
+/*                    INTERNAL HELPER FUNCTIONS                               */
+/* ========================================================================== */
+
 /**
- * @brief Add a token to the Stage 1 output array
+ * @brief Grow structural indices array (internal helper)
+ * @details Doubles the capacity of indices array using realloc.
+ *          Exported for use in inline add_token function.
+ * @param[in,out] a_stage1 Stage 1 parser state
+ * @return true on success, false on allocation failure
+ */
+extern bool dap_json_stage1_grow_indices_array(dap_json_stage1_t *a_stage1);
+
+/**
+ * @brief Add a token to the Stage 1 output array (inline hot path)
+ * @details Inline function for maximum performance in hot path.
+ *          Grows array if needed (unlikely after pre-allocation).
  * @param[in,out] a_stage1 Stage 1 parser state
  * @param[in] a_position Token position in input buffer
  * @param[in] a_length Token length (0 for structural)
@@ -56,13 +71,57 @@ extern int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1);
  * @param[in] a_character_or_subtype Structural character or literal subtype
  * @return true on success, false on allocation failure
  */
-extern bool dap_json_stage1_add_token(
+static inline bool dap_json_stage1_add_token(
     dap_json_stage1_t *a_stage1,
     uint32_t a_position,
     uint32_t a_length,
     dap_json_token_type_t a_type,
     uint8_t a_character_or_subtype
-);
+)
+{
+    // Unlikely NULL check (should never happen in hot path)
+    if(__builtin_expect(!a_stage1, 0)) {
+        return false;
+    }
+    
+    // Grow array if needed (unlikely after pre-allocation)
+    if(__builtin_expect(a_stage1->indices_count >= a_stage1->indices_capacity, 0)) {
+        if(!dap_json_stage1_grow_indices_array(a_stage1)) {
+            a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
+            a_stage1->error_position = a_position;
+            return false;
+        }
+    }
+    
+    // Add token (hot path - fully inlined)
+    dap_json_struct_index_t *l_token = &a_stage1->indices[a_stage1->indices_count];
+    l_token->position = a_position;
+    l_token->length = a_length;
+    l_token->type = a_type;
+    l_token->character = a_character_or_subtype;
+    
+    a_stage1->indices_count++;
+    
+    // Update statistics
+    switch(a_type) {
+        case TOKEN_TYPE_STRUCTURAL:
+            a_stage1->structural_chars++;
+            break;
+        case TOKEN_TYPE_STRING:
+            a_stage1->string_count++;
+            break;
+        case TOKEN_TYPE_NUMBER:
+            a_stage1->number_count++;
+            break;
+        case TOKEN_TYPE_LITERAL:
+            a_stage1->literal_count++;
+            break;
+        default:
+            break;
+    }
+    
+    return true;
+}
 
 /**
  * @brief Scan string from current position (reference implementation)
