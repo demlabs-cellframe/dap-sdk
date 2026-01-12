@@ -307,46 +307,38 @@ generate_custom_mock_headers() {
             param_array="NULL"
             param_count=0
         else
-            # Extract PARAM(type, name) entries
-            local clean_params=$(echo "$param_list" | tr -d ' \t\n')
-            param_count=$(echo "$clean_params" | grep -o "PARAM(" | wc -l)
+            # AWK script already processed PARAM(...) into "type name, type2 name2" format
+            # Split by comma to get individual parameters
+            local param_decl_parts=()
+            local param_name_parts=()
+            local param_array_parts=()
             
-            if [ "$param_count" -eq 0 ]; then
+            # Split param_list by commas
+            IFS=',' read -ra PARAMS <<< "$param_list"
+            for param in "${PARAMS[@]}"; do
+                # Trim whitespace
+                param=$(echo "$param" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                [ -z "$param" ] && continue
+                
+                # Extract last word as parameter name
+                local param_name=$(echo "$param" | awk '{print $NF}')
+                
+                param_decl_parts+=("$param")
+                param_name_parts+=("$param_name")
+                param_array_parts+=("(void*)(intptr_t)$param_name")
+            done
+            
+            # Join parameters with proper formatting
+            if [ ${#param_decl_parts[@]} -gt 0 ]; then
+                param_decl=$(IFS=', '; echo "${param_decl_parts[*]}")
+                param_names=$(IFS=', '; echo "${param_name_parts[*]}")
+                param_array="((void*[]){$(IFS=', '; echo "${param_array_parts[*]}")})"
+                param_count=${#param_decl_parts[@]}
+            else
                 param_decl="void"
                 param_names=""
                 param_array="NULL"
                 param_count=0
-            else
-                # Extract each PARAM(type, name)
-                local param_decl_parts=()
-                local param_name_parts=()
-                local param_array_parts=()
-                
-                # Use awk script to extract PARAM entries
-                local tmp_params_file=$(create_temp_file "params_${func_name}")
-                temp_files+=("$tmp_params_file")
-                echo "$param_list" | gawk -f "${MOCK_AWK_DIR}/parse_params.awk" > "$tmp_params_file"
-                
-                # Read extracted parameters
-                while IFS='|' read -r param_type param_name; do
-                    [ -z "$param_type" ] && continue
-                    param_decl_parts+=("$param_type $param_name")
-                    param_name_parts+=("$param_name")
-                    param_array_parts+=("(void*)(intptr_t)$param_name")
-                done < "$tmp_params_file"
-                
-                # Join parameters with proper formatting
-                if [ ${#param_decl_parts[@]} -gt 0 ]; then
-                    param_decl=$(IFS=','; printf '%s, ' "${param_decl_parts[@]}" | sed 's/, $//')
-                    param_names=$(IFS=','; printf '%s, ' "${param_name_parts[@]}" | sed 's/, $//')
-                    param_array="((void*[]){$(IFS=','; printf '%s, ' "${param_array_parts[@]}" | sed 's/, $//')})"
-                    param_count=${#param_decl_parts[@]}
-                else
-                    param_decl="void"
-                    param_names=""
-                    param_array="NULL"
-                    param_count=0
-                fi
             fi
         fi
         

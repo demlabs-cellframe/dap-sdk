@@ -149,6 +149,17 @@
 
 #define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
+// Constructor/Destructor attributes for automatic initialization/cleanup
+#ifdef _MSC_VER
+    // MSVC doesn't support __attribute__ constructor/destructor
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+#else
+    // GCC/Clang constructor/destructor attributes
+    #define DAP_CONSTRUCTOR __attribute__((constructor))
+    #define DAP_DESTRUCTOR __attribute__((destructor))
+#endif
+
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
 void dap_delete_multy(size_t, ...);
