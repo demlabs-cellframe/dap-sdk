@@ -453,15 +453,13 @@ static bool s_test_ieee754_precision_preservation(void) {
     DAP_TEST_FAIL_IF_NULL(l_json2, "Re-parse IEEE 754 doubles");
     
     // Compare with tolerance
-    // Note: JSON serialization typically preserves ~14-15 significant digits for doubles
-    // Using 1e-14 (14 digits) as realistic tolerance for round-trip
     double pi1 = dap_json_object_get_double(l_json1, "pi");
     double pi2 = dap_json_object_get_double(l_json2, "pi");
-    DAP_TEST_FAIL_IF(fabs(pi1 - pi2) > 1e-14, "Pi preserved with high precision");
+    DAP_TEST_FAIL_IF(fabs(pi1 - pi2) > 1e-15, "Pi preserved with high precision");
     
     double e1 = dap_json_object_get_double(l_json1, "e");
     double e2 = dap_json_object_get_double(l_json2, "e");
-    DAP_TEST_FAIL_IF(fabs(e1 - e2) > 1e-14, "e preserved with high precision");
+    DAP_TEST_FAIL_IF(fabs(e1 - e2) > 1e-15, "e preserved with high precision");
     
     double small1 = dap_json_object_get_double(l_json1, "small");
     double small2 = dap_json_object_get_double(l_json2, "small");
