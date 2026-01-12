@@ -105,7 +105,7 @@ void dap_json_init(void)
     // Initialize Stage 1 (CPU detection)
     dap_json_stage1_init();
     
-    log_it(L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
+    debug_if(s_debug_more, L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
            dap_cpu_arch_get_name(dap_cpu_arch_get()));
 }
 
@@ -255,10 +255,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         // Zero-copy: parse directly
         l_parse_input = l_enc_info.data_start;
         l_parse_len = l_enc_info.data_len;
-        log_it(L_DEBUG, "UTF-8 fast path (zero-copy)");
+        debug_if(s_debug_more, L_DEBUG, "UTF-8 fast path (zero-copy)");
     } else {
         // Slow path: transcode UTF-16/32 → UTF-8
-        log_it(L_DEBUG, "Non-UTF-8 encoding detected: %s (transcoding required)",
+        debug_if(s_debug_more, L_DEBUG, "Non-UTF-8 encoding detected: %s (transcoding required)",
                dap_json_encoding_name(l_enc_info.encoding));
         
         if (!dap_json_transcode_to_utf8(l_enc_info.data_start, l_enc_info.data_len,
@@ -270,7 +270,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         }
         
         l_parse_input = l_transcoded;
-        log_it(L_DEBUG, "Transcoded %s → UTF-8 (%zu bytes)",
+        debug_if(s_debug_more, L_DEBUG, "Transcoded %s → UTF-8 (%zu bytes)",
                dap_json_encoding_name(l_enc_info.encoding), l_parse_len);
     }
     

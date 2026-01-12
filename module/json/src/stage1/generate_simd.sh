@@ -29,8 +29,12 @@ fi
 
 source "${DAP_TPL_DIR}/dap_tpl.sh"
 
+# Set TEMPLATES_DIR for {{#include}} to find sub-templates
+export TEMPLATES_DIR="${SCRIPT_DIR}"
+
 echo "=== Generating SIMD implementations using dap_tpl ==="
 echo "Output directory: ${OUTPUT_DIR}"
+echo "Templates directory: ${TEMPLATES_DIR}"
 
 # Detect target architecture
 # CMAKE_SYSTEM_PROCESSOR can be passed from CMake for cross-compilation
@@ -135,10 +139,12 @@ case "${ARCH}" in
             "MASK_TYPE=uint64_t" \
             "LOADU=_mm512_loadu_si512" \
             "SET1_EPI8=_mm512_set1_epi8" \
+            "CMPEQ_EPI8=_mm512_cmpeq_epi8_mask" \
             "CMPEQ_EPI8_MASK=_mm512_cmpeq_epi8_mask" \
             "MOVEMASK_TYPE=__mmask64" \
             "PERF_TARGET=2+ GB/s (single-core)" \
             "TARGET_ATTR=avx512f,avx512dq,avx512bw" \
+            "is_avx512=1" \
             "USE_AVX512_MASK=1"
         ;;
     

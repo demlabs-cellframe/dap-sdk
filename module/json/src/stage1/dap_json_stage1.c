@@ -38,6 +38,9 @@
 
 #define LOG_TAG "dap_json_stage1"
 
+// Debug flag: detailed logs (below WARNING level)
+static bool s_debug_more = false;
+
 /* ========================================================================== */
 /*                          GLOBAL STATE                                      */
 /* ========================================================================== */
@@ -64,6 +67,6 @@ void dap_json_stage1_init(void)
     g_dap_json_cpu_features_initialized = true;
     
     dap_cpu_arch_t arch = dap_cpu_arch_get();
-    log_it(L_INFO, "Stage 1 initialized (arch: %s)", dap_cpu_arch_get_name(arch));
+    debug_if(s_debug_more, L_INFO, "Stage 1 initialized (arch: %s)", dap_cpu_arch_get_name(arch));
 }
 

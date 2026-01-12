@@ -32,6 +32,9 @@
 
 #define LOG_TAG "dap_json_stage1_ref"
 
+// Debug flag: detailed logs (below WARNING level)
+static bool s_debug_more = false;
+
 // Initial capacity for structural indices array
 #define INITIAL_INDICES_CAPACITY    256
 
@@ -683,7 +686,7 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
         }
     }
     
-    log_it(L_INFO, "Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
+    debug_if(s_debug_more, L_INFO, "Stage 1 complete: %zu tokens (%zu structural, %zu strings, %zu numbers, %zu literals)",
            a_stage1->indices_count, a_stage1->structural_chars, 
            a_stage1->string_count, a_stage1->number_count, a_stage1->literal_count);
     

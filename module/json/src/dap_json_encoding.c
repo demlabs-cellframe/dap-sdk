@@ -10,6 +10,9 @@
 
 #define LOG_TAG "dap_json_encoding"
 
+// Debug flag: detailed logs (below WARNING level)
+static bool s_debug_more = false;
+
 /**
  * @brief Detect encoding by BOM
  */
@@ -150,7 +153,7 @@ bool dap_json_detect_encoding(
     if (s_detect_bom(a_input, a_len, a_info)) {
         a_info->data_start = a_input + a_info->bom_size;
         a_info->data_len = a_len - a_info->bom_size;
-        log_it(L_DEBUG, "Encoding detected by BOM: %s (%zu byte BOM)",
+        debug_if(s_debug_more, L_DEBUG, "Encoding detected by BOM: %s (%zu byte BOM)",
                dap_json_encoding_name(a_info->encoding), a_info->bom_size);
         return true;
     }
@@ -162,7 +165,7 @@ bool dap_json_detect_encoding(
     a_info->data_start = a_input;
     a_info->data_len = a_len;
     
-    log_it(L_DEBUG, "Encoding detected by heuristics: %s",
+    debug_if(s_debug_more, L_DEBUG, "Encoding detected by heuristics: %s",
            dap_json_encoding_name(a_info->encoding));
     
     return true;

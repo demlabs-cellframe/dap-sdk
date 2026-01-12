@@ -12,6 +12,9 @@
 
 #define LOG_TAG "dap_json_transcode"
 
+// Debug flag: detailed logs (below WARNING level)
+static bool s_debug_more = false;
+
 /**
  * @brief Encode UTF-8 from codepoint
  */
@@ -126,7 +129,7 @@ bool dap_json_transcode_to_utf8(
     *a_output = l_output;
     *a_output_len = l_out_pos;
     
-    log_it(L_DEBUG, "Transcoded %zu bytes (%s) → %zu bytes (UTF-8)",
+    debug_if(s_debug_more, L_DEBUG, "Transcoded %zu bytes (%s) → %zu bytes (UTF-8)",
            a_len, dap_json_encoding_name(a_encoding), l_out_pos);
     
     return true;

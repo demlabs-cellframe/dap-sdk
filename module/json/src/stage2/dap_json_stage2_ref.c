@@ -54,6 +54,9 @@
 
 #define LOG_TAG "dap_json_stage2_ref"
 
+// Debug flag: detailed logs (below WARNING level)
+static bool s_debug_more = false;
+
 // Initial capacity for arrays/objects
 #define INITIAL_ARRAY_CAPACITY 8
 #define INITIAL_OBJECT_CAPACITY 8
@@ -661,7 +664,7 @@ static bool s_parse_number(
                     }
                 } else {
                     // strtoull also failed - convert to double as last resort
-                    log_it(L_DEBUG, "Integer overflow, converting to double: %s", l_buffer);
+                    debug_if(s_debug_more, L_DEBUG, "Integer overflow, converting to double: %s", l_buffer);
                     errno = 0;
                     double l_dval = strtod(l_buffer, &l_u_endptr);
                     
@@ -681,7 +684,7 @@ static bool s_parse_number(
                 }
             } else {
                 // Negative overflow (< INT64_MIN) - convert to double
-                log_it(L_DEBUG, "Negative integer underflow, converting to double: %s", l_buffer);
+                debug_if(s_debug_more, L_DEBUG, "Negative integer underflow, converting to double: %s", l_buffer);
                 errno = 0;
                 char *l_d_endptr = NULL;
                 double l_dval = strtod(l_buffer, &l_d_endptr);
@@ -1135,7 +1138,7 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         return NULL;
     }
     
-    log_it(L_DEBUG, "Stage 2 initialized with %zu indices, Arena: %zu bytes, String Pool: %zu capacity", 
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 initialized with %zu indices, Arena: %zu bytes, String Pool: %zu capacity", 
            l_stage2->indices_count, l_estimated_size, l_string_pool_capacity);
     
     return l_stage2;
@@ -1183,22 +1186,22 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
         return;
     }
     
-    log_it(L_DEBUG, "Stage 2 free: start");
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: start");
     
     // Free Arena (frees all DOM nodes allocated from it)
-    log_it(L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
     dap_arena_free(a_stage2->arena);
-    log_it(L_DEBUG, "Stage 2 free: Arena freed");
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: Arena freed");
     
     // Free String Pool (frees all interned strings)
-    log_it(L_DEBUG, "Stage 2 free: freeing String Pool at %p", a_stage2->string_pool);
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing String Pool at %p", a_stage2->string_pool);
     dap_string_pool_free(a_stage2->string_pool);
-    log_it(L_DEBUG, "Stage 2 free: String Pool freed");
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: String Pool freed");
     
     // NOTE: root pointer becomes invalid after Arena free
     // Caller should use root BEFORE calling this function
     DAP_DELETE(a_stage2);
-    log_it(L_DEBUG, "Stage 2 free: complete");
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: complete");
 }
 
 /* Forward declaration для recursive parsing */
@@ -1560,7 +1563,7 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
         return a_stage2->error_code;
     }
     
-    log_it(L_DEBUG, "Starting Stage 2 DOM building...");
+    debug_if(s_debug_more, L_DEBUG, "Starting Stage 2 DOM building...");
     
     size_t l_idx = 0;
     a_stage2->root = s_parse_value(a_stage2, &l_idx);
@@ -1582,7 +1585,7 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
         return a_stage2->error_code;
     }
     
-    log_it(L_INFO, "Stage 2 completed: objects=%zu arrays=%zu strings=%zu numbers=%zu",
+    debug_if(s_debug_more, L_INFO, "Stage 2 completed: objects=%zu arrays=%zu strings=%zu numbers=%zu",
            a_stage2->objects_created, a_stage2->arrays_created,
            a_stage2->strings_created, a_stage2->numbers_created);
     
