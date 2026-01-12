@@ -26,16 +26,11 @@
  * @file dap_json_string_ref.c
  * @brief Zero-Copy JSON String Scanner - Reference Implementation
  * 
- * Pure C reference implementation служит baseline для correctness testing.
- * SIMD implementations (AVX2/SSE2/NEON) будут в отдельных файлах.
- * 
- * Algorithm:
- * 1. Scan character-by-character until '"' or '\'
- * 2. If no backslash found - zero-copy (just pointer)
- * 3. If backslash found - mark needs_unescape
+ * Pure C reference implementation - NO SIMD, character-by-character scanning.
+ * Serves as correctness baseline and fallback for platforms without SIMD.
  * 
  * Performance: ~1 char per cycle (baseline)
- * SIMD will be ~32 chars per cycle (AVX2)
+ * SIMD implementations will be 16-64x faster
  * 
  * @author DAP JSON Native Implementation Team
  * @date 2026-01-12
@@ -48,7 +43,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LOG_TAG "dap_json_string"
+#define LOG_TAG "dap_json_string_ref"
 
 /* ========================================================================== */
 /*                    ESCAPE SEQUENCE HANDLING                                */
@@ -57,13 +52,6 @@
 /**
  * @brief Unescape JSON string
  * @details Handles: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
- * 
- * @param[in] a_input Escaped string (without quotes)
- * @param[in] a_input_len Input length
- * @param[in] a_arena Arena allocator for output
- * @param[out] a_out_unescaped Output unescaped string
- * @param[out] a_out_length Output length
- * @return true on success, false on invalid escape
  */
 static bool s_unescape_string(
     const char *a_input,
@@ -162,15 +150,14 @@ static bool s_unescape_string(
 }
 
 /* ========================================================================== */
-/*                    REFERENCE STRING SCANNER                                */
+/*                    REFERENCE STRING SCANNER (NO SIMD)                      */
 /* ========================================================================== */
 
 /**
- * @brief Reference C string scanner (baseline)
- * @details Character-by-character scanning - ~1 char per cycle.
- *          SIMD implementations будут ~32x faster.
+ * @brief Reference C string scanner - character-by-character
+ * @details NO SIMD - pure C implementation for correctness baseline
  */
-static bool s_scan_string_ref(
+bool dap_json_string_scan_ref(
     const uint8_t *a_input,
     size_t a_input_len,
     dap_json_string_t *a_out_string,
@@ -229,20 +216,8 @@ static bool s_scan_string_ref(
 }
 
 /* ========================================================================== */
-/*                    PUBLIC API IMPLEMENTATION                               */
+/*                    LAZY UNESCAPING                                         */
 /* ========================================================================== */
-
-bool dap_json_string_scan(
-    const uint8_t *a_input,
-    size_t a_input_len,
-    dap_json_string_t *a_out_string,
-    uint32_t *a_out_end_offset
-)
-{
-    // TODO: CPU dispatch to SIMD implementation (AVX2/SSE2/NEON)
-    // For now - use reference implementation
-    return s_scan_string_ref(a_input, a_input_len, a_out_string, a_out_end_offset);
-}
 
 const char* dap_json_string_get_cstr(
     dap_json_string_t *a_string,
@@ -301,11 +276,4 @@ void dap_json_string_free(dap_json_string_t *a_string)
     a_string->unescaped = NULL;
     a_string->unescaped_valid = false;
     a_string->unescaped_length = 0;
-}
-
-dap_json_string_scanner_fn_t dap_json_string_get_scanner(void)
-{
-    // TODO: Runtime CPU dispatch
-    // For now - return reference implementation
-    return s_scan_string_ref;
 }
