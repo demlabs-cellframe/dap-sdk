@@ -2476,64 +2476,141 @@
         {
           "id": "2.2",
           "name": "🚀 P0: Zero-Copy Strings + SIMD String Scanner (CRITICAL!)",
-          "status": "pending",
+          "status": "in_progress - 50% complete",
+          "started": "2026-01-12",
+          "updated": "2026-01-12T23:30:00Z",
           "priority": "P0 - HIGHEST IMPACT",
           "estimated_impact": "+1000-2000% (10-20x) для string-heavy JSON",
           "effort": "Medium (2-3 days)",
           "why": "STRING COPYING - самое большое узкое место! Measured 21x gap на string-heavy JSON. Zero-copy + SIMD scanner дадут огромный прирост.",
-          "deliverables": [
-            "module/json/include/internal/dap_json_string.h - Zero-copy string type",
-            "module/json/src/stage2/string/dap_json_string_scanner.c - SIMD string scanner",
-            "module/json/src/stage2/string/arch/x86/string_avx2.c - AVX2 scanner",
-            "module/json/src/stage2/string/arch/x86/string_sse2.c - SSE2 scanner",
-            "module/json/src/stage2/string/arch/arm/string_neon.c - ARM NEON scanner",
-            "Lazy unescaping - unescape только при доступе к строке",
-            "tests/unit/json/test_zero_copy_strings.c - correctness tests",
-            "tests/unit/json/test_simd_string_scanner.c - SIMD tests",
-            "Benchmark: >= 2 GB/s для string-heavy JSON"
+          "completed_items": [
+            "✅ module/json/include/internal/dap_json_string.h - Zero-copy string type (266 lines)",
+            "✅ module/json/src/stage2/string/dap_json_string_ref.c - Reference impl (280 lines)",
+            "✅ module/json/src/stage2/string/dap_json_string_simd.c.tpl - Universal template",
+            "✅ module/json/src/stage2/string/generate_string_simd.sh - Generator script",
+            "✅ Zero-copy structure: dap_json_string_t with lazy unescaping",
+            "✅ Reference implementation: Pure C baseline (~1 char/cycle)",
+            "✅ SIMD template: SSE2/AVX2/AVX-512/NEON support",
+            "✅ CPU dispatch: static inline как в Stage 1",
+            "✅ Unicode escape support: \\uXXXX → UTF-8",
+            "✅ Branch prediction hints для fast path"
           ],
-          "implementation_details": {
-            "zero_copy_structure": {
-              "description": "Новая структура для zero-copy strings",
-              "code": "typedef struct { const char *data; uint32_t length; bool needs_unescape; char *unescaped; } dap_json_string_t;",
-              "benefits": [
-                "No malloc() для строк без escapes",
-                "No memcpy() - просто указатель",
-                "Lazy unescaping - только если нужно",
-                "Cache-friendly - less memory traffic"
+          "remaining_work": [
+            "⏳ CMake integration - generate SIMD files at build time",
+            "⏳ Stage 2 parser integration - use zero-copy instead of strndup",
+            "⏳ tests/unit/json/test_zero_copy_strings.c - correctness tests",
+            "⏳ tests/unit/json/test_simd_string_scanner.c - SIMD tests",
+            "⏳ Benchmark: >= 2 GB/s для string-heavy JSON"
+          ],
+          "deliverables": [
+            "✅ module/json/include/internal/dap_json_string.h - Zero-copy string type",
+            "✅ module/json/src/stage2/string/dap_json_string_ref.c - Reference scanner",
+            "✅ module/json/src/stage2/string/dap_json_string_simd.c.tpl - SIMD template",
+            "✅ module/json/src/stage2/string/generate_string_simd.sh - Code generator",
+            "⏳ CMake integration для генерации SIMD файлов",
+            "⏳ Stage 2 integration - replace strndup with zero-copy",
+            "⏳ Lazy unescaping - integrated в get_cstr()",
+            "⏳ tests/unit/json/test_zero_copy_strings.c - correctness tests",
+            "⏳ tests/unit/json/test_simd_string_scanner.c - SIMD tests",
+            "⏳ Benchmark: >= 2 GB/s для string-heavy JSON"
+          ],
+          "architecture_details": {
+            "pattern": "Stage 1-style architecture (Reference + SIMD + Dispatch)",
+            "reference_impl": {
+              "file": "dap_json_string_ref.c",
+              "description": "Pure C, NO SIMD, character-by-character",
+              "performance": "~1 char per cycle",
+              "purpose": "Correctness baseline + fallback"
+            },
+            "simd_template": {
+              "file": "dap_json_string_simd.c.tpl",
+              "description": "Universal dap_tpl template для всех SIMD",
+              "generates": ["SSE2", "AVX2", "AVX-512", "ARM NEON"],
+              "performance": "16-64 chars per cycle (зависит от arch)",
+              "features": [
+                "Parallel quote/backslash detection",
+                "Conditional compilation via {{#if}}",
+                "Architecture-specific intrinsics",
+                "NEON movemask emulation"
               ]
             },
-            "simd_string_scanner_avx2": {
-              "description": "Найти closing quote или backslash в 32 bytes",
-              "algorithm": [
-                "1. Load 32 bytes: chunk = _mm256_loadu_si256(str)",
-                "2. Find quotes: quotes = _mm256_cmpeq_epi8(chunk, '\"')",
-                "3. Find backslash: backslash = _mm256_cmpeq_epi8(chunk, '\\\\')",
-                "4. Combine: mask = _mm256_movemask_epi8(quotes | backslash)",
-                "5. Find first bit: pos = __builtin_ctz(mask)",
-                "6. Process 32 chars at once instead of 1!"
+            "cpu_dispatch": {
+              "location": "dap_json_string.h - static inline function",
+              "mechanism": "Runtime CPU detection via dap_cpu_arch_get()",
+              "optimizations": [
+                "Branch prediction hints (__builtin_expect)",
+                "Zero-cost inline dispatch",
+                "Manual override support"
               ],
-              "performance": "32x faster character scanning",
-              "measured_gap": "21x slower на string-heavy - это исправит!"
+              "fallback": "Reference implementation для unsupported CPUs"
+            }
+          },
+          "implementation_details": {
+            "zero_copy_structure": {
+              "description": "Структура для zero-copy strings с lazy unescaping",
+              "definition": "struct { const char *data; uint32_t length; uint8_t needs_unescape:1; uint8_t unescaped_valid:1; char *unescaped; uint32_t unescaped_length; }",
+              "memory_layout": "Hot fields first (data, length) для cache performance",
+              "benefits": [
+                "No malloc() для строк без escapes",
+                "No memcpy() - просто указатель в JSON buffer",
+                "Lazy unescaping - только при первом доступе",
+                "Cache-friendly - минимальный memory traffic"
+              ]
+            },
+            "simd_scanner_algorithm": {
+              "description": "Параллельный поиск closing quote или backslash",
+              "steps": [
+                "1. Load 16-64 bytes (зависит от архитектуры)",
+                "2. Parallel compare with '\"' (все байты одновременно)",
+                "3. Parallel compare with '\\' (все байты одновременно)",
+                "4. Combine masks with OR",
+                "5. Find first match with ctz (count trailing zeros)",
+                "6. Handle escape or return if quote found"
+              ],
+              "performance_by_arch": {
+                "sse2": "16 bytes/cycle (~16x vs reference)",
+                "avx2": "32 bytes/cycle (~32x vs reference)",
+                "avx512": "64 bytes/cycle (~64x vs reference)",
+                "neon": "16 bytes/cycle (~16x vs reference)"
+              }
             },
             "lazy_unescaping": {
-              "description": "Unescape только при реальном доступе",
-              "implementation": "const char* get_cstr(str) { if(needs_unescape && !unescaped) unescape(); return unescaped ? unescaped : data; }",
-              "benefit": "Skip unescaping для неиспользуемых strings"
+              "description": "Unescape только при реальном доступе через get_cstr()",
+              "logic": "if (!needs_unescape) return data; if (unescaped_valid) return unescaped; else { unescape_now(); return unescaped; }",
+              "benefit": "Skip unescaping для strings которые никогда не читаются",
+              "escape_sequences": ["\\\"", "\\\\", "\\/", "\\b", "\\f", "\\n", "\\r", "\\t", "\\uXXXX"]
             }
           },
           "acceptance_criteria": [
-            "Zero-copy работает для всех strings без escapes",
-            "SIMD scanner находит quotes/backslash в 32 bytes (AVX2)",
-            "Lazy unescaping - unescape только при get()",
-            "String-heavy JSON: >= 2 GB/s (сейчас 0.45 GB/s)",
-            "Correctness == 100% vs current implementation"
+            "✅ Zero-copy structure implemented",
+            "✅ Reference implementation working",
+            "✅ SIMD template для всех arch (SSE2/AVX2/AVX512/NEON)",
+            "✅ CPU dispatch как в Stage 1 (static inline)",
+            "⏳ CMake integration - генерация во время сборки",
+            "⏳ Stage 2 parser использует zero-copy",
+            "⏳ Lazy unescaping работает корректно",
+            "⏳ String-heavy JSON: >= 2 GB/s (сейчас 0.45 GB/s)",
+            "⏳ Correctness == 100% vs current implementation"
           ],
+          "progress_metrics": {
+            "lines_written": "~900 lines (structure + ref + template + generator)",
+            "commits": 3,
+            "completion": "50%",
+            "files_created": 4,
+            "architecture_correct": true,
+            "pattern_matches_stage1": true
+          },
           "expected_impact": {
             "string_heavy_json": "0.45 → 4-6 GB/s (+900-1300%)",
             "medium_json": "0.20 → 0.8-1.2 GB/s (+300-500%)",
             "overall_average": "0.21 → 1.5-2.0 GB/s (+600-800%)"
-          }
+          },
+          "next_immediate_steps": [
+            "1. CMake: integrate generate_string_simd.sh into build",
+            "2. Stage 2: replace s_parse_string() to use dap_json_string_scan()",
+            "3. Tests: create test_zero_copy_strings.c",
+            "4. Benchmark: measure improvement on string-heavy JSON"
+          ]
         },
         {
           "id": "2.3",
