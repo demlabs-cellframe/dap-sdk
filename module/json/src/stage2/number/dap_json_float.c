@@ -30,6 +30,7 @@
  */
 
 #include "dap_common.h"
+#include "dap_math_ops.h"
 #include "internal/dap_json_float.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -126,39 +127,7 @@ static const struct {
 /* ========================================================================== */
 
 /**
- * @brief Multiply two 64-bit numbers to get 128-bit result
- * @param[in] a First operand
- * @param[in] a Second operand
- * @param[out] high High 64 bits of result
- * @param[out] low Low 64 bits of result
- */
-static inline void s_mul64_128(uint64_t a, uint64_t b, uint64_t *high, uint64_t *low) {
-    // Use __uint128_t if available (GCC/Clang)
-#if defined(__SIZEOF_INT128__)
-    __uint128_t l_product = ((__uint128_t)a) * b;
-    *high = (uint64_t)(l_product >> 64);
-    *low = (uint64_t)l_product;
-#else
-    // Fallback: Manual 64x64→128 multiplication
-    uint64_t l_a_lo = (uint32_t)a;
-    uint64_t l_a_hi = a >> 32;
-    uint64_t l_b_lo = (uint32_t)b;
-    uint64_t l_b_hi = b >> 32;
-    
-    uint64_t l_p0 = l_a_lo * l_b_lo;
-    uint64_t l_p1 = l_a_lo * l_b_hi;
-    uint64_t l_p2 = l_a_hi * l_b_lo;
-    uint64_t l_p3 = l_a_hi * l_b_hi;
-    
-    uint64_t l_mid = l_p1 + l_p2 + (l_p0 >> 32);
-    
-    *low = (l_mid << 32) | (uint32_t)l_p0;
-    *high = l_p3 + (l_mid >> 32);
-#endif
-}
-
-/**
- * @brief Count leading zeros in 64-bit number
+ * @brief Count leading zeros in 64-bit number (используем builtin если есть)
  */
 static inline int s_clz64(uint64_t x) {
     if (x == 0) return 64;
@@ -174,6 +143,25 @@ static inline int s_clz64(uint64_t x) {
     if (x <= 0x3FFFFFFFFFFFFFFFULL) { l_n += 2; x <<= 2; }
     if (x <= 0x7FFFFFFFFFFFFFFFULL) { l_n += 1; }
     return l_n;
+#endif
+}
+
+/**
+ * @brief Extract high/low 64 bits from uint128_t (портабельно)
+ */
+static inline uint64_t s_get_high64(uint128_t a) {
+#ifdef DAP_GLOBAL_IS_INT128
+    return (uint64_t)(a >> 64);
+#else
+    return a.hi;
+#endif
+}
+
+static inline uint64_t s_get_low64(uint128_t a) {
+#ifdef DAP_GLOBAL_IS_INT128
+    return (uint64_t)a;
+#else
+    return a.lo;
 #endif
 }
 
@@ -210,8 +198,9 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     
     // Check if exponent is in our table range
     if (a_exponent < s_power5_data.min_exp || a_exponent > s_power5_data.max_exp) {
-        // TODO: Implement on-the-fly power computation for extreme values
-        return false; // For now, fallback to strtod
+        // Out of table range: fallback to strtod
+        // This handles extreme exponents like 1e-300 or 1e+300
+        return false;
     }
     
     // Get power of 5 from table
@@ -223,22 +212,33 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     uint64_t l_pow5_high = s_power5_data.table[l_idx][0];
     uint64_t l_pow5_low = s_power5_data.table[l_idx][1];
     
-    // Multiply: mantissa * power_of_5 (128-bit result)
-    uint64_t l_prod_high, l_prod_low;
-    s_mul64_128(a_mantissa, l_pow5_high, &l_prod_high, &l_prod_low);
+    // Multiply mantissa * power_of_5 using dap_math_ops.h
+    // This gives us a 128-bit result
+    uint128_t l_product;
+    MULT_64_128(a_mantissa, l_pow5_high, &l_product);
     
-    // Also need to add mantissa * pow5_low contribution
+    // If low part of power5 is non-zero, add contribution
     if (l_pow5_low != 0) {
-        uint64_t l_prod2_high, l_prod2_low;
-        s_mul64_128(a_mantissa, l_pow5_low, &l_prod2_high, &l_prod2_low);
+        uint128_t l_product2;
+        MULT_64_128(a_mantissa, l_pow5_low, &l_product2);
         
-        // Add l_prod2_high to l_prod_low (with carry to l_prod_high)
+        // Add product2.hi to product.lo (with carry)
+        uint64_t l_prod_high = s_get_high64(l_product);
+        uint64_t l_prod_low = s_get_low64(l_product);
+        uint64_t l_prod2_high = s_get_high64(l_product2);
+        
         uint64_t l_old_low = l_prod_low;
         l_prod_low += l_prod2_high;
         if (l_prod_low < l_old_low) {
             l_prod_high++; // Carry
         }
+        
+        l_product = GET_128_FROM_64_64(l_prod_high, l_prod_low);
     }
+    
+    // Extract high and low parts for IEEE 754 construction
+    uint64_t l_prod_high = s_get_high64(l_product);
+    uint64_t l_prod_low = s_get_low64(l_product);
     
     // Compute IEEE 754 exponent
     // Formula: exponent_10 * log2(10) ≈ exponent_10 * 3.32192809...
