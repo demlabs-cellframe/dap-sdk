@@ -45,9 +45,10 @@ extern "C" {
  * @brief Maximum obfuscated handshake packet size (bytes)
  * 
  * Allows reasonable padding while keeping packets under typical MTU.
- * Range [850, 1300] = ~450 bytes variability for DPI resistance.
+ * Range [850, 1350] = ~500 bytes variability for DPI resistance.
+ * Increased from 1300 to 1350 to account for SALSA nonce (8 bytes).
  */
-#define DAP_TRANSPORT_OBFUSCATION_MAX_SIZE 1300
+#define DAP_TRANSPORT_OBFUSCATION_MAX_SIZE 1350
 
 /**
  * @brief Static seed for size-based key derivation

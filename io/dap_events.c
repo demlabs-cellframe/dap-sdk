@@ -95,6 +95,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_events_socket.h"
 #include "dap_proc_thread.h"
 #include "dap_config.h"
+#include "dap_io_flow_ctrl.h"
 
 #define LOG_TAG "dap_events"
 
@@ -275,6 +276,12 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
 
     if(dap_context_init() != 0){
         log_it( L_CRITICAL, "Can't init client submodule dap_context( )" );
+        goto err;
+    }
+
+    // Initialize Flow Control subsystem
+    if (dap_io_flow_ctrl_init() != 0) {
+        log_it(L_CRITICAL, "Can't init Flow Control subsystem");
         goto err;
     }
 

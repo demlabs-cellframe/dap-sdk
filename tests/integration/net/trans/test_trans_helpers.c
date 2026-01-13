@@ -512,3 +512,28 @@ bool test_wait_for_all_streams_closed(uint32_t a_timeout_ms)
     return false;
 }
 
+/**
+ * @brief Server-side channel callback to echo data back to client
+ */
+bool test_server_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
+{
+    if (!a_ch || !a_arg) {
+        return false;
+    }
+    
+    dap_stream_ch_pkt_t *l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
+    
+    if (!l_ch_pkt->data || l_ch_pkt->hdr.data_size == 0) {
+        return false;
+    }
+    
+    log_it(L_DEBUG, "SERVER: Echo callback received %u bytes on channel '%c' (type=%u)",
+           l_ch_pkt->hdr.data_size, a_ch->proc ? a_ch->proc->id : '?', l_ch_pkt->hdr.type);
+    
+    // Echo data back to client through the same channel
+    dap_stream_ch_pkt_write_unsafe(a_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size);
+    
+    log_it(L_DEBUG, "SERVER: Echoed %u bytes back to client", l_ch_pkt->hdr.data_size);
+    
+    return true;
+}

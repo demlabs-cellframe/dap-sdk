@@ -33,11 +33,16 @@
 #include "dap_worker.h"
 #include "dap_context.h"
 #include "dap_proc_thread.h"
+#include "dap_arena.h"
 
 #define LOG_TAG "dap_io_flow"
 
 // Debug mode
 static bool s_debug_more = false;
+
+// Thread-local arena for cross-worker packet allocations
+// Each worker has its own arena, reset after packet forwarding
+static __thread dap_arena_t *tl_cross_worker_arena = NULL;
 
 // Forward declarations for internal structures
 typedef struct flow_worker_context flow_worker_context_t;
@@ -758,6 +763,33 @@ void dap_io_flow_server_get_stats(
  * @param a_remote_addr Remote address
  * @param a_listener_es REAL UDP listener socket (not queue!)
  */
+/**
+ * @brief Get or create thread-local arena for cross-worker packets
+ * 
+ * Each worker thread has its own arena for allocating cross-worker packet structures.
+ * Arena is created once per worker and reused for all cross-worker operations.
+ * 
+ * @return Arena pointer, or NULL on critical allocation failure
+ */
+static dap_arena_t* s_get_cross_worker_arena(void)
+{
+    if (!tl_cross_worker_arena) {
+        tl_cross_worker_arena = dap_arena_new(8192);  // 8KB initial, grows as needed
+        if (!tl_cross_worker_arena) {
+            log_it(L_CRITICAL, "Failed to create cross-worker arena for worker thread");
+            return NULL;
+        }
+        log_it(L_DEBUG, "Created cross-worker arena for worker thread");
+    }
+    return tl_cross_worker_arena;
+}
+
+/**
+ * @brief Process incoming packet for flow
+ * 
+ * Finds or creates flow, handles cross-worker forwarding if needed,
+ * and dispatches packet to protocol handler.
+ */
 static void s_process_flow_packet_common(
     dap_io_flow_server_t *a_server,
     const uint8_t *a_data,
@@ -801,7 +833,53 @@ static void s_process_flow_packet_common(
         }
     }
     
-    // Call protocol's packet_received callback
+    // Check if flow is on another worker - forward if needed
+    if (l_flow && l_worker && l_flow->owner_worker_id != l_worker->id) {
+        // Flow exists on different worker - must forward packet
+        debug_if(s_debug_more, L_DEBUG,
+                 "Flow on worker %u, current worker %u - forwarding",
+                 l_flow->owner_worker_id, l_worker->id);
+        
+        // Get cross-worker arena (fail-fast if not available)
+        dap_arena_t *l_arena = s_get_cross_worker_arena();
+        if (!l_arena) {
+            log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
+            return;  // Fail-fast: no arena = no forwarding
+        }
+        
+        // Allocate packet structure from arena (fast path)
+        struct flow_cross_worker_packet *l_packet = 
+            dap_arena_alloc(l_arena, sizeof(struct flow_cross_worker_packet));
+        uint8_t *l_data_copy = dap_arena_alloc(l_arena, a_data_size);
+        
+        if (!l_packet || !l_data_copy) {
+            log_it(L_ERROR, "Arena allocation failed for cross-worker packet");
+            dap_arena_reset(l_arena);  // Clean up partial allocations
+            return;  // Fail-fast: allocation failed
+        }
+        
+        // Fill packet structure
+        memcpy(l_data_copy, a_data, a_data_size);
+        l_packet->data = l_data_copy;
+        l_packet->size = a_data_size;
+        l_packet->flow = l_flow;
+        memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+        l_packet->remote_addr_len = a_remote_addr_len;
+        
+        // Forward to correct worker
+        int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
+                                                l_flow->owner_worker_id, l_packet);
+        if (l_ret != 0) {
+            log_it(L_WARNING, "Failed to forward packet to worker %u", l_flow->owner_worker_id);
+        }
+        
+        // Reset arena after forwarding (memory reclaimed immediately)
+        dap_arena_reset(l_arena);
+        
+        return;  // Packet forwarded, done
+    }
+    
+    // Call protocol's packet_received callback (flow is on current worker OR new flow)
     if (a_server->ops->packet_received) {
         a_server->ops->packet_received(a_server, l_flow,
                                        a_data, a_data_size,
@@ -828,7 +906,7 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     
-    // DEBUG: Log socket type and addr_storage details
+    // Log incoming packet details
     debug_if(s_debug_more, L_DEBUG, 
              "Listener received %zu bytes on fd=%d, type=%d, from %s",
              a_es->buf_in_size, a_es->fd, a_es->type,

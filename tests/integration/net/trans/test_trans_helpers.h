@@ -129,6 +129,14 @@ void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
                                       void *a_arg);
 
 /**
+ * @brief Server-side channel callback to echo data back to client
+ * @param a_ch Channel that received the packet
+ * @param a_arg User argument (channel packet is in a_ch->in)
+ * @return true on success, false on error
+ */
+bool test_server_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg);
+
+/**
  * @brief Wait for client to reach STAGE_STREAM_STREAMING
  * @param a_client Client to wait for
  * @param a_timeout_ms Timeout in milliseconds

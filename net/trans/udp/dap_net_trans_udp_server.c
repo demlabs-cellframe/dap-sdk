@@ -56,8 +56,8 @@ static bool s_debug_more = false;
  * Расширяет базовую FC схему (dap_io_flow_ctrl_base_fields) с UDP-специфичными полями.
  * Эта схема используется для (де)сериализации полного UDP заголовка.
  * 
- * КРИТИЧЕСКИ ВАЖНО: Вся структура шифруется целиком!
- * DPI не видит ни одного байта этого заголовка.
+ * CRITICAL: Entire structure is encrypted!
+ * No header bytes visible to DPI.
  */
 const dap_serialize_field_t g_udp_full_header_fields[] = {
     // ===== БАЗОВЫЕ FC ПОЛЯ (наследуются от g_dap_io_flow_ctrl_base_fields) =====
@@ -628,6 +628,8 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         return -1;
     }
     
+    log_it(L_NOTICE, "SERVER: packet received: size=%zu, flow=%p", a_size, a_flow);
+    
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     if (!l_session) {
         log_it(L_ERROR, "NULL session in packet callback");
@@ -641,8 +643,14 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
         
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Attempting to deobfuscate packet (size=%zu)", a_size);
+        
         int l_ret = dap_transport_deobfuscate_handshake(a_data, a_size,
                                                         &l_handshake, &l_handshake_size);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Deobfuscation result: ret=%d", l_ret);
         
         if (l_ret == 0) {
             // Successfully deobfuscated as handshake!
@@ -665,7 +673,11 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         }
         
         // Deobfuscation failed - might be regular encrypted packet
+        log_it(L_WARNING, "SERVER: Deobfuscation failed (ret=%d), treating as encrypted packet", l_ret);
         // Continue to try decryption with session key
+    } else {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Packet size %zu not in obfuscated range", a_size);
     }
     
     // ALL OTHER PACKETS: Must be encrypted!
@@ -1046,9 +1058,14 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     
     int l_ret;
     
-    // If Flow Control is enabled: send PURE PAYLOAD
+    // CRITICAL: SESSION_CREATE response must be sent WITHOUT Flow Control!
+    // It should not occupy seq=1 in FC sequence, allowing DATA packets to start from seq=1.
+    // SESSION_CREATE uses its own encryption with handshake key.
+    bool l_use_fc = (a_session->flow_ctrl != NULL) && (a_type != DAP_STREAM_UDP_PKT_SESSION_CREATE);
+    
+    // If Flow Control is enabled AND not SESSION_CREATE: send PURE PAYLOAD
     // FC callback построит full_header и зашифрует
-    if (a_session->flow_ctrl) {
+    if (l_use_fc) {
         atomic_store(&a_session->last_send_type, a_type);
         
         debug_if(s_debug_more, L_DEBUG,
@@ -1428,73 +1445,50 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
 static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_t *a_payload,
                                    size_t a_payload_size)
 {
-    if (!a_session || !a_payload) {
+    if (!a_session || !a_payload || a_payload_size == 0) {
+        log_it(L_ERROR, "Invalid arguments for SESSION_CREATE handler");
         return -1;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Processing SESSION_CREATE packet (%zu bytes)",
+             "Processing SESSION_CREATE: payload_size=%zu (inner envelope)",
              a_payload_size);
     
-    // Debug: log session info
-    debug_if(s_debug_more, L_DEBUG,
-             "SESSION_CREATE for session %p: session_id=0x%lx, encryption_key=%p",
-             a_session, a_session->session_id, a_session->encryption_key);
+    // NOTE: Payload from s_process_encrypted_udp_packet is OUTER decrypted (full_header removed)
+    // But SESSION_CREATE has INNER encryption envelope! Need to decrypt again.
+    // Architecture: encrypt(JSON) → inner_encrypted, then full_header + inner_encrypted → outer_encrypted
     
-    // Decrypt payload with handshake key
-    if (!a_session->encryption_key) {
-        log_it(L_ERROR, "No handshake key for SESSION_CREATE decryption");
-        return -2;
-    }
-    
-    // Allocate buffer for decrypted data
-    size_t l_decrypted_max = a_payload_size + 256;  // Extra space for decryption
+    // Decrypt inner envelope
+    size_t l_decrypted_max = a_payload_size + 256;
     uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
     if (!l_decrypted) {
-        log_it(L_ERROR, "Failed to allocate decryption buffer");
+        log_it(L_ERROR, "Failed to allocate buffer for inner decryption");
         return -3;
     }
     
-    // Decrypt
     size_t l_decrypted_size = dap_enc_decode(a_session->encryption_key,
                                              a_payload, a_payload_size,
                                              l_decrypted, l_decrypted_max,
                                              DAP_ENC_DATA_TYPE_RAW);
     
     if (l_decrypted_size == 0) {
-        log_it(L_ERROR, "Failed to decrypt SESSION_CREATE payload");
+        log_it(L_ERROR, "Failed to decrypt SESSION_CREATE inner envelope");
         DAP_DELETE(l_decrypted);
         return -4;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Decrypted SESSION_CREATE: %zu bytes", l_decrypted_size);
+             "Decrypted SESSION_CREATE inner envelope: %zu bytes", l_decrypted_size);
     
-    // Debug: print decrypted content (as hex and string)
-    if (s_debug_more && l_decrypted_size > 0) {
-        char l_hex[512] = {0};
-        size_t l_print_size = l_decrypted_size > 128 ? 128 : l_decrypted_size;
-        for (size_t i = 0; i < l_print_size; i++) {
-            sprintf(l_hex + i*3, "%02x ", l_decrypted[i]);
-        }
-        log_it(L_DEBUG, "Decrypted hex (first %zu bytes): %s", l_print_size, l_hex);
-        
-        // Print as string (null-terminated)
-        char l_str[256] = {0};
-        size_t l_str_len = l_decrypted_size < 255 ? l_decrypted_size : 255;
-        memcpy(l_str, l_decrypted, l_str_len);
-        l_str[l_str_len] = '\0';
-        log_it(L_DEBUG, "Decrypted string: '%s'", l_str);
-    }
-    
-    // Parse JSON parameters
+    // Parse JSON from decrypted inner data
     json_object *l_json = json_tokener_parse((const char*)l_decrypted);
     DAP_DELETE(l_decrypted);
     
     if (!l_json) {
-        log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON");
+        log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (inner_size=%zu)", l_decrypted_size);
         return -5;
     }
+
     
     // Extract session ID
     json_object *l_session_id_obj = NULL;
@@ -1640,9 +1634,9 @@ static int s_handle_close(stream_udp_session_t *a_session)
 /**
  * @brief Prepare packet with Flow Control header (NEW ARCHITECTURE)
  * 
- * КРИТИЧЕСКИ ВАЖНО: Этот callback ШИФРУЕТ весь пакет!
+ * CRITICAL: This callback ENCRYPTS entire packet!
  * 
- * Архитектура:
+ * Architecture:
  * 1. Payload приходит УЖЕ в виде [UDP old header + data] (НЕ ЗАШИФРОВАН!)
  * 2. Мы строим [FC+UDP full header]
  * 3. Собираем: [FC+UDP full header] + [legacy UDP header + data]
@@ -1774,9 +1768,9 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
 /**
  * @brief Parse packet and extract Flow Control header (NEW ARCHITECTURE)
  * 
- * КРИТИЧЕСКИ ВАЖНО: Этот callback ДЕШИФРУЕТ весь пакет!
+ * CRITICAL: This callback DECRYPTS entire packet!
  * 
- * Архитектура:
+ * Architecture:
  * 1. Входной a_packet - ЗАШИФРОВАННЫЙ блок
  * 2. ДЕШИФРУЕМ его
  * 3. Парсим [FC+UDP full header]
@@ -1864,6 +1858,9 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     a_metadata->is_keepalive = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE) != 0;
     a_metadata->is_retransmit = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT) != 0;
     
+    // CRITICAL: Store l_decrypted for FC to free after delivery!
+    a_metadata->private_ctx = l_decrypted;
+    
     // Store UDP-specific info in session (для payload_deliver callback)
     atomic_store(&l_session->last_recv_type, l_hdr.type);
     
@@ -1871,11 +1868,7 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     *a_payload_out = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
     *a_payload_size_out = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
     
-    // ВАЖНО: l_decrypted НЕ освобождаем здесь!
-    // Он содержит payload, который передаётся через *a_payload_out
-    // Освобождение произойдёт в:
-    // 1. payload_deliver callback (если обработка успешна)
-    // 2. flow_ctrl cleanup (если ошибка доставки)
+    // NOTE: l_decrypted will be freed by FC after delivery via metadata->private_ctx
     
     debug_if(s_debug_more, L_DEBUG,
              "Parsed DECRYPTED FC packet: seq=%lu, ack=%lu, type=%u, session=0x%lx, payload_size=%zu",
@@ -1904,8 +1897,15 @@ static int s_flow_ctrl_packet_send_cb(dap_io_flow_t *a_flow,
         return -1;
     }
     
+    debug_if(s_debug_more, L_DEBUG,
+             "SERVER: Sending FC packet: size=%zu, session=%p", a_packet_size, l_session);
+    
     // Send via UDP flow
     ssize_t l_ret = dap_io_flow_udp_send(&l_session->base, a_packet, a_packet_size);
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "SERVER: dap_io_flow_udp_send returned: %zd", l_ret);
+    
     if (l_ret < 0) {
         log_it(L_WARNING, "Failed to send Flow Control packet: ret=%zd", l_ret);
         return -2;
@@ -1932,7 +1932,7 @@ static void s_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
 /**
  * @brief Deliver in-order payload to upper layer (NEW ARCHITECTURE)
  * 
- * КРИТИЧЕСКИ ВАЖНО: Payload УЖЕ ДЕШИФРОВАН в parse_cb!
+ * CRITICAL: Payload ALREADY DECRYPTED в parse_cb!
  * 
  * Payload содержит: [старый UDP encrypted header] + [data]
  * Но это УЖЕ расшифрованный блок!
@@ -1989,11 +1989,8 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
             break;
     }
     
-    // Освобождаем буфер (выделен в parse_cb)
-    // ВАЖНО: a_payload указывает внутрь буфера (после full_header)!
-    // Начало буфера = a_payload - sizeof(full_header)
-    uint8_t *l_buffer_start = (uint8_t *)a_payload - sizeof(dap_stream_trans_udp_full_header_t);
-    DAP_DELETE(l_buffer_start);
+    // NOTE: Payload buffer ownership handled via metadata->private_ctx
+    // FC will free it after delivery (immediate or buffered)
     
     return l_ret;
 }

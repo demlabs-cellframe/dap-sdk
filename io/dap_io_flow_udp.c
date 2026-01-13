@@ -132,15 +132,23 @@ int dap_io_flow_udp_send(dap_io_flow_udp_t *a_flow,
     // Increment sequence number atomically
     uint32_t l_seq = atomic_fetch_add(&a_flow->seq_num_out, 1);
     
-    // TODO: Optionally prepend sequence number to packet here
-    // For now, just send data as-is (protocol can add its own framing)
-    
     // Send via socket
     debug_if(s_debug_more, L_DEBUG,
              "dap_io_flow_udp_send: BEFORE send, listener_es=%p, fd=%d, type=%u",
              a_flow->listener_es, 
              a_flow->listener_es ? a_flow->listener_es->fd : -1,
              a_flow->listener_es ? (unsigned)a_flow->listener_es->type : 0);
+    
+    // Log destination address
+    if (a_flow->remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_addr_in = (struct sockaddr_in *)&a_flow->remote_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_addr_in->sin_addr, l_addr_str, sizeof(l_addr_str));
+        debug_if(s_debug_more, L_DEBUG,
+                 "Sending %zu bytes to %s:%u (listener_es=%p, fd=%d)",
+                 a_size, l_addr_str, ntohs(l_addr_in->sin_port),
+                 a_flow->listener_es, a_flow->listener_es ? a_flow->listener_es->fd : -1);
+    }
     
     int l_ret = dap_io_flow_socket_send_to(
         a_flow->listener_es,
@@ -213,7 +221,6 @@ static void s_udp_packet_received_wrapper(dap_io_flow_server_t *a_srv,
                                          dap_events_socket_t *a_listener_es)
 {
     UNUSED(a_srv);
-    UNUSED(a_remote_addr);
     UNUSED(a_listener_es);
     
     if (!a_flow || !a_data || a_size == 0) {
@@ -221,6 +228,19 @@ static void s_udp_packet_received_wrapper(dap_io_flow_server_t *a_srv,
     }
     
     dap_io_flow_udp_t *l_udp_flow = (dap_io_flow_udp_t*)a_flow;
+    
+    // CRITICAL: Update remote_addr from EVERY incoming packet!
+    // Client port may change between handshake and data packets (after bind())
+    if (a_remote_addr) {
+        memcpy(&l_udp_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+        l_udp_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
+            ? sizeof(struct sockaddr_in) 
+            : sizeof(struct sockaddr_in6);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Updated flow remote_addr to %s",
+                 dap_io_flow_socket_addr_to_string(a_remote_addr));
+    }
     
     // Update activity time
     dap_io_flow_udp_update_activity(l_udp_flow);

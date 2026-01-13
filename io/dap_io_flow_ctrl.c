@@ -21,8 +21,12 @@
 #include "dap_io_flow.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_arena.h"
+#include "dap_config.h"
 
 #define LOG_TAG "dap_io_flow_ctrl"
+
+static bool s_debug_more = false;
 
 //===================================================================
 // BASE FLOW CONTROL HEADER SCHEMA
@@ -88,6 +92,7 @@ typedef struct recv_window_entry {
     size_t payload_size;
     uint64_t seq_num;
     bool received;
+    void *packet_buffer;            // Original packet buffer from packet_parse (to free after delivery)
 } recv_window_entry_t;
 
 struct dap_io_flow_ctrl {
@@ -144,7 +149,11 @@ int dap_io_flow_ctrl_init(void)
         return 0;
     }
     
-    log_it(L_NOTICE, "Flow Control subsystem initialized");
+    // Read debug settings from config
+    s_debug_more = dap_config_get_item_bool_default(g_config, "io_flow", "debug_more", false);
+    
+    log_it(L_NOTICE, "Flow Control subsystem initialized (debug_more=%s)", 
+           s_debug_more ? "true" : "false");
     s_inited = true;
     return 0;
 }
@@ -189,6 +198,9 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
         log_it(L_ERROR, "Failed to allocate flow control");
         return NULL;
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "FC CREATE: l_ctrl=%p, a_flow=%p, payload_deliver=%p, arg=%p",
+             l_ctrl, a_flow, a_callbacks->payload_deliver, a_callbacks->arg);
     
     l_ctrl->flow = a_flow;
     l_ctrl->flags = a_flags;
@@ -315,6 +327,9 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     if (a_ctrl->recv_window) {
         for (size_t i = 0; i < a_ctrl->recv_window_size; i++) {
             DAP_DEL_Z(a_ctrl->recv_window[i].payload);
+            if (a_ctrl->recv_window[i].packet_buffer) {
+                DAP_DELETE(a_ctrl->recv_window[i].packet_buffer);
+            }
         }
         pthread_mutex_destroy(&a_ctrl->recv_mutex);
         DAP_DEL_Z(a_ctrl->recv_window);
@@ -336,7 +351,9 @@ void dap_io_flow_ctrl_get_default_config(dap_io_flow_ctrl_config_t *a_config)
         return;
     }
     
-    a_config->retransmit_timeout_ms = 200;
+    // Default retransmit configuration
+    // Tuned for UDP with potential network delays
+    a_config->retransmit_timeout_ms = 1000;  // 1 second
     a_config->max_retransmit_count = 5;
     a_config->send_window_size = 64;
     a_config->recv_window_size = 128;
@@ -354,9 +371,51 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
         return -1;
     }
     
-    // TODO: Implement dynamic flag changes
-    log_it(L_WARNING, "Dynamic flag changes not yet implemented");
+    dap_io_flow_ctrl_flags_t l_old_flags = a_ctrl->flags;
     a_ctrl->flags = a_flags;
+    
+    // Handle timer changes based on flag transitions
+    dap_worker_t *l_worker = dap_worker_get_current();
+    
+    // Retransmit timer
+    if ((a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && !(l_old_flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
+        // Enable retransmit - start timer
+        if (l_worker && !a_ctrl->retransmit_timer) {
+            a_ctrl->retransmit_timer = dap_timerfd_start_on_worker(
+                l_worker,
+                a_ctrl->config.retransmit_timeout_ms / 2,
+                s_retransmit_timer_callback,
+                a_ctrl
+            );
+        }
+    } else if (!(a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && (l_old_flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
+        // Disable retransmit - stop timer
+        if (a_ctrl->retransmit_timer) {
+            dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+            a_ctrl->retransmit_timer = NULL;
+        }
+    }
+    
+    // Keepalive timer
+    if ((a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) && !(l_old_flags & DAP_IO_FLOW_CTRL_KEEPALIVE)) {
+        // Enable keepalive - start timer
+        if (l_worker && !a_ctrl->keepalive_timer) {
+            a_ctrl->keepalive_timer = dap_timerfd_start_on_worker(
+                l_worker,
+                a_ctrl->config.keepalive_interval_ms / 2,
+                s_keepalive_timer_callback,
+                a_ctrl
+            );
+        }
+    } else if (!(a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) && (l_old_flags & DAP_IO_FLOW_CTRL_KEEPALIVE)) {
+        // Disable keepalive - stop timer
+        if (a_ctrl->keepalive_timer) {
+            dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+            a_ctrl->keepalive_timer = NULL;
+        }
+    }
+    
+    log_it(L_DEBUG, "Flow Control flags updated: 0x%02x → 0x%02x", l_old_flags, a_flags);
     
     return 0;
 }
@@ -447,6 +506,8 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
  */
 int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size_t a_packet_size)
 {
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_ctrl_recv ENTRY: a_ctrl=%p", a_ctrl);
+    
     if (!a_ctrl || !a_packet || a_packet_size == 0) {
         return -1;
     }
@@ -459,12 +520,25 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     int l_ret = a_ctrl->callbacks.packet_parse(a_ctrl->flow, a_packet, a_packet_size,
                                                 &l_metadata, &l_payload, &l_payload_size,
                                                 a_ctrl->callbacks.arg);
+    
+    debug_if(s_debug_more, L_DEBUG, "packet_parse returned: ret=%d, seq=%lu, payload_size=%zu", 
+             l_ret, l_metadata.seq_num, l_payload_size);
+    
     if (l_ret != 0) {
-        log_it(L_WARNING, "Failed to parse packet: ret=%d", l_ret);
+        debug_if(s_debug_more, L_WARNING, "Failed to parse packet: ret=%d", l_ret);
         return -2;
     }
     
+    debug_if(s_debug_more, L_DEBUG,
+             "FC recv: seq=%lu, ack_seq=%lu, is_keepalive=%d, payload_size=%zu, reorder_enabled=%d",
+             l_metadata.seq_num, l_metadata.ack_seq, l_metadata.is_keepalive, l_payload_size,
+             (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) ? 1 : 0);
+    
     a_ctrl->last_activity_ns = dap_nanotime_now();
+    
+    // DEBUG: Log incoming packet
+    log_it(L_NOTICE, "FC recv: seq=%lu, ack_seq=%lu, is_keepalive=%d, payload_size=%zu",
+           l_metadata.seq_num, l_metadata.ack_seq, l_metadata.is_keepalive, l_payload_size);
     
     // Process ACK if retransmission enabled
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.ack_seq > 0) {
@@ -484,6 +558,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
         
         if (l_metadata.ack_seq > a_ctrl->send_seq_acked) {
+            log_it(L_NOTICE, "FC recv: UPDATING send_seq_acked: %lu → %lu",
+                   a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
         }
         
@@ -504,10 +580,26 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             
             uint64_t l_seq = l_metadata.seq_num;
             
+            log_it(L_NOTICE, "FC recv: REORDER CHECK: seq=%lu, recv_seq_expected=%lu", 
+                   l_seq, a_ctrl->recv_seq_expected);
+            
             // Check if this is the expected sequence
             if (l_seq == a_ctrl->recv_seq_expected) {
                 // IN-ORDER: Deliver immediately + check buffered packets
+                debug_if(s_debug_more, L_DEBUG, "FC recv: DELIVERING IN-ORDER seq=%lu, payload_size=%zu", 
+                         l_seq, l_payload_size);
+                debug_if(s_debug_more, L_DEBUG, "FC recv: a_ctrl=%p, a_ctrl->flow=%p, payload_deliver=%p, arg=%p", 
+                         a_ctrl, a_ctrl->flow, a_ctrl->callbacks.payload_deliver, a_ctrl->callbacks.arg);
+                
+                // Deliver payload
                 a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
+                
+                // Free packet buffer after immediate delivery
+                // packet_parse stored buffer pointer in metadata->private_ctx
+                if (l_metadata.private_ctx) {
+                    DAP_DELETE(l_metadata.private_ctx);
+                }
+                
                 a_ctrl->recv_seq_expected++;
                 atomic_fetch_add(&a_ctrl->stats_recv, 1);
                 
@@ -523,6 +615,11 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                                                           a_ctrl->callbacks.arg);
                         // Free buffered payload
                         DAP_DEL_Z(a_ctrl->recv_window[l_idx].payload);
+                        // Free original packet buffer
+                        if (a_ctrl->recv_window[l_idx].packet_buffer) {
+                            DAP_DELETE(a_ctrl->recv_window[l_idx].packet_buffer);
+                            a_ctrl->recv_window[l_idx].packet_buffer = NULL;
+                        }
                         a_ctrl->recv_window[l_idx].received = false;
                         a_ctrl->recv_seq_expected++;
                         atomic_fetch_add(&a_ctrl->stats_recv, 1);
@@ -532,6 +629,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else if (l_seq > a_ctrl->recv_seq_expected) {
                 // OUT-OF-ORDER: Buffer for later delivery
+                log_it(L_NOTICE, "FC recv: BUFFERING OUT-OF-ORDER seq=%lu (expected=%lu)", 
+                       l_seq, a_ctrl->recv_seq_expected);
                 size_t l_idx = (l_seq - 1) % a_ctrl->recv_window_size;
                 
                 // Check if already received (duplicate)
@@ -544,6 +643,9 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                     if (a_ctrl->recv_window[l_idx].payload) {
                         DAP_DELETE(a_ctrl->recv_window[l_idx].payload);
                     }
+                    if (a_ctrl->recv_window[l_idx].packet_buffer) {
+                        DAP_DELETE(a_ctrl->recv_window[l_idx].packet_buffer);
+                    }
                     
                     a_ctrl->recv_window[l_idx].payload = DAP_NEW_SIZE(uint8_t, l_payload_size);
                     if (a_ctrl->recv_window[l_idx].payload) {
@@ -551,6 +653,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                         a_ctrl->recv_window[l_idx].payload_size = l_payload_size;
                         a_ctrl->recv_window[l_idx].seq_num = l_seq;
                         a_ctrl->recv_window[l_idx].received = true;
+                        a_ctrl->recv_window[l_idx].packet_buffer = l_metadata.private_ctx;  // Save buffer for later free
                         
                         if (l_seq > a_ctrl->recv_seq_highest) {
                             a_ctrl->recv_seq_highest = l_seq;
@@ -561,6 +664,10 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                         atomic_fetch_add(&a_ctrl->stats_out_of_order, 1);
                     } else {
                         log_it(L_ERROR, "Failed to allocate buffer for out-of-order packet");
+                        // Free packet buffer since we can't buffer
+                        if (l_metadata.private_ctx) {
+                            DAP_DELETE(l_metadata.private_ctx);
+                        }
                     }
                 }
             } else {
@@ -574,12 +681,16 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         } else {
             // NO REORDERING: Deliver immediately
             a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
+            
+            // Free packet buffer after delivery
+            if (l_metadata.private_ctx) {
+                DAP_DELETE(l_metadata.private_ctx);
+            }
+            
             atomic_fetch_add(&a_ctrl->stats_recv, 1);
         }
     }
     
-    // CRITICAL: Send ACK for received data packet
-    // If retransmission is enabled, sender needs ACK to stop retransmitting!
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.seq_num > 0 && !l_metadata.is_keepalive) {
         // Prepare ACK-only packet (no payload)
         dap_io_flow_pkt_metadata_t l_ack_metadata = {
@@ -598,14 +709,6 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             l_ack_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_ack_packet, l_ack_packet_size,
                                                        a_ctrl->callbacks.arg);
             a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
-            
-            if (l_ack_ret == 0) {
-                debug_if(true, L_DEBUG, "Sent ACK: ack_seq=%lu", l_ack_metadata.ack_seq);
-            } else {
-                log_it(L_WARNING, "Failed to send ACK: ret=%d", l_ack_ret);
-            }
-        } else {
-            log_it(L_WARNING, "Failed to prepare ACK packet: ret=%d", l_ack_ret);
         }
     }
     

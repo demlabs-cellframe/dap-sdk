@@ -201,11 +201,14 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     bool l_enable_sharding = (l_worker_count > 1 && a_socket_type == SOCK_DGRAM);
     
     // CRITICAL: Check eBPF availability BEFORE enabling sharding
+    // eBPF provides sticky sessions (consistent hashing) to prevent duplicate flows
+    // WITHOUT eBPF, SO_REUSEPORT will create duplicate flows across workers!
     if (l_enable_sharding) {
         if (dap_io_flow_ebpf_is_available()) {
             log_it(L_NOTICE, "eBPF available - enabling UDP sharding with sticky sessions");
         } else {
-            log_it(L_CRITICAL, "eBPF NOT available - DISABLING sharding to prevent duplicate flows");
+            log_it(L_NOTICE, "eBPF NOT available - DISABLING sharding to prevent duplicate flows");
+            log_it(L_NOTICE, "Single listener will handle all UDP traffic (acceptable for moderate load)");
             l_enable_sharding = false;
             l_worker_count = 1;  // Force single socket
         }
@@ -284,12 +287,11 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // eBPF program is shared across all SO_REUSEPORT sockets in the group
         if (i == 0 && l_enable_sharding && a_socket_type == SOCK_DGRAM) {
             if (dap_io_flow_ebpf_attach_socket(l_socket) != 0) {
-                log_it(L_CRITICAL, "FATAL: eBPF attach failed but sharding was enabled");
-                log_it(L_CRITICAL, "This is a logic error - eBPF check should have disabled sharding");
+                log_it(L_CRITICAL, "FATAL: eBPF attach failed but was marked available");
                 close(l_socket);
                 return -98;
             }
-            log_it(L_NOTICE, "eBPF consistent hashing attached to %s:%u", 
+            log_it(L_NOTICE, "eBPF consistent hashing attached to %s:%u",
                    a_addr ? a_addr : "0.0.0.0", a_port);
         }
         

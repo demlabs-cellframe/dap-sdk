@@ -28,6 +28,8 @@
 #include "dap_client.h"
 #include "dap_client_helpers.h"
 #include "dap_stream.h"
+#include "dap_io_flow.h"
+#include "dap_net_trans_udp_server.h"
 #include "dap_stream_ctl.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_server.h"
@@ -229,10 +231,51 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i]) {
                 dap_net_trans_server_stop(a_ctx->servers[i]);
+                
+                // CRITICAL: For UDP servers, poll flow_servers cleanup!
+                if (a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC && a_ctx->servers[i]->trans_specific) {
+                    dap_net_trans_udp_server_t *l_udp_server = 
+                        (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
+                    
+                    // Poll all flow servers for cleanup completion
+                    uint64_t l_start = dap_test_get_time_ms();
+                    uint32_t l_timeout_ms = 10000;
+                    bool l_all_cleaned = false;
+                    
+                    while (dap_test_get_time_ms() - l_start < l_timeout_ms) {
+                        bool l_pending = false;
+                        
+                        for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
+                            if (l_udp_server->flow_servers[j]) {
+                                uint32_t l_p = atomic_load(&l_udp_server->flow_servers[j]->pending_cleanups);
+                                uint32_t l_a = atomic_load(&l_udp_server->flow_servers[j]->active_callbacks);
+                                if (l_p > 0 || l_a > 0) {
+                                    l_pending = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!l_pending) {
+                            l_all_cleaned = true;
+                            log_it(L_DEBUG, "UDP flow cleanup complete (took %llu ms)",
+                                   dap_test_get_time_ms() - l_start);
+                            break;
+                        }
+                        
+                        dap_test_sleep_ms(50);
+                    }
+                    
+                    if (!l_all_cleaned) {
+                        log_it(L_WARNING, "UDP flow cleanup timeout after %u ms", l_timeout_ms);
+                    }
+                }
+                
                 dap_net_trans_server_delete(a_ctx->servers[i]);
                 a_ctx->servers[i] = NULL;
             }
         }
+        
         DAP_DEL_Z(a_ctx->servers);
     }
     
@@ -382,10 +425,10 @@ static int test_init_all_transs(void)
     
     // Register channel processors for test channels A, B, C
     // These channels are used in tests but don't have processors registered by default
-    // Add packet_in_callback to echo data back to client
-    dap_stream_ch_proc_add('A', NULL, NULL, s_test_channel_echo_callback, NULL);
-    dap_stream_ch_proc_add('B', NULL, NULL, s_test_channel_echo_callback, NULL);
-    dap_stream_ch_proc_add('C', NULL, NULL, s_test_channel_echo_callback, NULL);
+    // Echo callback is defined in test_trans_helpers.c
+    dap_stream_ch_proc_add('A', NULL, NULL, test_server_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('B', NULL, NULL, test_server_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('C', NULL, NULL, test_server_channel_echo_callback, NULL);
     log_it(L_DEBUG, "Registered channel processors for test channels A, B, C with echo callback");
     
     // Initialize all registered modules
@@ -912,11 +955,18 @@ static void test_02_sequential_trans_testing(void)
             test_trans_ctx_free(l_ctx);
             
             // Wait for cleanup to complete with intelligent polling
-            // For scenarios with many clients, need more time for async cleanup
-            uint32_t l_cleanup_timeout = (g_scenarios[scenario_idx].num_clients > 100) ? 15000 : 10000;
+            // For scenarios with many clients, need MORE time for async cleanup
+            // CRITICAL: UDP Flow Control needs time to flush packets and close flows
+            uint32_t l_cleanup_timeout = (g_scenarios[scenario_idx].num_clients > 100) ? 30000 : 20000;
             if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
                 log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", 
                        g_scenarios[scenario_idx].name);
+            }
+            
+            // Additional stabilization for UDP (async flow cleanup)
+            if (g_trans_configs[trans_idx].trans_type == DAP_NET_TRANS_UDP_BASIC) {
+                log_it(L_INFO, "UDP: Additional cleanup stabilization...");
+                dap_test_sleep_ms(1000);  // 1 second for flows to close
             }
             
             printf("\n");
@@ -1002,12 +1052,14 @@ int main(void)
                                  "timeout=60\n"
                                  "debug_more=false\n"
                                  "timeout_active_after_connect=60\n"
-                                 "[stream]\n"
-                                 "debug_more=false\n"
-                                 "debug_channels=false\n"
-                                 "debug_dump_stream_headers=false\n"
-                                 "[stream_udp]\n"
-                                 "debug_more=false\n";
+                                "[stream]\n"
+                                "debug_more=false\n"
+                                "debug_channels=false\n"
+                                "debug_dump_stream_headers=false\n"
+                                "[stream_udp]\n"
+                                "debug_more=false\n"
+                                "[io_flow]\n"
+                                "debug_more=false\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);

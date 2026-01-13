@@ -125,6 +125,7 @@ typedef struct dap_io_flow_pkt_metadata {
     uint32_t timestamp_ms;    ///< Timestamp for RTT calculation (optional)
     bool is_keepalive;        ///< Is this a keep-alive packet?
     bool is_retransmit;       ///< Is this a retransmitted packet?
+    void *private_ctx;        ///< Private context for packet_parse (e.g., buffer to free)
 } dap_io_flow_pkt_metadata_t;
 
 /**

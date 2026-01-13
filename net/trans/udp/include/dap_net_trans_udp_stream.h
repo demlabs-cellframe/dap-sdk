@@ -248,6 +248,12 @@ typedef struct dap_net_trans_udp_ctx {
     dap_io_flow_ctrl_t *flow_ctrl;      ///< Flow Control for reliable delivery (client-side)
     uint8_t last_send_type;             ///< Last sent packet type (for FC prepare callback)
     uint8_t last_recv_type;             ///< Last received packet type (for FC deliver callback)
+    // BUFFERED PACKETS QUEUE: All encrypted packets before FC is ready
+    uint8_t **buffered_packets;         ///< Array of buffered encrypted packets (NULL if no buffers)
+    size_t *buffered_packet_sizes;      ///< Array of buffered packet sizes
+    size_t buffered_count;              ///< Number of buffered packets
+    size_t buffered_capacity;           ///< Capacity of buffered arrays
+    bool fc_creating;                   ///< Flag: FC is being created (buffer all packets)
 } dap_net_trans_udp_ctx_t;
 
 /**
