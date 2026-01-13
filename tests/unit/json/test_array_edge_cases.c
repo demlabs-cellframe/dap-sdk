@@ -260,7 +260,7 @@ static bool s_test_large_arrays(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse large array");
     
     size_t len = dap_json_array_length(l_json);
-    DAP_TEST_FAIL_IF(len != ELEMENT_COUNT, "Large array has correct length");
+    DAP_TEST_FAIL_IF(len != (size_t)ELEMENT_COUNT, "Large array has correct length");
     
     // Spot check elements
     int first = dap_json_array_get_int(l_json, 0);

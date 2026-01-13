@@ -279,7 +279,7 @@ static bool s_test_large_data_round_trip(void) {
     size_t len1 = dap_json_array_length(l_json1);
     size_t len2 = dap_json_array_length(l_json2);
     DAP_TEST_FAIL_IF(len1 != len2, "Array lengths match");
-    DAP_TEST_FAIL_IF(len1 != ELEMENT_COUNT, "Array length correct");
+    DAP_TEST_FAIL_IF(len1 != (size_t)ELEMENT_COUNT, "Array length correct");
     
     // Spot check
     int val_first = dap_json_array_get_int(l_json2, 0);

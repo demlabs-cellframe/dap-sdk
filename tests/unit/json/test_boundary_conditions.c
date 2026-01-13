@@ -392,7 +392,7 @@ static bool s_test_mixed_large_content(void) {
                 dap_json_array_add(l_array, dap_json_object_new_string(l_large_str));
                 break;
             case 1:
-                dap_json_array_add(l_array, dap_json_object_new_int(INT64_MAX));
+                dap_json_array_add(l_array, dap_json_object_new_int64(INT64_MAX));
                 break;
             case 2: {
                 dap_json_t *l_nested_obj = dap_json_object_new();
