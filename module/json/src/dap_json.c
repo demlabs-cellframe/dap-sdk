@@ -552,10 +552,29 @@ void dap_json_object_free(dap_json_t* a_json)
     // Values from parsing are NOT freed here - they live in s_thread_arena
     // Only manually created values (owns_value=true, stage2_parser=NULL) are freed
     
-    if (a_json->owns_value && a_json->value) {
+    // Check if any borrowed wrappers with ref_count > 1 still reference this value
+    bool l_has_live_borrows = false;
+    if (a_json->value) {
+        if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
+            for (size_t i = 0; i < a_json->value->array.count; i++) {
+                if (a_json->value->array.wrappers[i] && a_json->value->array.wrappers[i]->ref_count > 1) {
+                    l_has_live_borrows = true;
+                    break;
+                }
+            }
+        } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
+            for (size_t i = 0; i < a_json->value->object.count; i++) {
+                if (a_json->value->object.wrappers[i] && a_json->value->object.wrappers[i]->ref_count > 1) {
+                    l_has_live_borrows = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (a_json->owns_value && a_json->value && !l_has_live_borrows) {
         // Malloc-based value (manually created via dap_json_object_new, etc.)
-        // Check if this value is NOT from arena (arena values have different allocation)
-        // For now, we free all owned values - arena values will be freed with arena
+        // Only free if no borrowed wrappers are still using it
         dap_json_value_v2_free(a_json->value);
     }
     
