@@ -150,29 +150,32 @@ void dap_test_cond_signal(dap_test_cond_wait_ctx_t *a_ctx);
 bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms);
 
 // =============================================================================
-// WHOLE TEST TIMEOUT (ALARM-BASED) - POSIX only
+// WHOLE TEST TIMEOUT (CROSS-PLATFORM)
 // =============================================================================
 
-#ifndef _WIN32
 /**
- * @brief Global timeout context for entire test suite (POSIX only)
+ * @brief Global timeout context for entire test suite
  */
 typedef struct dap_test_global_timeout {
-    sigjmp_buf jump_buf;
-    volatile sig_atomic_t timeout_triggered;
+    pthread_t watchdog_thread;
+    pthread_mutex_t lock;
+    volatile bool timeout_triggered;
+    volatile bool cancelled;
     uint32_t timeout_sec;
     const char *test_name;
 } dap_test_global_timeout_t;
 
 /**
- * @brief Set global timeout for entire test suite (POSIX only)
- * @details Uses alarm() to limit test execution time.
- *          On timeout, siglongjmp is called to exit the test.
+ * @brief Set global timeout for entire test suite
+ * @details Creates a watchdog thread that monitors test execution time.
+ *          On timeout, sets a flag that can be checked periodically.
  * 
  * @param a_timeout Timeout context
  * @param a_timeout_sec Timeout in seconds
  * @param a_test_name Test name for logging
- * @return 0 on first call, 1 if timeout occurred (after longjmp)
+ * @return 0 on success, -1 on error
+ * 
+ * @note Call dap_test_check_timeout() periodically in your test to check for timeout
  * 
  * @code
  * int main(int argc, char **argv) {
@@ -180,16 +183,21 @@ typedef struct dap_test_global_timeout {
  *     
  *     // Set 30 sec timeout for entire test suite
  *     if (dap_test_set_global_timeout(&l_timeout, 30, "VPN State Machine Tests")) {
- *         // Timeout triggered
- *         log_it(L_CRITICAL, "Test suite timeout!");
+ *         log_it(L_ERROR, "Failed to setup timeout");
  *         return 1;
  *     }
  *     
- *     // Run tests
- *     run_all_tests();
+ *     // Run tests with periodic timeout checks
+ *     for (int i = 0; i < test_count; i++) {
+ *         if (dap_test_check_timeout(&l_timeout)) {
+ *             log_it(L_CRITICAL, "Test timeout!");
+ *             break;
+ *         }
+ *         run_test(i);
+ *     }
  *     
  *     // Cancel timeout
- *     dap_test_cancel_global_timeout();
+ *     dap_test_cancel_global_timeout(&l_timeout);
  *     return 0;
  * }
  * @endcode
@@ -201,11 +209,15 @@ int dap_test_set_global_timeout(
 );
 
 /**
- * @brief Cancel global timeout (POSIX only)
+ * @brief Check if global timeout has been triggered
+ * @return true if timeout triggered, false otherwise
  */
-void dap_test_cancel_global_timeout(void);
+bool dap_test_check_timeout(dap_test_global_timeout_t *a_timeout);
 
-#endif // !_WIN32
+/**
+ * @brief Cancel global timeout
+ */
+void dap_test_cancel_global_timeout(dap_test_global_timeout_t *a_timeout);
 
 // =============================================================================
 // SIMPLE DELAY HELPERS

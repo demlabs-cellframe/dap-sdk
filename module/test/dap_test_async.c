@@ -1,21 +1,17 @@
 /**
  * @file dap_test_async.c
  * @brief DAP SDK Asynchronous Test Utilities - Implementation
- * @date 2025-10-27
+ * @date 2025-01-13
  * @copyright (c) 2025 Demlabs
  */
 
 #include "dap_test_async.h"
 #include "dap_test.h"
+#include "dap_time.h"
 #include <errno.h>
 #include <stdio.h>
 
 #define LOG_TAG "dap_test_async"
-
-#ifndef _WIN32
-// Global timeout handler state (POSIX only)
-static dap_test_global_timeout_t *s_global_timeout = NULL;
-#endif
 
 // =============================================================================
 // CONDITION POLLING
@@ -132,28 +128,39 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
     
     return l_success;
 }
-
 // =============================================================================
-// GLOBAL TEST TIMEOUT (ALARM-BASED) - POSIX only
+// GLOBAL TEST TIMEOUT (CROSS-PLATFORM PTHREAD WATCHDOG)
 // =============================================================================
 
-#ifndef _WIN32
-
-static void s_global_timeout_handler(int a_sig)
+/**
+ * @brief Watchdog thread that monitors test execution time
+ */
+static void *s_timeout_watchdog_thread(void *a_arg)
 {
-    UNUSED(a_sig);
+    dap_test_global_timeout_t *l_timeout = (dap_test_global_timeout_t*)a_arg;
+    if (!l_timeout) return NULL;
     
-    if (!s_global_timeout) return;
+    // Sleep for timeout duration
+    dap_usleep(l_timeout->timeout_sec * 1000000ULL);
     
-    s_global_timeout->timeout_triggered = 1;
+    // Check if cancelled
+    pthread_mutex_lock(&l_timeout->lock);
+    if (!l_timeout->cancelled) {
+        l_timeout->timeout_triggered = true;
+        
+        log_it(L_CRITICAL, "=== TEST TIMEOUT ===");
+        log_it(L_CRITICAL, "Test '%s' exceeded %u seconds",
+               l_timeout->test_name ? l_timeout->test_name : "unknown",
+               l_timeout->timeout_sec);
+        log_it(L_CRITICAL, "Aborting test execution...");
+        
+        // Force exit with error code
+        pthread_mutex_unlock(&l_timeout->lock);
+        exit(124); // Timeout exit code
+    }
+    pthread_mutex_unlock(&l_timeout->lock);
     
-    log_it(L_CRITICAL, "=== TEST TIMEOUT ===");
-    log_it(L_CRITICAL, "Test '%s' exceeded %u seconds",
-           s_global_timeout->test_name ? s_global_timeout->test_name : "unknown",
-           s_global_timeout->timeout_sec);
-    log_it(L_CRITICAL, "Aborting test execution...");
-    
-    siglongjmp(s_global_timeout->jump_buf, 1);
+    return NULL;
 }
 
 int dap_test_set_global_timeout(
@@ -163,27 +170,24 @@ int dap_test_set_global_timeout(
 {
     if (!a_timeout) return -1;
     
-    a_timeout->timeout_triggered = 0;
+    a_timeout->timeout_triggered = false;
+    a_timeout->cancelled = false;
     a_timeout->timeout_sec = a_timeout_sec;
     a_timeout->test_name = a_test_name;
     
-    // Setup signal handler
-    if (signal(SIGALRM, s_global_timeout_handler) == SIG_ERR) {
-        log_it(L_ERROR, "Failed to setup SIGALRM handler");
+    // Initialize mutex
+    if (pthread_mutex_init(&a_timeout->lock, NULL) != 0) {
+        log_it(L_ERROR, "Failed to init timeout mutex");
         return -1;
     }
     
-    // Setup longjmp point
-    s_global_timeout = a_timeout;
-    
-    if (sigsetjmp(a_timeout->jump_buf, 1) != 0) {
-        // Returned from timeout longjmp
-        s_global_timeout = NULL;
-        return 1;
+    // Create watchdog thread
+    if (pthread_create(&a_timeout->watchdog_thread, NULL, 
+                       s_timeout_watchdog_thread, a_timeout) != 0) {
+        log_it(L_ERROR, "Failed to create timeout watchdog thread");
+        pthread_mutex_destroy(&a_timeout->lock);
+        return -1;
     }
-    
-    // Start alarm
-    alarm(a_timeout_sec);
     
     log_it(L_INFO, "Global test timeout set: %u seconds for '%s'",
            a_timeout_sec, a_test_name ? a_test_name : "test");
@@ -191,13 +195,31 @@ int dap_test_set_global_timeout(
     return 0;
 }
 
-void dap_test_cancel_global_timeout(void)
+bool dap_test_check_timeout(dap_test_global_timeout_t *a_timeout)
 {
-    alarm(0);  // Cancel alarm
-    s_global_timeout = NULL;
-    signal(SIGALRM, SIG_DFL);  // Restore default handler
+    if (!a_timeout) return false;
+    
+    pthread_mutex_lock(&a_timeout->lock);
+    bool l_triggered = a_timeout->timeout_triggered;
+    pthread_mutex_unlock(&a_timeout->lock);
+    
+    return l_triggered;
+}
+
+void dap_test_cancel_global_timeout(dap_test_global_timeout_t *a_timeout)
+{
+    if (!a_timeout) return;
+    
+    // Mark as cancelled
+    pthread_mutex_lock(&a_timeout->lock);
+    a_timeout->cancelled = true;
+    pthread_mutex_unlock(&a_timeout->lock);
+    
+    // Wait for watchdog thread to finish
+    pthread_join(a_timeout->watchdog_thread, NULL);
+    
+    // Cleanup
+    pthread_mutex_destroy(&a_timeout->lock);
     
     log_it(L_DEBUG, "Global test timeout cancelled");
 }
-
-#endif // !_WIN32
