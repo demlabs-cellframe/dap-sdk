@@ -149,6 +149,8 @@ typedef struct {
     size_t string_count;        /**< Number of strings found (Phase 1.3) */
     size_t number_count;        /**< Number of numbers found (Phase 1.3) */
     size_t literal_count;       /**< Number of literals found (Phase 1.3) */
+    size_t array_count;         /**< Number of arrays found (Phase 2.1 - for pre-allocation) */
+    size_t object_count;        /**< Number of objects found (Phase 2.1 - for pre-allocation) */
     size_t string_chars;        /**< Number of chars in strings */
     size_t whitespace_chars;    /**< Number of whitespace chars */
     size_t structural_chars;    /**< Number of structural chars */
@@ -256,6 +258,28 @@ void dap_json_stage1_get_stats(
     size_t *out_string_chars,
     size_t *out_whitespace_chars,
     size_t *out_structural_chars
+);
+
+/**
+ * @brief Get Stage 1 token counts for pre-allocation (Phase 2.1)
+ * 
+ * Returns token counts for predictive memory allocation.
+ * Used by Stage 2 to pre-size Arena based on expected DOM size.
+ * 
+ * @param stage1 Stage 1 parser
+ * @param out_string_count Output: number of strings (can be NULL)
+ * @param out_number_count Output: number of numbers (can be NULL)
+ * @param out_literal_count Output: number of literals (can be NULL)
+ * @param out_array_count Output: number of arrays (can be NULL)
+ * @param out_object_count Output: number of objects (can be NULL)
+ */
+void dap_json_stage1_get_token_counts(
+    const dap_json_stage1_t *stage1,
+    size_t *out_string_count,
+    size_t *out_number_count,
+    size_t *out_literal_count,
+    size_t *out_array_count,
+    size_t *out_object_count
 );
 
 /* ========================================================================== */

@@ -508,6 +508,8 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
     a_stage1->string_count = 0;  // Phase 1.3
     a_stage1->number_count = 0;  // Phase 1.3
     a_stage1->literal_count = 0; // Phase 1.3
+    a_stage1->array_count = 0;   // Phase 2.1 - for pre-allocation
+    a_stage1->object_count = 0;  // Phase 2.1 - for pre-allocation
     a_stage1->string_chars = 0;
     a_stage1->whitespace_chars = 0;
     a_stage1->structural_chars = 0;
@@ -558,6 +560,14 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                     log_it(L_ERROR, "Failed to add structural index at position %zu", a_stage1->current_pos);
                     return a_stage1->error_code;
                 }
+                
+                // Count arrays and objects for Phase 2.1 pre-allocation
+                if (c == '[') {
+                    a_stage1->array_count++;
+                } else if (c == '{') {
+                    a_stage1->object_count++;
+                }
+                
                 a_stage1->current_pos++;
                 break;
             
@@ -887,5 +897,43 @@ void dap_json_stage1_get_stats(
     
     if(a_out_structural_chars) {
         *a_out_structural_chars = a_stage1->structural_chars;
+    }
+}
+
+/**
+ * @brief Get Stage 1 token counts for pre-allocation (Phase 2.1)
+ */
+void dap_json_stage1_get_token_counts(
+    const dap_json_stage1_t *a_stage1,
+    size_t *a_out_string_count,
+    size_t *a_out_number_count,
+    size_t *a_out_literal_count,
+    size_t *a_out_array_count,
+    size_t *a_out_object_count
+)
+{
+    if(!a_stage1) {
+        log_it(L_ERROR, "NULL stage1 pointer");
+        return;
+    }
+    
+    if(a_out_string_count) {
+        *a_out_string_count = a_stage1->string_count;
+    }
+    
+    if(a_out_number_count) {
+        *a_out_number_count = a_stage1->number_count;
+    }
+    
+    if(a_out_literal_count) {
+        *a_out_literal_count = a_stage1->literal_count;
+    }
+    
+    if(a_out_array_count) {
+        *a_out_array_count = a_stage1->array_count;
+    }
+    
+    if(a_out_object_count) {
+        *a_out_object_count = a_stage1->object_count;
     }
 }

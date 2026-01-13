@@ -1241,11 +1241,41 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     l_stage2->indices_count = a_stage1->indices_count;
     l_stage2->max_depth = MAX_NESTING_DEPTH;
     
-    // Create Arena for DOM nodes (estimate: ~100 bytes per token)
-    size_t l_estimated_size = a_stage1->indices_count * 100;
+    // Phase 2.1: Predictive pre-allocation based on Stage 1 token counts
+    // Get token counts from Stage 1 for accurate memory sizing
+    size_t l_string_count = 0, l_number_count = 0, l_literal_count = 0;
+    size_t l_array_count = 0, l_object_count = 0;
+    
+    dap_json_stage1_get_token_counts(a_stage1,
+                                      &l_string_count,
+                                      &l_number_count,
+                                      &l_literal_count,
+                                      &l_array_count,
+                                      &l_object_count);
+    
+    // Calculate Arena size based on actual token types:
+    // - Each value:  sizeof(dap_json_value_t) = ~80 bytes
+    // - Each array:  + initial capacity * 8 bytes (pointers)
+    // - Each object: + initial capacity * 24 bytes (pairs)
+    size_t l_total_values = l_string_count + l_number_count + l_literal_count + 
+                            l_array_count + l_object_count;
+    
+    size_t l_estimated_size = 
+        (l_total_values * 80) +                              // Value nodes
+        (l_array_count * INITIAL_ARRAY_CAPACITY * 8) +      // Array storage
+        (l_object_count * INITIAL_OBJECT_CAPACITY * 24);    // Object storage
+    
+    // Minimum 4KB, round up to 4KB boundary for efficiency
     if (l_estimated_size < 4096) {
         l_estimated_size = 4096;
+    } else {
+        l_estimated_size = ((l_estimated_size + 4095) / 4096) * 4096;
     }
+    
+    debug_if(dap_json_get_debug(), L_DEBUG,
+             "Phase 2.1: Pre-allocation - strings:%zu numbers:%zu literals:%zu arrays:%zu objects:%zu → arena:%zu bytes",
+             l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
+             l_estimated_size);
     
     l_stage2->arena = dap_arena_new(l_estimated_size);
     if (!l_stage2->arena) {
