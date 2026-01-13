@@ -42,6 +42,7 @@
 #include <stdbool.h>
 #include "dap_events_socket.h"
 #include "dap_server.h"
+#include "dap_io_flow.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,7 +114,8 @@ int dap_io_flow_socket_create_sharded_listeners(
     uint16_t a_port,
     int a_socket_type,
     int a_protocol,
-    dap_events_socket_callbacks_t *a_callbacks);
+    dap_events_socket_callbacks_t *a_callbacks,
+    dap_io_flow_lb_tier_t *a_lb_tier_out);  ///< [out] Detected load balancing tier
 
 /**
  * @brief Get esocket's remote address

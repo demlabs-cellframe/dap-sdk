@@ -222,14 +222,15 @@ int dap_io_flow_server_listen(
     }
     
     // Create sharded listeners (or single socket if eBPF unavailable)
-    // dap_io_flow_socket_create_sharded_listeners handles eBPF check internally
+    // dap_io_flow_socket_create_sharded_listeners detects best LB tier
     int l_ret = dap_io_flow_socket_create_sharded_listeners(
         a_server->dap_server,
         a_addr,
         a_port,
         l_socket_type,
         l_protocol,
-        &l_callbacks);
+        &l_callbacks,
+        &a_server->lb_tier);  // Save detected tier
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to create sharded listeners: %d", l_ret);
@@ -890,8 +891,74 @@ static void s_process_flow_packet_common(
     // Find or create flow
     dap_io_flow_t *l_flow = dap_io_flow_find(a_server, a_remote_addr);
     
+    debug_if(s_debug_more, L_DEBUG, "packet_common: worker=%u, flow=%p, remote=%s",
+             l_worker->id, l_flow, dap_io_flow_socket_addr_to_string(a_remote_addr));
+    
     if (!l_flow) {
-        // Create new flow
+        // Application-Level Load Balancing (Tier 1):
+        // If no BPF, manually distribute new flows across workers
+        uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
+        
+        if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+            // Hash (src_ip, src_port) to determine target worker
+            // Simple FNV-1a hash on remote address
+            uint32_t l_hash = 2166136261u;  // FNV offset basis
+            const uint8_t *l_addr_bytes = (const uint8_t *)a_remote_addr;
+            for (size_t i = 0; i < a_remote_addr_len; i++) {
+                l_hash = (l_hash ^ l_addr_bytes[i]) * 16777619u;  // FNV prime
+            }
+            l_target_worker_id = l_hash % dap_proc_thread_get_count();
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "Application LB: hash=%u, target_worker=%u",
+                     l_hash, l_target_worker_id);
+        }
+        
+        // If target worker is different, forward packet BEFORE creating flow
+        if (l_target_worker_id != l_worker->id) {
+            debug_if(s_debug_more, L_DEBUG,
+                     "Application LB: forwarding new flow packet to worker %u",
+                     l_target_worker_id);
+            
+            // Get cross-worker arena
+            dap_arena_t *l_arena = s_get_cross_worker_arena();
+            if (!l_arena) {
+                log_it(L_ERROR, "Cross-worker arena not available - creating locally");
+                goto create_local;
+            }
+            
+            // Allocate packet for forwarding
+            struct flow_cross_worker_packet *l_packet = 
+                dap_arena_alloc(l_arena, sizeof(struct flow_cross_worker_packet));
+            uint8_t *l_data_copy = dap_arena_alloc(l_arena, a_data_size);
+            
+            if (!l_packet || !l_data_copy) {
+                log_it(L_ERROR, "Arena allocation failed - creating locally");
+                dap_arena_reset(l_arena);
+                goto create_local;
+            }
+            
+            // Fill packet (flow = NULL since not created yet)
+            memcpy(l_data_copy, a_data, a_data_size);
+            l_packet->data = l_data_copy;
+            l_packet->size = a_data_size;
+            l_packet->flow = NULL;  // Will be created on target worker
+            memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+            l_packet->remote_addr_len = a_remote_addr_len;
+            
+            // Forward to target worker
+            int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
+                                                    l_target_worker_id, l_packet);
+            dap_arena_reset(l_arena);
+            
+            if (l_ret == 0) {
+                return;  // Forwarded successfully
+            }
+            // Fall through to create_local on forward failure
+        }
+        
+create_local:
+        // Create new flow locally
         l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
         
         if (l_flow) {
@@ -916,8 +983,8 @@ static void s_process_flow_packet_common(
     if (l_flow && l_worker && l_flow->owner_worker_id != l_worker->id) {
         // Flow exists on different worker - must forward packet
         debug_if(s_debug_more, L_DEBUG,
-                 "Flow on worker %u, current worker %u - forwarding",
-                 l_flow->owner_worker_id, l_worker->id);
+                 "Flow on worker %u, current worker %u - forwarding packet size=%zu",
+                 l_flow->owner_worker_id, l_worker->id, a_data_size);
         
         // Get cross-worker arena (fail-fast if not available)
         dap_arena_t *l_arena = s_get_cross_worker_arena();
@@ -985,9 +1052,12 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
     
+    dap_worker_t *l_worker = dap_worker_get_current();
+    
     // Log incoming packet details
     debug_if(s_debug_more, L_DEBUG, 
-             "Listener received %zu bytes on fd=%d, type=%d, from %s",
+             "Listener worker=%u received %zu bytes on fd=%d, type=%d, from %s",
+             l_worker ? l_worker->id : 999,
              a_es->buf_in_size, a_es->fd, a_es->type,
              dap_io_flow_socket_addr_to_string(&a_es->addr_storage));
     
@@ -1097,7 +1167,10 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
  */
 static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
 {
+    debug_if(s_debug_more, L_DEBUG, "Queue callback ENTRY: a_es=%p, a_ptr=%p", a_es, a_ptr);
+    
     if (!a_ptr) {
+        debug_if(s_debug_more, L_DEBUG, "Queue callback: a_ptr is NULL, returning");
         return;
     }
     
@@ -1107,6 +1180,8 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
         DAP_DELETE(a_ptr);
         return;
     }
+    
+    debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", l_server, l_server->lb_tier);
     
     struct flow_cross_worker_packet *l_packet = (struct flow_cross_worker_packet*)a_ptr;
     
@@ -1118,6 +1193,7 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_events_socket_t *l_real_listener = NULL;
     
+    // Try to find local listener (for Tier 2: eBPF with multiple listeners)
     if (l_worker) {
         dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
         while (l_listener_item) {
@@ -1132,9 +1208,28 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
         }
     }
     
+    // Fallback for Tier 1 (Application-level): use ANY UDP listener
+    // When we have single listener on worker 0, forwarded packets on other workers
+    // need to reference that single listener for flow creation
+    if (!l_real_listener && l_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+        dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
+        while (l_listener_item) {
+            dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;
+            if (l_listener && (l_listener->type == DESCRIPTOR_TYPE_SOCKET_UDP || 
+                              l_listener->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)) {
+                l_real_listener = l_listener;
+                debug_if(s_debug_more, L_DEBUG,
+                         "Application LB: using listener from worker %u for forwarded packet",
+                         l_listener->worker ? l_listener->worker->id : 999);
+                break;
+            }
+            l_listener_item = l_listener_item->next;
+        }
+    }
+    
     if (!l_real_listener) {
-        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (queue fd=%d, type=%d)",
-               l_worker ? l_worker->id : 999, a_es->fd, a_es->type);
+        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (queue fd=%d, type=%d, tier=%d)",
+               l_worker ? l_worker->id : 999, a_es->fd, a_es->type, l_server->lb_tier);
         DAP_DELETE(l_packet->data);
         DAP_DELETE(l_packet);
         return;

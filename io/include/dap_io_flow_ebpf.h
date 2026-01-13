@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "dap_io_flow.h"  // For dap_io_flow_lb_tier_t
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,22 @@ extern "C" {
 bool dap_io_flow_ebpf_is_available(void);
 
 /**
+ * @brief Check if classic BPF is available
+ * 
+ * Checks for SO_ATTACH_BPF support (Linux 3.9+)
+ * 
+ * @return true if classic BPF available, false otherwise
+ */
+bool dap_io_flow_classic_bpf_is_available(void);
+
+/**
+ * @brief Detect best available load balancing tier
+ * 
+ * @return Highest available tier (EBPF > CLASSIC_BPF > APPLICATION > NONE)
+ */
+dap_io_flow_lb_tier_t dap_io_flow_detect_lb_tier(void);
+
+/**
  * @brief Attach eBPF sticky session program to SO_REUSEPORT socket
  * 
  * Loads and attaches eBPF program that implements consistent hashing
@@ -36,6 +53,17 @@ bool dap_io_flow_ebpf_is_available(void);
  * @return 0 on success, -1 on error
  */
 int dap_io_flow_ebpf_attach_socket(int socket_fd);
+
+/**
+ * @brief Attach classic BPF program to SO_REUSEPORT socket
+ * 
+ * Uses SO_ATTACH_BPF (older API) for consistent hashing.
+ * Falls back from eBPF when SO_ATTACH_REUSEPORT_EBPF not available.
+ * 
+ * @param socket_fd One of the SO_REUSEPORT sockets (any from the group)
+ * @return 0 on success, -1 on error
+ */
+int dap_io_flow_classic_bpf_attach_socket(int socket_fd);
 
 /**
  * @brief Detach eBPF program from socket (cleanup)

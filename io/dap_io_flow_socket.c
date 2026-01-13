@@ -190,7 +190,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                                                  uint16_t a_port,
                                                  int a_socket_type,
                                                  int a_protocol,
-                                                 dap_events_socket_callbacks_t *a_callbacks)
+                                                 dap_events_socket_callbacks_t *a_callbacks,
+                                                 dap_io_flow_lb_tier_t *a_lb_tier_out)
 {
     if (!a_server || !a_callbacks) {
         log_it(L_ERROR, "Invalid arguments for sharded listeners");
@@ -198,25 +199,40 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     }
     
     uint32_t l_worker_count = dap_proc_thread_get_count();
-    bool l_enable_sharding = (l_worker_count > 1 && a_socket_type == SOCK_DGRAM);
+    bool l_is_udp = (a_socket_type == SOCK_DGRAM);
     
-    // SO_REUSEPORT with kernel hash-based distribution provides sticky sessions
-    // WITHOUT eBPF! Linux kernel hashes (src_ip, src_port, dst_ip, dst_port)
-    // and consistently routes packets from same client to same socket/worker.
-    // 
-    // eBPF is OPTIONAL - it only provides more advanced load balancing algorithms.
-    // For most cases, kernel hash distribution is sufficient!
-    if (l_enable_sharding) {
-        if (dap_io_flow_ebpf_is_available()) {
-            log_it(L_NOTICE, "eBPF available - will use advanced load balancing");
-        } else {
-            log_it(L_NOTICE, "Using kernel SO_REUSEPORT hash distribution for UDP sharding");
-            log_it(L_NOTICE, "Kernel provides sticky sessions via 4-tuple hash (no eBPF required)");
-        }
+    // Detect best available load balancing tier
+    dap_io_flow_lb_tier_t l_lb_tier = DAP_IO_FLOW_LB_TIER_NONE;
+    if (l_is_udp && l_worker_count > 1) {
+        l_lb_tier = dap_io_flow_detect_lb_tier();
     }
     
-    // Create listener socket for each worker (or single socket if no sharding)
-    for (uint32_t i = 0; i < l_worker_count; i++) {
+    // Return tier to caller
+    if (a_lb_tier_out) {
+        *a_lb_tier_out = l_lb_tier;
+    }
+    
+    // Determine if we need SO_REUSEPORT (Tier 2: eBPF only)
+    bool l_enable_reuseport = (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF);
+    
+    // Determine number of listeners to create
+    uint32_t l_num_listeners = 1;
+    if (l_enable_reuseport) {
+        // Kernel-level load balancing (Tier 2): one listener per worker with SO_REUSEPORT + eBPF
+        l_num_listeners = l_worker_count;
+        log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT + eBPF",
+               l_num_listeners);
+    } else {
+        // Application-level (Tier 1) or no LB (Tier 0): single listener
+        // Application-level will manually forward packets via queues
+        log_it(L_NOTICE, "Creating single listener (tier=%d: %s)",
+               l_lb_tier,
+               l_lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION ? 
+                   "application-level queue forwarding" : "no load balancing");
+    }
+    
+    // Create listener socket for each worker
+    for (uint32_t i = 0; i < l_num_listeners; i++) {
         dap_worker_t *l_worker = dap_events_worker_get(i);
         if (!l_worker) {
             log_it(L_ERROR, "Failed to get worker %u", i);
@@ -240,13 +256,19 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             log_it(L_WARNING, "Failed to set SO_REUSEADDR");
         }
         
-        // Set SO_REUSEPORT for sharding
-        if (l_enable_sharding) {
+        // Set SO_REUSEPORT if needed (Tier 2 or Tier 3)
+        if (l_enable_reuseport) {
 #ifdef SO_REUSEPORT
             l_opt = 1;
             if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, &l_opt, sizeof(l_opt)) < 0) {
-                log_it(L_WARNING, "SO_REUSEPORT is not supported");
+                log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
+                close(l_socket);
+                return -6;
             }
+#else
+            log_it(L_ERROR, "SO_REUSEPORT not supported on this platform");
+            close(l_socket);
+            return -7;
 #endif
         }
         
@@ -284,17 +306,16 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             return -4;
         }
         
-        // Attach eBPF sticky sessions (first socket only, if sharding enabled AND eBPF available)
-        // eBPF program is shared across all SO_REUSEPORT sockets in the group
-        if (i == 0 && l_enable_sharding && a_socket_type == SOCK_DGRAM && dap_io_flow_ebpf_is_available()) {
+        // Attach load balancing mechanism (first socket only, eBPF only)
+        if (i == 0 && l_is_udp && l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
+            // Tier 2: eBPF with SO_ATTACH_REUSEPORT_EBPF
             if (dap_io_flow_ebpf_attach_socket(l_socket) != 0) {
-                log_it(L_CRITICAL, "FATAL: eBPF attach failed but was marked available");
+                log_it(L_CRITICAL, "FATAL: eBPF attach failed");
                 close(l_socket);
                 return -98;
             }
-            log_it(L_NOTICE, "eBPF consistent hashing attached to %s:%u",
-                   a_addr ? a_addr : "0.0.0.0", a_port);
         }
+        // Tier 1: Application-level - no kernel attachment needed
         
         // Wrap socket in esocket
         dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
@@ -320,6 +341,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // (not through queue). Required for poll() systems and general correctness.
         l_es->is_initalized = true;
         
+        debug_if(g_debug_reactor, L_DEBUG, 
+                 "Sharded listener #%u: fd=%d added to worker %u", 
+                 i, l_socket, l_worker->id);
+        
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
         
@@ -327,9 +352,23 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         dap_events_socket_set_writable_unsafe(l_es, true);
     }
     
-    log_it(L_INFO, "Created %u sharded listener%s on %s:%u (type=%d, protocol=%d)",
-           l_worker_count, (l_worker_count > 1) ? "s" : "",
-           a_addr ? a_addr : "0.0.0.0", a_port, a_socket_type, a_protocol);
+    // Final summary
+    const char *l_tier_desc = "unknown";
+    switch (l_lb_tier) {
+        case DAP_IO_FLOW_LB_TIER_EBPF:
+            l_tier_desc = "eBPF (kernel sticky sessions with FNV-1a)";
+            break;
+        case DAP_IO_FLOW_LB_TIER_APPLICATION:
+            l_tier_desc = "Application-level (queue-based distribution)";
+            break;
+        default:
+            l_tier_desc = "None (single listener)";
+            break;
+    }
+    
+    log_it(L_INFO, "✅ Created %u listener%s on %s:%u - %s",
+           l_num_listeners, (l_num_listeners > 1) ? "s" : "",
+           a_addr ? a_addr : "0.0.0.0", a_port, l_tier_desc);
     
     return 0;
 }

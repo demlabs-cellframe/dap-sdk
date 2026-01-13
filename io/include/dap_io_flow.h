@@ -72,6 +72,23 @@ typedef struct dap_io_flow_server dap_io_flow_server_t;
 typedef struct dap_io_flow_ops dap_io_flow_ops_t;
 
 /**
+ * @brief Load balancing tier enum
+ * 
+ * Graceful degradation from best (eBPF) to fallback (application-level):
+ * - Tier 2 (eBPF): Kernel SO_ATTACH_REUSEPORT_EBPF with FNV-1a hash, full sticky sessions
+ * - Tier 1 (Application): User-space FNV-1a hash + cross-worker queue forwarding
+ * - Tier 0 (None): Single socket, no load balancing
+ * 
+ * Note: Classic BPF (SO_ATTACH_BPF) does NOT support SO_REUSEPORT load balancing.
+ * Only eBPF (SO_ATTACH_REUSEPORT_EBPF) provides kernel-level sticky sessions.
+ */
+typedef enum {
+    DAP_IO_FLOW_LB_TIER_NONE = 0,        // No load balancing (single socket)
+    DAP_IO_FLOW_LB_TIER_APPLICATION = 1, // Application-level via queues
+    DAP_IO_FLOW_LB_TIER_EBPF = 2         // eBPF with SO_ATTACH_REUSEPORT_EBPF
+} dap_io_flow_lb_tier_t;
+
+/**
  * @brief Data boundary types for different protocols
  * 
  * Defines how protocol reads and processes incoming data:
@@ -310,6 +327,7 @@ struct dap_io_flow_server {
     void *_inheritor;                       ///< User data (protocol-specific server)
     
     dap_server_t *dap_server;               ///< Underlying DAP server
+    dap_io_flow_lb_tier_t lb_tier;          ///< Load balancing tier (set by socket creation)
     
     // Per-worker flow hash tables (zero-lock-contention)
     dap_io_flow_t **flows_per_worker;       ///< Flow hash tables [worker_id]

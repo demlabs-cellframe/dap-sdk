@@ -19,7 +19,6 @@
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
-#include <linux/in.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -349,3 +348,77 @@ int dap_io_flow_ebpf_detach_socket(int socket_fd)
     log_it(L_DEBUG, "eBPF program detached from socket %d", socket_fd);
     return 0;
 }
+
+/**
+ * @brief Check if classic BPF is available
+ * 
+ * Classic BPF (SO_ATTACH_BPF) available since Linux 3.9
+ */
+bool dap_io_flow_classic_bpf_is_available(void)
+{
+#ifdef SO_ATTACH_BPF
+    // Classic BPF with SO_ATTACH_BPF available
+    // This is older API but still works for REUSEPORT load balancing
+    return true;
+#else
+    return false;
+#endif
+}
+
+/**
+ * @brief Classic BPF program for SO_REUSEPORT load balancing
+ * 
+ * Simpler than eBPF - just uses raw_smp_processor_id() hash
+ * Not as good as eBPF's FNV-1a but better than kernel default
+ */
+int dap_io_flow_classic_bpf_attach_socket(int socket_fd)
+{
+#ifdef SO_ATTACH_BPF
+    // Classic BPF program: simple hash on src_port
+    // Note: Classic BPF is limited compared to eBPF but works for basic load balancing
+    struct sock_filter code[] = {
+        // Load src_port from skb (offset 0 = src_port for REUSEPORT context)
+        { 0x20, 0, 0, 0x00000000 },  // ld [0]  (load src_port)
+        // Return src_port as hash (kernel will mod by num_sockets)
+        { 0x06, 0, 0, 0x00000000 },  // ret a
+    };
+    
+    struct sock_fprog prog = {
+        .len = sizeof(code) / sizeof(code[0]),
+        .filter = code,
+    };
+    
+    // Attach via SO_ATTACH_BPF (older API, but works)
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_ATTACH_BPF, &prog, sizeof(prog)) < 0) {
+        log_it(L_ERROR, "Failed to attach classic BPF: %s", strerror(errno));
+        return -1;
+    }
+    
+    log_it(L_NOTICE, "Classic BPF load balancing attached to socket %d", socket_fd);
+    log_it(L_NOTICE, "Using src_port hash for distribution (basic sticky sessions)");
+    return 0;
+#else
+    log_it(L_ERROR, "SO_ATTACH_BPF not available on this platform");
+    return -1;
+#endif
+}
+
+/**
+ * @brief Detect best available load balancing tier
+ * 
+ * Note: Classic BPF (SO_ATTACH_BPF) does NOT support SO_REUSEPORT!
+ * Only eBPF (SO_ATTACH_REUSEPORT_EBPF) provides kernel-level sticky sessions.
+ */
+dap_io_flow_lb_tier_t dap_io_flow_detect_lb_tier(void)
+{
+    // Try eBPF (SO_ATTACH_REUSEPORT_EBPF - the ONLY kernel-level option for SO_REUSEPORT)
+    if (dap_io_flow_ebpf_is_available()) {
+        log_it(L_NOTICE, "🚀 Load balancing: Tier 2 (eBPF) - Kernel sticky sessions with FNV-1a");
+        return DAP_IO_FLOW_LB_TIER_EBPF;
+    }
+    
+    // Fallback to application-level (manual distribution via queues)
+    log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based distribution");
+    return DAP_IO_FLOW_LB_TIER_APPLICATION;
+}
+
