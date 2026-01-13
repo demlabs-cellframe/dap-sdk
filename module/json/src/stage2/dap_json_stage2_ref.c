@@ -1019,18 +1019,50 @@ static bool s_parse_string(
     
     l_value->type = DAP_JSON_TYPE_STRING;
     
-    // TRUE ZERO-COPY: Just store pointer and length (NO allocation, NO copy!)
-    // String points directly into original JSON buffer - NOT null-terminated
-    l_value->string.data = (const char*)l_scanned_string.data;
-    l_value->string.length = l_scanned_string.length;
-    l_value->string.data_materialized = NULL;  // Lazy materialization on first C string access
-    l_value->string.is_zero_copy = true;       // Mark as zero-copy (not null-terminated)
-    l_value->string.needs_free = false;        // Arena will own materialized copy
-    
-    // TODO: Add lazy unescaping support
-    // For now, strings with escapes will fail
+    // Check if string needs unescaping
     if (l_scanned_string.needs_unescape) {
-        log_it(L_WARNING, "String at offset %u contains escapes - lazy unescaping not yet implemented", a_start);
+        // String has escapes - allocate and unescape in Arena
+        char *l_unescaped_data = NULL;
+        size_t l_unescaped_length = 0;
+        
+        if (!s_unescape_string(
+            (const char*)l_scanned_string.data,
+            l_scanned_string.length,
+            &l_unescaped_data,
+            &l_unescaped_length
+        )) {
+            log_it(L_ERROR, "Failed to unescape string at offset %u", a_start);
+            return false;
+        }
+        
+        // Intern unescaped string in String Pool (for deduplication and null-termination)
+        const char *l_interned = dap_string_pool_intern_n(
+            a_stage2->string_pool,
+            l_unescaped_data,
+            l_unescaped_length
+        );
+        
+        DAP_DELETE(l_unescaped_data);  // Free temporary unescaped buffer
+        
+        if (!l_interned) {
+            log_it(L_ERROR, "Failed to intern unescaped string");
+            return false;
+        }
+        
+        // Store interned (null-terminated) string
+        l_value->string.data = l_interned;
+        l_value->string.length = l_unescaped_length;
+        l_value->string.data_materialized = (char*)l_interned;  // Already materialized
+        l_value->string.is_zero_copy = false;  // Not zero-copy (was unescaped)
+        l_value->string.needs_free = false;    // String Pool owns it
+    } else {
+        // TRUE ZERO-COPY: No escapes - just store pointer and length (NO allocation, NO copy!)
+        // String points directly into original JSON buffer - NOT null-terminated
+        l_value->string.data = (const char*)l_scanned_string.data;
+        l_value->string.length = l_scanned_string.length;
+        l_value->string.data_materialized = NULL;  // Lazy materialization on first C string access
+        l_value->string.is_zero_copy = true;       // Mark as zero-copy (not null-terminated)
+        l_value->string.needs_free = false;        // Arena will own materialized copy
     }
     
     *a_out_value = l_value;
