@@ -63,11 +63,8 @@ BEGIN {
             if (char == ")") {
                 paren_level--
                 if (paren_level == 0) {
-                    # Found closing paren - output count and return_type
+                    # Found closing paren - output count ONLY (no return_type here)
                     print param_count
-                    if (return_type != "") {
-                        print return_type
-                    }
                     in_custom = 0
                     param_count = 0
                     paren_level = 0
