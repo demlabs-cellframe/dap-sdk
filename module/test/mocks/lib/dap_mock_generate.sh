@@ -504,16 +504,50 @@ prepare_map_impl_cond_data() {
     done
 }
 
+# Generate single MAP macro definition using pure bash (no AWK)
+# Avoids mawk sprintf buffer limit (8KB) for large parameter counts
+# Usage: generate_single_map_macro COUNT
+# Output: #define _DAP_MOCK_MAP_N(macro, ...) macro(type1, name1), macro(type2, name2), ...
+generate_single_map_macro() {
+    local count="$1"
+    
+    # Start macro definition
+    echo -n "#define _DAP_MOCK_MAP_${count}(macro"
+    
+    # Generate parameter list: , type1, name1, type2, name2, ...
+    for ((i=1; i<=count; i++)); do
+        echo -n ", type${i}, name${i}"
+    done
+    
+    # Start macro body
+    echo -n ") \\"
+    echo ""
+    echo -n "    "
+    
+    if [ "$count" -eq 0 ]; then
+        echo ""
+    else
+        # Generate macro invocations: macro(type1, name1), macro(type2, name2), ...
+        for ((i=1; i<=count; i++)); do
+            if [ "$i" -gt 1 ]; then
+                echo -n ", "
+            fi
+            echo -n "macro(type${i}, name${i})"
+        done
+        echo ""
+    fi
+}
+
 # Prepare MAP_MACROS_DATA for template generation
-# Uses temporary file to avoid mawk sprintf buffer overflow (8KB limit)
+# Uses pure bash generation to avoid mawk sprintf buffer overflow (8KB limit)
 prepare_map_macros_data() {
     local param_counts_array=("$@")
     
     # Create temporary file for incremental generation
     local tmp_macros_file=$(mktemp)
     
-    # Generate macros one by one directly to file
-    # This avoids accumulating large strings in memory/sprintf buffers
+    # Generate macros one by one directly to file using bash (not AWK)
+    # This completely avoids mawk sprintf buffer limitations
     local first_entry=1
     for count in "${param_counts_array[@]}"; do
         [ -z "$count" ] && continue
@@ -525,9 +559,8 @@ prepare_map_macros_data() {
         fi
         first_entry=0
         
-        # Generate macro definition for this count
-        # AWK processes single small input - no buffer overflow
-        local macro_def=$(echo "$count" | awk -f "${LIB_DIR}/awk/generate_map_macros.awk")
+        # Generate macro definition using pure bash - no AWK involved
+        local macro_def=$(generate_single_map_macro "$count")
         
         # Write count|macro to file
         echo -n "${count}|${macro_def}" >> "$tmp_macros_file"
