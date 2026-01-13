@@ -1038,7 +1038,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     struct {
         dap_json_sort_fn_t sort_fn;
         dap_json_t **wrappers;
-        dap_json_value_t *elements;
+        dap_json_value_t **elements;
     } l_ctx = {
         .sort_fn = a_sort_fn,
         .wrappers = l_wrappers,

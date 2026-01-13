@@ -1066,7 +1066,7 @@ static bool s_parse_string(
         size_t l_unescaped_length = 0;
         
         if (!s_unescape_string(
-            (const char*)l_scanned_string.data,
+            (const uint8_t*)l_scanned_string.data,
             l_scanned_string.length,
             &l_unescaped_data,
             &l_unescaped_length
