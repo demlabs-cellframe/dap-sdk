@@ -3,10 +3,9 @@
  * @brief ARM SVE2-specific helpers for string scanning
  * 
  * SVE2 features:
- * - All SVE features
+ * - All SVE features (variable vector length, predicates)
  * - Additional instructions for string processing
- * - Histogram operations
- * - Match/search instructions
+ * - svmatch instruction for character search
  * 
  * TEMPLATE FRAGMENT - included by parent template
  */
@@ -38,18 +37,16 @@
 // svmatch_u8 returns predicate where bytes match
 #define SIMD_MATCH(pred, vec, val) svmatch_u8(pred, vec, val)
 
-// Convert predicate to bitmask
-static inline uint64_t sve2_predicate_to_mask(svbool_t pred) {
-    uint64_t mask = 0;
-    uint8_t buf[64] = {0};
+// Check if any predicate bit is true
+#define SIMD_PRED_ANY(pred) svptest_any(svptrue_b8(), (pred))
+
+// Find first true bit in predicate (returns byte index)
+static inline uint32_t sve2_find_first_true(svbool_t pred) {
+    // svbrka_b_z creates mask with first true bit and all before it false
+    svbool_t l_first = svbrka_b_z(svptrue_b8(), pred);
     
-    svst1_u8(pred, buf, svdup_n_u8(1));
-    
-    for (int i = 0; i < 64 && i < svcntb(); i++) {
-        if (buf[i]) mask |= (1ULL << i);
-    }
-    
-    return mask;
+    // Count false bits before first true
+    return (uint32_t)svcntp_b8(svptrue_b8(), svbic_b_z(svptrue_b8(), l_first, pred));
 }
 
-#define SIMD_PRED_TO_MASK(pred) sve2_predicate_to_mask(pred)
+#define SIMD_PRED_FIRST_TRUE(pred) sve2_find_first_true(pred)

@@ -4,7 +4,7 @@
  * 
  * SVE features:
  * - Variable vector length (128-2048 bits at runtime)
- * - Predicate-based operations
+ * - Predicate-based operations (no fixed bitmask!)
  * - No fixed SIMD_CHUNK_SIZE (determined at runtime)
  * 
  * TEMPLATE FRAGMENT - included by parent template
@@ -33,22 +33,16 @@
 // Get all-true predicate for current vector length
 #define SIMD_PTRUE() svptrue_b8()
 
-// Convert predicate to bitmask (first N bits)
-// For SVE we need to extract active lanes
-static inline uint64_t sve_predicate_to_mask(svbool_t pred) {
-    // Convert predicate to uint64 bitmask (max 64 bytes per vector)
-    uint64_t mask = 0;
-    uint8_t buf[64] = {0};
+// Check if any predicate bit is true
+#define SIMD_PRED_ANY(pred) svptest_any(svptrue_b8(), (pred))
+
+// Find first true bit in predicate (returns byte index)
+static inline uint32_t sve_find_first_true(svbool_t pred) {
+    // svbrka_b_z creates mask with first true bit and all before it false
+    svbool_t l_first = svbrka_b_z(svptrue_b8(), pred);
     
-    // Store predicate as bytes (1 where true, 0 where false)
-    svst1_u8(pred, buf, svdup_n_u8(1));
-    
-    // Pack into bitmask
-    for (int i = 0; i < 64 && i < svcntb(); i++) {
-        if (buf[i]) mask |= (1ULL << i);
-    }
-    
-    return mask;
+    // Count false bits before first true
+    return (uint32_t)svcntp_b8(svptrue_b8(), svbic_b_z(svptrue_b8(), l_first, pred));
 }
 
-#define SIMD_PRED_TO_MASK(pred) sve_predicate_to_mask(pred)
+#define SIMD_PRED_FIRST_TRUE(pred) sve_find_first_true(pred)

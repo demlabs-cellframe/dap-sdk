@@ -1,9 +1,10 @@
 /**
- * @file string_scanner_sve_impl.c.tpl
+ * @file string_scanner_sve_impl.c
  * @brief ARM SVE specific implementation fragment (predicate-based)
  * 
  * SVE uses variable-length vectors and predicate-based operations.
  * Vector length is determined at runtime via svcntb().
+ * No bitmask conversion - work with predicates directly!
  */
 
 // Get runtime vector length
@@ -24,16 +25,13 @@ while (l_pos + l_vlen <= a_input_len) {
     // Combine predicates with OR
     SIMD_PRED_TYPE l_combined_pred = SIMD_OR_PRED(l_quotes_pred, l_backslashes_pred);
     
-    // Convert predicate to bitmask
-    uint64_t l_mask = SIMD_PRED_TO_MASK(l_combined_pred);
-    
-    if (l_mask != 0) {
-        // Found quote or backslash - find first match
-        uint32_t l_first_idx = __builtin_ctzll(l_mask);
+    // Check if any match found (no bitmask conversion!)
+    if (SIMD_PRED_ANY(l_combined_pred)) {
+        // Find first true bit directly from predicate
+        uint32_t l_first_idx = SIMD_PRED_FIRST_TRUE(l_combined_pred);
         
-        // Check if it's a quote (check predicate bit)
-        uint64_t l_quote_mask = SIMD_PRED_TO_MASK(l_quotes_pred);
-        if ((l_quote_mask >> l_first_idx) & 1) {
+        // Check if it's a quote by testing the quote predicate
+        if (svptest_first(svptrue_b8(), l_quotes_pred)) {
             // Found closing quote!
             a_out_string->data = (const char*)a_input;
             a_out_string->length = l_pos + l_first_idx;
