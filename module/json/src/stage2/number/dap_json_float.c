@@ -370,6 +370,8 @@ static bool s_clinger_fallback(uint64_t a_mantissa, int a_exponent, double *a_ou
  * @return true if успешно, false if ошибка
  */
 bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) {
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse called: len=%zu, str='%.*s'", a_len, (int)a_len, a_str);
+    
     if (!a_str || a_len == 0 || !a_out_value) {
         return false;
     }

@@ -805,20 +805,14 @@ static bool s_parse_number(
     double l_dval;
     
     // ⭐ DEBUG: Log input before parsing
-    if (dap_json_get_debug()) {
-        char l_debug_buf[257];
-        size_t l_debug_len = l_len < 256 ? l_len : 256;
-        memcpy(l_debug_buf, l_num_str, l_debug_len);
-        l_debug_buf[l_debug_len] = '\0';
-        debug_if(dap_json_get_debug(), L_DEBUG, "Parsing double: '%s' (len=%zu)", l_debug_buf, l_len);
-    }
+    log_it(L_DEBUG, "s_parse_number DOUBLE PATH: '%.*s' (len=%zu)", (int)l_len, l_num_str, l_len);
     
     if (!dap_json_parse_double_fast(l_num_str, l_len, &l_dval)) {
         log_it(L_ERROR, "Invalid number format");
         return false;
     }
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Parsed double: %f (isfinite=%d)", l_dval, isfinite(l_dval));
+    log_it(L_DEBUG, "Parsed double: %f (isfinite=%d)", l_dval, isfinite(l_dval));
     
     // Validate double
     if (!isfinite(l_dval)) {
