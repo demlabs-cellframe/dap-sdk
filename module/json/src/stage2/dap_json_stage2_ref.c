@@ -390,8 +390,11 @@ dap_json_value_t *dap_json_value_v2_create_string(const char *a_data, size_t a_l
         return NULL;
     }
     
-    memcpy(l_value->string.data, a_data, a_length);
-    l_value->string.data[a_length] = '\0';
+    memcpy((char*)l_value->string.data, a_data, a_length);
+    ((char*)l_value->string.data)[a_length] = '\0';
+    l_value->string.length = a_length;
+    l_value->string.data_materialized = (char*)l_value->string.data;  // Already materialized
+    l_value->string.is_zero_copy = false;  // This is a copy, not zero-copy
     l_value->string.needs_free = true;
     
     return l_value;
@@ -1016,23 +1019,13 @@ static bool s_parse_string(
     
     l_value->type = DAP_JSON_TYPE_STRING;
     
-    // ZERO-COPY: Intern string in String Pool (handles non-null-terminated correctly)
-    // String Pool will create a null-terminated interned copy for C string compatibility
-    const char *l_interned_string = dap_string_pool_intern_n(
-        a_stage2->string_pool,
-        (const char*)l_scanned_string.data,
-        l_scanned_string.length
-    );
-    
-    if (!l_interned_string) {
-        log_it(L_ERROR, "Failed to intern string (%zu bytes)", l_scanned_string.length);
-        return false;
-    }
-    
-    // Interned strings are null-terminated and deduplicated (zero-copy for duplicates!)
-    l_value->string.data = (char*)l_interned_string;
+    // TRUE ZERO-COPY: Just store pointer and length (NO allocation, NO copy!)
+    // String points directly into original JSON buffer - NOT null-terminated
+    l_value->string.data = (const char*)l_scanned_string.data;
     l_value->string.length = l_scanned_string.length;
-    l_value->string.needs_free = false; // String Pool owns the memory
+    l_value->string.data_materialized = NULL;  // Lazy materialization on first C string access
+    l_value->string.is_zero_copy = true;       // Mark as zero-copy (not null-terminated)
+    l_value->string.needs_free = false;        // Arena will own materialized copy
     
     // TODO: Add lazy unescaping support
     // For now, strings with escapes will fail

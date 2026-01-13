@@ -44,6 +44,7 @@
 #include "dap_common.h"
 #include "dap_json.h"
 #include "dap_json_type.h"
+#include "dap_arena.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
 #include "internal/dap_json_encoding.h"
@@ -598,13 +599,15 @@ const char* dap_json_array_get_string_n(dap_json_t* a_array, size_t a_idx, size_
 
 /**
  * @brief Get string element from array by index (null-terminated C string)
+ * @details Lazy materialization: creates null-terminated copy only on first access
  * @param[in] a_array Array object
  * @param[in] a_idx Element index
  * @return Pointer to null-terminated string, or NULL if not found or wrong type
  */
 const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx)
 {
-    return dap_json_array_get_string_n(a_array, a_idx, NULL);
+    dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
+    return l_elem ? dap_json_get_string(l_elem) : NULL;
 }
 
 /**
@@ -1267,6 +1270,55 @@ int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value
  * @brief Get string field from object
  */
 /**
+ * @brief Materialize zero-copy string to null-terminated C string (lazy)
+ * @details If string is already materialized or not zero-copy, returns existing data
+ *          Otherwise, allocates null-terminated copy in Arena and caches it
+ * @param[in] a_json JSON wrapper (needed to access Arena)
+ * @param[in,out] a_string_value String value to materialize
+ * @return Pointer to null-terminated string, or NULL on allocation failure
+ */
+static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_string_value)
+{
+    if (!a_string_value || a_string_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    
+    // Already materialized or not zero-copy? Return existing data
+    if (!a_string_value->string.is_zero_copy || a_string_value->string.data_materialized) {
+        return a_string_value->string.data_materialized ? 
+               a_string_value->string.data_materialized : 
+               a_string_value->string.data;
+    }
+    
+    // FAIL-FAST: No Arena = critical error (shouldn't happen in normal parsing)
+    if (!a_json || !a_json->stage2_parser || !a_json->stage2_parser->arena) {
+        log_it(L_CRITICAL, "FATAL: No Arena available for string materialization - JSON object not properly initialized!");
+        return NULL;
+    }
+    
+    // Lazy materialization: allocate null-terminated copy in Arena
+    char *l_copy = (char*)dap_arena_alloc(
+        a_json->stage2_parser->arena,
+        a_string_value->string.length + 1
+    );
+    
+    if (!l_copy) {
+        log_it(L_ERROR, "Arena allocation failed for string materialization (%zu bytes)", 
+               a_string_value->string.length + 1);
+        return NULL;
+    }
+    
+    memcpy(l_copy, a_string_value->string.data, a_string_value->string.length);
+    l_copy[a_string_value->string.length] = '\0';
+    
+    // Cache materialized copy
+    a_string_value->string.data_materialized = l_copy;
+    a_string_value->string.needs_free = false;  // Arena owns it
+    
+    return l_copy;
+}
+
+/**
  * @brief Get string field from object (with length for zero-copy)
  * @details Returns pointer to string data and its length
  *          String is guaranteed to be null-terminated (via String Pool)
@@ -1300,14 +1352,29 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
 
 /**
  * @brief Get string field from object (null-terminated C string)
- * @details Convenience wrapper around dap_json_object_get_string_n()
+ * @details Lazy materialization: creates null-terminated copy only on first access
  * @param[in] a_json JSON object
  * @param[in] a_key Object key
  * @return Pointer to null-terminated string, or NULL if not found/not a string
  */
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
 {
-    return dap_json_object_get_string_n(a_json, a_key, NULL);
+    if (!a_json || !a_key) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    
+    // Materialize if needed (lazy null-termination)
+    return s_materialize_string(a_json, l_value);
 }
 
 /**
@@ -1782,12 +1849,23 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
 
 /**
  * @brief Get string value from JSON (null-terminated C string)
+ * @details Lazy materialization: creates null-terminated copy only on first access
  * @param[in] a_json JSON value
  * @return Pointer to null-terminated string, or NULL if not a string
  */
 const char* dap_json_get_string(dap_json_t* a_json)
 {
-    return dap_json_get_string_n(a_json, NULL);
+    if (!a_json) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_value = s_unwrap_value(a_json);
+    if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    
+    // Materialize if needed (lazy null-termination)
+    return s_materialize_string(a_json, l_value);
 }
 
 /**

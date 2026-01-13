@@ -78,11 +78,18 @@ typedef struct {
 
 /**
  * @brief JSON string representation
+ * @details Supports both zero-copy and materialized strings
+ *          - data: points to original JSON buffer (zero-copy) OR materialized copy
+ *          - length: string length (for zero-copy access)
+ *          - data_materialized: cached null-terminated copy (lazy allocation)
+ *          - is_zero_copy: true if data points to original buffer (not null-terminated)
  */
 typedef struct {
-    char *data;        /**< String data (null-terminated) */
-    size_t length;     /**< String length (excluding null terminator) */
-    bool needs_free;   /**< true if data needs to be freed */
+    const char *data;              /**< String data (zero-copy: NOT null-terminated) */
+    size_t length;                 /**< String length (excluding null terminator) */
+    char *data_materialized;       /**< Cached null-terminated copy (NULL if not yet materialized) */
+    bool is_zero_copy;             /**< true if data is zero-copy (not null-terminated) */
+    bool needs_free;               /**< true if data_materialized needs to be freed */
 } dap_json_string_t;
 
 /* Forward declarations for recursive types */
