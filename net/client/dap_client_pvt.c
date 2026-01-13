@@ -686,7 +686,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
             return false; // Stop timer
         }
         
-        if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
+        if (dap_time_now() - l_client_pvt->ts_last_active >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u, possible network problems or host is down",
                                 l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
@@ -1655,7 +1655,7 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
-    l_client_pvt->ts_last_active = time(NULL);
+    l_client_pvt->ts_last_active = dap_time_now();
     
     // Delegate reading to transport if available
     dap_net_trans_t *l_transport = NULL;
