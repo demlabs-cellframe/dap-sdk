@@ -183,11 +183,7 @@ int dap_stream_init(dap_config_t * a_config)
         dap_memstat_reg(&s_memstat[i]);
 #endif
 
-#ifdef DAP_STREAM_TEST
-#include "dap_stream_test.h"
-    dap_stream_test_init();
-#endif
-
+// DAP_STREAM_TEST removed: Test initialization moved to test files
     s_global_links_cluster = dap_cluster_new(DAP_STREAM_CLUSTER_GLOBAL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_TYPE_SYSTEM);
 
     log_it(L_NOTICE,"Init streaming module");

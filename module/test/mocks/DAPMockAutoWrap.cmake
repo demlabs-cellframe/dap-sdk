@@ -14,6 +14,7 @@
 # For static libraries, use dap_mock_autowrap_with_static to wrap with --whole-archive
 
 # Save module directory for script paths
+<<<<<<< HEAD
 # Use CACHE INTERNAL to persist across multiple include() calls
 get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY CACHE)
 set(DAP_MOCK_AUTOWRAP_MODULE_DIR "${DAP_MOCK_AUTOWRAP_MODULE_DIR}" CACHE INTERNAL "Directory containing DAPMockAutoWrap.cmake")
@@ -24,6 +25,10 @@ if(NOT DAP_MOCK_AUTOWRAP_MODULE_DIR)
 endif()
 #message(STATUS "DAPMockAutoWrap module directory: ${DAP_MOCK_AUTOWRAP_MODULE_DIR}")
 
+=======
+get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 # Detect script executor (bash on Unix, PowerShell on Windows)
 # Note: PowerShell version (ps1) is basic and may not support all features
 # Full functionality is available in bash version (sh)
@@ -103,6 +108,12 @@ function(dap_mock_autowrap TARGET_NAME)
     # STAGE 1: Generate wrap file at configure time
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
+    
+    # Set DAP_TPL_DIR environment variable for script if provided by parent CMake
+    if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
+        message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        set(ENV{DAP_TPL_DIR} "${DAP_TPL_DIR}")
+    endif()
     
     execute_process(
         COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}

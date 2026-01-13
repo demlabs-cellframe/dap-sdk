@@ -8,10 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+<<<<<<< HEAD
 #include <unistd.h>
 #include <sys/time.h>
+=======
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_mock.h"
 #include "dap_mock_async.h"
 
@@ -380,6 +384,7 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     if (a_min >= a_max)
         return a_min;
     
+<<<<<<< HEAD
     // Use rand_r for thread safety
     static __thread unsigned int l_seed = 0;
     if (l_seed == 0)
@@ -387,6 +392,19 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     
     uint64_t l_range = a_max - a_min;
     return a_min + (rand_r(&l_seed) % (l_range + 1));
+=======
+    // Thread-safe random using time-based seed
+    static _Thread_local bool l_seeded = false;
+    if (!l_seeded) {
+        srand((unsigned int)(dap_nanotime_now() ^ (uint64_t)pthread_self()));
+        l_seeded = true;
+    }
+    
+    uint64_t l_range = a_max - a_min;
+    // Generate 64-bit random from two 32-bit rand() calls
+    uint64_t l_random = ((uint64_t)rand() << 32) | (uint64_t)rand();
+    return a_min + (l_random % (l_range + 1));
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 }
 
 void dap_mock_set_delay_fixed(dap_mock_function_state_t *a_state, uint64_t a_delay_us)
@@ -486,12 +504,23 @@ static void s_log_mock_call(const char *a_func_name, const char *a_action)
         return;
     
     if (s_settings.log_timestamps) {
+<<<<<<< HEAD
         struct timeval tv;
         gettimeofday(&tv, NULL);
         struct tm *tm_info = localtime(&tv.tv_sec);
         char time_buf[32];
         strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
         log_it(L_DEBUG, "[%s.%06ld] MOCK %s: %s", time_buf, tv.tv_usec, a_func_name, a_action);
+=======
+        dap_nanotime_t l_now = dap_nanotime_now();
+        time_t l_time_sec = (time_t)dap_nanotime_to_sec(l_now);
+        uint64_t l_usec = (l_now % DAP_NSEC_PER_SEC) / 1000;
+        
+        struct tm *tm_info = localtime(&l_time_sec);
+        char time_buf[32];
+        strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
+        log_it(L_DEBUG, "[%s.%06llu] MOCK %s: %s", time_buf, (unsigned long long)l_usec, a_func_name, a_action);
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
     } else {
         log_it(L_DEBUG, "MOCK %s: %s", a_func_name, a_action);
     }

@@ -257,12 +257,17 @@ generate_template_file() {
 }
 
 # Generate custom mock headers for each custom mock declaration
+<<<<<<< HEAD
 # Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions> [mock_functions]
+=======
+# Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions>
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 generate_custom_mock_headers() {
     local output_dir="$1"
     local basename="$2"
     local custom_mocks_file="$3"
     local wrapper_functions="$4"
+<<<<<<< HEAD
     local mock_functions="${5:-}"  # Optional: list of all DAP_MOCK_DECLARE functions
     local temp_files=()  # Track temporary files for cleanup
     
@@ -277,6 +282,14 @@ generate_custom_mock_headers() {
         fi
         
         print_info "No custom mocks found - creating custom mocks header with macros only"
+=======
+    local temp_files=()  # Track temporary files for cleanup
+    
+    if [ ! -f "$custom_mocks_file" ] || [ ! -s "$custom_mocks_file" ]; then
+        print_info "No custom mocks found - creating custom mocks header with macros only"
+        local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
+        
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
         # Generate empty main include file using template
         replace_template_placeholders_with_mocking \
             "${TEMPLATES_DIR}/custom_mocks_main_empty.h.tpl" \
@@ -315,15 +328,47 @@ generate_custom_mock_headers() {
             param_array="NULL"
             param_count=0
         else
+<<<<<<< HEAD
             # Extract PARAM(type, name) entries
             local clean_params=$(echo "$param_list" | tr -d ' \t\n')
             param_count=$(echo "$clean_params" | grep -o "PARAM(" | wc -l)
             
             if [ "$param_count" -eq 0 ]; then
+=======
+            # AWK script already processed PARAM(...) into "type name, type2 name2" format
+            # Split by comma to get individual parameters
+            local param_decl_parts=()
+            local param_name_parts=()
+            local param_array_parts=()
+            
+            # Split param_list by commas
+            IFS=',' read -ra PARAMS <<< "$param_list"
+            for param in "${PARAMS[@]}"; do
+                # Trim whitespace
+                param=$(echo "$param" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                [ -z "$param" ] && continue
+                
+                # Extract last word as parameter name
+                local param_name=$(echo "$param" | awk '{print $NF}')
+                
+                param_decl_parts+=("$param")
+                param_name_parts+=("$param_name")
+                param_array_parts+=("(void*)(intptr_t)$param_name")
+            done
+            
+            # Join parameters with proper formatting
+            if [ ${#param_decl_parts[@]} -gt 0 ]; then
+                param_decl=$(IFS=', '; echo "${param_decl_parts[*]}")
+                param_names=$(IFS=', '; echo "${param_name_parts[*]}")
+                param_array="((void*[]){$(IFS=', '; echo "${param_array_parts[*]}")})"
+                param_count=${#param_decl_parts[@]}
+            else
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
                 param_decl="void"
                 param_names=""
                 param_array="NULL"
                 param_count=0
+<<<<<<< HEAD
             else
                 # Extract each PARAM(type, name)
                 local param_decl_parts=()
@@ -355,6 +400,8 @@ generate_custom_mock_headers() {
                     param_array="NULL"
                     param_count=0
                 fi
+=======
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
             fi
         fi
         
@@ -609,6 +656,7 @@ prepare_map_count_params_by_count_data() {
     done
 }
 
+<<<<<<< HEAD
 # Generate default wrappers for DAP_MOCK_DECLARE functions without custom wrappers
 # Usage: generate_default_wrappers <output_dir> <basename> <mock_functions> <wrapper_functions> <main_header_file>
 generate_default_wrappers() {
@@ -660,6 +708,8 @@ generate_default_wrappers() {
     print_success "Generated default wrappers header for $(echo "$functions_without_wrappers" | wc -l) functions"
 }
 
+=======
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 # Prepare MAP_COUNT_PARAMS_HELPER_DATA for template generation
 # Format: arg_count|param_count
 prepare_map_count_params_helper_data() {

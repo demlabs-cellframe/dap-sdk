@@ -13,12 +13,15 @@ BEGIN {
     # Pattern for DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, ...)
     pattern_wrapper_passthrough_void = "DAP_MOCK_WRAPPER_PASSTHROUGH_VOID\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
     
+<<<<<<< HEAD
     # Pattern for DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, ...)
     pattern_wrapper_default = "DAP_MOCK_WRAPPER_DEFAULT\\s*\\([^,]*,\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
     
     # Pattern for DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, ...)
     pattern_wrapper_default_void = "DAP_MOCK_WRAPPER_DEFAULT_VOID\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
     
+=======
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
     # Pattern for explicit __wrap_ definitions
     pattern_wrap = "__wrap_([a-zA-Z_][a-zA-Z0-9_]*)"
 }
@@ -63,6 +66,7 @@ BEGIN {
     # Reset line for next pattern
     $0 = $0
     
+<<<<<<< HEAD
     # Find DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, ...)
     while (match($0, pattern_wrapper_default, arr)) {
         func_name = arr[1]
@@ -89,6 +93,8 @@ BEGIN {
     # Reset line for next pattern
     $0 = $0
     
+=======
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
     # Find explicit __wrap_ definitions
     while (match($0, pattern_wrap, arr)) {
         func_name = arr[1]

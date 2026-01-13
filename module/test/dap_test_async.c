@@ -12,8 +12,10 @@
 
 #define LOG_TAG "dap_test_async"
 
-// Global timeout handler state
+#ifndef _WIN32
+// Global timeout handler state (POSIX only)
 static dap_test_global_timeout_t *s_global_timeout = NULL;
+#endif
 
 // =============================================================================
 // CONDITION POLLING
@@ -132,9 +134,17 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
 }
 
 // =============================================================================
+<<<<<<< HEAD
 // GLOBAL TEST TIMEOUT (ALARM-BASED)
 // =============================================================================
 
+=======
+// GLOBAL TEST TIMEOUT (ALARM-BASED) - POSIX only
+// =============================================================================
+
+#ifndef _WIN32
+
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 static void s_global_timeout_handler(int a_sig)
 {
     UNUSED(a_sig);
@@ -196,3 +206,7 @@ void dap_test_cancel_global_timeout(void)
     log_it(L_DEBUG, "Global test timeout cancelled");
 }
 
+<<<<<<< HEAD
+=======
+#endif // !_WIN32
+>>>>>>> a8b8799642f830d976bc7686526ea201333815dd

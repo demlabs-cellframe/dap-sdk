@@ -41,7 +41,7 @@
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
 #include "dap_enc_multisign_prepared.h"
-#include "dap_enc_ringct20.h"
+// #include "dap_enc_ringct20.h" // REMOVED: ringct20 module deleted
 #include "dap_enc_chipmunk.h"
 
 #ifdef DAP_ECDSA
@@ -542,20 +542,21 @@ dap_enc_key_callbacks_t s_callbacks[]={
       },
 
 
+    // REMOVED: DAP_ENC_KEY_TYPE_SIG_RINGCT20 - module deleted
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
-        .name =                             "SIG_RINGCT20",
+        .name =                             "SIG_RINGCT20_REMOVED",
         .enc =                              NULL,
         .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_ringct20_get_sign_with_pb_list,//dap_enc_sig_ringct20_get_sign,
-        .dec_na =                           dap_enc_sig_ringct20_verify_sign,
-        .dec_na_ext =                       dap_enc_sig_ringct20_verify_sign_with_pbk_list,
+        .enc_na =                           NULL,
+        .dec_na =                           NULL,
+        .dec_na_ext =                       NULL,
         .gen_key_public =                   NULL,
         .ser_pub_key_size =                 NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_ringct20_key_new,
-        .delete_callback =                  dap_enc_sig_ringct20_key_delete,
-        .new_generate_callback =            dap_enc_sig_ringct20_key_new_generate,
+        .new_callback =                     NULL,
+        .delete_callback =                  NULL,
+        .new_generate_callback =            NULL,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         NULL,

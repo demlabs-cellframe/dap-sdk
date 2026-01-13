@@ -163,6 +163,17 @@
 
 #define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
+// Constructor/Destructor attributes for automatic initialization/cleanup
+#ifdef _MSC_VER
+    // MSVC doesn't support __attribute__ constructor/destructor
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+#else
+    // GCC/Clang constructor/destructor attributes
+    #define DAP_CONSTRUCTOR __attribute__((constructor))
+    #define DAP_DESTRUCTOR __attribute__((destructor))
+#endif
+
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
 void dap_delete_multy(size_t, ...);
@@ -506,10 +517,7 @@ typedef enum dap_log_level {
   L_ATT       = 6,
   L_ERROR     = 7,
   L_CRITICAL  = 8,
-  L_TOTAL,
-#ifdef DAP_TPS_TEST
-  L_TPS  = 15,
-#endif
+  L_TOTAL
 } dap_log_level_t;
 
 typedef void *dap_interval_timer_t;
@@ -578,7 +586,7 @@ extern "C" {
 #define DAP_HUGE_SIGNED_SIZE __SIZEOF_LONG_LONG__
 #define DAP_HUGE_NATURAL_SIZE __SIZEOF_LONG_DOUBLE__
 
-#if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
+#if (defined (__GNUC__) || defined (__clang__))
     #define dap_add(a,b)                                        \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -606,70 +614,8 @@ extern "C" {
         _a;                                                     \
     })
 #else
-    #ifdef DAP_CORE_TESTS
-        #if defined(__has_builtin) && __has_builtin(__builtin_add_overflow_p)
-        // GCC-style builtin functions (Linux)
-        #define dap_add_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_add_overflow_p(_a,_b,_a)) {          \
-                (_a += b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_sub_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_sub_overflow_p(_a,_b,_a)) {          \
-                (_a -= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_mul_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_mul_overflow_p(_a,_b,_a)) {          \
-                (_a *= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-        #else
-        // macOS/Clang compatible version using __builtin_*_overflow
-        #define dap_add_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_add_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_sub_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_sub_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_mul_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_mul_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-        #endif
-    #endif
-    
-    #if !defined(DAP_CORE_TESTS) && ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
+    // Alternative overflow-safe implementations for platforms without GCC/Clang builtins
+    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
         #define dap_add(a,b)                                \
         ({                                                          \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -768,6 +714,11 @@ extern "C" {
             )) { (_a *= _b); } \
             (_a); \
         })
+    #else
+        // Fallback: simple arithmetic without overflow check
+        #define dap_add(a,b)    ((a) + (b))
+        #define dap_sub(a,b)    ((a) - (b))
+        #define dap_mul(a,b)    ((a) * (b))
     #endif
 #endif
 
