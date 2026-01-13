@@ -1186,7 +1186,8 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     dap_io_flow_server_t *l_server = (dap_io_flow_server_t*)a_es->_inheritor;
     if (!l_server) {
         log_it(L_ERROR, "Queue callback: server not found in _inheritor");
-        DAP_DELETE(a_ptr);
+        // NOTE: Do NOT free a_ptr - it's allocated from thread-local arena!
+        // Arena memory is automatically reused
         return;
     }
     
@@ -1239,8 +1240,8 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     if (!l_real_listener) {
         log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (queue fd=%d, type=%d, tier=%d)",
                l_worker ? l_worker->id : 999, a_es->fd, a_es->type, l_server->lb_tier);
-        DAP_DELETE(l_packet->data);
-        DAP_DELETE(l_packet);
+        // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
+        // Arena memory is automatically reused
         return;
     }
     
@@ -1260,9 +1261,8 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
         );
     }
     
-    // Free packet data and structure
-    DAP_DELETE(l_packet->data);
-    DAP_DELETE(l_packet);
+    // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
+    // Arena memory is automatically reused when the source worker's arena is reset
 }
 
 /**

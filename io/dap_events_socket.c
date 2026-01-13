@@ -1442,14 +1442,31 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t *a_es_input, v
 #elif defined DAP_EVENTS_CAPS_IOCP
     return dap_events_socket_queue_ptr_send(a_es_input->pipe_out, a_arg);
 #else
+    // For PIPE-based queues: write pointer directly to write end (fd2)
     debug_if(g_debug_reactor, L_DEBUG, 
-             "Queue send EPOLL/POLL: writing %zu bytes to fd=%d",
-             sizeof(a_arg), a_es_input ? a_es_input->fd : -1);
-    size_t l_written = dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg));
+             "Queue send EPOLL/POLL: writing %zu bytes to fd2=%d (read end fd=%d)",
+             sizeof(a_arg), a_es_input->fd2, a_es_input->fd);
+    
+    ssize_t l_written = write(a_es_input->fd2, &a_arg, sizeof(a_arg));
+    
+    if (l_written < 0) {
+        int l_errno = errno;
+        log_it(L_ERROR, "Queue send failed: write to fd2=%d failed: %s (%d)",
+               a_es_input->fd2, strerror(l_errno), l_errno);
+        return -1;
+    }
+    
+    if (l_written != sizeof(a_arg)) {
+        log_it(L_WARNING, "Queue send: partial write to fd2=%d: written=%zd, expected=%zu",
+               a_es_input->fd2, l_written, sizeof(a_arg));
+        return -1;
+    }
+    
     debug_if(g_debug_reactor, L_DEBUG, 
-             "Queue send result: written=%zu, expected=%zu, ret=%d",
-             l_written, sizeof(a_arg), l_written == sizeof(a_arg) ? 0 : -1);
-    return l_written == sizeof(a_arg) ? 0 : -1;
+             "Queue send successful: written=%zd bytes to fd2=%d",
+             l_written, a_es_input->fd2);
+    
+    return 0;
 #endif
 }
 
