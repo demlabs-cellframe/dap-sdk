@@ -803,10 +803,22 @@ static bool s_parse_number(
     // SLOW PATH: Double (has '.' or 'e', or integer overflow)
     // TODO: Replace with Eisel-Lemire for 3-5x speedup
     double l_dval;
+    
+    // ⭐ DEBUG: Log input before parsing
+    if (dap_json_get_debug()) {
+        char l_debug_buf[257];
+        size_t l_debug_len = l_len < 256 ? l_len : 256;
+        memcpy(l_debug_buf, l_num_str, l_debug_len);
+        l_debug_buf[l_debug_len] = '\0';
+        debug_if(dap_json_get_debug(), L_DEBUG, "Parsing double: '%s' (len=%zu)", l_debug_buf, l_len);
+    }
+    
     if (!dap_json_parse_double_fast(l_num_str, l_len, &l_dval)) {
         log_it(L_ERROR, "Invalid number format");
         return false;
     }
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "Parsed double: %f (isfinite=%d)", l_dval, isfinite(l_dval));
     
     // Validate double
     if (!isfinite(l_dval)) {
@@ -817,6 +829,9 @@ static bool s_parse_number(
     l_value->type = DAP_JSON_TYPE_DOUBLE;
     l_value->number.d = l_dval;
     l_value->number.is_double = true;
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "Stored in value: type=%d, d=%f, i=%ld", 
+           l_value->type, l_value->number.d, l_value->number.i);
     
     *a_out_value = l_value;
     return true;

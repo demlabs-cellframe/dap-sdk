@@ -452,6 +452,9 @@ int dap_json_array_edge_tests_run(void) {
 }
 
 int main(void) {
+    // ⭐ Enable JSON debug for detailed logging
+    dap_json_set_debug(true);
+    
     dap_print_module_name("DAP JSON Array Edge Cases");
     return dap_json_array_edge_tests_run();
 }

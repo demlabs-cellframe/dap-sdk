@@ -42,6 +42,9 @@
 
 #define LOG_TAG "dap_json_float"
 
+// Debug flag from stage2
+extern bool dap_json_get_debug(void);
+
 /* ========================================================================== */
 /*                    PRECOMPUTED POWERS OF 5 (128-bit)                      */
 /* ========================================================================== */
@@ -212,10 +215,15 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     uint64_t l_pow5_high = s_power5_data.table[l_idx][0];
     uint64_t l_pow5_low = s_power5_data.table[l_idx][1];
     
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire: idx=%d, pow5_high=%016lx, pow5_low=%016lx", 
+             l_idx, l_pow5_high, l_pow5_low);
+    
     // Multiply mantissa * power_of_5 using dap_math_ops.h
     // This gives us a 128-bit result
     uint128_t l_product;
     MULT_64_128(a_mantissa, l_pow5_high, &l_product);
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "After MULT_64_128");
     
     // If low part of power5 is non-zero, add contribution
     if (l_pow5_low != 0) {
@@ -240,6 +248,8 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     uint64_t l_prod_high = s_get_high64(l_product);
     uint64_t l_prod_low = s_get_low64(l_product);
     
+    debug_if(dap_json_get_debug(), L_DEBUG, "Product: high=%016lx, low=%016lx", l_prod_high, l_prod_low);
+    
     // Compute IEEE 754 exponent
     // Formula: exponent_10 * log2(10) ≈ exponent_10 * 3.32192809...
     // For double: bias = 1023, mantissa_bits = 52
@@ -252,6 +262,8 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     int l_binary_exp = (int)((a_exponent * 217706) >> 16); // 217706/65536 ≈ 3.32193
     l_binary_exp += 64 - l_lz; // Adjust for normalization
     l_binary_exp += 1023 + 52; // IEEE 754 bias + mantissa bits
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "lz=%d, binary_exp=%d", l_lz, l_binary_exp);
     
     // Check if exponent is in valid range
     if (l_binary_exp <= 0) {
@@ -295,6 +307,9 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     // Build IEEE 754 double
     // Format: [sign:1][exp:11][mantissa:52]
     uint64_t l_bits = ((uint64_t)l_binary_exp << 52) | l_mantissa_bits;
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "Final: mantissa_bits=%013lx, bits=%016lx", 
+             l_mantissa_bits, l_bits);
     
     memcpy(a_out_value, &l_bits, sizeof(double));
     return true;
@@ -405,15 +420,21 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     // Should have consumed all input
     if (l_pos != a_len) return false;
     
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", l_mantissa, l_exponent);
+    
     // Phase 2: Apply Eisel-Lemire algorithm
     double l_result;
     if (s_eisel_lemire(l_mantissa, l_exponent, &l_result)) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire success: result=%f", l_result);
         *a_out_value = l_negative ? -l_result : l_result;
         return true;
     }
     
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire failed, trying Clinger fallback");
+    
     // Phase 3: Fallback to Clinger's algorithm
     if (s_clinger_fallback(l_mantissa, l_exponent, &l_result)) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "Clinger fallback success: result=%f", l_result);
         *a_out_value = l_negative ? -l_result : l_result;
         return true;
     }
