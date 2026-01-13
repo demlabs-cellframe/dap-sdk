@@ -85,24 +85,45 @@ DAP_MOCK_ENABLE(func_name);
 
 ### Issue: Mock Not Working for Functions in Static Library
 **Symptom:** Functions from static library (`lib*.a`) are not mocked, real function executes  
-**Cause:** Linker excludes unused symbols from static libraries, so `--wrap` is not applied  
-**Solution:** Use `dap_mock_autowrap_with_static()` to wrap static library with `--whole-archive` flags
+**Cause:** One of the following:
+- Linker excludes unused symbols from static libraries (missing `--whole-archive`)
+- Object files (`.o`) are used instead of static libraries (`.a`)
+- `dap_test_link_libraries()` not used (links object files by default)
+
+**Solution (AUTOMATIC):** Use the correct helper functions - mocking is fully automatic!
 
 ```cmake
-# After normal linking and dap_mock_autowrap()
+# Step 1: Link as STATIC libraries (not object files)
+dap_test_link_libraries(test_target)
+
+# Step 2: Add includes
+dap_test_add_includes(test_target)
+
+# Step 3: Enable mocking - everything automatic!
 dap_mock_autowrap(test_target)
-
-# Wrap static library with --whole-archive
-dap_mock_autowrap_with_static(test_target dap_http_server)
 ```
 
-**Verify:**
+**Verify the fix:**
 ```bash
-make VERBOSE=1 | grep -E "--whole-archive|dap_http_server"
-# Should see: -Wl,--whole-archive ... dap_http_server ... -Wl,--no-whole-archive
+# Check that --whole-archive is applied to static libraries
+make VERBOSE=1 | grep -E "--whole-archive.*libdap.*_static"
+# Should see: -Wl,--whole-archive ../../../../libdap_io_static.a -Wl,--no-whole-archive
+
+# Check that static libraries are used (not object files)
+make VERBOSE=1 test_target 2>&1 | grep "Linking" -A 1 | grep "\.a"
+# Should see: libdap_core_static.a libdap_io_static.a (not .o files)
 ```
 
-**Important:** Order matters! First `dap_mock_autowrap()`, then `dap_mock_autowrap_with_static()`
+**Legacy manual approach (still works):**
+```cmake
+dap_mock_autowrap(test_target)
+dap_mock_autowrap_with_static(test_target dap_http_server)  # Optional override
+```
+
+**Critical notes:** 
+- **MUST use** `dap_test_link_libraries()` - creates static libraries automatically
+- **Object files (`.o`) do NOT work** with `--wrap` - only static libraries (`.a`)
+- **Why:** Object files linked directly have resolved symbols at link time - no indirection for `--wrap` to intercept
 
 ### Issue: Linker Error "multiple definition"
 **Symptom:** Error `multiple definition of 'function_name'` when using `--whole-archive`  

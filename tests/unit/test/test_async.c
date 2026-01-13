@@ -313,9 +313,10 @@ static void test_wait_until_macro(void)
 }
 
 // =============================================================================
-// GLOBAL TIMEOUT TEST (separate executable needed for actual timeout)
+// GLOBAL TIMEOUT TEST (POSIX only - separate executable needed for actual timeout)
 // =============================================================================
 
+#ifndef _WIN32
 static void test_global_timeout_setup(void)
 {
     log_it(L_INFO, "=== Test 9: Global Timeout Setup ===");
@@ -335,6 +336,7 @@ static void test_global_timeout_setup(void)
     
     log_it(L_INFO, "✓ Test 9: Global Timeout Setup PASSED\n");
 }
+#endif // !_WIN32
 
 // =============================================================================
 // MAIN TEST SUITE
@@ -364,7 +366,9 @@ int main(int argc, char **argv)
     test_cond_wait_delayed_signal();
     test_cond_wait_timeout();
     test_wait_until_macro();
+#ifndef _WIN32
     test_global_timeout_setup();
+#endif
     
     log_it(L_INFO, "\n=== All Async Tests PASSED! ===");
     

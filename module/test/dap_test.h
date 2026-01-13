@@ -117,31 +117,3 @@ int benchmark_test_time(void (*func_name)(void), int repeat);
  * @return function rate, i.e. count per second
  */
 float benchmark_test_rate(void (*func_name)(void), float sec);
-
-/**
- * @brief Enable clean logging for unit tests
- * This sets the DAP logging system to use simple format without timestamps
- */
-#define dap_test_logging_init() do { \
-    extern void dap_log_set_simple_for_tests(bool); \
-    extern void dap_log_set_external_output(int, void*); \
-    dap_log_set_simple_for_tests(true); \
-    dap_log_set_external_output(1, NULL); /* LOGGER_OUTPUT_STDOUT */ \
-} while(0)
-
-/**
- * @brief Restore default logging format
- */
-#define dap_test_logging_restore() do { \
-    extern void dap_log_set_simple_for_tests(bool); \
-    dap_log_set_simple_for_tests(false); \
-} while(0)
-
-/**
- * @brief Use DAP logging instead of direct printf for tests
- * Provides clean output with color support
- */
-#define dap_test_log(level, ...) do { \
-    extern void _log_it(const char*, int, const char*, int, const char*, ...); \
-    _log_it(NULL, 0, "test", level, __VA_ARGS__); \
-} while(0)

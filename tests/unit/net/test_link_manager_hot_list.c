@@ -242,7 +242,7 @@ static void test_hot_list_add_single(void)
     
     // Add node to hot list
     dap_stream_node_addr_t l_addr = s_make_addr(0x01);
-    dap_link_manager_test_add_to_hot_list(l_addr, TEST_NET_ID_1);
+    dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     
     // Verify node is in hot list
     size_t l_count = 0;
@@ -283,7 +283,7 @@ static void test_hot_list_add_multiple(void)
     l_addrs_to_add[2] = s_make_addr(0x03);
     
     for (size_t i = 0; i < l_nodes_count; i++) {
-        dap_link_manager_test_add_to_hot_list(l_addrs_to_add[i], TEST_NET_ID_1);
+        dap_link_manager_add_to_hot_list(l_addrs_to_add[i], TEST_NET_ID_1);
     }
     
     // Verify all nodes are in hot list
@@ -328,10 +328,10 @@ static void test_hot_list_duplicate(void)
     
     // Add node first time
     dap_stream_node_addr_t l_addr = s_make_addr(0x01);
-    dap_link_manager_test_add_to_hot_list(l_addr, TEST_NET_ID_1);
+    dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     
     // Add same node again (should update timestamp, not add duplicate)
-    dap_link_manager_test_add_to_hot_list(l_addr, TEST_NET_ID_1);
+    dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     
     // Verify still only one entry
     size_t l_count = 0;
@@ -367,8 +367,8 @@ static void test_hot_list_multi_net(void)
     dap_stream_node_addr_t l_addr1 = s_make_addr(0x01);
     dap_stream_node_addr_t l_addr2 = s_make_addr(0x02);
     
-    dap_link_manager_test_add_to_hot_list(l_addr1, TEST_NET_ID_1);
-    dap_link_manager_test_add_to_hot_list(l_addr2, TEST_NET_ID_2);
+    dap_link_manager_add_to_hot_list(l_addr1, TEST_NET_ID_1);
+    dap_link_manager_add_to_hot_list(l_addr2, TEST_NET_ID_2);
     
     // Verify network 1 hot list
     size_t l_count1 = 0;
@@ -418,7 +418,7 @@ static void test_hot_list_cleanup(void)
     l_addrs[2] = s_make_addr(0x03);
     
     for (size_t i = 0; i < sizeof(l_addrs) / sizeof(l_addrs[0]); i++) {
-        dap_link_manager_test_add_to_hot_list(l_addrs[i], TEST_NET_ID_1);
+        dap_link_manager_add_to_hot_list(l_addrs[i], TEST_NET_ID_1);
     }
     
     // Verify nodes are present
@@ -499,7 +499,7 @@ static void test_hot_list_many_nodes(void)
     for (size_t i = 1; i <= NODES_COUNT; i++) {
         dap_stream_node_addr_t l_addr;
         l_addr.uint64 = i;
-        dap_link_manager_test_add_to_hot_list(l_addr, TEST_NET_ID_1);
+        dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     }
     
     // Verify all nodes are present
