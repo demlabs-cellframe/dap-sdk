@@ -64,6 +64,71 @@ static bool s_debug_more = false;
 #define INITIAL_ARRAY_CAPACITY 8
 #define INITIAL_OBJECT_CAPACITY 8
 
+// Node pool chunk size for batch allocation (Phase 2.4 optimization)
+#define NODE_POOL_CHUNK_SIZE 256
+
+/* ========================================================================== */
+/*                    NODE POOL (BATCH ALLOCATION) - Phase 2.4                */
+/* ========================================================================== */
+
+/**
+ * @brief Fast node allocator using arena batching
+ * 
+ * Pre-allocates chunks of nodes from arena, then uses bump-pointer
+ * allocation for ~1ns per node (vs ~5-10ns single arena alloc).
+ */
+typedef struct {
+    dap_json_value_t *nodes;       /**< Current chunk */
+    size_t capacity;               /**< Chunk size */
+    size_t used;                   /**< Nodes used in current chunk */
+    dap_arena_t *arena;            /**< Backing arena */
+} dap_json_node_pool_t;
+
+/**
+ * @brief Initialize node pool
+ */
+static inline void s_node_pool_init(dap_json_node_pool_t *a_pool, dap_arena_t *a_arena)
+{
+    a_pool->nodes = NULL;
+    a_pool->capacity = 0;
+    a_pool->used = 0;
+    a_pool->arena = a_arena;
+}
+
+/**
+ * @brief Allocate node from pool (fast path: ~1ns)
+ * @return Allocated node, or NULL on error
+ */
+static inline dap_json_value_t *s_node_pool_alloc(dap_json_node_pool_t *a_pool)
+{
+    // Fast path: bump pointer (~1ns)
+    if (__builtin_expect(a_pool->used < a_pool->capacity, 1)) {
+        dap_json_value_t *l_node = &a_pool->nodes[a_pool->used++];
+        memset(l_node, 0, sizeof(dap_json_value_t));  // Zero-initialize
+        return l_node;
+    }
+    
+    // Slow path: allocate new chunk (~5-10ns amortized)
+    debug_if(s_debug_more, L_DEBUG, "Node pool: allocating new chunk (%d nodes)", NODE_POOL_CHUNK_SIZE);
+    
+    a_pool->nodes = (dap_json_value_t *)dap_arena_alloc(
+        a_pool->arena,
+        NODE_POOL_CHUNK_SIZE * sizeof(dap_json_value_t)
+    );
+    
+    if (!a_pool->nodes) {
+        log_it(L_ERROR, "Failed to allocate node pool chunk");
+        return NULL;
+    }
+    
+    a_pool->capacity = NODE_POOL_CHUNK_SIZE;
+    a_pool->used = 1;
+    
+    dap_json_value_t *l_node = &a_pool->nodes[0];
+    memset(l_node, 0, sizeof(dap_json_value_t));
+    return l_node;
+}
+
 // Growth factors
 #define ARRAY_GROWTH_FACTOR 2
 #define OBJECT_GROWTH_FACTOR 2
@@ -283,7 +348,8 @@ static bool s_object_add_arena(
 /* ========================================================================== */
 
 /**
- * @brief Create value using Arena allocator (internal, high-performance)
+ * @brief Create value using Arena allocator (legacy function)
+ * @deprecated Use s_create_value_fast() instead for node pool optimization
  */
 static inline dap_json_value_t *s_create_value_arena(dap_arena_t *a_arena)
 {
@@ -297,6 +363,22 @@ static inline dap_json_value_t *s_create_value_arena(dap_arena_t *a_arena)
     }
     
     return l_value;
+}
+
+/* Phase 2.4: Node pool as thread-local for current parse operation */
+static __thread dap_json_node_pool_t *s_current_node_pool = NULL;
+
+/**
+ * @brief Create value using node pool (Phase 2.4 optimization)
+ * @note Falls back to direct arena allocation if node pool not set
+ */
+static inline dap_json_value_t *s_create_value_fast(dap_arena_t *a_arena)
+{
+    if (s_current_node_pool) {
+        return s_node_pool_alloc(s_current_node_pool);
+    }
+    // Fallback: direct arena allocation
+    return s_create_value_arena(a_arena);
 }
 
 /**
@@ -753,7 +835,7 @@ static bool s_parse_number(
     }
     
     // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+    dap_json_value_t *l_value = s_create_value_fast(a_stage2->arena);
     if (!l_value) {
         return false;
     }
@@ -1057,7 +1139,7 @@ static bool s_parse_string(
     }
     
     // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+    dap_json_value_t *l_value = s_create_value_fast(a_stage2->arena);
     if (!l_value) {
         return false;
     }
@@ -1150,7 +1232,7 @@ static bool s_parse_literal(
     }
     
     // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
+    dap_json_value_t *l_value = s_create_value_fast(a_stage2->arena);
     if (!l_value) {
         return false;
     }
@@ -1734,8 +1816,16 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
     
     debug_if(s_debug_more, L_DEBUG, "Starting Stage 2 DOM building...");
     
+    // Phase 2.4: Initialize node pool for batch allocation
+    dap_json_node_pool_t l_node_pool;
+    s_node_pool_init(&l_node_pool, a_stage2->arena);
+    s_current_node_pool = &l_node_pool;  // Set thread-local pool
+    
     size_t l_idx = 0;
     a_stage2->root = s_parse_value(a_stage2, &l_idx);
+    
+    // Clear thread-local pool after parsing
+    s_current_node_pool = NULL;
     
     if(!a_stage2->root) {
         log_it(L_ERROR, "Stage 2 parsing failed: %s (position %zu)",
