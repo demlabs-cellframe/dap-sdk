@@ -1287,7 +1287,15 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
              l_real_listener->fd, l_real_listener->type, a_es->fd, a_es->type);
     
     // Call protocol's packet handler with REAL UDP listener
+    debug_if(s_debug_more, L_DEBUG,
+             "Queue callback: checking ops: l_server->ops=%p, packet_received=%p",
+             l_server->ops, l_server->ops ? l_server->ops->packet_received : NULL);
+    
     if (l_server->ops && l_server->ops->packet_received) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "Queue callback: CALLING packet_received(%p, flow=%p, size=%zu, listener_fd=%d)",
+                 l_server, l_packet->flow, l_packet->size, l_real_listener->fd);
+        
         l_server->ops->packet_received(
             l_server,
             l_packet->flow,
@@ -1296,6 +1304,11 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
             &l_packet->remote_addr,
             l_real_listener  // Pass REAL UDP listener, not queue!
         );
+        
+        debug_if(s_debug_more, L_DEBUG, "Queue callback: packet_received RETURNED");
+    } else {
+        log_it(L_ERROR, "Queue callback: ops or packet_received is NULL! ops=%p, packet_received=%p",
+               l_server->ops, l_server->ops ? l_server->ops->packet_received : NULL);
     }
     
     // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
