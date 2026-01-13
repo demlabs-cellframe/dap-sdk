@@ -522,6 +522,11 @@ void dap_json_object_free(dap_json_t* a_json)
     if (a_json->value) {
         if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
             for (size_t i = 0; i < a_json->value->array.count; i++) {
+                // Phase 2.5: Prefetch next element for better cache utilization
+                if (i + 1 < a_json->value->array.count && a_json->value->array.wrappers[i + 1]) {
+                    __builtin_prefetch(a_json->value->array.wrappers[i + 1], 0, 3);
+                }
+                
                 if (a_json->value->array.wrappers[i]) {
                     // If wrapper has refcount > 1, user called ref() - decrement and keep alive
                     if (a_json->value->array.wrappers[i]->ref_count > 1) {
@@ -541,6 +546,11 @@ void dap_json_object_free(dap_json_t* a_json)
             a_json->value->array.wrappers = NULL;
         } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
             for (size_t i = 0; i < a_json->value->object.count; i++) {
+                // Phase 2.5: Prefetch next element for better cache utilization
+                if (i + 1 < a_json->value->object.count && a_json->value->object.wrappers[i + 1]) {
+                    __builtin_prefetch(a_json->value->object.wrappers[i + 1], 0, 3);
+                }
+                
                 if (a_json->value->object.wrappers[i]) {
                     // If wrapper has refcount > 1, user called ref() - decrement and keep alive
                     if (a_json->value->object.wrappers[i]->ref_count > 1) {

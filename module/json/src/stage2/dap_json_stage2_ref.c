@@ -1509,6 +1509,11 @@ static dap_json_value_t *s_parse_array(
     
     // Parse elements
     while(*a_idx < a_stage2->indices_count) {
+        // Phase 2.5: Prefetch next structural index for better cache utilization
+        if (*a_idx + 1 < a_stage2->indices_count) {
+            __builtin_prefetch(&a_stage2->indices[*a_idx + 1], 0, 3);
+        }
+        
         // Parse value
         dap_json_value_t *l_element = s_parse_value(a_stage2, a_idx);
         if(!l_element) {
@@ -1612,6 +1617,11 @@ static dap_json_value_t *s_parse_object(
     
     // Parse key-value pairs
     while(*a_idx < a_stage2->indices_count) {
+        // Phase 2.5: Prefetch next structural index for better cache utilization
+        if (*a_idx + 1 < a_stage2->indices_count) {
+            __builtin_prefetch(&a_stage2->indices[*a_idx + 1], 0, 3);
+        }
+        
         // Parse key (must be string)
         uint32_t l_key_offset = a_stage2->indices[*a_idx].position;
         
