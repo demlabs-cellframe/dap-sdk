@@ -302,12 +302,17 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
+    // Transfer ownership of transcoded buffer to Stage 2 (will be freed with Stage 2)
+    if (l_transcoded) {
+        l_stage2->transcoded_buffer = l_transcoded;
+        l_transcoded = NULL;  // Ownership transferred
+    }
+    
     dap_json_stage2_error_t l_err = dap_json_stage2_run(l_stage2);
     if (l_err != STAGE2_SUCCESS) {
         log_it(L_ERROR, "Failed to parse JSON: %s", dap_json_stage2_error_to_string(l_err));
         dap_json_stage2_free(l_stage2);
         dap_json_stage1_free(l_stage1);
-        if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
     
@@ -321,13 +326,12 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
-    // Wrap for public API (keep Stage 2 parser alive - it owns the Arena)
+    // Wrap for public API (keep Stage 2 parser alive - it owns the Arena and transcoded buffer)
     dap_json_t *l_result = s_wrap_value_ex(l_root, true); // owns_value = true
-    l_result->stage2_parser = l_stage2; // Keep Stage 2 alive for Arena lifetime
+    l_result->stage2_parser = l_stage2; // Keep Stage 2 alive for Arena and transcoded buffer lifetime
     
-    // Cleanup Stage 1 and transcoded buffer (if any)
+    // Cleanup Stage 1 (transcoded buffer ownership transferred to Stage 2)
     dap_json_stage1_free(l_stage1);
-    if (l_transcoded) DAP_DELETE(l_transcoded);
     
     return l_result;
 }

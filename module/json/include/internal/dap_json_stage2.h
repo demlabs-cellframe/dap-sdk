@@ -97,8 +97,9 @@ typedef enum {
  */
 struct dap_json_stage2 {
     /* Input from Stage 1 */
-    const uint8_t *input;                    /**< Original JSON input buffer */
+    const uint8_t *input;                    /**< Original JSON input buffer (may be transcoded) */
     size_t input_len;                        /**< Input buffer length */
+    uint8_t *transcoded_buffer;              /**< Transcoded UTF-8 buffer (if input was UTF-16/32, NULL otherwise) */
     const dap_json_struct_index_t *indices;  /**< Structural indices from Stage 1 */
     size_t indices_count;                    /**< Number of structural indices */
     

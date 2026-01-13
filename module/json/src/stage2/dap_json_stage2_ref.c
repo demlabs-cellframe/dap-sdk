@@ -1274,6 +1274,13 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
     
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: start");
     
+    // Free transcoded buffer (if any)
+    if (a_stage2->transcoded_buffer) {
+        debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing transcoded buffer at %p", a_stage2->transcoded_buffer);
+        DAP_DELETE(a_stage2->transcoded_buffer);
+        debug_if(s_debug_more, L_DEBUG, "Stage 2 free: transcoded buffer freed");
+    }
+    
     // Free Arena (frees all DOM nodes allocated from it)
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
     dap_arena_free(a_stage2->arena);
