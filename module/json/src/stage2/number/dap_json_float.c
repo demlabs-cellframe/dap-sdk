@@ -261,7 +261,7 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     // Each decimal exponent contributes ~3.32 binary exponent
     int l_binary_exp = (int)((a_exponent * 217706) >> 16); // 217706/65536 ≈ 3.32193
     l_binary_exp += 64 - l_lz; // Adjust for normalization
-    l_binary_exp += 1023 + 52; // IEEE 754 bias + mantissa bits
+    l_binary_exp += 1023; // IEEE 754 bias (NOT + 52! mantissa bits handled separately)
     
     debug_if(dap_json_get_debug(), L_DEBUG, "lz=%d, binary_exp=%d", l_lz, l_binary_exp);
     
