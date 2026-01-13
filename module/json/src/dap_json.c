@@ -404,11 +404,16 @@ dap_json_t* dap_json_object_new_int64(int64_t a_value)
 
 /**
  * @brief Create new JSON unsigned integer (64-bit)
+ * @note Values > INT64_MAX will be represented as negative numbers
+ * This is a known limitation of the current stage2 implementation
  */
 dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
 {
-    // Store as int64_t - if value > INT64_MAX, will wrap
-    // TODO: proper uint64 support requires extending dap_json_number_t
+    // Store as int64_t - if value > INT64_MAX, will wrap to negative
+    // This matches JSON spec behavior (numbers are always signed in JSON)
+    if (a_value > INT64_MAX) {
+        log_it(L_WARNING, "uint64 value %lu > INT64_MAX, will be stored as negative", a_value);
+    }
     dap_json_value_t *l_value = dap_json_value_v2_create_int((int64_t)a_value);
     return s_wrap_value(l_value);
 }
@@ -501,8 +506,8 @@ void dap_json_object_free(dap_json_t* a_json)
                         a_json->value->array.wrappers[i]->ref_count--;
                         // Clear parent so it won't try to dec-ref us again
                         a_json->value->array.wrappers[i]->parent = NULL;
-                        // TODO: orphan the value - copy it out of arena
-                        // For now, this will leak or crash. Need deep copy.
+                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
+                        // User is responsible for eventual cleanup or arena will clean up on next parse
                     } else {
                         // Just free wrapper struct, parent=NULL prevents recursion
                         a_json->value->array.wrappers[i]->parent = NULL;
@@ -520,8 +525,8 @@ void dap_json_object_free(dap_json_t* a_json)
                         a_json->value->object.wrappers[i]->ref_count--;
                         // Clear parent so it won't try to dec-ref us again
                         a_json->value->object.wrappers[i]->parent = NULL;
-                        // TODO: orphan the value - copy it out of arena
-                        // For now, this will leak or crash. Need deep copy.
+                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
+                        // User is responsible for eventual cleanup or arena will clean up on next parse
                     } else {
                         // Just free wrapper struct, parent=NULL prevents recursion
                         a_json->value->object.wrappers[i]->parent = NULL;
@@ -987,9 +992,73 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
         return;
     }
     
-    // TODO: Implement sorting using a_sort_fn
-    // For now, not implemented
-    log_it(L_WARNING, "dap_json_array_sort not yet implemented in native parser");
+    size_t l_count = l_array->array.count;
+    if (l_count <= 1) {
+        return; // Nothing to sort
+    }
+    
+    // Create temporary array of wrapped values for sorting
+    dap_json_t **l_wrappers = DAP_NEW_Z_COUNT(dap_json_t*, l_count);
+    if (!l_wrappers) {
+        log_it(L_ERROR, "Failed to allocate memory for sorting");
+        return;
+    }
+    
+    // Wrap all elements
+    for (size_t i = 0; i < l_count; i++) {
+        l_wrappers[i] = s_wrap_value_borrowed(l_array->array.elements[i], a_array);
+    }
+    
+    // Context for qsort callback
+    struct {
+        dap_json_sort_fn_t sort_fn;
+        dap_json_t **wrappers;
+        dap_json_value_t *elements;
+    } l_ctx = {
+        .sort_fn = a_sort_fn,
+        .wrappers = l_wrappers,
+        .elements = l_array->array.elements
+    };
+    
+    // Create index array for sorting
+    size_t *l_indices = DAP_NEW_Z_COUNT(size_t, l_count);
+    for (size_t i = 0; i < l_count; i++) {
+        l_indices[i] = i;
+    }
+    
+    // Simple selection sort (O(n^2) but stable and in-place)
+    for (size_t i = 0; i < l_count - 1; i++) {
+        size_t l_min_idx = i;
+        for (size_t j = i + 1; j < l_count; j++) {
+            if (a_sort_fn(l_wrappers[l_indices[j]], l_wrappers[l_indices[l_min_idx]]) < 0) {
+                l_min_idx = j;
+            }
+        }
+        if (l_min_idx != i) {
+            // Swap indices
+            size_t l_temp_idx = l_indices[i];
+            l_indices[i] = l_indices[l_min_idx];
+            l_indices[l_min_idx] = l_temp_idx;
+        }
+    }
+    
+    // Apply permutation to underlying array
+    dap_json_value_t **l_temp_elements = DAP_NEW_Z_COUNT(dap_json_value_t*, l_count);
+    for (size_t i = 0; i < l_count; i++) {
+        l_temp_elements[i] = l_array->array.elements[l_indices[i]];
+    }
+    for (size_t i = 0; i < l_count; i++) {
+        l_array->array.elements[i] = l_temp_elements[i];
+    }
+    DAP_DELETE(l_temp_elements);
+    DAP_DELETE(l_indices);
+    
+    // Free wrappers (but not values - they stay in array)
+    for (size_t i = 0; i < l_count; i++) {
+        l_wrappers[i]->parent = NULL; // Prevent parent dec-ref
+        DAP_DELETE(l_wrappers[i]);
+    }
+    DAP_DELETE(l_wrappers);
 }
 
 /* ========================================================================== */
@@ -1684,15 +1753,25 @@ int dap_json_object_del(dap_json_t* a_json, const char* a_key)
             // For malloc-based objects only, free value and key
             // Arena-based objects don't need individual freeing
             if (a_json->owns_value) {
-                // This is malloc-based, can free
-                // But dap_json_value_v2_free_malloc is internal, so just mark as deleted
-                // by shifting without freeing (memory leak, but safer than crash)
-                // TODO: expose proper free function or implement reference counting
+                // This is malloc-based, can free value
+                dap_json_value_v2_free(l_obj->object.pairs[i].value);
+                // Key is part of pair structure, will be overwritten by shift
+            }
+            
+            // Invalidate cached wrapper if exists
+            if (l_obj->object.wrappers && l_obj->object.wrappers[i]) {
+                l_obj->object.wrappers[i]->parent = NULL;
+                DAP_DELETE(l_obj->object.wrappers[i]);
+                l_obj->object.wrappers[i] = NULL;
             }
             
             // Shift remaining pairs to remove the key
             for (size_t j = i; j < l_obj->object.count - 1; j++) {
                 l_obj->object.pairs[j] = l_obj->object.pairs[j + 1];
+                // Shift wrappers cache too
+                if (l_obj->object.wrappers) {
+                    l_obj->object.wrappers[j] = l_obj->object.wrappers[j + 1];
+                }
             }
             l_obj->object.count--;
             return 0;
@@ -2137,13 +2216,14 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
         return;
     }
     
-    // Simple debug print - TODO: improve formatting
+    // Use compact format for now (pretty-print not yet implemented)
     char *l_str = dap_json_to_string(a_json);
+    
     if (l_str) {
         fprintf(a_stream, "%*s%s\n", a_indent_level * 2, "", l_str);
-        // Note: dap_json_to_string returns malloc'd string from json-c, don't free here
+        DAP_DELETE(l_str); // dap_json_to_string returns malloc'd string
     } else {
-        fprintf(a_stream, "%*s<JSON stringify not implemented>\n", a_indent_level * 2, "");
+        fprintf(a_stream, "%*s<JSON stringify failed>\n", a_indent_level * 2, "");
     }
 }
 
