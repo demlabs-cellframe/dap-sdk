@@ -88,13 +88,28 @@ bool dap_json_get_debug(void)
 
 /**
  * @brief Wrapper structure for public API
- * @details Wraps dap_json_value_t for backward compatibility with old API
+ * @details Wraps dap_json_value_t with mode-specific metadata
  */
 struct dap_json {
     dap_json_value_t *value;         /**< Internal native value */
     int ref_count;                   /**< Reference counter for dap_json_object_ref */
     bool owns_value;                 /**< True if wrapper owns value and should free it */
-    struct dap_json *parent;         /**< Parent wrapper for borrowed references (cached) */
+    
+    dap_json_mode_t mode;            /**< ⭐ NEW: Operation mode (arena/malloc) */
+    
+    // Mode-specific data (union to save memory)
+    union {
+        // ARENA_IMMUTABLE mode (parsed JSON)
+        struct {
+            void *arena_page_handle;  /**< Arena page for refcounting */
+            struct dap_json *parent;  /**< Parent wrapper for borrowed refs */
+        } arena;
+        
+        // MALLOC_MUTABLE mode (manual JSON)
+        struct {
+            // Reserved for future use (e.g., modification tracking)
+        } malloc;
+    };
 };
 
 /* ========================================================================== */
@@ -161,6 +176,9 @@ static inline dap_json_t* s_wrap_value(dap_json_value_t *a_value)
 
 /**
  * @brief Wrap dap_json_value_t into dap_json_t (with optional ownership)
+ * @param a_value Value to wrap
+ * @param a_owns Whether wrapper owns the value
+ * @return Wrapper in MALLOC_MUTABLE mode (for manual creation)
  */
 static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns)
 {
@@ -177,7 +195,11 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
     l_json->value = a_value;
     l_json->ref_count = 1;
     l_json->owns_value = a_owns;
-    l_json->parent = NULL;
+    
+    // ⭐ Manual creation → MALLOC_MUTABLE mode
+    l_json->mode = DAP_JSON_MODE_MALLOC_MUTABLE;
+    // malloc union fields are zero-initialized
+    
     return l_json;
 }
 
@@ -188,22 +210,28 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
  * @return Borrowed wrapper that keeps parent alive
  */
 /**
- * @brief Create borrowed reference wrapper (json-c compatible + refcounted arena)
- * @details Creates a wrapper for a value that lives in parent's Arena.
- *          Like json-c, borrowed references don't increase parent ref_count.
- *          The wrapper is cached in parent's array/object and freed automatically
- *          when parent is freed. User should NEVER call dap_json_object_free() on it.
+ * @brief Create borrowed reference wrapper with mode awareness
+ * @details Creates a wrapper for a value that lives in parent's container.
  *          
- *          ⭐ NEW: With refcounted arena, increments page refcount to keep value alive.
- *          This allows borrowed refs to outlive their parent safely.
+ *          ARENA_IMMUTABLE mode (parsed JSON):
+ *          - Zero-copy borrowed reference
+ *          - Increments arena page refcount
+ *          - Borrowed ref can outlive parent (if ref'd)
+ *          - Wrapper cached in parent, freed automatically
  *          
- * @param a_value Value to wrap (must be from parent's Arena)
- * @param a_parent Parent wrapper (array or object)
- * @return Wrapper pointer (cached, reused on subsequent calls)
+ *          MALLOC_MUTABLE mode (manual JSON):
+ *          - Creates non-owning wrapper (points to value in parent)
+ *          - DOES NOT copy value (lightweight reference)
+ *          - Wrapper cached in parent, freed automatically
+ *          - Safe because parent owns the value
+ *          
+ * @param a_value Value to wrap
+ * @param a_parent Parent wrapper
+ * @return Borrowed wrapper (non-owning, cached)
  */
 static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_json_t *a_parent)
 {
-    if (!a_value) {
+    if (!a_value || !a_parent) {
         return NULL;
     }
     
@@ -215,24 +243,24 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     
     l_json->value = a_value;
     l_json->ref_count = 1;
-    l_json->owns_value = false; // Borrowed
+    l_json->owns_value = false; // Borrowed (non-owning)
+    l_json->mode = a_parent->mode; // Inherit mode from parent
     
-    // CRITICAL FIX: Do NOT increment parent ref_count for borrowed references
-    // In json-c, borrowed references don't increase ref count - they just return
-    // a pointer to existing object. The wrapper is cached and freed with parent.
-    // This prevents memory leaks and ref count buildup.
-    if (a_parent) {
-        l_json->parent = a_parent;
-        // NOTE: parent->ref_count is NOT incremented (json-c compatible)
-        // Arena access is via thread-local s_thread_arena (no per-object stage2_parser)
-    }
-    
-    // ⭐ NEW: Increment arena page refcount to keep value alive
-    // This allows borrowed ref to outlive parent if dap_json_object_ref() is called
-    if (a_value->arena_page_handle) {
-        dap_arena_page_ref(a_value->arena_page_handle);
-        debug_if(s_debug_more, L_DEBUG, "Borrowed ref: incremented page refcount for value %p (page: %p)",
-                 a_value, a_value->arena_page_handle);
+    if (a_parent->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+        // ARENA mode: setup page refcounting
+        l_json->arena.parent = a_parent;
+        l_json->arena.arena_page_handle = a_value->arena_page_handle;
+        
+        // Increment arena page refcount to keep value alive
+        if (l_json->arena.arena_page_handle) {
+            dap_arena_page_ref(l_json->arena.arena_page_handle);
+            debug_if(s_debug_more, L_DEBUG, "Borrowed ref (ARENA): page=%p, parent=%p",
+                     l_json->arena.arena_page_handle, a_parent);
+        }
+    } else {
+        // MALLOC mode: just create wrapper (value owned by parent)
+        debug_if(s_debug_more, L_DEBUG, "Borrowed ref (MALLOC): value=%p, parent=%p (non-owning wrapper)",
+                 a_value, a_parent);
     }
     
     return l_json;
@@ -362,6 +390,14 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     
     // Wrap for public API (value lives in thread-local arena)
     dap_json_t *l_result = s_wrap_value_ex(l_root, false); // owns_value = false (in arena)
+    
+    // ⭐ Set mode to ARENA_IMMUTABLE (parsed JSON)
+    l_result->mode = DAP_JSON_MODE_ARENA_IMMUTABLE;
+    l_result->arena.arena_page_handle = l_root->arena_page_handle;
+    l_result->arena.parent = NULL; // Root has no parent
+    
+    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: mode=ARENA_IMMUTABLE, page=%p", 
+             l_result->arena.arena_page_handle);
     
     // Cleanup Stage 1 (transcoded buffer ownership transferred to Stage 2)
     dap_json_stage1_free(l_stage1);
@@ -497,51 +533,43 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // CRITICAL FIX: Borrowed references should NOT free stage2_parser/Arena
-    // Only the root object (from parsing) should free the stage2_parser/Arena
-    // Borrowed references (child elements) just free the wrapper, NOT the value
-    if (a_json->parent) {
-        // This is a borrowed reference from parent (e.g., array element, object value)
-        // The value itself lives in parent's Arena, so don't free it
-        // Just free this wrapper struct - parent ref_count stays unchanged
-        // (because we didn't increment it when creating borrowed ref)
-        
-        // ⭐ NEW: Decrement arena page refcount (only if arena-based)
-        if (a_json->value && a_json->value->arena_page_handle) {
-            dap_arena_page_unref(a_json->value->arena_page_handle);
-            debug_if(s_debug_more, L_DEBUG, "Borrowed ref freed: decremented page refcount for value %p (page: %p)",
-                     a_json->value, a_json->value->arena_page_handle);
+    // Borrowed reference handling (mode-aware)
+    if (!a_json->owns_value) {
+        // ⭐ Mode-specific cleanup for borrowed refs
+        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+            // Arena-based: decrement page refcount
+            if (a_json->arena.arena_page_handle) {
+                dap_arena_page_unref(a_json->arena.arena_page_handle);
+                debug_if(s_debug_more, L_DEBUG, "Borrowed ref freed (ARENA): page=%p",
+                         a_json->arena.arena_page_handle);
+            }
         }
+        // MALLOC_MUTABLE borrowed refs don't exist (error in s_wrap_value_borrowed)
         
-        a_json->parent = NULL;
-        // Free only the wrapper struct, not the value (it's in parent's Arena/malloc)
+        // Free wrapper only
         DAP_DELETE(a_json);
         return;
     }
     
     // Free cached wrappers in arrays/objects BEFORE freeing values
-    // This ensures borrowed reference wrappers are cleaned up properly
-    // IMPORTANT: Wrappers are borrowed refs - just free wrapper struct if refcount=0
-    if (a_json->value) {
+    // Only for ARENA_IMMUTABLE mode (wrappers cache only exists for parsed JSON)
+    if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE && a_json->value) {
         if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
             for (size_t i = 0; i < a_json->value->array.count; i++) {
                 if (a_json->value->array.wrappers[i]) {
-                    // ⭐ NEW: Decrement arena page refcount for cached wrapper
+                    // Decrement arena page refcount for cached wrapper
                     dap_json_value_t *l_element_value = a_json->value->array.elements[i];
                     if (l_element_value && l_element_value->arena_page_handle) {
                         dap_arena_page_unref(l_element_value->arena_page_handle);
                     }
                     
-                    // If wrapper has refcount > 1, user called ref() - decrement and keep alive
+                    // If wrapper has refcount > 1, user called ref() - keep alive
                     if (a_json->value->array.wrappers[i]->ref_count > 1) {
                         a_json->value->array.wrappers[i]->ref_count--;
-                        // Clear parent so it won't try to dec-ref us again
-                        a_json->value->array.wrappers[i]->parent = NULL;
-                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
-                        // User is responsible for eventual cleanup or arena will clean up on next parse
+                        a_json->value->array.wrappers[i]->arena.parent = NULL;
                     } else {
-                        // Just free wrapper struct, parent=NULL prevents recursion
-                        a_json->value->array.wrappers[i]->parent = NULL;
+                        // Free wrapper struct
+                        a_json->value->array.wrappers[i]->arena.parent = NULL;
                         DAP_DELETE(a_json->value->array.wrappers[i]);
                     }
                 }
@@ -551,22 +579,19 @@ void dap_json_object_free(dap_json_t* a_json)
         } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
             for (size_t i = 0; i < a_json->value->object.count; i++) {
                 if (a_json->value->object.wrappers[i]) {
-                    // ⭐ NEW: Decrement arena page refcount for cached wrapper
+                    // Decrement arena page refcount for cached wrapper
                     dap_json_value_t *l_pair_value = a_json->value->object.pairs[i].value;
                     if (l_pair_value && l_pair_value->arena_page_handle) {
                         dap_arena_page_unref(l_pair_value->arena_page_handle);
                     }
                     
-                    // If wrapper has refcount > 1, user called ref() - decrement and keep alive
+                    // If wrapper has refcount > 1, user called ref() - keep alive
                     if (a_json->value->object.wrappers[i]->ref_count > 1) {
                         a_json->value->object.wrappers[i]->ref_count--;
-                        // Clear parent so it won't try to dec-ref us again
-                        a_json->value->object.wrappers[i]->parent = NULL;
-                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
-                        // User is responsible for eventual cleanup or arena will clean up on next parse
+                        a_json->value->object.wrappers[i]->arena.parent = NULL;
                     } else {
-                        // Just free wrapper struct, parent=NULL prevents recursion
-                        a_json->value->object.wrappers[i]->parent = NULL;
+                        // Free wrapper struct
+                        a_json->value->object.wrappers[i]->arena.parent = NULL;
                         DAP_DELETE(a_json->value->object.wrappers[i]);
                     }
                 }
@@ -636,6 +661,34 @@ void dap_json_cleanup_thread_arena(void)
         dap_json_stage2_free(s_thread_arena);
         s_thread_arena = NULL;
     }
+}
+
+/* ========================================================================== */
+/*                          MODE QUERIES                                      */
+/* ========================================================================== */
+
+/**
+ * @brief Check if JSON is mutable (malloc-based)
+ */
+bool dap_json_is_mutable(const dap_json_t* a_json)
+{
+    return a_json && a_json->mode == DAP_JSON_MODE_MALLOC_MUTABLE;
+}
+
+/**
+ * @brief Check if JSON is immutable (arena-based)
+ */
+bool dap_json_is_immutable(const dap_json_t* a_json)
+{
+    return a_json && a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE;
+}
+
+/**
+ * @brief Get JSON operation mode
+ */
+dap_json_mode_t dap_json_get_mode(const dap_json_t* a_json)
+{
+    return a_json ? a_json->mode : DAP_JSON_MODE_MALLOC_MUTABLE; // Default to mutable if NULL
 }
 
 /* ========================================================================== */
@@ -1131,7 +1184,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     
     // Free wrappers (but not values - they stay in array)
     for (size_t i = 0; i < l_count; i++) {
-        l_wrappers[i]->parent = NULL; // Prevent parent dec-ref
+        l_wrappers[i]->arena.parent = NULL; // Prevent parent dec-ref
         DAP_DELETE(l_wrappers[i]);
     }
     DAP_DELETE(l_wrappers);
@@ -1957,7 +2010,7 @@ int dap_json_object_del(dap_json_t* a_json, const char* a_key)
             
             // Invalidate cached wrapper if exists
             if (l_obj->object.wrappers && l_obj->object.wrappers[i]) {
-                l_obj->object.wrappers[i]->parent = NULL;
+                l_obj->object.wrappers[i]->arena.parent = NULL;
                 DAP_DELETE(l_obj->object.wrappers[i]);
                 l_obj->object.wrappers[i] = NULL;
             }

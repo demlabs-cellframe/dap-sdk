@@ -79,6 +79,15 @@ const char* dap_json_get_arch_name(dap_cpu_arch_t a_arch);
  */
 typedef struct dap_json dap_json_t;
 
+/**
+ * @brief JSON operation mode
+ * @details Determines memory model and mutability semantics
+ */
+typedef enum {
+    DAP_JSON_MODE_ARENA_IMMUTABLE,   /**< Arena-based, parsed JSON (read-only, fast borrowed refs) */
+    DAP_JSON_MODE_MALLOC_MUTABLE     /**< Malloc-based, manual JSON (mutable, no borrowed refs) */
+} dap_json_mode_t;
+
 typedef int (*dap_json_sort_fn_t)(const dap_json_t *a, const dap_json_t *b);
 
 // Object creation and destruction
@@ -89,6 +98,11 @@ void dap_json_cleanup_thread_arena(void);        // Clean up thread-local arena 
 // Use dap_json_object_free() for arrays too - it handles both types
 #define dap_json_array_free(a_array) dap_json_object_free(a_array)
 dap_json_t* dap_json_object_ref(dap_json_t* a_json);
+
+// Mode queries
+bool dap_json_is_mutable(const dap_json_t* a_json);
+bool dap_json_is_immutable(const dap_json_t* a_json);
+dap_json_mode_t dap_json_get_mode(const dap_json_t* a_json);
 // Value object creation (for simple types)
 dap_json_t* dap_json_object_new_int(int a_value);
 dap_json_t* dap_json_object_new_string(const char* a_value);
