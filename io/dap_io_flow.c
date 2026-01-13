@@ -318,12 +318,9 @@ static bool s_queue_input_delete_callback(void *a_arg)
              l_arg->queue_input, l_arg->worker_id);
     
     // Delete queue_input in its native worker context
-    // CRITICAL: Pass true for a_preserve_inheritor to prevent deletion of server!
-    // queue_input->_inheritor points to dap_io_flow_server_t, which we're deleting
-    // separately in dap_io_flow_server_delete. If we don't preserve it here,
-    // the server will be freed while we're still in this callback → use-after-free!
+    // remove_and_delete_unsafe calls dap_context_remove to unregister from epoll AND hash
     if (l_arg->queue_input) {
-        dap_events_socket_delete_unsafe(l_arg->queue_input, true);  // PRESERVE INHERITOR!
+        dap_events_socket_remove_and_delete_unsafe(l_arg->queue_input, true);  // Preserve inheritor
     }
     
     // Decrement pending counter and signal if all done
@@ -402,13 +399,21 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     
     // Step 2: Delete inter_worker_queues (outputs) - close write ends of pipes
+    // These are on workers, must use MT-safe deletion
     if (a_server->inter_worker_queues) {
         log_it(L_DEBUG, "Deleting inter-worker queue OUTPUTS (write ends)");
         for (uint32_t i = 0; i < l_worker_count; i++) {
             if (a_server->inter_worker_queues[i]) {
                 for (uint32_t j = 0; j < l_worker_count; j++) {
                     if (i != j && a_server->inter_worker_queues[i][j]) {
-                        dap_events_socket_delete_unsafe(a_server->inter_worker_queues[i][j], false);
+                        dap_worker_t *l_worker = dap_events_worker_get(i);
+                        dap_events_socket_uuid_t l_uuid = a_server->inter_worker_queues[i][j]->uuid;
+                        
+                        // Use MT-safe deletion (queue output is on worker i)
+                        if (l_worker) {
+                            dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
+                        }
+                        
                         a_server->inter_worker_queues[i][j] = NULL;
                     }
                 }
@@ -435,6 +440,21 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
             // Set pending counter
             atomic_store(&a_server->pending_cleanups, l_pending_count);
             
+            // Save UUIDs of queue_inputs for lifecycle tracking
+            dap_events_socket_uuid_t *l_queue_uuids = DAP_NEW_Z_COUNT(dap_events_socket_uuid_t, l_pending_count);
+            if (!l_queue_uuids) {
+                log_it(L_CRITICAL, "Failed to allocate UUID tracking array - proceeding without UUID tracking");
+            }
+            
+            uint32_t l_uuid_index = 0;
+            if (l_queue_uuids) {
+                for (uint32_t i = 0; i < l_worker_count; i++) {
+                    if (a_server->queue_inputs[i]) {
+                        l_queue_uuids[l_uuid_index++] = a_server->queue_inputs[i]->uuid;
+                    }
+                }
+            }
+            
             // Schedule deletions on each worker via proc_thread callbacks
             for (uint32_t i = 0; i < l_worker_count; i++) {
                 if (a_server->queue_inputs[i]) {
@@ -456,8 +476,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                     l_arg->server = a_server;
                     l_arg->worker_id = i;
                     
-                    // CRITICAL RACE FIX: Increment active_callbacks BEFORE scheduling callback
-                    // This ensures main thread won't destroy sync primitives before callback starts
+                    // Increment active_callbacks BEFORE scheduling callback
                     atomic_fetch_add(&a_server->active_callbacks, 1);
                     
                     // Schedule callback on worker's proc_thread queue
@@ -500,22 +519,11 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
             log_it(L_DEBUG, "All queue_inputs deleted (pending_cleanups==0)");
             
             // STEP 2: Wait for ALL callbacks to FULLY COMPLETE execution (active_callbacks==0)
-            // CRITICAL RACE CONDITION FIX:
-            // Even after pending_cleanups==0, callbacks might still be executing
-            // their cleanup code (pthread_mutex_lock/unlock/signal)
-            // We MUST wait for active_callbacks==0 before destroying sync primitives!
-            
-            // Keep mutex LOCKED during wait to prevent callbacks from accessing sync primitives
-            // Callbacks will increment active_callbacks BEFORE using sync primitives,
-            // and decrement AFTER they're done
-            
             struct timespec l_active_timeout;
             clock_gettime(CLOCK_REALTIME, &l_active_timeout);
             l_active_timeout.tv_sec += 5; // 5 second timeout for callbacks to exit
             
             while (atomic_load(&a_server->active_callbacks) > 0) {
-                // Use pthread_cond_timedwait to wait efficiently
-                // This will spurious wakeup periodically to check active_callbacks
                 struct timespec l_short_wait;
                 clock_gettime(CLOCK_REALTIME, &l_short_wait);
                 l_short_wait.tv_nsec += 10000000; // 10ms
@@ -528,7 +536,6 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                                       &a_server->cleanup_mutex, 
                                       &l_short_wait);
                 
-                // Check timeout
                 struct timespec l_now;
                 clock_gettime(CLOCK_REALTIME, &l_now);
                 if (l_now.tv_sec >= l_active_timeout.tv_sec) {
@@ -539,10 +546,82 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
             }
             
             pthread_mutex_unlock(&a_server->cleanup_mutex);
-            log_it(L_DEBUG, "All callbacks fully exited (active_callbacks==0), safe to destroy sync");
+            log_it(L_DEBUG, "All callbacks fully exited (active_callbacks==0)");
             
-            // Memory barrier to ensure all callback writes are visible
+            // Memory barrier
             __atomic_thread_fence(__ATOMIC_SEQ_CST);
+            
+            // STEP 3: Poll until all queue_input UUIDs are removed from worker contexts
+            // This ensures workers finished processing events from deleted esockets
+            if (l_queue_uuids) {
+                time_t l_uuid_wait_start = time(NULL);
+                time_t l_uuid_max_wait_sec = 5;  // 5 second max
+                
+                log_it(L_DEBUG, "Polling for %u queue_input UUIDs to be removed from worker hash tables", l_uuid_index);
+                
+                bool l_all_removed = false;
+                uint32_t l_poll_count = 0;
+                
+                while (time(NULL) - l_uuid_wait_start < l_uuid_max_wait_sec) {
+                    l_all_removed = true;
+                    l_poll_count++;
+                    
+                    // Check if any UUID still exists in worker hash tables
+                    for (uint32_t i = 0; i < l_uuid_index; i++) {
+                        bool l_found = false;
+                        
+                        // Search all worker contexts for this UUID
+                        for (uint32_t w = 0; w < l_worker_count; w++) {
+                            dap_worker_t *l_worker = dap_events_worker_get(w);
+                            if (l_worker && l_worker->context) {
+                                dap_events_socket_t *l_check = dap_context_find(l_worker->context, l_queue_uuids[i]);
+                                if (l_check) {
+                                    l_found = true;
+                                    l_all_removed = false;
+                                    
+                                    if (l_poll_count % 100 == 0) {  // Log every 100 polls (~1 sec)
+                                        log_it(L_DEBUG, "UUID 0x%016lx still in worker %u hash table (poll #%u)",
+                                               l_queue_uuids[i], w, l_poll_count);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (l_found) {
+                            break;  // Still has UUIDs, keep waiting
+                        }
+                    }
+                    
+                    if (l_all_removed) {
+                        log_it(L_DEBUG, "All queue_input UUIDs removed from workers after %u polls, safe to free",
+                               l_poll_count);
+                        break;
+                    }
+                    
+                    // Poll interval
+                    struct timespec l_sleep = {0, 10000000};  // 10ms
+                    nanosleep(&l_sleep, NULL);
+                }
+                
+                if (!l_all_removed) {
+                    log_it(L_WARNING, "Timeout waiting for UUID removal after %ld sec (%u polls)",
+                           l_uuid_max_wait_sec, l_poll_count);
+                    // Log which UUIDs are still present
+                    for (uint32_t i = 0; i < l_uuid_index; i++) {
+                        for (uint32_t w = 0; w < l_worker_count; w++) {
+                            dap_worker_t *l_worker = dap_events_worker_get(w);
+                            if (l_worker && l_worker->context) {
+                                if (dap_context_find(l_worker->context, l_queue_uuids[i])) {
+                                    log_it(L_WARNING, "UUID 0x%016lx still in worker %u", l_queue_uuids[i], w);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            DAP_DELETE(l_queue_uuids);
         }
         
         log_it(L_DEBUG, "Freeing queue_inputs array");

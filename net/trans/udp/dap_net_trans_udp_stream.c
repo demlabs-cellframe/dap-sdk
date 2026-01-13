@@ -1534,6 +1534,8 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     const char *l_json_str = json_object_to_json_string(l_json);
     size_t l_json_len = strlen(l_json_str);
     
+    log_it(L_DEBUG, "CLIENT: SESSION_CREATE JSON: '%s' (%zu bytes)", l_json_str, l_json_len);
+    
     // Encrypt JSON with handshake key
     size_t l_encrypted_max = l_json_len + 256;  // Extra space for encryption overhead
     uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
@@ -1556,8 +1558,8 @@ static int s_udp_session_create(dap_stream_t *a_stream,
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Encrypted SESSION_CREATE: %zu bytes (from %zu plaintext)", 
-             l_encrypted_size, l_json_len);
+    log_it(L_DEBUG, "CLIENT: Encrypted SESSION_CREATE: %zu bytes → %zu bytes", 
+           l_json_len, l_encrypted_size);
     
     // Send encrypted SESSION_CREATE packet
     ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,

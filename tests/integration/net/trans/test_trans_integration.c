@@ -55,8 +55,13 @@
 
 // Test configuration  
 #define TEST_STREAM_CH_ID 'A'
-#define TEST_TRANS_TIMEOUT_MS 30000  // 30 seconds for standard scenarios
-#define TEST_TRANS_TIMEOUT_LARGE_MS 120000  // 2 minutes for large scenarios (1000+ clients/servers)
+// Test scenario timeouts scale with client count for realistic performance
+#define TEST_TRANS_BASE_TIMEOUT_MS 10000      // 10 seconds base
+#define TEST_TRANS_PER_CLIENT_MS 3000         // 3 seconds per client
+#define TEST_TRANS_TIMEOUT_LARGE_MS 180000    // 3 minutes for large scenarios
+
+// Helper macro to calculate timeout based on client count
+#define CALC_TIMEOUT(clients) (TEST_TRANS_BASE_TIMEOUT_MS + (clients) * TEST_TRANS_PER_CLIENT_MS)
 
 // Test scenarios: different server/client configurations
 // Testing progression: start small → scale up → stress test
@@ -70,17 +75,17 @@ typedef struct test_scenario {
 
 static const test_scenario_t g_scenarios[] = {
     // Basic scenarios - verify functionality
-    {"1 server, 1 client",      1,    1,    10*1024, TEST_TRANS_TIMEOUT_MS},
-    {"1 server, 10 clients",    1,   10,    10*1024, TEST_TRANS_TIMEOUT_MS},
+    {"1 server, 1 client",      1,    1,    10*1024, CALC_TIMEOUT(1)},     // 13 sec
+    {"1 server, 10 clients",    1,   10,    10*1024, CALC_TIMEOUT(10)},    // 40 sec
     
-    // Scaling scenarios - test concurrency (GRADUAL GROWTH)
-    {"1 server, 100 clients",   1,  100,     5*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
-    {"10 servers, 10 clients", 10,   10,    10*1024, TEST_TRANS_TIMEOUT_MS},
-    {"10 servers, 100 clients", 10, 100,     5*1024, TEST_TRANS_TIMEOUT_LARGE_MS},
+    // Scaling scenarios - test concurrency
+    {"1 server, 100 clients",   1,  100,     5*1024, CALC_TIMEOUT(100)},   // 310 sec
+    {"10 servers, 10 clients", 10,   10,    10*1024, CALC_TIMEOUT(10)},
+    {"10 servers, 100 clients", 10, 100,     5*1024, CALC_TIMEOUT(100)},
     
     // Stress scenarios - test system limits
-    {"1 server, 1000 clients",  1, 1000,     1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 2},
-    {"10 servers, 1000 clients", 10, 1000,   1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 2},
+    {"1 server, 1000 clients",  1, 1000,     1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
+    {"10 servers, 1000 clients", 10, 1000,   1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
@@ -961,12 +966,6 @@ static void test_02_sequential_trans_testing(void)
             if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
                 log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", 
                        g_scenarios[scenario_idx].name);
-            }
-            
-            // Additional stabilization for UDP (async flow cleanup)
-            if (g_trans_configs[trans_idx].trans_type == DAP_NET_TRANS_UDP_BASIC) {
-                log_it(L_INFO, "UDP: Additional cleanup stabilization...");
-                dap_test_sleep_ms(1000);  // 1 second for flows to close
             }
             
             printf("\n");

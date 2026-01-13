@@ -1466,6 +1466,9 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         return -3;
     }
     
+    log_it(L_DEBUG, "SERVER: Decrypting SESSION_CREATE inner (payload_size=%zu) with key=%p",
+           a_payload_size, a_session->encryption_key);
+    
     size_t l_decrypted_size = dap_enc_decode(a_session->encryption_key,
                                              a_payload, a_payload_size,
                                              l_decrypted, l_decrypted_max,
@@ -1477,8 +1480,8 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         return -4;
     }
     
-    debug_if(s_debug_more, L_DEBUG,
-             "Decrypted SESSION_CREATE inner envelope: %zu bytes", l_decrypted_size);
+    log_it(L_DEBUG, "SERVER: Decrypted %zu → %zu bytes, first 40 chars: '%.40s'",
+           a_payload_size, l_decrypted_size, (char*)l_decrypted);
     
     // Parse JSON from decrypted inner data
     json_object *l_json = json_tokener_parse((const char*)l_decrypted);
