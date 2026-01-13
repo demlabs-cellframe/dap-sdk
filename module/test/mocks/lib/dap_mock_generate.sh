@@ -505,38 +505,40 @@ prepare_map_impl_cond_data() {
 }
 
 # Prepare MAP_MACROS_DATA for template generation
+# Uses temporary file to avoid mawk sprintf buffer overflow (8KB limit)
 prepare_map_macros_data() {
     local param_counts_array=("$@")
-    local counts_input=""
+    
+    # Create temporary file for incremental generation
+    local tmp_macros_file=$(mktemp)
+    
+    # Generate macros one by one directly to file
+    # This avoids accumulating large strings in memory/sprintf buffers
+    local first_entry=1
     for count in "${param_counts_array[@]}"; do
         [ -z "$count" ] && continue
-        if [ -n "$counts_input" ]; then
-            counts_input="${counts_input}"$'\n'"${count}"
-        else
-            counts_input="${count}"
+        
+        # Add separator between entries (except before first)
+        if [ "$first_entry" -eq 0 ]; then
+            echo "" >> "$tmp_macros_file"
+            echo "" >> "$tmp_macros_file"
         fi
-    done
-    
-    # Generate macros using AWK script
-    local macros_content
-    macros_content=$(echo "$counts_input" | awk -f "${LIB_DIR}/awk/generate_map_macros.awk")
-    
-    # Format for template (pipe separated: count|macro)
-    # Since the macro content is multi-line, we need to be careful
-    # But mock_macros_header.h.tpl expects: count|macro
-    # And it iterates over MAP_MACROS_DATA|newline_double
-    # So we need to construct MAP_MACROS_DATA where each entry is separated by \n\n
-    
-    MAP_MACROS_DATA=""
-    for count in "${param_counts_array[@]}"; do
-        [ -z "$count" ] && continue
+        first_entry=0
+        
+        # Generate macro definition for this count
+        # AWK processes single small input - no buffer overflow
         local macro_def=$(echo "$count" | awk -f "${LIB_DIR}/awk/generate_map_macros.awk")
-        if [ -n "$MAP_MACROS_DATA" ]; then
-            MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n\n'"${count}|${macro_def}"
-        else
-            MAP_MACROS_DATA="${count}|${macro_def}"
-        fi
+        
+        # Write count|macro to file
+        echo -n "${count}|${macro_def}" >> "$tmp_macros_file"
     done
+    
+    # Read entire file content into MAP_MACROS_DATA
+    # File I/O handles large content better than shell string accumulation
+    MAP_MACROS_DATA=$(cat "$tmp_macros_file")
+    
+    # Cleanup
+    rm -f "$tmp_macros_file"
 }
 
 # Prepare NARGS data for template generation
