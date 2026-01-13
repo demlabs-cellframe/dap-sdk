@@ -39,13 +39,9 @@
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
-#ifndef DAP_SDK_TESTS
-    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
-    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
-#else  // to more fast tests
-    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 25UL
-    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  50UL  
-#endif
+// DAP_SDK_TESTS removed: Use production values always
+#define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
 
 // Main record flags (DB saved)
 #define DAP_GLOBAL_DB_RECORD_DEL        BIT(0)                                  /* Information of record deletion (key, timestamp and sign) propagated over sync */

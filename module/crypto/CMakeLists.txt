@@ -113,7 +113,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
-      src/ringct20/*.c
+      # src/ringct20/*.c # REMOVED: ringct20 module deleted
       src/falcon/codec.c
       src/falcon/common.c
       src/falcon/falcon.c
@@ -172,7 +172,7 @@ file( GLOB CRYPTO_HEADERS
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
-      src/ringct20/*.h
+      # src/ringct20/*.h # REMOVED: ringct20 module deleted
       src/falcon/*.h
       src/chipmunk/*.h
       src/hash/sha2-256/*.h

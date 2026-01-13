@@ -3,7 +3,7 @@
 #include "dap_enc_test.h"
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_multithread_test.h"
-#include "dap_enc_ringct20_test.h"
+// #include "dap_enc_ringct20_test.h" // REMOVED: ringct20 module deleted
 #include "dap_enc_chipmunk_test.h"
 #include "dap_sign_test.h"
 #include "rand/dap_rand.h"
@@ -40,7 +40,7 @@ int main(void) {
     dap_enc_tests_run();
     dap_enc_base64_tests_run(l_times);
     dap_enc_base58_tests_run(l_times);
-    dap_enc_ringct20_tests_run(l_times);
+    // dap_enc_ringct20_tests_run(l_times); // REMOVED: ringct20 module deleted
     dap_enc_benchmark_tests_run(l_times);
     dap_enc_multithread_tests_run(l_times);
     
