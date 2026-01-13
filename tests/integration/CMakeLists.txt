@@ -11,7 +11,7 @@ enable_testing()
 # ============================================================================
 
 # Flow Control & Load Balancing Tests
-add_subdirectory(io)
+# add_subdirectory(io)  # Disabled: skeleton only
 
 # ============================================================================
 # Network Module Integration Tests

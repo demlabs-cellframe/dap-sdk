@@ -1651,6 +1651,14 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
 {
     UNUSED(a_arg);
     
+    debug_if(s_debug_more, L_DEBUG,
+             "FC prepare_cb ENTRY: a_metadata=%p, seq=%lu, ack=%lu, ts=%u, keepalive=%d, retrans=%d",
+             a_metadata, a_metadata ? a_metadata->seq_num : 0,
+             a_metadata ? a_metadata->ack_seq : 0,
+             a_metadata ? a_metadata->timestamp_ms : 0,
+             a_metadata ? a_metadata->is_keepalive : 0,
+             a_metadata ? a_metadata->is_retransmit : 0);
+    
     if (!a_flow || !a_metadata || !a_packet_out || !a_packet_size_out) {
         return -1;
     }

@@ -453,6 +453,14 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         pthread_mutex_lock(&a_ctrl->send_mutex);
         l_seq_num = a_ctrl->send_seq_next++;
         pthread_mutex_unlock(&a_ctrl->send_mutex);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "FC send: assigned seq=%lu (flags=0x%02x, send_seq_next=%lu)",
+                 l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
+    } else {
+        debug_if(s_debug_more, L_DEBUG,
+                 "FC send: NO RETRANSMIT flag, seq=0 (flags=0x%02x)",
+                 a_ctrl->flags);
     }
     
     // Prepare metadata
@@ -463,6 +471,10 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         .is_keepalive = false,
         .is_retransmit = false,
     };
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "FC send: metadata prepared: seq=%lu, ack=%lu, ts=%u",
+             l_metadata.seq_num, l_metadata.ack_seq, l_metadata.timestamp_ms);
     
     // Prepare packet (add header)
     void *l_packet = NULL;
