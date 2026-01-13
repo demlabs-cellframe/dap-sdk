@@ -664,7 +664,20 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
     if( l_es ){
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
+        if (!l_client) {
+            // esocket exists but client already freed - stop timer
+            debug_if(s_debug_more, L_DEBUG, "Timeout timer: esocket exists but client freed, stopping timer");
+            DAP_DELETE(l_es_uuid_ptr);
+            return false;
+        }
+        
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+        if (!l_client_pvt) {
+            // client exists but client_pvt freed - stop timer
+            debug_if(s_debug_more, L_DEBUG, "Timeout timer: client exists but client_pvt freed, stopping timer");
+            DAP_DELETE(l_es_uuid_ptr);
+            return false;
+        }
         
         // Check if client is being removed - stop timer gracefully
         if (l_client_pvt->is_removing) {
