@@ -31,6 +31,7 @@
 
 #include "dap_common.h"
 #include "dap_math_ops.h"
+#include "dap_json.h"
 #include "internal/dap_json_float.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -41,9 +42,6 @@
 #include <limits.h>
 
 #define LOG_TAG "dap_json_float"
-
-// Debug flag from stage2
-extern bool dap_json_get_debug(void);
 
 /* ========================================================================== */
 /*                    PRECOMPUTED POWERS OF 5 (128-bit)                      */
