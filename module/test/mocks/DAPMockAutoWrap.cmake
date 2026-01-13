@@ -96,6 +96,12 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
+    # Set DAP_TPL_DIR environment variable for script if provided by parent CMake
+    if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
+        message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        set(ENV{DAP_TPL_DIR} "${DAP_TPL_DIR}")
+    endif()
+    
     execute_process(
         COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

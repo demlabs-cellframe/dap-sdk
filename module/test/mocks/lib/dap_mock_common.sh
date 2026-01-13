@@ -35,27 +35,35 @@ init_mock_common() {
     # Get script directory (where dap_mock_autowrap.sh is located)
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     
-    # dap_tpl is in test/dap_tpl (same level as mocks)
-    # Templates are in test/templates (same level as mocks and dap_tpl)
-    if [ ! -d "${script_dir}/../dap_tpl" ]; then
-        print_error "dap_tpl directory not found at ${script_dir}/../dap_tpl"
-        print_error "Current script_dir: ${script_dir}"
-        print_error "BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
-        print_error "Please ensure dap_tpl submodule is initialized: git submodule update --init --recursive"
-        return 1
-    fi
-    
-    DAP_TPL_DIR="$(cd "${script_dir}/../dap_tpl" && pwd)"
-    TEMPLATES_DIR="$(cd "${script_dir}/../templates" && pwd)"
-    SCRIPTS_DIR="${DAP_TPL_DIR}"
-    
-    if [ -z "${DAP_TPL_DIR}" ] || [ ! -f "${DAP_TPL_DIR}/dap_tpl.sh" ]; then
-        print_error "dap_tpl.sh not found at ${DAP_TPL_DIR}/dap_tpl.sh"
-        print_error "Calculated paths:"
-        print_error "  script_dir: ${script_dir}"
-        print_error "  DAP_TPL_DIR: ${DAP_TPL_DIR}"
-        print_error "  TEMPLATES_DIR: ${TEMPLATES_DIR}"
-        return 1
+    # Check if DAP_TPL_DIR is provided by CMake (centralized location)
+    if [ -n "${DAP_TPL_DIR}" ] && [ -f "${DAP_TPL_DIR}/dap_tpl.sh" ]; then
+        print_info "Using CMake-provided DAP_TPL_DIR: ${DAP_TPL_DIR}"
+        TEMPLATES_DIR="$(cd "${script_dir}/../templates" && pwd)"
+        SCRIPTS_DIR="${DAP_TPL_DIR}"
+    else
+        # Fallback: dap_tpl is in test/dap_tpl (same level as mocks)
+        # Templates are in test/templates (same level as mocks and dap_tpl)
+        if [ ! -d "${script_dir}/../dap_tpl" ]; then
+            print_error "dap_tpl directory not found at ${script_dir}/../dap_tpl"
+            print_error "Current script_dir: ${script_dir}"
+            print_error "BASH_SOURCE[0]: ${BASH_SOURCE[0]}"
+            print_error "Please ensure dap_tpl submodule is initialized: git submodule update --init --recursive"
+            print_error "Or set DAP_TPL_DIR environment variable to centralized dap_tpl location"
+            return 1
+        fi
+        
+        DAP_TPL_DIR="$(cd "${script_dir}/../dap_tpl" && pwd)"
+        TEMPLATES_DIR="$(cd "${script_dir}/../templates" && pwd)"
+        SCRIPTS_DIR="${DAP_TPL_DIR}"
+        
+        if [ -z "${DAP_TPL_DIR}" ] || [ ! -f "${DAP_TPL_DIR}/dap_tpl.sh" ]; then
+            print_error "dap_tpl.sh not found at ${DAP_TPL_DIR}/dap_tpl.sh"
+            print_error "Calculated paths:"
+            print_error "  script_dir: ${script_dir}"
+            print_error "  DAP_TPL_DIR: ${DAP_TPL_DIR}"
+            print_error "  TEMPLATES_DIR: ${TEMPLATES_DIR}"
+            return 1
+        fi
     fi
     
     # Mocking extensions for dap_tpl are in mocks/lib/dap_tpl
