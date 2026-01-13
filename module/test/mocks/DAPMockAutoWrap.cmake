@@ -114,7 +114,7 @@ function(dap_mock_autowrap TARGET_NAME)
     )
     
     if(NOT MOCK_GEN_RESULT EQUAL 0)
-        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
+        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
     # For STAGE 2 (add_custom_command) - prepare separate command
