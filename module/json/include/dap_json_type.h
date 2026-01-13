@@ -62,10 +62,17 @@ typedef enum {
 } dap_json_type_t;
 
 /**
- * @brief JSON number representation
+ * @brief JSON number representation (Phase 2.1: Optimized layout)
  * @details Supports int64, uint64, uint128, uint256, and double
+ * 
+ * Layout optimization:
+ * - Hot field is_double first (frequently checked)
+ * - Proper alignment for uint256_t (32 bytes)
+ * Total size: 40 bytes (1 byte flag + 7 padding + 32 byte union)
  */
 typedef struct {
+    bool is_double;       /**< true if double, false otherwise (check type) - HOT FIELD */
+    uint8_t _pad[7];      /**< Padding for 8-byte alignment of union */
     union {
         int64_t i;        /**< Signed 64-bit integer */
         uint64_t u64;     /**< Unsigned 64-bit integer */
@@ -73,7 +80,6 @@ typedef struct {
         uint256_t u256;   /**< Unsigned 256-bit integer */
         double d;         /**< IEEE 754 double precision */
     };
-    bool is_double;       /**< true if double, false otherwise (check type) */
 } dap_json_number_t;
 
 /**
@@ -126,9 +132,17 @@ typedef struct {
 
 /**
  * @brief JSON value (unified type for all JSON values)
+ * @details Phase 2.1: Optimized struct layout for cache efficiency
+ * 
+ * Layout optimization:
+ * - type as uint8_t (1 byte instead of 4) - HOT FIELD first
+ * - Explicit padding for alignment
+ * - Union aligned to 8 bytes
+ * Total size: 48 bytes (1+7 pad + 40 union)
  */
 struct dap_json_value {
-    dap_json_type_t type;          /**< Value type */
+    uint8_t type;                  /**< Value type (dap_json_type_t) - HOT FIELD */
+    uint8_t _pad[7];               /**< Padding for 8-byte alignment */
     union {
         bool boolean;              /**< Boolean value (for TYPE_BOOLEAN) */
         dap_json_number_t number;  /**< Number value (for TYPE_INT/TYPE_DOUBLE) */
