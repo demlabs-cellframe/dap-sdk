@@ -96,14 +96,17 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
-    # Set DAP_TPL_DIR environment variable for script if provided by parent CMake
+    # Prepare command for mock generation
+    # For STAGE 1 (execute_process) - use list
+    set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
-        set(ENV{DAP_TPL_DIR} "${DAP_TPL_DIR}")
+        # Use cmake -E env to set environment variable (works with CMake 3.10+)
+        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env "DAP_TPL_DIR=${DAP_TPL_DIR}" ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
     execute_process(
-        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
+        COMMAND ${MOCK_GEN_CMD_STAGE1}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         RESULT_VARIABLE MOCK_GEN_RESULT
         OUTPUT_VARIABLE MOCK_GEN_OUTPUT
@@ -114,10 +117,17 @@ function(dap_mock_autowrap TARGET_NAME)
         message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
+    # For STAGE 2 (add_custom_command) - prepare separate command
+    if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
+        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env "DAP_TPL_DIR=${DAP_TPL_DIR}" ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
+    else()
+        set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
+    endif()
+    
     # STAGE 2: Setup re-generation on source file changes
     add_custom_command(
         OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT} ${MACROS_HEADER} ${CUSTOM_MOCKS_HEADER} ${LINKER_WRAPPER_HEADER}
-        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
+        COMMAND ${MOCK_GEN_CMD_STAGE2} ${ALL_SOURCES}
         DEPENDS ${ALL_SOURCES}
         COMMENT "Regenerating mock wrappers for ${TARGET_NAME}"
         VERBATIM
