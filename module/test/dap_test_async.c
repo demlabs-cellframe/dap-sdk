@@ -134,8 +134,10 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
 }
 
 // =============================================================================
-// GLOBAL TEST TIMEOUT (ALARM-BASED)
+// GLOBAL TEST TIMEOUT (ALARM-BASED) - POSIX only
 // =============================================================================
+
+#ifndef _WIN32
 
 static void s_global_timeout_handler(int a_sig)
 {
@@ -198,3 +200,4 @@ void dap_test_cancel_global_timeout(void)
     log_it(L_DEBUG, "Global test timeout cancelled");
 }
 
+#endif // !_WIN32
