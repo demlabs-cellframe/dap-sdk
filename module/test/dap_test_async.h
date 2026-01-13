@@ -17,9 +17,11 @@
 #include <stdint.h>
 #include <time.h>
 #include <pthread.h>
+#ifndef _WIN32
 #include <signal.h>
 #include <setjmp.h>
 #include <unistd.h>
+#endif
 #include "dap_common.h"
 #include "dap_test.h"
 
@@ -148,11 +150,12 @@ void dap_test_cond_signal(dap_test_cond_wait_ctx_t *a_ctx);
 bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms);
 
 // =============================================================================
-// WHOLE TEST TIMEOUT (ALARM-BASED)
+// WHOLE TEST TIMEOUT (ALARM-BASED) - POSIX only
 // =============================================================================
 
+#ifndef _WIN32
 /**
- * @brief Global timeout context for entire test suite
+ * @brief Global timeout context for entire test suite (POSIX only)
  */
 typedef struct dap_test_global_timeout {
     sigjmp_buf jump_buf;
@@ -162,7 +165,7 @@ typedef struct dap_test_global_timeout {
 } dap_test_global_timeout_t;
 
 /**
- * @brief Set global timeout for entire test suite
+ * @brief Set global timeout for entire test suite (POSIX only)
  * @details Uses alarm() to limit test execution time.
  *          On timeout, siglongjmp is called to exit the test.
  * 
@@ -198,9 +201,11 @@ int dap_test_set_global_timeout(
 );
 
 /**
- * @brief Cancel global timeout
+ * @brief Cancel global timeout (POSIX only)
  */
 void dap_test_cancel_global_timeout(void);
+
+#endif // !_WIN32
 
 // =============================================================================
 // SIMPLE DELAY HELPERS

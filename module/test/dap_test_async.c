@@ -12,8 +12,10 @@
 
 #define LOG_TAG "dap_test_async"
 
-// Global timeout handler state
+#ifndef _WIN32
+// Global timeout handler state (POSIX only)
 static dap_test_global_timeout_t *s_global_timeout = NULL;
+#endif
 
 // =============================================================================
 // CONDITION POLLING
