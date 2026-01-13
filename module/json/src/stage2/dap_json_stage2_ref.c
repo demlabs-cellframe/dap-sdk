@@ -1058,6 +1058,18 @@ static bool s_parse_string(
     } else {
         // TRUE ZERO-COPY: No escapes - just store pointer and length (NO allocation, NO copy!)
         // String points directly into original JSON buffer - NOT null-terminated
+        
+        // RFC 8259: Validate no unescaped control characters (U+0000..U+001F)
+        // IMPORTANT: Must use unsigned comparison to handle UTF-8 multibyte (0x80-0xFF)
+        for (size_t i = 0; i < l_scanned_string.length; i++) {
+            unsigned char c = l_scanned_string.data[i];
+            if (c < 0x20) {  // Control characters: 0x00-0x1F
+                log_it(L_ERROR, "Unescaped control character 0x%02X in zero-copy string at offset %u",
+                       c, a_start);
+                return false;
+            }
+        }
+        
         l_value->string.data = (const char*)l_scanned_string.data;
         l_value->string.length = l_scanned_string.length;
         l_value->string.data_materialized = NULL;  // Lazy materialization on first C string access
