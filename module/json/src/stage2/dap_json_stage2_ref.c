@@ -128,6 +128,82 @@ static bool s_array_add_arena(
 }
 
 /**
+ * @brief Add key-value pair to object using Arena + String Pool (non-null-terminated key version)
+ * @details Internal function for Stage 2 parsing only - for zero-copy keys
+ */
+static bool s_object_add_arena_n(
+    dap_arena_t *a_arena,
+    dap_string_pool_t *a_string_pool,
+    dap_json_value_t *a_object,
+    const char *a_key,
+    size_t a_key_len,
+    dap_json_value_t *a_value
+)
+{
+    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "Invalid object");
+        return false;
+    }
+    
+    if(!a_key || !a_value) {
+        log_it(L_ERROR, "NULL key or value");
+        return false;
+    }
+    
+    // Intern key in String Pool for deduplication (using _n version for non-null-terminated)
+    const char *l_interned_key = dap_string_pool_intern_n(a_string_pool, a_key, a_key_len);
+    if (!l_interned_key) {
+        log_it(L_ERROR, "Failed to intern object key");
+        return false;
+    }
+    
+    // Check for duplicate key (O(1) pointer comparison after interning)
+    for(size_t i = 0; i < a_object->object.count; i++) {
+        if(a_object->object.pairs[i].key == l_interned_key) {
+            log_it(L_WARNING, "Duplicate object key: %.*s", (int)a_key_len, a_key);
+            // Overwrite existing value
+            a_object->object.pairs[i].value = a_value;
+            return true;
+        }
+    }
+    
+    // Grow if needed
+    if(a_object->object.count >= a_object->object.capacity) {
+        size_t l_new_capacity = (a_object->object.capacity == 0) ?
+            INITIAL_OBJECT_CAPACITY :
+            (a_object->object.capacity * OBJECT_GROWTH_FACTOR);
+        
+        // Allocate new pairs array in Arena
+        dap_json_object_pair_t *l_new_pairs = (dap_json_object_pair_t *)dap_arena_alloc(
+            a_arena,
+            l_new_capacity * sizeof(dap_json_object_pair_t)
+        );
+        
+        if(!l_new_pairs) {
+            log_it(L_ERROR, "Arena allocation failed for object growth to %zu pairs", l_new_capacity);
+            return false;
+        }
+        
+        // Copy old pairs
+        if(a_object->object.pairs && a_object->object.count > 0) {
+            memcpy(l_new_pairs, a_object->object.pairs,
+                   a_object->object.count * sizeof(dap_json_object_pair_t));
+        }
+        
+        // Old array becomes garbage in Arena (no free needed)
+        a_object->object.pairs = l_new_pairs;
+        a_object->object.capacity = l_new_capacity;
+    }
+    
+    // Add new pair (key already interned, no strdup needed)
+    a_object->object.pairs[a_object->object.count].key = (char *)l_interned_key;
+    a_object->object.pairs[a_object->object.count].value = a_value;
+    a_object->object.count++;
+    
+    return true;
+}
+
+/**
  * @brief Add key-value pair to object using Arena + String Pool
  * @details Internal function for Stage 2 parsing only
  */
@@ -940,11 +1016,20 @@ static bool s_parse_string(
     
     l_value->type = DAP_JSON_TYPE_STRING;
     
-    // ZERO-COPY: Store pointer directly (no memcpy!)
-    // String data points into original JSON buffer
-    l_value->string.data = (char*)l_scanned_string.data;  // Cast away const - safe, we won't modify
+    // COPY string into Arena (with null terminator for compatibility)
+    // NOTE: We trade zero-copy for API simplicity - most JSON strings are small anyway
+    char *l_string_copy = (char*)dap_arena_alloc(a_stage2->arena, l_scanned_string.length + 1);
+    if (!l_string_copy) {
+        log_it(L_ERROR, "Arena allocation failed for string (%zu bytes)", l_scanned_string.length + 1);
+        return false;
+    }
+    
+    memcpy(l_string_copy, l_scanned_string.data, l_scanned_string.length);
+    l_string_copy[l_scanned_string.length] = '\0';  // Null-terminate for C string compatibility
+    
+    l_value->string.data = l_string_copy;
     l_value->string.length = l_scanned_string.length;
-    l_value->string.needs_free = false; // Zero-copy into JSON buffer
+    l_value->string.needs_free = false; // Arena owns the memory
     
     // TODO: Add lazy unescaping support
     // For now, strings with escapes will fail
@@ -1349,6 +1434,7 @@ static dap_json_value_t *s_parse_object(
         }
         
         const char *l_key = l_key_value->string.data;
+        size_t l_key_len = l_key_value->string.length;
         (*a_idx)++; // Skip key string index
         
         // Expect ':'
@@ -1374,8 +1460,8 @@ static dap_json_value_t *s_parse_object(
             return NULL;
         }
         
-        // Add to object using Arena + String Pool
-        if(!s_object_add_arena(a_stage2->arena, a_stage2->string_pool, l_object, l_key, l_value)) {
+        // Add to object using Arena + String Pool (_n version for non-null-terminated)
+        if(!s_object_add_arena_n(a_stage2->arena, a_stage2->string_pool, l_object, l_key, l_key_len, l_value)) {
             // NOTE: Arena owns all memory - no need to free
             // dap_json_value_v2_free(l_value);
             // dap_json_value_v2_free(l_key_value);

@@ -1228,20 +1228,27 @@ int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value
  */
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
 {
+    log_it(L_INFO, "get_string ENTER: a_json=%p a_key=%s", a_json, a_key ? a_key : "NULL");
     if (!a_json || !a_key) {
+        log_it(L_ERROR, "get_string: NULL params");
         return NULL;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
+    log_it(L_INFO, "get_string: l_obj=%p type=%d (expected %d)", l_obj, l_obj ? (int)l_obj->type : -1, (int)DAP_JSON_TYPE_OBJECT);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+        log_it(L_ERROR, "get_string: Not an object");
         return NULL;
     }
     
     dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
+    log_it(L_INFO, "get_string: l_value=%p type=%d (expected %d) key='%s'", l_value, l_value ? (int)l_value->type : -1, (int)DAP_JSON_TYPE_STRING, a_key);
     if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+        log_it(L_ERROR, "get_string: Value not found or not a string");
         return NULL;
     }
     
+    log_it(L_INFO, "get_string: SUCCESS data=%p length=%zu", l_value->string.data, l_value->string.length);
     return l_value->string.data;
 }
 
