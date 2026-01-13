@@ -884,6 +884,19 @@ static inline void DIV_256(uint256_t a_256_bit, uint256_t b_256_bit, uint256_t* 
 }
 
 /**
+ * @brief Calculate modulo (remainder) of 256-bit division
+ * @param a_256_bit Dividend
+ * @param b_256_bit Divisor
+ * @param c_256_bit Result (remainder)
+ */
+static inline void MOD_256(uint256_t a_256_bit, uint256_t b_256_bit, uint256_t* c_256_bit){
+    uint256_t l_quotient = uint256_0;
+    uint256_t l_remainder = uint256_0;
+    divmod_impl_256(a_256_bit, b_256_bit, &l_quotient, &l_remainder);
+    *c_256_bit = l_remainder;
+}
+
+/**
  * Multiplicates to fixed-point values, represented as 256-bit values
  * @param a_val
  * @param b_val

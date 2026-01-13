@@ -108,7 +108,8 @@ static void test_uint256_addition_simple(void) {
     dap_test_msg("Simple addition: 1 + 1 = 2");
     uint256_t a = GET_256_FROM_64(1);
     uint256_t b = GET_256_FROM_64(1);
-    uint256_t result = SUM_256_256(a, b);
+    uint256_t result;
+    SUM_256_256(a, b, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "2", "1 + 1 = 2");
@@ -119,7 +120,8 @@ static void test_uint256_addition_large(void) {
     dap_test_msg("Large number addition");
     uint256_t a = GET_256_FROM_64(UINT64_MAX);
     uint256_t b = GET_256_FROM_64(1);
-    uint256_t result = SUM_256_256(a, b);
+    uint256_t result;
+    SUM_256_256(a, b, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert(str != NULL, "Результат не NULL");
@@ -131,7 +133,8 @@ static void test_uint256_subtraction_simple(void) {
     dap_test_msg("Simple subtraction: 10 - 5 = 5");
     uint256_t a = GET_256_FROM_64(10);
     uint256_t b = GET_256_FROM_64(5);
-    uint256_t result = SUBTRACT_256_256(a, b);
+    uint256_t result;
+    SUBTRACT_256_256(a, b, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "5", "10 - 5 = 5");
@@ -142,7 +145,8 @@ static void test_uint256_subtraction_underflow(void) {
     dap_test_msg("Subtraction underflow: 5 - 10 (should underflow)");
     uint256_t a = GET_256_FROM_64(5);
     uint256_t b = GET_256_FROM_64(10);
-    uint256_t result = SUBTRACT_256_256(a, b);
+    uint256_t result;
+    SUBTRACT_256_256(a, b, &result);
     
     // В зависимости от реализации, это может быть wrap-around
     // или специальная обработка. Проверим что не крашится
@@ -155,7 +159,8 @@ static void test_uint256_multiplication_simple(void) {
     dap_test_msg("Simple multiplication: 123 * 456");
     uint256_t a = GET_256_FROM_64(123);
     uint256_t b = GET_256_FROM_64(456);
-    uint256_t result = MULT_256_256(a, b);
+    uint256_t result;
+    MULT_256_256(a, b, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "56088", "123 * 456 = 56088");
@@ -166,7 +171,8 @@ static void test_uint256_division_simple(void) {
     dap_test_msg("Simple division: 100 / 10 = 10");
     uint256_t a = GET_256_FROM_64(100);
     uint256_t b = GET_256_FROM_64(10);
-    uint256_t result = DIV_256(a, b);
+    uint256_t result;
+    DIV_256(a, b, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "10", "100 / 10 = 10");
@@ -174,10 +180,15 @@ static void test_uint256_division_simple(void) {
 }
 
 static void test_uint256_modulo_simple(void) {
-    dap_test_msg("Simple modulo: 17 % 5 = 2");
+    dap_test_msg("Simple modulo: 17 %% 5 = 2");  // %% для экранирования % в printf
     uint256_t a = GET_256_FROM_64(17);
     uint256_t b = GET_256_FROM_64(5);
-    uint256_t result = MOD_256(a, b);
+    
+    // Вычисляем модуло через DIV: result = a - (a/b)*b
+    uint256_t quotient, product, result;
+    DIV_256(a, b, &quotient);
+    MULT_256_256(quotient, b, &product);
+    SUBTRACT_256_256(a, product, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "2", "17 % 5 = 2");
@@ -193,7 +204,7 @@ static void test_uint256_equal(void) {
     uint256_t a = GET_256_FROM_64(12345);
     uint256_t b = GET_256_FROM_64(12345);
     
-    dap_assert(EQUAL_256_256(a, b), "12345 == 12345");
+    dap_assert(EQUAL_256(a, b), "12345 == 12345");
 }
 
 static void test_uint256_not_equal(void) {
@@ -201,7 +212,7 @@ static void test_uint256_not_equal(void) {
     uint256_t a = GET_256_FROM_64(12345);
     uint256_t b = GET_256_FROM_64(54321);
     
-    dap_assert(!EQUAL_256_256(a, b), "12345 != 54321");
+    dap_assert(!EQUAL_256(a, b), "12345 != 54321");
 }
 
 static void test_uint256_greater_than(void) {
@@ -249,7 +260,8 @@ static void test_uint256_bit_or(void) {
 static void test_uint256_bit_shift_left(void) {
     dap_test_msg("Left shift operation");
     uint256_t a = GET_256_FROM_64(1);
-    uint256_t result = LSHIFT_256(a, 10);
+    uint256_t result;
+    LEFT_SHIFT_256(a, &result, 10);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "1024", "1 << 10 = 1024");
@@ -259,7 +271,8 @@ static void test_uint256_bit_shift_left(void) {
 static void test_uint256_bit_shift_right(void) {
     dap_test_msg("Right shift operation");
     uint256_t a = GET_256_FROM_64(1024);
-    uint256_t result = RSHIFT_256(a, 10);
+    uint256_t result;
+    RIGHT_SHIFT_256(a, &result, 10);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "1", "1024 >> 10 = 1");
@@ -274,7 +287,8 @@ static void test_uint256_coins_conversion(void) {
     dap_test_msg("DAP coins conversion (datoshi to DAP)");
     uint256_t datoshi = GET_256_FROM_64(1000000000); // 1 DAP = 10^9 datoshi
     uint256_t divisor = GET_256_FROM_64(1000000000);
-    uint256_t result = DIV_256(datoshi, divisor);
+    uint256_t result;
+    DIV_256(datoshi, divisor, &result);
     
     char *str = dap_uint256_uninteger_to_char(result);
     dap_assert_str_equal(str, "1", "1000000000 datoshi = 1 DAP");
@@ -292,7 +306,8 @@ static void test_uint256_balance_operations(void) {
     dap_test_msg("Balance addition (typical blockchain operation)");
     uint256_t balance1 = dap_uint256_scan_uninteger("1000000000000000000"); // 1 ETH-like unit
     uint256_t balance2 = dap_uint256_scan_uninteger("2000000000000000000"); // 2 ETH-like units
-    uint256_t total = SUM_256_256(balance1, balance2);
+    uint256_t total;
+    SUM_256_256(balance1, balance2, &total);
     
     char *str = dap_uint256_uninteger_to_char(total);
     dap_assert_str_equal(str, "3000000000000000000", "Балансы должны суммироваться");

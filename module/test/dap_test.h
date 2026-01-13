@@ -60,6 +60,20 @@
     abort(); } }
 
 /**
+ * @brief String equality assertion with detailed error message
+ */
+#define dap_assert_str_equal(str1, str2, testname) { \
+    if(strcmp(str1, str2) == 0) { \
+        printf("\t%s%s PASS.%s\n", TEXT_COLOR_GRN, testname, TEXT_COLOR_RESET); \
+        fflush(stdout); \
+    } else { \
+        printf("\t%s%s FAILED!%s\n", TEXT_COLOR_RED, testname, TEXT_COLOR_RESET); \
+        printf("\t  Expected: \"%s\"\n", str2); \
+        printf("\t  Got:      \"%s\"\n", str1); \
+        fflush(stdout); \
+        abort(); } }
+
+/**
  * @brief Display the name test
 */
 #define dap_pass_msg(testname) { \
