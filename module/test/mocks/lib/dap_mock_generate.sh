@@ -51,6 +51,10 @@ EOF
 # Generate macros header file
 # Usage: generate_macros_file <macros_file> [custom_mocks_file]
 generate_macros_file() {
+    # CRITICAL: Save PARAM_COUNTS_ARRAY to local variable IMMEDIATELY to avoid corruption
+    # Global PARAM_COUNTS_ARRAY may be corrupted by template processing functions
+    local -a local_param_counts=("${PARAM_COUNTS_ARRAY[@]}")
+    
     local macros_file="$1"
     local custom_mocks_file="${2:-${TMP_CUSTOM_MOCKS}}"
     local return_type_macros_file="${macros_file}.return_types"
@@ -77,7 +81,8 @@ generate_macros_file() {
     prepare_map_count_params_helper_data "$MAX_ARGS_COUNT"
     prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}"
     prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}"
-    prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}"
+    # NOTE: prepare_map_macros_data() is NO LONGER USED - we generate macros directly now
+    # prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}"
     
     # Generate mock_map_macros content with template language constructs
     RETURN_TYPE_MACROS_FILE="$return_type_macros_file" \
@@ -86,7 +91,8 @@ generate_macros_file() {
     # dap_tpl for_evaluator expects pipe-separated or newline-separated arrays
     PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${PARAM_COUNTS_ARRAY[*]}")
     
-    PARAM_COUNTS_ARRAY="${PARAM_COUNTS_ARRAY[*]}" \
+    # NOTE: DO NOT set PARAM_COUNTS_ARRAY in environment here - it will corrupt the global array!
+    # The template only needs PARAM_COUNTS_ARRAY_PIPE (passed as argument below)
     MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
     MAP_COUNT_PARAMS_BY_COUNT_DATA="$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
     MAP_COUNT_PARAMS_HELPER_DATA="$MAP_COUNT_PARAMS_HELPER_DATA" \
@@ -162,7 +168,7 @@ EOF_HEADER
     
     # Generate MAP macros directly - NO dap_tpl, NO AWK
     # This is the key fix for mawk buffer overflow (no sprintf limits)
-    for count in "${PARAM_COUNTS_ARRAY[@]}"; do
+    for count in "${local_param_counts[@]}"; do
         [ -z "$count" ] && continue
         generate_single_map_macro "$count" >> "$macros_file"
         echo "" >> "$macros_file"
@@ -190,7 +196,7 @@ EOF_HEADER
     # Keep map_content file for now - it's needed for include processing
     # It will be cleaned up later if needed
     
-    print_success "Generated macros header with ${#PARAM_COUNTS_ARRAY[@]} parameter count(s)"
+    print_success "Generated macros header with ${#local_param_counts[@]} parameter count(s)"
     if [ -n "$RETURN_TYPES" ]; then
         local return_types_count=$(echo "$RETURN_TYPES" | wc -w)
         print_success "Generated specialized macros for $return_types_count return type(s): $RETURN_TYPES"
@@ -559,38 +565,14 @@ generate_single_map_macro() {
 
 # Prepare MAP_MACROS_DATA for template generation
 # Uses pure bash generation to avoid mawk sprintf buffer overflow (8KB limit)
+# NOTE: This function is DEPRECATED - macros are now generated directly in generate_macros_file()
+# Kept for backward compatibility but does NOT produce pipe-separated data
 prepare_map_macros_data() {
     local param_counts_array=("$@")
     
-    # Create temporary file for incremental generation
-    local tmp_macros_file=$(mktemp)
-    
-    # Generate macros one by one directly to file using bash (not AWK)
-    # This completely avoids mawk sprintf buffer limitations
-    local first_entry=1
-    for count in "${param_counts_array[@]}"; do
-        [ -z "$count" ] && continue
-        
-        # Add separator between entries (except before first)
-        if [ "$first_entry" -eq 0 ]; then
-            echo "" >> "$tmp_macros_file"
-            echo "" >> "$tmp_macros_file"
-        fi
-        first_entry=0
-        
-        # Generate macro definition using pure bash - no AWK involved
-        local macro_def=$(generate_single_map_macro "$count")
-        
-        # Write count|macro to file
-        echo -n "${count}|${macro_def}" >> "$tmp_macros_file"
-    done
-    
-    # Read entire file content into MAP_MACROS_DATA
-    # File I/O handles large content better than shell string accumulation
-    MAP_MACROS_DATA=$(cat "$tmp_macros_file")
-    
-    # Cleanup
-    rm -f "$tmp_macros_file"
+    # Do nothing - direct generation is used now
+    # This function is kept to avoid breaking old code that might call it
+    MAP_MACROS_DATA=""
 }
 
 # Prepare NARGS data for template generation
