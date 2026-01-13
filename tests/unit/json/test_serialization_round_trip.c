@@ -279,7 +279,7 @@ static bool s_test_large_data_round_trip(void) {
     size_t len1 = dap_json_array_length(l_json1);
     size_t len2 = dap_json_array_length(l_json2);
     DAP_TEST_FAIL_IF(len1 != len2, "Array lengths match");
-    DAP_TEST_FAIL_IF(len1 != ELEMENT_COUNT, "Array length correct");
+    DAP_TEST_FAIL_IF(len1 != (size_t)ELEMENT_COUNT, "Array length correct");
     
     // Spot check
     int val_first = dap_json_array_get_int(l_json2, 0);
@@ -287,8 +287,8 @@ static bool s_test_large_data_round_trip(void) {
     int val_last = dap_json_array_get_int(l_json2, ELEMENT_COUNT - 1);
     
     DAP_TEST_FAIL_IF(val_first != 0, "First element preserved");
-    DAP_TEST_FAIL_IF(val_mid != ELEMENT_COUNT / 2, "Middle element preserved");
-    DAP_TEST_FAIL_IF(val_last != ELEMENT_COUNT - 1, "Last element preserved");
+    DAP_TEST_FAIL_IF(val_mid != (int)(ELEMENT_COUNT / 2), "Middle element preserved");
+    DAP_TEST_FAIL_IF(val_last != (int)(ELEMENT_COUNT - 1), "Last element preserved");
     
     result = true;
     log_it(L_DEBUG, "Large data round-trip test passed");
@@ -404,7 +404,7 @@ static bool s_test_mixed_types_round_trip(void) {
     
     dap_json_t *arr = dap_json_object_get_array(l_json2, "array");
     DAP_TEST_FAIL_IF_NULL(arr, "Array preserved");
-    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3, "Array length preserved");
+    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Array length preserved");
     
     dap_json_t *obj = dap_json_object_get_object(l_json2, "object");
     DAP_TEST_FAIL_IF_NULL(obj, "Object preserved");

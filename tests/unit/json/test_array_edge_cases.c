@@ -140,16 +140,16 @@ static bool s_test_nested_empty_arrays(void) {
     // Check depth 1: []
     dap_json_t *depth1 = dap_json_array_get_array(l_json, 0);
     DAP_TEST_FAIL_IF_NULL(depth1, "Get depth 1");
-    DAP_TEST_FAIL_IF(dap_json_array_length(depth1) != 0, "Depth 1 is empty");
+    DAP_TEST_FAIL_IF(dap_json_array_length(depth1) != 0UL, "Depth 1 is empty");
     
     // Check depth 2: [[]]
     dap_json_t *depth2 = dap_json_array_get_array(l_json, 1);
     DAP_TEST_FAIL_IF_NULL(depth2, "Get depth 2");
-    DAP_TEST_FAIL_IF(dap_json_array_length(depth2) != 1, "Depth 2 has 1 element");
+    DAP_TEST_FAIL_IF(dap_json_array_length(depth2) != 1UL, "Depth 2 has 1 element");
     
     dap_json_t *depth2_inner = dap_json_array_get_array(depth2, 0);
     DAP_TEST_FAIL_IF_NULL(depth2_inner, "Get depth 2 inner");
-    DAP_TEST_FAIL_IF(dap_json_array_length(depth2_inner) != 0, "Depth 2 inner is empty");
+    DAP_TEST_FAIL_IF(dap_json_array_length(depth2_inner) != 0UL, "Depth 2 inner is empty");
     
     // Check depth 5: [[[[[]]]]]
     dap_json_t *depth5 = dap_json_array_get_array(l_json, 4);
@@ -168,7 +168,7 @@ static bool s_test_nested_empty_arrays(void) {
     dap_json_t *d5_4 = dap_json_array_get_array(d5_3, 0);
     DAP_TEST_FAIL_IF_NULL(d5_4, "Depth 5 level 4");
     
-    DAP_TEST_FAIL_IF(dap_json_array_length(d5_4) != 0, "Depth 5 innermost is empty");
+    DAP_TEST_FAIL_IF(dap_json_array_length(d5_4) != 0UL, "Depth 5 innermost is empty");
     
     result = true;
     log_it(L_DEBUG, "Nested empty arrays test passed");
@@ -214,7 +214,7 @@ static bool s_test_heterogeneous_arrays(void) {
     
     dap_json_t *arr = dap_json_array_get_array(l_json, 5);
     DAP_TEST_FAIL_IF_NULL(arr, "Element 5 is array");
-    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3, "Nested array has 3 elements");
+    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Nested array has 3 elements");
     
     double dbl_val = dap_json_array_get_double(l_json, 6);
     DAP_TEST_FAIL_IF(dbl_val < 3.13 || dbl_val > 3.15, "Element 6 is double 3.14");
@@ -260,17 +260,17 @@ static bool s_test_large_arrays(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse large array");
     
     size_t len = dap_json_array_length(l_json);
-    DAP_TEST_FAIL_IF(len != ELEMENT_COUNT, "Large array has correct length");
+    DAP_TEST_FAIL_IF(len != (size_t)ELEMENT_COUNT, "Large array has correct length");
     
     // Spot check elements
     int first = dap_json_array_get_int(l_json, 0);
     DAP_TEST_FAIL_IF(first != 0, "First element is 0");
     
     int middle = dap_json_array_get_int(l_json, ELEMENT_COUNT / 2);
-    DAP_TEST_FAIL_IF(middle != ELEMENT_COUNT / 2, "Middle element correct");
+    DAP_TEST_FAIL_IF(middle != (int)(ELEMENT_COUNT / 2), "Middle element correct");
     
     int last = dap_json_array_get_int(l_json, ELEMENT_COUNT - 1);
-    DAP_TEST_FAIL_IF(last != ELEMENT_COUNT - 1, "Last element correct");
+    DAP_TEST_FAIL_IF(last != (int)(ELEMENT_COUNT - 1), "Last element correct");
     
     result = true;
     log_it(L_DEBUG, "Large arrays test passed");

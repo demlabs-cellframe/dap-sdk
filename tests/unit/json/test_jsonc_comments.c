@@ -94,7 +94,7 @@ static bool s_test_multi_line_comments(void) {
         
         dap_json_t *arr = dap_json_object_get_array(l_json, "array");
         DAP_TEST_FAIL_IF_NULL(arr, "Array correct despite surrounding comments");
-        DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3, "Array length correct");
+        DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Array length correct");
     } else {
         log_it(L_INFO, "Parser does NOT support JSONC multi-line comments (strict JSON mode)");
     }
@@ -146,7 +146,7 @@ static bool s_test_comments_in_various_positions(void) {
         DAP_TEST_FAIL_IF(strcmp(val2, "value2") != 0, "key2 correct");
         
         dap_json_t *arr = dap_json_object_get_array(l_json, "array");
-        DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3, "Array with comments correct");
+        DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Array with comments correct");
     } else {
         log_it(L_INFO, "Parser does NOT support JSONC comments (strict JSON mode)");
     }
