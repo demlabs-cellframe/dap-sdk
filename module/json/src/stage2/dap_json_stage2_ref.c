@@ -64,6 +64,10 @@ static bool s_debug_more = false;
 // Reused across multiple parse calls in the same thread for efficiency
 static _Thread_local dap_arena_t *s_thread_json_arena = NULL;
 
+// ⭐ Thread-local string pool for object keys
+// Reused across multiple parse calls in the same thread for efficiency
+static _Thread_local dap_string_pool_t *s_thread_string_pool = NULL;
+
 // Initial capacity for arrays/objects
 #define INITIAL_ARRAY_CAPACITY 8
 #define INITIAL_OBJECT_CAPACITY 8
@@ -477,6 +481,11 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
         case DAP_JSON_TYPE_STRING:
             if(a_value->string.needs_free && a_value->string.data) {
                 DAP_DELETE(a_value->string.data);
+            }
+            // Free materialized copy if it was allocated separately
+            if(a_value->string.data_materialized && 
+               a_value->string.data_materialized != a_value->string.data) {
+                DAP_DELETE(a_value->string.data_materialized);
             }
             break;
         
@@ -1245,11 +1254,41 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     l_stage2->indices_count = a_stage1->indices_count;
     l_stage2->max_depth = MAX_NESTING_DEPTH;
     
-    // Create Arena for DOM nodes (estimate: ~100 bytes per token)
-    size_t l_estimated_size = a_stage1->indices_count * 100;
+    // Phase 2.1: Predictive pre-allocation based on Stage 1 token counts
+    // Get token counts from Stage 1 for accurate memory sizing
+    size_t l_string_count = 0, l_number_count = 0, l_literal_count = 0;
+    size_t l_array_count = 0, l_object_count = 0;
+    
+    dap_json_stage1_get_token_counts(a_stage1,
+                                      &l_string_count,
+                                      &l_number_count,
+                                      &l_literal_count,
+                                      &l_array_count,
+                                      &l_object_count);
+    
+    // Calculate Arena size based on actual token types:
+    // - Each value:  sizeof(dap_json_value_t) = ~80 bytes
+    // - Each array:  + initial capacity * 8 bytes (pointers)
+    // - Each object: + initial capacity * 24 bytes (pairs)
+    size_t l_total_values = l_string_count + l_number_count + l_literal_count + 
+                            l_array_count + l_object_count;
+    
+    size_t l_estimated_size = 
+        (l_total_values * 80) +                              // Value nodes
+        (l_array_count * INITIAL_ARRAY_CAPACITY * 8) +      // Array storage
+        (l_object_count * INITIAL_OBJECT_CAPACITY * 24);    // Object storage
+    
+    // Minimum 4KB, round up to 4KB boundary for efficiency
     if (l_estimated_size < 4096) {
         l_estimated_size = 4096;
+    } else {
+        l_estimated_size = ((l_estimated_size + 4095) / 4096) * 4096;
     }
+    
+    debug_if(dap_json_get_debug(), L_DEBUG,
+             "Phase 2.1: Pre-allocation - strings:%zu numbers:%zu literals:%zu arrays:%zu objects:%zu → arena:%zu bytes",
+             l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
+             l_estimated_size);
     
     // ⭐ Reuse thread-local refcounted arena (create if first time)
     if (!s_thread_json_arena) {
@@ -1270,22 +1309,29 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         debug_if(s_debug_more, L_DEBUG, "Reusing thread-local arena (reset)");
     }
     
-    l_stage2->arena = s_thread_json_arena;
-    
-    // Create String Pool for object keys (estimate: token_count / 4)
-    // String Pool will use the same Arena for all allocations
+    // ⭐ Reuse thread-local string pool (create if first time)
     size_t l_string_pool_capacity = a_stage1->indices_count / 4;
     if (l_string_pool_capacity < 32) {
         l_string_pool_capacity = 32;
     }
     
-    l_stage2->string_pool = dap_string_pool_new(l_stage2->arena, l_string_pool_capacity);
-    if (!l_stage2->string_pool) {
-        log_it(L_ERROR, "Failed to create String Pool");
-        dap_arena_free(l_stage2->arena);
-        DAP_DELETE(l_stage2);
-        return NULL;
+    if (!s_thread_string_pool) {
+        s_thread_string_pool = dap_string_pool_new(s_thread_json_arena, l_string_pool_capacity);
+        if (!s_thread_string_pool) {
+            log_it(L_ERROR, "Failed to create thread-local String Pool");
+            DAP_DELETE(l_stage2);
+            return NULL;
+        }
+        debug_if(s_debug_more, L_DEBUG, "Created thread-local string pool (capacity: %zu)", l_string_pool_capacity);
+    } else {
+        // Clear string pool for reuse (keeps capacity, clears entries)
+        dap_string_pool_clear(s_thread_string_pool);
+        debug_if(s_debug_more, L_DEBUG, "Reusing thread-local string pool (cleared)");
     }
+    
+    // ⭐ Stage2 теперь просто ссылается на thread-local ресурсы, не владеет ими
+    l_stage2->arena = s_thread_json_arena;
+    l_stage2->string_pool = s_thread_string_pool;
     
     debug_if(s_debug_more, L_DEBUG, "Stage 2 initialized with %zu indices, Arena: %zu bytes, String Pool: %zu capacity", 
            l_stage2->indices_count, l_estimated_size, l_string_pool_capacity);

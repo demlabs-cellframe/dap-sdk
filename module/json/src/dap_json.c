@@ -62,7 +62,19 @@
 static bool s_debug_more = false;
 
 /* Thread-local static arena for parsed JSON values */
-static _Thread_local dap_json_stage2_t *s_thread_arena = NULL;
+/**
+ * @brief Thread-local arena list for multiple parsed JSON objects
+ * @details Each parse creates a new arena. Old arenas are kept alive until:
+ *          1. User explicitly frees all JSON objects from that arena
+ *          2. User calls dap_json_cleanup_thread()
+ *          3. Thread exits
+ */
+typedef struct dap_json_arena_node {
+    dap_json_stage2_t *stage2;
+    struct dap_json_arena_node *next;
+} dap_json_arena_node_t;
+
+static _Thread_local dap_json_arena_node_t *s_arena_list = NULL;
 
 /**
  * @brief Enable/disable detailed debug logging for ALL JSON parser components
@@ -380,15 +392,19 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
-    // Free old thread-local arena if exists
-    if (s_thread_arena) {
-        dap_json_stage2_free(s_thread_arena);
+    // Add new arena to thread-local list
+    dap_json_arena_node_t *l_node = DAP_NEW_Z(dap_json_arena_node_t);
+    if (!l_node) {
+        log_it(L_ERROR, "Failed to allocate arena list node");
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
     }
+    l_node->stage2 = l_stage2;
+    l_node->next = s_arena_list;
+    s_arena_list = l_node;
     
-    // Store Stage 2 parser in thread-local arena (it owns the Arena and transcoded buffer)
-    s_thread_arena = l_stage2;
-    
-    // Wrap for public API (value lives in thread-local arena)
+    // Wrap for public API (value lives in arena)
     dap_json_t *l_result = s_wrap_value_ex(l_root, false); // owns_value = false (in arena)
     
     // ⭐ Set mode to ARENA_IMMUTABLE (parsed JSON)
@@ -552,24 +568,35 @@ void dap_json_object_free(dap_json_t* a_json)
     }
     
     // Free cached wrappers in arrays/objects BEFORE freeing values
-    // Only for ARENA_IMMUTABLE mode (wrappers cache only exists for parsed JSON)
-    if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE && a_json->value) {
+    // This ensures borrowed reference wrappers are cleaned up properly
+    // IMPORTANT: Wrappers are borrowed refs - just free wrapper struct if refcount=0
+    bool l_has_live_borrowed_refs = false;
+    if (a_json->value) {
         if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
             for (size_t i = 0; i < a_json->value->array.count; i++) {
                 if (a_json->value->array.wrappers[i]) {
-                    // Decrement arena page refcount for cached wrapper
-                    dap_json_value_t *l_element_value = a_json->value->array.elements[i];
-                    if (l_element_value && l_element_value->arena_page_handle) {
-                        dap_arena_page_unref(l_element_value->arena_page_handle);
+                    // Decrement arena page refcount for cached wrapper (ARENA_IMMUTABLE mode)
+                    if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                        dap_json_value_t *l_element_value = a_json->value->array.elements[i];
+                        if (l_element_value && l_element_value->arena_page_handle) {
+                            dap_arena_page_unref(l_element_value->arena_page_handle);
+                        }
                     }
                     
                     // If wrapper has refcount > 1, user called ref() - keep alive
                     if (a_json->value->array.wrappers[i]->ref_count > 1) {
                         a_json->value->array.wrappers[i]->ref_count--;
-                        a_json->value->array.wrappers[i]->arena.parent = NULL;
+                        // Clear parent so it won't try to dec-ref us again
+                        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                            a_json->value->array.wrappers[i]->arena.parent = NULL;
+                        }
+                        // Mark that we have live borrowed references - value must stay alive!
+                        l_has_live_borrowed_refs = true;
                     } else {
                         // Free wrapper struct
-                        a_json->value->array.wrappers[i]->arena.parent = NULL;
+                        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                            a_json->value->array.wrappers[i]->arena.parent = NULL;
+                        }
                         DAP_DELETE(a_json->value->array.wrappers[i]);
                     }
                 }
@@ -579,19 +606,28 @@ void dap_json_object_free(dap_json_t* a_json)
         } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
             for (size_t i = 0; i < a_json->value->object.count; i++) {
                 if (a_json->value->object.wrappers[i]) {
-                    // Decrement arena page refcount for cached wrapper
-                    dap_json_value_t *l_pair_value = a_json->value->object.pairs[i].value;
-                    if (l_pair_value && l_pair_value->arena_page_handle) {
-                        dap_arena_page_unref(l_pair_value->arena_page_handle);
+                    // Decrement arena page refcount for cached wrapper (ARENA_IMMUTABLE mode)
+                    if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                        dap_json_value_t *l_pair_value = a_json->value->object.pairs[i].value;
+                        if (l_pair_value && l_pair_value->arena_page_handle) {
+                            dap_arena_page_unref(l_pair_value->arena_page_handle);
+                        }
                     }
                     
                     // If wrapper has refcount > 1, user called ref() - keep alive
                     if (a_json->value->object.wrappers[i]->ref_count > 1) {
                         a_json->value->object.wrappers[i]->ref_count--;
-                        a_json->value->object.wrappers[i]->arena.parent = NULL;
+                        // Clear parent so it won't try to dec-ref us again
+                        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                            a_json->value->object.wrappers[i]->arena.parent = NULL;
+                        }
+                        // Mark that we have live borrowed references - value must stay alive!
+                        l_has_live_borrowed_refs = true;
                     } else {
                         // Free wrapper struct
-                        a_json->value->object.wrappers[i]->arena.parent = NULL;
+                        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+                            a_json->value->object.wrappers[i]->arena.parent = NULL;
+                        }
                         DAP_DELETE(a_json->value->object.wrappers[i]);
                     }
                 }
@@ -602,38 +638,17 @@ void dap_json_object_free(dap_json_t* a_json)
     }
     
     // This is a root object - proceed with full cleanup
-    // With thread-local arena: values from parsing live in s_thread_arena
+    // With multi-arena: values from parsing live in their respective arenas
     // Manually created values are malloc-based and must be freed
     
-    // NOTE: stage2_parser is always NULL now (arena is thread-local)
-    // Values from parsing are NOT freed here - they live in s_thread_arena
-    // Only manually created values (owns_value=true, stage2_parser=NULL) are freed
-    
-    // Check if any borrowed wrappers with ref_count > 1 still reference this value
-    bool l_has_live_borrows = false;
-    if (a_json->value) {
-        if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
-            for (size_t i = 0; i < a_json->value->array.count; i++) {
-                if (a_json->value->array.wrappers[i] && a_json->value->array.wrappers[i]->ref_count > 1) {
-                    l_has_live_borrows = true;
-                    break;
-                }
-            }
-        } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
-            for (size_t i = 0; i < a_json->value->object.count; i++) {
-                if (a_json->value->object.wrappers[i] && a_json->value->object.wrappers[i]->ref_count > 1) {
-                    l_has_live_borrows = true;
-                    break;
-                }
-            }
-        }
-    }
-    
-    if (a_json->owns_value && a_json->value && !l_has_live_borrows) {
+    // CRITICAL: Don't free value if there are live borrowed references!
+    if (a_json->owns_value && a_json->value && !l_has_live_borrowed_refs) {
         // Malloc-based value (manually created via dap_json_object_new, etc.)
-        // Only free if no borrowed wrappers are still using it
+        // AND no live borrowed references - safe to free
         dap_json_value_v2_free(a_json->value);
     }
+    // If l_has_live_borrowed_refs==true, value stays alive for borrowed wrappers
+    // They will free it when their own refcount reaches 0
     
     // Free wrapper
     DAP_DELETE(a_json);
@@ -651,15 +666,17 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json)
 }
 
 /**
- * @brief Clean up thread-local arena
- * @details Call this at the end of thread to free parsed JSON values
- * This is optional - arena will be reused for next parse in same thread
+ * @brief Clean up all thread-local arenas
+ * @details Call this at the end of thread to free ALL parsed JSON values
+ * This frees all arenas in the thread-local list
  */
 void dap_json_cleanup_thread_arena(void)
 {
-    if (s_thread_arena) {
-        dap_json_stage2_free(s_thread_arena);
-        s_thread_arena = NULL;
+    while (s_arena_list) {
+        dap_json_arena_node_t *l_next = s_arena_list->next;
+        dap_json_stage2_free(s_arena_list->stage2);
+        DAP_DELETE(s_arena_list);
+        s_arena_list = l_next;
     }
 }
 
@@ -1142,7 +1159,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     struct {
         dap_json_sort_fn_t sort_fn;
         dap_json_t **wrappers;
-        dap_json_value_t **elements;
+        dap_json_value_t **elements;  // Array of pointers
     } l_ctx = {
         .sort_fn = a_sort_fn,
         .wrappers = l_wrappers,
@@ -1574,24 +1591,12 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
         return a_string_value->string.data_materialized;
     }
     
-    // FAIL-FAST: No Arena = critical error (shouldn't happen in normal parsing)
-    if (!s_thread_arena || !s_thread_arena->arena) {
-        log_it(L_CRITICAL, "FATAL: No thread-local Arena available for string materialization!");
-        log_it(L_CRITICAL, "       is_zero_copy=%d, data_materialized=%p, s_thread_arena=%p", 
-               a_string_value->string.is_zero_copy, 
-               a_string_value->string.data_materialized,
-               s_thread_arena);
-        return NULL;
-    }
-    
-    // Lazy materialization: allocate null-terminated copy in thread-local Arena
-    char *l_copy = (char*)dap_arena_alloc(
-        s_thread_arena->arena,
-        a_string_value->string.length + 1
-    );
+    // Lazy materialization: allocate null-terminated copy in HEAP
+    // (Not in arena, because we don't know which arena this value belongs to in multi-arena setup)
+    char *l_copy = DAP_NEW_Z_SIZE(char, a_string_value->string.length + 1);
     
     if (!l_copy) {
-        log_it(L_ERROR, "Arena allocation failed for string materialization (%zu bytes)", 
+        log_it(L_ERROR, "Failed to allocate string materialization (%zu bytes)", 
                a_string_value->string.length + 1);
         return NULL;
     }
@@ -1599,9 +1604,9 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     memcpy(l_copy, a_string_value->string.data, a_string_value->string.length);
     l_copy[a_string_value->string.length] = '\0';
     
-    // Cache materialized copy
+    // Cache materialized copy (HEAP allocated, will be freed with value)
     a_string_value->string.data_materialized = l_copy;
-    a_string_value->string.needs_free = false;  // Arena owns it
+    a_string_value->string.needs_free = true;  // Mark for cleanup
     
     return l_copy;
 }

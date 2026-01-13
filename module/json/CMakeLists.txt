@@ -11,7 +11,7 @@ file(GLOB JSON_HEADERS include/*.h)
 file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
-file(GLOB JSON_STAGE2_SRCS src/stage2/*.c src/stage2/string/*.c)
+file(GLOB JSON_STAGE2_SRCS src/stage2/*.c src/stage2/string/*.c src/stage2/number/*.c)
 
 # Generate SIMD implementations from templates at configure time
 # Generated files go to build directory to keep source tree clean

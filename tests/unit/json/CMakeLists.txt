@@ -614,3 +614,15 @@ dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;schema;validation;phase1.8")
+
+# Phase 2 Profiling Tool
+project(profile_stage2)
+add_executable(${PROJECT_NAME} profile_stage2.c)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
+
+# Profile Number Parsing (Phase 2.2)
+project(profile_numbers)
+add_executable(${PROJECT_NAME} profile_numbers.c)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
