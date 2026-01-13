@@ -12,7 +12,7 @@
 #   - ALL_TYPES_PAIRS (multiline string)
 #   - ORIGINAL_TYPES (associative array)
 #
-# The output can be executed via: eval "$(gawk -f process_mock_data.awk ...)"
+# The output can be executed via: eval "$(awk -f process_mock_data.awk ...)"
 
 # Function to escape shell special characters
 function shell_escape(str) {

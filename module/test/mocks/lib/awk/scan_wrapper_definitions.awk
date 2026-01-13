@@ -1,4 +1,4 @@
-#!/usr/bin/gawk -f
+#!/usr/bin/awk -f
 # Scan source files for wrapper definitions
 # Output: newline-separated list of function names that have wrappers
 
