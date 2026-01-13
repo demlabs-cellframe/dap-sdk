@@ -188,11 +188,15 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
  * @return Borrowed wrapper that keeps parent alive
  */
 /**
- * @brief Create borrowed reference wrapper (json-c compatible)
+ * @brief Create borrowed reference wrapper (json-c compatible + refcounted arena)
  * @details Creates a wrapper for a value that lives in parent's Arena.
  *          Like json-c, borrowed references don't increase parent ref_count.
  *          The wrapper is cached in parent's array/object and freed automatically
  *          when parent is freed. User should NEVER call dap_json_object_free() on it.
+ *          
+ *          ⭐ NEW: With refcounted arena, increments page refcount to keep value alive.
+ *          This allows borrowed refs to outlive their parent safely.
+ *          
  * @param a_value Value to wrap (must be from parent's Arena)
  * @param a_parent Parent wrapper (array or object)
  * @return Wrapper pointer (cached, reused on subsequent calls)
@@ -221,6 +225,14 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
         l_json->parent = a_parent;
         // NOTE: parent->ref_count is NOT incremented (json-c compatible)
         // Arena access is via thread-local s_thread_arena (no per-object stage2_parser)
+    }
+    
+    // ⭐ NEW: Increment arena page refcount to keep value alive
+    // This allows borrowed ref to outlive parent if dap_json_object_ref() is called
+    if (a_value->arena_page_handle) {
+        dap_arena_page_ref(a_value->arena_page_handle);
+        debug_if(s_debug_more, L_DEBUG, "Borrowed ref: incremented page refcount for value %p (page: %p)",
+                 a_value, a_value->arena_page_handle);
     }
     
     return l_json;
@@ -493,8 +505,16 @@ void dap_json_object_free(dap_json_t* a_json)
         // The value itself lives in parent's Arena, so don't free it
         // Just free this wrapper struct - parent ref_count stays unchanged
         // (because we didn't increment it when creating borrowed ref)
+        
+        // ⭐ NEW: Decrement arena page refcount (only if arena-based)
+        if (a_json->value && a_json->value->arena_page_handle) {
+            dap_arena_page_unref(a_json->value->arena_page_handle);
+            debug_if(s_debug_more, L_DEBUG, "Borrowed ref freed: decremented page refcount for value %p (page: %p)",
+                     a_json->value, a_json->value->arena_page_handle);
+        }
+        
         a_json->parent = NULL;
-        // Free only the wrapper struct, not the value (it's in parent's Arena)
+        // Free only the wrapper struct, not the value (it's in parent's Arena/malloc)
         DAP_DELETE(a_json);
         return;
     }
@@ -506,6 +526,12 @@ void dap_json_object_free(dap_json_t* a_json)
         if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
             for (size_t i = 0; i < a_json->value->array.count; i++) {
                 if (a_json->value->array.wrappers[i]) {
+                    // ⭐ NEW: Decrement arena page refcount for cached wrapper
+                    dap_json_value_t *l_element_value = a_json->value->array.elements[i];
+                    if (l_element_value && l_element_value->arena_page_handle) {
+                        dap_arena_page_unref(l_element_value->arena_page_handle);
+                    }
+                    
                     // If wrapper has refcount > 1, user called ref() - decrement and keep alive
                     if (a_json->value->array.wrappers[i]->ref_count > 1) {
                         a_json->value->array.wrappers[i]->ref_count--;
@@ -525,6 +551,12 @@ void dap_json_object_free(dap_json_t* a_json)
         } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
             for (size_t i = 0; i < a_json->value->object.count; i++) {
                 if (a_json->value->object.wrappers[i]) {
+                    // ⭐ NEW: Decrement arena page refcount for cached wrapper
+                    dap_json_value_t *l_pair_value = a_json->value->object.pairs[i].value;
+                    if (l_pair_value && l_pair_value->arena_page_handle) {
+                        dap_arena_page_unref(l_pair_value->arena_page_handle);
+                    }
+                    
                     // If wrapper has refcount > 1, user called ref() - decrement and keep alive
                     if (a_json->value->object.wrappers[i]->ref_count > 1) {
                         a_json->value->object.wrappers[i]->ref_count--;

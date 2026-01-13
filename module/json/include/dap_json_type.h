@@ -136,6 +136,9 @@ struct dap_json_value {
         dap_json_array_t array;    /**< Array value (for TYPE_ARRAY) */
         dap_json_object_t object;  /**< Object value (for TYPE_OBJECT) */
     };
+    
+    // ⭐ Arena refcounting support
+    void *arena_page_handle;       /**< Page handle from refcounted arena (for borrowed refs) */
 };
 
 #ifdef __cplusplus

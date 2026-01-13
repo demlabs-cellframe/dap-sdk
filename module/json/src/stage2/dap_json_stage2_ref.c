@@ -60,6 +60,10 @@
 // Debug flag: detailed logs (below WARNING level)
 static bool s_debug_more = false;
 
+// ⭐ Thread-local refcounted arena for JSON parsing
+// Reused across multiple parse calls in the same thread for efficiency
+static _Thread_local dap_arena_t *s_thread_json_arena = NULL;
+
 // Initial capacity for arrays/objects
 #define INITIAL_ARRAY_CAPACITY 8
 #define INITIAL_OBJECT_CAPACITY 8
@@ -287,14 +291,19 @@ static bool s_object_add_arena(
  */
 static inline dap_json_value_t *s_create_value_arena(dap_arena_t *a_arena)
 {
-    dap_json_value_t *l_value = (dap_json_value_t *)dap_arena_alloc_zero(
-        a_arena, 
-        sizeof(dap_json_value_t)
-    );
-    
-    if (!l_value) {
+    // ⭐ Use extended allocation to get page handle for refcounting
+    dap_arena_alloc_ex_t l_alloc_result;
+    if (!dap_arena_alloc_ex(a_arena, sizeof(dap_json_value_t), &l_alloc_result)) {
         log_it(L_ERROR, "Arena allocation failed for value");
+        return NULL;
     }
+    
+    // Zero-initialize the value
+    dap_json_value_t *l_value = (dap_json_value_t *)l_alloc_result.ptr;
+    memset(l_value, 0, sizeof(dap_json_value_t));
+    
+    // ⭐ Store page handle for later ref/unref
+    l_value->arena_page_handle = l_alloc_result.page_handle;
     
     return l_value;
 }
@@ -1242,12 +1251,26 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         l_estimated_size = 4096;
     }
     
-    l_stage2->arena = dap_arena_new(l_estimated_size);
-    if (!l_stage2->arena) {
-        log_it(L_ERROR, "Failed to create Arena allocator");
-        DAP_DELETE(l_stage2);
-        return NULL;
+    // ⭐ Reuse thread-local refcounted arena (create if first time)
+    if (!s_thread_json_arena) {
+        s_thread_json_arena = dap_arena_new_opt((dap_arena_opt_t){
+            .use_refcount = true,
+            .initial_size = l_estimated_size,
+            .thread_local = true
+        });
+        if (!s_thread_json_arena) {
+            log_it(L_ERROR, "Failed to create thread-local refcounted Arena");
+            DAP_DELETE(l_stage2);
+            return NULL;
+        }
+        debug_if(s_debug_more, L_DEBUG, "Created thread-local refcounted arena (size: %zu)", l_estimated_size);
+    } else {
+        // Reset arena for reuse (only resets pages with refcount=0)
+        dap_arena_reset(s_thread_json_arena);
+        debug_if(s_debug_more, L_DEBUG, "Reusing thread-local arena (reset)");
     }
+    
+    l_stage2->arena = s_thread_json_arena;
     
     // Create String Pool for object keys (estimate: token_count / 4)
     // String Pool will use the same Arena for all allocations
@@ -1321,18 +1344,13 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
         debug_if(s_debug_more, L_DEBUG, "Stage 2 free: transcoded buffer freed");
     }
     
-    // Free Arena (frees all DOM nodes allocated from it)
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
-    dap_arena_free(a_stage2->arena);
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: Arena freed");
+    // ⭐ DO NOT free thread-local arena (it's reused across parses)
+    // Arena will be reset on next parse via dap_arena_reset()
+    // String Pool also uses arena memory, so no need to free it separately
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: arena is thread-local, not freed (will be reused)");
     
-    // Free String Pool (frees all interned strings)
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing String Pool at %p", a_stage2->string_pool);
-    dap_string_pool_free(a_stage2->string_pool);
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: String Pool freed");
-    
-    // NOTE: root pointer becomes invalid after Arena free
-    // Caller should use root BEFORE calling this function
+    // NOTE: root pointer and all values remain valid until next parse or thread exit
+    // Caller should keep ref'd borrowed references alive via dap_arena_page_ref()
     DAP_DELETE(a_stage2);
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: complete");
 }
