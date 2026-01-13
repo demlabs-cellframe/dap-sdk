@@ -473,12 +473,16 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     };
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC send: metadata prepared: seq=%lu, ack=%lu, ts=%u",
-             l_metadata.seq_num, l_metadata.ack_seq, l_metadata.timestamp_ms);
+             "FC send: metadata prepared: seq=%lu, ack=%lu, ts=%u, &l_metadata=%p",
+             l_metadata.seq_num, l_metadata.ack_seq, l_metadata.timestamp_ms, &l_metadata);
     
     // Prepare packet (add header)
     void *l_packet = NULL;
     size_t l_packet_size = 0;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "FC send: calling packet_prepare with &l_metadata=%p", &l_metadata);
+    
     int l_ret = a_ctrl->callbacks.packet_prepare(a_ctrl->flow, &l_metadata, a_payload, a_payload_size,
                                                   &l_packet, &l_packet_size, a_ctrl->callbacks.arg);
     if (l_ret != 0 || !l_packet) {
