@@ -1146,8 +1146,8 @@ int main(void)
     // Create minimal config file for tests
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
-                                 "[general]\n"
-                                 "debug_reactor=false\n"
+                                "[general]\n"
+                                "debug_reactor=true\n"
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"

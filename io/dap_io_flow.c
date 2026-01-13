@@ -1133,6 +1133,12 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
         }
         
         a_server->queue_inputs[dst]->_inheritor = a_server;
+        
+        debug_if(s_debug_more, L_DEBUG, 
+                 "Created queue_input[%u]: es=%p, fd=%d, callback=%p",
+                 dst, a_server->queue_inputs[dst], 
+                 a_server->queue_inputs[dst]->fd, 
+                 a_server->queue_inputs[dst]->callbacks.queue_ptr_callback);
     }
     
     // Create queue outputs from each source worker to each destination worker
@@ -1283,6 +1289,12 @@ static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server,
         log_it(L_ERROR, "No queue output for workers %u -> %u", a_from_worker_id, a_to_worker_id);
         return -3;
     }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Forwarding: src_worker=%u -> dst_worker=%u, queue_input[%u]=%p (fd=%d)",
+             a_from_worker_id, a_to_worker_id, a_to_worker_id,
+             a_server->queue_inputs[a_to_worker_id],
+             a_server->queue_inputs[a_to_worker_id] ? a_server->queue_inputs[a_to_worker_id]->fd : -1);
     
     // Send packet pointer via queue (zero-copy)
     int l_ret = dap_events_socket_queue_ptr_send_to_input(a_server->queue_inputs[a_to_worker_id], a_packet);

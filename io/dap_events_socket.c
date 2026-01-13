@@ -1018,6 +1018,9 @@ dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * 
  */
 int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 {
+    debug_if(g_debug_reactor, L_DEBUG, "queue_proc_input: es=%p, fd=%d, flags=0x%x",
+             a_esocket, a_esocket ? a_esocket->fd : -1, 
+             a_esocket ? a_esocket->flags : 0);
 
 #ifdef DAP_EVENTS_CAPS_WEPOLL
     ssize_t l_read = dap_recvfrom(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max);
@@ -1036,13 +1039,16 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
             l_read_errno = errno;
             if(l_read_ret > 0) {
-                //debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
+                debug_if(g_debug_reactor, L_DEBUG, "Read %ld bytes from queue pipe [es %d]", 
+                         l_read_ret, a_esocket->fd);
                 if (l_read_ret % sizeof(void*)) {
                     log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
                     return -3;
                 }
                 for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
                     void *l_queue_ptr = *(void**)(l_body + shift);
+                    debug_if(g_debug_reactor, L_DEBUG, 
+                             "Calling queue_ptr_callback(%p, %p)", a_esocket, l_queue_ptr);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
                 }
             }
@@ -1401,7 +1407,14 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t *a_es_input, v
 #elif defined DAP_EVENTS_CAPS_IOCP
     return dap_events_socket_queue_ptr_send(a_es_input->pipe_out, a_arg);
 #else
-    return dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg)) == sizeof(a_arg) ? 0 : -1;
+    debug_if(g_debug_reactor, L_DEBUG, 
+             "Queue send EPOLL/POLL: writing %zu bytes to fd=%d",
+             sizeof(a_arg), a_es_input ? a_es_input->fd : -1);
+    size_t l_written = dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg));
+    debug_if(g_debug_reactor, L_DEBUG, 
+             "Queue send result: written=%zu, expected=%zu, ret=%d",
+             l_written, sizeof(a_arg), l_written == sizeof(a_arg) ? 0 : -1);
+    return l_written == sizeof(a_arg) ? 0 : -1;
 #endif
 }
 
