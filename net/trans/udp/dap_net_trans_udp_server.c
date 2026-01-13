@@ -1483,6 +1483,16 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     log_it(L_DEBUG, "SERVER: Decrypted %zu → %zu bytes, first 40 chars: '%.40s'",
            a_payload_size, l_decrypted_size, (char*)l_decrypted);
     
+    // CRITICAL: Ensure null-termination for JSON parsing
+    // dap_enc_decode doesn't add null terminator
+    if (l_decrypted_size < l_decrypted_max) {
+        l_decrypted[l_decrypted_size] = '\0';
+    } else {
+        log_it(L_ERROR, "No space for null terminator in decrypted buffer");
+        DAP_DELETE(l_decrypted);
+        return -4;
+    }
+    
     // Parse JSON from decrypted inner data
     json_object *l_json = json_tokener_parse((const char*)l_decrypted);
     DAP_DELETE(l_decrypted);

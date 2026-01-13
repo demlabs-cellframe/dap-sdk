@@ -28,6 +28,9 @@
 
 static bool s_debug_more = false;
 
+// Magic number for FC structure validation (detect use-after-free)
+#define DAP_IO_FLOW_CTRL_MAGIC 0xFC10C001
+
 //===================================================================
 // BASE FLOW CONTROL HEADER SCHEMA
 //===================================================================
@@ -96,6 +99,7 @@ typedef struct recv_window_entry {
 } recv_window_entry_t;
 
 struct dap_io_flow_ctrl {
+    uint32_t magic;                     // Magic number for validation (DAP_IO_FLOW_CTRL_MAGIC)
     dap_io_flow_t *flow;            // Associated flow
     dap_io_flow_ctrl_flags_t flags; // Active flags
     dap_io_flow_ctrl_config_t config; // Configuration
@@ -198,6 +202,9 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
         log_it(L_ERROR, "Failed to allocate flow control");
         return NULL;
     }
+    
+    // Set magic number for validation (detect use-after-free in timer callbacks)
+    l_ctrl->magic = DAP_IO_FLOW_CTRL_MAGIC;
     
     debug_if(s_debug_more, L_DEBUG, "FC CREATE: l_ctrl=%p, a_flow=%p, payload_deliver=%p, arg=%p",
              l_ctrl, a_flow, a_callbacks->payload_deliver, a_callbacks->arg);
@@ -338,6 +345,9 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     log_it(L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
+    
+    // Clear magic to detect use-after-free
+    a_ctrl->magic = 0;
     
     DAP_DELETE(a_ctrl);
 }
@@ -751,7 +761,11 @@ void dap_io_flow_ctrl_get_stats(
 static bool s_retransmit_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
-    if (!l_ctrl) {
+    
+    // Validate FC structure (detect use-after-free)
+    if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
+        log_it(L_WARNING, "Retransmit timer called on deleted/invalid FC (magic=0x%08x)", 
+               l_ctrl ? l_ctrl->magic : 0);
         return false;  // Stop timer
     }
     
@@ -817,7 +831,10 @@ static bool s_retransmit_timer_callback(void *a_arg)
 static bool s_keepalive_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
-    if (!l_ctrl) {
+    
+    // Validate FC structure (detect use-after-free)
+    if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
+        log_it(L_WARNING, "Keepalive timer called on deleted/invalid FC");
         return false;  // Stop timer
     }
     
