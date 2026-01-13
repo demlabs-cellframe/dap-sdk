@@ -216,7 +216,25 @@ static bool s_test_heterogeneous_arrays(void) {
     DAP_TEST_FAIL_IF_NULL(arr, "Element 5 is array");
     DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Nested array has 3 elements");
     
+    // DEBUG: Check element 6 type and value
+    dap_json_t *elem6 = dap_json_array_get_idx(l_json, 6);
+    log_it(L_DEBUG, "Element 6: ptr=%p", elem6);
+    if (elem6) {
+        dap_json_type_t type6 = dap_json_get_type(elem6);
+        log_it(L_DEBUG, "Element 6 type: %d (DOUBLE=%d, INT=%d)", type6, DAP_JSON_TYPE_DOUBLE, DAP_JSON_TYPE_INT);
+        if (type6 == DAP_JSON_TYPE_DOUBLE) {
+            double val = dap_json_get_double(elem6);
+            log_it(L_DEBUG, "Element 6 double value: %f", val);
+        } else if (type6 == DAP_JSON_TYPE_INT) {
+            int val = dap_json_get_int(elem6);
+            log_it(L_DEBUG, "Element 6 int value: %d", val);
+        }
+        // ⚠️ DON'T free borrowed reference - it's cached in parent!
+        // dap_json_object_free(elem6);
+    }
+    
     double dbl_val = dap_json_array_get_double(l_json, 6);
+    log_it(L_DEBUG, "dap_json_array_get_double(6) = %f", dbl_val);
     DAP_TEST_FAIL_IF(dbl_val < 3.13 || dbl_val > 3.15, "Element 6 is double 3.14");
     
     result = true;
@@ -406,6 +424,15 @@ cleanup:
 
 int dap_json_array_edge_tests_run(void) {
     log_it(L_INFO, "=== DAP JSON Array Edge Cases ===");
+    
+    // ⭐ TEST FIRST: simple [3.14] before any other tests
+    log_it(L_INFO, "PRE-TEST: parsing [3.14]");
+    dap_json_t *l_pre = dap_json_parse_string("[3.14]");
+    if (l_pre) {
+        double pre_val = dap_json_array_get_double(l_pre, 0);
+        log_it(L_INFO, "PRE-TEST: [3.14][0] = %f (expected 3.14)", pre_val);
+        dap_json_object_free(l_pre);
+    }
     
     int tests_passed = 0;
     int tests_total = 8;
