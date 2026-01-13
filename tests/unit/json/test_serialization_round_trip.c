@@ -64,6 +64,12 @@ static bool s_test_simple_object_round_trip(void) {
     // Compare values
     const char *name1 = dap_json_object_get_string(l_json1, "name");
     const char *name2 = dap_json_object_get_string(l_json2, "name");
+    DAP_TEST_FAIL_IF_NULL(name1, "Get name from original");
+    DAP_TEST_FAIL_IF_NULL(name2, "Get name from serialized");
+    if (strcmp(name1, name2) != 0) {
+        log_it(L_ERROR, "Name mismatch: '%s' vs '%s' (len %zu vs %zu)", 
+               name1, name2, strlen(name1), strlen(name2));
+    }
     DAP_TEST_FAIL_IF(strcmp(name1, name2) != 0, "Name preserved");
     
     int age1 = dap_json_object_get_int(l_json1, "age");
@@ -212,6 +218,8 @@ static bool s_test_special_characters_preservation(void) {
     // Compare
     const char *unicode1 = dap_json_object_get_string(l_json1, "unicode");
     const char *unicode2 = dap_json_object_get_string(l_json2, "unicode");
+    DAP_TEST_FAIL_IF_NULL(unicode1, "Get unicode from original");
+    DAP_TEST_FAIL_IF_NULL(unicode2, "Get unicode from serialized");
     DAP_TEST_FAIL_IF(strcmp(unicode1, unicode2) != 0, "Unicode preserved");
     
     const char *escapes1 = dap_json_object_get_string(l_json1, "escapes");
@@ -287,8 +295,8 @@ static bool s_test_large_data_round_trip(void) {
     int val_last = dap_json_array_get_int(l_json2, ELEMENT_COUNT - 1);
     
     DAP_TEST_FAIL_IF(val_first != 0, "First element preserved");
-    DAP_TEST_FAIL_IF(val_mid != ELEMENT_COUNT / 2, "Middle element preserved");
-    DAP_TEST_FAIL_IF(val_last != ELEMENT_COUNT - 1, "Last element preserved");
+    DAP_TEST_FAIL_IF(val_mid != (int)(ELEMENT_COUNT / 2), "Middle element preserved");
+    DAP_TEST_FAIL_IF(val_last != (int)(ELEMENT_COUNT - 1), "Last element preserved");
     
     result = true;
     log_it(L_DEBUG, "Large data round-trip test passed");
@@ -397,6 +405,7 @@ static bool s_test_mixed_types_round_trip(void) {
     DAP_TEST_FAIL_IF(fabs(dbl_val - 3.14) > 0.01, "Double preserved");
     
     const char *str_val = dap_json_object_get_string(l_json2, "string");
+    DAP_TEST_FAIL_IF_NULL(str_val, "Get string from serialized");
     DAP_TEST_FAIL_IF(strcmp(str_val, "text") != 0, "String preserved");
     
     bool bool_val = dap_json_object_get_bool(l_json2, "bool");
@@ -404,7 +413,7 @@ static bool s_test_mixed_types_round_trip(void) {
     
     dap_json_t *arr = dap_json_object_get_array(l_json2, "array");
     DAP_TEST_FAIL_IF_NULL(arr, "Array preserved");
-    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3, "Array length preserved");
+    DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Array length preserved");
     
     dap_json_t *obj = dap_json_object_get_object(l_json2, "object");
     DAP_TEST_FAIL_IF_NULL(obj, "Object preserved");

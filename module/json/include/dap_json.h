@@ -115,6 +115,7 @@ int dap_json_array_insert_array(dap_json_t* a_array, size_t a_idx, dap_json_t* a
 
 // Typed array element access
 const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx);
+const char* dap_json_array_get_string_n(dap_json_t* a_array, size_t a_idx, size_t *a_out_length);  // Zero-copy: returns (data, length)
 int dap_json_array_get_int(dap_json_t* a_array, size_t a_idx);
 int64_t dap_json_array_get_int64(dap_json_t* a_array, size_t a_idx);
 double dap_json_array_get_double(dap_json_t* a_array, size_t a_idx);
@@ -139,12 +140,14 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
 
 // Object field modification (update existing keys)
 int dap_json_object_set_string(dap_json_t* a_json, const char* a_key, const char* a_value);
+int dap_json_object_set_string_n(dap_json_t* a_json, const char* a_key, const char* a_value, size_t a_length);  // Zero-copy: accepts (data, length)
 int dap_json_object_set_int(dap_json_t* a_json, const char* a_key, int a_value);
 int dap_json_object_set_double(dap_json_t* a_json, const char* a_key, double a_value);
 int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value);
 
 // Object field access
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key);
+const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, size_t *a_out_length);  // Zero-copy: returns (data, length)
 int dap_json_object_get_int(dap_json_t* a_json, const char* a_key);
 int64_t dap_json_object_get_int64(dap_json_t* a_json, const char* a_key);
 uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key);
@@ -265,6 +268,7 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
 
 // Extended value access API
 const char* dap_json_get_string(dap_json_t* a_json);
+const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length);  // Zero-copy: returns (data, length)
 int64_t dap_json_get_int64(dap_json_t* a_json);
 int dap_json_get_int(dap_json_t* a_json); // Wrapper for int64 that returns int
 double dap_json_get_double(dap_json_t* a_json);

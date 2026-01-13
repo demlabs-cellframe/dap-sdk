@@ -928,7 +928,7 @@ DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const c
 
 #ifdef DAP_DEBUG
 // Debug build: debug_if with branch prediction hint
-#define debug_if(flg, lvl, ...) (__builtin_expect(!!(flg), 0) ? _log_it(NULL, 0, LOG_TAG, (lvl), ##__VA_ARGS__) : (void)0)
+#define debug_if(flg, lvl, ...) (__builtin_expect(!!(flg), 0) ? _log_it(NULL, 0, LOG_TAG, lvl, ##__VA_ARGS__) : (void)0)
 #else
 // Release build: debug_if compiles to ((void)0) for comma expressions
 #define debug_if(flg, lvl, ...) ((void)0)

@@ -16,6 +16,15 @@
 static bool s_debug_more = false;
 
 /**
+ * @brief Enable/disable detailed debug logs
+ */
+void dap_json_transcode_set_debug(bool a_enable)
+{
+    s_debug_more = a_enable;
+    log_it(L_DEBUG, "Transcode debug logs %s", a_enable ? "ENABLED" : "DISABLED");
+}
+
+/**
  * @brief Encode UTF-8 from codepoint
  */
 static size_t s_encode_utf8(uint32_t a_codepoint, uint8_t *a_output)
@@ -85,6 +94,9 @@ bool dap_json_transcode_to_utf8(
     size_t l_in_pos = 0;
     size_t l_out_pos = 0;
     
+    debug_if(s_debug_more, L_DEBUG, "Starting transcode: %zu bytes (%s) → UTF-8",
+           a_len, dap_json_encoding_name(a_encoding));
+    
     // Transcode loop
     while (l_in_pos < a_len) {
         uint32_t l_codepoint = 0;
@@ -93,10 +105,14 @@ bool dap_json_transcode_to_utf8(
         // Read character in source encoding
         if (!dap_json_read_char(a_input, l_in_pos, a_len, a_encoding,
                                 &l_codepoint, &l_bytes_read)) {
-            log_it(L_ERROR, "Failed to read character at position %zu", l_in_pos);
+            log_it(L_ERROR, "Failed to read character at position %zu (encoding=%s, remaining=%zu bytes)",
+                   l_in_pos, dap_json_encoding_name(a_encoding), a_len - l_in_pos);
             DAP_DELETE(l_output);
             return false;
         }
+        
+        debug_if(s_debug_more, L_DEBUG, "Read codepoint U+%04X (%zu bytes) at pos %zu",
+               l_codepoint, l_bytes_read, l_in_pos);
         
         // Encode as UTF-8
         size_t l_bytes_written = s_encode_utf8(l_codepoint, l_output + l_out_pos);

@@ -132,7 +132,9 @@ static bool s_test_value_creation_string(void)
     dap_json_value_t *l_str = dap_json_value_v2_create_string(l_hello, strlen(l_hello));
     dap_assert(l_str != NULL, "String creation failed");
     dap_assert(l_str->string.length == strlen(l_hello), "String length mismatch");
-    dap_assert(strcmp(l_str->string.data, l_hello) == 0, "String content mismatch");
+    // Created strings ARE materialized (null-terminated)
+    dap_assert(l_str->string.data_materialized != NULL, "Created string should be materialized");
+    dap_assert(strcmp(l_str->string.data_materialized, l_hello) == 0, "String content mismatch");
     
     dap_json_value_v2_free(l_empty);
     dap_json_value_v2_free(l_str);
@@ -225,7 +227,9 @@ static bool s_test_object_operations(void)
     
     dap_json_value_t *l_get2 = dap_json_object_v2_get(l_object, "string");
     dap_assert(l_get2 != NULL, "Object get failed (string)");
-    dap_assert(strcmp(l_get2->string.data, "test") == 0, "Object value mismatch (string)");
+    // Created strings ARE materialized
+    dap_assert(l_get2->string.data_materialized != NULL, "Created string should be materialized");
+    dap_assert(strcmp(l_get2->string.data_materialized, "test") == 0, "Object value mismatch (string)");
     
     dap_json_value_t *l_get3 = dap_json_object_v2_get(l_object, "boolean");
     dap_assert(l_get3 != NULL, "Object get failed (boolean)");
@@ -321,7 +325,10 @@ static bool s_test_parse_simple_values(void)
         
         dap_json_value_t *l_root = dap_json_stage2_get_root(l_s2);
         dap_assert(l_root->type == DAP_JSON_TYPE_STRING, "Expected string type");
-        dap_assert(strcmp(l_root->string.data, "Hello") == 0, "Expected 'Hello'");
+        
+        // For zero-copy strings, use strncmp with length
+        dap_assert(l_root->string.length == 5, "Expected length 5");
+        dap_assert(strncmp(l_root->string.data, "Hello", l_root->string.length) == 0, "Expected 'Hello'");
         
         // NOTE: l_root is Arena-based - don't call dap_json_value_v2_free()
         // dap_json_value_v2_free(l_root);
@@ -384,7 +391,9 @@ static bool s_test_parse_object(void)
     
     dap_json_value_t *l_name = dap_json_object_v2_get(l_root, "name");
     dap_assert(l_name != NULL, "Name not found");
-    dap_assert(strcmp(l_name->string.data, "Alice") == 0, "Expected 'Alice'");
+    // Zero-copy strings may not be null-terminated - use strncmp
+    dap_assert(l_name->string.length == 5, "Expected length 5 for 'Alice'");
+    dap_assert(strncmp(l_name->string.data, "Alice", l_name->string.length) == 0, "Expected 'Alice'");
     
     dap_json_value_t *l_age = dap_json_object_v2_get(l_root, "age");
     dap_assert(l_age != NULL, "Age not found");
@@ -419,7 +428,9 @@ static bool s_test_parse_nested(void)
     dap_assert(l_user0->type == DAP_JSON_TYPE_OBJECT, "Expected object (user0)");
     
     dap_json_value_t *l_name0 = dap_json_object_v2_get(l_user0, "name");
-    dap_assert(strcmp(l_name0->string.data, "Bob") == 0, "Expected 'Bob'");
+    // Parsed strings may be zero-copy - use strncmp
+    dap_assert(l_name0->string.length == 3, "Expected length 3 for 'Bob'");
+    dap_assert(strncmp(l_name0->string.data, "Bob", l_name0->string.length) == 0, "Expected 'Bob'");
     
     dap_json_value_t *l_active0 = dap_json_object_v2_get(l_user0, "active");
     dap_assert(l_active0->boolean == true, "Expected true");

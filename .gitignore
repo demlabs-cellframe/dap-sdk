@@ -1,4 +1,5 @@
 # Prerequisites
+.context/
 build*/*
 debug/*
 crypto/XKCP/Makefile

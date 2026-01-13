@@ -23,7 +23,9 @@ stages:
 tests:amd64.debian:
     extends: .tests
     image: demlabs/debian/amd64:qt6
-    before_script: /opt/buildtools/prepare_environment.sh amd64-linux
+    before_script:
+      - apt-get update -qq && apt-get install -y -qq gawk
+      - /opt/buildtools/prepare_environment.sh amd64-linux 
     script:
       - pwd
       - env
