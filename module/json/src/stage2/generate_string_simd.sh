@@ -42,23 +42,38 @@ mkdir -p "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/arch/x86"
 mkdir -p "${OUTPUT_DIR}/arch/arm"
 
-# Generate arch-specific helper headers from templates
-echo "Generating arch-specific headers..."
-for arch_file in "${SCRIPT_DIR}/arch/x86/"*.tpl; do
-    if [[ -f "$arch_file" ]]; then
+# Copy arch-specific files (headers and implementation fragments)
+echo "Copying arch-specific files..."
+
+# Copy common vector impl (used by SSE2, AVX2, NEON)
+if [[ -f "${SCRIPT_DIR}/arch/string_scanner_vector_impl.c" ]]; then
+    cp "${SCRIPT_DIR}/arch/string_scanner_vector_impl.c" "${OUTPUT_DIR}/arch/string_scanner_vector_impl.c"
+    echo "  ✓ string_scanner_vector_impl.c"
+fi
+
+# Copy x86 specific files (.h and .c)
+for arch_file in "${SCRIPT_DIR}/arch/x86/"*; do
+    if [[ -f "$arch_file" ]] && [[ "$arch_file" != *.tpl ]]; then
+        base_name=$(basename "$arch_file")
+        cp "$arch_file" "${OUTPUT_DIR}/arch/x86/${base_name}"
+        echo "  ✓ x86/${base_name}"
+    elif [[ -f "$arch_file" ]] && [[ "$arch_file" == *.tpl ]]; then
         base_name=$(basename "$arch_file" .tpl)
-        output_file="${OUTPUT_DIR}/arch/x86/${base_name}"
-        cp "$arch_file" "$output_file"
-        echo "  Copied: ${base_name}"
+        cp "$arch_file" "${OUTPUT_DIR}/arch/x86/${base_name}"
+        echo "  ✓ x86/${base_name}"
     fi
 done
 
-for arch_file in "${SCRIPT_DIR}/arch/arm/"*.tpl; do
-    if [[ -f "$arch_file" ]]; then
+# Copy ARM specific files (.h and .c)
+for arch_file in "${SCRIPT_DIR}/arch/arm/"*; do
+    if [[ -f "$arch_file" ]] && [[ "$arch_file" != *.tpl ]]; then
+        base_name=$(basename "$arch_file")
+        cp "$arch_file" "${OUTPUT_DIR}/arch/arm/${base_name}"
+        echo "  ✓ arm/${base_name}"
+    elif [[ -f "$arch_file" ]] && [[ "$arch_file" == *.tpl ]]; then
         base_name=$(basename "$arch_file" .tpl)
-        output_file="${OUTPUT_DIR}/arch/arm/${base_name}"
-        cp "$arch_file" "$output_file"
-        echo "  Copied: ${base_name}"
+        cp "$arch_file" "${OUTPUT_DIR}/arch/arm/${base_name}"
+        echo "  ✓ arm/${base_name}"
     fi
 done
 
@@ -70,6 +85,7 @@ generate_arch() {
     local chunk_size="$4"
     local mask_bits="$5"
     local speedup="$6"
+    local simd_loop_impl="$7"  # Path to loop implementation fragment
     
     local output_c="${OUTPUT_DIR}/dap_json_string_simd_${arch_lower}.c"
     local output_h="${OUTPUT_DIR}/dap_json_string_simd_${arch_lower}.h"
@@ -81,7 +97,8 @@ generate_arch() {
         "ARCH_FAMILY=${arch_family}" \
         "CHUNK_SIZE=${chunk_size}" \
         "MASK_BITS=${mask_bits}" \
-        "SPEEDUP=${speedup}"
+        "SPEEDUP=${speedup}" \
+        "SIMD_LOOP_IMPL=${simd_loop_impl}"
     
     # Generate .h file
     replace_template_placeholders "$TPL_H" "$output_h" \
@@ -100,15 +117,16 @@ echo ""
 case "${ARCH}" in
     x86_64|amd64|AMD64|i686|i386)
         echo "=== x86/x64 SIMD ==="
-        generate_arch "sse2" "SSE2" "x86" "16" "32" "16"
-        generate_arch "avx2" "AVX2" "x86" "32" "32" "32"
-        generate_arch "avx512" "AVX512" "x86" "64" "64" "64"
+        generate_arch "sse2" "SSE2" "x86" "16" "32" "16" "arch/string_scanner_vector_impl.c"
+        generate_arch "avx2" "AVX2" "x86" "32" "32" "32" "arch/string_scanner_vector_impl.c"
+        generate_arch "avx512" "AVX512" "x86" "64" "64" "64" "arch/x86/string_scanner_avx512_impl.c"
         ;;
     
     aarch64|arm64|armv8*)
-        echo "=== ARM64/NEON SIMD ==="
-        generate_arch "neon" "NEON" "arm" "16" "32" "16"
-        # TODO: SVE, SVE2
+        echo "=== ARM64 SIMD ==="
+        generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
+        generate_arch "sve" "SVE" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve_impl.c"
+        generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c"
         ;;
     
     *)
