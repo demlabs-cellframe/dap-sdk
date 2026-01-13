@@ -392,6 +392,7 @@ static bool s_test_mixed_types_round_trip(void) {
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse mixed types");
     
     serialized = dap_json_to_string(l_json1);
+    log_it(L_DEBUG, "Serialized: %s", serialized);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize mixed types");
     
     l_json2 = dap_json_parse_string(serialized);
@@ -402,6 +403,7 @@ static bool s_test_mixed_types_round_trip(void) {
     DAP_TEST_FAIL_IF(int_val != 42, "Int preserved");
     
     double dbl_val = dap_json_object_get_double(l_json2, "double");
+    log_it(L_DEBUG, "Double value parsed: %.15f (expected 3.14)", dbl_val);
     DAP_TEST_FAIL_IF(fabs(dbl_val - 3.14) > 0.01, "Double preserved");
     
     const char *str_val = dap_json_object_get_string(l_json2, "string");

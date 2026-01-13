@@ -73,28 +73,29 @@ static const struct {
     .max_exp = 22,
     .table = {
         // 5^-22 to 5^-1 (negative powers - for exponents like 1e-100)
-        {0x8AC7230489E80000ULL, 0x0000000000000000ULL}, // 5^-22
-        {0xAD78EBC5AC620000ULL, 0x0000000000000000ULL}, // 5^-21
-        {0xD8D726B7177A8000ULL, 0x0000000000000000ULL}, // 5^-20
-        {0x878678326EAC9000ULL, 0x0000000000000000ULL}, // 5^-19
-        {0xA968163F0A57B400ULL, 0x0000000000000000ULL}, // 5^-18
-        {0xD3C21BCECCEDA100ULL, 0x0000000000000000ULL}, // 5^-17
-        {0x84595161401484A0ULL, 0x0000000000000000ULL}, // 5^-16
-        {0xA56FA5B99019A5C8ULL, 0x0000000000000000ULL}, // 5^-15
-        {0xCECB8F27F4200F3AULL, 0x0000000000000000ULL}, // 5^-14
-        {0x813F3978F8940984ULL, 0x4000000000000000ULL}, // 5^-13
-        {0xA18F07D736B90BE5ULL, 0x5000000000000000ULL}, // 5^-12
-        {0xC9F2C9CD04674EDEULL, 0xA400000000000000ULL}, // 5^-11
-        {0xFC6F7C4045812296ULL, 0x4D00000000000000ULL}, // 5^-10
-        {0x9DC5ADA82B70B59DULL, 0xF020000000000000ULL}, // 5^-9
-        {0xC5371912364CE305ULL, 0x6C28000000000000ULL}, // 5^-8
-        {0xF684DF56C3E01BC6ULL, 0xC732000000000000ULL}, // 5^-7
-        {0x9A130B963A6C115CULL, 0x3C7F400000000000ULL}, // 5^-6
-        {0xC097CE7BC90715B3ULL, 0x4B9F100000000000ULL}, // 5^-5
-        {0xF0BDC21ABB48DB20ULL, 0x1E86D40000000000ULL}, // 5^-4
-        {0x96769950B50D88F4ULL, 0x1314448000000000ULL}, // 5^-3
-        {0xBC143FA4E250EB31ULL, 0x17D955A000000000ULL}, // 5^-2
-        {0xEB194F8E1AE525FDUL, 0x5DCFAB0800000000ULL}, // 5^-1
+        // CORRECTED TABLE: All values recalculated using (2^132 / 5^abs_exp)
+        {0x000000000001E392ULL, 0x010175EE5962A649ULL}, // 5^-22
+        {0x00000000000971DAULL, 0x05074DA7BEED3F6FULL}, // 5^-21
+        {0x00000000002F3942ULL, 0x19248446BAA23D2EULL}, // 5^-20
+        {0x0000000000EC1E4AULL, 0x7DB69561A52B31E9ULL}, // 5^-19
+        {0x00000000049C9774ULL, 0x7490EAE839D7F991ULL}, // 5^-18
+        {0x00000000170EF546ULL, 0x46D496892137DFD7ULL}, // 5^-17
+        {0x00000000734ACA5FULL, 0x6226F0ADA6175F34ULL}, // 5^-16
+        {0x000000024075F3DCULL, 0xEAC2B3643E74DC05ULL}, // 5^-15
+        {0x0000000B424DC350ULL, 0x95CD80F538484C19ULL}, // 5^-14
+        {0x000000384B84D092ULL, 0xED0384CA19697C81ULL}, // 5^-13
+        {0x00000119799812DEULL, 0xA11197F27F0F6E88ULL}, // 5^-12
+        {0x0000057F5FF85E59ULL, 0x2557F7BC7B4D28A9ULL}, // 5^-11
+        {0x00001B7CDFD9D7BDULL, 0xBAB7D6AE6881CB51ULL}, // 5^-10
+        {0x000089705F4136B4ULL, 0xA59731680A88F895ULL}, // 5^-9
+        {0x0002AF31DC461187ULL, 0x3BF3F70834ACDAE9ULL}, // 5^-8
+        {0x000D6BF94D5E57A4ULL, 0x2BC3D32907604691ULL}, // 5^-7
+        {0x00431BDE82D7B634ULL, 0xDAD31FCD24E160D8ULL}, // 5^-6
+        {0x014F8B588E368F08ULL, 0x461F9F01B866E43AULL}, // 5^-5
+        {0x068DB8BAC710CB29ULL, 0x5E9E1B089A027525ULL}, // 5^-4
+        {0x20C49BA5E353F7CEULL, 0xD916872B020C49BAULL}, // 5^-3
+        {0xA3D70A3D70A3D70AULL, 0x3D70A3D70A3D70A3ULL}, // 5^-2
+        {0x3333333333333333ULL, 0x3333333333333333ULL}, // 5^-1
         
         // 5^0 to 5^22 (positive powers - most common)
         {0x8000000000000000ULL, 0x0000000000000000ULL}, // 5^0
@@ -186,6 +187,8 @@ static inline uint64_t s_get_low64(uint128_t a) {
  * @return true if successful (exact result), false if need fallback
  */
 static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_value) {
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", a_mantissa, a_exponent);
+    
     // Quick check: zero mantissa
     if (a_mantissa == 0) {
         *a_out_value = 0.0;
@@ -284,22 +287,47 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     // Extract mantissa (top 53 bits of normalized product)
     uint64_t l_mantissa_bits;
     
+    // First, normalize the 128-bit product so MSB is at position 127 (or 63 of high part)
+    // Then take bits [62:11] which is 52 bits for mantissa (bit 63 is implicit leading 1)
+    
     if (l_lz == 0) {
-        // Already normalized, take top 53 bits
+        // Already normalized (MSB at position 63)
+        // Take bits [62:11] (52 bits)
         l_mantissa_bits = l_prod_high >> 11;
-    } else if (l_lz < 11) {
-        // Shift right
-        l_mantissa_bits = l_prod_high >> (11 - l_lz);
+        debug_if(dap_json_get_debug(), L_DEBUG, "Mantissa: already normalized, extracted from high");
     } else {
-        // Shift left, need bits from both high and low
-        int l_shift = l_lz - 11;
-        l_mantissa_bits = (l_prod_high << l_shift);
-        if (l_shift < 64) {
-            l_mantissa_bits |= (l_prod_low >> (64 - l_shift));
+        // Need to shift left by lz to normalize
+        // After shift, MSB will be at position 63 of new high
+        debug_if(dap_json_get_debug(), L_DEBUG, "Mantissa: normalizing with lz=%d", l_lz);
+        
+        uint64_t l_norm_high, l_norm_low;
+        if (l_lz < 64) {
+            // Shift 128-bit left by lz
+            l_norm_high = (l_prod_high << l_lz) | (l_prod_low >> (64 - l_lz));
+            l_norm_low = l_prod_low << l_lz;
+        } else {
+            // lz >= 64: shift low to high
+            l_norm_high = l_prod_low << (l_lz - 64);
+            l_norm_low = 0;
         }
+        
+        debug_if(dap_json_get_debug(), L_DEBUG, "Normalized: high=%016lx, low=%016lx", l_norm_high, l_norm_low);
+        
+        // Now take bits [62:11] from normalized high (52 bits for mantissa)
+        l_mantissa_bits = l_norm_high >> 11;
     }
     
-    // Remove implicit leading 1 bit (IEEE 754 format)
+    debug_if(dap_json_get_debug(), L_DEBUG, "Extracted mantissa_bits=%016lx (before removing implicit 1), bit52=%d", 
+             l_mantissa_bits, (int)((l_mantissa_bits >> 52) & 1));
+    
+    // TEMP DEBUG: expected for 3.14 is 0x40091EB851EB851F
+    // exp=1024, mantissa WITH implicit 1 (before mask) = 0x191EB851EB851F (53 bits)
+    if (dap_json_get_debug() && l_binary_exp == 1024) {
+        debug_if(true, L_DEBUG, "For comparison: 3.14 should have mantissa_with_implicit1=0x191EB851EB851F, we have=%013lx", 
+                 l_mantissa_bits);
+    }
+    
+    // Remove implicit leading 1 bit (bit 52 after >>11) for IEEE 754 format
     l_mantissa_bits &= 0x000FFFFFFFFFFFFFULL;
     
     // Build IEEE 754 double
