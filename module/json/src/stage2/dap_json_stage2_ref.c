@@ -391,18 +391,24 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
             break;
         
         case DAP_JSON_TYPE_ARRAY:
+            // NOTE: Cached wrappers are freed in dap_json_object_free() before calling this
+            // Free actual values
             for(size_t i = 0; i < a_value->array.count; i++) {
                 dap_json_value_v2_free(a_value->array.elements[i]);
             }
             DAP_DELETE(a_value->array.elements);
+            // wrappers array is already freed in dap_json_object_free
             break;
         
         case DAP_JSON_TYPE_OBJECT:
+            // NOTE: Cached wrappers are freed in dap_json_object_free() before calling this
+            // Free actual pairs
             for(size_t i = 0; i < a_value->object.count; i++) {
                 DAP_DELETE(a_value->object.pairs[i].key);
                 dap_json_value_v2_free(a_value->object.pairs[i].value);
             }
             DAP_DELETE(a_value->object.pairs);
+            // wrappers array is already freed in dap_json_object_free
             break;
         
         default:
@@ -434,7 +440,8 @@ bool dap_json_array_v2_add(dap_json_value_t *a_array, dap_json_value_t *a_elemen
     
     // Grow if needed
     if(a_array->array.count >= a_array->array.capacity) {
-        size_t l_new_capacity = a_array->array.capacity * ARRAY_GROWTH_FACTOR;
+        size_t l_old_capacity = a_array->array.capacity;
+        size_t l_new_capacity = l_old_capacity * ARRAY_GROWTH_FACTOR;
         dap_json_value_t **l_new_elements = DAP_REALLOC(
             a_array->array.elements,
             l_new_capacity * sizeof(dap_json_value_t*)
@@ -447,6 +454,22 @@ bool dap_json_array_v2_add(dap_json_value_t *a_array, dap_json_value_t *a_elemen
         
         a_array->array.elements = l_new_elements;
         a_array->array.capacity = l_new_capacity;
+        
+        // Also grow wrappers cache if it exists
+        if (a_array->array.wrappers) {
+            dap_json_t **l_new_wrappers = DAP_REALLOC(
+                a_array->array.wrappers,
+                l_new_capacity * sizeof(dap_json_t*)
+            );
+            if (!l_new_wrappers) {
+                log_it(L_ERROR, "Failed to grow wrappers cache to %zu", l_new_capacity);
+                return false;
+            }
+            // Zero out new slots
+            memset(l_new_wrappers + l_old_capacity, 0, 
+                   (l_new_capacity - l_old_capacity) * sizeof(dap_json_t*));
+            a_array->array.wrappers = l_new_wrappers;
+        }
     }
     
     a_array->array.elements[a_array->array.count++] = a_element;
@@ -478,7 +501,8 @@ bool dap_json_object_v2_add(dap_json_value_t *a_object, const char *a_key, dap_j
     
     // Grow if needed
     if(a_object->object.count >= a_object->object.capacity) {
-        size_t l_new_capacity = a_object->object.capacity * OBJECT_GROWTH_FACTOR;
+        size_t l_old_capacity = a_object->object.capacity;
+        size_t l_new_capacity = l_old_capacity * OBJECT_GROWTH_FACTOR;
         dap_json_object_pair_t *l_new_pairs = DAP_REALLOC(
             a_object->object.pairs,
             l_new_capacity * sizeof(dap_json_object_pair_t)
@@ -491,6 +515,22 @@ bool dap_json_object_v2_add(dap_json_value_t *a_object, const char *a_key, dap_j
         
         a_object->object.pairs = l_new_pairs;
         a_object->object.capacity = l_new_capacity;
+        
+        // Also grow wrappers cache if it exists
+        if (a_object->object.wrappers) {
+            dap_json_t **l_new_wrappers = DAP_REALLOC(
+                a_object->object.wrappers,
+                l_new_capacity * sizeof(dap_json_t*)
+            );
+            if (!l_new_wrappers) {
+                log_it(L_ERROR, "Failed to grow wrappers cache to %zu", l_new_capacity);
+                return false;
+            }
+            // Zero out new slots
+            memset(l_new_wrappers + l_old_capacity, 0, 
+                   (l_new_capacity - l_old_capacity) * sizeof(dap_json_t*));
+            a_object->object.wrappers = l_new_wrappers;
+        }
     }
     
     // Add pair

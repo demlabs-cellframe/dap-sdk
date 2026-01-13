@@ -87,6 +87,7 @@ typedef struct {
 
 /* Forward declarations for recursive types */
 typedef struct dap_json_value dap_json_value_t;
+typedef struct dap_json dap_json_t;
 
 /**
  * @brief JSON array representation
@@ -95,6 +96,7 @@ typedef struct {
     dap_json_value_t **elements;  /**< Array of value pointers */
     size_t count;                  /**< Number of elements */
     size_t capacity;               /**< Allocated capacity */
+    dap_json_t **wrappers;         /**< Cached wrappers for borrowed refs (json-c compatible) */
 } dap_json_array_t;
 
 /**
@@ -112,6 +114,7 @@ typedef struct {
     dap_json_object_pair_t *pairs; /**< Array of key-value pairs */
     size_t count;                   /**< Number of pairs */
     size_t capacity;                /**< Allocated capacity */
+    dap_json_t **wrappers;         /**< Cached wrappers for borrowed refs (json-c compatible) */
 } dap_json_object_t;
 
 /**

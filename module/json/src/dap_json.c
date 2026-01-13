@@ -183,6 +183,16 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
  * @param a_parent Parent wrapper (will be ref'd to keep it alive)
  * @return Borrowed wrapper that keeps parent alive
  */
+/**
+ * @brief Create borrowed reference wrapper (json-c compatible)
+ * @details Creates a wrapper for a value that lives in parent's Arena.
+ *          Like json-c, borrowed references don't increase parent ref_count.
+ *          The wrapper is cached in parent's array/object and freed automatically
+ *          when parent is freed. User should NEVER call dap_json_object_free() on it.
+ * @param a_value Value to wrap (must be from parent's Arena)
+ * @param a_parent Parent wrapper (array or object)
+ * @return Wrapper pointer (cached, reused on subsequent calls)
+ */
 static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_json_t *a_parent)
 {
     if (!a_value) {
@@ -199,10 +209,13 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     l_json->ref_count = 1;
     l_json->owns_value = false; // Borrowed
     
-    // Keep parent alive by incrementing its refcount
+    // CRITICAL FIX: Do NOT increment parent ref_count for borrowed references
+    // In json-c, borrowed references don't increase ref count - they just return
+    // a pointer to existing object. The wrapper is cached and freed with parent.
+    // This prevents memory leaks and ref count buildup.
     if (a_parent) {
-        a_parent->ref_count++;
         l_json->parent = a_parent;
+        // NOTE: parent->ref_count is NOT incremented (json-c compatible)
     }
     
     return l_json;
@@ -454,16 +467,42 @@ void dap_json_object_free(dap_json_t* a_json)
     
     // CRITICAL FIX: Borrowed references should NOT free stage2_parser/Arena
     // Only the root object (from parsing) should free the stage2_parser/Arena
-    // Borrowed references (child elements) just dec-ref the parent and free wrapper
+    // Borrowed references (child elements) just free the wrapper, NOT the value
     if (a_json->parent) {
         // This is a borrowed reference from parent (e.g., array element, object value)
         // The value itself lives in parent's Arena, so don't free it
-        // Just dec-ref parent and free this wrapper
-        dap_json_object_free(a_json->parent);
+        // Just free this wrapper struct - parent ref_count stays unchanged
+        // (because we didn't increment it when creating borrowed ref)
         a_json->parent = NULL;
         // Free only the wrapper struct, not the value (it's in parent's Arena)
         DAP_DELETE(a_json);
         return;
+    }
+    
+    // Free cached wrappers in arrays/objects BEFORE freeing values
+    // This ensures borrowed reference wrappers are cleaned up properly
+    if (a_json->value) {
+        if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
+            for (size_t i = 0; i < a_json->value->array.count; i++) {
+                if (a_json->value->array.wrappers[i]) {
+                    // Just free wrapper struct, parent=NULL prevents recursion
+                    a_json->value->array.wrappers[i]->parent = NULL;
+                    DAP_DELETE(a_json->value->array.wrappers[i]);
+                }
+            }
+            DAP_DELETE(a_json->value->array.wrappers);
+            a_json->value->array.wrappers = NULL;
+        } else if (a_json->value->type == DAP_JSON_TYPE_OBJECT && a_json->value->object.wrappers) {
+            for (size_t i = 0; i < a_json->value->object.count; i++) {
+                if (a_json->value->object.wrappers[i]) {
+                    // Just free wrapper struct, parent=NULL prevents recursion
+                    a_json->value->object.wrappers[i]->parent = NULL;
+                    DAP_DELETE(a_json->value->object.wrappers[i]);
+                }
+            }
+            DAP_DELETE(a_json->value->object.wrappers);
+            a_json->value->object.wrappers = NULL;
+        }
     }
     
     // This is a root object - proceed with full cleanup
@@ -557,6 +596,10 @@ size_t dap_json_array_length(dap_json_t* a_array)
 
 /**
  * @brief Get array element by index
+ * @note Like json-c, returns "borrowed reference" - do NOT free it manually!
+ *       The wrapper is cached and will be freed automatically when parent array is freed.
+ *       This matches json-c behavior exactly: no need to call dap_json_object_free()
+ *       on returned object (unlike temporary objects which DO need to be freed).
  */
 dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
 {
@@ -573,8 +616,23 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    dap_json_value_t *l_value = l_array->array.elements[a_idx];
-    return s_wrap_value_borrowed(l_value, a_array); // Borrowed reference with parent tracking
+    // JSON-C COMPATIBLE: Return cached wrapper (borrowed reference)
+    // Create wrappers array on first access (lazy initialization)
+    if (!l_array->array.wrappers) {
+        l_array->array.wrappers = DAP_NEW_Z_COUNT(dap_json_t*, l_array->array.capacity);
+        if (!l_array->array.wrappers) {
+            log_it(L_ERROR, "Failed to allocate wrappers cache for array");
+            return NULL;
+        }
+    }
+    
+    // Return existing wrapper or create new one (cached for lifetime of array)
+    if (!l_array->array.wrappers[a_idx]) {
+        dap_json_value_t *l_value = l_array->array.elements[a_idx];
+        l_array->array.wrappers[a_idx] = s_wrap_value_borrowed(l_value, a_array);
+    }
+    
+    return l_array->array.wrappers[a_idx];
 }
 
 /**
@@ -1468,45 +1526,42 @@ dap_time_t dap_json_object_get_time(dap_json_t* a_json, const char* a_key)
 /**
  * @brief Get object field from object
  */
+/**
+ * @brief Get object field from object (with caching)
+ * @note Returns borrowed reference (cached wrapper) - do NOT free manually!
+ */
 dap_json_t* dap_json_object_get_object(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json || !a_key) {
+    dap_json_t *l_result = NULL;
+    if (!dap_json_object_get_ex(a_json, a_key, &l_result)) {
         return NULL;
     }
     
-    dap_json_value_t *l_obj = s_unwrap_value(a_json);
-    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+    // Verify it's an object
+    if (!l_result || !dap_json_is_object(l_result)) {
         return NULL;
     }
     
-    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
-    if (!l_value || l_value->type != DAP_JSON_TYPE_OBJECT) {
-        return NULL;
-    }
-    
-    return s_wrap_value_borrowed(l_value, a_json); // Borrowed reference with parent tracking
+    return l_result; // Cached borrowed reference
 }
 
 /**
- * @brief Get array field from object
+ * @brief Get array field from object (with caching)
+ * @note Returns borrowed reference (cached wrapper) - do NOT free manually!
  */
 dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
 {
-    if (!a_json || !a_key) {
+    dap_json_t *l_result = NULL;
+    if (!dap_json_object_get_ex(a_json, a_key, &l_result)) {
         return NULL;
     }
     
-    dap_json_value_t *l_obj = s_unwrap_value(a_json);
-    if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
+    // Verify it's an array
+    if (!l_result || !dap_json_is_array(l_result)) {
         return NULL;
     }
     
-    dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
-    if (!l_value || l_value->type != DAP_JSON_TYPE_ARRAY) {
-        return NULL;
-    }
-    
-    return s_wrap_value_borrowed(l_value, a_json); // Borrowed reference with parent tracking
+    return l_result; // Cached borrowed reference
 }
 
 /**
@@ -1524,12 +1579,41 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    dap_json_value_t *l_val = dap_json_object_v2_get(l_obj, a_key);
+    // Find key and its index
+    size_t l_idx = 0;
+    dap_json_value_t *l_val = NULL;
+    for (size_t i = 0; i < l_obj->object.count; i++) {
+        if (strcmp(l_obj->object.pairs[i].key, a_key) == 0) {
+            l_val = l_obj->object.pairs[i].value;
+            l_idx = i;
+            break;
+        }
+    }
+    
     if (!l_val) {
+        debug_if(s_debug_more, L_DEBUG, "Key '%s' not found in object", a_key);
         return false;
     }
     
-    *a_value = s_wrap_value_borrowed(l_val, a_json); // Borrowed reference with parent tracking
+    // JSON-C COMPATIBLE: Cache wrappers (lazy init)
+    if (!l_obj->object.wrappers) {
+        l_obj->object.wrappers = DAP_NEW_Z_COUNT(dap_json_t*, l_obj->object.capacity);
+        if (!l_obj->object.wrappers) {
+            log_it(L_ERROR, "Failed to allocate wrappers cache for object");
+            return false;
+        }
+        debug_if(s_debug_more, L_DEBUG, "Allocated wrappers cache for object (capacity=%zu)", l_obj->object.capacity);
+    }
+    
+    // Return cached wrapper or create new one
+    if (!l_obj->object.wrappers[l_idx]) {
+        l_obj->object.wrappers[l_idx] = s_wrap_value_borrowed(l_val, a_json);
+        debug_if(s_debug_more, L_DEBUG, "Created cached wrapper for key '%s' at index %zu", a_key, l_idx);
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "Reusing cached wrapper for key '%s' at index %zu", a_key, l_idx);
+    }
+    
+    *a_value = l_obj->object.wrappers[l_idx];
     return true;
 }
 
