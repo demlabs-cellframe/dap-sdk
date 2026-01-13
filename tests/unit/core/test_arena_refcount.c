@@ -17,7 +17,7 @@
  */
 static void s_test_basic_refcount(void)
 {
-    printf("\n=== Test: Basic Refcount ===\n");
+    log_it(L_INFO, "\n=== Test: Basic Refcount ===");
     
     // Create refcounted arena
     dap_arena_t *l_arena = dap_arena_new_opt((dap_arena_opt_t){
@@ -34,10 +34,10 @@ static void s_test_basic_refcount(void)
     dap_assert(dap_arena_alloc_ex(l_arena, 256, &l_result2), "Alloc 2 success");
     dap_assert(dap_arena_alloc_ex(l_arena, 512, &l_result3), "Alloc 3 success");
     
-    printf("Allocated 3 blocks from arena\n");
-    printf("  Block 1: %p (page: %p)\n", l_result1.ptr, l_result1.page_handle);
-    printf("  Block 2: %p (page: %p)\n", l_result2.ptr, l_result2.page_handle);
-    printf("  Block 3: %p (page: %p)\n", l_result3.ptr, l_result3.page_handle);
+    log_it(L_INFO, "Allocated 3 blocks from arena");
+    log_it(L_INFO, "  Block 1: %p (page: %p)", l_result1.ptr, l_result1.page_handle);
+    log_it(L_INFO, "  Block 2: %p (page: %p)", l_result2.ptr, l_result2.page_handle);
+    log_it(L_INFO, "  Block 3: %p (page: %p)", l_result3.ptr, l_result3.page_handle);
     
     // All should be from same page (4KB is enough)
     dap_assert(l_result1.page_handle == l_result2.page_handle, "Same page for alloc 1&2");
@@ -45,25 +45,25 @@ static void s_test_basic_refcount(void)
     
     // Check initial refcount (should be 4: arena + 3 allocations)
     int l_refcount = dap_arena_page_get_refcount(l_result1.page_handle);
-    printf("Initial refcount: %d (expected 4: arena + 3 allocs)\n", l_refcount);
+    log_it(L_INFO, "Initial refcount: %d (expected 4: arena + 3 allocs)", l_refcount);
     dap_assert(l_refcount == 4, "Initial refcount correct");
     
     // Increment refcount (simulate borrowed reference)
     dap_arena_page_ref(l_result1.page_handle);
     l_refcount = dap_arena_page_get_refcount(l_result1.page_handle);
-    printf("After ref: %d (expected 5)\n", l_refcount);
+    log_it(L_INFO, "After ref: %d (expected 5)", l_refcount);
     dap_assert(l_refcount == 5, "Refcount after ref");
     
     // Decrement refcount
     dap_arena_page_unref(l_result1.page_handle);
     l_refcount = dap_arena_page_get_refcount(l_result1.page_handle);
-    printf("After unref: %d (expected 4)\n", l_refcount);
+    log_it(L_INFO, "After unref: %d (expected 4)", l_refcount);
     dap_assert(l_refcount == 4, "Refcount after unref");
     
     // Cleanup
     dap_arena_free(l_arena);
     
-    printf("✓ Basic refcount test passed\n");
+    log_it(L_INFO, "✓ Basic refcount test passed");
 }
 
 /**
@@ -71,7 +71,7 @@ static void s_test_basic_refcount(void)
  */
 static void s_test_stats_refcount(void)
 {
-    printf("\n=== Test: Statistics ===\n");
+    log_it(L_INFO, "\n=== Test: Statistics ===");
     
     dap_arena_t *l_arena = dap_arena_new_opt((dap_arena_opt_t){
         .initial_size = 4096,
@@ -83,12 +83,12 @@ static void s_test_stats_refcount(void)
     dap_arena_stats_t l_stats;
     dap_arena_get_stats(l_arena, &l_stats);
     
-    printf("Initial stats:\n");
-    printf("  Pages: %zu\n", l_stats.page_count);
-    printf("  Total allocated: %zu bytes\n", l_stats.total_allocated);
-    printf("  Total used: %zu bytes\n", l_stats.total_used);
-    printf("  Active refcount: %zu\n", l_stats.active_refcount);
-    printf("  Allocations: %zu\n", l_stats.allocation_count);
+    log_it(L_INFO, "Initial stats:");
+    log_it(L_INFO, "  Pages: %zu", l_stats.page_count);
+    log_it(L_INFO, "  Total allocated: %zu bytes", l_stats.total_allocated);
+    log_it(L_INFO, "  Total used: %zu bytes", l_stats.total_used);
+    log_it(L_INFO, "  Active refcount: %zu", l_stats.active_refcount);
+    log_it(L_INFO, "  Allocations: %zu", l_stats.allocation_count);
     
     dap_assert(l_stats.page_count == 1, "Initial page count");
     dap_assert(l_stats.active_refcount == 1, "Initial refcount (arena only)");
@@ -98,13 +98,13 @@ static void s_test_stats_refcount(void)
     dap_arena_alloc_ex(l_arena, 128, &l_result);
     
     dap_arena_get_stats(l_arena, &l_stats);
-    printf("\nAfter 1 allocation:\n");
-    printf("  Active refcount: %zu (expected 2)\n", l_stats.active_refcount);
+    log_it(L_INFO, "\nAfter 1 allocation:");
+    log_it(L_INFO, "  Active refcount: %zu (expected 2)", l_stats.active_refcount);
     dap_assert(l_stats.active_refcount == 2, "Refcount after alloc");
     
     dap_arena_free(l_arena);
     
-    printf("✓ Stats test passed\n");
+    log_it(L_INFO, "✓ Stats test passed");
 }
 
 /**
@@ -112,7 +112,7 @@ static void s_test_stats_refcount(void)
  */
 static void s_test_comparison(void)
 {
-    printf("\n=== Test: Refcounted vs Standard ===\n");
+    log_it(L_INFO, "\n=== Test: Refcounted vs Standard ===");
     
     // Standard arena (no refcount)
     dap_arena_t *l_arena_std = dap_arena_new_opt((dap_arena_opt_t){
@@ -131,12 +131,12 @@ static void s_test_comparison(void)
     // Standard arena: simple alloc
     void *l_ptr_std = dap_arena_alloc(l_arena_std, 128);
     dap_assert(l_ptr_std != NULL, "Standard alloc works");
-    printf("✓ Standard arena: simple alloc works\n");
+    log_it(L_INFO, "✓ Standard arena: simple alloc works");
     
     // Refcounted arena: extended alloc
     dap_arena_alloc_ex_t l_result_ref;
     dap_assert(dap_arena_alloc_ex(l_arena_ref, 128, &l_result_ref), "Refcounted alloc works");
-    printf("✓ Refcounted arena: extended alloc works\n");
+    log_it(L_INFO, "✓ Refcounted arena: extended alloc works");
     
     // Standard arena: can still use simple alloc
     void *l_ptr_std2 = dap_arena_alloc(l_arena_std, 256);
@@ -145,12 +145,12 @@ static void s_test_comparison(void)
     // Refcounted arena: can also use simple alloc (for backward compatibility)
     void *l_ptr_ref_simple = dap_arena_alloc(l_arena_ref, 256);
     dap_assert(l_ptr_ref_simple != NULL, "Refcounted arena: simple alloc works too");
-    printf("✓ Refcounted arena: backward compatible with simple alloc\n");
+    log_it(L_INFO, "✓ Refcounted arena: backward compatible with simple alloc");
     
     dap_arena_free(l_arena_std);
     dap_arena_free(l_arena_ref);
     
-    printf("✓ Comparison test passed\n");
+    log_it(L_INFO, "✓ Comparison test passed");
 }
 
 /**
@@ -158,7 +158,7 @@ static void s_test_comparison(void)
  */
 static void s_test_growth_options(void)
 {
-    printf("\n=== Test: Page Growth Options ===\n");
+    log_it(L_INFO, "\n=== Test: Page Growth Options ===");
     
     // Note: minimum page size is 4KB, so we test with larger allocations
     dap_arena_t *l_arena = dap_arena_new_opt((dap_arena_opt_t){
@@ -178,25 +178,25 @@ static void s_test_growth_options(void)
     dap_arena_alloc(l_arena, 2048);  // 4KB total (page full)
     
     dap_arena_get_stats(l_arena, &l_stats);
-    printf("After filling first page (4KB):\n");
-    printf("  Pages: %zu (expected 1)\n", l_stats.page_count);
-    printf("  Used: %zu bytes\n", l_stats.total_used);
+    log_it(L_INFO, "After filling first page (4KB):");
+    log_it(L_INFO, "  Pages: %zu (expected 1)", l_stats.page_count);
+    log_it(L_INFO, "  Used: %zu bytes", l_stats.total_used);
     dap_assert(l_stats.page_count == 1, "Still on first page");
     
     // This should trigger new page (with growth factor 1.5 = 6KB)
     dap_arena_alloc(l_arena, 1024);  // Exceeds first page
     
     dap_arena_get_stats(l_arena, &l_stats);
-    printf("After allocation requiring new page:\n");
-    printf("  Pages: %zu (expected 2)\n", l_stats.page_count);
-    printf("  Total allocated: %zu bytes\n", l_stats.total_allocated);
-    printf("  Total used: %zu bytes\n", l_stats.total_used);
+    log_it(L_INFO, "After allocation requiring new page:");
+    log_it(L_INFO, "  Pages: %zu (expected 2)", l_stats.page_count);
+    log_it(L_INFO, "  Total allocated: %zu bytes", l_stats.total_allocated);
+    log_it(L_INFO, "  Total used: %zu bytes", l_stats.total_used);
     
     dap_assert(l_stats.page_count >= 2, "Multiple pages created");
     
     dap_arena_free(l_arena);
     
-    printf("✓ Growth options test passed\n");
+    log_it(L_INFO, "✓ Growth options test passed");
 }
 
 int main(int argc, char **argv)
@@ -204,24 +204,21 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_INFO);
     
-    printf("\n");
-    printf("═══════════════════════════════════════════════════════\n");
-    printf("  DAP Arena Refcount Test Suite\n");
-    printf("  Hybrid approach with dap_arena_opt_t\n");
-    printf("═══════════════════════════════════════════════════════\n");
+    log_it(L_INFO, "\n═══════════════════════════════════════════════════════");
+    log_it(L_INFO, "  DAP Arena Refcount Test Suite");
+    log_it(L_INFO, "  Hybrid approach with dap_arena_opt_t");
+    log_it(L_INFO, "═══════════════════════════════════════════════════════");
     
     s_test_basic_refcount();
     s_test_stats_refcount();
     s_test_comparison();
     s_test_growth_options();
     
-    printf("\n");
-    printf("═══════════════════════════════════════════════════════\n");
-    printf("  ✅ ALL TESTS PASSED\n");
-    printf("═══════════════════════════════════════════════════════\n");
-    printf("\n");
+    log_it(L_INFO, "\n═══════════════════════════════════════════════════════");
+    log_it(L_INFO, "  ✅ ALL TESTS PASSED");
+    log_it(L_INFO, "═══════════════════════════════════════════════════════\n");
     
     return 0;
 }
