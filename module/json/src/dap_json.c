@@ -204,6 +204,8 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     if (a_parent) {
         a_parent->ref_count++;
         l_json->parent = a_parent;
+        // Inherit stage2_parser from parent for Arena access
+        l_json->stage2_parser = a_parent->stage2_parser;
     }
     
     return l_json;
@@ -1284,15 +1286,25 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     }
     
     // Already materialized or not zero-copy? Return existing data
-    if (!a_string_value->string.is_zero_copy || a_string_value->string.data_materialized) {
+    if (!a_string_value->string.is_zero_copy) {
+        // Not zero-copy means it's a created/materialized string
         return a_string_value->string.data_materialized ? 
                a_string_value->string.data_materialized : 
                a_string_value->string.data;
     }
     
+    // Zero-copy string - check if already materialized
+    if (a_string_value->string.data_materialized) {
+        return a_string_value->string.data_materialized;
+    }
+    
     // FAIL-FAST: No Arena = critical error (shouldn't happen in normal parsing)
     if (!a_json || !a_json->stage2_parser || !a_json->stage2_parser->arena) {
         log_it(L_CRITICAL, "FATAL: No Arena available for string materialization - JSON object not properly initialized!");
+        log_it(L_CRITICAL, "       is_zero_copy=%d, data_materialized=%p, stage2_parser=%p", 
+               a_string_value->string.is_zero_copy, 
+               a_string_value->string.data_materialized,
+               a_json ? a_json->stage2_parser : NULL);
         return NULL;
     }
     

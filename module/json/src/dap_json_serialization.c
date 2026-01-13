@@ -94,6 +94,68 @@ static bool s_append_string(char **a_buffer, size_t *a_size, size_t *a_capacity,
 }
 
 /**
+ * @brief Escape string for JSON with explicit length (for zero-copy support)
+ * @param a_str String to escape (may not be null-terminated!)
+ * @param a_len String length
+ * @return Escaped string (with quotes), caller must free with DAP_DELETE
+ */
+static char* s_escape_string_n(const char *a_str, size_t a_len)
+{
+    if (!a_str) {
+        return NULL;
+    }
+    
+    size_t l_capacity = a_len * 2 + 3; // Worst case: every char escaped + quotes + null
+    char *l_result = DAP_NEW_Z_SIZE(char, l_capacity);
+    if (!l_result) {
+        return NULL;
+    }
+    
+    size_t l_pos = 0;
+    l_result[l_pos++] = '"';
+    
+    for (size_t i = 0; i < a_len; i++) {
+        unsigned char c = (unsigned char)a_str[i];
+        
+        switch (c) {
+            case '"':  l_result[l_pos++] = '\\'; l_result[l_pos++] = '"'; break;
+            case '\\': l_result[l_pos++] = '\\'; l_result[l_pos++] = '\\'; break;
+            case '\b': l_result[l_pos++] = '\\'; l_result[l_pos++] = 'b'; break;
+            case '\f': l_result[l_pos++] = '\\'; l_result[l_pos++] = 'f'; break;
+            case '\n': l_result[l_pos++] = '\\'; l_result[l_pos++] = 'n'; break;
+            case '\r': l_result[l_pos++] = '\\'; l_result[l_pos++] = 'r'; break;
+            case '\t': l_result[l_pos++] = '\\'; l_result[l_pos++] = 't'; break;
+            default:
+                if (c < 32) {
+                    // Control character - use \uXXXX
+                    char l_buf[7];
+                    snprintf(l_buf, sizeof(l_buf), "\\u%04x", c);
+                    memcpy(l_result + l_pos, l_buf, 6);
+                    l_pos += 6;
+                } else {
+                    l_result[l_pos++] = c;
+                }
+                break;
+        }
+        
+        // Reallocate if needed
+        if (l_pos + 10 > l_capacity) {
+            l_capacity *= 2;
+            char *l_new = DAP_REALLOC(l_result, l_capacity);
+            if (!l_new) {
+                DAP_DELETE(l_result);
+                return NULL;
+            }
+            l_result = l_new;
+        }
+    }
+    
+    l_result[l_pos++] = '"';
+    l_result[l_pos] = '\0';
+    return l_result;
+}
+
+/**
  * @brief Escape string for JSON
  */
 static char* s_escape_string(const char *a_str)
@@ -308,7 +370,8 @@ static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t
         }
             
         case DAP_JSON_TYPE_STRING: {
-            char *l_escaped = s_escape_string(a_value->string.data);
+            // Use explicit length for zero-copy strings (may not be null-terminated)
+            char *l_escaped = s_escape_string_n(a_value->string.data, a_value->string.length);
             if (!l_escaped) {
                 return false;
             }

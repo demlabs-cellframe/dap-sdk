@@ -64,6 +64,12 @@ static bool s_test_simple_object_round_trip(void) {
     // Compare values
     const char *name1 = dap_json_object_get_string(l_json1, "name");
     const char *name2 = dap_json_object_get_string(l_json2, "name");
+    DAP_TEST_FAIL_IF_NULL(name1, "Get name from original");
+    DAP_TEST_FAIL_IF_NULL(name2, "Get name from serialized");
+    if (strcmp(name1, name2) != 0) {
+        log_it(L_ERROR, "Name mismatch: '%s' vs '%s' (len %zu vs %zu)", 
+               name1, name2, strlen(name1), strlen(name2));
+    }
     DAP_TEST_FAIL_IF(strcmp(name1, name2) != 0, "Name preserved");
     
     int age1 = dap_json_object_get_int(l_json1, "age");
@@ -212,6 +218,8 @@ static bool s_test_special_characters_preservation(void) {
     // Compare
     const char *unicode1 = dap_json_object_get_string(l_json1, "unicode");
     const char *unicode2 = dap_json_object_get_string(l_json2, "unicode");
+    DAP_TEST_FAIL_IF_NULL(unicode1, "Get unicode from original");
+    DAP_TEST_FAIL_IF_NULL(unicode2, "Get unicode from serialized");
     DAP_TEST_FAIL_IF(strcmp(unicode1, unicode2) != 0, "Unicode preserved");
     
     const char *escapes1 = dap_json_object_get_string(l_json1, "escapes");
@@ -397,6 +405,7 @@ static bool s_test_mixed_types_round_trip(void) {
     DAP_TEST_FAIL_IF(fabs(dbl_val - 3.14) > 0.01, "Double preserved");
     
     const char *str_val = dap_json_object_get_string(l_json2, "string");
+    DAP_TEST_FAIL_IF_NULL(str_val, "Get string from serialized");
     DAP_TEST_FAIL_IF(strcmp(str_val, "text") != 0, "String preserved");
     
     bool bool_val = dap_json_object_get_bool(l_json2, "bool");
