@@ -62,7 +62,19 @@
 static bool s_debug_more = false;
 
 /* Thread-local static arena for parsed JSON values */
-static _Thread_local dap_json_stage2_t *s_thread_arena = NULL;
+/**
+ * @brief Thread-local arena list for multiple parsed JSON objects
+ * @details Each parse creates a new arena. Old arenas are kept alive until:
+ *          1. User explicitly frees all JSON objects from that arena
+ *          2. User calls dap_json_cleanup_thread()
+ *          3. Thread exits
+ */
+typedef struct dap_json_arena_node {
+    dap_json_stage2_t *stage2;
+    struct dap_json_arena_node *next;
+} dap_json_arena_node_t;
+
+static _Thread_local dap_json_arena_node_t *s_arena_list = NULL;
 
 /**
  * @brief Enable/disable detailed debug logging for ALL JSON parser components
@@ -340,15 +352,19 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
-    // Free old thread-local arena if exists
-    if (s_thread_arena) {
-        dap_json_stage2_free(s_thread_arena);
+    // Add new arena to thread-local list
+    dap_json_arena_node_t *l_node = DAP_NEW_Z(dap_json_arena_node_t);
+    if (!l_node) {
+        log_it(L_ERROR, "Failed to allocate arena list node");
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
     }
+    l_node->stage2 = l_stage2;
+    l_node->next = s_arena_list;
+    s_arena_list = l_node;
     
-    // Store Stage 2 parser in thread-local arena (it owns the Arena and transcoded buffer)
-    s_thread_arena = l_stage2;
-    
-    // Wrap for public API (value lives in thread-local arena)
+    // Wrap for public API (value lives in arena)
     dap_json_t *l_result = s_wrap_value_ex(l_root, false); // owns_value = false (in arena)
     
     // Cleanup Stage 1 (transcoded buffer ownership transferred to Stage 2)
@@ -578,15 +594,17 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json)
 }
 
 /**
- * @brief Clean up thread-local arena
- * @details Call this at the end of thread to free parsed JSON values
- * This is optional - arena will be reused for next parse in same thread
+ * @brief Clean up all thread-local arenas
+ * @details Call this at the end of thread to free ALL parsed JSON values
+ * This frees all arenas in the thread-local list
  */
 void dap_json_cleanup_thread_arena(void)
 {
-    if (s_thread_arena) {
-        dap_json_stage2_free(s_thread_arena);
-        s_thread_arena = NULL;
+    while (s_arena_list) {
+        dap_json_arena_node_t *l_next = s_arena_list->next;
+        dap_json_stage2_free(s_arena_list->stage2);
+        DAP_DELETE(s_arena_list);
+        s_arena_list = l_next;
     }
 }
 
@@ -1473,24 +1491,12 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
         return a_string_value->string.data_materialized;
     }
     
-    // FAIL-FAST: No Arena = critical error (shouldn't happen in normal parsing)
-    if (!s_thread_arena || !s_thread_arena->arena) {
-        log_it(L_CRITICAL, "FATAL: No thread-local Arena available for string materialization!");
-        log_it(L_CRITICAL, "       is_zero_copy=%d, data_materialized=%p, s_thread_arena=%p", 
-               a_string_value->string.is_zero_copy, 
-               a_string_value->string.data_materialized,
-               s_thread_arena);
-        return NULL;
-    }
-    
-    // Lazy materialization: allocate null-terminated copy in thread-local Arena
-    char *l_copy = (char*)dap_arena_alloc(
-        s_thread_arena->arena,
-        a_string_value->string.length + 1
-    );
+    // Lazy materialization: allocate null-terminated copy in HEAP
+    // (Not in arena, because we don't know which arena this value belongs to in multi-arena setup)
+    char *l_copy = DAP_NEW_Z_SIZE(char, a_string_value->string.length + 1);
     
     if (!l_copy) {
-        log_it(L_ERROR, "Arena allocation failed for string materialization (%zu bytes)", 
+        log_it(L_ERROR, "Failed to allocate string materialization (%zu bytes)", 
                a_string_value->string.length + 1);
         return NULL;
     }
@@ -1498,9 +1504,9 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     memcpy(l_copy, a_string_value->string.data, a_string_value->string.length);
     l_copy[a_string_value->string.length] = '\0';
     
-    // Cache materialized copy
+    // Cache materialized copy (HEAP allocated, will be freed with value)
     a_string_value->string.data_materialized = l_copy;
-    a_string_value->string.needs_free = false;  // Arena owns it
+    a_string_value->string.needs_free = true;  // Mark for cleanup
     
     return l_copy;
 }

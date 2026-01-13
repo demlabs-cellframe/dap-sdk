@@ -469,6 +469,11 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
             if(a_value->string.needs_free && a_value->string.data) {
                 DAP_DELETE(a_value->string.data);
             }
+            // Free materialized copy if it was allocated separately
+            if(a_value->string.data_materialized && 
+               a_value->string.data_materialized != a_value->string.data) {
+                DAP_DELETE(a_value->string.data_materialized);
+            }
             break;
         
         case DAP_JSON_TYPE_ARRAY:
