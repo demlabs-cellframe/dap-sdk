@@ -51,6 +51,7 @@
 #include <stdlib.h>
 #include <locale.h>
 #include <string.h>
+#include <math.h>
 
 #define LOG_TAG "dap_json_number_fast"
 
@@ -124,7 +125,8 @@ bool dap_json_parse_int64_fast(const char *a_str, size_t a_len, int64_t *a_out_v
     // Apply sign
     if (l_negative) {
         // Special case: INT64_MIN (can't be represented as positive)
-        if (__builtin_expect(l_value == (int64_t)(INT64_MAX) + 1, 0)) {
+        // Compare as uint64_t to avoid overflow and signedness warnings
+        if (__builtin_expect((uint64_t)l_value == (uint64_t)INT64_MAX + 1, 0)) {
             *a_out_value = INT64_MIN;
             return true;
         }

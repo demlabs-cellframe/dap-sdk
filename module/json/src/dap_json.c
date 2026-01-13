@@ -502,6 +502,7 @@ void dap_json_object_free(dap_json_t* a_json)
     // Free cached wrappers in arrays/objects BEFORE freeing values
     // This ensures borrowed reference wrappers are cleaned up properly
     // IMPORTANT: Wrappers are borrowed refs - just free wrapper struct if refcount=0
+    bool l_has_live_borrowed_refs = false;
     if (a_json->value) {
         if (a_json->value->type == DAP_JSON_TYPE_ARRAY && a_json->value->array.wrappers) {
             for (size_t i = 0; i < a_json->value->array.count; i++) {
@@ -511,8 +512,8 @@ void dap_json_object_free(dap_json_t* a_json)
                         a_json->value->array.wrappers[i]->ref_count--;
                         // Clear parent so it won't try to dec-ref us again
                         a_json->value->array.wrappers[i]->parent = NULL;
-                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
-                        // User is responsible for eventual cleanup or arena will clean up on next parse
+                        // Mark that we have live borrowed references - value must stay alive!
+                        l_has_live_borrowed_refs = true;
                     } else {
                         // Just free wrapper struct, parent=NULL prevents recursion
                         a_json->value->array.wrappers[i]->parent = NULL;
@@ -530,8 +531,8 @@ void dap_json_object_free(dap_json_t* a_json)
                         a_json->value->object.wrappers[i]->ref_count--;
                         // Clear parent so it won't try to dec-ref us again
                         a_json->value->object.wrappers[i]->parent = NULL;
-                        // Value lives in thread-local arena, wrapper stays alive with decremented refcount
-                        // User is responsible for eventual cleanup or arena will clean up on next parse
+                        // Mark that we have live borrowed references - value must stay alive!
+                        l_has_live_borrowed_refs = true;
                     } else {
                         // Just free wrapper struct, parent=NULL prevents recursion
                         a_json->value->object.wrappers[i]->parent = NULL;
@@ -552,12 +553,14 @@ void dap_json_object_free(dap_json_t* a_json)
     // Values from parsing are NOT freed here - they live in s_thread_arena
     // Only manually created values (owns_value=true, stage2_parser=NULL) are freed
     
-    if (a_json->owns_value && a_json->value) {
+    // CRITICAL: Don't free value if there are live borrowed references!
+    if (a_json->owns_value && a_json->value && !l_has_live_borrowed_refs) {
         // Malloc-based value (manually created via dap_json_object_new, etc.)
-        // Check if this value is NOT from arena (arena values have different allocation)
-        // For now, we free all owned values - arena values will be freed with arena
+        // AND no live borrowed references - safe to free
         dap_json_value_v2_free(a_json->value);
     }
+    // If l_has_live_borrowed_refs==true, value stays alive for borrowed wrappers
+    // They will free it when their own refcount reaches 0
     
     // Free wrapper
     DAP_DELETE(a_json);
@@ -1038,7 +1041,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     struct {
         dap_json_sort_fn_t sort_fn;
         dap_json_t **wrappers;
-        dap_json_value_t *elements;
+        dap_json_value_t **elements;  // Array of pointers
     } l_ctx = {
         .sort_fn = a_sort_fn,
         .wrappers = l_wrappers,
