@@ -223,42 +223,16 @@ static void s_udp_packet_received_wrapper(dap_io_flow_server_t *a_srv,
     UNUSED(a_srv);
     UNUSED(a_listener_es);
     
-    // NOTE: a_flow CAN be NULL for cross-worker forwarded NEW flows!
-    // In that case, we just skip flow-specific updates but still process the packet
-    if (!a_data || a_size == 0) {
+    // NOTE: a_flow should NEVER be NULL here - s_process_flow_packet_common creates it!
+    // If it's NULL, something is wrong with flow creation
+    if (!a_flow || !a_data || a_size == 0) {
+        if (!a_flow) {
+            log_it(L_ERROR, "UDP wrapper: a_flow is NULL - flow creation failed!");
+        }
         return;
     }
     
-    // If flow exists, update its state
-    if (a_flow) {
-        dap_io_flow_udp_t *l_udp_flow = (dap_io_flow_udp_t*)a_flow;
-        
-        // CRITICAL: Update remote_addr from EVERY incoming packet!
-        // Client port may change between handshake and data packets (after bind())
-        if (a_remote_addr) {
-            memcpy(&l_udp_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
-            l_udp_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
-                ? sizeof(struct sockaddr_in) 
-                : sizeof(struct sockaddr_in6);
-            
-            debug_if(s_debug_more, L_DEBUG,
-                     "Updated flow remote_addr to %s",
-                     dap_io_flow_socket_addr_to_string(a_remote_addr));
-        }
-        
-        // Update activity time
-        dap_io_flow_udp_update_activity(l_udp_flow);
-    } else {
-        debug_if(s_debug_more, L_DEBUG,
-                 "UDP wrapper: a_flow is NULL (new flow from cross-worker forward), skipping flow updates");
-    }
-   
-    // Call protocol-specific handler (works even if a_flow is NULL - protocol will handle it)
-    if (s_udp_ops && s_udp_ops->packet_received) {
-        dap_io_flow_udp_t *l_udp_flow = a_flow ? (dap_io_flow_udp_t*)a_flow : NULL;
-        s_udp_ops->packet_received(l_udp_flow, a_data, a_size);
-    }
-}
+    dap_io_flow_udp_t *l_udp_flow = (dap_io_flow_udp_t*)a_flow;
     
     // CRITICAL: Update remote_addr from EVERY incoming packet!
     // Client port may change between handshake and data packets (after bind())

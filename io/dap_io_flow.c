@@ -1283,33 +1283,29 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     }
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Queue callback: forwarding to protocol with real listener fd=%d (type=%d) instead of queue fd=%d (type=%d)",
+             "Queue callback: forwarding to flow processing with real listener fd=%d (type=%d) instead of queue fd=%d (type=%d)",
              l_real_listener->fd, l_real_listener->type, a_es->fd, a_es->type);
     
-    // Call protocol's packet handler with REAL UDP listener
+    // CRITICAL: Call s_process_flow_packet_common instead of packet_received directly!
+    // s_process_flow_packet_common will:
+    // 1. Find existing flow OR create new flow if l_packet->flow is NULL
+    // 2. Add new flow to current worker's hash table
+    // 3. Then call packet_received with valid flow
+    // This ensures proper flow lifecycle for cross-worker forwarded handshakes
     debug_if(s_debug_more, L_DEBUG,
-             "Queue callback: checking ops: l_server->ops=%p, packet_received=%p",
-             l_server->ops, l_server->ops ? l_server->ops->packet_received : NULL);
+             "Queue callback: CALLING s_process_flow_packet_common(server=%p, flow=%p, size=%zu, listener_fd=%d)",
+             l_server, l_packet->flow, l_packet->size, l_real_listener->fd);
     
-    if (l_server->ops && l_server->ops->packet_received) {
-        debug_if(s_debug_more, L_DEBUG,
-                 "Queue callback: CALLING packet_received(%p, flow=%p, size=%zu, listener_fd=%d)",
-                 l_server, l_packet->flow, l_packet->size, l_real_listener->fd);
-        
-        l_server->ops->packet_received(
-            l_server,
-            l_packet->flow,
-            l_packet->data,
-            l_packet->size,
-            &l_packet->remote_addr,
-            l_real_listener  // Pass REAL UDP listener, not queue!
-        );
-        
-        debug_if(s_debug_more, L_DEBUG, "Queue callback: packet_received RETURNED");
-    } else {
-        log_it(L_ERROR, "Queue callback: ops or packet_received is NULL! ops=%p, packet_received=%p",
-               l_server->ops, l_server->ops ? l_server->ops->packet_received : NULL);
-    }
+    s_process_flow_packet_common(
+        l_server,
+        l_packet->data,
+        l_packet->size,
+        &l_packet->remote_addr,
+        l_packet->remote_addr_len,
+        l_real_listener  // Pass REAL UDP listener, not queue!
+    );
+    
+    debug_if(s_debug_more, L_DEBUG, "Queue callback: s_process_flow_packet_common RETURNED");
     
     // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
     // Arena memory is automatically reused when the source worker's arena is reset
