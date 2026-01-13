@@ -101,8 +101,21 @@ bool dap_json_parse_int64_fast(const char *a_str, size_t a_len, int64_t *a_out_v
             return false; // Would overflow
         }
         
-        if (__builtin_expect(l_value == l_max_div_10 && digit > l_max_mod_10, 0)) {
-            return false; // Would overflow
+        // Special case for INT64_MIN: allow digit==8 when negative and at boundary
+        // INT64_MIN = -9223372036854775808 (absolute value 9223372036854775808)
+        // INT64_MAX =  9223372036854775807
+        if (__builtin_expect(l_value == l_max_div_10, 0)) {
+            if (l_negative) {
+                // Allow digit==8 for INT64_MIN, reject >8
+                if (digit > 8) {
+                    return false;
+                }
+            } else {
+                // Positive: max digit is 7 (INT64_MAX ends with 7)
+                if (digit > l_max_mod_10) {
+                    return false;
+                }
+            }
         }
         
         l_value = l_value * 10 + digit;
@@ -239,8 +252,14 @@ bool dap_json_parse_double_fast(const char *a_str, size_t a_len, double *a_out_v
         return false; // Invalid or didn't consume all input
     }
     
+    // IEEE 754 allows underflow to zero or denormalized numbers
+    // ERANGE with result==0 or very small is OK (underflow)
+    // ERANGE with result==Inf is NOT OK (overflow)
     if (errno == ERANGE) {
-        return false; // Overflow/underflow
+        if (isinf(l_value)) {
+            return false; // Overflow to infinity - reject
+        }
+        // Underflow to zero or denormalized - accept
     }
     
     *a_out_value = l_value;

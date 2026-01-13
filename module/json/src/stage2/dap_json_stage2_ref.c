@@ -737,16 +737,16 @@ static bool s_parse_number(
             return true;
         }
         
-        // TODO: Try uint128/uint256 for very large integers
-        log_it(L_ERROR, "Integer overflow (> UINT64_MAX)");
-        return false;
+        // Integer overflow (> UINT64_MAX or < INT64_MIN)
+        // Fallback to double for graceful handling (e.g., -9223372036854775809)
+        // This loses precision but allows parsing to succeed
     }
     
-    // SLOW PATH: Double (has '.' or 'e')
+    // SLOW PATH: Double (has '.' or 'e', or integer overflow)
     // TODO: Replace with Eisel-Lemire for 3-5x speedup
     double l_dval;
     if (!dap_json_parse_double_fast(l_num_str, l_len, &l_dval)) {
-        log_it(L_ERROR, "Invalid double format");
+        log_it(L_ERROR, "Invalid number format");
         return false;
     }
     
