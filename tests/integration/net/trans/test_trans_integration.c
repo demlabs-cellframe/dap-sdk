@@ -1046,19 +1046,19 @@ int main(void)
                                  "ca_folders=[./test_ca]\n"
                                  "[general]\n"
                                  "debug_reactor=false\n"
-                                 "[dap_client]\n"
-                                 "max_tries=5\n"
-                                 "timeout=60\n"
-                                 "debug_more=false\n"
-                                 "timeout_active_after_connect=60\n"
-                                "[stream]\n"
-                                "debug_more=false\n"
+                                "[dap_client]\n"
+                                "max_tries=5\n"
+                                "timeout=60\n"
+                                "debug_more=true\n"
+                                "timeout_active_after_connect=60\n"
+                               "[stream]\n"
+                                "debug_more=true\n"
                                 "debug_channels=false\n"
                                 "debug_dump_stream_headers=false\n"
                                 "[stream_udp]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "[io_flow]\n"
-                                "debug_more=false\n";
+                                "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);

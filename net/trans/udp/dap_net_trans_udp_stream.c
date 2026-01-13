@@ -1534,38 +1534,13 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     const char *l_json_str = json_object_to_json_string(l_json);
     size_t l_json_len = strlen(l_json_str);
     
-    log_it(L_DEBUG, "CLIENT: SESSION_CREATE JSON: '%s' (%zu bytes)", l_json_str, l_json_len);
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE JSON: '%s' (%zu bytes)", l_json_str, l_json_len);
     
-    // Encrypt JSON with handshake key
-    size_t l_encrypted_max = l_json_len + 256;  // Extra space for encryption overhead
-    uint8_t *l_encrypted = DAP_NEW_SIZE(uint8_t, l_encrypted_max);
-    if (!l_encrypted) {
-        log_it(L_ERROR, "Failed to allocate encryption buffer");
-        json_object_put(l_json);
-        return -1;
-    }
-    
-    size_t l_encrypted_size = dap_enc_code(l_udp_ctx->handshake_key,
-                                           l_json_str, l_json_len,
-                                           l_encrypted, l_encrypted_max,
-                                           DAP_ENC_DATA_TYPE_RAW);
+    // Send SESSION_CREATE packet (s_udp_write_typed will handle encryption)
+    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
+                                        l_json_str, l_json_len);
     
     json_object_put(l_json);  // Free JSON object
-    
-    if (l_encrypted_size == 0) {
-        log_it(L_ERROR, "Failed to encrypt SESSION_CREATE payload");
-        DAP_DELETE(l_encrypted);
-        return -1;
-    }
-    
-    log_it(L_DEBUG, "CLIENT: Encrypted SESSION_CREATE: %zu bytes → %zu bytes", 
-           l_json_len, l_encrypted_size);
-    
-    // Send encrypted SESSION_CREATE packet
-    ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_SESSION_CREATE,
-                                        l_encrypted, l_encrypted_size);
-    
-    DAP_DELETE(l_encrypted);  // Free encryption buffer
     
     if (l_sent < 0) {
         log_it(L_ERROR, "Failed to send UDP session create request");
@@ -2282,7 +2257,10 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     // Send encrypted blob (no headers, no magic, just encrypted data)
     ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size);
     
+    log_it(L_CRITICAL, "!!! ABOUT TO FREE l_encrypted=%p (size=%zu, sent=%zd) at s_udp_write_typed:2260 !!!", 
+           l_encrypted, l_encrypted_size, l_sent);
     DAP_DELETE(l_encrypted);
+    log_it(L_CRITICAL, "!!! FREED l_encrypted successfully at s_udp_write_typed:2260 !!!");
     
     if (l_sent < 0) {
         log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_pkt_type);

@@ -1451,55 +1451,31 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Processing SESSION_CREATE: payload_size=%zu (inner envelope)",
+             "Processing SESSION_CREATE: payload_size=%zu (JSON plaintext)",
              a_payload_size);
     
-    // NOTE: Payload from s_process_encrypted_udp_packet is OUTER decrypted (full_header removed)
-    // But SESSION_CREATE has INNER encryption envelope! Need to decrypt again.
-    // Architecture: encrypt(JSON) → inner_encrypted, then full_header + inner_encrypted → outer_encrypted
+    // NOTE: Payload from s_process_encrypted_udp_packet is already decrypted JSON plaintext
+    // No inner encryption envelope anymore (simplified architecture)
     
-    // Decrypt inner envelope
-    size_t l_decrypted_max = a_payload_size + 256;
-    uint8_t *l_decrypted = DAP_NEW_SIZE(uint8_t, l_decrypted_max);
-    if (!l_decrypted) {
-        log_it(L_ERROR, "Failed to allocate buffer for inner decryption");
+    // Ensure null-termination for JSON parsing
+    char *l_json_str = DAP_NEW_SIZE(char, a_payload_size + 1);
+    if (!l_json_str) {
+        log_it(L_ERROR, "Failed to allocate buffer for JSON string");
         return -3;
     }
     
-    log_it(L_DEBUG, "SERVER: Decrypting SESSION_CREATE inner (payload_size=%zu) with key=%p",
-           a_payload_size, a_session->encryption_key);
+    memcpy(l_json_str, a_payload, a_payload_size);
+    l_json_str[a_payload_size] = '\0';
     
-    size_t l_decrypted_size = dap_enc_decode(a_session->encryption_key,
-                                             a_payload, a_payload_size,
-                                             l_decrypted, l_decrypted_max,
-                                             DAP_ENC_DATA_TYPE_RAW);
+    debug_if(s_debug_more, L_DEBUG, "SERVER: SESSION_CREATE JSON: '%.80s'", l_json_str);
     
-    if (l_decrypted_size == 0) {
-        log_it(L_ERROR, "Failed to decrypt SESSION_CREATE inner envelope");
-        DAP_DELETE(l_decrypted);
-        return -4;
-    }
-    
-    log_it(L_DEBUG, "SERVER: Decrypted %zu → %zu bytes, first 40 chars: '%.40s'",
-           a_payload_size, l_decrypted_size, (char*)l_decrypted);
-    
-    // CRITICAL: Ensure null-termination for JSON parsing
-    // dap_enc_decode doesn't add null terminator
-    if (l_decrypted_size < l_decrypted_max) {
-        l_decrypted[l_decrypted_size] = '\0';
-    } else {
-        log_it(L_ERROR, "No space for null terminator in decrypted buffer");
-        DAP_DELETE(l_decrypted);
-        return -4;
-    }
-    
-    // Parse JSON from decrypted inner data
-    json_object *l_json = json_tokener_parse((const char*)l_decrypted);
-    DAP_DELETE(l_decrypted);
+    // Parse JSON directly from payload
+    json_object *l_json = json_tokener_parse(l_json_str);
+    DAP_DELETE(l_json_str);
     
     if (!l_json) {
-        log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (inner_size=%zu)", l_decrypted_size);
-        return -5;
+        log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (size=%zu)", a_payload_size);
+        return -4;
     }
 
     
