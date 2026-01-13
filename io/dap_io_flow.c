@@ -78,6 +78,18 @@ static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server,
                                       uint32_t a_from_worker_id,
                                       uint32_t a_to_worker_id, 
                                       struct flow_cross_worker_packet *a_packet);
+static void s_process_forwarded_packet(dap_io_flow_server_t *server,
+                                       dap_io_flow_t *flow,
+                                       const uint8_t *data,
+                                       size_t size,
+                                       const struct sockaddr_storage *remote_addr,
+                                       dap_events_socket_t *listener_es);
+static void s_process_flow_packet_common(dap_io_flow_server_t *a_server,
+                                         const uint8_t *a_data,
+                                         size_t a_data_size,
+                                         const struct sockaddr_storage *a_remote_addr,
+                                         socklen_t a_remote_addr_len,
+                                         dap_events_socket_t *a_listener_es);
 
 // =============================================================================
 // Public API - Core
@@ -105,12 +117,6 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     
     if (!a_name || !a_ops) {
         log_it(L_ERROR, "Invalid arguments: name=%p, ops=%p", a_name, a_ops);
-        return NULL;
-    }
-    
-    // Validate required callbacks
-    if (!a_ops->packet_received || !a_ops->flow_create || !a_ops->flow_destroy) {
-        log_it(L_ERROR, "Required callbacks are missing");
         return NULL;
     }
     
@@ -862,6 +868,37 @@ static dap_arena_t* s_get_cross_worker_arena(void)
         log_it(L_DEBUG, "Created cross-worker arena for worker thread");
     }
     return tl_cross_worker_arena;
+}
+
+// =============================================================================
+// Cross-Worker Forwarding
+// =============================================================================
+
+/**
+ * @brief Wrapper for cross-worker forwarded packets
+ * 
+ * Called from queue callback when packet is forwarded from another worker.
+ * Re-processes the packet on the target worker.
+ */
+static void s_process_forwarded_packet(
+    dap_io_flow_server_t *a_server,
+    dap_io_flow_t *a_flow,  // May be NULL for new flows
+    const uint8_t *a_data,
+    size_t a_data_size,
+    const struct sockaddr_storage *a_remote_addr,
+    dap_events_socket_t *a_listener)
+{
+    debug_if(s_debug_more, L_DEBUG,
+             "Processing forwarded packet: server=%p, flow=%p, size=%zu, listener_fd=%d",
+             a_server, a_flow, a_data_size, a_listener ? a_listener->fd : -1);
+    
+    // Process the packet using common logic
+    socklen_t l_addr_len = (a_remote_addr->ss_family == AF_INET) 
+        ? sizeof(struct sockaddr_in) 
+        : sizeof(struct sockaddr_in6);
+    
+    s_process_flow_packet_common(a_server, a_data, a_data_size,
+                                  a_remote_addr, l_addr_len, a_listener);
 }
 
 /**
