@@ -85,6 +85,7 @@ typedef int (*dap_json_sort_fn_t)(const dap_json_t *a, const dap_json_t *b);
 dap_json_t* dap_json_object_new(void);
 dap_json_t* dap_json_parse_string(const char* a_json_string);
 void dap_json_object_free(dap_json_t* a_json);  // Works for both owned and borrowed
+void dap_json_cleanup_thread_arena(void);        // Clean up thread-local arena (call at thread end)
 // Use dap_json_object_free() for arrays too - it handles both types
 #define dap_json_array_free(a_array) dap_json_object_free(a_array)
 dap_json_t* dap_json_object_ref(dap_json_t* a_json);
