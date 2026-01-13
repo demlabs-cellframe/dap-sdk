@@ -3,8 +3,6 @@
 # - func_name
 # - parameters list (type and name from PARAM(...) or void)
 # Output format: return_type|func_name|param_list|macro_type
-<<<<<<< HEAD
-=======
 # Parse DAP_MOCK_CUSTOM and DAP_MOCK_WRAPPER_CUSTOM declarations and extract:
 # - return_type (original, with *)
 # - func_name
@@ -61,7 +59,6 @@ function process_params(params_str) {
     return result
 }
 
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
 BEGIN {
     in_custom = 0
     paren_level = 0
@@ -73,11 +70,7 @@ BEGIN {
     is_void = 0
     macro_type = ""  # "CUSTOM", "NONVOID", "VOID"
 }
-<<<<<<< HEAD
-/DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
-=======
 /DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
     in_custom = 1
     paren_level = 0
     found_opening_paren = 0
@@ -88,13 +81,9 @@ BEGIN {
     is_void = 0
     macro_type = ""
     
-<<<<<<< HEAD
-    if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
-=======
     if (match($0, /DAP_MOCK_CUSTOM\s*\(/)) {
         macro_type = "CUSTOM"
     } else if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
         macro_type = "CUSTOM"
     } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
         macro_type = "NONVOID"
@@ -102,11 +91,7 @@ BEGIN {
         macro_type = "VOID"
     }
     
-<<<<<<< HEAD
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
-=======
     if (match($0, /(DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
         found_opening_paren = 1
         paren_level = 1
         rest = substr($0, RSTART + RLENGTH)
@@ -165,12 +150,9 @@ BEGIN {
                         gsub(/^[ \t\n,]+|[ \t\n,]+$/, "", param_list)
                         if (param_list == "" || param_list == "void") {
                             param_list = "void"
-<<<<<<< HEAD
-=======
                         } else {
                             # Process PARAM(...) macros
                             param_list = process_params(param_list)
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
                         }
                         # Output: return_type|func_name|param_list|macro_type
                         printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
@@ -210,12 +192,9 @@ in_custom {
                 gsub(/^[ \t\n,]+/, "", param_list)
                 if (param_list == "" || param_list == "void") {
                     param_list = "void"
-<<<<<<< HEAD
-=======
                 } else {
                     # Process PARAM(...) macros
                     param_list = process_params(param_list)
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
                 }
                 # Output: return_type|func_name|param_list|macro_type
                 printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
@@ -242,12 +221,9 @@ in_custom {
         gsub(/^[ \t\n,]+/, "", param_list)
         if (param_list == "" || param_list == "void") {
             param_list = "void"
-<<<<<<< HEAD
-=======
         } else {
             # Process PARAM(...) macros
             param_list = process_params(param_list)
->>>>>>> a8b8799642f830d976bc7686526ea201333815dd
         }
         # Output: return_type|func_name|param_list|macro_type
         printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
