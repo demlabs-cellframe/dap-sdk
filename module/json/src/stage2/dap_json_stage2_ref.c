@@ -1303,11 +1303,8 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
             return NULL;
         }
         debug_if(s_debug_more, L_DEBUG, "Created thread-local refcounted arena (size: %zu)", l_estimated_size);
-    } else {
-        // Reset arena for reuse (only resets pages with refcount=0)
-        dap_arena_reset(s_thread_json_arena);
-        debug_if(s_debug_more, L_DEBUG, "Reusing thread-local arena (reset)");
     }
+    // ⚠️ DON'T reset arena here - string_pool_clear will do it!
     
     // ⭐ Reuse thread-local string pool (create if first time)
     size_t l_string_pool_capacity = a_stage1->indices_count / 4;
@@ -1324,9 +1321,9 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         }
         debug_if(s_debug_more, L_DEBUG, "Created thread-local string pool (capacity: %zu)", l_string_pool_capacity);
     } else {
-        // Clear string pool for reuse (keeps capacity, clears entries)
+        // Clear string pool for reuse (это также сбросит арену!)
         dap_string_pool_clear(s_thread_string_pool);
-        debug_if(s_debug_more, L_DEBUG, "Reusing thread-local string pool (cleared)");
+        debug_if(s_debug_more, L_DEBUG, "Reusing thread-local string pool (cleared, arena reset)");
     }
     
     // ⭐ Stage2 теперь просто ссылается на thread-local ресурсы, не владеет ими
