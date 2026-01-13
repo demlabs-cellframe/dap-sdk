@@ -207,7 +207,7 @@ static bool s_test_memory_exhaustion(void) {
         
         // Verify array is accessible
         size_t array_len = dap_json_array_length(l_json);
-        DAP_TEST_FAIL_IF(array_len != ELEM_COUNT + 1, "Array length correct");
+        DAP_TEST_FAIL_IF(array_len != (size_t)(ELEM_COUNT + 1), "Array length correct");
         
         // Check parse time is reasonable (< 1 second)
         DAP_TEST_FAIL_IF(parse_time > 1.0, "Parse time reasonable for large array");
@@ -447,7 +447,7 @@ static bool s_test_arena_exhaustion(void) {
     
     // Verify array length
     size_t array_len = dap_json_array_length(l_json);
-    DAP_TEST_FAIL_IF(array_len != OBJECT_COUNT, "Array length correct");
+    DAP_TEST_FAIL_IF(array_len != (size_t)OBJECT_COUNT, "Array length correct");
     
     result = true;
     log_it(L_DEBUG, "Arena allocator exhaustion protection test passed");
