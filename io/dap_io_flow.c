@@ -1123,21 +1123,24 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
             return -4;
         }
         
-        // Create queue input esocket on destination worker
-        a_server->queue_inputs[dst] = dap_events_socket_create_type_queue_ptr_mt(
-            l_dst_worker, s_queue_ptr_callback);
+        // Create queue input esocket directly on destination worker's context
+        // This ensures it's immediately added to epoll and can receive events
+        a_server->queue_inputs[dst] = dap_context_create_queue(
+            l_dst_worker->context, s_queue_ptr_callback);
         
         if (!a_server->queue_inputs[dst]) {
             log_it(L_ERROR, "Failed to create queue input for worker %u", dst);
             return -5;
         }
         
+        a_server->queue_inputs[dst]->worker = l_dst_worker;
         a_server->queue_inputs[dst]->_inheritor = a_server;
         
         debug_if(s_debug_more, L_DEBUG, 
-                 "Created queue_input[%u]: es=%p, fd=%d, callback=%p",
+                 "Created queue_input[%u]: es=%p, fd=%d, worker=%u, callback=%p",
                  dst, a_server->queue_inputs[dst], 
-                 a_server->queue_inputs[dst]->fd, 
+                 a_server->queue_inputs[dst]->fd,
+                 l_dst_worker->id,
                  a_server->queue_inputs[dst]->callbacks.queue_ptr_callback);
     }
     

@@ -419,6 +419,7 @@ dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
 dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
+dap_events_socket_t * dap_events_socket_create_type_queue_ptr_unsafe(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
 int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket);
 
 dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);

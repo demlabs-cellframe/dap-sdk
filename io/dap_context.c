@@ -1677,13 +1677,25 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
              a_es->socket, a_es->flags, 
              !!(a_es->flags & DAP_SOCK_READY_TO_READ), !!(a_es->flags & DAP_SOCK_READY_TO_WRITE), !!(a_es->flags & DAP_SOCK_CONNECTING),
              a_es->ev.events, !!(a_es->ev.events & EPOLLIN), !!(a_es->ev.events & EPOLLOUT), a_es->type, g_debug_reactor);
-    int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, a_es->socket, &a_es->ev);
+    
+    // For QUEUE type (pipe-based), use fd instead of socket
+    int l_fd_to_monitor = (a_es->type == DESCRIPTOR_TYPE_QUEUE) ? a_es->fd : a_es->socket;
+    
+    debug_if(g_debug_reactor && a_es->type == DESCRIPTOR_TYPE_QUEUE, L_DEBUG, 
+             "Adding QUEUE to epoll: fd=%d, socket=%"DAP_FORMAT_SOCKET", using fd=%d",
+             a_es->fd, a_es->socket, l_fd_to_monitor);
+    
+    int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, l_fd_to_monitor, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
         l_errno = errno;
-        log_it(L_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed for socket %"DAP_FORMAT_SOCKET": %d (%s)", a_es->socket, l_errno, dap_strerror(l_errno));
+        log_it(L_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed for %s %d: %d (%s)", 
+               a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
+               l_fd_to_monitor, l_errno, dap_strerror(l_errno));
     } else {
-        debug_if(g_debug_reactor, L_DEBUG, "Successfully added socket %"DAP_FORMAT_SOCKET" to epoll (g_debug_reactor=%d)", a_es->socket, g_debug_reactor);
+        debug_if(g_debug_reactor, L_DEBUG, "Successfully added %s %d to epoll (g_debug_reactor=%d)",
+                 a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
+                 l_fd_to_monitor, g_debug_reactor);
     }
 #elif defined (DAP_EVENTS_CAPS_POLL)
     if (  a_context->poll_count == a_context->poll_count_max ){ // realloc
@@ -1815,12 +1827,16 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
             l_event->data.ptr = NULL; // signal to skip on its iteration
     }
 
+    // For QUEUE type (pipe-based), use fd instead of socket
+    int l_fd_to_remove = (a_es->type == DESCRIPTOR_TYPE_QUEUE) ? a_es->fd : a_es->socket;
+
     // Remove from epoll
-    if (epoll_ctl(l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1) {
+    if (epoll_ctl(l_context->epoll_fd, EPOLL_CTL_DEL, l_fd_to_remove, &a_es->ev) == -1) {
         int l_errno = errno;
         if (l_errno != ENOENT) {  // ENOENT = already removed, not an error
-            log_it(L_WARNING, "Error removing esocket %p from epoll: %s (%d)",
-                   a_es, dap_strerror(l_errno), l_errno);
+            log_it(L_WARNING, "Error removing esocket %p %s %d from epoll: %s (%d)",
+                   a_es, a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
+                   l_fd_to_remove, dap_strerror(l_errno), l_errno);
             return -1;
         }
     }

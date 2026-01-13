@@ -1001,6 +1001,12 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
  * @param a_flags
  * @return
  */
+/**
+ * @brief Create queue ptr socket and assign to worker (MT-safe, async via queue)
+ * @param a_w Worker to assign to
+ * @param a_callback Queue pointer callback
+ * @return Created esocket
+ */
 dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback)
 {
     dap_events_socket_t * l_es = dap_context_create_queue(NULL, a_callback);
@@ -1009,6 +1015,35 @@ dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * 
     if ( a_w)
         dap_events_socket_assign_on_worker_mt(l_es,a_w);
     return  l_es;
+}
+
+/**
+ * @brief Create queue ptr socket and add to worker immediately (unsafe, must be called from worker thread)
+ * @param a_w Worker to assign to
+ * @param a_callback Queue pointer callback
+ * @return Created esocket
+ */
+dap_events_socket_t * dap_events_socket_create_type_queue_ptr_unsafe(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback)
+{
+    if (!a_w || !a_w->context) {
+        log_it(L_ERROR, "Invalid worker or context");
+        return NULL;
+    }
+    
+    // Create queue with context - will be added to epoll immediately
+    dap_events_socket_t * l_es = dap_context_create_queue(a_w->context, a_callback);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create queue");
+        return NULL;
+    }
+    
+    l_es->worker = a_w;
+    
+    debug_if(g_debug_reactor, L_DEBUG, 
+             "Created queue_ptr_unsafe: es=%p, fd=%d, worker=%u, callback=%p",
+             l_es, l_es->fd, a_w->id, a_callback);
+    
+    return l_es;
 }
 
 
