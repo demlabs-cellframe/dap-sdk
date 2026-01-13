@@ -19,6 +19,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <signal.h>
 
 // DAP SDK headers
 #include "dap_common.h"
@@ -121,6 +122,86 @@ typedef struct trans_test_ctx {
 
 // Global test state - no longer fixed array, will be allocated dynamically
 static pthread_mutex_t s_test_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Global test statistics
+typedef struct test_statistics {
+    // Per-transport stats
+    size_t scenarios_passed[TRANS_CONFIG_COUNT];
+    size_t scenarios_failed[TRANS_CONFIG_COUNT];
+    size_t total_clients_processed[TRANS_CONFIG_COUNT];
+    size_t total_bytes_sent[TRANS_CONFIG_COUNT];
+    size_t total_bytes_received[TRANS_CONFIG_COUNT];
+    uint64_t total_duration_ms[TRANS_CONFIG_COUNT];
+    
+    // Global stats
+    size_t total_scenarios_passed;
+    size_t total_scenarios_failed;
+    uint64_t test_start_time_ms;
+    uint64_t test_end_time_ms;
+} test_statistics_t;
+
+static test_statistics_t s_test_stats = {0};
+
+/**
+ * @brief Print comprehensive test statistics
+ */
+static void print_test_statistics(void)
+{
+    printf("\n");
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("                    TEST STATISTICS SUMMARY                    \n");
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    uint64_t total_duration_sec = (s_test_stats.test_end_time_ms - s_test_stats.test_start_time_ms) / 1000;
+    
+    // Overall summary
+    printf("📊 Overall Results:\n");
+    printf("   Total Scenarios: %zu passed, %zu failed\n",
+           s_test_stats.total_scenarios_passed, s_test_stats.total_scenarios_failed);
+    printf("   Total Duration: %lu seconds (%.1f minutes)\n",
+           total_duration_sec, total_duration_sec / 60.0);
+    printf("\n");
+    
+    // Per-transport statistics
+    for (size_t i = 0; i < TRANS_CONFIG_COUNT; i++) {
+        const trans_test_config_t *cfg = &g_trans_configs[i];
+        
+        printf("🔹 %s Transport:\n", cfg->name);
+        printf("   Scenarios: %zu passed, %zu failed\n",
+               s_test_stats.scenarios_passed[i], s_test_stats.scenarios_failed[i]);
+        printf("   Clients Processed: %zu\n", s_test_stats.total_clients_processed[i]);
+        
+        double mb_sent = s_test_stats.total_bytes_sent[i] / (1024.0 * 1024.0);
+        double mb_recv = s_test_stats.total_bytes_received[i] / (1024.0 * 1024.0);
+        printf("   Data: %.2f MB sent, %.2f MB received\n", mb_sent, mb_recv);
+        
+        if (s_test_stats.total_duration_ms[i] > 0) {
+            double duration_sec = s_test_stats.total_duration_ms[i] / 1000.0;
+            double throughput_mbps = (mb_sent + mb_recv) * 8 / duration_sec;
+            printf("   Duration: %.1f seconds\n", duration_sec);
+            printf("   Throughput: %.2f Mbps\n", throughput_mbps);
+        }
+        printf("\n");
+    }
+    
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("\n");
+}
+
+/**
+ * @brief Signal handler for graceful shutdown (Ctrl+C)
+ */
+static volatile sig_atomic_t s_interrupted = 0;
+static void signal_handler(int sig)
+{
+    (void)sig;
+    s_interrupted = 1;
+    s_test_stats.test_end_time_ms = dap_nanotime_now() / 1000000;
+    printf("\n\n⚠️  Test interrupted by user (Ctrl+C)\n");
+    print_test_statistics();
+    exit(0);
+}
 
 // =======================================================================================
 // HELPER FUNCTIONS
@@ -935,13 +1016,34 @@ static void test_02_sequential_trans_testing(void)
             }
             
             // Run test for this scenario
+            uint64_t scenario_start = dap_nanotime_now() / 1000000;
             test_trans_worker(l_ctx);
+            uint64_t scenario_end = dap_nanotime_now() / 1000000;
             
-            // Check result
+            // Collect statistics
+            size_t bytes_sent = 0, bytes_recv = 0;
+            for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+                bytes_sent += l_ctx->stream_ctxs[i].sent_data_size;
+                bytes_recv += l_ctx->stream_ctxs[i].received_data_size;
+            }
+            
+            // Check result and update stats
             if (l_ctx->result == 0) {
-                printf("✅ %s - %s: PASSED\n", 
-                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name);
+                s_test_stats.scenarios_passed[trans_idx]++;
+                s_test_stats.total_scenarios_passed++;
+                s_test_stats.total_clients_processed[trans_idx] += l_ctx->scenario.num_clients;
+                s_test_stats.total_bytes_sent[trans_idx] += bytes_sent;
+                s_test_stats.total_bytes_received[trans_idx] += bytes_recv;
+                s_test_stats.total_duration_ms[trans_idx] += (scenario_end - scenario_start);
+                
+                printf("✅ %s - %s: PASSED (%.1f MB in %.2f sec)\n", 
+                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name,
+                       (bytes_sent + bytes_recv) / (1024.0 * 1024.0),
+                       (scenario_end - scenario_start) / 1000.0);
             } else {
+                s_test_stats.scenarios_failed[trans_idx]++;
+                s_test_stats.total_scenarios_failed++;
+                
                 printf("❌ %s - %s: FAILED (code %d)\n", 
                        g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name, 
                        l_ctx->result);
@@ -1123,10 +1225,18 @@ int main(void)
         return -1;
     }
     
+    // Setup signal handler for graceful shutdown (Ctrl+C)
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    
+    // Initialize test start time
+    s_test_stats.test_start_time_ms = dap_nanotime_now() / 1000000;
+    
     TEST_SUITE_START("Trans Integration Tests");
     printf("\n");
     printf("═══════════════════════════════════════════════════════════════\n");
     printf("  Testing all transs in parallel with full handshake cycle\n");
+    printf("  Press Ctrl+C for test statistics\n");
     printf("═══════════════════════════════════════════════════════════════\n");
     printf("\n");
     
@@ -1136,6 +1246,10 @@ int main(void)
     TEST_RUN(test_03_cleanup_all_resources);
     
     TEST_SUITE_END();
+    
+    // Record test end time and print statistics
+    s_test_stats.test_end_time_ms = dap_nanotime_now() / 1000000;
+    print_test_statistics();
     
     // Final cleanup
     if (g_config) {
