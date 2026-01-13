@@ -583,10 +583,28 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
  * @param a_idx Element index
  * @return String value or NULL if not found or wrong type
  */
-const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx)
+/**
+ * @brief Get string element from array by index (with length for zero-copy)
+ * @param[in] a_array Array object
+ * @param[in] a_idx Element index
+ * @param[out] a_out_length String length (optional, can be NULL)
+ * @return Pointer to string data, or NULL if not found or wrong type
+ */
+const char* dap_json_array_get_string_n(dap_json_t* a_array, size_t a_idx, size_t *a_out_length)
 {
     dap_json_t *l_elem = dap_json_array_get_idx(a_array, a_idx);
-    return l_elem ? dap_json_get_string(l_elem) : NULL;
+    return l_elem ? dap_json_get_string_n(l_elem, a_out_length) : NULL;
+}
+
+/**
+ * @brief Get string element from array by index (null-terminated C string)
+ * @param[in] a_array Array object
+ * @param[in] a_idx Element index
+ * @return Pointer to null-terminated string, or NULL if not found or wrong type
+ */
+const char* dap_json_array_get_string(dap_json_t* a_array, size_t a_idx)
+{
+    return dap_json_array_get_string_n(a_array, a_idx, NULL);
 }
 
 /**
@@ -1184,6 +1202,28 @@ int dap_json_object_add_array(dap_json_t* a_json, const char* a_key, dap_json_t*
 /**
  * @brief Set/update string field in object (replaces existing value)
  */
+/**
+ * @brief Set/update string field in object (replaces existing value) - zero-copy version
+ * @param[in] a_json JSON object
+ * @param[in] a_key Object key
+ * @param[in] a_value String value (data pointer)
+ * @param[in] a_length String length
+ * @return 0 on success, -1 on error
+ */
+int dap_json_object_set_string_n(dap_json_t* a_json, const char* a_key, const char* a_value, size_t a_length)
+{
+    // Delete existing key first, then add new value
+    dap_json_object_del(a_json, a_key);
+    return dap_json_object_add_string_len(a_json, a_key, a_value, (int)a_length);
+}
+
+/**
+ * @brief Set/update string field in object (replaces existing value)
+ * @param[in] a_json JSON object
+ * @param[in] a_key Object key
+ * @param[in] a_value String value (null-terminated)
+ * @return 0 on success, -1 on error
+ */
 int dap_json_object_set_string(dap_json_t* a_json, const char* a_key, const char* a_value)
 {
     // Delete existing key first, then add new value
@@ -1226,30 +1266,48 @@ int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value
 /**
  * @brief Get string field from object
  */
-const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
+/**
+ * @brief Get string field from object (with length for zero-copy)
+ * @details Returns pointer to string data and its length
+ *          String is guaranteed to be null-terminated (via String Pool)
+ * @param[in] a_json JSON object
+ * @param[in] a_key Object key
+ * @param[out] a_out_length String length (optional, can be NULL)
+ * @return Pointer to string data, or NULL if not found/not a string
+ */
+const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, size_t *a_out_length)
 {
-    log_it(L_INFO, "get_string ENTER: a_json=%p a_key=%s", a_json, a_key ? a_key : "NULL");
     if (!a_json || !a_key) {
-        log_it(L_ERROR, "get_string: NULL params");
         return NULL;
     }
     
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
-    log_it(L_INFO, "get_string: l_obj=%p type=%d (expected %d)", l_obj, l_obj ? (int)l_obj->type : -1, (int)DAP_JSON_TYPE_OBJECT);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "get_string: Not an object");
         return NULL;
     }
     
     dap_json_value_t *l_value = dap_json_object_v2_get(l_obj, a_key);
-    log_it(L_INFO, "get_string: l_value=%p type=%d (expected %d) key='%s'", l_value, l_value ? (int)l_value->type : -1, (int)DAP_JSON_TYPE_STRING, a_key);
     if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
-        log_it(L_ERROR, "get_string: Value not found or not a string");
         return NULL;
     }
     
-    log_it(L_INFO, "get_string: SUCCESS data=%p length=%zu", l_value->string.data, l_value->string.length);
+    if (a_out_length) {
+        *a_out_length = l_value->string.length;
+    }
+    
     return l_value->string.data;
+}
+
+/**
+ * @brief Get string field from object (null-terminated C string)
+ * @details Convenience wrapper around dap_json_object_get_string_n()
+ * @param[in] a_json JSON object
+ * @param[in] a_key Object key
+ * @return Pointer to null-terminated string, or NULL if not found/not a string
+ */
+const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
+{
+    return dap_json_object_get_string_n(a_json, a_key, NULL);
 }
 
 /**
@@ -1698,7 +1756,13 @@ bool dap_json_is_null(dap_json_t* a_json)
  * @brief Get string value from JSON
  * @return String value or NULL if not a string
  */
-const char* dap_json_get_string(dap_json_t* a_json)
+/**
+ * @brief Get string value from JSON (with length for zero-copy)
+ * @param[in] a_json JSON value
+ * @param[out] a_out_length String length (optional, can be NULL)
+ * @return Pointer to string data, or NULL if not a string
+ */
+const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
 {
     if (!a_json) {
         return NULL;
@@ -1709,7 +1773,21 @@ const char* dap_json_get_string(dap_json_t* a_json)
         return NULL;
     }
     
+    if (a_out_length) {
+        *a_out_length = l_value->string.length;
+    }
+    
     return l_value->string.data;
+}
+
+/**
+ * @brief Get string value from JSON (null-terminated C string)
+ * @param[in] a_json JSON value
+ * @return Pointer to null-terminated string, or NULL if not a string
+ */
+const char* dap_json_get_string(dap_json_t* a_json)
+{
+    return dap_json_get_string_n(a_json, NULL);
 }
 
 /**

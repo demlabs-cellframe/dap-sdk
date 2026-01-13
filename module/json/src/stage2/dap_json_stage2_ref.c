@@ -1016,20 +1016,23 @@ static bool s_parse_string(
     
     l_value->type = DAP_JSON_TYPE_STRING;
     
-    // COPY string into Arena (with null terminator for compatibility)
-    // NOTE: We trade zero-copy for API simplicity - most JSON strings are small anyway
-    char *l_string_copy = (char*)dap_arena_alloc(a_stage2->arena, l_scanned_string.length + 1);
-    if (!l_string_copy) {
-        log_it(L_ERROR, "Arena allocation failed for string (%zu bytes)", l_scanned_string.length + 1);
+    // ZERO-COPY: Intern string in String Pool (handles non-null-terminated correctly)
+    // String Pool will create a null-terminated interned copy for C string compatibility
+    const char *l_interned_string = dap_string_pool_intern_n(
+        a_stage2->string_pool,
+        (const char*)l_scanned_string.data,
+        l_scanned_string.length
+    );
+    
+    if (!l_interned_string) {
+        log_it(L_ERROR, "Failed to intern string (%zu bytes)", l_scanned_string.length);
         return false;
     }
     
-    memcpy(l_string_copy, l_scanned_string.data, l_scanned_string.length);
-    l_string_copy[l_scanned_string.length] = '\0';  // Null-terminate for C string compatibility
-    
-    l_value->string.data = l_string_copy;
+    // Interned strings are null-terminated and deduplicated (zero-copy for duplicates!)
+    l_value->string.data = (char*)l_interned_string;
     l_value->string.length = l_scanned_string.length;
-    l_value->string.needs_free = false; // Arena owns the memory
+    l_value->string.needs_free = false; // String Pool owns the memory
     
     // TODO: Add lazy unescaping support
     // For now, strings with escapes will fail

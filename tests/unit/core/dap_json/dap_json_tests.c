@@ -108,7 +108,6 @@ static bool s_test_json_parsing(void) {
     
     // Verify parsed content
     const char* l_name = dap_json_object_get_string(l_parsed, "name");
-    log_it(L_INFO, "Parsed name: '%s' (expected 'test')", l_name ? l_name : "(null)");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("test", l_name, "Parsed name field");
     
     int64_t l_value = dap_json_object_get_int64(l_parsed, "value");
