@@ -665,6 +665,14 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
     if( l_es ){
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+        
+        // Check if client is being removed - stop timer gracefully
+        if (l_client_pvt->is_removing) {
+            debug_if(s_debug_more, L_DEBUG, "Timeout timer: client %p is being removed, stopping timer", l_client);
+            DAP_DELETE(l_es_uuid_ptr);
+            return false; // Stop timer
+        }
+        
         if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u, possible network problems or host is down",
                                 l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
