@@ -2257,10 +2257,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     // Send encrypted blob (no headers, no magic, just encrypted data)
     ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size);
     
-    log_it(L_CRITICAL, "!!! ABOUT TO FREE l_encrypted=%p (size=%zu, sent=%zd) at s_udp_write_typed:2260 !!!", 
-           l_encrypted, l_encrypted_size, l_sent);
     DAP_DELETE(l_encrypted);
-    log_it(L_CRITICAL, "!!! FREED l_encrypted successfully at s_udp_write_typed:2260 !!!");
     
     if (l_sent < 0) {
         log_it(L_ERROR, "Failed to send encrypted packet (type=%u)", a_pkt_type);
