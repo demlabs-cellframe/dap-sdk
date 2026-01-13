@@ -10,6 +10,7 @@
 
 #define SIMD_VEC_TYPE __m128i
 #define SIMD_CHUNK_SIZE 16
+#define SIMD_MASK_TYPE uint16_t  // SSE2: 16 bytes → 16-bit mask
 
 // Load unaligned chunk
 #define SIMD_LOAD(ptr) _mm_loadu_si128((__m128i*)(ptr))
@@ -24,4 +25,4 @@
 #define SIMD_OR(a, b) _mm_or_si128((a), (b))
 
 // Convert comparison result to bitmask
-#define SIMD_MOVEMASK(vec) _mm_movemask_epi8(vec)
+#define SIMD_MOVEMASK(vec) ((SIMD_MASK_TYPE)_mm_movemask_epi8(vec))

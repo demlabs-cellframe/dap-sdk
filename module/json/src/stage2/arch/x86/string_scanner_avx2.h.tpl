@@ -10,6 +10,7 @@
 
 #define SIMD_VEC_TYPE __m256i
 #define SIMD_CHUNK_SIZE 32
+#define SIMD_MASK_TYPE uint32_t  // AVX2: 32 bytes → 32-bit mask
 
 // Load unaligned chunk
 #define SIMD_LOAD(ptr) _mm256_loadu_si256((__m256i*)(ptr))
@@ -24,4 +25,4 @@
 #define SIMD_OR(a, b) _mm256_or_si256((a), (b))
 
 // Convert comparison result to bitmask
-#define SIMD_MOVEMASK(vec) _mm256_movemask_epi8(vec)
+#define SIMD_MOVEMASK(vec) ((SIMD_MASK_TYPE)_mm256_movemask_epi8(vec))

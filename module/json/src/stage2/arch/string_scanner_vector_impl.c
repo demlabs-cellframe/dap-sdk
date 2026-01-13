@@ -18,8 +18,8 @@ while (l_pos + SIMD_CHUNK_SIZE <= a_input_len) {
     // Combine results
     SIMD_VEC_TYPE l_combined = SIMD_OR(l_quotes, l_backslashes);
     
-    // Convert to bitmask
-    uint32_t l_mask = SIMD_MOVEMASK(l_combined);
+    // Convert to bitmask (type defined by architecture: uint16_t for SSE2/NEON, uint32_t for AVX2)
+    SIMD_MASK_TYPE l_mask = SIMD_MOVEMASK(l_combined);
     
     if (l_mask != 0) {
         // Found quote or backslash - find first match

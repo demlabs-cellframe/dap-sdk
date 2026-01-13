@@ -10,6 +10,7 @@
 
 #define SIMD_VEC_TYPE uint8x16_t
 #define SIMD_CHUNK_SIZE 16
+#define SIMD_MASK_TYPE uint16_t  // NEON: 16 bytes → 16-bit mask
 
 // Load unaligned chunk
 #define SIMD_LOAD(ptr) vld1q_u8((const uint8_t*)(ptr))
