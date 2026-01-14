@@ -257,18 +257,26 @@ generate_template_file() {
 }
 
 # Generate custom mock headers for each custom mock declaration
-# Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions>
+# Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions> [mock_functions]
 generate_custom_mock_headers() {
     local output_dir="$1"
     local basename="$2"
     local custom_mocks_file="$3"
     local wrapper_functions="$4"
+    local mock_functions="${5:-}"  # Optional: list of all DAP_MOCK_DECLARE functions
     local temp_files=()  # Track temporary files for cleanup
     
+    local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
+    
     if [ ! -f "$custom_mocks_file" ] || [ ! -s "$custom_mocks_file" ]; then
-        print_info "No custom mocks found - creating custom mocks header with macros only"
-        local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
+        # No custom mocks found, but we may have DAP_MOCK_DECLARE functions
+        # Generate default wrappers for functions with DAP_MOCK_DECLARE but without wrappers
+        if [ -n "$mock_functions" ]; then
+            generate_default_wrappers "$output_dir" "$basename" "$mock_functions" "$wrapper_functions" "$main_custom_mocks_file"
+            return 0
+        fi
         
+        print_info "No custom mocks found - creating custom mocks header with macros only"
         # Generate empty main include file using template
         replace_template_placeholders_with_mocking \
             "${TEMPLATES_DIR}/custom_mocks_main_empty.h.tpl" \
@@ -307,38 +315,46 @@ generate_custom_mock_headers() {
             param_array="NULL"
             param_count=0
         else
-            # AWK script already processed PARAM(...) into "type name, type2 name2" format
-            # Split by comma to get individual parameters
-            local param_decl_parts=()
-            local param_name_parts=()
-            local param_array_parts=()
+            # Extract PARAM(type, name) entries
+            local clean_params=$(echo "$param_list" | tr -d ' \t\n')
+            param_count=$(echo "$clean_params" | grep -o "PARAM(" | wc -l)
             
-            # Split param_list by commas
-            IFS=',' read -ra PARAMS <<< "$param_list"
-            for param in "${PARAMS[@]}"; do
-                # Trim whitespace
-                param=$(echo "$param" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-                [ -z "$param" ] && continue
-                
-                # Extract last word as parameter name
-                local param_name=$(echo "$param" | awk '{print $NF}')
-                
-                param_decl_parts+=("$param")
-                param_name_parts+=("$param_name")
-                param_array_parts+=("(void*)(intptr_t)$param_name")
-            done
-            
-            # Join parameters with proper formatting
-            if [ ${#param_decl_parts[@]} -gt 0 ]; then
-                param_decl=$(IFS=', '; echo "${param_decl_parts[*]}")
-                param_names=$(IFS=', '; echo "${param_name_parts[*]}")
-                param_array="((void*[]){$(IFS=', '; echo "${param_array_parts[*]}")})"
-                param_count=${#param_decl_parts[@]}
-            else
+            if [ "$param_count" -eq 0 ]; then
                 param_decl="void"
                 param_names=""
                 param_array="NULL"
                 param_count=0
+            else
+                # Extract each PARAM(type, name)
+                local param_decl_parts=()
+                local param_name_parts=()
+                local param_array_parts=()
+                
+                # Use awk script to extract PARAM entries
+                local tmp_params_file=$(create_temp_file "params_${func_name}")
+                temp_files+=("$tmp_params_file")
+                echo "$param_list" | gawk -f "${MOCK_AWK_DIR}/parse_params.awk" > "$tmp_params_file"
+                
+                # Read extracted parameters
+                while IFS='|' read -r param_type param_name; do
+                    [ -z "$param_type" ] && continue
+                    param_decl_parts+=("$param_type $param_name")
+                    param_name_parts+=("$param_name")
+                    param_array_parts+=("(void*)(intptr_t)$param_name")
+                done < "$tmp_params_file"
+                
+                # Join parameters with proper formatting
+                if [ ${#param_decl_parts[@]} -gt 0 ]; then
+                    param_decl=$(IFS=','; printf '%s, ' "${param_decl_parts[@]}" | sed 's/, $//')
+                    param_names=$(IFS=','; printf '%s, ' "${param_name_parts[@]}" | sed 's/, $//')
+                    param_array="((void*[]){$(IFS=','; printf '%s, ' "${param_array_parts[@]}" | sed 's/, $//')})"
+                    param_count=${#param_decl_parts[@]}
+                else
+                    param_decl="void"
+                    param_names=""
+                    param_array="NULL"
+                    param_count=0
+                fi
             fi
         fi
         
@@ -591,6 +607,57 @@ prepare_map_count_params_by_count_data() {
             MAP_COUNT_PARAMS_BY_COUNT_DATA="${arg_count}"
         fi
     done
+}
+
+# Generate default wrappers for DAP_MOCK_DECLARE functions without custom wrappers
+# Usage: generate_default_wrappers <output_dir> <basename> <mock_functions> <wrapper_functions> <main_header_file>
+generate_default_wrappers() {
+    local output_dir="$1"
+    local basename="$2"
+    local mock_functions="$3"
+    local wrapper_functions="$4"
+    local main_header_file="$5"
+    
+    # Find functions with DAP_MOCK_DECLARE but without wrappers
+    local functions_without_wrappers=""
+    if [ -n "$mock_functions" ] && [ -n "$wrapper_functions" ]; then
+        functions_without_wrappers=$(comm -23 <(echo "$mock_functions" | sort) <(echo "$wrapper_functions" | sort))
+    elif [ -n "$mock_functions" ]; then
+        functions_without_wrappers="$mock_functions"
+    fi
+    
+    if [ -z "$functions_without_wrappers" ]; then
+        # All functions have wrappers or no mocks - generate empty header
+        replace_template_placeholders_with_mocking \
+            "${TEMPLATES_DIR}/custom_mocks_main_empty.h.tpl" \
+            "$main_header_file" \
+            "BASENAME=$basename"
+        return 0
+    fi
+    
+    # Generate header with default wrapper macros
+    # These will be expanded by DAP_MOCK_WRAPPER_DEFAULT macros
+    # Note: We can't generate actual wrappers without function signatures,
+    # so we generate a comment instructing to use DAP_MOCK_WRAPPER_DEFAULT
+    {
+        echo "// Auto-generated default wrappers for DAP_MOCK_DECLARE functions"
+        echo "// Generated by dap_mock_autowrap.sh"
+        echo "// Do not modify manually"
+        echo ""
+        echo "#include \"${basename}_mock_macros.h\""
+        echo ""
+        echo "// Default wrappers are auto-generated via DAP_MOCK_WRAPPER_DEFAULT macros"
+        echo "// Functions with DAP_MOCK_DECLARE but without custom wrappers:"
+        echo "$functions_without_wrappers" | while read func; do
+            [ -z "$func" ] && continue
+            echo "//   - $func (use DAP_MOCK_WRAPPER_DEFAULT if needed)"
+        done
+        echo ""
+        echo "// Note: Wrappers are automatically generated by the mock framework"
+        echo "//       when DAP_MOCK_DECLARE is used. No manual wrapper needed!"
+    } > "$main_header_file"
+    
+    print_success "Generated default wrappers header for $(echo "$functions_without_wrappers" | wc -l) functions"
 }
 
 # Prepare MAP_COUNT_PARAMS_HELPER_DATA for template generation

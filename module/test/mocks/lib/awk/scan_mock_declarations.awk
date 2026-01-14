@@ -7,6 +7,8 @@ BEGIN {
     pattern_declare = "DAP_MOCK_DECLARE\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
     # Pattern for DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
     pattern_declare_custom = "DAP_MOCK_DECLARE_CUSTOM\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
+    # Pattern for DAP_MOCK_CUSTOM(return_type, func_name, ...) - includes declaration
+    pattern_mock_custom = "DAP_MOCK_CUSTOM\\s*\\([^,]+,\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
 }
 
 {
@@ -25,6 +27,19 @@ BEGIN {
     
     # Find DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
     while (match($0, pattern_declare_custom, arr)) {
+        func_name = arr[1]
+        if (func_name != "") {
+            print func_name
+        }
+        # Remove matched part and continue searching
+        $0 = substr($0, RSTART + RLENGTH)
+    }
+    
+    # Reset line for next pattern
+    $0 = $0
+    
+    # Find DAP_MOCK_CUSTOM(return_type, func_name, ...)
+    while (match($0, pattern_mock_custom, arr)) {
         func_name = arr[1]
         if (func_name != "") {
             print func_name

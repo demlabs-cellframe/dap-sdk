@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
-#include "assert.h"
-#include "signal.h"
+#include <assert.h>
+#include <signal.h>
 
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
