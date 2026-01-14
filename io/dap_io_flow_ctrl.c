@@ -454,10 +454,18 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         l_seq_num = a_ctrl->send_seq_next++;
         pthread_mutex_unlock(&a_ctrl->send_mutex);
         
+        // UNCONDITIONAL log for debugging metadata corruption
+        log_it(L_NOTICE, "FC send: ASSIGNED seq=%lu (flags=0x%02x, send_seq_next=%lu, flow=%p)",
+               l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next, a_ctrl->flow);
+        
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: assigned seq=%lu (flags=0x%02x, send_seq_next=%lu)",
                  l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
     } else {
+        // UNCONDITIONAL log for NO RETRANSMIT case
+        log_it(L_WARNING, "FC send: NO RETRANSMIT flag, seq=0 (flags=0x%02x, flow=%p)",
+               a_ctrl->flags, a_ctrl->flow);
+        
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: NO RETRANSMIT flag, seq=0 (flags=0x%02x)",
                  a_ctrl->flags);
@@ -717,24 +725,62 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
     }
     
+    // Send ACK ONLY if RETRANSMIT enabled AND we have valid data to acknowledge
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.seq_num > 0 && !l_metadata.is_keepalive) {
-        // Prepare ACK-only packet (no payload)
-        dap_io_flow_pkt_metadata_t l_ack_metadata = {
-            .seq_num = 0,  // ACK-only packets don't need seq_num
-            .ack_seq = (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) ? a_ctrl->recv_seq_expected - 1 : l_metadata.seq_num,
-            .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
-            .is_keepalive = false,
-            .is_retransmit = false,
-        };
+        // Determine if we should send ACK and what ack_seq to use
+        bool l_should_send_ack = false;
+        uint64_t l_ack_seq_to_send = 0;
         
-        void *l_ack_packet = NULL;
-        size_t l_ack_packet_size = 0;
-        int l_ack_ret = a_ctrl->callbacks.packet_prepare(a_ctrl->flow, &l_ack_metadata, NULL, 0,
-                                                          &l_ack_packet, &l_ack_packet_size, a_ctrl->callbacks.arg);
-        if (l_ack_ret == 0 && l_ack_packet) {
-            l_ack_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_ack_packet, l_ack_packet_size,
-                                                       a_ctrl->callbacks.arg);
-            a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
+        if (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) {
+            // REORDERING enabled: Send ACK ONLY if we delivered in-order packets
+            // (recv_seq_expected increased beyond initial state)
+            pthread_mutex_lock(&a_ctrl->recv_mutex);
+            if (a_ctrl->recv_seq_expected > 1) {
+                l_should_send_ack = true;
+                l_ack_seq_to_send = a_ctrl->recv_seq_expected - 1;
+            }
+            pthread_mutex_unlock(&a_ctrl->recv_mutex);
+            
+            // Don't send ACK for OUT-OF-ORDER packets - wait until missing packets arrive
+            if (!l_should_send_ack) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "FC recv: NOT sending ACK for out-of-order seq=%lu (expected=1, will ACK after delivery)",
+                         l_metadata.seq_num);
+            }
+        } else {
+            // NO reordering: Always ACK the received packet
+            l_should_send_ack = true;
+            l_ack_seq_to_send = l_metadata.seq_num;
+        }
+        
+        if (l_should_send_ack && l_ack_seq_to_send > 0) {
+            // Prepare ACK-only packet (no payload)
+            dap_io_flow_pkt_metadata_t l_ack_metadata = {
+                .seq_num = 0,  // ACK-only packets don't need seq_num
+                .ack_seq = l_ack_seq_to_send,
+                .timestamp_ms = (uint32_t)(dap_nanotime_now() / 1000000),
+                .is_keepalive = false,
+                .is_retransmit = false,
+            };
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "FC recv: Sending ACK for seq_num up to %lu", l_ack_seq_to_send);
+            
+            void *l_ack_packet = NULL;
+            size_t l_ack_packet_size = 0;
+            int l_ack_ret = a_ctrl->callbacks.packet_prepare(a_ctrl->flow, &l_ack_metadata, NULL, 0,
+                                                              &l_ack_packet, &l_ack_packet_size, a_ctrl->callbacks.arg);
+            if (l_ack_ret == 0 && l_ack_packet) {
+                l_ack_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_ack_packet, l_ack_packet_size,
+                                                           a_ctrl->callbacks.arg);
+                a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
+                
+                if (l_ack_ret == 0) {
+                    debug_if(s_debug_more, L_DEBUG, "Sent ACK: ack_seq=%lu", l_ack_seq_to_send);
+                } else {
+                    log_it(L_WARNING, "Failed to send ACK packet: ret=%d", l_ack_ret);
+                }
+            }
         }
     }
     
