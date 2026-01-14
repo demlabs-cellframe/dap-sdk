@@ -386,15 +386,24 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     int l_exponent = 0;
     bool l_has_digits = false;
     int l_digit_count = 0;  // Track total digits
+    int l_significant_digits = 0;  // Digits actually stored in mantissa (max 19)
     
     while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
-        l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
+        if (l_significant_digits < 19) {
+            // Can still fit in uint64_t (max 19 digits)
+            l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
+            l_significant_digits++;
+        } else {
+            // Too many digits for uint64_t, increment exponent instead
+            l_exponent++;
+        }
         l_has_digits = true;
         l_digit_count++;
         l_pos++;
     }
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after integer part: mantissa=%lu, digits=%d", l_mantissa, l_digit_count);
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after integer part: mantissa=%lu, digits=%d, significant_digits=%d", 
+           l_mantissa, l_digit_count, l_significant_digits);
     
     // Parse decimal part
     if (l_pos < a_len && a_str[l_pos] == '.') {
@@ -402,8 +411,13 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         int l_decimal_digits = 0;
         
         while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
-            l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
-            l_decimal_digits++;
+            if (l_significant_digits < 19) {
+                // Can still fit more significant digits
+                l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
+                l_decimal_digits++;
+                l_significant_digits++;
+            }
+            // else: ignore extra precision digits (they're beyond double precision anyway)
             l_digit_count++;
             l_has_digits = true;
             l_pos++;
