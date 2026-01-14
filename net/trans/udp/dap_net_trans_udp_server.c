@@ -1346,8 +1346,16 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     log_it(L_DEBUG, "s_handle_handshake RECEIVED: a_payload_size=%zu, expected=%d",
            a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
     
+    // PROFILE: Measure KEM key generation time
+    uint64_t l_start_time = dap_nanotime_now();
+    
     // Generate ephemeral Bob key (Kyber512)
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    
+    uint64_t l_keygen_time = dap_nanotime_now() - l_start_time;
+    log_it(L_NOTICE, "PROFILE: Kyber512 key generation took %lu ns (%.3f ms)",
+           l_keygen_time, l_keygen_time / 1000000.0);
+    
     if (!l_bob_key) {
         log_it(L_ERROR, "Failed to generate Bob KEM key");
         return -2;
@@ -1360,8 +1368,14 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     // Perform KEM encapsulation (Bob side)
     if (l_bob_key->gen_bob_shared_key) {
+        uint64_t l_encap_start = dap_nanotime_now();
+        
         l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_payload, a_payload_size, &l_bob_pub);
         l_shared_key = l_bob_key->shared_key;
+        
+        uint64_t l_encap_time = dap_nanotime_now() - l_encap_start;
+        log_it(L_NOTICE, "PROFILE: KEM encapsulation took %lu ns (%.3f ms)",
+               l_encap_time, l_encap_time / 1000000.0);
         
         // CRITICAL: Return value is ciphertext size (768 for Kyber512), NOT shared key size (32)!
         l_bob_pub_size = l_shared_key_size;  // This IS the ciphertext size
