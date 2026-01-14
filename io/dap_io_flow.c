@@ -28,6 +28,7 @@
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
+#include "dap_hash.h"
 #include "dap_io_flow.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
@@ -925,8 +926,15 @@ static void s_process_flow_packet_common(
         return;
     }
     
+    // UNCONDITIONAL log for debugging 50% packet loss
+    log_it(L_NOTICE, "packet_common ENTRY: worker=%u, size=%zu, remote=%s, listener_fd=%d",
+           l_worker->id, a_data_size, dap_io_flow_socket_addr_to_string(a_remote_addr), a_listener_es->fd);
+    
     // Find or create flow
     dap_io_flow_t *l_flow = dap_io_flow_find(a_server, a_remote_addr);
+    
+    log_it(L_NOTICE, "packet_common: flow=%p (found=%s)",
+           l_flow, l_flow ? "YES" : "NO");
     
     debug_if(s_debug_more, L_DEBUG, "packet_common: worker=%u, flow=%p, remote=%s",
              l_worker->id, l_flow, dap_io_flow_socket_addr_to_string(a_remote_addr));
@@ -938,17 +946,48 @@ static void s_process_flow_packet_common(
         
         if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
             // Hash (src_ip, src_port) to determine target worker
-            // Simple FNV-1a hash on remote address
-            uint32_t l_hash = 2166136261u;  // FNV offset basis
-            const uint8_t *l_addr_bytes = (const uint8_t *)a_remote_addr;
-            for (size_t i = 0; i < a_remote_addr_len; i++) {
-                l_hash = (l_hash ^ l_addr_bytes[i]) * 16777619u;  // FNV prime
+            // Use DAP FNV-1a hash on ONLY IP address + port (NOT entire sockaddr with padding!)
+            
+            // Cast to sockaddr to access sa_family
+            const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
+            
+            uint32_t l_hash = 0;
+            
+            if (l_sa->sa_family == AF_INET) {
+                // IPv4: hash sin_addr (4 bytes) + sin_port (2 bytes)
+                struct sockaddr_in *l_sin = (struct sockaddr_in *)a_remote_addr;
+                
+                // Prepare buffer: [IP (4 bytes)][Port (2 bytes)]
+                uint8_t l_hash_input[6];
+                memcpy(l_hash_input, &l_sin->sin_addr.s_addr, 4);
+                memcpy(l_hash_input + 4, &l_sin->sin_port, 2);
+                
+                // Compute FNV-1a hash
+                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+                
+            } else if (l_sa->sa_family == AF_INET6) {
+                // IPv6: hash sin6_addr (16 bytes) + sin6_port (2 bytes)
+                struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6 *)a_remote_addr;
+                
+                // Prepare buffer: [IPv6 (16 bytes)][Port (2 bytes)]
+                uint8_t l_hash_input[18];
+                memcpy(l_hash_input, &l_sin6->sin6_addr, 16);
+                memcpy(l_hash_input + 16, &l_sin6->sin6_port, 2);
+                
+                // Compute FNV-1a hash
+                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+                
+            } else {
+                log_it(L_WARNING, "Application LB: unknown address family %d, using local worker",
+                       l_sa->sa_family);
+                l_hash = l_worker->id;  // Fallback: stay local
             }
+            
             l_target_worker_id = l_hash % dap_proc_thread_get_count();
             
             debug_if(s_debug_more, L_DEBUG,
-                     "Application LB: hash=%u, target_worker=%u",
-                     l_hash, l_target_worker_id);
+                     "Application LB: hash=%u (family=%d), target_worker=%u",
+                     l_hash, l_sa->sa_family, l_target_worker_id);
         }
         
         // If target worker is different, forward packet BEFORE creating flow
@@ -1063,10 +1102,17 @@ create_local:
     }
     
     // Call protocol's packet_received callback (flow is on current worker OR new flow)
+    log_it(L_NOTICE, "packet_common: CALLING packet_received (flow=%p, size=%zu, worker=%u)",
+           l_flow, a_data_size, l_worker->id);
+    
     if (a_server->ops->packet_received) {
         a_server->ops->packet_received(a_server, l_flow,
                                        a_data, a_data_size,
                                        a_remote_addr, a_listener_es);
+        
+        log_it(L_NOTICE, "packet_common: packet_received RETURNED");
+    } else {
+        log_it(L_ERROR, "packet_common: packet_received is NULL!");
     }
 }
 
@@ -1090,6 +1136,11 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
     }
     
     dap_worker_t *l_worker = dap_worker_get_current();
+    
+    // UNCONDITIONAL log for debugging 50% packet loss
+    log_it(L_NOTICE, "Listener READ: worker=%u, size=%zu, fd=%d, from=%s",
+           l_worker ? l_worker->id : 999, a_es->buf_in_size, a_es->fd,
+           dap_io_flow_socket_addr_to_string(&a_es->addr_storage));
     
     // Log incoming packet details
     debug_if(s_debug_more, L_DEBUG, 

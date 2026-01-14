@@ -626,7 +626,12 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                          a_ctrl, a_ctrl->flow, a_ctrl->callbacks.payload_deliver, a_ctrl->callbacks.arg);
                 
                 // Deliver payload
-                a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
+                log_it(L_NOTICE, "FC recv: CALLING payload_deliver (flow=%p, payload_size=%zu, arg=%p)",
+                       a_ctrl->flow, l_payload_size, a_ctrl->callbacks.arg);
+                
+                int l_deliver_ret = a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
+                
+                log_it(L_NOTICE, "FC recv: payload_deliver RETURNED: ret=%d", l_deliver_ret);
                 
                 // Free packet buffer after immediate delivery
                 // packet_parse stored buffer pointer in metadata->private_ctx
