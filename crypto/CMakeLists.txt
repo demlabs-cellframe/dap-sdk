@@ -121,6 +121,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
       src/ringct20/*.c
       src/falcon/*.c
+      src/hash/sha2-256/*.c
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
 ) 
