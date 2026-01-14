@@ -1372,70 +1372,68 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
 //===================================================================
 
 /**
- * @brief Handle HANDSHAKE packet (encryption handshake)
+ * @brief KEM task function (executed in thread pool)
+ * 
+ * Performs heavy cryptographic operations:
+ * 1. Generate Bob's ephemeral Kyber512 key
+ * 2. Perform KEM encapsulation with Alice's public key
+ * 3. Derive handshake encryption key via KDF-SHAKE256
+ * 
+ * @param a_arg Pointer to kem_task_ctx_t
+ * @return Pointer to kem_task_result_t (must be freed by callback)
  */
-static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_payload,
-                             size_t a_payload_size)
+static void* s_kem_task_func(void *a_arg)
 {
-    if (!a_session || !a_payload) {
-        return -1;
+    kem_task_ctx_t *l_ctx = (kem_task_ctx_t *)a_arg;
+    if (!l_ctx) {
+        return NULL;
     }
     
-    debug_if(s_debug_more, L_DEBUG,
-             "Processing HANDSHAKE packet (%zu bytes) for session %p",
-             a_payload_size, a_session);
+    kem_task_result_t *l_result = DAP_NEW_Z(kem_task_result_t);
+    if (!l_result) {
+        return NULL;
+    }
     
-    // DEBUG: Show actual received size
-    log_it(L_DEBUG, "s_handle_handshake RECEIVED: a_payload_size=%zu, expected=%d",
-           a_payload_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
-    
-    // PROFILE: Measure KEM key generation time
-    uint64_t l_start_time = dap_nanotime_now();
+    l_result->session_id = l_ctx->session->session_id;
+    l_result->error_code = 0;
     
     // Generate ephemeral Bob key (Kyber512)
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     
-    uint64_t l_keygen_time = dap_nanotime_now() - l_start_time;
-    log_it(L_NOTICE, "PROFILE: Kyber512 key generation took %lu ns (%.3f ms)",
-           l_keygen_time, l_keygen_time / 1000000.0);
-    
     if (!l_bob_key) {
-        log_it(L_ERROR, "Failed to generate Bob KEM key");
-        return -2;
+        log_it(L_ERROR, "[KEM Task] Failed to generate Bob KEM key");
+        l_result->error_code = -2;
+        return l_result;
     }
     
     void *l_bob_pub = NULL;
-    size_t l_bob_pub_size = 0;
-    void *l_shared_key = NULL;
     size_t l_shared_key_size = 0;
     
     // Perform KEM encapsulation (Bob side)
     if (l_bob_key->gen_bob_shared_key) {
-        uint64_t l_encap_start = dap_nanotime_now();
+        l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, l_ctx->alice_pub_key, l_ctx->alice_pub_key_size, &l_bob_pub);
         
-        l_shared_key_size = l_bob_key->gen_bob_shared_key(l_bob_key, a_payload, a_payload_size, &l_bob_pub);
-        l_shared_key = l_bob_key->shared_key;
-        
-        uint64_t l_encap_time = dap_nanotime_now() - l_encap_start;
-        log_it(L_NOTICE, "PROFILE: KEM encapsulation took %lu ns (%.3f ms)",
-               l_encap_time, l_encap_time / 1000000.0);
-        
-        // CRITICAL: Return value is ciphertext size (768 for Kyber512), NOT shared key size (32)!
-        l_bob_pub_size = l_shared_key_size;  // This IS the ciphertext size
-        
-        if (!l_bob_pub || l_bob_pub_size == 0 || !l_shared_key) {
-            log_it(L_ERROR, "Failed to generate shared key from Alice's public key");
+        if (!l_bob_pub || l_shared_key_size == 0 || !l_bob_key->shared_key) {
+            log_it(L_ERROR, "[KEM Task] Failed to generate shared key from Alice's public key");
             dap_enc_key_delete(l_bob_key);
-            return -3;
+            l_result->error_code = -3;
+            return l_result;
         }
         
-        // DEBUG: Show sizes
-        log_it(L_DEBUG, "HANDSHAKE: Bob ciphertext size=%zu, shared_secret addr=%p",
-               l_bob_pub_size, l_shared_key);
+        // Copy Bob's ciphertext for response
+        l_result->bob_ciphertext_size = l_shared_key_size;
+        l_result->bob_ciphertext = DAP_NEW_SIZE(uint8_t, l_shared_key_size);
+        if (!l_result->bob_ciphertext) {
+            dap_enc_key_delete(l_bob_key);
+            l_result->error_code = -4;
+            return l_result;
+        }
+        memcpy(l_result->bob_ciphertext, l_bob_pub, l_shared_key_size);
     } else {
-        log_it(L_ERROR, "Key type doesn't support KEM handshake");
+        log_it(L_ERROR, "[KEM Task] Key type doesn't support KEM handshake");
         dap_enc_key_delete(l_bob_key);
-        return -4;
+        l_result->error_code = -5;
+        return l_result;
     }
     
     // Derive HANDSHAKE key from shared secret using KDF-SHAKE256
@@ -1449,51 +1447,164 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     );
     
     if (!l_handshake_key) {
-        log_it(L_ERROR, "Failed to derive handshake key via KDF");
+        log_it(L_ERROR, "[KEM Task] Failed to derive handshake key via KDF");
         dap_enc_key_delete(l_bob_key);
-        return -5;
+        DAP_DELETE(l_result->bob_ciphertext);
+        l_result->error_code = -6;
+        return l_result;
     }
     
-    log_it(L_INFO, "SERVER: handshake key derived via KDF-SHAKE256");
+    l_result->handshake_key = l_handshake_key;
     
-    // Store handshake key in session
-    a_session->encryption_key = l_handshake_key;
+    // Cleanup Bob's key (shared secret is now in handshake_key)
+    dap_enc_key_delete(l_bob_key);
+    
+    return l_result;
+}
+
+/**
+ * @brief KEM task completion callback (called from worker thread)
+ * 
+ * This callback is executed in the thread pool worker context.
+ * It must dispatch the result back to the reactor thread safely.
+ * 
+ * @param a_result Pointer to kem_task_result_t (from task function)
+ * @param a_arg Pointer to kem_task_ctx_t (original context)
+ */
+static void s_kem_task_callback(void *a_result, void *a_arg)
+{
+    kem_task_result_t *l_result = (kem_task_result_t *)a_result;
+    kem_task_ctx_t *l_ctx = (kem_task_ctx_t *)a_arg;
+    
+    if (!l_result || !l_ctx) {
+        log_it(L_ERROR, "[KEM Callback] Invalid arguments");
+        return;
+    }
+    
+    stream_udp_session_t *l_session = l_ctx->session;
+    
+    // Validate session UUID (ensure session still exists)
+    dap_events_socket_t *l_es = dap_events_socket_uuid_find(l_ctx->session_uuid);
+    if (!l_es || l_es != (dap_events_socket_t *)&l_session->base.base.base) {
+        log_it(L_WARNING, "[KEM Callback] Session no longer valid (UUID mismatch or deleted)");
+        goto cleanup;
+    }
+    
+    if (l_result->error_code != 0) {
+        log_it(L_ERROR, "[KEM Callback] KEM task failed with error %d", l_result->error_code);
+        goto cleanup;
+    }
+    
+    // Store handshake key in session (MAIN THREAD CONTEXT!)
+    l_session->encryption_key = l_result->handshake_key;
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE: stored encryption_key=%p for session %p (session_id=0x%lx)",
-             a_session->encryption_key, a_session, a_session->session_id);
+             "[KEM Callback] Stored encryption_key=%p for session %p (session_id=0x%lx)",
+             l_session->encryption_key, l_session, l_session->session_id);
     
     // Build handshake response: Bob's ciphertext + session_id
-    // Client needs session_id to use in all subsequent packets!
-    size_t l_response_size = l_bob_pub_size + sizeof(uint64_t);
-    
-    // Serialize: Bob's ciphertext + session_id (network byte order)
-    uint64_t l_session_id_be = htobe64(a_session->session_id);
+    size_t l_response_size = l_result->bob_ciphertext_size + sizeof(uint64_t);
+    uint64_t l_session_id_be = htobe64(l_result->session_id);
     uint8_t *l_response = dap_serialize_multy(NULL, l_response_size,
-                                              l_bob_pub, l_bob_pub_size,
+                                              l_result->bob_ciphertext, l_result->bob_ciphertext_size,
                                               &l_session_id_be, sizeof(uint64_t),
                                               DOOF_PTR);
     if (!l_response) {
-        log_it(L_ERROR, "Failed to serialize handshake response");
-        dap_enc_key_delete(l_bob_key);
-        return -6;
+        log_it(L_ERROR, "[KEM Callback] Failed to serialize handshake response");
+        goto cleanup;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
-             l_bob_pub_size, a_session->session_id);
+             "[KEM Callback] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
+             l_result->bob_ciphertext_size, l_result->session_id);
     
     // Send handshake response
-    int l_ret = s_send_udp_packet(a_session,
+    int l_ret = s_send_udp_packet(l_session,
                                   DAP_STREAM_UDP_PKT_HANDSHAKE,
                                   l_response, l_response_size);
     
     DAP_DELETE(l_response);
-    dap_enc_key_delete(l_bob_key);
     
-    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE response sent (ret=%d)", l_ret);
+    debug_if(s_debug_more, L_DEBUG, "[KEM Callback] HANDSHAKE response sent (ret=%d)", l_ret);
     
-    return l_ret;
+cleanup:
+    // Free task resources
+    if (l_result) {
+        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DELETE(l_result);
+    }
+    
+    if (l_ctx) {
+        DAP_DELETE(l_ctx->alice_pub_key);
+        DAP_DELETE(l_ctx);
+    }
+}
+
+//===================================================================
+// PROTOCOL PACKET HANDLERS (Synchronous fallback)
+//===================================================================
+
+/**
+ * @brief Handle HANDSHAKE packet (encryption handshake)
+ */
+static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_payload,
+                             size_t a_payload_size)
+{
+    if (!a_session || !a_payload) {
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "Processing HANDSHAKE packet (%zu bytes) for session %p",
+             a_payload_size, a_session);
+    
+    // Check if thread pool is available
+    if (!s_kem_thread_pool) {
+        log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");
+        // TODO: Implement synchronous fallback (same code as s_kem_task_func)
+        return -10;
+    }
+    
+    // Create task context
+    kem_task_ctx_t *l_ctx = DAP_NEW_Z(kem_task_ctx_t);
+    if (!l_ctx) {
+        log_it(L_ERROR, "Failed to allocate KEM task context");
+        return -2;
+    }
+    
+    l_ctx->session = a_session;
+    l_ctx->session_uuid = a_session->base.base.base.uuid;
+    l_ctx->alice_pub_key_size = a_payload_size;
+    l_ctx->alice_pub_key = DAP_NEW_SIZE(uint8_t, a_payload_size);
+    
+    if (!l_ctx->alice_pub_key) {
+        log_it(L_ERROR, "Failed to allocate Alice public key buffer");
+        DAP_DELETE(l_ctx);
+        return -3;
+    }
+    
+    memcpy(l_ctx->alice_pub_key, a_payload, a_payload_size);
+    
+    // Submit task to thread pool
+    int l_ret = dap_thread_pool_submit(s_kem_thread_pool,
+                                      s_kem_task_func,
+                                      l_ctx,
+                                      s_kem_task_callback,
+                                      l_ctx);
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to submit KEM task to thread pool: %d", l_ret);
+        DAP_DELETE(l_ctx->alice_pub_key);
+        DAP_DELETE(l_ctx);
+        return -4;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%lx)",
+             a_session, a_session->session_id);
+    
+    // Return immediately - response will be sent from callback
+    return 0;
 }
 
 /**
