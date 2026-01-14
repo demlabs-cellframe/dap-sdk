@@ -36,6 +36,7 @@
 #include "dap_stream_session.h"
 #include "dap_net_trans.h"
 #include "dap_worker.h"
+#include "dap_thread_pool.h"
 #include "json.h"
 
 #define LOG_TAG "dap_net_trans_udp_server"
@@ -45,6 +46,9 @@
 
 // Global debug flag
 static bool s_debug_more = false;
+
+// Global thread pool for heavy KEM operations
+static dap_thread_pool_t *s_kem_thread_pool = NULL;
 
 //===================================================================
 // UDP EXTENDED FLOW CONTROL HEADER SCHEMA (dap_serialize)
@@ -149,6 +153,27 @@ typedef struct stream_udp_session {
     _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
     _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
 } stream_udp_session_t;
+
+/**
+ * @brief KEM task context for thread pool offload
+ */
+typedef struct kem_task_ctx {
+    stream_udp_session_t *session;       // Session handle (must remain valid!)
+    uint8_t *alice_pub_key;              // Alice's public key (copied)
+    size_t alice_pub_key_size;           // Alice's public key size
+    dap_events_socket_uuid_t session_uuid; // Session UUID for validation
+} kem_task_ctx_t;
+
+/**
+ * @brief KEM task result
+ */
+typedef struct kem_task_result {
+    dap_enc_key_t *handshake_key;        // Derived handshake key
+    uint8_t *bob_ciphertext;             // Bob's ciphertext (to send to client)
+    size_t bob_ciphertext_size;          // Bob's ciphertext size
+    uint64_t session_id;                 // Session ID
+    int error_code;                      // 0 on success, negative on error
+} kem_task_result_t;
 
 // Forward declarations for protocol handlers
 static bool s_stream_udp_should_forward(dap_io_flow_t *a_flow);
@@ -472,6 +497,15 @@ int dap_net_trans_udp_server_init(void)
         log_it(L_NOTICE, "Stream UDP debug mode ENABLED");
     }
     
+    // Create thread pool for KEM operations
+    // Use 0 for auto-detect CPU count, each thread will be bound to its own CPU core
+    s_kem_thread_pool = dap_thread_pool_create(0, 256);  // Auto CPU count, max 256 queued tasks
+    if (!s_kem_thread_pool) {
+        log_it(L_ERROR, "Failed to create KEM thread pool");
+        return -1;
+    }
+    log_it(L_NOTICE, "KEM thread pool created (auto CPU count with affinity, max queue 256)");
+    
     // Register server operations for all UDP variants
     int l_ret = 0;
     l_ret |= dap_net_trans_server_register_ops(DAP_NET_TRANS_UDP_BASIC, &s_udp_server_ops);
@@ -480,6 +514,8 @@ int dap_net_trans_udp_server_init(void)
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register UDP server operations");
+        dap_thread_pool_delete(s_kem_thread_pool);
+        s_kem_thread_pool = NULL;
         return l_ret;
     }
     
@@ -489,6 +525,13 @@ int dap_net_trans_udp_server_init(void)
 void dap_net_trans_udp_server_deinit(void)
 {
     log_it(L_NOTICE, "Deinitializing Stream UDP server module");
+    
+    // Shutdown KEM thread pool
+    if (s_kem_thread_pool) {
+        log_it(L_INFO, "Shutting down KEM thread pool...");
+        dap_thread_pool_delete(s_kem_thread_pool);
+        s_kem_thread_pool = NULL;
+    }
     
     // Unregister server operations
     dap_net_trans_server_unregister_ops(DAP_NET_TRANS_UDP_BASIC);

@@ -152,8 +152,18 @@ dap_thread_pool_t* dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         
         // Set thread name for debugging
         char l_name[16];
-        snprintf(l_name, sizeof(l_name), "pool_worker_%u", i);
+        snprintf(l_name, sizeof(l_name), "kem_worker_%u", i);
         dap_thread_set_name(l_pool->threads[i], l_name);
+        
+        // Bind thread to CPU core (i % num_cpus for wrap-around)
+        long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+        if (l_ncpus > 0) {
+            uint32_t l_cpu_id = i % (uint32_t)l_ncpus;
+            int l_aff_ret = dap_thread_set_affinity(l_pool->threads[i], l_cpu_id);
+            if (l_aff_ret == 0) {
+                log_it(L_INFO, "KEM worker %u bound to CPU core %u", i, l_cpu_id);
+            }
+        }
     }
     
     log_it(L_INFO, "Created thread pool with %u workers", a_num_threads);

@@ -87,6 +87,14 @@ int dap_thread_set_name(dap_thread_t a_thread, const char *a_name);
  */
 int dap_thread_detach(dap_thread_t a_thread);
 
+/**
+ * @brief Set CPU affinity for thread (bind to specific CPU core)
+ * @param a_thread Thread handle
+ * @param a_cpu_id CPU core ID (0-based)
+ * @return 0 on success, negative on error
+ */
+int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id);
+
 #ifdef __cplusplus
 }
 #endif
