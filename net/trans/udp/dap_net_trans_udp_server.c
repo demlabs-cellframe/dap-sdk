@@ -1463,10 +1463,96 @@ static void* s_kem_task_func(void *a_arg)
 }
 
 /**
+ * @brief Structure for scheduling reactor callback from KEM worker thread
+ */
+typedef struct kem_reactor_callback_arg {
+    stream_udp_session_t *session;
+    kem_task_result_t *result;
+} kem_reactor_callback_arg_t;
+
+/**
+ * @brief KEM reactor callback (called IN REACTOR THREAD)
+ * 
+ * This is the SECOND stage callback that runs in the reactor thread.
+ * Here we can safely access session and send packets.
+ * 
+ * @param a_arg Pointer to kem_reactor_callback_arg_t
+ */
+static void s_kem_reactor_callback(void *a_arg)
+{
+    kem_reactor_callback_arg_t *l_arg = (kem_reactor_callback_arg_t *)a_arg;
+    if (!l_arg) {
+        log_it(L_ERROR, "[KEM Reactor] Invalid argument");
+        return;
+    }
+    
+    stream_udp_session_t *l_session = l_arg->session;
+    kem_task_result_t *l_result = l_arg->result;
+    
+    if (!l_result) {
+        log_it(L_ERROR, "[KEM Reactor] No result");
+        DAP_DELETE(l_arg);
+        return;
+    }
+    
+    // Validate session still exists
+    if (!l_session || !l_session->base.base.stream_context || !l_session->base.listener_es) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "[KEM Reactor] Session %p invalid or deleted", l_session);
+        goto cleanup_reactor;
+    }
+    
+    if (l_result->error_code != 0) {
+        log_it(L_ERROR, "[KEM Reactor] KEM task failed with error %d", l_result->error_code);
+        goto cleanup_reactor;
+    }
+    
+    // Store handshake key in session (NOW SAFE - in reactor thread!)
+    l_session->encryption_key = l_result->handshake_key;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%lx)",
+             l_session->encryption_key, l_session, l_session->session_id);
+    
+    // Build handshake response: Bob's ciphertext + session_id
+    size_t l_response_size = l_result->bob_ciphertext_size + sizeof(uint64_t);
+    uint64_t l_session_id_be = htobe64(l_result->session_id);
+    uint8_t *l_response = dap_serialize_multy(NULL, l_response_size,
+                                              l_result->bob_ciphertext, l_result->bob_ciphertext_size,
+                                              &l_session_id_be, sizeof(uint64_t),
+                                              DOOF_PTR);
+    if (!l_response) {
+        log_it(L_ERROR, "[KEM Reactor] Failed to serialize handshake response");
+        goto cleanup_reactor;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
+             l_result->bob_ciphertext_size, l_result->session_id);
+    
+    // Send handshake response (NOW SAFE - in reactor thread!)
+    int l_ret = s_send_udp_packet(l_session,
+                                  DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                  l_response, l_response_size);
+    
+    DAP_DELETE(l_response);
+    
+    debug_if(s_debug_more, L_DEBUG, "[KEM Reactor] HANDSHAKE response sent (ret=%d)", l_ret);
+    
+cleanup_reactor:
+    // Free result
+    if (l_result) {
+        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DELETE(l_result);
+    }
+    DAP_DELETE(l_arg);
+}
+
+/**
  * @brief KEM task completion callback (called from worker thread)
  * 
  * This callback is executed in the thread pool worker context.
- * It must dispatch the result back to the reactor thread safely.
+ * It schedules a reactor callback to complete the handshake.
  * 
  * @param a_result Pointer to kem_task_result_t (from task function)
  * @param a_arg Pointer to kem_task_ctx_t (original context)
@@ -1478,67 +1564,55 @@ static void s_kem_task_callback(void *a_result, void *a_arg)
     
     if (!l_result || !l_ctx) {
         log_it(L_ERROR, "[KEM Callback] Invalid arguments");
+        if (l_result) {
+            DAP_DELETE(l_result->bob_ciphertext);
+            DAP_DELETE(l_result);
+        }
+        if (l_ctx) {
+            DAP_DELETE(l_ctx->alice_pub_key);
+            DAP_DELETE(l_ctx);
+        }
         return;
     }
     
-    stream_udp_session_t *l_session = l_ctx->session;
-    
-    // Validate session still exists (check encryption key as marker)
-    if (!l_session || !l_session->encryption_key) {
-        // Session might have been freed - check magic/validity
-        // For now, proceed with caution
-        debug_if(s_debug_more, L_DEBUG,
-                 "[KEM Callback] Session %p validation skipped", l_session);
-    }
-    
-    if (l_result->error_code != 0) {
-        log_it(L_ERROR, "[KEM Callback] KEM task failed with error %d", l_result->error_code);
-        goto cleanup;
-    }
-    
-    // Store handshake key in session (MAIN THREAD CONTEXT!)
-    l_session->encryption_key = l_result->handshake_key;
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Callback] Stored encryption_key=%p for session %p (session_id=0x%lx)",
-             l_session->encryption_key, l_session, l_session->session_id);
-    
-    // Build handshake response: Bob's ciphertext + session_id
-    size_t l_response_size = l_result->bob_ciphertext_size + sizeof(uint64_t);
-    uint64_t l_session_id_be = htobe64(l_result->session_id);
-    uint8_t *l_response = dap_serialize_multy(NULL, l_response_size,
-                                              l_result->bob_ciphertext, l_result->bob_ciphertext_size,
-                                              &l_session_id_be, sizeof(uint64_t),
-                                              DOOF_PTR);
-    if (!l_response) {
-        log_it(L_ERROR, "[KEM Callback] Failed to serialize handshake response");
-        goto cleanup;
-    }
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Callback] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
-             l_result->bob_ciphertext_size, l_result->session_id);
-    
-    // Send handshake response
-    int l_ret = s_send_udp_packet(l_session,
-                                  DAP_STREAM_UDP_PKT_HANDSHAKE,
-                                  l_response, l_response_size);
-    
-    DAP_DELETE(l_response);
-    
-    debug_if(s_debug_more, L_DEBUG, "[KEM Callback] HANDSHAKE response sent (ret=%d)", l_ret);
-    
-cleanup:
-    // Free task resources
-    if (l_result) {
+    // Prepare argument for reactor callback
+    kem_reactor_callback_arg_t *l_reactor_arg = DAP_NEW_Z(kem_reactor_callback_arg_t);
+    if (!l_reactor_arg) {
+        log_it(L_CRITICAL, "[KEM Callback] Failed to allocate reactor callback arg");
         DAP_DELETE(l_result->bob_ciphertext);
         DAP_DELETE(l_result);
-    }
-    
-    if (l_ctx) {
         DAP_DELETE(l_ctx->alice_pub_key);
         DAP_DELETE(l_ctx);
+        return;
     }
+    
+    l_reactor_arg->session = l_ctx->session;
+    l_reactor_arg->result = l_result;
+    
+    // Get session's worker
+    stream_udp_session_t *l_session = l_ctx->session;
+    if (!l_session || !l_session->base.listener_es || !l_session->base.listener_es->worker) {
+        log_it(L_ERROR, "[KEM Callback] Session or worker invalid");
+        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DELETE(l_result);
+        DAP_DELETE(l_reactor_arg);
+        DAP_DELETE(l_ctx->alice_pub_key);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    
+    dap_worker_t *l_worker = l_session->base.listener_es->worker;
+    
+    // Schedule reactor callback
+    dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg);
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "[KEM Callback] Scheduled reactor callback for session %p on worker %p",
+             l_session, l_worker);
+    
+    // Cleanup context (result will be freed in reactor callback)
+    DAP_DELETE(l_ctx->alice_pub_key);
+    DAP_DELETE(l_ctx);
 }
 
 //===================================================================
