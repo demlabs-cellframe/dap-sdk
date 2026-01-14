@@ -328,7 +328,7 @@ static void test_global_timeout_setup(void)
     log_it(L_DEBUG, "Global timeout set to 5 seconds");
     
     // Cancel immediately
-    dap_test_cancel_global_timeout(&l_timeout);
+    dap_test_cancel_global_timeout();
     
     log_it(L_DEBUG, "Global timeout cancelled");
     

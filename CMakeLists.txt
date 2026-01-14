@@ -75,6 +75,12 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
+if(NOT DEFINED DAP_TPL_DIR)
+    set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
+    message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
+endif()
+
 # JSON module is always required (used by core and other modules)
 add_subdirectory(module/json)
 message("[+] Module 'json' (always required)")
