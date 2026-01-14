@@ -22,17 +22,12 @@
 */
 
 /**
- * @file benchmark_competitive_full.cpp
+ * @file benchmark_competitive_full.c
  * @brief Comprehensive competitive benchmark suite: dap_json vs simdjson vs RapidJSON vs yajl
  * @details Full comparison across 12 test scenarios with memory profiling and latency distribution
  * @date 2026-01-12
  */
 
-// C++ includes first
-#include <string>
-#include <sstream>
-
-// C includes
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,14 +38,13 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-// DAP SDK includes (mixed C/C++)
 #include "dap_common.h"
 
-// Pure C includes with extern "C"
 extern "C" {
-    #include "dap_strfuncs.h"
-    #include "dap_file_utils.h"
-    #include "dap_json.h"
+#include "dap_strfuncs.h"
+#include "dap_file_utils.h"
+#include "dap_string.h"
+#include "dap_json.h"
 }
 
 // Competitor includes
@@ -64,8 +58,10 @@ extern "C" {
 #endif
 
 #ifdef HAVE_YAJL
+extern "C" {
 #include "yajl/yajl_parse.h"
 #include "yajl/yajl_tree.h"
+}
 #endif
 
 #define LOG_TAG "benchmark_competitive"
@@ -248,21 +244,19 @@ static char *s_generate_small_json(size_t *a_size_out)
  */
 static char *s_generate_medium_json(size_t *a_size_out)
 {
-    std::string l_json = "[";
+    dap_string_t *l_str = dap_string_new("[");
     
     for (int i = 0; i < 100; i++) {
-        char l_buf[512];
-        snprintf(l_buf, sizeof(l_buf),
+        dap_string_append_printf(l_str,
             "{\"id\":%d,\"user\":\"user%d\",\"score\":%.2f,"
             "\"active\":%s,\"tags\":[\"tag1\",\"tag2\",\"tag3\"],"
             "\"meta\":{\"created\":\"2026-01-12\",\"updated\":\"2026-01-12\"}}%s",
             i, i, (float)i * 1.5, (i % 2) ? "true" : "false", (i < 99) ? "," : "");
-        l_json += l_buf;
     }
     
-    l_json += "]";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -270,20 +264,18 @@ static char *s_generate_medium_json(size_t *a_size_out)
  */
 static char *s_generate_large_json(size_t *a_size_out)
 {
-    std::string l_json = "{\"data\":[";
+    dap_string_t *l_str = dap_string_new("{\"data\":[");
     
     for (int i = 0; i < 10000; i++) {
-        char l_buf[512];
-        snprintf(l_buf, sizeof(l_buf),
+        dap_string_append_printf(l_str,
             "{\"id\":%d,\"data\":\"This is a longer string with more content to increase size\","
             "\"numbers\":[%d,%d,%d,%d,%d],\"nested\":{\"a\":%d,\"b\":%d,\"c\":%d}}%s",
             i, i*2, i*3, i*4, i*5, i*6, i, i+1, i+2, (i < 9999) ? "," : "");
-        l_json += l_buf;
     }
     
-    l_json += "]}";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]}");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -291,19 +283,19 @@ static char *s_generate_large_json(size_t *a_size_out)
  */
 static char *s_generate_deep_nested_json(size_t *a_size_out)
 {
-    std::string l_json;
+    dap_string_t *l_str = dap_string_new("");
     
     const int l_depth = 500;
     for (int i = 0; i < l_depth; i++) {
-        l_json += "{\"nested\":";
+        dap_string_append(l_str, "{\"nested\":");
     }
-    l_json += "\"deep_value\"";
+    dap_string_append(l_str, "\"deep_value\"");
     for (int i = 0; i < l_depth; i++) {
-        l_json += "}";
+        dap_string_append(l_str, "}");
     }
     
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -311,17 +303,15 @@ static char *s_generate_deep_nested_json(size_t *a_size_out)
  */
 static char *s_generate_wide_array_json(size_t *a_size_out)
 {
-    std::string l_json = "[";
+    dap_string_t *l_str = dap_string_new("[");
     
     for (int i = 0; i < 100000; i++) {
-        char l_buf[32];
-        snprintf(l_buf, sizeof(l_buf), "%d%s", i, (i < 99999) ? "," : "");
-        l_json += l_buf;
+        dap_string_append_printf(l_str, "%d%s", i, (i < 99999) ? "," : "");
     }
     
-    l_json += "]";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -329,17 +319,15 @@ static char *s_generate_wide_array_json(size_t *a_size_out)
  */
 static char *s_generate_number_heavy_json(size_t *a_size_out)
 {
-    std::string l_json = "{\"numbers\":[";
+    dap_string_t *l_str = dap_string_new("{\"numbers\":[");
     
     for (int i = 0; i < 10000; i++) {
-        char l_buf[64];
-        snprintf(l_buf, sizeof(l_buf), "%.6f%s", (double)i * 3.14159, (i < 9999) ? "," : "");
-        l_json += l_buf;
+        dap_string_append_printf(l_str, "%.6f%s", (double)i * 3.14159, (i < 9999) ? "," : "");
     }
     
-    l_json += "]}";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]}");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -347,18 +335,16 @@ static char *s_generate_number_heavy_json(size_t *a_size_out)
  */
 static char *s_generate_string_heavy_json(size_t *a_size_out)
 {
-    std::string l_json = "{\"strings\":[";
+    dap_string_t *l_str = dap_string_new("{\"strings\":[");
     
     for (int i = 0; i < 5000; i++) {
-        char l_buf[128];
-        snprintf(l_buf, sizeof(l_buf), "\"This is a long string number %d with lots of text\"%s",
-                 i, (i < 4999) ? "," : "");
-        l_json += l_buf;
+        dap_string_append_printf(l_str, "\"This is a long string number %d with lots of text\"%s",
+                                 i, (i < 4999) ? "," : "");
     }
     
-    l_json += "]}";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]}");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -366,16 +352,16 @@ static char *s_generate_string_heavy_json(size_t *a_size_out)
  */
 static char *s_generate_escape_heavy_json(size_t *a_size_out)
 {
-    std::string l_json = "{\"escaped\":[";
+    dap_string_t *l_str = dap_string_new("{\"escaped\":[");
     
     for (int i = 0; i < 1000; i++) {
-        l_json += "\"Line\\nwith\\ttabs\\rand\\\"quotes\\\"and\\\\backslashes\"";
-        if (i < 999) l_json += ",";
+        dap_string_append(l_str, "\"Line\\nwith\\ttabs\\rand\\\"quotes\\\"and\\\\backslashes\"");
+        if (i < 999) dap_string_append(l_str, ",");
     }
     
-    l_json += "]}";
-    *a_size_out = l_json.size();
-    return strdup(l_json.c_str());
+    dap_string_append(l_str, "]}");
+    *a_size_out = l_str->len;
+    return dap_string_free(l_str, false);
 }
 
 /**
@@ -698,8 +684,7 @@ static void s_print_final_summary(scenario_results_t *a_all_results, int a_scena
 
 int main(int argc, char **argv)
 {
-    // Set INFO level to avoid debug spam
-    dap_log_level_set(L_INFO);
+    dap_log_level_set(L_DEBUG);
     
     log_it(L_INFO, "");
     log_it(L_INFO, "%s╔════════════════════════════════════════════════════════════════════════════════════════╗%s",

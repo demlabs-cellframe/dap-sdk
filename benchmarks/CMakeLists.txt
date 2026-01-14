@@ -38,12 +38,6 @@ add_executable(benchmark_competitive_full
     benchmark_competitive_full.cpp
 )
 
-# Enable C++17 for simdjson
-set_target_properties(benchmark_competitive_full PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
-)
-
 target_link_libraries(benchmark_competitive_full
     dap_core
     dap_json
@@ -82,7 +76,45 @@ else()
     message("[!] simdjson not found (optional competitor)")
 endif()
 
+# Check for RapidJSON (header-only)
+find_path(RAPIDJSON_INCLUDE_DIR rapidjson/rapidjson.h
+    PATHS ${CMAKE_SOURCE_DIR}/benchmarks/competitors/rapidjson/include
+    NO_DEFAULT_PATH
+)
+
+if(RAPIDJSON_INCLUDE_DIR)
+    message("[+] RapidJSON found: ${RAPIDJSON_INCLUDE_DIR}")
+    target_compile_definitions(benchmark_competitive_full PRIVATE HAVE_RAPIDJSON=1)
+    target_include_directories(benchmark_competitive_full PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+else()
+    message("[!] RapidJSON not found (optional competitor)")
+endif()
+
+# Check for YAJL
+find_path(YAJL_INCLUDE_DIR yajl/yajl_parse.h
+    PATHS 
+        ${CMAKE_SOURCE_DIR}/benchmarks/competitors/yajl/build/yajl-2.1.1/include
+        ${CMAKE_SOURCE_DIR}/benchmarks/competitors/yajl/src/api
+    NO_DEFAULT_PATH
+)
+
+find_library(YAJL_LIBRARY
+    NAMES yajl_s yajl
+    PATHS ${CMAKE_SOURCE_DIR}/benchmarks/competitors/yajl/build/yajl-2.1.1/lib
+    NO_DEFAULT_PATH
+)
+
+if(YAJL_INCLUDE_DIR AND YAJL_LIBRARY)
+    message("[+] YAJL found: ${YAJL_INCLUDE_DIR}, ${YAJL_LIBRARY}")
+    target_compile_definitions(benchmark_competitive_full PRIVATE HAVE_YAJL=1)
+    target_include_directories(benchmark_competitive_full PRIVATE ${YAJL_INCLUDE_DIR})
+    target_link_libraries(benchmark_competitive_full ${YAJL_LIBRARY})
+else()
+    message("[!] YAJL not found (optional competitor)")
+endif()
+
 install(TARGETS benchmark_competitive_full
     RUNTIME DESTINATION bin/benchmarks
     COMPONENT benchmarks
 )
+

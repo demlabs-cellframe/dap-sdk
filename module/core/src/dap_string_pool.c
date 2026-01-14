@@ -31,6 +31,9 @@
 
 #define LOG_TAG "dap_string_pool"
 
+// Debug flag
+static bool g_string_pool_debug = false;
+
 // Default initial capacity
 #define DAP_STRING_POOL_DEFAULT_CAPACITY 256
 
@@ -166,7 +169,7 @@ static bool s_rehash(dap_string_pool_t *a_pool)
     a_pool->table = l_new_table;
     a_pool->capacity = l_new_capacity;
     
-    log_it(L_DEBUG, "String pool rehashed to %zu entries", l_new_capacity);
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool rehashed to %zu entries", l_new_capacity);
     
     return true;
 }
@@ -232,7 +235,7 @@ dap_string_pool_t *dap_string_pool_new(dap_arena_t *a_arena, size_t a_initial_ca
     l_pool->hit_count = 0;
     l_pool->collision_count = 0;
     
-    log_it(L_DEBUG, "String pool created (capacity: %zu)", a_initial_capacity);
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool created (capacity: %zu)", a_initial_capacity);
     
     return l_pool;
 }
@@ -250,7 +253,7 @@ dap_string_pool_t *dap_string_pool_new_thread_safe(size_t a_initial_capacity)
     l_pool->thread_safe = true;
     pthread_mutex_init(&l_pool->mutex, NULL);
     
-    log_it(L_DEBUG, "Thread-safe string pool created");
+    debug_if(g_string_pool_debug, L_DEBUG, "Thread-safe string pool created");
     
     return l_pool;
 }
@@ -418,7 +421,7 @@ void dap_string_pool_clear(dap_string_pool_t *a_pool)
         pthread_mutex_unlock(&a_pool->mutex);
     }
     
-    log_it(L_DEBUG, "String pool cleared");
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool cleared");
 }
 
 /**
@@ -462,7 +465,7 @@ void dap_string_pool_free(dap_string_pool_t *a_pool)
         return;
     }
     
-    log_it(L_DEBUG, "String pool free: start (owns_arena=%d, arena=%p, table=%p)", 
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool free: start (owns_arena=%d, arena=%p, table=%p)", 
            a_pool->owns_arena, a_pool->arena, a_pool->table);
     
     if (a_pool->thread_safe) {
@@ -471,17 +474,17 @@ void dap_string_pool_free(dap_string_pool_t *a_pool)
     
     // Only free arena if we own it
     if (a_pool->owns_arena && a_pool->arena) {
-        log_it(L_DEBUG, "String pool free: freeing owned Arena");
+        debug_if(g_string_pool_debug, L_DEBUG, "String pool free: freeing owned Arena");
         dap_arena_free(a_pool->arena);
     } else {
-        log_it(L_DEBUG, "String pool free: NOT freeing Arena (owns_arena=%d)", a_pool->owns_arena);
+        debug_if(g_string_pool_debug, L_DEBUG, "String pool free: NOT freeing Arena (owns_arena=%d)", a_pool->owns_arena);
     }
     
-    log_it(L_DEBUG, "String pool free: freeing table at %p", a_pool->table);
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool free: freeing table at %p", a_pool->table);
     DAP_DELETE(a_pool->table);
-    log_it(L_DEBUG, "String pool free: table freed");
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool free: table freed");
     
     DAP_DELETE(a_pool);
-    log_it(L_DEBUG, "String pool freed");
+    debug_if(g_string_pool_debug, L_DEBUG, "String pool freed");
 }
 

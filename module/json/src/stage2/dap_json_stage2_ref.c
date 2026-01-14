@@ -68,6 +68,70 @@ static bool s_debug_more = false;
 #define NODE_POOL_CHUNK_SIZE 256
 
 /* ========================================================================== */
+/*                   THREAD-LOCAL ARENA & STRING POOL                         */
+/* ========================================================================== */
+
+/**
+ * @brief Thread-local arena for DOM building
+ * 
+ * Similar to Stage 1, reuse arena across multiple parse calls in the same thread.
+ * This eliminates repeated malloc/free overhead.
+ */
+static _Thread_local dap_arena_t *tls_arena = NULL;
+static _Thread_local dap_string_pool_t *tls_string_pool = NULL;
+
+/**
+ * @brief Get or create thread-local arena
+ */
+static inline dap_arena_t *s_get_tls_arena(size_t a_min_size)
+{
+    if (!tls_arena) {
+        tls_arena = dap_arena_new(a_min_size);
+        if (!tls_arena) {
+            log_it(L_ERROR, "Failed to create thread-local arena");
+            return NULL;
+        }
+    } else {
+        // Reset arena for reuse
+        dap_arena_reset(tls_arena);
+        
+        // Check if we need to grow
+        dap_arena_stats_t l_stats;
+        dap_arena_get_stats(tls_arena, &l_stats);
+        if (l_stats.total_allocated < a_min_size) {
+            // Need more space - free and recreate
+            dap_arena_free(tls_arena);
+            tls_arena = dap_arena_new(a_min_size);
+            if (!tls_arena) {
+                log_it(L_ERROR, "Failed to recreate thread-local arena");
+                return NULL;
+            }
+        }
+    }
+    
+    return tls_arena;
+}
+
+/**
+ * @brief Get or create thread-local string pool
+ */
+static inline dap_string_pool_t *s_get_tls_string_pool(dap_arena_t *a_arena, size_t a_capacity)
+{
+    if (!tls_string_pool) {
+        tls_string_pool = dap_string_pool_new(a_arena, a_capacity);
+        if (!tls_string_pool) {
+            log_it(L_ERROR, "Failed to create thread-local string pool");
+            return NULL;
+        }
+    } else {
+        // Clear string pool for reuse
+        dap_string_pool_clear(tls_string_pool);
+    }
+    
+    return tls_string_pool;
+}
+
+/* ========================================================================== */
 /*                    NODE POOL (BATCH ALLOCATION) - Phase 2.4                */
 /* ========================================================================== */
 
@@ -1359,9 +1423,10 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
              l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
              l_estimated_size);
     
-    l_stage2->arena = dap_arena_new(l_estimated_size);
+    // Get thread-local arena (reused across multiple parses)
+    l_stage2->arena = s_get_tls_arena(l_estimated_size);
     if (!l_stage2->arena) {
-        log_it(L_ERROR, "Failed to create Arena allocator");
+        log_it(L_ERROR, "Failed to get thread-local Arena allocator");
         DAP_DELETE(l_stage2);
         return NULL;
     }
@@ -1373,10 +1438,11 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         l_string_pool_capacity = 32;
     }
     
-    l_stage2->string_pool = dap_string_pool_new(l_stage2->arena, l_string_pool_capacity);
+    // Get thread-local string pool (reused across multiple parses)
+    l_stage2->string_pool = s_get_tls_string_pool(l_stage2->arena, l_string_pool_capacity);
     if (!l_stage2->string_pool) {
-        log_it(L_ERROR, "Failed to create String Pool");
-        dap_arena_free(l_stage2->arena);
+        log_it(L_ERROR, "Failed to get thread-local String Pool");
+        // Don't free arena - it's thread-local
         DAP_DELETE(l_stage2);
         return NULL;
     }
@@ -1438,17 +1504,11 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
         debug_if(s_debug_more, L_DEBUG, "Stage 2 free: transcoded buffer freed");
     }
     
-    // Free Arena (frees all DOM nodes allocated from it)
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing Arena at %p", a_stage2->arena);
-    dap_arena_free(a_stage2->arena);
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: Arena freed");
+    // NOTE: Arena and String Pool are thread-local and reused across multiple parses
+    // They are NOT freed here - they persist for the lifetime of the thread
+    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: Arena and String Pool are thread-local (not freed)");
     
-    // Free String Pool (frees all interned strings)
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: freeing String Pool at %p", a_stage2->string_pool);
-    dap_string_pool_free(a_stage2->string_pool);
-    debug_if(s_debug_more, L_DEBUG, "Stage 2 free: String Pool freed");
-    
-    // NOTE: root pointer becomes invalid after Arena free
+    // NOTE: root pointer becomes invalid after thread-local arena is reset on next parse
     // Caller should use root BEFORE calling this function
     DAP_DELETE(a_stage2);
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: complete");

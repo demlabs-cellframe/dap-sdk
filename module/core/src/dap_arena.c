@@ -30,6 +30,9 @@
 
 #define LOG_TAG "dap_arena"
 
+// Debug flag
+static bool g_arena_debug = false;
+
 // Default page size: 64KB (good balance between allocation count and memory overhead)
 #define DAP_ARENA_DEFAULT_PAGE_SIZE (64 * 1024)
 
@@ -143,7 +146,7 @@ dap_arena_t *dap_arena_new(size_t a_initial_size)
     l_arena->allocation_count = 0;
     l_arena->is_thread_local = false;
     
-    log_it(L_DEBUG, "Arena created (page size: %zu bytes)", a_initial_size);
+    debug_if(g_arena_debug, L_DEBUG, "Arena created (page size: %zu bytes)", a_initial_size);
     
     return l_arena;
 }
@@ -156,7 +159,7 @@ dap_arena_t *dap_arena_new_thread_local(size_t a_initial_size)
     dap_arena_t *l_arena = dap_arena_new(a_initial_size);
     if (l_arena) {
         l_arena->is_thread_local = true;
-        log_it(L_DEBUG, "Thread-local arena created");
+        debug_if(g_arena_debug, L_DEBUG, "Thread-local arena created");
     }
     return l_arena;
 }
@@ -201,7 +204,7 @@ void *dap_arena_alloc(dap_arena_t *a_arena, size_t a_size)
         a_arena->total_allocated += sizeof(dap_arena_page_t) + l_new_page_size;
         l_page = l_new_page;
         
-        log_it(L_DEBUG, "Arena grew: new page %zu bytes (total: %zu bytes)",
+        debug_if(g_arena_debug, L_DEBUG, "Arena grew: new page %zu bytes (total: %zu bytes)",
                l_new_page_size, a_arena->total_allocated);
     }
     
@@ -308,7 +311,7 @@ void dap_arena_reset(dap_arena_t *a_arena)
     a_arena->current_page = a_arena->first_page;
     a_arena->allocation_count = 0;
     
-    log_it(L_DEBUG, "Arena reset (%zu total allocated remains available for reuse)",
+    debug_if(g_arena_debug, L_DEBUG, "Arena reset (%zu total allocated remains available for reuse)",
            a_arena->total_allocated);
 }
 
@@ -355,6 +358,6 @@ void dap_arena_free(dap_arena_t *a_arena)
     s_arena_free_pages(a_arena->first_page);
     DAP_DELETE(a_arena);
     
-    log_it(L_DEBUG, "Arena freed");
+    debug_if(g_arena_debug, L_DEBUG, "Arena freed");
 }
 
