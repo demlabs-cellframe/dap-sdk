@@ -391,6 +391,10 @@ static bool s_test_mixed_types_round_trip(void) {
     l_json1 = dap_json_parse_string(input);
     DAP_TEST_FAIL_IF_NULL(l_json1, "Parse mixed types");
     
+    // DEBUG: Check parsed double value BEFORE serialization
+    double parsed_dbl = dap_json_object_get_double(l_json1, "double");
+    log_it(L_DEBUG, "Double value AFTER parsing (before serialization): %.15f", parsed_dbl);
+    
     serialized = dap_json_to_string(l_json1);
     log_it(L_DEBUG, "Serialized: %s", serialized);
     DAP_TEST_FAIL_IF_NULL(serialized, "Serialize mixed types");
@@ -516,6 +520,7 @@ int dap_json_serialization_tests_run(void) {
 
 int main(void) {
     dap_print_module_name("DAP JSON Serialization Round-Trip Tests");
+    //dap_json_set_debug(true); // Enable debug logging
     return dap_json_serialization_tests_run();
 }
 

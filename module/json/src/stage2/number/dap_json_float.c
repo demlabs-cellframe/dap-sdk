@@ -33,6 +33,7 @@
 #include "dap_math_ops.h"
 #include "dap_json.h"
 #include "internal/dap_json_float.h"
+#include "dap_json_power5.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -44,85 +45,25 @@
 #define LOG_TAG "dap_json_float"
 
 /* ========================================================================== */
-/*                    PRECOMPUTED POWERS OF 5 (128-bit)                      */
+/*                    POWERS OF 5 (RUNTIME GENERATION)                        */
 /* ========================================================================== */
 
 /**
- * @brief Precomputed powers of 5 for Eisel-Lemire algorithm (FULL TABLE)
- * @details 128-bit approximations of 5^i for fast multiplication
- * 
- * This table covers exponents from -342 to +308 (full double range)
- * Each entry represents 5^q where q ranges from minimum to maximum
- * 
- * Format: Each entry is { high64, low64 } representing a 128-bit value
- * These are normalized so the high bit of high64 is always set
- * 
- * Reference: Lemire's fast_float library
- * Paper: "Number Parsing at a Gigabyte per Second" (2021)
+ * @brief Power-of-5 table (runtime generated)
+ * @details The table is generated during dap_json initialization
+ *          See dap_json_power5.c for generation algorithm
  */
+static const dap_json_power5_table_t* s_power5_table = NULL;
 
-// Extended powers of 5 table: covers full double exponent range
-// This is a simplified version - full table would have ~350 entries
-// For now, we compute on-the-fly for out-of-range values
-static const struct {
-    int16_t min_exp;  // Minimum exponent this table covers
-    int16_t max_exp;  // Maximum exponent this table covers
-    uint64_t table[46][2];  // Extended table: 5^-22 to 5^22 (covers -342 to +308 with scaling)
-} s_power5_data = {
-    .min_exp = -22,
-    .max_exp = 22,
-    .table = {
-        // 5^-22 to 5^-1 (negative powers - for exponents like 1e-100)
-        // CORRECTED TABLE: All values recalculated using (2^132 / 5^abs_exp)
-        {0x000000000001E392ULL, 0x010175EE5962A649ULL}, // 5^-22
-        {0x00000000000971DAULL, 0x05074DA7BEED3F6FULL}, // 5^-21
-        {0x00000000002F3942ULL, 0x19248446BAA23D2EULL}, // 5^-20
-        {0x0000000000EC1E4AULL, 0x7DB69561A52B31E9ULL}, // 5^-19
-        {0x00000000049C9774ULL, 0x7490EAE839D7F991ULL}, // 5^-18
-        {0x00000000170EF546ULL, 0x46D496892137DFD7ULL}, // 5^-17
-        {0x00000000734ACA5FULL, 0x6226F0ADA6175F34ULL}, // 5^-16
-        {0x000000024075F3DCULL, 0xEAC2B3643E74DC05ULL}, // 5^-15
-        {0x0000000B424DC350ULL, 0x95CD80F538484C19ULL}, // 5^-14
-        {0x000000384B84D092ULL, 0xED0384CA19697C81ULL}, // 5^-13
-        {0x00000119799812DEULL, 0xA11197F27F0F6E88ULL}, // 5^-12
-        {0x0000057F5FF85E59ULL, 0x2557F7BC7B4D28A9ULL}, // 5^-11
-        {0x00001B7CDFD9D7BDULL, 0xBAB7D6AE6881CB51ULL}, // 5^-10
-        {0x000089705F4136B4ULL, 0xA59731680A88F895ULL}, // 5^-9
-        {0x0002AF31DC461187ULL, 0x3BF3F70834ACDAE9ULL}, // 5^-8
-        {0x000D6BF94D5E57A4ULL, 0x2BC3D32907604691ULL}, // 5^-7
-        {0x00431BDE82D7B634ULL, 0xDAD31FCD24E160D8ULL}, // 5^-6
-        {0x014F8B588E368F08ULL, 0x461F9F01B866E43AULL}, // 5^-5
-        {0x068DB8BAC710CB29ULL, 0x5E9E1B089A027525ULL}, // 5^-4
-        {0x20C49BA5E353F7CEULL, 0xD916872B020C49BAULL}, // 5^-3
-        {0xA3D70A3D70A3D70AULL, 0x3D70A3D70A3D70A3ULL}, // 5^-2
-        {0x3333333333333333ULL, 0x3333333333333333ULL}, // 5^-1
-        
-        // 5^0 to 5^22 (positive powers - most common)
-        {0x8000000000000000ULL, 0x0000000000000000ULL}, // 5^0
-        {0xA000000000000000ULL, 0x0000000000000000ULL}, // 5^1
-        {0xC800000000000000ULL, 0x0000000000000000ULL}, // 5^2
-        {0xFA00000000000000ULL, 0x0000000000000000ULL}, // 5^3
-        {0x9C40000000000000ULL, 0x0000000000000000ULL}, // 5^4
-        {0xC350000000000000ULL, 0x0000000000000000ULL}, // 5^5
-        {0xF424000000000000ULL, 0x0000000000000000ULL}, // 5^6
-        {0x9896800000000000ULL, 0x0000000000000000ULL}, // 5^7
-        {0xBEBC200000000000ULL, 0x0000000000000000ULL}, // 5^8
-        {0xEE6B280000000000ULL, 0x0000000000000000ULL}, // 5^9
-        {0x9502F90000000000ULL, 0x0000000000000000ULL}, // 5^10
-        {0xBA43B74000000000ULL, 0x0000000000000000ULL}, // 5^11
-        {0xE8D4A51000000000ULL, 0x0000000000000000ULL}, // 5^12
-        {0x9184E72A00000000ULL, 0x0000000000000000ULL}, // 5^13
-        {0xB5E620F480000000ULL, 0x0000000000000000ULL}, // 5^14
-        {0xE35FA931A0000000ULL, 0x0000000000000000ULL}, // 5^15
-        {0x8E1BC9BF04000000ULL, 0x0000000000000000ULL}, // 5^16
-        {0xB1A2BC2EC5000000ULL, 0x0000000000000000ULL}, // 5^17
-        {0xDE0B6B3A76400000ULL, 0x0000000000000000ULL}, // 5^18
-        {0x8AC7230489E80000ULL, 0x0000000000000000ULL}, // 5^19
-        {0xAD78EBC5AC620000ULL, 0x0000000000000000ULL}, // 5^20
-        {0xD8D726B7177A8000ULL, 0x0000000000000000ULL}, // 5^21
-        {0x878678326EAC9000ULL, 0x0000000000000000ULL}, // 5^22
+/**
+ * @brief Initialize power-of-5 table
+ * @details Called during dap_json initialization
+ */
+void dap_json_float_init(void) {
+    if (!s_power5_table) {
+        s_power5_table = dap_json_power5_init();
     }
-};
+}
 
 /* ========================================================================== */
 /*                    128-BIT ARITHMETIC HELPERS                              */
@@ -188,48 +129,71 @@ static inline uint64_t s_get_low64(uint128_t a) {
  */
 static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_value) {
     debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", a_mantissa, a_exponent);
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: a_mantissa=%lu (0x%016lx), a_exponent=%d", a_mantissa, a_mantissa, a_exponent);
+    
+    // Count leading zeros in INPUT mantissa
+    int l_mantissa_lz = s_clz64(a_mantissa);
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: input mantissa has %d leading zeros (significant bits: %d)", 
+           l_mantissa_lz, 64 - l_mantissa_lz);
     
     // Quick check: zero mantissa
     if (a_mantissa == 0) {
         *a_out_value = 0.0;
+        debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: mantissa is zero, returning 0.0");
         return true;
     }
+    
+    // Normalize mantissa to use full 64 bits [2^63, 2^64)
+    // This is CRITICAL for Eisel-Lemire algorithm correctness
+    uint64_t l_normalized_mantissa = a_mantissa << l_mantissa_lz;
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: normalized mantissa=0x%016lx (shifted left %d)", 
+           l_normalized_mantissa, l_mantissa_lz);
     
     // Eisel-Lemire works for exponents in extended range
     if (a_exponent < -342 || a_exponent > 308) {
         return false; // Out of range, need fallback
     }
     
+    // Ensure power-of-5 table is initialized
+    if (!s_power5_table) {
+        s_power5_table = dap_json_power5_get_table();
+        if (!s_power5_table) {
+            log_it(L_ERROR, "Power-of-5 table not initialized");
+            return false;
+        }
+    }
+    
     // Check if exponent is in our table range
-    if (a_exponent < s_power5_data.min_exp || a_exponent > s_power5_data.max_exp) {
+    if (a_exponent < s_power5_table->min_exp || a_exponent > s_power5_table->max_exp) {
         // Out of table range: fallback to strtod
         // This handles extreme exponents like 1e-300 or 1e+300
         return false;
     }
     
     // Get power of 5 from table
-    int l_idx = a_exponent - s_power5_data.min_exp;
+    int l_idx = a_exponent - s_power5_table->min_exp;
     if (l_idx < 0 || l_idx >= 46) {
         return false;
     }
     
-    uint64_t l_pow5_high = s_power5_data.table[l_idx][0];
-    uint64_t l_pow5_low = s_power5_data.table[l_idx][1];
+    uint64_t l_pow5_high = s_power5_table->table[l_idx][0];
+    uint64_t l_pow5_low = s_power5_table->table[l_idx][1];
     
     debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire: idx=%d, pow5_high=%016lx, pow5_low=%016lx", 
              l_idx, l_pow5_high, l_pow5_low);
     
-    // Multiply mantissa * power_of_5 using dap_math_ops.h
+    // Multiply NORMALIZED mantissa * power_of_5 (as is from table) using dap_math_ops.h
     // This gives us a 128-bit result
+    // NOTE: pow5 is NOT normalized - table values have varying leading zeros
     uint128_t l_product;
-    MULT_64_128(a_mantissa, l_pow5_high, &l_product);
+    MULT_64_128(l_normalized_mantissa, l_pow5_high, &l_product);
     
     debug_if(dap_json_get_debug(), L_DEBUG, "After MULT_64_128");
     
     // If low part of power5 is non-zero, add contribution
     if (l_pow5_low != 0) {
         uint128_t l_product2;
-        MULT_64_128(a_mantissa, l_pow5_low, &l_product2);
+        MULT_64_128(l_normalized_mantissa, l_pow5_low, &l_product2);
         
         // Add product2.hi to product.lo (with carry)
         uint64_t l_prod_high = s_get_high64(l_product);
@@ -259,10 +223,27 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     int l_lz = s_clz64(l_prod_high);
     
     // Compute binary exponent
-    // Each decimal exponent contributes ~3.32 binary exponent
-    int l_binary_exp = (int)((a_exponent * 217706) >> 16); // 217706/65536 ≈ 3.32193
-    l_binary_exp += 64 - l_lz; // Adjust for normalization
-    l_binary_exp += 1023; // IEEE 754 bias (NOT + 52! mantissa bits handled separately)
+     // With normalized input mantissa and NORMALIZED pow5 table:
+     // Both mantissa and pow5 have MSB at bit 63 (in their respective 64-bit values).
+     // After multiplication: product will have MSB in bits [126:127] → product_lz will be 0 or 1.
+     //
+     // Formula: binary_exp = floor(exp10 * log2(10)) + 1023 + 64 - input_lz - product_lz
+     //          = floor(exp10 * log2(10)) + 1087 - input_lz - product_lz
+     
+     int l_binary_exp = (int)((a_exponent * 217706) >> 16); // floor(a_exponent * log2(10))
+     debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: step1 (decimal contribution): binary_exp=%d", l_binary_exp);
+     
+     // Add bias and position adjustment (1023 + 64 = 1087)
+     l_binary_exp += 1087;
+     debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: step2 (after +1087): binary_exp=%d", l_binary_exp);
+     
+     // Subtract input mantissa normalization shift
+     l_binary_exp -= l_mantissa_lz;
+     debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: step3 (after -input_lz=%d): binary_exp=%d", l_mantissa_lz, l_binary_exp);
+     
+     // Subtract product normalization shift (should be 0 or 1 for normalized table)
+     l_binary_exp -= l_lz;
+     debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: step4 (after -product_lz=%d): binary_exp=%d", l_lz, l_binary_exp);
     
     debug_if(dap_json_get_debug(), L_DEBUG, "lz=%d, binary_exp=%d", l_lz, l_binary_exp);
     
@@ -338,6 +319,10 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
              l_mantissa_bits, l_bits);
     
     memcpy(a_out_value, &l_bits, sizeof(double));
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire SUCCESS: binary_exp=%d, mantissa_bits=%016lx, result=%f", 
+           l_binary_exp, l_mantissa_bits, *a_out_value);
+    
     return true;
 }
 
@@ -370,9 +355,10 @@ static bool s_clinger_fallback(uint64_t a_mantissa, int a_exponent, double *a_ou
  * @return true if успешно, false if ошибка
  */
 bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) {
-    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse called: len=%zu, str='%.*s'", a_len, (int)a_len, a_str);
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse ENTRY: len=%zu, str='%.*s'", a_len, (int)a_len, a_str);
     
     if (!a_str || a_len == 0 || !a_out_value) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: NULL check failed");
         return false;
     }
     
@@ -390,18 +376,25 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         l_pos++;
     }
     
-    if (l_pos >= a_len) return false;
+    if (l_pos >= a_len) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: no digits after sign");
+        return false;
+    }
     
     // Parse integer part
     uint64_t l_mantissa = 0;
     int l_exponent = 0;
     bool l_has_digits = false;
+    int l_digit_count = 0;  // Track total digits
     
     while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
         l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
         l_has_digits = true;
+        l_digit_count++;
         l_pos++;
     }
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after integer part: mantissa=%lu, digits=%d", l_mantissa, l_digit_count);
     
     // Parse decimal part
     if (l_pos < a_len && a_str[l_pos] == '.') {
@@ -411,14 +404,20 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
             l_mantissa = l_mantissa * 10 + (a_str[l_pos] - '0');
             l_decimal_digits++;
+            l_digit_count++;
             l_has_digits = true;
             l_pos++;
         }
         
         l_exponent -= l_decimal_digits;
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after decimal: mantissa=%lu, decimal_digits=%d, total_digits=%d, exp=%d", 
+               l_mantissa, l_decimal_digits, l_digit_count, l_exponent);
     }
     
-    if (!l_has_digits) return false;
+    if (!l_has_digits) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: no digits found");
+        return false;
+    }
     
     // Parse exponent
     if (l_pos < a_len && (a_str[l_pos] == 'e' || a_str[l_pos] == 'E')) {
@@ -446,7 +445,13 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     }
     
     // Should have consumed all input
-    if (l_pos != a_len) return false;
+    if (l_pos != a_len) {
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: unconsumed input! pos=%zu, len=%zu", l_pos, a_len);
+        return false;
+    }
+    
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: before Eisel-Lemire: mantissa=%lu, exponent=%d, digit_count=%d", 
+           l_mantissa, l_exponent, l_digit_count);
     
     debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", l_mantissa, l_exponent);
     

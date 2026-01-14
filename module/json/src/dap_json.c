@@ -48,6 +48,7 @@
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
 #include "internal/dap_json_encoding.h"
+#include "internal/dap_json_float.h"
 #include "internal/dap_json_transcode.h"
 #include <string.h>
 #include <stdio.h>
@@ -135,6 +136,9 @@ void dap_json_init(void)
 {
     // Initialize Stage 1 (CPU detection)
     dap_json_stage1_init();
+    
+    // Initialize float parsing (power-of-5 table generation)
+    dap_json_float_init();
     
     debug_if(s_debug_more, L_NOTICE, "DAP JSON Native Parser initialized (SIMD arch: %s)", 
            dap_cpu_arch_get_name(dap_cpu_arch_get()));

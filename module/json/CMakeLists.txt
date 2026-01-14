@@ -50,8 +50,8 @@ endif()
 message(STATUS "[dap_json] Generating Stage 2 String Scanner SIMD implementations...")
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E env ${CODEGEN_ENV}
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2/generate_string_simd.sh ${SIMD_GEN_DIR}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2/string/generate_string_simd.sh ${SIMD_GEN_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/stage2/string
     RESULT_VARIABLE STRING_CODEGEN_RESULT
     OUTPUT_VARIABLE STRING_CODEGEN_OUTPUT
     ERROR_VARIABLE STRING_CODEGEN_ERROR

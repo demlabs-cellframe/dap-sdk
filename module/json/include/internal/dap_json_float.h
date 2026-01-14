@@ -10,7 +10,7 @@
  * @file dap_json_float.h
  * @brief Lemire's algorithm - Fast double parsing
  * @details Eisel-Lemire algorithm for high-performance double parsing
- * @date 2026-01-13
+ * @date 2026-01-14
  */
 
 #pragma once
@@ -22,6 +22,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Initialize float parsing module (power-of-5 table generation)
+ * @details Must be called before first use of dap_json_float_parse()
+ *          Called automatically during dap_json_init()
+ */
+void dap_json_float_init(void);
 
 /**
  * @brief Parse double using Lemire's algorithm
