@@ -10,8 +10,8 @@ enable_testing()
 # IO Layer Integration Tests
 # ============================================================================
 
-# Flow Control & Load Balancing Tests
-# add_subdirectory(io)  # Disabled: skeleton only
+# Thread Pool Integration Tests
+add_subdirectory(io)
 
 # ============================================================================
 # Network Module Integration Tests
