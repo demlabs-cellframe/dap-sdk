@@ -17,14 +17,8 @@ add_subdirectory(io)
 # Network Module Integration Tests
 # ============================================================================
 
-# HTTP Integration Tests (Client + Server)
-add_subdirectory(net/http)
-
-# Stream Integration Tests
-add_subdirectory(net/stream)
-
-# Transport Integration Tests (HTTP, WebSocket, UDP)
-add_subdirectory(net/trans)
+# Network tests (UDP KEM scaling, HTTP, Stream, Transport)
+add_subdirectory(net)
 
 # Global DB Integration Tests
 add_subdirectory(global-db)
