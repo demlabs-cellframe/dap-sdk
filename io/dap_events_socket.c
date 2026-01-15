@@ -2548,6 +2548,22 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
             return 0;  // Queue full
         }
         
+        // Log destination address before sendto
+        char l_addr_str[INET6_ADDRSTRLEN] = {0};
+        uint16_t l_port = 0;
+        if (a_es->addr_storage.ss_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in*)&a_es->addr_storage;
+            inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+            l_port = ntohs(l_sin->sin_port);
+        } else if (a_es->addr_storage.ss_family == AF_INET6) {
+            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)&a_es->addr_storage;
+            inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
+            l_port = ntohs(l_sin6->sin6_port);
+        }
+        
+        log_it(L_DEBUG, "UDP sendto: fd=%d, size=%zu, dest=%s:%u", 
+               a_es->fd, a_data_size, l_addr_str, l_port);
+        
         // Try direct sendto
         ssize_t l_sent = sendto(a_es->fd, a_data, a_data_size, 0,
                                 (struct sockaddr*)&a_es->addr_storage, a_es->addr_size);

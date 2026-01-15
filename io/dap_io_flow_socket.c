@@ -61,12 +61,17 @@ static void s_flow_sendto_callback(void *a_arg)
     
     dap_events_socket_t *l_es = l_args->esocket;
     
+    log_it(L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
+           l_es, l_es->fd, l_args->size);
+    
     // Update addr_storage for reactor's sendto
     memcpy(&l_es->addr_storage, &l_args->addr, l_args->addr_len);
     l_es->addr_size = l_args->addr_len;
     
     // Write data to buf_out (reactor will sendto)
-    dap_events_socket_write_unsafe(l_es, l_args->data, l_args->size);
+    int l_ret = dap_events_socket_write_unsafe(l_es, l_args->data, l_args->size);
+    
+    log_it(L_DEBUG, "s_flow_sendto_callback: write_unsafe returned %d", l_ret);
     
     // Cleanup
     DAP_DELETE(l_args->data);
