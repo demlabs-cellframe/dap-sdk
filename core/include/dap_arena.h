@@ -62,6 +62,68 @@ extern "C" {
 typedef struct dap_arena dap_arena_t;
 
 /**
+ * @brief Arena creation options (pass by value)
+ * 
+ * Flexible configuration structure for arena creation.
+ * All fields are optional (zero-initialized struct uses defaults).
+ * 
+ * Usage:
+ * ```c
+ * // Default arena (fast bump allocator)
+ * dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){0});
+ * 
+ * // Reference-counted arena (for shared ownership)
+ * dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){
+ *     .use_refcount = true,
+ *     .initial_size = 8192
+ * });
+ * 
+ * // Thread-local arena with custom page size
+ * dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){
+ *     .initial_size = 16384,
+ *     .page_growth_factor = 1.5,
+ *     .thread_local = true
+ * });
+ * ```
+ */
+typedef struct {
+    size_t initial_size;        ///< Initial page size (0 = default 64KB)
+    
+    bool use_refcount;          ///< Enable reference counting for shared ownership
+                                ///< When enabled:
+                                ///< - Each allocation tracks its page
+                                ///< - Pages have atomic refcount
+                                ///< - Pages freed when refcount reaches 0
+                                ///< - Allows partial arena cleanup
+                                ///< Use for: JSON borrowed refs, shared data structures
+    
+    bool thread_local;          ///< Create thread-local arena (faster, no locks)
+    
+    double page_growth_factor;  ///< Page size multiplier for subsequent pages (0 = 2.0)
+                                ///< Example: 1.5 means each new page is 1.5x previous
+                                ///< Useful for gradually growing allocations
+    
+    size_t max_page_size;       ///< Maximum page size (0 = unlimited)
+                                ///< Prevents unbounded growth for long-lived arenas
+    
+    // Future expansion options (zero-initialized = disabled):
+    // bool use_guard_pages;    ///< Add guard pages to detect overflows
+    // bool collect_stats;      ///< Enable detailed statistics collection
+    // void *user_data;         ///< Opaque user data pointer
+} dap_arena_opt_t;
+
+/**
+ * @brief Arena allocation result (for refcounted arenas)
+ * 
+ * When use_refcount=true, allocations return this struct
+ * to track which page the memory came from.
+ */
+typedef struct {
+    void *ptr;                  ///< Allocated memory pointer
+    void *page_handle;          ///< Opaque page handle (for ref/unref)
+} dap_arena_alloc_ex_t;
+
+/**
  * @brief Arena allocation statistics
  */
 typedef struct {
@@ -70,12 +132,36 @@ typedef struct {
     size_t current_page;      // Current page index
     size_t page_count;        // Total number of pages
     size_t allocation_count;  // Number of allocations made
+    size_t active_refcount;   // Total active references (if use_refcount=true)
 } dap_arena_stats_t;
 
 /**
- * @brief Create new arena allocator
+ * @brief Create new arena allocator with options
  * 
- * @param[in] a_initial_size Initial page size in bytes (recommended: 4096-65536)
+ * Modern, flexible arena creation. Pass options by value.
+ * 
+ * @param[in] a_opt Arena options (pass by value, zero-initialized uses defaults)
+ * @return New arena, or NULL on allocation failure
+ * 
+ * @example
+ * // Default arena
+ * dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){0});
+ * 
+ * // Refcounted arena for JSON
+ * dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){
+ *     .use_refcount = true,
+ *     .initial_size = 8192
+ * });
+ */
+dap_arena_t *dap_arena_new_opt(dap_arena_opt_t a_opt);
+
+/**
+ * @brief Create new arena allocator (simple version)
+ * 
+ * Convenience wrapper for dap_arena_new_opt().
+ * Creates standard bump allocator without refcounting.
+ * 
+ * @param[in] a_initial_size Initial page size in bytes (0 = default 64KB)
  * @return New arena, or NULL on allocation failure
  */
 dap_arena_t *dap_arena_new(size_t a_initial_size);
@@ -83,10 +169,10 @@ dap_arena_t *dap_arena_new(size_t a_initial_size);
 /**
  * @brief Create thread-local arena
  * 
+ * Convenience wrapper for dap_arena_new_opt().
  * Thread-local arenas are faster for concurrent use (no locks).
- * Each thread gets its own arena instance.
  * 
- * @param[in] a_initial_size Initial page size
+ * @param[in] a_initial_size Initial page size (0 = default 64KB)
  * @return Thread-local arena, or NULL on failure
  */
 dap_arena_t *dap_arena_new_thread_local(size_t a_initial_size);
@@ -101,6 +187,28 @@ dap_arena_t *dap_arena_new_thread_local(size_t a_initial_size);
  * @return Pointer to allocated memory, or NULL on failure
  */
 void *dap_arena_alloc(dap_arena_t *a_arena, size_t a_size);
+
+/**
+ * @brief Allocate memory from refcounted arena (extended version)
+ * 
+ * Use this for arenas created with use_refcount=true.
+ * Returns both pointer and page handle for later ref/unref.
+ * 
+ * @param[in,out] a_arena Arena allocator (must have use_refcount=true)
+ * @param[in] a_size Number of bytes to allocate
+ * @param[out] a_result Result structure with pointer and page handle
+ * @return true on success, false on failure
+ * 
+ * @example
+ * dap_arena_alloc_ex_t result;
+ * if (dap_arena_alloc_ex(arena, 256, &result)) {
+ *     // Use result.ptr
+ *     dap_arena_page_ref(result.page_handle);  // Increment refcount
+ *     // ... later ...
+ *     dap_arena_page_unref(result.page_handle);  // Decrement refcount
+ * }
+ */
+bool dap_arena_alloc_ex(dap_arena_t *a_arena, size_t a_size, dap_arena_alloc_ex_t *a_result);
 
 /**
  * @brief Allocate zero-initialized memory from arena
@@ -155,9 +263,46 @@ char *dap_arena_strndup(dap_arena_t *a_arena, const char *a_str, size_t a_len);
  * All allocated memory becomes invalid. Keeps allocated pages
  * for reuse (no system calls).
  * 
+ * Note: For refcounted arenas, only resets pages with refcount=0.
+ * Pages with active references are kept alive.
+ * 
  * @param[in,out] a_arena Arena allocator
  */
 void dap_arena_reset(dap_arena_t *a_arena);
+
+/**
+ * @brief Increment page reference count
+ * 
+ * Only for arenas created with use_refcount=true.
+ * Prevents page from being freed until all references are released.
+ * 
+ * @param[in] a_page_handle Opaque page handle from dap_arena_alloc_ex()
+ * 
+ * @note Thread-safe (uses atomic operations)
+ */
+void dap_arena_page_ref(void *a_page_handle);
+
+/**
+ * @brief Decrement page reference count
+ * 
+ * Only for arenas created with use_refcount=true.
+ * When refcount reaches 0, page may be freed/reused.
+ * 
+ * @param[in] a_page_handle Opaque page handle from dap_arena_alloc_ex()
+ * 
+ * @note Thread-safe (uses atomic operations)
+ */
+void dap_arena_page_unref(void *a_page_handle);
+
+/**
+ * @brief Get page reference count
+ * 
+ * Returns current refcount for debugging/diagnostics.
+ * 
+ * @param[in] a_page_handle Opaque page handle
+ * @return Current reference count, or -1 if invalid handle
+ */
+int dap_arena_page_get_refcount(void *a_page_handle);
 
 /**
  * @brief Get arena statistics

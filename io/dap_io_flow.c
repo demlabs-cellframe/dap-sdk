@@ -41,8 +41,9 @@
 // Debug mode
 static bool s_debug_more = false;
 
-// Thread-local arena for cross-worker packet allocations
-// Each worker has its own arena, reset after packet forwarding
+// Thread-local arena for cross-worker packet allocations (REFCOUNTED mode)
+// Each worker has its own arena with per-page refcounting
+// Pages are freed when all references are released (thread-safe)
 static __thread dap_arena_t *tl_cross_worker_arena = NULL;
 
 // Forward declarations for internal structures
@@ -51,13 +52,16 @@ typedef struct flow_cross_worker_packet flow_cross_worker_packet_t;
 
 /**
  * @brief Cross-worker packet forwarding structure
+ * 
+ * Includes page handle for refcounted arena management.
  */
 struct flow_cross_worker_packet {
     dap_io_flow_t *flow;                   // Target flow (in remote worker)
-    uint8_t *data;                          // Packet data (ownership transferred)
+    uint8_t *data;                          // Packet data (arena-allocated)
     size_t size;                            // Data size
     struct sockaddr_storage remote_addr;   // Source address
     socklen_t remote_addr_len;             // Address length
+    void *page_handle;                      // Arena page handle for refcounting
 };
 
 /**
@@ -851,9 +855,10 @@ void dap_io_flow_server_get_stats(
  * @param a_listener_es REAL UDP listener socket (not queue!)
  */
 /**
- * @brief Get or create thread-local arena for cross-worker packets
+ * @brief Get or create thread-local refcounted arena for cross-worker packets
  * 
- * Each worker thread has its own arena for allocating cross-worker packet structures.
+ * Each worker thread has its own arena with per-page refcounting enabled.
+ * Pages are freed when all references are released (thread-safe).
  * Arena is created once per worker and reused for all cross-worker operations.
  * 
  * @return Arena pointer, or NULL on critical allocation failure
@@ -861,12 +866,17 @@ void dap_io_flow_server_get_stats(
 static dap_arena_t* s_get_cross_worker_arena(void)
 {
     if (!tl_cross_worker_arena) {
-        tl_cross_worker_arena = dap_arena_new(8192);  // 8KB initial, grows as needed
+        // Create arena with per-page refcounting enabled
+        tl_cross_worker_arena = dap_arena_new_opt((dap_arena_opt_t){
+            .initial_size = 8192,        // 8KB initial, grows as needed
+            .use_refcount = true,        // Enable per-page refcounting
+            .thread_local = true         // Thread-local (no locks within worker)
+        });
         if (!tl_cross_worker_arena) {
-            log_it(L_CRITICAL, "Failed to create cross-worker arena for worker thread");
+            log_it(L_CRITICAL, "Failed to create refcounted cross-worker arena");
             return NULL;
         }
-        log_it(L_DEBUG, "Created cross-worker arena for worker thread");
+        log_it(L_DEBUG, "Created refcounted cross-worker arena for worker thread");
     }
     return tl_cross_worker_arena;
 }
@@ -996,23 +1006,28 @@ static void s_process_flow_packet_common(
                      "Application LB: forwarding new flow packet to worker %u",
                      l_target_worker_id);
             
-            // Get cross-worker arena
+            // Get refcounted cross-worker arena
             dap_arena_t *l_arena = s_get_cross_worker_arena();
             if (!l_arena) {
                 log_it(L_ERROR, "Cross-worker arena not available - creating locally");
                 goto create_local;
             }
             
-            // Allocate packet for forwarding
-            struct flow_cross_worker_packet *l_packet = 
-                dap_arena_alloc(l_arena, sizeof(struct flow_cross_worker_packet));
-            uint8_t *l_data_copy = dap_arena_alloc(l_arena, a_data_size);
-            
-            if (!l_packet || !l_data_copy) {
-                log_it(L_ERROR, "Arena allocation failed - creating locally");
-                dap_arena_reset(l_arena);
+            // Allocate packet structure (with page handle for refcounting)
+            dap_arena_alloc_ex_t l_packet_alloc;
+            if (!dap_arena_alloc_ex(l_arena, sizeof(struct flow_cross_worker_packet), &l_packet_alloc)) {
+                log_it(L_ERROR, "Arena allocation failed for packet struct - creating locally");
                 goto create_local;
             }
+            struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
+            
+            // Allocate data buffer (same page, so same page_handle)
+            dap_arena_alloc_ex_t l_data_alloc;
+            if (!dap_arena_alloc_ex(l_arena, a_data_size, &l_data_alloc)) {
+                log_it(L_ERROR, "Arena allocation failed for data buffer - creating locally");
+                goto create_local;
+            }
+            uint8_t *l_data_copy = l_data_alloc.ptr;
             
             // Fill packet (flow = NULL since not created yet)
             memcpy(l_data_copy, a_data, a_data_size);
@@ -1021,18 +1036,27 @@ static void s_process_flow_packet_common(
             l_packet->flow = NULL;  // Will be created on target worker
             memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
             l_packet->remote_addr_len = a_remote_addr_len;
+            l_packet->page_handle = l_packet_alloc.page_handle;  // Store page handle for unref
+            
+            // Increment refcount before forwarding (thread-safe atomic operation)
+            dap_arena_page_ref(l_packet->page_handle);
+            
+            debug_if(s_debug_more, L_DEBUG,
+                     "Allocated packet from refcounted arena (page_handle=%p, data=%p, size=%zu)",
+                     l_packet->page_handle, l_data_copy, a_data_size);
             
             // Forward to target worker
             int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
                                                     l_target_worker_id, l_packet);
-            // DO NOT reset arena here! Receiver worker still needs the data!
-            // Arena will be reset on next allocation or when worker processes queue
             
             if (l_ret == 0) {
-                return;  // Forwarded successfully
+                // Forwarded successfully - receiver worker will unref when done
+                return;
             }
-            // Forward failed - reset arena to free allocated memory
-            dap_arena_reset(l_arena);
+            
+            // Forward failed - decrement refcount to free page
+            log_it(L_WARNING, "Forward failed, releasing page reference");
+            dap_arena_page_unref(l_packet->page_handle);
             // Fall through to create_local on forward failure
         }
         
@@ -1065,23 +1089,28 @@ create_local:
                  "Flow on worker %u, current worker %u - forwarding packet size=%zu",
                  l_flow->owner_worker_id, l_worker->id, a_data_size);
         
-        // Get cross-worker arena (fail-fast if not available)
+        // Get refcounted cross-worker arena (fail-fast if not available)
         dap_arena_t *l_arena = s_get_cross_worker_arena();
         if (!l_arena) {
             log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
             return;  // Fail-fast: no arena = no forwarding
         }
         
-        // Allocate packet structure from arena (fast path)
-        struct flow_cross_worker_packet *l_packet = 
-            dap_arena_alloc(l_arena, sizeof(struct flow_cross_worker_packet));
-        uint8_t *l_data_copy = dap_arena_alloc(l_arena, a_data_size);
-        
-        if (!l_packet || !l_data_copy) {
-            log_it(L_ERROR, "Arena allocation failed for cross-worker packet");
-            dap_arena_reset(l_arena);  // Clean up partial allocations
+        // Allocate packet structure (with page handle for refcounting)
+        dap_arena_alloc_ex_t l_packet_alloc;
+        if (!dap_arena_alloc_ex(l_arena, sizeof(struct flow_cross_worker_packet), &l_packet_alloc)) {
+            log_it(L_ERROR, "Arena allocation failed for packet struct - dropping");
             return;  // Fail-fast: allocation failed
         }
+        struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
+        
+        // Allocate data buffer (same page, so same page_handle)
+        dap_arena_alloc_ex_t l_data_alloc;
+        if (!dap_arena_alloc_ex(l_arena, a_data_size, &l_data_alloc)) {
+            log_it(L_ERROR, "Arena allocation failed for data buffer - dropping");
+            return;  // Fail-fast: allocation failed
+        }
+        uint8_t *l_data_copy = l_data_alloc.ptr;
         
         // Fill packet structure
         memcpy(l_data_copy, a_data, a_data_size);
@@ -1090,21 +1119,27 @@ create_local:
         l_packet->flow = l_flow;
         memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
         l_packet->remote_addr_len = a_remote_addr_len;
+        l_packet->page_handle = l_packet_alloc.page_handle;  // Store page handle for unref
+        
+        // Increment refcount before forwarding (thread-safe atomic operation)
+        dap_arena_page_ref(l_packet->page_handle);
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Allocated cross-worker packet (page_handle=%p, data=%p, size=%zu)",
+                 l_packet->page_handle, l_data_copy, a_data_size);
         
         // Forward to correct worker
         int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
                                                 l_flow->owner_worker_id, l_packet);
         if (l_ret != 0) {
-            log_it(L_WARNING, "Failed to forward packet to worker %u", l_flow->owner_worker_id);
-            // Forward failed - reset arena to free allocated memory
-            dap_arena_reset(l_arena);
+            log_it(L_WARNING, "Failed to forward packet to worker %u - releasing page", 
+                   l_flow->owner_worker_id);
+            // Forward failed - decrement refcount to free page
+            dap_arena_page_unref(l_packet->page_handle);
             return;
         }
         
-        // DO NOT reset arena here! Receiver worker still needs the data!
-        // Arena will be reset on next packet forwarding from this worker
-        // (arenas grow and reuse memory automatically)
-        
+        // Forwarded successfully - receiver worker will unref when done
         return;  // Packet forwarded, done
     }
     
@@ -1143,11 +1178,6 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
     }
     
     dap_worker_t *l_worker = dap_worker_get_current();
-    
-    // UNCONDITIONAL log for debugging 50% packet loss
-    log_it(L_NOTICE, "Listener READ: worker=%u, size=%zu, fd=%d, from=%s",
-           l_worker ? l_worker->id : 999, a_es->buf_in_size, a_es->fd,
-           dap_io_flow_socket_addr_to_string(&a_es->addr_storage));
     
     // Log incoming packet details
     debug_if(s_debug_more, L_DEBUG, 
@@ -1365,12 +1395,17 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     
     debug_if(s_debug_more, L_DEBUG, "Queue callback: s_process_flow_packet_common RETURNED");
     
-    // CRITICAL: Reset arena AFTER packet is fully processed by receiver worker!
-    // This frees the memory allocated by sender worker's arena.
-    // Note: We reset sender's arena from receiver context, but that's OK because
-    // arena memory is allocated in sender worker's TLS and we're just marking it as free.
-    // The actual memory remains allocated until sender worker's next arena operation.
-    debug_if(s_debug_more, L_DEBUG, "Queue callback: packet processed, memory can be reused on next send");
+    // CRITICAL: Decrement page refcount after packet is fully processed!
+    // This is thread-safe (atomic operation) and allows arena page to be freed
+    // when all references are released.
+    if (l_packet->page_handle) {
+        debug_if(s_debug_more, L_DEBUG, 
+                 "Queue callback: releasing page reference (page_handle=%p)",
+                 l_packet->page_handle);
+        dap_arena_page_unref(l_packet->page_handle);
+    } else {
+        log_it(L_WARNING, "Queue callback: packet has NULL page_handle");
+    }
 }
 
 /**
