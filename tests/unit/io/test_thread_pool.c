@@ -33,8 +33,14 @@ static void* s_simple_task(void *a_arg)
 /**
  * @brief Task completion callback
  */
-static void s_task_callback(void *a_result, void *a_arg)
+static void s_task_callback(dap_thread_pool_t *a_pool,
+                            dap_thread_t a_worker_thread,
+                            void *a_result,
+                            void *a_arg)
 {
+    UNUSED(a_pool);
+    UNUSED(a_worker_thread);
+    
     int l_result = (intptr_t)a_result;
     int l_expected = *(int*)a_arg * 2;
     

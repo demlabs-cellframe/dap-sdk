@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "dap_common.h"
+#include "dap_thread.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,10 +39,20 @@ typedef void* (*dap_thread_pool_task_func_t)(void *a_arg);
 
 /**
  * @brief Task completion callback type
+ * 
+ * Called from worker thread after task completes.
+ * Provides pool handle, worker thread, and result for advanced use cases
+ * (e.g., inter-worker queues, CPU affinity-aware processing).
+ * 
+ * @param a_pool Thread pool that executed the task
+ * @param a_worker_thread Worker thread that executed the task
  * @param a_result Task result from task function
  * @param a_arg User argument
  */
-typedef void (*dap_thread_pool_callback_t)(void *a_result, void *a_arg);
+typedef void (*dap_thread_pool_callback_t)(dap_thread_pool_t *a_pool,
+                                           dap_thread_t a_worker_thread,
+                                           void *a_result,
+                                           void *a_arg);
 
 /**
  * @brief Create thread pool

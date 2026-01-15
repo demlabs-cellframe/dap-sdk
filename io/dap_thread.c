@@ -44,6 +44,11 @@ dap_thread_t dap_thread_create(dap_thread_func_t a_func, void *a_arg)
     return l_thread;
 }
 
+dap_thread_t dap_thread_self(void)
+{
+    return pthread_self();
+}
+
 int dap_thread_join(dap_thread_t a_thread, void **a_retval)
 {
     if (a_thread == 0) {

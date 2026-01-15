@@ -55,6 +55,7 @@ struct dap_thread_pool {
 static void* s_worker_thread(void *a_arg)
 {
     dap_thread_pool_t *l_pool = (dap_thread_pool_t *)a_arg;
+    dap_thread_t l_self = dap_thread_self();  // Get worker thread handle once
     
     while (true) {
         pthread_mutex_lock(&l_pool->mutex);
@@ -90,9 +91,9 @@ static void* s_worker_thread(void *a_arg)
                 l_result = l_task->func(l_task->arg);
             }
             
-            // Call completion callback
+            // Call completion callback with pool, worker thread, result, and user arg
             if (l_task->callback) {
-                l_task->callback(l_result, l_task->callback_arg);
+                l_task->callback(l_pool, l_self, l_result, l_task->callback_arg);
             }
             
             DAP_DELETE(l_task);

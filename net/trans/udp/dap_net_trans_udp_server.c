@@ -1554,13 +1554,22 @@ cleanup_reactor:
  * This callback is executed in the thread pool worker context.
  * It schedules a reactor callback to complete the handshake.
  * 
+ * @param a_pool Thread pool that executed the task
+ * @param a_worker_thread Worker thread that executed the task
  * @param a_result Pointer to kem_task_result_t (from task function)
  * @param a_arg Pointer to kem_task_ctx_t (original context)
  */
-static void s_kem_task_callback(void *a_result, void *a_arg)
+static void s_kem_task_callback(dap_thread_pool_t *a_pool,
+                                dap_thread_t a_worker_thread,
+                                void *a_result,
+                                void *a_arg)
 {
     kem_task_result_t *l_result = (kem_task_result_t *)a_result;
     kem_task_ctx_t *l_ctx = (kem_task_ctx_t *)a_arg;
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "[KEM Callback] Worker thread %lu (pool %p) completed KEM task",
+             (unsigned long)a_worker_thread, a_pool);
     
     if (!l_result || !l_ctx) {
         log_it(L_ERROR, "[KEM Callback] Invalid arguments");

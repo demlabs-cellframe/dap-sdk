@@ -59,6 +59,12 @@ typedef void* (*dap_thread_func_t)(void *a_arg);
 dap_thread_t dap_thread_create(dap_thread_func_t a_func, void *a_arg);
 
 /**
+ * @brief Get current thread handle
+ * @return Current thread handle
+ */
+dap_thread_t dap_thread_self(void);
+
+/**
  * @brief Wait for thread to finish
  * @param a_thread Thread handle
  * @param a_retval Pointer to store thread return value (can be NULL)
