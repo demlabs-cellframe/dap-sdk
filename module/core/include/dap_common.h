@@ -701,10 +701,55 @@ extern "C" {
             (_a); \
         })
     #else
-        // Fallback: simple arithmetic without overflow check
-        #define dap_add(a,b)    ((a) + (b))
-        #define dap_sub(a,b)    ((a) - (b))
-        #define dap_mul(a,b)    ((a) * (b))
+        // Universal overflow-safe arithmetic for compilers without builtins
+        // Uses portable overflow detection via range checks
+        
+        #define dap_add(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Check for overflow: a + b > MAX or a + b < MIN */ \
+                if ((_b > 0 && _a > dap_maxval(_a) - _b) || \
+                    (_b < 0 && _a < dap_minval(_a) - _b)) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a += _b; \
+                } \
+                _a; \
+            })
+        
+        #define dap_sub(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Check for overflow: a - b > MAX or a - b < MIN */ \
+                /* Equivalent to: a + (-b), so check if -b would overflow first */ \
+                if ((_b < 0 && _a > dap_maxval(_a) + _b) || \
+                    (_b > 0 && _a < dap_minval(_a) + _b)) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a -= _b; \
+                } \
+                _a; \
+            })
+        
+        #define dap_mul(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Multiplication overflow check via division */ \
+                if (_b != 0 && ( \
+                    (_a > 0 && _b > 0 && _a > dap_maxval(_a) / _b) || \
+                    (_a > 0 && _b < 0 && _b < dap_minval(_a) / _a) || \
+                    (_a < 0 && _b > 0 && _a < dap_minval(_a) / _b) || \
+                    (_a < 0 && _b < 0 && _a < dap_maxval(_a) / _b) \
+                )) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a *= _b; \
+                } \
+                _a; \
+            })
     #endif
 #endif
 
