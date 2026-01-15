@@ -194,6 +194,23 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         debug_if(a_server->ext_log, L_INFO, "setsockopt(SO_REUSEPORT) is not supported");
 #endif
 
+    // For UDP: Set large socket buffers to prevent packet loss under high load
+    if (a_type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+        int l_buffer_size = 4 * 1024 * 1024;  // 4 MB
+        
+        if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char*)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+            log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, dap_strerror(errno));
+        } else {
+            log_it(L_INFO, "Set SO_RCVBUF to %d bytes (4 MB) for UDP socket", l_buffer_size);
+        }
+        
+        if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char*)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+            log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, dap_strerror(errno));
+        } else {
+            log_it(L_INFO, "Set SO_SNDBUF to %d bytes (4 MB) for UDP socket", l_buffer_size);
+        }
+    }
+
     if ( bind(l_socket, (struct sockaddr*)&l_saddr, l_len) < 0 ) {
         close_socket_due_to_fail("bind()");
         return 6;
@@ -259,6 +276,15 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                     continue;
                 }
 #endif
+                
+                // Set large socket buffers (4 MB) for high-throughput UDP
+                int l_buffer_size = 4 * 1024 * 1024;  // 4 MB
+                if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_RCVBUF, (const char*)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                    log_it(L_WARNING, "Failed to set SO_RCVBUF for sharded socket %u: %s", i, dap_strerror(errno));
+                }
+                if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_SNDBUF, (const char*)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                    log_it(L_WARNING, "Failed to set SO_SNDBUF for sharded socket %u: %s", i, dap_strerror(errno));
+                }
                 
                 // Bind to the SAME address/port
                 if (bind(l_sharded_socket, (struct sockaddr*)&l_saddr, l_len) < 0) {

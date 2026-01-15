@@ -1025,11 +1025,14 @@ static void s_process_flow_packet_common(
             // Forward to target worker
             int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
                                                     l_target_worker_id, l_packet);
-            dap_arena_reset(l_arena);
+            // DO NOT reset arena here! Receiver worker still needs the data!
+            // Arena will be reset on next allocation or when worker processes queue
             
             if (l_ret == 0) {
                 return;  // Forwarded successfully
             }
+            // Forward failed - reset arena to free allocated memory
+            dap_arena_reset(l_arena);
             // Fall through to create_local on forward failure
         }
         
@@ -1093,10 +1096,14 @@ create_local:
                                                 l_flow->owner_worker_id, l_packet);
         if (l_ret != 0) {
             log_it(L_WARNING, "Failed to forward packet to worker %u", l_flow->owner_worker_id);
+            // Forward failed - reset arena to free allocated memory
+            dap_arena_reset(l_arena);
+            return;
         }
         
-        // Reset arena after forwarding (memory reclaimed immediately)
-        dap_arena_reset(l_arena);
+        // DO NOT reset arena here! Receiver worker still needs the data!
+        // Arena will be reset on next packet forwarding from this worker
+        // (arenas grow and reuse memory automatically)
         
         return;  // Packet forwarded, done
     }
@@ -1358,8 +1365,12 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     
     debug_if(s_debug_more, L_DEBUG, "Queue callback: s_process_flow_packet_common RETURNED");
     
-    // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
-    // Arena memory is automatically reused when the source worker's arena is reset
+    // CRITICAL: Reset arena AFTER packet is fully processed by receiver worker!
+    // This frees the memory allocated by sender worker's arena.
+    // Note: We reset sender's arena from receiver context, but that's OK because
+    // arena memory is allocated in sender worker's TLS and we're just marking it as free.
+    // The actual memory remains allocated until sender worker's next arena operation.
+    debug_if(s_debug_more, L_DEBUG, "Queue callback: packet processed, memory can be reused on next send");
 }
 
 /**

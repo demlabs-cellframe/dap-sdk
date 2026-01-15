@@ -2483,6 +2483,20 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
+    // Set large socket buffers (4 MB) to prevent packet loss under high load
+    int l_buffer_size = 4 * 1024 * 1024;  // 4 MB
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+        log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
+    } else {
+        log_it(L_DEBUG, "Set SO_RCVBUF to %d bytes (4 MB) for UDP client socket", l_buffer_size);
+    }
+    
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+        log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
+    } else {
+        log_it(L_DEBUG, "Set SO_SNDBUF to %d bytes (4 MB) for UDP client socket", l_buffer_size);
+    }
+    
     // Get local port assigned by OS
     struct sockaddr_in l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);

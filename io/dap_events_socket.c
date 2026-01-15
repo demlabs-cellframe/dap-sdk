@@ -1069,26 +1069,39 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
         if (a_esocket->flags & DAP_SOCK_QUEUE_PTR){
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+            // CRITICAL: Read ALL available pointers from pipe in a loop!
+            // Level-triggered epoll will keep firing if we don't drain the pipe completely.
+            // This fixes the bug where queue callback was called multiple times for same packet.
             int l_read_errno = 0;
             char l_body[PIPE_BUF] = { '\0' };
-            ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
-            l_read_errno = errno;
-            if(l_read_ret > 0) {
-                debug_if(g_debug_reactor, L_DEBUG, "Read %ld bytes from queue pipe [es %d]", 
-                         l_read_ret, a_esocket->fd);
-                if (l_read_ret % sizeof(void*)) {
-                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
-                    return -3;
-                }
-                for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
-                    void *l_queue_ptr = *(void**)(l_body + shift);
-                    debug_if(g_debug_reactor, L_DEBUG, 
-                             "Calling queue_ptr_callback(%p, %p)", a_esocket, l_queue_ptr);
-                    a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
+            
+            while (true) {
+                ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
+                l_read_errno = errno;
+                
+                if (l_read_ret > 0) {
+                    debug_if(g_debug_reactor, L_DEBUG, "Read %ld bytes from queue pipe [es %d]", 
+                             l_read_ret, a_esocket->fd);
+                    if (l_read_ret % sizeof(void*)) {
+                        log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
+                        return -3;
+                    }
+                    for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
+                        void *l_queue_ptr = *(void**)(l_body + shift);
+                        debug_if(g_debug_reactor, L_DEBUG, 
+                                 "Calling queue_ptr_callback(%p, %p)", a_esocket, l_queue_ptr);
+                        a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
+                    }
+                } else if (l_read_errno == EAGAIN || l_read_errno == EWOULDBLOCK) {
+                    // Pipe drained completely - normal exit
+                    debug_if(g_debug_reactor, L_DEBUG, "Queue pipe drained (EAGAIN/EWOULDBLOCK)");
+                    break;
+                } else {
+                    // Real error
+                    log_it(L_ERROR, "Can't read message from pipe: %s (%d)", strerror(l_read_errno), l_read_errno);
+                    break;
                 }
             }
-            else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
-                log_it(L_ERROR, "Can't read message from pipe");
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
             char l_body[DAP_QUEUE_MAX_BUFLEN * DAP_QUEUE_MAX_MSGS] = { '\0' };
             ssize_t l_ret, l_shift;
