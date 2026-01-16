@@ -68,10 +68,26 @@ static void s_flow_sendto_callback(void *a_arg)
     memcpy(&l_es->addr_storage, &l_args->addr, l_args->addr_len);
     l_es->addr_size = l_args->addr_len;
     
-    // Write data to buf_out (reactor will sendto)
+    // Debug: log destination address BEFORE write
+    char l_addr_str[INET6_ADDRSTRLEN] = {0};
+    uint16_t l_port = 0;
+    if (l_args->addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_args->addr;
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        l_port = ntohs(l_sin->sin_port);
+    } else if (l_args->addr.ss_family == AF_INET6) {
+        struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)&l_args->addr;
+        inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
+        l_port = ntohs(l_sin6->sin6_port);
+    }
+    log_it(L_DEBUG, "s_flow_sendto_callback: addr set to %s:%u (addr_size=%u)",
+           l_addr_str, l_port, l_args->addr_len);
+    
+    // Write data to buf_out (reactor will sendto or queue if EAGAIN)
     int l_ret = dap_events_socket_write_unsafe(l_es, l_args->data, l_args->size);
     
-    log_it(L_DEBUG, "s_flow_sendto_callback: write_unsafe returned %d", l_ret);
+    log_it(L_DEBUG, "s_flow_sendto_callback: write_unsafe returned %d (queue=%p, count=%zu)", 
+           l_ret, l_es->packet_queue, l_es->packet_queue ? l_es->packet_queue->count : 0);
     
     // Cleanup
     DAP_DELETE(l_args->data);
