@@ -445,7 +445,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                          "%s\r\n"
                                          "%s", 
                                          dap_strlen(l_ret), 
-                                         (uint64_t)dap_nanotime_now() - l_arg->time_start, 
+                                         (uint64_t)(dap_nanotime_now() - l_arg->time_start), 
                                          l_additional_headers,
                                          l_ret);
     DAP_DEL_MULTY(l_additional_headers, l_ret);
