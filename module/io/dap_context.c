@@ -150,6 +150,16 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     l_msg->callback_stopped = a_callback_loop_after;
     l_msg->callback_arg = a_callback_arg;
 
+    // Create thread attributes with increased stack size for crypto operations (Dilithium needs ~100KB+ stack)
+    pthread_attr_t l_thread_attr;
+    pthread_attr_init(&l_thread_attr);
+    // Set stack size to 2MB (default is often 8MB on Linux, but may be smaller on ARM)
+    // Dilithium crypto uses ~70KB+ of stack for local variables alone
+    size_t l_stack_size = 2 * 1024 * 1024;  // 2MB
+    if (pthread_attr_setstacksize(&l_thread_attr, l_stack_size) != 0) {
+        log_it(L_WARNING, "Failed to set thread stack size to %zu bytes, using default", l_stack_size);
+    }
+
     // If we have to wait for started thread (and initialization inside )
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
         // Init kernel objects
@@ -168,7 +178,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
 
-        l_ret = pthread_create(&a_context->thread_id, NULL, s_context_thread, l_msg);
+        l_ret = pthread_create(&a_context->thread_id, &l_thread_attr, s_context_thread, l_msg);
 
         if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
             while (!a_context->started && !l_ret)
@@ -185,12 +195,13 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         }
         pthread_mutex_unlock(&a_context->started_mutex);
     }else{ // Here we wait for nothing, just run it
-        l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
+        l_ret = pthread_create( &a_context->thread_id , &l_thread_attr, s_context_thread, l_msg);
         if(l_ret != 0){ // Check for error, if present lets cleanup the memory for l_msg
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
     }
+    pthread_attr_destroy(&l_thread_attr);
     return l_ret;
 }
 
