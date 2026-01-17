@@ -952,7 +952,9 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     dap_stream_t *l_double = NULL;
     HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
+        log_it(L_WARNING, "Stream already present in hash table for node "NODE_ADDR_FP_STR", rejecting new stream (existing esocket fd=%"DAP_FORMAT_SOCKET")",
+               NODE_ADDR_FP_ARGS_S(a_stream->node),
+               l_double->esocket ? l_double->esocket->socket : -1);
         return -1;
     }
     a_stream->primary = true;
