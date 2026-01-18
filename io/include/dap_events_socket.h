@@ -447,6 +447,27 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
+/**
+ * @brief Send datagram (UDP/SCTP) to specific address
+ * 
+ * Specialized function for datagram sockets that accepts destination address explicitly.
+ * Tries direct sendto() first, queues packet if socket would block (EAGAIN).
+ * 
+ * UNSAFE: Must be called from socket's owner worker thread only.
+ * 
+ * @param a_es Event socket (must be DESCRIPTOR_TYPE_SOCKET_UDP or CLIENT)
+ * @param a_data Data buffer to send
+ * @param a_data_size Size of data
+ * @param a_addr Destination address
+ * @param a_addr_len Address length
+ * @return Number of bytes queued/sent, or 0 on error
+ */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, 
+                                       const void *a_data, 
+                                       size_t a_data_size,
+                                       const struct sockaddr_storage *a_addr,
+                                       socklen_t a_addr_len);
+
 // MT variants less
 void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
 void dap_events_socket_set_writable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);

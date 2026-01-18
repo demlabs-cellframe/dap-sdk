@@ -2615,6 +2615,109 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
 }
 
 /**
+ * @brief Send datagram (UDP/SCTP) to specific address (UNSAFE version)
+ * 
+ * Specialized function for datagram sockets that accepts destination address explicitly.
+ * This is more efficient than dap_events_socket_write_unsafe() for UDP because:
+ * - Avoids overwriting a_es->addr_storage (which may be shared across packets)
+ * - Directly queues packet with correct destination in packet_queue
+ * - Supports multiple concurrent sendto operations without race conditions
+ * 
+ * UNSAFE: Must be called from socket's owner worker thread only.
+ * 
+ * @param a_es Event socket (must be DESCRIPTOR_TYPE_SOCKET_UDP or CLIENT)
+ * @param a_data Data buffer to send
+ * @param a_data_size Size of data
+ * @param a_addr Destination address
+ * @param a_addr_len Address length
+ * @return Number of bytes queued/sent, or 0 on error
+ */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, 
+                                       const void *a_data, 
+                                       size_t a_data_size,
+                                       const struct sockaddr_storage *a_addr,
+                                       socklen_t a_addr_len)
+{
+    if (!a_es || !a_data || a_data_size == 0 || !a_addr) {
+        log_it(L_ERROR, "Invalid arguments for sendto_unsafe");
+        return 0;
+    }
+    
+    if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        debug_if(g_debug_reactor, L_NOTICE, "Trying to sendto into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
+        return 0;
+    }
+    
+    // Only for datagram sockets
+    if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
+        a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
+        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d)", a_es->type);
+        return 0;
+    }
+    
+    // Check maximum datagram size
+    if (a_data_size > DAP_UDP_MAX_DATAGRAM_SIZE) {
+        log_it(L_ERROR, "UDP datagram too large: %zu bytes (max %d bytes)",
+               a_data_size, DAP_UDP_MAX_DATAGRAM_SIZE);
+        return 0;
+    }
+    
+    // If queue already has packets, add to queue (maintain ordering!)
+    if (a_es->packet_queue && a_es->packet_queue->count > 0) {
+        if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size, a_addr, a_addr_len) == 0) {
+            // Mark socket as writable to trigger queue flush
+            dap_events_socket_set_writable_unsafe(a_es, true);
+            debug_if(g_debug_reactor, L_DEBUG,
+                     "Datagram queued (queue not empty): %zu bytes (queue size: %zu)",
+                     a_data_size, a_es->packet_queue->count);
+            return a_data_size;  // Queued successfully
+        }
+        return 0;  // Queue full
+    }
+    
+    // Try direct sendto
+    debug_if(g_debug_reactor, L_DEBUG, "Attempting direct sendto: fd=%d, size=%zu", 
+             a_es->fd, a_data_size);
+    
+    ssize_t l_sent = sendto(a_es->fd, a_data, a_data_size, 0,
+                            (struct sockaddr*)a_addr, a_addr_len);
+    
+    if (l_sent < 0) {
+        int l_errno = errno;
+        if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+            // Socket would block, create queue and add packet
+            if (!a_es->packet_queue) {
+                a_es->packet_queue = s_packet_queue_create();
+                if (!a_es->packet_queue) {
+                    log_it(L_ERROR, "Failed to create packet queue");
+                    return 0;
+                }
+            }
+            
+            if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size, a_addr, a_addr_len) == 0) {
+                // Mark socket as writable to trigger queue flush later
+                dap_events_socket_set_writable_unsafe(a_es, true);
+                
+                debug_if(g_debug_reactor, L_DEBUG,
+                         "Datagram sendto would block, queued %zu bytes", a_data_size);
+                return a_data_size;  // Queued successfully
+            }
+            return 0;  // Queue full
+        }
+        
+        // Permanent error
+        log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
+        return 0;
+    }
+    
+    debug_if(g_debug_reactor, L_DEBUG,
+             "Datagram direct sendto: sent %zd bytes (requested %zu)",
+             l_sent, a_data_size);
+    
+    return (size_t)l_sent;
+}
+
+/**
  * @brief dap_events_socket_write_f Write formatted text to the client
  * @param a_es Conn instance
  * @param a_format Format

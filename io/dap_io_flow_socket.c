@@ -61,32 +61,15 @@ static void s_flow_sendto_callback(void *a_arg)
     
     dap_events_socket_t *l_es = l_args->esocket;
     
-    log_it(L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
            l_es, l_es->fd, l_args->size);
     
-    // Update addr_storage for reactor's sendto
-    memcpy(&l_es->addr_storage, &l_args->addr, l_args->addr_len);
-    l_es->addr_size = l_args->addr_len;
+    // Use specialized sendto function that accepts address explicitly
+    // This avoids race conditions with addr_storage and properly queues packet
+    size_t l_ret = dap_events_socket_sendto_unsafe(l_es, l_args->data, l_args->size,
+                                                    &l_args->addr, l_args->addr_len);
     
-    // Debug: log destination address BEFORE write
-    char l_addr_str[INET6_ADDRSTRLEN] = {0};
-    uint16_t l_port = 0;
-    if (l_args->addr.ss_family == AF_INET) {
-        struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_args->addr;
-        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        l_port = ntohs(l_sin->sin_port);
-    } else if (l_args->addr.ss_family == AF_INET6) {
-        struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)&l_args->addr;
-        inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
-        l_port = ntohs(l_sin6->sin6_port);
-    }
-    log_it(L_DEBUG, "s_flow_sendto_callback: addr set to %s:%u (addr_size=%u)",
-           l_addr_str, l_port, l_args->addr_len);
-    
-    // Write data to buf_out (reactor will sendto or queue if EAGAIN)
-    int l_ret = dap_events_socket_write_unsafe(l_es, l_args->data, l_args->size);
-    
-    log_it(L_DEBUG, "s_flow_sendto_callback: write_unsafe returned %d (queue=%p, count=%zu)", 
+    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: sendto_unsafe returned %zu (queue=%p, count=%zu)", 
            l_ret, l_es->packet_queue, l_es->packet_queue ? l_es->packet_queue->count : 0);
     
     // Cleanup
@@ -110,7 +93,7 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
     }
     
     // DEBUG: Always log socket type
-    log_it(L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d (UDP=%d, CLIENT=%d)",
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d (UDP=%d, CLIENT=%d)",
            a_es, a_es->fd, a_es->type, DESCRIPTOR_TYPE_SOCKET_UDP, DESCRIPTOR_TYPE_SOCKET_CLIENT);
     
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
@@ -123,37 +106,21 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
     dap_worker_t *l_current_worker = dap_worker_get_current();
     dap_worker_t *l_target_worker = a_es->worker;
     
-    log_it(L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, fd=%d", 
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, fd=%d", 
            a_size, l_current_worker ? l_current_worker->id : 999, 
            l_target_worker ? l_target_worker->id : 999, a_es->fd);
     
     if (l_current_worker == l_target_worker) {
-        // FAST PATH: Same worker, direct write
-        memcpy(&a_es->addr_storage, a_addr, a_addr_len);
-        a_es->addr_size = a_addr_len;
+        // FAST PATH: Same worker, direct sendto with explicit address
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH size=%zu", a_size);
         
-        // Debug: log destination address
-        char l_addr_str[INET6_ADDRSTRLEN] = {0};
-        uint16_t l_port = 0;
-        if (a_addr->ss_family == AF_INET) {
-            struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
-            inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-            l_port = ntohs(l_sin->sin_port);
-        } else if (a_addr->ss_family == AF_INET6) {
-            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)a_addr;
-            inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
-            l_port = ntohs(l_sin6->sin6_port);
-        }
+        size_t l_ret = dap_events_socket_sendto_unsafe(a_es, a_data, a_size, a_addr, a_addr_len);
         
-        log_it(L_DEBUG, "dap_io_flow_socket_send_to: sending %zu bytes to %s:%u via fd=%d",
-               a_size, l_addr_str, l_port, a_es->fd);
-        
-        int l_ret = dap_events_socket_write_unsafe(a_es, a_data, a_size);
-        log_it(L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH write returned %d", l_ret);
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH sendto returned %zu", l_ret);
         return l_ret;
     } else {
         // SLOW PATH: Cross-worker, use callback
-        log_it(L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
         flow_sendto_args_t *l_args = DAP_NEW_Z(flow_sendto_args_t);
         if (!l_args) {
             log_it(L_ERROR, "Failed to allocate sendto args");
