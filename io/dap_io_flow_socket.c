@@ -25,6 +25,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_io_flow_ebpf.h"
@@ -33,6 +34,9 @@
 #include "dap_proc_thread.h"
 
 #define LOG_TAG "dap_io_flow_socket"
+
+// Debug flag for verbose logging
+static bool s_debug_more = false;
 
 // Thread-local buffer for address formatting
 static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
@@ -75,6 +79,34 @@ static void s_flow_sendto_callback(void *a_arg)
     // Cleanup
     DAP_DELETE(l_args->data);
     DAP_DELETE(l_args);
+}
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+/**
+ * @brief Initialize dap_io_flow_socket module
+ * @details Reads debug flags from config
+ * @return 0 on success
+ */
+int dap_io_flow_socket_init(void)
+{
+    if (g_config) {
+        s_debug_more = dap_config_get_item_bool_default(g_config, "dap_io_flow_socket", "debug_more", false);
+        if (s_debug_more) {
+            log_it(L_INFO, "Flow socket debug mode ENABLED");
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Deinitialize dap_io_flow_socket module
+ */
+void dap_io_flow_socket_deinit(void)
+{
+    // Nothing to cleanup yet
 }
 
 // =============================================================================
@@ -322,12 +354,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             l_es->addr_size = sizeof(struct sockaddr_storage);
         }
         
-        // Add to worker
-        dap_worker_add_events_socket_unsafe(l_worker, l_es);
-        
-        // CRITICAL: is_initalized must be set for sockets added directly via _unsafe
-        // (not through queue). Required for poll() systems and general correctness.
-        l_es->is_initalized = true;
+        // Add to specific worker (use thread-safe version from main thread)
+        dap_worker_add_events_socket(l_worker, l_es);
         
         debug_if(g_debug_reactor, L_DEBUG, 
                  "Sharded listener #%u: fd=%d added to worker %u", 
@@ -335,9 +363,6 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-        
-        // Socket is ready to send packets - use proper API to set flag and update epoll
-        dap_events_socket_set_writable_unsafe(l_es, true);
     }
     
     // Final summary

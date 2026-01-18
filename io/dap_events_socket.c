@@ -81,7 +81,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_worker.h"
 #include "dap_uuid.h"
 #include "dap_events.h"
-
+#include "dap_io_flow_socket.h"
 #include "dap_timerfd.h"
 #include "dap_context.h"
 #include "dap_events_socket.h"
@@ -461,6 +461,7 @@ int dap_events_socket_init( void )
     }
 #endif
     dap_timerfd_init();
+    dap_io_flow_socket_init();
     return 0;
 }
 
@@ -469,6 +470,7 @@ int dap_events_socket_init( void )
  */
 void dap_events_socket_deinit(void)
 {
+    dap_io_flow_socket_deinit();
 }
 
 /**
@@ -1074,34 +1076,21 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             // This fixes the bug where queue callback was called multiple times for same packet.
             int l_read_errno = 0;
             char l_body[PIPE_BUF] = { '\0' };
-            
-            while (true) {
-                ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
-                l_read_errno = errno;
-                
-                if (l_read_ret > 0) {
-                    debug_if(g_debug_reactor, L_DEBUG, "Read %ld bytes from queue pipe [es %d]", 
-                             l_read_ret, a_esocket->fd);
-                    if (l_read_ret % sizeof(void*)) {
-                        log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
-                        return -3;
-                    }
-                    for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
-                        void *l_queue_ptr = *(void**)(l_body + shift);
-                        debug_if(g_debug_reactor, L_DEBUG, 
-                                 "Calling queue_ptr_callback(%p, %p)", a_esocket, l_queue_ptr);
-                        a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
-                    }
-                } else if (l_read_errno == EAGAIN || l_read_errno == EWOULDBLOCK) {
-                    // Pipe drained completely - normal exit
-                    debug_if(g_debug_reactor, L_DEBUG, "Queue pipe drained (EAGAIN/EWOULDBLOCK)");
-                    break;
-                } else {
-                    // Real error
-                    log_it(L_ERROR, "Can't read message from pipe: %s (%d)", strerror(l_read_errno), l_read_errno);
-                    break;
+            ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
+            l_read_errno = errno;
+            if(l_read_ret > 0) {
+                //debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
+                if (l_read_ret % sizeof(void*)) {
+                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
+                    return -3;
+                }
+                for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
+                    void *l_queue_ptr = *(void**)(l_body + shift);
+                    a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
                 }
             }
+            else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
+                log_it(L_ERROR, "Can't read message from pipe");
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
             char l_body[DAP_QUEUE_MAX_BUFLEN * DAP_QUEUE_MAX_MSGS] = { '\0' };
             ssize_t l_ret, l_shift;
@@ -1455,31 +1444,12 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t *a_es_input, v
 #elif defined DAP_EVENTS_CAPS_IOCP
     return dap_events_socket_queue_ptr_send(a_es_input->pipe_out, a_arg);
 #else
-    // For PIPE-based queues: write pointer directly to write end (fd2)
-    debug_if(g_debug_reactor, L_DEBUG, 
-             "Queue send EPOLL/POLL: writing %zu bytes to fd2=%d (read end fd=%d)",
-             sizeof(a_arg), a_es_input->fd2, a_es_input->fd);
-    
-    ssize_t l_written = write(a_es_input->fd2, &a_arg, sizeof(a_arg));
-    
-    if (l_written < 0) {
-        int l_errno = errno;
-        log_it(L_ERROR, "Queue send failed: write to fd2=%d failed: %s (%d)",
-               a_es_input->fd2, strerror(l_errno), l_errno);
+    // Write to queue OUTPUT esocket (pipe_out), which will buffer and reactor will flush
+    if (!a_es_input->pipe_out) {
+        log_it(L_ERROR, "Queue input has no pipe_out");
         return -1;
     }
-    
-    if (l_written != sizeof(a_arg)) {
-        log_it(L_WARNING, "Queue send: partial write to fd2=%d: written=%zd, expected=%zu",
-               a_es_input->fd2, l_written, sizeof(a_arg));
-        return -1;
-    }
-    
-    debug_if(g_debug_reactor, L_DEBUG, 
-             "Queue send successful: written=%zd bytes to fd2=%d",
-             l_written, a_es_input->fd2);
-    
-    return 0;
+    return dap_events_socket_write_unsafe(a_es_input->pipe_out, &a_arg, sizeof(a_arg)) == sizeof(a_arg) ? 0 : -1;
 #endif
 }
 
@@ -2547,22 +2517,6 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
             }
             return 0;  // Queue full
         }
-        
-        // Log destination address before sendto
-        char l_addr_str[INET6_ADDRSTRLEN] = {0};
-        uint16_t l_port = 0;
-        if (a_es->addr_storage.ss_family == AF_INET) {
-            struct sockaddr_in *l_sin = (struct sockaddr_in*)&a_es->addr_storage;
-            inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-            l_port = ntohs(l_sin->sin_port);
-        } else if (a_es->addr_storage.ss_family == AF_INET6) {
-            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6*)&a_es->addr_storage;
-            inet_ntop(AF_INET6, &l_sin6->sin6_addr, l_addr_str, sizeof(l_addr_str));
-            l_port = ntohs(l_sin6->sin6_port);
-        }
-        
-        log_it(L_DEBUG, "UDP sendto: fd=%d, size=%zu, dest=%s:%u", 
-               a_es->fd, a_data_size, l_addr_str, l_port);
         
         // Try direct sendto
         ssize_t l_sent = sendto(a_es->fd, a_data, a_data_size, 0,

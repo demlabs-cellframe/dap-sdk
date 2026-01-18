@@ -1271,6 +1271,12 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
     
     // Create queue outputs from each source worker to each destination worker
     for (uint32_t src = 0; src < l_worker_count; src++) {
+        dap_worker_t *l_src_worker = dap_events_worker_get(src);
+        if (!l_src_worker) {
+            log_it(L_ERROR, "Worker %u not found for queue output", src);
+            return -7;
+        }
+        
         for (uint32_t dst = 0; dst < l_worker_count; dst++) {
             if (src == dst) {
                 continue;  // No queue to self
@@ -1284,6 +1290,14 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
                 log_it(L_ERROR, "Failed to create queue output %u -> %u", src, dst);
                 return -6;
             }
+            
+            // Add queue output to SOURCE worker so reactor can flush buf_out to pipe
+            // Use thread-safe version because we're in main thread adding to specific worker
+            dap_worker_add_events_socket(l_src_worker, l_queue_out);
+            
+            debug_if(s_debug_more, L_DEBUG, 
+                     "Added queue_output[%u->%u]: es=%p, fd=%d to worker %u",
+                     src, dst, l_queue_out, l_queue_out->fd, src);
             
             a_server->inter_worker_queues[src][dst] = l_queue_out;
         }
