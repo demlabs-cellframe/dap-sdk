@@ -67,7 +67,7 @@ extern "C" {
 
 #ifdef HAVE_JSON_C
 extern "C" {
-#include "json-c/json.h"
+#include "json.h"
 }
 #endif
 

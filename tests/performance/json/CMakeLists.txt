@@ -46,9 +46,8 @@ find_library(YAJL_LIBRARY
 
 # json-c
 find_path(JSONC_INCLUDE_DIR
-    NAMES json-c/json.h json.h
+    NAMES json.h
     PATHS "${COMPETITORS_DIR}/json-c/build"
-          "${COMPETITORS_DIR}/json-c"
     NO_DEFAULT_PATH
 )
 find_library(JSONC_LIBRARY
@@ -107,7 +106,11 @@ endif()
 
 if(JSONC_INCLUDE_DIR AND JSONC_LIBRARY)
     message("  [✓] json-c found: ${JSONC_LIBRARY}")
-    target_include_directories(benchmark_competitive_full PRIVATE ${JSONC_INCLUDE_DIR})
+    # json-c needs both: build dir (for generated headers) and source dir (for arraylist.h, etc.)
+    target_include_directories(benchmark_competitive_full PRIVATE 
+        ${JSONC_INCLUDE_DIR}  # build directory first (for config.h)
+        "${COMPETITORS_DIR}/json-c"  # source directory (for arraylist.h, etc.)
+    )
     target_link_libraries(benchmark_competitive_full PRIVATE ${JSONC_LIBRARY})
     target_compile_definitions(benchmark_competitive_full PRIVATE HAVE_JSON_C=1)
 else()
