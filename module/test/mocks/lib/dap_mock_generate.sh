@@ -41,7 +41,9 @@ EOF_HEADER
             # Generate -alias options and trampolines for each function
             echo "$mock_functions" | while read func; do
                 # 1. Generate -alias to redirect calls (Mach-O symbols have underscore prefix)
-                echo "-Wl,-alias,_${func},___wrap_${func}" >> "$wrap_file"
+                # Note: For response file (@file), we write raw linker options WITHOUT -Wl, prefix
+                # CMake will add -Wl,@file which passes the file content to linker
+                echo "-alias _${func} ___wrap_${func}" >> "$wrap_file"
                 
                 # 2. Generate __real_ trampoline in assembly (AT&T syntax)
                 # The trampoline provides access to original function before aliasing
