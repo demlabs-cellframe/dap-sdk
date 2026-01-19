@@ -1173,12 +1173,26 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
              l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
              l_estimated_size);
     
-    // Cap at 128 MB to prevent excessive pre-allocation from malformed token counts
-    const size_t MAX_PREALLOC = 128 * 1024 * 1024;  // 128 MB
-    if (l_estimated_size > MAX_PREALLOC) {
-        log_it(L_WARNING, "Pre-allocation capped: requested=%zu MB, capped to=%zu MB", 
-               l_estimated_size / (1024*1024), MAX_PREALLOC / (1024*1024));
-        l_estimated_size = MAX_PREALLOC;
+    // ⚡ ОПТИМИЗАЦИЯ: Более агрессивный cap для экономии памяти
+    // Для JSON <1KB: максимум 16KB арены
+    // Для JSON <100KB: максимум 512KB арены
+    // Для JSON >100KB: cap на 4x от размера JSON
+    const size_t MAX_PREALLOC_SMALL = 16 * 1024;   // 16 KB для маленьких JSON
+    const size_t MAX_PREALLOC_MEDIUM = 512 * 1024; // 512 KB для средних JSON
+    const size_t MAX_PREALLOC_LARGE = a_stage1->input_len * 4; // 4x от размера JSON
+    
+    if (a_stage1->input_len < 1024 && l_estimated_size > MAX_PREALLOC_SMALL) {
+        log_it(L_DEBUG, "Pre-allocation capped (small JSON): requested=%zu KB, capped to=%zu KB", 
+               l_estimated_size / 1024, MAX_PREALLOC_SMALL / 1024);
+        l_estimated_size = MAX_PREALLOC_SMALL;
+    } else if (a_stage1->input_len < 102400 && l_estimated_size > MAX_PREALLOC_MEDIUM) {
+        log_it(L_DEBUG, "Pre-allocation capped (medium JSON): requested=%zu KB, capped to=%zu KB", 
+               l_estimated_size / 1024, MAX_PREALLOC_MEDIUM / 1024);
+        l_estimated_size = MAX_PREALLOC_MEDIUM;
+    } else if (l_estimated_size > MAX_PREALLOC_LARGE) {
+        log_it(L_DEBUG, "Pre-allocation capped (large JSON): requested=%zu MB, capped to=%zu MB", 
+               l_estimated_size / (1024*1024), MAX_PREALLOC_LARGE / (1024*1024));
+        l_estimated_size = MAX_PREALLOC_LARGE;
     }
     
     // Minimum 4KB, round up to 4KB boundary for efficiency
@@ -1198,7 +1212,7 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
         s_thread_json_arena = dap_arena_new_opt((dap_arena_opt_t){
             .use_refcount = true,
             .initial_size = l_estimated_size,
-            .max_page_size = MAX_PREALLOC,  // ⚠️ Cap page growth to prevent runaway allocation
+            .max_page_size = l_estimated_size * 2,  // ⚠️ Cap page growth
             .thread_local = true
         });
         if (!s_thread_json_arena) {
