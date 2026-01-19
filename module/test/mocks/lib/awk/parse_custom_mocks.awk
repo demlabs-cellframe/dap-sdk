@@ -53,6 +53,10 @@ function process_params(params_str) {
     
     # If no PARAM found, return original (might be regular params or void)
     if (result == "") {
+        # Remove outer parentheses if present
+        gsub(/^\(\s*/, "", params_str)
+        gsub(/\s*\)$/, "", params_str)
+        gsub(/^[ \t]+|[ \t]+$/, "", params_str)
         return params_str
     }
     

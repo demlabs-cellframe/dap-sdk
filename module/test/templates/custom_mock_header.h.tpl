@@ -14,6 +14,9 @@
 #include "dap_config.h"
 #include "dap_mock.h"
 
+// Additional includes (project-specific)
+{{ADDITIONAL_INCLUDES}}
+
 // External declaration of real function
 extern {{RETURN_TYPE}} __real_{{FUNC_NAME}}({{PARAM_DECL}});
 

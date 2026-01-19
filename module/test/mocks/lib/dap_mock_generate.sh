@@ -440,7 +440,8 @@ EOF
             "RETURN_VALUE_OVERRIDE=$return_value_override" \
             "RECORD_CALL=$record_call" \
             "REAL_FUNCTION_CALL=$real_function_call" \
-            "RETURN_STATEMENT=$return_statement"
+            "RETURN_STATEMENT=$return_statement" \
+            "ADDITIONAL_INCLUDES=${DAP_MOCK_ADDITIONAL_INCLUDES:-}"
         
         print_success "Generated mock header: $header_file"
     done < "$custom_mocks_file"
