@@ -167,6 +167,7 @@ function(dap_mock_autowrap TARGET_NAME)
                CMAKE_C_COMPILER_ID MATCHES "Clang" OR
                CMAKE_C_COMPILER_ID MATCHES "AppleClang")
                 # GCC and Clang support -Wl,@file for response files
+                # Note: macOS generates -Wl,-alias options, Linux generates --wrap options
                 target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
                 #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
             else()
@@ -176,12 +177,16 @@ function(dap_mock_autowrap TARGET_NAME)
                 #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
             endif()
             
-            # Count wrapped functions
-            string(REGEX MATCHALL "--wrap=" WRAP_MATCHES "${WRAP_CONTENT}")
+            # Count wrapped functions (works for both --wrap and -alias)
+            string(REGEX MATCHALL "(--wrap=|-alias)" WRAP_MATCHES "${WRAP_CONTENT}")
             list(LENGTH WRAP_MATCHES WRAP_COUNT)
             
             if(WRAP_COUNT GREATER 0)
-                message(STATUS " Mocked ${WRAP_COUNT} functions")
+                if(APPLE)
+                    message(STATUS " Mocked ${WRAP_COUNT} functions (macOS -alias)")
+                else()
+                    message(STATUS " Mocked ${WRAP_COUNT} functions (GNU --wrap)")
+                endif()
             endif()
         else()
             # File is empty - don't apply to linker
