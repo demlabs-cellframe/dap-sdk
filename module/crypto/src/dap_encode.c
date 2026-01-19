@@ -59,3 +59,28 @@ size_t dap_encode_char_by_char(const char * a_in, size_t a_in_size, uint8_t a_ba
 
 
 }
+
+
+
+size_t dap_encode_bignum_to_string(const char * a_in, size_t a_in_size, uint8_t a_base_size, const char * a_table, char * a_out)
+{
+
+    // Unlike dap_encode_char_by_char above, this function interprets the input as a big endian big number
+    // and uses arithmetic operations to compute the bit pattern to be encoded into the 
+    // byte in the output buffer. This function follows a similar structure as dap_encode_char_by_char, 
+    // but does not need to extract the rightmost byte, using only the leftmost byte of the input buffer.
+
+    if (NULL == a_in || NULL == a_out || NULL == a_table || a_base_size == 0) {
+
+
+
+
+
+
+
+
+
+
+
+}
+

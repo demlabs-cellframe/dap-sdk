@@ -1,0 +1,319 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{Mathematical Interpretation of test\_encode.c Using Coding Theory}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+
+The unit tests in \texttt{test\_encode.c} verify a bit-level encoding function \texttt{dap\_encode\_char\_by\_char} that implements a \textbf{base-2\textsuperscript{b} encoding scheme}, where \texttt{b = a\_base\_size}. From a coding theory perspective, this function implements a \textbf{linear encoding map} from a binary vector space to a representation space.
+
+\section{Mathematical Framework}
+
+\subsection{Vector Space Structure}
+
+Let $\mathbb{F}_2 = \{0, 1\}$ denote the binary field (Boolean field). The input data is interpreted as a vector in the vector space:
+
+$$\mathbf{x} \in \mathbb{F}_2^n$$
+
+where $n = 8 \cdot \text{input\_size}$ is the total number of bits in the input.
+
+\subsection{Encoding Map}
+
+The function implements an encoding map:
+
+$$E: \mathbb{F}_2^n \rightarrow \Sigma^m$$
+
+where:
+\begin{itemize}
+\item $\Sigma$ is the output alphabet (defined by the lookup table)
+\item $m = \lfloor n/b \rfloor$ is the output length
+\item $b = \text{a\_base\_size}$ is the number of bits extracted per output symbol
+\end{itemize}
+
+\subsection{Code Definition}
+
+The encoding process defines a \textbf{code} $C \subseteq \mathbb{F}_2^n$ where each codeword $\mathbf{c} \in C$ represents an input vector. However, since this is a \textbf{bijective encoding} (not error-correcting), the code $C = \mathbb{F}_2^n$ (the entire space).
+
+The code can be viewed as a \textbf{linear code} with:
+\begin{itemize}
+\item \textbf{Dimension}: $k = n$ (all input vectors are valid)
+\item \textbf{Length}: $n$ (input length in bits)
+\item \textbf{Rate}: $R = 1$ (no redundancy added)
+\end{itemize}
+
+\section{Test-by-Test Mathematical Interpretation}
+
+\subsection{1. \texttt{s\_test\_encode\_null\_inputs()} --- Trivial Cases}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests the \textbf{domain} of the encoding function $E$
+\item Verifies that $E(\emptyset) = \emptyset$ (empty input maps to empty output)
+\item Ensures the function is \textbf{well-defined} on its domain
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item Verifies that the encoding map respects the \textbf{zero vector}: $E(\mathbf{0}) = \emptyset$
+\item Tests \textbf{function domain constraints}: $E$ is only defined for non-null inputs
+\end{itemize}
+
+\subsection{2. \texttt{s\_test\_encode\_empty\_input()} --- Zero Vector}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests encoding of the \textbf{zero vector} $\mathbf{0} \in \mathbb{F}_2^0$
+\item Verifies: $E(\mathbf{0}) = \emptyset$ (empty string)
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item The zero vector is always a codeword in any linear code
+\item Verifies the \textbf{additive identity property}: $E(\mathbf{0}) = \mathbf{0}$
+\end{itemize}
+
+\subsection{3. \texttt{s\_test\_encode\_base8()} --- Identity-like Encoding}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests encoding with $b = 8$ (extracts 8 bits at a time)
+\item Input: $\mathbf{x} \in \mathbb{F}_2^{40}$ (5 bytes = 40 bits for ``Hello'')
+\item Output length: $m = \lfloor 40/8 \rfloor = 5$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item For $b = 8$, the encoding extracts \textbf{one byte} at a time
+\item The encoding map becomes: $E: \mathbb{F}_2^{8k} \rightarrow \Sigma^k$ where $k$ is the number of bytes
+\item This is essentially a \textbf{byte-to-symbol mapping} with no bit-level transformation
+\end{itemize}
+
+\textbf{Vector Space View:}
+\begin{itemize}
+\item Each 8-bit block $\mathbf{x}_i \in \mathbb{F}_2^8$ is mapped to a symbol via the lookup table
+\item The encoding is: $E(\mathbf{x}) = (T(x_1), T(x_2), \ldots, T(x_k))$ where $T$ is the table mapping
+\end{itemize}
+
+\subsection{4. \texttt{s\_test\_encode\_base5()} --- Base-32-like Encoding}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests encoding with $b = 5$ (extracts 5 bits at a time)
+\item Input: $\mathbf{x} \in \mathbb{F}_2^{16}$ (2 bytes = 16 bits for ``AB'')
+\item Output length: $m = \lfloor 16/5 \rfloor = 3$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item The encoding extracts \textbf{5-bit blocks} from the input bitstream
+\item Each 5-bit block $\mathbf{b}_i \in \mathbb{F}_2^5$ represents a value in $\{0, 1, \ldots, 31\}$
+\item The encoding map: $E: \mathbb{F}_2^{16} \rightarrow \Sigma^3$
+\end{itemize}
+
+\textbf{Vector Space Decomposition:}
+\begin{itemize}
+\item The input space $\mathbb{F}_2^{16}$ is partitioned into 3 blocks (with the last block potentially incomplete)
+\item Each block spans across byte boundaries, requiring bit-level extraction
+\end{itemize}
+
+\subsection{5. \texttt{s\_test\_encode\_base6()} --- Base-64-like Encoding}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests encoding with $b = 6$ (extracts 6 bits at a time)
+\item Input: $\mathbf{x} \in \mathbb{F}_2^{24}$ (3 bytes = 24 bits for ``ABC'')
+\item Output length: $m = \lfloor 24/6 \rfloor = 4$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item This is the standard \textbf{Base64 encoding scheme}
+\item Each 6-bit block $\mathbf{b}_i \in \mathbb{F}_2^6$ represents a value in $\{0, 1, \ldots, 63\}$
+\item The encoding map: $E: \mathbb{F}_2^{24} \rightarrow \Sigma^4$
+\end{itemize}
+
+\textbf{Mathematical Structure:}
+\begin{itemize}
+\item The input is divided into \textbf{4 blocks of 6 bits each}
+\item Perfect alignment: $24 = 4 \times 6$ (no padding needed)
+\item This is why Base64 is commonly used: 3 bytes map cleanly to 4 characters
+\end{itemize}
+
+\subsection{6. \texttt{s\_test\_encode\_different\_sizes()} --- Dimension Testing}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests the encoding function across different \textbf{input dimensions}
+\item Verifies the \textbf{dimension formula}: $m = \lfloor n/b \rfloor$
+\end{itemize}
+
+\textbf{Test Cases:}
+\begin{enumerate}
+\item $n = 8$ bits, $b = 5$: $m = \lfloor 8/5 \rfloor = 1$
+\item $n = 32$ bits, $b = 5$: $m = \lfloor 32/5 \rfloor = 6$
+\item $n = 64$ bits, $b = 5$: $m = \lfloor 64/5 \rfloor = 12$
+\end{enumerate}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item Verifies that the encoding map $E: \mathbb{F}_2^n \rightarrow \Sigma^m$ has the correct \textbf{codomain dimension}
+\item Tests the \textbf{linearity property}: the output dimension scales correctly with input dimension
+\end{itemize}
+
+\subsection{7. \texttt{s\_test\_encode\_output\_size()} --- Dimension Formula Verification}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Systematically tests the \textbf{dimension relationship}: $m = \lfloor n/b \rfloor$
+\item Tests multiple values of $b \in \{1, 2, 4, 8\}$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item For a linear code, the \textbf{rate} is $R = k/n$ where $k$ is the dimension
+\item Here, $k = n$ (no redundancy), so $R = 1$
+\item The output dimension $m$ represents the \textbf{representation length} in the new alphabet
+\end{itemize}
+
+\textbf{Mathematical Verification:}
+\begin{itemize}
+\item $b = 1$: $m = n$ (bit-by-bit encoding)
+\item $b = 2$: $m = n/2$ (2 bits per symbol)
+\item $b = 4$: $m = n/4$ (4 bits per symbol, like hexadecimal)
+\item $b = 8$: $m = n/8$ (byte-by-byte encoding)
+\end{itemize}
+
+\subsection{8. \texttt{s\_test\_encode\_custom\_table()} --- Encoding Function Verification}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests that the encoding uses the \textbf{lookup table} $T: \{0, 1, \ldots, 2^b-1\} \rightarrow \Sigma$
+\item Verifies the \textbf{encoding function composition}: $E(\mathbf{x}) = (T(b_1), T(b_2), \ldots, T(b_m))$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item The lookup table defines the \textbf{symbol mapping} for the code
+\item Different tables create different \textbf{representations} of the same underlying code
+\item The code structure (vector space) remains the same, only the \textbf{presentation} changes
+\end{itemize}
+
+\subsection{9. \texttt{s\_test\_encode\_base58()} --- Base-58 Encoding}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Tests Base-58 encoding with $b = 6$ (uses 6-bit extraction, but only 58 symbols)
+\item Input: $\mathbf{x} \in \mathbb{F}_2^{40}$ (5 bytes = 40 bits)
+\item Output length: $m = \lfloor 40/6 \rfloor = 6$
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item Base-58 is a \textbf{non-standard base} encoding (58 symbols instead of 64)
+\item The encoding extracts 6 bits (values 0--63) but maps only 58 of them to valid symbols
+\item This creates a \textbf{subset code} where some 6-bit patterns are invalid in the output
+\end{itemize}
+
+\textbf{Mathematical Structure:}
+\begin{itemize}
+\item The code $C \subseteq \mathbb{F}_2^n$ remains the same
+\item The encoding map $E: \mathbb{F}_2^n \rightarrow \Sigma_{58}^m$ uses a \textbf{58-symbol alphabet}
+\item The lookup table $T: \{0, 1, \ldots, 63\} \rightarrow \Sigma_{58} \cup \{\text{invalid}\}$ is a \textbf{partial function}
+\end{itemize}
+
+\subsection{10. \texttt{s\_test\_encode\_base64\_standard()} and \texttt{s\_test\_encode\_base64\_url\_safe()} --- Base-64 Variants}
+
+\textbf{Mathematical Interpretation:}
+\begin{itemize}
+\item Both test Base-64 encoding with $b = 6$
+\item They differ only in the \textbf{lookup table} (symbol mapping)
+\end{itemize}
+
+\textbf{Coding Theory Perspective:}
+\begin{itemize}
+\item Both implement the \textbf{same code} $C = \mathbb{F}_2^n$
+\item They differ in the \textbf{presentation}: standard Base64 vs.\ URL-safe Base64
+\item The encoding maps are \textbf{equivalent} up to symbol renaming
+\end{itemize}
+
+\textbf{Mathematical Equivalence:}
+\begin{itemize}
+\item Standard: $E_{\text{std}}: \mathbb{F}_2^n \rightarrow \Sigma_{\text{std}}^m$
+\item URL-safe: $E_{\text{url}}: \mathbb{F}_2^n \rightarrow \Sigma_{\text{url}}^m$
+\item There exists a \textbf{bijection} $\phi: \Sigma_{\text{std}} \rightarrow \Sigma_{\text{url}}$ such that $E_{\text{url}} = \phi \circ E_{\text{std}}$
+\end{itemize}
+
+\section{General Mathematical Properties}
+
+\subsection{Linearity (Partial)}
+
+The encoding function is \textbf{not fully linear} in the algebraic sense because:
+\begin{enumerate}
+\item It operates on \textbf{bit-level extraction} across byte boundaries
+\item The lookup table introduces \textbf{non-linear symbol mapping}
+\end{enumerate}
+
+However, the \textbf{bit extraction} process is linear:
+\begin{itemize}
+\item The bit extraction: $\mathbf{b}_i = \text{extract}_b(\mathbf{x}, i)$ is a \textbf{linear operation}
+\item The table lookup: $T(\mathbf{b}_i)$ is a \textbf{non-linear symbol mapping}
+\end{itemize}
+
+\subsection{Vector Space Structure}
+
+The input space maintains the structure:
+\begin{itemize}
+\item \textbf{Addition}: Bitwise XOR in $\mathbb{F}_2^n$
+\item \textbf{Scalar multiplication}: Multiplication in $\mathbb{F}_2$ (trivial: $0 \cdot \mathbf{x} = \mathbf{0}$, $1 \cdot \mathbf{x} = \mathbf{x}$)
+\end{itemize}
+
+\subsection{Code Properties}
+
+\begin{itemize}
+\item \textbf{Code dimension}: $k = n$ (all input vectors are valid codewords)
+\item \textbf{Code length}: $n$ (input length in bits)
+\item \textbf{Minimum distance}: Not applicable (this is not an error-correcting code)
+\item \textbf{Rate}: $R = 1$ (no redundancy)
+\end{itemize}
+
+\subsection{Encoding Efficiency}
+
+The encoding efficiency is determined by:
+\begin{itemize}
+\item \textbf{Input dimension}: $n$ bits
+\item \textbf{Output dimension}: $m = \lfloor n/b \rfloor$ symbols
+\item \textbf{Alphabet size}: $|\Sigma| = 2^b$ (for Base-64: 64 symbols)
+\end{itemize}
+
+The \textbf{expansion factor} is: $\frac{m}{n} = \frac{1}{b}$ symbols per bit
+
+\section{Conclusion}
+
+The unit tests verify a \textbf{bit-level encoding scheme} that implements a mapping from binary vectors $\mathbb{F}_2^n$ to symbol strings in an alphabet $\Sigma$. While not a traditional error-correcting code, the encoding maintains the vector space structure of the input and provides a systematic way to represent binary data in different bases (Base-5, Base-6/Base-64, Base-58, etc.).
+
+The tests verify:
+\begin{enumerate}
+\item \textbf{Domain and codomain} correctness
+\item \textbf{Dimension relationships} between input and output
+\item \textbf{Encoding function} correctness for various base sizes
+\item \textbf{Symbol mapping} via lookup tables
+\item \textbf{Edge cases} (empty input, null inputs)
+\end{enumerate}
+
+From a coding theory perspective, this is a \textbf{bijective encoding} (no redundancy) that preserves all information while changing the representation format.
+
+\end{document}
