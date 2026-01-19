@@ -19,7 +19,7 @@ static bool s_debug_more = false;
 void dap_json_encoding_set_debug(bool a_enable)
 {
     s_debug_more = a_enable;
-    log_it(L_DEBUG, "Encoding debug logs %s", a_enable ? "ENABLED" : "DISABLED");
+    debug_if(true, L_DEBUG, "Encoding debug logs %s", a_enable ? "ENABLED" : "DISABLED");
 }
 
 /**

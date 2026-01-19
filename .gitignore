@@ -1,5 +1,7 @@
 # Prerequisites
 .context/
+slc
+.cursorrules
 build*/*
 debug/*
 crypto/XKCP/Makefile

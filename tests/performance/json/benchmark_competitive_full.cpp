@@ -45,6 +45,7 @@ extern "C" {
 #include "dap_file_utils.h"
 #include "dap_string.h"
 #include "dap_json.h"
+#include "dap_cpu_arch.h"
 }
 
 // Competitor includes
@@ -61,6 +62,12 @@ extern "C" {
 extern "C" {
 #include "yajl/yajl_parse.h"
 #include "yajl/yajl_tree.h"
+}
+#endif
+
+#ifdef HAVE_JSON_C
+extern "C" {
+#include "json-c/json.h"
 }
 #endif
 
@@ -102,18 +109,18 @@ static const char *s_scenario_names[] = {
 };
 
 static const int s_scenario_iterations[] = {
-    100000,  // SMALL_JSON
-    10000,   // MEDIUM_JSON
-    1000,    // LARGE_JSON
+    1000,    // SMALL_JSON (reduced from 100000 for faster benchmarking)
+    1000,    // MEDIUM_JSON (reduced from 10000)
+    100,     // LARGE_JSON
     10,      // HUGE_JSON
-    1000,    // DEEP_NESTED
+    100,     // DEEP_NESTED (reduced from 1000)
     100,     // WIDE_ARRAYS
-    5000,    // NUMBER_HEAVY
-    5000,    // STRING_HEAVY
-    5000,    // ESCAPE_HEAVY
-    5000,    // REAL_GITHUB
-    5000,    // REAL_TWITTER
-    5000     // REAL_REDDIT
+    500,     // NUMBER_HEAVY (reduced from 5000)
+    500,     // STRING_HEAVY (reduced from 5000)
+    500,     // ESCAPE_HEAVY (reduced from 5000)
+    500,     // REAL_GITHUB (reduced from 5000)
+    500,     // REAL_TWITTER (reduced from 5000)
+    500      // REAL_REDDIT (reduced from 5000)
 };
 
 /* ========================================================================== */
@@ -121,25 +128,37 @@ static const int s_scenario_iterations[] = {
 /* ========================================================================== */
 
 typedef enum {
-    PARSER_DAP_JSON,
+    PARSER_DAP_JSON_REF,      // dap_json - Reference C
+    PARSER_DAP_JSON_SSE2,     // dap_json - SSE2
+    PARSER_DAP_JSON_AVX2,     // dap_json - AVX2
+    PARSER_DAP_JSON_AVX512,   // dap_json - AVX-512
     PARSER_SIMDJSON,
     PARSER_RAPIDJSON,
     PARSER_YAJL,
+    PARSER_JSONC,             // json-c
     PARSER_COUNT
 } parser_type_t;
 
 static const char *s_parser_names[] = {
-    "dap_json",
+    "dap_json(Ref)",
+    "dap_json(SSE2)",
+    "dap_json(AVX2)",
+    "dap_json(AVX512)",
     "simdjson",
     "RapidJSON",
-    "yajl"
+    "yajl",
+    "json-c"
 };
 
 static const char *s_parser_colors[] = {
-    "\033[1;32m",  // dap_json - Green (we are the best!)
-    "\033[1;36m",  // simdjson - Cyan (fast competitor)
+    "\033[1;32m",  // dap_json(Ref) - Green
+    "\033[1;92m",  // dap_json(SSE2) - Bright Green
+    "\033[1;96m",  // dap_json(AVX2) - Bright Cyan
+    "\033[1;94m",  // dap_json(AVX512) - Bright Blue
+    "\033[1;36m",  // simdjson - Cyan
     "\033[1;33m",  // RapidJSON - Yellow
-    "\033[1;35m"   // yajl - Magenta
+    "\033[1;35m",  // yajl - Magenta
+    "\033[1;37m"   // json-c - White
 };
 
 #define COLOR_RESET "\033[0m"
@@ -412,12 +431,20 @@ static char *s_get_scenario_data(benchmark_scenario_t a_scenario, size_t *a_size
 /* ========================================================================== */
 
 /**
- * @brief Benchmark dap_json parser
+ * @brief Benchmark dap_json parser with specific SIMD architecture
  */
-static benchmark_result_t s_benchmark_dap_json(const char *a_json, size_t a_size, int a_iterations)
+static benchmark_result_t s_benchmark_dap_json(const char *a_json, size_t a_size, int a_iterations, dap_cpu_arch_t a_arch)
 {
-    benchmark_result_t l_result = {0};
+    benchmark_result_t l_result = {};
     uint64_t *l_latencies = DAP_NEW_Z_SIZE(uint64_t, a_iterations * sizeof(uint64_t));
+    
+    // Set architecture
+    if (dap_json_set_arch(a_arch) != 0) {
+        log_it(L_ERROR, "Failed to set architecture: %s", dap_json_get_arch_name(a_arch));
+        l_result.success = false;
+        DAP_DELETE(l_latencies);
+        return l_result;
+    }
     
     uint64_t l_rss_before = s_get_rss_bytes();
     uint64_t l_total_start = s_get_timestamp_ns();
@@ -475,7 +502,7 @@ static benchmark_result_t s_benchmark_dap_json(const char *a_json, size_t a_size
  */
 static benchmark_result_t s_benchmark_simdjson(const char *a_json, size_t a_size, int a_iterations)
 {
-    benchmark_result_t l_result = {0};
+    benchmark_result_t l_result = {};
     uint64_t *l_latencies = DAP_NEW_Z_SIZE(uint64_t, a_iterations * sizeof(uint64_t));
     
     simdjson::dom::parser l_parser;
@@ -526,6 +553,177 @@ static benchmark_result_t s_benchmark_simdjson(const char *a_json, size_t a_size
 }
 #endif
 
+#ifdef HAVE_RAPIDJSON
+/**
+ * @brief Benchmark RapidJSON parser
+ */
+static benchmark_result_t s_benchmark_rapidjson(const char *a_json, size_t a_size, int a_iterations)
+{
+    benchmark_result_t l_result = {};
+    uint64_t *l_latencies = DAP_NEW_Z_SIZE(uint64_t, a_iterations * sizeof(uint64_t));
+    
+    uint64_t l_rss_before = s_get_rss_bytes();
+    uint64_t l_total_start = s_get_timestamp_ns();
+    
+    for (int i = 0; i < a_iterations; i++) {
+        uint64_t l_start = s_get_timestamp_ns();
+        
+        rapidjson::Document l_doc;
+        l_doc.Parse(a_json, a_size);
+        
+        uint64_t l_end = s_get_timestamp_ns();
+        l_latencies[i] = l_end - l_start;
+        
+        if (l_doc.HasParseError()) {
+            l_result.success = false;
+            DAP_DELETE(l_latencies);
+            return l_result;
+        }
+    }
+    
+    uint64_t l_total_end = s_get_timestamp_ns();
+    uint64_t l_rss_after = s_get_rss_bytes();
+    
+    l_result.success = true;
+    l_result.total_time_sec = (l_total_end - l_total_start) / 1e9;
+    l_result.memory_bytes = l_rss_after - l_rss_before;
+    
+    uint64_t l_total_bytes = (uint64_t)a_size * a_iterations;
+    l_result.throughput_gbps = (double)l_total_bytes / l_result.total_time_sec / 1e9;
+    
+    qsort(l_latencies, a_iterations, sizeof(uint64_t), s_compare_uint64);
+    
+    l_result.latency_p50_ns = s_calculate_percentile(l_latencies, a_iterations, 0.50);
+    l_result.latency_p95_ns = s_calculate_percentile(l_latencies, a_iterations, 0.95);
+    l_result.latency_p99_ns = s_calculate_percentile(l_latencies, a_iterations, 0.99);
+    l_result.latency_p999_ns = s_calculate_percentile(l_latencies, a_iterations, 0.999);
+    
+    uint64_t l_sum = 0;
+    for (int i = 0; i < a_iterations; i++) {
+        l_sum += l_latencies[i];
+    }
+    l_result.latency_mean_ns = (double)l_sum / a_iterations;
+    
+    DAP_DELETE(l_latencies);
+    return l_result;
+}
+#endif
+
+#ifdef HAVE_YAJL
+/**
+ * @brief Benchmark YAJL parser
+ */
+static benchmark_result_t s_benchmark_yajl(const char *a_json, size_t a_size, int a_iterations)
+{
+    benchmark_result_t l_result = {};
+    uint64_t *l_latencies = DAP_NEW_Z_SIZE(uint64_t, a_iterations * sizeof(uint64_t));
+    
+    uint64_t l_rss_before = s_get_rss_bytes();
+    uint64_t l_total_start = s_get_timestamp_ns();
+    
+    for (int i = 0; i < a_iterations; i++) {
+        uint64_t l_start = s_get_timestamp_ns();
+        
+        char l_errbuf[1024];
+        yajl_val l_node = yajl_tree_parse(a_json, l_errbuf, sizeof(l_errbuf));
+        
+        uint64_t l_end = s_get_timestamp_ns();
+        l_latencies[i] = l_end - l_start;
+        
+        if (!l_node) {
+            l_result.success = false;
+            DAP_DELETE(l_latencies);
+            return l_result;
+        }
+        
+        yajl_tree_free(l_node);
+    }
+    
+    uint64_t l_total_end = s_get_timestamp_ns();
+    uint64_t l_rss_after = s_get_rss_bytes();
+    
+    l_result.success = true;
+    l_result.total_time_sec = (l_total_end - l_total_start) / 1e9;
+    l_result.memory_bytes = l_rss_after - l_rss_before;
+    
+    uint64_t l_total_bytes = (uint64_t)a_size * a_iterations;
+    l_result.throughput_gbps = (double)l_total_bytes / l_result.total_time_sec / 1e9;
+    
+    qsort(l_latencies, a_iterations, sizeof(uint64_t), s_compare_uint64);
+    
+    l_result.latency_p50_ns = s_calculate_percentile(l_latencies, a_iterations, 0.50);
+    l_result.latency_p95_ns = s_calculate_percentile(l_latencies, a_iterations, 0.95);
+    l_result.latency_p99_ns = s_calculate_percentile(l_latencies, a_iterations, 0.99);
+    l_result.latency_p999_ns = s_calculate_percentile(l_latencies, a_iterations, 0.999);
+    
+    uint64_t l_sum = 0;
+    for (int i = 0; i < a_iterations; i++) {
+        l_sum += l_latencies[i];
+    }
+    l_result.latency_mean_ns = (double)l_sum / a_iterations;
+    
+    DAP_DELETE(l_latencies);
+    return l_result;
+}
+#endif
+
+#ifdef HAVE_JSON_C
+/**
+ * @brief Benchmark json-c parser
+ */
+static benchmark_result_t s_benchmark_jsonc(const char *a_json, size_t a_size, int a_iterations)
+{
+    benchmark_result_t l_result = {};
+    uint64_t *l_latencies = DAP_NEW_Z_SIZE(uint64_t, a_iterations * sizeof(uint64_t));
+    
+    uint64_t l_rss_before = s_get_rss_bytes();
+    uint64_t l_total_start = s_get_timestamp_ns();
+    
+    for (int i = 0; i < a_iterations; i++) {
+        uint64_t l_start = s_get_timestamp_ns();
+        
+        struct json_object *l_obj = json_tokener_parse(a_json);
+        
+        uint64_t l_end = s_get_timestamp_ns();
+        l_latencies[i] = l_end - l_start;
+        
+        if (!l_obj) {
+            l_result.success = false;
+            DAP_DELETE(l_latencies);
+            return l_result;
+        }
+        
+        json_object_put(l_obj);
+    }
+    
+    uint64_t l_total_end = s_get_timestamp_ns();
+    uint64_t l_rss_after = s_get_rss_bytes();
+    
+    l_result.success = true;
+    l_result.total_time_sec = (l_total_end - l_total_start) / 1e9;
+    l_result.memory_bytes = l_rss_after - l_rss_before;
+    
+    uint64_t l_total_bytes = (uint64_t)a_size * a_iterations;
+    l_result.throughput_gbps = (double)l_total_bytes / l_result.total_time_sec / 1e9;
+    
+    qsort(l_latencies, a_iterations, sizeof(uint64_t), s_compare_uint64);
+    
+    l_result.latency_p50_ns = s_calculate_percentile(l_latencies, a_iterations, 0.50);
+    l_result.latency_p95_ns = s_calculate_percentile(l_latencies, a_iterations, 0.95);
+    l_result.latency_p99_ns = s_calculate_percentile(l_latencies, a_iterations, 0.99);
+    l_result.latency_p999_ns = s_calculate_percentile(l_latencies, a_iterations, 0.999);
+    
+    uint64_t l_sum = 0;
+    for (int i = 0; i < a_iterations; i++) {
+        l_sum += l_latencies[i];
+    }
+    l_result.latency_mean_ns = (double)l_sum / a_iterations;
+    
+    DAP_DELETE(l_latencies);
+    return l_result;
+}
+#endif
+
 /**
  * @brief Benchmark parser for specific scenario
  */
@@ -534,22 +732,55 @@ static benchmark_result_t s_run_parser_benchmark(parser_type_t a_parser,
                                                   size_t a_size,
                                                   int a_iterations)
 {
-    benchmark_result_t l_result = {0};
+    benchmark_result_t l_result = {};
     
     switch (a_parser) {
-        case PARSER_DAP_JSON:
-            return s_benchmark_dap_json(a_json, a_size, a_iterations);
+        case PARSER_DAP_JSON_REF:
+            return s_benchmark_dap_json(a_json, a_size, a_iterations, DAP_CPU_ARCH_REFERENCE);
+        
+        case PARSER_DAP_JSON_SSE2:
+            return s_benchmark_dap_json(a_json, a_size, a_iterations, DAP_CPU_ARCH_SSE2);
+        
+        case PARSER_DAP_JSON_AVX2:
+            return s_benchmark_dap_json(a_json, a_size, a_iterations, DAP_CPU_ARCH_AVX2);
+        
+        case PARSER_DAP_JSON_AVX512:
+            return s_benchmark_dap_json(a_json, a_size, a_iterations, DAP_CPU_ARCH_AVX512);
         
 #ifdef HAVE_SIMDJSON
         case PARSER_SIMDJSON:
             return s_benchmark_simdjson(a_json, a_size, a_iterations);
 #endif
         
+#ifdef HAVE_RAPIDJSON
         case PARSER_RAPIDJSON:
-        case PARSER_YAJL:
-            log_it(L_WARNING, "Parser %s not yet implemented", s_parser_names[a_parser]);
+            return s_benchmark_rapidjson(a_json, a_size, a_iterations);
+#else
+        case PARSER_RAPIDJSON:
+            log_it(L_WARNING, "RapidJSON not available (compile with -DHAVE_RAPIDJSON)");
             l_result.success = false;
             return l_result;
+#endif
+        
+#ifdef HAVE_YAJL
+        case PARSER_YAJL:
+            return s_benchmark_yajl(a_json, a_size, a_iterations);
+#else
+        case PARSER_YAJL:
+            log_it(L_WARNING, "YAJL not available (compile with -DHAVE_YAJL)");
+            l_result.success = false;
+            return l_result;
+#endif
+        
+#ifdef HAVE_JSON_C
+        case PARSER_JSONC:
+            return s_benchmark_jsonc(a_json, a_size, a_iterations);
+#else
+        case PARSER_JSONC:
+            log_it(L_WARNING, "json-c not available (compile with -DHAVE_JSON_C)");
+            l_result.success = false;
+            return l_result;
+#endif
         
         default:
             log_it(L_ERROR, "Unknown parser type: %d", a_parser);
@@ -613,7 +844,7 @@ static void s_print_results_table(scenario_results_t *a_results)
     
     log_it(L_INFO, "%s========================================================================================================%s",
            COLOR_HEADER, COLOR_RESET);
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
 }
 
 /**
@@ -621,14 +852,14 @@ static void s_print_results_table(scenario_results_t *a_results)
  */
 static void s_print_final_summary(scenario_results_t *a_all_results, int a_scenario_count)
 {
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     log_it(L_INFO, "%s╔════════════════════════════════════════════════════════════════════════════════════════╗%s",
            COLOR_HEADER, COLOR_RESET);
     log_it(L_INFO, "%s║                          COMPETITIVE BENCHMARK SUMMARY                                 ║%s",
            COLOR_HEADER, COLOR_RESET);
     log_it(L_INFO, "%s╚════════════════════════════════════════════════════════════════════════════════════════╝%s",
            COLOR_HEADER, COLOR_RESET);
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     
     // Calculate win rates
     int l_wins[PARSER_COUNT] = {0};
@@ -662,11 +893,15 @@ static void s_print_final_summary(scenario_results_t *a_all_results, int a_scena
                COLOR_RESET);
     }
     
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     log_it(L_INFO, "%s🎯 TARGET: dap_json должен быть БЫСТРЕЕ на >= 70%% test cases%s", 
            COLOR_HEADER, COLOR_RESET);
     
-    double l_dap_win_pct = (l_total_races > 0) ? (100.0 * l_wins[PARSER_DAP_JSON] / l_total_races) : 0.0;
+    // Sum all dap_json wins (all architectures)
+    int l_dap_total_wins = l_wins[PARSER_DAP_JSON_REF] + l_wins[PARSER_DAP_JSON_SSE2] + 
+                            l_wins[PARSER_DAP_JSON_AVX2] + l_wins[PARSER_DAP_JSON_AVX512];
+    
+    double l_dap_win_pct = (l_total_races > 0) ? (100.0 * l_dap_total_wins / l_total_races) : 0.0;
     if (l_dap_win_pct >= 70.0) {
         log_it(L_INFO, "%s✅ TARGET ACHIEVED: dap_json wins %.1f%% of races!%s", 
                COLOR_HEADER, l_dap_win_pct, COLOR_RESET);
@@ -675,18 +910,18 @@ static void s_print_final_summary(scenario_results_t *a_all_results, int a_scena
                COLOR_HEADER, l_dap_win_pct, COLOR_RESET);
     }
     
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
 }
 
 /* ========================================================================== */
 /*                              MAIN                                          */
 /* ========================================================================== */
 
-int main(int argc, char **argv)
+int main(int argc __attribute__((unused)), char **argv __attribute__((unused)))
 {
     dap_log_level_set(L_DEBUG);
     
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     log_it(L_INFO, "%s╔════════════════════════════════════════════════════════════════════════════════════════╗%s",
            COLOR_HEADER, COLOR_RESET);
     log_it(L_INFO, "%s║                    DAP JSON COMPETITIVE BENCHMARK SUITE                                ║%s",
@@ -695,7 +930,7 @@ int main(int argc, char **argv)
            COLOR_HEADER, COLOR_RESET);
     log_it(L_INFO, "%s╚════════════════════════════════════════════════════════════════════════════════════════╝%s",
            COLOR_HEADER, COLOR_RESET);
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     
     // Test which parsers are available
     log_it(L_INFO, "%sParsers available:%s", COLOR_HEADER, COLOR_RESET);
@@ -715,7 +950,7 @@ int main(int argc, char **argv)
 #else
     log_it(L_INFO, "  ❌ yajl (not compiled)");
 #endif
-    log_it(L_INFO, "");
+    log_it(L_INFO, " ");
     
     // Run benchmarks for all scenarios
     int l_scenario_count = 8; // Only implemented scenarios for now

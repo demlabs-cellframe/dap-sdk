@@ -49,6 +49,7 @@
 #include <stdbool.h>
 
 #include "../dap_json_type.h"
+#include "../dap_json_value.h"  
 #include "dap_json_stage1.h"
 #ifdef __cplusplus
 extern "C" {
@@ -108,8 +109,12 @@ struct dap_json_stage2 {
     size_t current_depth;                    /**< Current nesting depth */
     size_t max_depth;                        /**< Maximum nesting depth allowed */
     
-    /* Output */
-    dap_json_value_t *root;                  /**< Root value (result of parsing) */
+    /* Output - Phase 2.0.4: UNIFIED 8-byte values ONLY */
+    dap_json_value_t *root;                  /**< Root value (UNUSED, kept for ABI compat) */
+    dap_json_value_t *values;                /**< Flat array of 8-byte values */
+    size_t values_count;                     /**< Number of values in array */
+    size_t values_capacity;                  /**< Capacity of values array */
+    uint32_t root_value_index;               /**< Index of root value in values[] */
     
     /* High-performance memory management (Phase 1.1) */
     struct dap_arena *arena;                 /**< Arena allocator for DOM nodes */

@@ -327,28 +327,8 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 #   - SIMD correctness: ctest -L simd --verbose
 
 # =========================================
-# Test 11: Multi-Architecture Benchmarks (Stage 1)
+# Note: benchmark_stage1_multi_arch moved to tests/performance/dap_json/
 # =========================================
-# Coverage: Performance comparison across all SIMD implementations
-# Tests: Phase 1.4.3 - Reference C vs SSE2 vs AVX2 vs AVX-512 vs NEON
-project(benchmark_stage1_multi_arch)
-
-add_executable(${PROJECT_NAME}
-    benchmark_stage1_multi_arch.c
-)
-
-dap_test_add_includes(${PROJECT_NAME})
-dap_test_link_libraries(${PROJECT_NAME})
-
-add_test(
-    NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
-)
-
-set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300  # Longer timeout for comprehensive benchmarks
-    LABELS "unit;json;benchmark;performance;simd;multi_arch"
-)
 
 # =========================================
 # Test 16: SimdJSON Stage 1 Tests (Phase 2.1)

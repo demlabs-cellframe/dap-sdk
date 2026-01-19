@@ -231,15 +231,15 @@ static double s_strtod_c_locale(const char *a_str, char **a_endptr)
  */
 bool dap_json_parse_double_fast(const char *a_str, size_t a_len, double *a_out_value)
 {
-    log_it(L_DEBUG, "dap_json_parse_double_fast: len=%zu, str='%.*s'", a_len, (int)a_len, a_str);
+    debug_if(true, L_DEBUG, "dap_json_parse_double_fast: len=%zu, str='%.*s'", a_len, (int)a_len, a_str);
     
     if (!a_str || a_len == 0 || !a_out_value) {
-        log_it(L_DEBUG, "dap_json_parse_double_fast: early return (null check failed)");
+        debug_if(true, L_DEBUG, "dap_json_parse_double_fast: early return (null check failed)");
         return false;
     }
     
     // Use Lemire's algorithm for high performance
     bool result = dap_json_float_parse(a_str, a_len, a_out_value);
-    log_it(L_DEBUG, "dap_json_parse_double_fast: result=%d, value=%f", result, result ? *a_out_value : 0.0);
+    debug_if(true, L_DEBUG, "dap_json_parse_double_fast: result=%d, value=%f", result, result ? *a_out_value : 0.0);
     return result;
 }

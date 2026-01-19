@@ -48,6 +48,31 @@
 #include "dap_arena.h"
 #include "dap_string_pool.h"
 
+/* ========================================================================== */
+/*                    INTERNAL STORAGE STRUCTURES                             */
+/* ========================================================================== */
+
+/**
+ * @brief Phase 2.0.4: Internal storage for mutable arrays
+ * @details Used only in MALLOC_MUTABLE mode
+ */
+typedef struct {
+    dap_json_value_t **elements;  /**< Array of pointers to 8-byte values */
+    size_t count;                  /**< Current number of elements */
+    size_t capacity;               /**< Allocated capacity */
+} dap_json_array_storage_t;
+
+/**
+ * @brief Phase 2.0.4: Internal storage for mutable objects
+ * @details Used only in MALLOC_MUTABLE mode
+ */
+typedef struct {
+    char **keys;                   /**< Array of key strings (malloc'd) */
+    dap_json_value_t **values;     /**< Array of pointers to 8-byte values */
+    size_t count;                  /**< Current number of pairs */
+    size_t capacity;               /**< Allocated capacity */
+} dap_json_object_storage_t;
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -84,206 +109,48 @@ static _Thread_local dap_string_pool_t *s_thread_string_pool = NULL;
 /* ========================================================================== */
 
 /**
- * @brief Add element to array using Arena (copy-on-grow pattern)
- * @details Internal function for Stage 2 parsing only
+ * @brief Add ref to Stage 2 refs array (Phase 2.0.3)
+ * @details Adds an 8-byte value ref to the flat array
+ * @return Index of added ref, or -1 on error
  */
-static bool s_array_add_arena(
-    dap_arena_t *a_arena,
-    dap_json_value_t *a_array,
-    dap_json_value_t *a_element
+static int32_t s_stage2_add_ref(
+    dap_json_stage2_t *a_stage2,
+    const dap_json_value_t *a_ref
 )
 {
-    if(!a_array || a_array->type != DAP_JSON_TYPE_ARRAY) {
-        log_it(L_ERROR, "Invalid array");
-        return false;
+    if (!a_stage2 || !a_ref) {
+        return -1;
     }
     
-    if(!a_element) {
-        log_it(L_ERROR, "NULL element");
-        return false;
-    }
-    
-    // Grow if needed
-    if(a_array->array.count >= a_array->array.capacity) {
-        size_t l_new_capacity = (a_array->array.capacity == 0) ? 
-            INITIAL_ARRAY_CAPACITY : 
-            (a_array->array.capacity * ARRAY_GROWTH_FACTOR);
-        
-        // Allocate new array in Arena
-        dap_json_value_t **l_new_elements = (dap_json_value_t **)dap_arena_alloc(
-            a_arena,
-            l_new_capacity * sizeof(dap_json_value_t*)
+    // Check if need to grow
+    if (a_stage2->values_count >= a_stage2->values_capacity) {
+        size_t new_capacity = a_stage2->values_capacity * 2;
+        dap_json_value_t *new_refs = (dap_json_value_t*)dap_arena_alloc(
+            a_stage2->arena,
+            sizeof(dap_json_value_t) * new_capacity
         );
         
-        if(!l_new_elements) {
-            log_it(L_ERROR, "Arena allocation failed for array growth to %zu elements", l_new_capacity);
-            return false;
+        if (!new_refs) {
+            log_it(L_ERROR, "Failed to grow refs array to %zu refs", new_capacity);
+            return -1;
         }
         
-        // Copy old elements
-        if(a_array->array.elements && a_array->array.count > 0) {
-            memcpy(l_new_elements, a_array->array.elements,
-                   a_array->array.count * sizeof(dap_json_value_t*));
-        }
+        // Copy existing refs
+        memcpy(new_refs, a_stage2->values, 
+               sizeof(dap_json_value_t) * a_stage2->values_count);
         
-        // Old array becomes garbage in Arena (no free needed)
-        a_array->array.elements = l_new_elements;
-        a_array->array.capacity = l_new_capacity;
-    }
-    
-    a_array->array.elements[a_array->array.count++] = a_element;
-    return true;
-}
-
-/**
- * @brief Add key-value pair to object using Arena + String Pool (non-null-terminated key version)
- * @details Internal function for Stage 2 parsing only - for zero-copy keys
- */
-static bool s_object_add_arena_n(
-    dap_arena_t *a_arena,
-    dap_string_pool_t *a_string_pool,
-    dap_json_value_t *a_object,
-    const char *a_key,
-    size_t a_key_len,
-    dap_json_value_t *a_value
-)
-{
-    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Invalid object");
-        return false;
-    }
-    
-    if(!a_key || !a_value) {
-        log_it(L_ERROR, "NULL key or value");
-        return false;
-    }
-    
-    // Intern key in String Pool for deduplication (using _n version for non-null-terminated)
-    const char *l_interned_key = dap_string_pool_intern_n(a_string_pool, a_key, a_key_len);
-    if (!l_interned_key) {
-        log_it(L_ERROR, "Failed to intern object key");
-        return false;
-    }
-    
-    // Check for duplicate key (O(1) pointer comparison after interning)
-    for(size_t i = 0; i < a_object->object.count; i++) {
-        if(a_object->object.pairs[i].key == l_interned_key) {
-            log_it(L_WARNING, "Duplicate object key: %.*s", (int)a_key_len, a_key);
-            // Overwrite existing value
-            a_object->object.pairs[i].value = a_value;
-            return true;
-        }
-    }
-    
-    // Grow if needed
-    if(a_object->object.count >= a_object->object.capacity) {
-        size_t l_new_capacity = (a_object->object.capacity == 0) ?
-            INITIAL_OBJECT_CAPACITY :
-            (a_object->object.capacity * OBJECT_GROWTH_FACTOR);
+        a_stage2->values = new_refs;
+        a_stage2->values_capacity = new_capacity;
         
-        // Allocate new pairs array in Arena
-        dap_json_object_pair_t *l_new_pairs = (dap_json_object_pair_t *)dap_arena_alloc(
-            a_arena,
-            l_new_capacity * sizeof(dap_json_object_pair_t)
-        );
-        
-        if(!l_new_pairs) {
-            log_it(L_ERROR, "Arena allocation failed for object growth to %zu pairs", l_new_capacity);
-            return false;
-        }
-        
-        // Copy old pairs
-        if(a_object->object.pairs && a_object->object.count > 0) {
-            memcpy(l_new_pairs, a_object->object.pairs,
-                   a_object->object.count * sizeof(dap_json_object_pair_t));
-        }
-        
-        // Old array becomes garbage in Arena (no free needed)
-        a_object->object.pairs = l_new_pairs;
-        a_object->object.capacity = l_new_capacity;
+        debug_if(s_debug_more, L_DEBUG, "Grew refs array to %zu capacity", new_capacity);
     }
     
-    // Add new pair (key already interned, no strdup needed)
-    a_object->object.pairs[a_object->object.count].key = (char *)l_interned_key;
-    a_object->object.pairs[a_object->object.count].value = a_value;
-    a_object->object.count++;
+    // Add ref
+    uint32_t index = a_stage2->values_count;
+    a_stage2->values[index] = *a_ref;
+    a_stage2->values_count++;
     
-    return true;
-}
-
-/**
- * @brief Add key-value pair to object using Arena + String Pool
- * @details Internal function for Stage 2 parsing only
- */
-static bool s_object_add_arena(
-    dap_arena_t *a_arena,
-    dap_string_pool_t *a_string_pool,
-    dap_json_value_t *a_object,
-    const char *a_key,
-    dap_json_value_t *a_value
-)
-{
-    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
-        log_it(L_ERROR, "Invalid object");
-        return false;
-    }
-    
-    if(!a_key || !a_value) {
-        log_it(L_ERROR, "NULL key or value");
-        return false;
-    }
-    
-    // Intern key in String Pool for deduplication
-    const char *l_interned_key = dap_string_pool_intern(a_string_pool, a_key);
-    if (!l_interned_key) {
-        log_it(L_ERROR, "Failed to intern object key");
-        return false;
-    }
-    
-    // Check for duplicate key (O(1) pointer comparison after interning)
-    for(size_t i = 0; i < a_object->object.count; i++) {
-        if(a_object->object.pairs[i].key == l_interned_key) {
-            log_it(L_WARNING, "Duplicate object key: %s", a_key);
-            // Overwrite existing value
-            a_object->object.pairs[i].value = a_value;
-            return true;
-        }
-    }
-    
-    // Grow if needed
-    if(a_object->object.count >= a_object->object.capacity) {
-        size_t l_new_capacity = (a_object->object.capacity == 0) ?
-            INITIAL_OBJECT_CAPACITY :
-            (a_object->object.capacity * OBJECT_GROWTH_FACTOR);
-        
-        // Allocate new pairs array in Arena
-        dap_json_object_pair_t *l_new_pairs = (dap_json_object_pair_t *)dap_arena_alloc(
-            a_arena,
-            l_new_capacity * sizeof(dap_json_object_pair_t)
-        );
-        
-        if(!l_new_pairs) {
-            log_it(L_ERROR, "Arena allocation failed for object growth to %zu pairs", l_new_capacity);
-            return false;
-        }
-        
-        // Copy old pairs
-        if(a_object->object.pairs && a_object->object.count > 0) {
-            memcpy(l_new_pairs, a_object->object.pairs,
-                   a_object->object.count * sizeof(dap_json_object_pair_t));
-        }
-        
-        // Old array becomes garbage in Arena (no free needed)
-        a_object->object.pairs = l_new_pairs;
-        a_object->object.capacity = l_new_capacity;
-    }
-    
-    // Add new pair (key already interned, no strdup needed)
-    a_object->object.pairs[a_object->object.count].key = (char *)l_interned_key;
-    a_object->object.pairs[a_object->object.count].value = a_value;
-    a_object->object.count++;
-    
-    return true;
+    return (int32_t)index;
 }
 
 /* ========================================================================== */
@@ -305,9 +172,6 @@ static inline dap_json_value_t *s_create_value_arena(dap_arena_t *a_arena)
     // Zero-initialize the value
     dap_json_value_t *l_value = (dap_json_value_t *)l_alloc_result.ptr;
     memset(l_value, 0, sizeof(dap_json_value_t));
-    
-    // ⭐ Store page handle for later ref/unref
-    l_value->arena_page_handle = l_alloc_result.page_handle;
     
     return l_value;
 }
@@ -339,182 +203,295 @@ dap_json_value_t *dap_json_value_v2_create_bool(bool a_value)
     }
     
     l_value->type = DAP_JSON_TYPE_BOOLEAN;
-    l_value->boolean = a_value;
+    l_value->offset = a_value ? 1 : 0; // Store in offset
     return l_value;
 }
 
 /**
  * @brief Create number value (integer)
  */
+/**
+ * @brief Phase 2.0.4: Create number value (int64)
+ * @details For small ints (<2^31): store directly in offset
+ *          For large ints: allocate separately, pointer in offset
+ */
 dap_json_value_t *dap_json_value_v2_create_int(int64_t a_value)
 {
     dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
-    if(!l_value) {
-        log_it(L_ERROR, "Failed to allocate int value");
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate 8-byte int value");
         return NULL;
     }
     
     l_value->type = DAP_JSON_TYPE_INT;
-    l_value->number.i = a_value;
-    l_value->number.is_double = false;
+    l_value->flags = 0;
+    
+    // Check if fits in 32-bit offset
+    if (a_value >= INT32_MIN && a_value <= INT32_MAX) {
+        // Store directly in offset (no allocation needed!)
+        l_value->offset = (uint32_t)(int32_t)a_value;
+        l_value->length = 0; // Flag: stored inline
+    } else {
+        // Large int: allocate separately
+        int64_t *l_allocated = DAP_NEW(int64_t);
+        if (!l_allocated) {
+            DAP_DELETE(l_value);
+            log_it(L_ERROR, "Failed to allocate int64 storage");
+            return NULL;
+        }
+        *l_allocated = a_value;
+        l_value->offset = (uint32_t)(uintptr_t)l_allocated;
+        l_value->length = 1; // Flag: allocated
+    }
+    
     return l_value;
 }
 
 /**
- * @brief Create number value (double)
+ * @brief Phase 2.0.4: Create number value (double)
+ * @details Always allocates separately (doubles are 64-bit)
  */
 dap_json_value_t *dap_json_value_v2_create_double(double a_value)
 {
     dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
-    if(!l_value) {
-        log_it(L_ERROR, "Failed to allocate double value");
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate 8-byte double value");
         return NULL;
     }
     
+    // Allocate double separately
+    double *l_allocated = DAP_NEW(double);
+    if (!l_allocated) {
+        DAP_DELETE(l_value);
+        log_it(L_ERROR, "Failed to allocate double storage");
+        return NULL;
+    }
+    
+    *l_allocated = a_value;
+    
     l_value->type = DAP_JSON_TYPE_DOUBLE;
-    l_value->number.d = a_value;
-    l_value->number.is_double = true;
+    l_value->flags = 0;
+    l_value->length = 1; // Flag: allocated
+    l_value->offset = (uint32_t)(uintptr_t)l_allocated;
+    
     return l_value;
 }
 
 /**
- * @brief Create string value
+ * @brief Phase 2.0.4: Create string value (MALLOC_MUTABLE mode)
+ * 
+ * This version COPIES the string. Use only for manually created JSON objects.
+ * For parsing, Stage 2 uses refs directly!
  */
 dap_json_value_t *dap_json_value_v2_create_string(const char *a_data, size_t a_length)
 {
-    if(!a_data) {
+    if (!a_data) {
         log_it(L_ERROR, "NULL string data");
         return NULL;
     }
     
     dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
-    if(!l_value) {
-        log_it(L_ERROR, "Failed to allocate string value");
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate 8-byte string value");
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_STRING;
-    l_value->string.length = a_length;
-    l_value->string.data = DAP_NEW_Z_SIZE(char, a_length + 1);
-    
-    if(!l_value->string.data) {
+    // Allocate string copy (null-terminated)
+    char *l_str_copy = DAP_NEW_Z_COUNT(char, a_length + 1);
+    if (!l_str_copy) {
         log_it(L_ERROR, "Failed to allocate string data (%zu bytes)", a_length + 1);
         DAP_DELETE(l_value);
         return NULL;
     }
     
-    memcpy((char*)l_value->string.data, a_data, a_length);
-    ((char*)l_value->string.data)[a_length] = '\0';
-    l_value->string.length = a_length;
-    l_value->string.data_materialized = (char*)l_value->string.data;  // Already materialized
-    l_value->string.is_zero_copy = false;  // This is a copy, not zero-copy
-    l_value->string.needs_free = true;
+    memcpy(l_str_copy, a_data, a_length);
+    l_str_copy[a_length] = '\0';
+    
+    // Setup 8-byte value
+    l_value->type = DAP_JSON_TYPE_STRING;
+    l_value->flags = 0; // Not escaped
+    l_value->length = (uint16_t)a_length;
+    l_value->offset = (uint32_t)(uintptr_t)l_str_copy; // Pointer to allocated string
     
     return l_value;
 }
 
 /**
- * @brief Create array value
+ * @brief Phase 2.0.4: Create array value (MALLOC_MUTABLE mode)
+ * @details Creates 8-byte value + separate storage structure
  */
 dap_json_value_t *dap_json_value_v2_create_array(void)
 {
+    // Allocate 8-byte value
     dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
-    if(!l_value) {
-        log_it(L_ERROR, "Failed to allocate array value");
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate 8-byte array value");
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_ARRAY;
-    l_value->array.capacity = INITIAL_ARRAY_CAPACITY;
-    l_value->array.count = 0;
-    l_value->array.elements = DAP_NEW_Z_SIZE(dap_json_value_t*, 
-                                              INITIAL_ARRAY_CAPACITY * sizeof(dap_json_value_t*));
-    
-    if(!l_value->array.elements) {
-        log_it(L_ERROR, "Failed to allocate array elements");
+    // Allocate storage structure
+    dap_json_array_storage_t *l_storage = DAP_NEW_Z(dap_json_array_storage_t);
+    if (!l_storage) {
+        log_it(L_ERROR, "Failed to allocate array storage");
         DAP_DELETE(l_value);
         return NULL;
     }
+    
+    // Initialize storage
+    l_storage->capacity = INITIAL_ARRAY_CAPACITY;
+    l_storage->count = 0;
+    l_storage->elements = DAP_NEW_Z_COUNT(dap_json_value_t*, INITIAL_ARRAY_CAPACITY);
+    
+    if (!l_storage->elements) {
+        log_it(L_ERROR, "Failed to allocate array elements");
+        DAP_DELETE(l_storage);
+        DAP_DELETE(l_value);
+        return NULL;
+    }
+    
+    // Setup 8-byte value
+    l_value->type = DAP_JSON_TYPE_ARRAY;
+    l_value->flags = 0;
+    l_value->length = 0; // Will be updated on add
+    l_value->offset = (uint32_t)(uintptr_t)l_storage; // Pointer as offset!
     
     return l_value;
 }
 
 /**
- * @brief Create object value
+ * @brief Phase 2.0.4: Create object value (MALLOC_MUTABLE mode)
+ * @details Creates 8-byte value + separate storage structure
  */
 dap_json_value_t *dap_json_value_v2_create_object(void)
 {
+    // Allocate 8-byte value
     dap_json_value_t *l_value = DAP_NEW_Z(dap_json_value_t);
-    if(!l_value) {
-        log_it(L_ERROR, "Failed to allocate object value");
+    if (!l_value) {
+        log_it(L_ERROR, "Failed to allocate 8-byte object value");
         return NULL;
     }
     
-    l_value->type = DAP_JSON_TYPE_OBJECT;
-    l_value->object.capacity = INITIAL_OBJECT_CAPACITY;
-    l_value->object.count = 0;
-    l_value->object.pairs = DAP_NEW_Z_SIZE(dap_json_object_pair_t,
-                                            INITIAL_OBJECT_CAPACITY * sizeof(dap_json_object_pair_t));
-    
-    if(!l_value->object.pairs) {
-        log_it(L_ERROR, "Failed to allocate object pairs");
+    // Allocate storage structure
+    dap_json_object_storage_t *l_storage = DAP_NEW_Z(dap_json_object_storage_t);
+    if (!l_storage) {
+        log_it(L_ERROR, "Failed to allocate object storage");
         DAP_DELETE(l_value);
         return NULL;
     }
+    
+    // Initialize storage
+    l_storage->capacity = INITIAL_OBJECT_CAPACITY;
+    l_storage->count = 0;
+    l_storage->keys = DAP_NEW_Z_COUNT(char*, INITIAL_OBJECT_CAPACITY);
+    l_storage->values = DAP_NEW_Z_COUNT(dap_json_value_t*, INITIAL_OBJECT_CAPACITY);
+    
+    if (!l_storage->keys || !l_storage->values) {
+        log_it(L_ERROR, "Failed to allocate object storage arrays");
+        if (l_storage->keys) DAP_DELETE(l_storage->keys);
+        if (l_storage->values) DAP_DELETE(l_storage->values);
+        DAP_DELETE(l_storage);
+        DAP_DELETE(l_value);
+        return NULL;
+    }
+    
+    // Setup 8-byte value
+    l_value->type = DAP_JSON_TYPE_OBJECT;
+    l_value->flags = 0;
+    l_value->length = 0; // Will be updated on add
+    l_value->offset = (uint32_t)(uintptr_t)l_storage; // Pointer as offset!
     
     return l_value;
 }
 
 /**
- * @brief Free JSON value recursively (malloc-based allocation)
+ * @brief Phase 2.0.4: Free JSON value recursively (MALLOC_MUTABLE mode)
+ * @details Frees 8-byte value + associated storage structure
  * 
  * Used for manually created JSON objects (dap_json_object_new, etc.)
  * that were NOT allocated from Arena.
  */
 void dap_json_value_v2_free(dap_json_value_t *a_value)
 {
-    if(!a_value) {
+    if (!a_value) {
         return;
     }
     
-    switch(a_value->type) {
-        case DAP_JSON_TYPE_STRING:
-            if(a_value->string.needs_free && a_value->string.data) {
-                DAP_DELETE(a_value->string.data);
+    switch (a_value->type) {
+        case DAP_JSON_TYPE_INT:
+        case DAP_JSON_TYPE_UINT64: {
+            // Check if allocated (length==1) or inline (length==0)
+            if (a_value->length == 1 && a_value->offset) {
+                // Allocated int64/uint64
+                void *l_ptr = (void*)(uintptr_t)a_value->offset;
+                DAP_DELETE(l_ptr);
             }
-            // Free materialized copy if it was allocated separately
-            if(a_value->string.data_materialized && 
-               a_value->string.data_materialized != a_value->string.data) {
-                DAP_DELETE(a_value->string.data_materialized);
-            }
+            // Inline ints (length==0): nothing to free
             break;
+        }
         
-        case DAP_JSON_TYPE_ARRAY:
-            // NOTE: Cached wrappers are freed in dap_json_object_free() before calling this
-            // Free actual values
-            for(size_t i = 0; i < a_value->array.count; i++) {
-                dap_json_value_v2_free(a_value->array.elements[i]);
+        case DAP_JSON_TYPE_UINT256: {
+            // uint256 always allocated
+            if (a_value->offset) {
+                uint256_t *l_ptr = (uint256_t*)(uintptr_t)a_value->offset;
+                DAP_DELETE(l_ptr);
             }
-            DAP_DELETE(a_value->array.elements);
-            // wrappers array is already freed in dap_json_object_free
             break;
+        }
         
-        case DAP_JSON_TYPE_OBJECT:
-            // NOTE: Cached wrappers are freed in dap_json_object_free() before calling this
-            // Free actual pairs
-            for(size_t i = 0; i < a_value->object.count; i++) {
-                DAP_DELETE(a_value->object.pairs[i].key);
-                dap_json_value_v2_free(a_value->object.pairs[i].value);
+        case DAP_JSON_TYPE_DOUBLE: {
+            // Doubles are always allocated (length==1)
+            if (a_value->offset) {
+                double *l_ptr = (double*)(uintptr_t)a_value->offset;
+                DAP_DELETE(l_ptr);
             }
-            DAP_DELETE(a_value->object.pairs);
-            // wrappers array is already freed in dap_json_object_free
             break;
+        }
+        
+        case DAP_JSON_TYPE_STRING: {
+            // For MALLOC strings, offset points to malloc'd string data
+            if (a_value->offset) {
+                char *l_str = (char*)(uintptr_t)a_value->offset;
+                DAP_DELETE(l_str);
+            }
+            break;
+        }
+        
+        case DAP_JSON_TYPE_ARRAY: {
+            // offset → array_storage
+            dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)(uintptr_t)a_value->offset;
+            if (l_storage) {
+                // Recursively free all elements
+                for (size_t i = 0; i < l_storage->count; i++) {
+                    dap_json_value_v2_free(l_storage->elements[i]);
+                }
+                DAP_DELETE(l_storage->elements);
+                DAP_DELETE(l_storage);
+            }
+            break;
+        }
+        
+        case DAP_JSON_TYPE_OBJECT: {
+            // offset → object_storage
+            dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)(uintptr_t)a_value->offset;
+            if (l_storage) {
+                // Free all keys and values
+                for (size_t i = 0; i < l_storage->count; i++) {
+                    DAP_DELETE(l_storage->keys[i]);
+                    dap_json_value_v2_free(l_storage->values[i]);
+                }
+                DAP_DELETE(l_storage->keys);
+                DAP_DELETE(l_storage->values);
+                DAP_DELETE(l_storage);
+            }
+            break;
+        }
         
         default:
-            // NULL, BOOL, NUMBER - no cleanup needed
+            // NULL, BOOL, NUMBER - no cleanup needed (all data in 8 bytes)
             break;
     }
     
+    // Free the 8-byte value itself
     DAP_DELETE(a_value);
 }
 
@@ -523,164 +500,143 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
 /* ========================================================================== */
 
 /**
- * @brief Add element to array
+ * @brief Phase 2.0.4: Add element to array (MALLOC_MUTABLE mode)
+ * @details Works with storage structure
  */
 bool dap_json_array_v2_add(dap_json_value_t *a_array, dap_json_value_t *a_element)
 {
-    if(!a_array || a_array->type != DAP_JSON_TYPE_ARRAY) {
+    if (!a_array || a_array->type != DAP_JSON_TYPE_ARRAY) {
         log_it(L_ERROR, "Invalid array");
         return false;
     }
     
-    if(!a_element) {
+    if (!a_element) {
         log_it(L_ERROR, "NULL element");
         return false;
     }
     
+    // Get storage
+    dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)(uintptr_t)a_array->offset;
+    if (!l_storage) {
+        log_it(L_ERROR, "Array has no storage");
+        return false;
+    }
+    
     // Grow if needed
-    if(a_array->array.count >= a_array->array.capacity) {
-        size_t l_old_capacity = a_array->array.capacity;
-        size_t l_new_capacity = l_old_capacity * ARRAY_GROWTH_FACTOR;
+    if (l_storage->count >= l_storage->capacity) {
+        size_t l_new_capacity = l_storage->capacity * ARRAY_GROWTH_FACTOR;
         dap_json_value_t **l_new_elements = DAP_REALLOC(
-            a_array->array.elements,
+            l_storage->elements,
             l_new_capacity * sizeof(dap_json_value_t*)
         );
         
-        if(!l_new_elements) {
+        if (!l_new_elements) {
             log_it(L_ERROR, "Failed to grow array to %zu elements", l_new_capacity);
             return false;
         }
         
-        a_array->array.elements = l_new_elements;
-        a_array->array.capacity = l_new_capacity;
-        
-        // Also grow wrappers cache if it exists
-        if (a_array->array.wrappers) {
-            dap_json_t **l_new_wrappers = DAP_REALLOC(
-                a_array->array.wrappers,
-                l_new_capacity * sizeof(dap_json_t*)
-            );
-            if (!l_new_wrappers) {
-                log_it(L_ERROR, "Failed to grow wrappers cache to %zu", l_new_capacity);
-                return false;
-            }
-            // Zero out new slots
-            memset(l_new_wrappers + l_old_capacity, 0, 
-                   (l_new_capacity - l_old_capacity) * sizeof(dap_json_t*));
-            a_array->array.wrappers = l_new_wrappers;
-        }
+        l_storage->elements = l_new_elements;
+        l_storage->capacity = l_new_capacity;
     }
     
-    a_array->array.elements[a_array->array.count++] = a_element;
+    // Add element
+    l_storage->elements[l_storage->count++] = a_element;
+    
+    // Update length in 8-byte value
+    a_array->length = (uint16_t)l_storage->count;
+    
     return true;
 }
 
 /**
- * @brief Add key-value pair to object
+ * @brief Phase 2.0.4: Add key-value pair to object (MALLOC_MUTABLE mode)
+ * @details Works with storage structure
  */
 bool dap_json_object_v2_add(dap_json_value_t *a_object, const char *a_key, dap_json_value_t *a_value)
 {
-    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
+    if (!a_object || a_object->type != DAP_JSON_TYPE_OBJECT) {
         log_it(L_ERROR, "Invalid object");
         return false;
     }
     
-    if(!a_key || !a_value) {
+    if (!a_key || !a_value) {
         log_it(L_ERROR, "NULL key or value");
         return false;
     }
     
+    // Get storage
+    dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)(uintptr_t)a_object->offset;
+    if (!l_storage) {
+        log_it(L_ERROR, "Object has no storage");
+        return false;
+    }
+    
     // Check for duplicate key
-    for(size_t i = 0; i < a_object->object.count; i++) {
-        if(strcmp(a_object->object.pairs[i].key, a_key) == 0) {
+    for (size_t i = 0; i < l_storage->count; i++) {
+        if (strcmp(l_storage->keys[i], a_key) == 0) {
             log_it(L_WARNING, "Duplicate key: %s", a_key);
             return false;
         }
     }
     
     // Grow if needed
-    if(a_object->object.count >= a_object->object.capacity) {
-        size_t l_old_capacity = a_object->object.capacity;
-        size_t l_new_capacity = l_old_capacity * OBJECT_GROWTH_FACTOR;
-        dap_json_object_pair_t *l_new_pairs = DAP_REALLOC(
-            a_object->object.pairs,
-            l_new_capacity * sizeof(dap_json_object_pair_t)
-        );
+    if (l_storage->count >= l_storage->capacity) {
+        size_t l_new_capacity = l_storage->capacity * OBJECT_GROWTH_FACTOR;
         
-        if(!l_new_pairs) {
+        char **l_new_keys = DAP_REALLOC(l_storage->keys, l_new_capacity * sizeof(char*));
+        dap_json_value_t **l_new_values = DAP_REALLOC(l_storage->values, l_new_capacity * sizeof(dap_json_value_t*));
+        
+        if (!l_new_keys || !l_new_values) {
             log_it(L_ERROR, "Failed to grow object to %zu pairs", l_new_capacity);
             return false;
         }
         
-        a_object->object.pairs = l_new_pairs;
-        a_object->object.capacity = l_new_capacity;
-        
-        // Also grow wrappers cache if it exists
-        if (a_object->object.wrappers) {
-            dap_json_t **l_new_wrappers = DAP_REALLOC(
-                a_object->object.wrappers,
-                l_new_capacity * sizeof(dap_json_t*)
-            );
-            if (!l_new_wrappers) {
-                log_it(L_ERROR, "Failed to grow wrappers cache to %zu", l_new_capacity);
-                return false;
-            }
-            // Zero out new slots
-            memset(l_new_wrappers + l_old_capacity, 0, 
-                   (l_new_capacity - l_old_capacity) * sizeof(dap_json_t*));
-            a_object->object.wrappers = l_new_wrappers;
-        }
+        l_storage->keys = l_new_keys;
+        l_storage->values = l_new_values;
+        l_storage->capacity = l_new_capacity;
     }
     
-    // Add pair
+    // Copy key
     size_t l_key_len = strlen(a_key);
-    char *l_key_copy = DAP_NEW_Z_SIZE(char, l_key_len + 1);
+    char *l_key_copy = DAP_NEW_Z_COUNT(char, l_key_len + 1);
     
-    if(!l_key_copy) {
+    if (!l_key_copy) {
         log_it(L_ERROR, "Failed to allocate key copy");
         return false;
     }
     
     memcpy(l_key_copy, a_key, l_key_len + 1);
     
-    a_object->object.pairs[a_object->object.count].key = l_key_copy;
-    a_object->object.pairs[a_object->object.count].value = a_value;
-    a_object->object.count++;
+    // Add pair
+    l_storage->keys[l_storage->count] = l_key_copy;
+    l_storage->values[l_storage->count] = a_value;
+    l_storage->count++;
+    
+    // Update length in 8-byte value
+    a_object->length = (uint16_t)l_storage->count;
     
     return true;
 }
 
 /**
- * @brief Get array element by index
+ * @brief Phase 2.0.4: REMOVED - Use dap_json_array_get_idx() with wrapper instead
  */
 dap_json_value_t *dap_json_array_v2_get(const dap_json_value_t *a_array, size_t a_index)
 {
-    if(!a_array || a_array->type != DAP_JSON_TYPE_ARRAY) {
-        return NULL;
-    }
-    
-    if(a_index >= a_array->array.count) {
-        return NULL;
-    }
-    
-    return a_array->array.elements[a_index];
+    (void)a_array;
+    (void)a_index;
+    log_it(L_ERROR, "dap_json_array_v2_get: REMOVED in Phase 2.0.4 - use dap_json_array_get_idx() with wrapper");
+    return NULL;
 }
 
 /**
- * @brief Get object value by key
+ * @brief Phase 2.0.4: REMOVED - Use dap_json_object_get() with wrapper instead  
  */
 dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const char *a_key)
 {
-    if(!a_object || a_object->type != DAP_JSON_TYPE_OBJECT || !a_key) {
-        return NULL;
-    }
-    
-    for(size_t i = 0; i < a_object->object.count; i++) {
-        if(strcmp(a_object->object.pairs[i].key, a_key) == 0) {
-            return a_object->object.pairs[i].value;
-        }
-    }
-    
+    (void)a_object;
+    (void)a_key;
+    log_it(L_ERROR, "dap_json_object_v2_get: REMOVED in Phase 2.0.4 - use dap_json_object_get() with wrapper");
     return NULL;
 }
 
@@ -742,18 +698,19 @@ static double s_strtod_c_locale(const char *a_str, char **a_endptr)
  *   - Doubles: Same as before (strtod fallback)
  * 
  * Expected impact: +500-800% on number-heavy JSON
+ * 
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static bool s_parse_number(
+static int32_t s_parse_number(
     dap_json_stage2_t *a_stage2,
     uint32_t a_start,
-    uint32_t a_end,
-    dap_json_value_t **a_out_value
+    uint32_t a_end
 )
 {
     const uint8_t *a_input = a_stage2->input;
     
-    if(!a_input || !a_out_value || a_start >= a_end) {
-        return false;
+    if(!a_input || a_start >= a_end) {
+        return -1;
     }
     
     // Work directly on input buffer (no string copy!)
@@ -762,73 +719,30 @@ static bool s_parse_number(
     
     if(l_len >= 256) {
         log_it(L_ERROR, "Number too long: %zu bytes", l_len);
-        return false;
+        return -1;
     }
     
-    // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
-    if (!l_value) {
-        return false;
+    // Create number ref (lazy parsing!)
+    dap_json_value_t l_number_ref = dap_json_from_number(
+        (const char*)a_input,
+        a_start,
+        l_len,
+        false  // is_integer - lazy determination
+    );
+    
+    int32_t ref_index = s_stage2_add_ref(a_stage2, &l_number_ref);
+    if (ref_index < 0) {
+        log_it(L_ERROR, "Failed to add number ref");
+        return -1;
     }
     
-    // FAST PATH: Check if integer (no '.' or 'e')
-    if (dap_json_number_is_integer(l_num_str, l_len)) {
-        // INTEGER FAST PATH (~5-10ns!)
-        
-        // Try int64 first (most common)
-        int64_t l_ival;
-        if (dap_json_parse_int64_fast(l_num_str, l_len, &l_ival)) {
-            l_value->type = DAP_JSON_TYPE_INT;
-            l_value->number.i = l_ival;
-            l_value->number.is_double = false;
-            *a_out_value = l_value;
-            return true;
-        }
-        
-        // Overflow to int64 - try uint64
-        uint64_t l_uval;
-        if (dap_json_parse_uint64_fast(l_num_str, l_len, &l_uval)) {
-            l_value->type = DAP_JSON_TYPE_UINT64;
-            l_value->number.u64 = l_uval;
-            l_value->number.is_double = false;
-            *a_out_value = l_value;
-            return true;
-        }
-        
-        // Integer overflow (> UINT64_MAX or < INT64_MIN)
-        // Fallback to double for graceful handling (e.g., -9223372036854775809)
-        // This loses precision but allows parsing to succeed
-    }
+    a_stage2->numbers_created++;
     
-    // SLOW PATH: Double (has '.' or 'e', or integer overflow)
-    // TODO: Replace with Eisel-Lemire for 3-5x speedup
-    double l_dval;
+    debug_if(dap_json_get_debug(), L_DEBUG,
+             "Phase 2.0.3: Number ref[%d] - offset=%u, length=%zu (LAZY parse)",
+             ref_index, a_start, l_len);
     
-    // ⭐ DEBUG: Log input before parsing
-    log_it(L_DEBUG, "s_parse_number DOUBLE PATH: '%.*s' (len=%zu)", (int)l_len, l_num_str, l_len);
-    
-    if (!dap_json_parse_double_fast(l_num_str, l_len, &l_dval)) {
-        log_it(L_ERROR, "Invalid number format");
-        return false;
-    }
-    
-    log_it(L_DEBUG, "Parsed double: %f (isfinite=%d)", l_dval, isfinite(l_dval));
-    
-    // Validate double
-    if (!isfinite(l_dval)) {
-        log_it(L_ERROR, "Double is NaN or Inf");
-        return false;
-    }
-    
-    l_value->type = DAP_JSON_TYPE_DOUBLE;
-    l_value->number.d = l_dval;
-    l_value->number.is_double = true;
-    
-    debug_if(dap_json_get_debug(), L_DEBUG, "Stored in value: type=%d, d=%f, i=%ld", 
-           l_value->type, l_value->number.d, l_value->number.i);
-    
-    *a_out_value = l_value;
-    return true;
+    return ref_index;
 }
 
 /**
@@ -1044,170 +958,136 @@ static bool s_unescape_string(
  *          - Strings with escapes: lazy unescaping on first access
  * 
  * Performance: ~16-64x faster than character-by-character (depending on CPU)
+ * 
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static bool s_parse_string(
+static int32_t s_parse_string(
     dap_json_stage2_t *a_stage2,
     uint32_t a_start,
-    dap_json_value_t **a_out_value,
     uint32_t *a_out_end_offset
 )
 {
     const uint8_t *a_input = a_stage2->input;
     size_t a_input_len = a_stage2->input_len;
     
-    if(!a_input || !a_out_value || !a_out_end_offset) {
-        return false;
+    if(!a_input || !a_out_end_offset) {
+        return -1;
     }
     
     if(a_start >= a_input_len || a_input[a_start] != '"') {
         log_it(L_ERROR, "Expected opening quote at offset %u", a_start);
-        return false;
+        return -1;
     }
     
     // ZERO-COPY SIMD STRING SCANNER (CPU dispatch: AVX2/SSE2/NEON/Reference)
     dap_json_string_zc_t l_scanned_string;
     uint32_t l_end_offset = 0;
     
-    if (!dap_json_string_scan_ref(  // TODO: Replace with dap_json_string_scan() after header fix
+    if (!dap_json_string_scan_ref(
         a_input + a_start,
         a_input_len - a_start,
         &l_scanned_string,
         &l_end_offset
     )) {
         log_it(L_ERROR, "Failed to scan string at offset %u", a_start);
-        return false;
+        return -1;
     }
     
-    // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
-    if (!l_value) {
-        return false;
+    // Calculate offset to string data (after opening quote)
+    ptrdiff_t data_offset = l_scanned_string.data - (const char*)a_input;
+    
+    if (data_offset < 0 || (size_t)data_offset >= a_input_len) {
+        log_it(L_ERROR, "String data outside input buffer");
+        return -1;
     }
     
-    l_value->type = DAP_JSON_TYPE_STRING;
+    // Create string ref (8 bytes, zero-copy!)
+    dap_json_value_t l_string_ref = dap_json_from_string(
+        (const char*)a_input,
+        (uint32_t)data_offset,
+        l_scanned_string.length,
+        l_scanned_string.needs_unescape
+    );
     
-    // Check if string needs unescaping
-    if (l_scanned_string.needs_unescape) {
-        // String has escapes - allocate and unescape in Arena
-        char *l_unescaped_data = NULL;
-        size_t l_unescaped_length = 0;
-        
-        if (!s_unescape_string(
-            (const uint8_t*)l_scanned_string.data,
-            l_scanned_string.length,
-            &l_unescaped_data,
-            &l_unescaped_length
-        )) {
-            log_it(L_ERROR, "Failed to unescape string at offset %u", a_start);
-            return false;
-        }
-        
-        // Intern unescaped string in String Pool (for deduplication and null-termination)
-        const char *l_interned = dap_string_pool_intern_n(
-            a_stage2->string_pool,
-            l_unescaped_data,
-            l_unescaped_length
-        );
-        
-        DAP_DELETE(l_unescaped_data);  // Free temporary unescaped buffer
-        
-        if (!l_interned) {
-            log_it(L_ERROR, "Failed to intern unescaped string");
-            return false;
-        }
-        
-        // Store interned (null-terminated) string
-        l_value->string.data = l_interned;
-        l_value->string.length = l_unescaped_length;
-        l_value->string.data_materialized = (char*)l_interned;  // Already materialized
-        l_value->string.is_zero_copy = false;  // Not zero-copy (was unescaped)
-        l_value->string.needs_free = false;    // String Pool owns it
-    } else {
-        // TRUE ZERO-COPY: No escapes - just store pointer and length (NO allocation, NO copy!)
-        // String points directly into original JSON buffer - NOT null-terminated
-        
-        // RFC 8259: Validate no unescaped control characters (U+0000..U+001F)
-        // IMPORTANT: Must use unsigned comparison to handle UTF-8 multibyte (0x80-0xFF)
-        for (size_t i = 0; i < l_scanned_string.length; i++) {
-            unsigned char c = l_scanned_string.data[i];
-            if (c < 0x20) {  // Control characters: 0x00-0x1F
-                log_it(L_ERROR, "Unescaped control character 0x%02X in zero-copy string at offset %u",
-                       c, a_start);
-                return false;
-            }
-        }
-        
-        l_value->string.data = (const char*)l_scanned_string.data;
-        l_value->string.length = l_scanned_string.length;
-        l_value->string.data_materialized = NULL;  // Lazy materialization on first C string access
-        l_value->string.is_zero_copy = true;       // Mark as zero-copy (not null-terminated)
-        l_value->string.needs_free = false;        // Arena will own materialized copy
+    // Add ref to Stage 2 refs array
+    int32_t ref_index = s_stage2_add_ref(a_stage2, &l_string_ref);
+    if (ref_index < 0) {
+        log_it(L_ERROR, "Failed to add string ref");
+        return -1;
     }
     
-    *a_out_value = l_value;
+    a_stage2->strings_created++;
     *a_out_end_offset = a_start + l_end_offset;
-    return true;
+    
+    debug_if(dap_json_get_debug(), L_DEBUG,
+             "Phase 2.0.3: String ref[%d] - offset=%u, length=%zu, escapes=%d",
+             ref_index, (uint32_t)data_offset, l_scanned_string.length, 
+             l_scanned_string.needs_unescape);
+    
+    return ref_index;
 }
 
 /**
  * @brief Parse literal (true, false, null)
- * @details Uses Arena for allocation, no malloc
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static bool s_parse_literal(
+static int32_t s_parse_literal(
     dap_json_stage2_t *a_stage2,
     uint32_t a_start,
-    dap_json_value_t **a_out_value,
     uint32_t *a_out_end_offset
 )
 {
     const uint8_t *a_input = a_stage2->input;
     size_t a_input_len = a_stage2->input_len;
     
-    if(!a_input || !a_out_value || !a_out_end_offset) {
-        return false;
+    if(!a_input || !a_out_end_offset) {
+        return -1;
     }
     
     if(a_start >= a_input_len) {
-        return false;
-    }
-    
-    // Create value using Arena
-    dap_json_value_t *l_value = s_create_value_arena(a_stage2->arena);
-    if (!l_value) {
-        return false;
+        return -1;
     }
     
     // Check for "true"
     if(a_start + 4 <= a_input_len &&
        memcmp(a_input + a_start, "true", 4) == 0) {
-        l_value->type = DAP_JSON_TYPE_BOOLEAN;
-        l_value->boolean = true;
-        *a_out_value = l_value;
+        dap_json_value_t l_bool_ref = dap_json_from_boolean(
+            (const char*)a_input,
+            a_start,
+            true
+        );
+        int32_t ref_index = s_stage2_add_ref(a_stage2, &l_bool_ref);
         *a_out_end_offset = a_start + 4;
-        return true;
+        return ref_index;
     }
     
     // Check for "false"
     if(a_start + 5 <= a_input_len &&
        memcmp(a_input + a_start, "false", 5) == 0) {
-        l_value->type = DAP_JSON_TYPE_BOOLEAN;
-        l_value->boolean = false;
-        *a_out_value = l_value;
+        dap_json_value_t l_bool_ref = dap_json_from_boolean(
+            (const char*)a_input,
+            a_start,
+            false
+        );
+        int32_t ref_index = s_stage2_add_ref(a_stage2, &l_bool_ref);
         *a_out_end_offset = a_start + 5;
-        return true;
+        return ref_index;
     }
     
     // Check for "null"
     if(a_start + 4 <= a_input_len &&
        memcmp(a_input + a_start, "null", 4) == 0) {
-        l_value->type = DAP_JSON_TYPE_NULL;
-        *a_out_value = l_value;
+        dap_json_value_t l_null_ref = dap_json_from_null(
+            (const char*)a_input,
+            a_start
+        );
+        int32_t ref_index = s_stage2_add_ref(a_stage2, &l_null_ref);
         *a_out_end_offset = a_start + 4;
-        return true;
+        return ref_index;
     }
     
     log_it(L_ERROR, "Invalid literal at offset %u", a_start);
-    return false;
+    return -1;
 }
 
 /* ========================================================================== */
@@ -1276,19 +1156,20 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
                                       &l_object_count);
     
     // Calculate Arena size based on actual token types:
-    // - Each value:  sizeof(dap_json_value_t) = ~80 bytes
-    // - Each array:  + initial capacity * 8 bytes (pointers)
-    // - Each object: + initial capacity * 24 bytes (pairs)
+    // Phase 2.0.3: Updated for 8-byte refs (vs old 80-byte values)
+    // - Each value:  sizeof(dap_json_value_t) = 8 bytes (vs 80)
+    // - Each array:  + capacity * 8 bytes (refs, not pointers)
+    // - Each object: + capacity * 16 bytes (ref pairs)
     size_t l_total_values = l_string_count + l_number_count + l_literal_count + 
                             l_array_count + l_object_count;
     
     size_t l_estimated_size = 
-        (l_total_values * 80) +                              // Value nodes
-        (l_array_count * INITIAL_ARRAY_CAPACITY * 8) +      // Array storage
-        (l_object_count * INITIAL_OBJECT_CAPACITY * 24);    // Object storage
+        (l_total_values * 8) +                               // Value refs (8 bytes each!)
+        (l_array_count * INITIAL_ARRAY_CAPACITY * 8) +      // Array storage (refs)
+        (l_object_count * INITIAL_OBJECT_CAPACITY * 16);    // Object storage (ref pairs)
     
     debug_if(dap_json_get_debug(), L_DEBUG,
-             "Phase 2.1: Pre-allocation BEFORE cap - strings:%zu numbers:%zu literals:%zu arrays:%zu objects:%zu → arena:%zu bytes",
+             "Phase 2.0.3: Pre-allocation (8-byte refs) BEFORE cap - strings:%zu numbers:%zu literals:%zu arrays:%zu objects:%zu → arena:%zu bytes",
              l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
              l_estimated_size);
     
@@ -1353,6 +1234,33 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     l_stage2->arena = s_thread_json_arena;
     l_stage2->string_pool = s_thread_string_pool;
     
+    // ⭐ Phase 2.0.3: Initialize flat refs array for 8-byte values
+    l_stage2->values_capacity = l_total_values * 2;  // 2x buffer for safety
+    if (l_stage2->values_capacity < 64) {
+        l_stage2->values_capacity = 64;  // Minimum capacity
+    }
+    
+    l_stage2->values = (dap_json_value_t*)dap_arena_alloc(
+        l_stage2->arena,
+        sizeof(dap_json_value_t) * l_stage2->values_capacity
+    );
+    
+    if (!l_stage2->values) {
+        log_it(L_ERROR, "Failed to allocate refs array (%zu refs = %zu bytes)",
+               l_stage2->values_capacity, 
+               sizeof(dap_json_value_t) * l_stage2->values_capacity);
+        DAP_DELETE(l_stage2);
+        return NULL;
+    }
+    
+    l_stage2->values_count = 0;
+    l_stage2->root_value_index = 0;
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "Phase 2.0.3: Allocated refs array - capacity:%zu refs (%zu bytes)",
+             l_stage2->values_capacity,
+             sizeof(dap_json_value_t) * l_stage2->values_capacity);
+    
     debug_if(s_debug_more, L_DEBUG, "Stage 2 initialized with %zu indices, Arena: %zu bytes, String Pool: %zu capacity", 
            l_stage2->indices_count, l_estimated_size, l_string_pool_capacity);
     
@@ -1360,7 +1268,43 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
 }
 
 /**
+ * @brief Materialize ref into old-style value (ONLY for PUBLIC API!)
+ * 
+ * Phase 2.0.3: This is the ONLY place where we convert internal refs
+ * back to old-style dap_json_value_t for API compatibility.
+ * 
+ * This is a MINIMAL wrapper - just type and ref_index, NO data copy!
+ */
+static dap_json_value_t *s_materialize_ref_to_value(
+    dap_json_stage2_t *a_stage2,
+    uint32_t ref_index
+)
+{
+    if (ref_index >= a_stage2->values_count) {
+        log_it(L_ERROR, "Invalid ref_index: %u (max: %zu)", ref_index, a_stage2->values_count);
+        return NULL;
+    }
+    
+    dap_json_value_t *ref = &a_stage2->values[ref_index];
+    
+    // Create minimal wrapper
+    dap_json_value_t *value = s_create_value_arena(a_stage2->arena);
+    if (!value) {
+        return NULL;
+    }
+    
+    value->type = (dap_json_type_t)ref->type;
+    
+    // NO data initialization! Everything stays in the ref!
+    // API layer will access data through ref when needed
+    
+    return value;
+}
+
+/**
  * @brief Get root value
+ * 
+ * Phase 2.0.3: Creates a wrapper from root ref for PUBLIC API
  */
 dap_json_value_t *dap_json_stage2_get_root(const dap_json_stage2_t *a_stage2)
 {
@@ -1368,7 +1312,16 @@ dap_json_value_t *dap_json_stage2_get_root(const dap_json_stage2_t *a_stage2)
         return NULL;
     }
     
-    return a_stage2->root;
+    // Phase 2.0.3: Materialize root ref into wrapper
+    // This is the ONLY conversion point from refs to old API!
+    if (a_stage2->root_value_index < a_stage2->values_count) {
+        return s_materialize_ref_to_value(
+            (dap_json_stage2_t*)a_stage2,  // Cast away const
+            a_stage2->root_value_index
+        );
+    }
+    
+    return NULL;
 }
 
 /**
@@ -1422,20 +1375,16 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
 }
 
 /* Forward declaration для recursive parsing */
-static dap_json_value_t *s_parse_value(
+static int32_t s_parse_value(
     dap_json_stage2_t *a_stage2,
     size_t *a_idx
 );
 
 /**
  * @brief Parse array value recursively
- * @details Начинает с '[' index, парсит elements, ожидает ']'
- * 
- * @param[in,out] a_stage2 Stage 2 parser
- * @param[in,out] a_idx Current index (will be updated)
- * @return Parsed array value, or NULL on error
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static dap_json_value_t *s_parse_array(
+static int32_t s_parse_array(
     dap_json_stage2_t *a_stage2,
     size_t *a_idx
 )
@@ -1445,23 +1394,27 @@ static dap_json_value_t *s_parse_array(
         snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
                  "Maximum nesting depth (%zu) exceeded", a_stage2->max_depth);
         a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
-        return NULL;
+        return -1;
     }
     
     a_stage2->current_depth++;
     
-    // Create array value using Arena
-    dap_json_value_t *l_array = s_create_value_arena(a_stage2->arena);
-    if(!l_array) {
+    // Track array elements as ref indices
+    uint32_t *element_ref_indices = NULL;
+    size_t element_count = 0;
+    size_t element_capacity = INITIAL_ARRAY_CAPACITY;
+    
+    // Pre-allocate element indices array in Arena
+    element_ref_indices = (uint32_t*)dap_arena_alloc(
+        a_stage2->arena,
+        sizeof(uint32_t) * element_capacity
+    );
+    
+    if (!element_ref_indices) {
         a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
         a_stage2->current_depth--;
-        return NULL;
+        return -1;
     }
-    
-    l_array->type = DAP_JSON_TYPE_ARRAY;
-    l_array->array.elements = NULL;
-    l_array->array.count = 0;
-    l_array->array.capacity = 0;
     
     a_stage2->arrays_created++;
     (*a_idx)++; // Skip '['
@@ -1471,36 +1424,47 @@ static dap_json_value_t *s_parse_array(
        a_stage2->indices[*a_idx].character == ']') {
         (*a_idx)++; // Skip ']'
         a_stage2->current_depth--;
-        return l_array;
+        
+        // Create empty array ref
+        dap_json_value_t l_array_ref = dap_json_array_create(NULL, 0);
+        return s_stage2_add_ref(a_stage2, &l_array_ref);
     }
     
     // Parse elements
     while(*a_idx < a_stage2->indices_count) {
-        // Parse value
-        dap_json_value_t *l_element = s_parse_value(a_stage2, a_idx);
-        if(!l_element) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_array);
+        // Parse value - returns ref_index!
+        int32_t element_ref_idx = s_parse_value(a_stage2, a_idx);
+        if(element_ref_idx < 0) {
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
-        if(!s_array_add_arena(a_stage2->arena, l_array, l_element)) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_element);
-            // dap_json_value_v2_free(l_array);
-            a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
-            a_stage2->current_depth--;
-            return NULL;
+        // Grow if needed
+        if (element_count >= element_capacity) {
+            size_t new_capacity = element_capacity * 2;
+            uint32_t *new_indices = (uint32_t*)dap_arena_alloc(
+                a_stage2->arena,
+                sizeof(uint32_t) * new_capacity
+            );
+            
+            if (!new_indices) {
+                a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
+                a_stage2->current_depth--;
+                return -1;
+            }
+            
+            memcpy(new_indices, element_ref_indices, sizeof(uint32_t) * element_count);
+            element_ref_indices = new_indices;
+            element_capacity = new_capacity;
         }
+        
+        element_ref_indices[element_count++] = (uint32_t)element_ref_idx;
         
         // Check next: ',' or ']'
         if(*a_idx >= a_stage2->indices_count) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
         uint8_t l_next = a_stage2->indices[*a_idx].character;
@@ -1508,37 +1472,42 @@ static dap_json_value_t *s_parse_array(
         if(l_next == ']') {
             (*a_idx)++; // Skip ']'
             a_stage2->current_depth--;
-            return l_array;
+            
+            // Create array ref with flat ref indices
+            dap_json_value_t l_array_ref = dap_json_array_create(
+                element_ref_indices,
+                element_count
+            );
+            
+            int32_t array_ref_idx = s_stage2_add_ref(a_stage2, &l_array_ref);
+            
+            debug_if(dap_json_get_debug(), L_DEBUG,
+                     "Phase 2.0.3: Array ref[%d] with %zu elements",
+                     array_ref_idx, element_count);
+            
+            return array_ref_idx;
         }
         else if(l_next == ',') {
             (*a_idx)++; // Skip ','
             continue;
         }
         else {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_array);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
     }
     
-    // NOTE: Arena owns all memory - no need to free
-    // dap_json_value_v2_free(l_array);
     a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
     a_stage2->current_depth--;
-    return NULL;
+    return -1;
 }
 
 /**
  * @brief Parse object value recursively
- * @details Начинает с '{' index, парсит key-value pairs, ожидает '}'
- * 
- * @param[in,out] a_stage2 Stage 2 parser
- * @param[in,out] a_idx Current index (will be updated)
- * @return Parsed object value, or NULL on error
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static dap_json_value_t *s_parse_object(
+static int32_t s_parse_object(
     dap_json_stage2_t *a_stage2,
     size_t *a_idx
 )
@@ -1548,23 +1517,27 @@ static dap_json_value_t *s_parse_object(
         snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
                  "Maximum nesting depth (%zu) exceeded", a_stage2->max_depth);
         a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
-        return NULL;
+        return -1;
     }
     
     a_stage2->current_depth++;
     
-    // Create object value using Arena
-    dap_json_value_t *l_object = s_create_value_arena(a_stage2->arena);
-    if(!l_object) {
+    // Track object pairs as ref indices [key, val, key, val, ...]
+    uint32_t *pair_ref_indices = NULL;
+    size_t pair_count = 0;
+    size_t pair_capacity = INITIAL_OBJECT_CAPACITY;
+    
+    // Pre-allocate pair indices array in Arena (2 indices per pair)
+    pair_ref_indices = (uint32_t*)dap_arena_alloc(
+        a_stage2->arena,
+        sizeof(uint32_t) * pair_capacity * 2
+    );
+    
+    if (!pair_ref_indices) {
         a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
         a_stage2->current_depth--;
-        return NULL;
+        return -1;
     }
-    
-    l_object->type = DAP_JSON_TYPE_OBJECT;
-    l_object->object.pairs = NULL;
-    l_object->object.count = 0;
-    l_object->object.capacity = 0;
     
     a_stage2->objects_created++;
     (*a_idx)++; // Skip '{'
@@ -1574,7 +1547,10 @@ static dap_json_value_t *s_parse_object(
        a_stage2->indices[*a_idx].character == '}') {
         (*a_idx)++; // Skip '}'
         a_stage2->current_depth--;
-        return l_object;
+        
+        // Create empty object ref
+        dap_json_value_t l_object_ref = dap_json_object_create(NULL, 0);
+        return s_stage2_add_ref(a_stage2, &l_object_ref);
     }
     
     // Parse key-value pairs
@@ -1583,76 +1559,70 @@ static dap_json_value_t *s_parse_object(
         uint32_t l_key_offset = a_stage2->indices[*a_idx].position;
         
         if(a_stage2->input[l_key_offset] != '"') {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->error_position = l_key_offset;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
-        dap_json_value_t *l_key_value = NULL;
         uint32_t l_key_end = 0;
         
-        if(!s_parse_string(a_stage2, l_key_offset,
-                           &l_key_value, &l_key_end)) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_object);
+        int32_t key_ref_idx = s_parse_string(a_stage2, l_key_offset, &l_key_end);
+        if(key_ref_idx < 0) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_STRING;
             a_stage2->error_position = l_key_offset;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
-        const char *l_key = l_key_value->string.data;
-        size_t l_key_len = l_key_value->string.length;
         (*a_idx)++; // Skip key string index
         
         // Expect ':'
         if(*a_idx >= a_stage2->indices_count ||
            a_stage2->indices[*a_idx].character != ':') {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_key_value);
-            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_MISSING_COLON;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
         (*a_idx)++; // Skip ':'
         
         // Parse value
-        dap_json_value_t *l_value = s_parse_value(a_stage2, a_idx);
-        if(!l_value) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_key_value);
-            // dap_json_value_v2_free(l_object);
+        int32_t value_ref_idx = s_parse_value(a_stage2, a_idx);
+        if(value_ref_idx < 0) {
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
-        // Add to object using Arena + String Pool (_n version for non-null-terminated)
-        if(!s_object_add_arena_n(a_stage2->arena, a_stage2->string_pool, l_object, l_key, l_key_len, l_value)) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_value);
-            // dap_json_value_v2_free(l_key_value);
-            // dap_json_value_v2_free(l_object);
-            a_stage2->error_code = STAGE2_ERROR_DUPLICATE_KEY;
-            a_stage2->current_depth--;
-            return NULL;
+        // Grow if needed
+        if (pair_count >= pair_capacity) {
+            size_t new_capacity = pair_capacity * 2;
+            uint32_t *new_indices = (uint32_t*)dap_arena_alloc(
+                a_stage2->arena,
+                sizeof(uint32_t) * new_capacity * 2
+            );
+            
+            if (!new_indices) {
+                a_stage2->error_code = STAGE2_ERROR_OUT_OF_MEMORY;
+                a_stage2->current_depth--;
+                return -1;
+            }
+            
+            memcpy(new_indices, pair_ref_indices, sizeof(uint32_t) * pair_count * 2);
+            pair_ref_indices = new_indices;
+            pair_capacity = new_capacity;
         }
         
-        // Key now interned in String Pool, key_value can be freed
-        // (но Arena owns it, так что просто забудем про него)
-        // dap_json_value_v2_free(l_key_value); - не нужно, Arena owns
+        // Store [key_ref, value_ref] pair
+        pair_ref_indices[pair_count * 2 + 0] = (uint32_t)key_ref_idx;
+        pair_ref_indices[pair_count * 2 + 1] = (uint32_t)value_ref_idx;
+        pair_count++;
         
         // Check next: ',' or '}'
         if(*a_idx >= a_stage2->indices_count) {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
         
         uint8_t l_next = a_stage2->indices[*a_idx].character;
@@ -1660,51 +1630,55 @@ static dap_json_value_t *s_parse_object(
         if(l_next == '}') {
             (*a_idx)++; // Skip '}'
             a_stage2->current_depth--;
-            return l_object;
+            
+            // Create object ref with flat ref pairs
+            dap_json_value_t l_object_ref = dap_json_object_create(
+                pair_ref_indices,
+                pair_count
+            );
+            
+            int32_t object_ref_idx = s_stage2_add_ref(a_stage2, &l_object_ref);
+            
+            debug_if(dap_json_get_debug(), L_DEBUG,
+                     "Phase 2.0.3: Object ref[%d] with %zu pairs",
+                     object_ref_idx, pair_count);
+            
+            return object_ref_idx;
         }
         else if(l_next == ',') {
             (*a_idx)++; // Skip ','
             continue;
         }
         else {
-            // NOTE: Arena owns all memory - no need to free
-            // dap_json_value_v2_free(l_object);
             a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
             a_stage2->current_depth--;
-            return NULL;
+            return -1;
         }
     }
     
-    // NOTE: Arena owns all memory - no need to free
-    // dap_json_value_v2_free(l_object);
     a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
     a_stage2->current_depth--;
-    return NULL;
+    return -1;
 }
 
 /**
  * @brief Parse value (any JSON value)
- * @details Диспетчер для всех типов значений
- * 
- * @param[in,out] a_stage2 Stage 2 parser
- * @param[in,out] a_idx Current index (will be updated)
- * @return Parsed value, or NULL on error
+ * @return ref_index in Stage 2 refs array, or -1 on error
  */
-static dap_json_value_t *s_parse_value(
+static int32_t s_parse_value(
     dap_json_stage2_t *a_stage2,
     size_t *a_idx
 )
 {
     if(*a_idx >= a_stage2->indices_count) {
         a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
-        return NULL;
+        return -1;
     }
     
     uint32_t l_offset = a_stage2->indices[*a_idx].position;
     uint8_t l_type = a_stage2->indices[*a_idx].character;
     uint8_t l_char = a_stage2->input[l_offset];
     
-    dap_json_value_t *l_value = NULL;
     uint32_t l_end_offset = 0;
     
     // Structural characters
@@ -1717,15 +1691,14 @@ static dap_json_value_t *s_parse_value(
     
     // String
     else if(l_char == '"') {
-        if(!s_parse_string(a_stage2, l_offset,
-                           &l_value, &l_end_offset)) {
+        int32_t ref_idx = s_parse_string(a_stage2, l_offset, &l_end_offset);
+        if(ref_idx < 0) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_STRING;
             a_stage2->error_position = l_offset;
-            return NULL;
+            return -1;
         }
-        a_stage2->strings_created++;
         (*a_idx)++;
-        return l_value;
+        return ref_idx;
     }
     
     // Number
@@ -1743,26 +1716,26 @@ static dap_json_value_t *s_parse_value(
             }
         }
         
-        if(!s_parse_number(a_stage2, l_offset, l_number_end, &l_value)) {
+        int32_t ref_idx = s_parse_number(a_stage2, l_offset, l_number_end);
+        if(ref_idx < 0) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_NUMBER;
             a_stage2->error_position = l_offset;
-            return NULL;
+            return -1;
         }
-        a_stage2->numbers_created++;
         (*a_idx)++;
-        return l_value;
+        return ref_idx;
     }
     
     // Literal (true, false, null)
     else {
-        if(!s_parse_literal(a_stage2, l_offset,
-                            &l_value, &l_end_offset)) {
+        int32_t ref_idx = s_parse_literal(a_stage2, l_offset, &l_end_offset);
+        if(ref_idx < 0) {
             a_stage2->error_code = STAGE2_ERROR_INVALID_LITERAL;
             a_stage2->error_position = l_offset;
-            return NULL;
+            return -1;
         }
         (*a_idx)++;
-        return l_value;
+        return ref_idx;
     }
 }
 
@@ -1784,16 +1757,23 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
     debug_if(s_debug_more, L_DEBUG, "Starting Stage 2 DOM building...");
     
     size_t l_idx = 0;
-    a_stage2->root = s_parse_value(a_stage2, &l_idx);
+    int32_t root_ref_idx = s_parse_value(a_stage2, &l_idx);
     
-    if(!a_stage2->root) {
+    if(root_ref_idx < 0) {
         log_it(L_ERROR, "Stage 2 parsing failed: %s (position %zu)",
                dap_json_stage2_error_to_string(a_stage2->error_code),
                a_stage2->error_position);
         return a_stage2->error_code;
     }
     
-    // Check for trailing garbage - all structural indices must be consumed
+    // ⭐ Phase 2.0.3: Store root ref index
+    a_stage2->root_value_index = (uint32_t)root_ref_idx;
+    a_stage2->root = NULL;  // No old-style root! Only ref_index!
+    
+    debug_if(dap_json_get_debug(), L_DEBUG,
+             "Phase 2.0.3: Root ref_index = %u", a_stage2->root_value_index);
+    
+    // Check for trailing garbage
     if(l_idx < a_stage2->indices_count) {
         log_it(L_ERROR, "Trailing garbage detected: %zu unused structural indices (used %zu of %zu)",
                a_stage2->indices_count - l_idx, l_idx, a_stage2->indices_count);
@@ -1803,9 +1783,9 @@ dap_json_stage2_error_t dap_json_stage2_run(dap_json_stage2_t *a_stage2)
         return a_stage2->error_code;
     }
     
-    debug_if(s_debug_more, L_INFO, "Stage 2 completed: objects=%zu arrays=%zu strings=%zu numbers=%zu",
+    debug_if(s_debug_more, L_INFO, "Stage 2 completed: objects=%zu arrays=%zu strings=%zu numbers=%zu, refs=%zu",
            a_stage2->objects_created, a_stage2->arrays_created,
-           a_stage2->strings_created, a_stage2->numbers_created);
+           a_stage2->strings_created, a_stage2->numbers_created, a_stage2->values_count);
     
     a_stage2->error_code = STAGE2_SUCCESS;
     return STAGE2_SUCCESS;

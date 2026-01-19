@@ -24,12 +24,16 @@
 
 #include "dap_common.h"
 #include "dap_json_type.h"
+#include "dap_json_value.h"  // Phase 2.0.4: For helper functions
+#include "internal/dap_json_stage2.h"   // Phase 2.0.4: For stage2 context
 #include "internal/dap_json_serialization.h"
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
 #include <locale.h>
+
+#define LOG_TAG "json_serialization"
 
 /* ========================================================================== */
 /*                     JSON SERIALIZATION IMPLEMENTATION                      */
@@ -215,36 +219,62 @@ static char* s_escape_string(const char *a_str)
     return l_result;
 }
 
-// Forward declaration
-static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t *a_size, size_t *a_capacity, int a_indent, bool a_pretty);
+// Forward declaration (Phase 2.0.4: needs source_buffer + stage2)
+static bool s_stringify_value(
+    dap_json_value_t *a_value,
+    const char *a_source_buffer,
+    struct dap_json_stage2 *a_stage2,
+    char **a_buffer,
+    size_t *a_size,
+    size_t *a_capacity,
+    int a_indent,
+    bool a_pretty
+);
 
 /**
- * @brief Stringify array
+ * @brief Stringify array (Phase 2.0.4: works with 8-byte values + source buffer)
  */
-static bool s_stringify_array(dap_json_array_t *a_array, char **a_buffer, size_t *a_size, size_t *a_capacity, int a_indent, bool a_pretty)
+static bool s_stringify_array(
+    dap_json_value_t *a_array_value,
+    const char *a_source_buffer,
+    struct dap_json_stage2 *a_stage2,
+    char **a_buffer,
+    size_t *a_size,
+    size_t *a_capacity,
+    int a_indent,
+    bool a_pretty
+)
 {
     if (!s_append_string(a_buffer, a_size, a_capacity, "[")) {
         return false;
     }
     
-    for (size_t i = 0; i < a_array->count; i++) {
-        if (a_pretty && a_array->count > 0) {
+    // Phase 2.0.4: Array elements stored as flat array of indices
+    uint32_t *element_indices = (uint32_t*)(uintptr_t)a_array_value->offset;
+    size_t count = a_array_value->length;
+    
+    for (size_t i = 0; i < count; i++) {
+        if (a_pretty && count > 0) {
             s_append_string(a_buffer, a_size, a_capacity, "\n");
             for (int j = 0; j < a_indent + 1; j++) {
                 s_append_string(a_buffer, a_size, a_capacity, "  ");
             }
         }
         
-        if (!s_stringify_value(a_array->elements[i], a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
+        // Get element value from Stage 2
+        uint32_t element_idx = element_indices[i];
+        dap_json_value_t *element_value = &a_stage2->values[element_idx];
+        
+        if (!s_stringify_value(element_value, a_source_buffer, a_stage2, a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
             return false;
         }
         
-        if (i < a_array->count - 1) {
+        if (i < count - 1) {
             s_append_string(a_buffer, a_size, a_capacity, ",");
         }
     }
     
-    if (a_pretty && a_array->count > 0) {
+    if (a_pretty && count > 0) {
         s_append_string(a_buffer, a_size, a_capacity, "\n");
         for (int j = 0; j < a_indent; j++) {
             s_append_string(a_buffer, a_size, a_capacity, "  ");
@@ -255,15 +285,28 @@ static bool s_stringify_array(dap_json_array_t *a_array, char **a_buffer, size_t
 }
 
 /**
- * @brief Stringify object
+ * @brief Stringify object (Phase 2.0.4: works with 8-byte values + source buffer)
  */
-static bool s_stringify_object(dap_json_object_t *a_object, char **a_buffer, size_t *a_size, size_t *a_capacity, int a_indent, bool a_pretty)
+static bool s_stringify_object(
+    dap_json_value_t *a_object_value,
+    const char *a_source_buffer,
+    struct dap_json_stage2 *a_stage2,
+    char **a_buffer,
+    size_t *a_size,
+    size_t *a_capacity,
+    int a_indent,
+    bool a_pretty
+)
 {
     if (!s_append_string(a_buffer, a_size, a_capacity, "{")) {
         return false;
     }
     
-    for (size_t i = 0; i < a_object->count; i++) {
+    // Phase 2.0.4: Object pairs stored as flat array [key_idx, val_idx, key_idx, val_idx, ...]
+    uint32_t *pair_indices = (uint32_t*)(uintptr_t)a_object_value->offset;
+    size_t count = a_object_value->length;  // Number of pairs
+    
+    for (size_t i = 0; i < count; i++) {
         if (a_pretty) {
             s_append_string(a_buffer, a_size, a_capacity, "\n");
             for (int j = 0; j < a_indent + 1; j++) {
@@ -271,8 +314,18 @@ static bool s_stringify_object(dap_json_object_t *a_object, char **a_buffer, siz
             }
         }
         
-        // Key
-        char *l_escaped_key = s_escape_string(a_object->pairs[i].key);
+        // Get key and value from Stage 2
+        uint32_t key_idx = pair_indices[i * 2];
+        uint32_t val_idx = pair_indices[i * 2 + 1];
+        
+        dap_json_value_t *key_value = &a_stage2->values[key_idx];
+        dap_json_value_t *value_value = &a_stage2->values[val_idx];
+        
+        // Key: get string from source buffer
+        const char *key_data = dap_json_get_ptr(key_value, a_source_buffer);
+        size_t key_len = dap_json_get_length(key_value);
+        
+        char *l_escaped_key = s_escape_string_n(key_data, key_len);
         if (!l_escaped_key) {
             return false;
         }
@@ -282,16 +335,16 @@ static bool s_stringify_object(dap_json_object_t *a_object, char **a_buffer, siz
         s_append_string(a_buffer, a_size, a_capacity, a_pretty ? ": " : ":");
         
         // Value
-        if (!s_stringify_value(a_object->pairs[i].value, a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
+        if (!s_stringify_value(value_value, a_source_buffer, a_stage2, a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
             return false;
         }
         
-        if (i < a_object->count - 1) {
+        if (i < count - 1) {
             s_append_string(a_buffer, a_size, a_capacity, ",");
         }
     }
     
-    if (a_pretty && a_object->count > 0) {
+    if (a_pretty && count > 0) {
         s_append_string(a_buffer, a_size, a_capacity, "\n");
         for (int j = 0; j < a_indent; j++) {
             s_append_string(a_buffer, a_size, a_capacity, "  ");
@@ -302,91 +355,92 @@ static bool s_stringify_object(dap_json_object_t *a_object, char **a_buffer, siz
 }
 
 /**
- * @brief Stringify value recursively
+ * @brief Stringify value recursively (Phase 2.0.4: works with 8-byte values)
  */
-static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t *a_size, size_t *a_capacity, int a_indent, bool a_pretty)
+static bool s_stringify_value(
+    dap_json_value_t *a_value,
+    const char *a_source_buffer,
+    struct dap_json_stage2 *a_stage2,
+    char **a_buffer,
+    size_t *a_size,
+    size_t *a_capacity,
+    int a_indent,
+    bool a_pretty
+)
 {
     if (!a_value) {
         return s_append_string(a_buffer, a_size, a_capacity, "null");
     }
     
-    char l_buf[64];
+    char l_buf[128];
     
     switch (a_value->type) {
         case DAP_JSON_TYPE_NULL:
             return s_append_string(a_buffer, a_size, a_capacity, "null");
             
-        case DAP_JSON_TYPE_BOOLEAN:
-            return s_append_string(a_buffer, a_size, a_capacity, a_value->boolean ? "true" : "false");
+        case DAP_JSON_TYPE_BOOLEAN: {
+            // Phase 2.0.4: Boolean stored in source, get from buffer
+            const char *bool_str = dap_json_get_ptr(a_value, a_source_buffer);
+            bool is_true = (bool_str[0] == 't');  // "true" or "false"
+            return s_append_string(a_buffer, a_size, a_capacity, is_true ? "true" : "false");
+        }
             
         case DAP_JSON_TYPE_INT:
-            snprintf(l_buf, sizeof(l_buf), "%" PRId64, a_value->number.i);
+        case DAP_JSON_TYPE_DOUBLE: {
+            // Phase 2.0.4: Lazy parsing - parse number from source
+            const char *num_str = dap_json_get_ptr(a_value, a_source_buffer);
+            size_t num_len = dap_json_get_length(a_value);
+            
+            // Copy number string (it's NOT null-terminated in source!)
+            if (num_len >= sizeof(l_buf)) {
+                log_it(L_ERROR, "Number too long: %zu bytes", num_len);
+                return false;
+            }
+            memcpy(l_buf, num_str, num_len);
+            l_buf[num_len] = '\0';
+            
             return s_append_string(a_buffer, a_size, a_capacity, l_buf);
+        }
             
         case DAP_JSON_TYPE_UINT64:
-            snprintf(l_buf, sizeof(l_buf), "%" PRIu64, a_value->number.u64);
-            return s_append_string(a_buffer, a_size, a_capacity, l_buf);
-            
-        case DAP_JSON_TYPE_UINT128: {
-            // Serialize uint128 as hex string quoted (for JSON compatibility)
-            uint128_t l_u128 = a_value->number.u128;
-            uint64_t l_hi = (uint64_t)(l_u128 >> 64);
-            uint64_t l_lo = (uint64_t)l_u128;
-            char l_u128_str[48];
-            snprintf(l_u128_str, sizeof(l_u128_str), "\"0x%016" PRIx64 "%016" PRIx64 "\"", l_hi, l_lo);
-            return s_append_string(a_buffer, a_size, a_capacity, l_u128_str);
-        }
-            
+        case DAP_JSON_TYPE_UINT128:
         case DAP_JSON_TYPE_UINT256: {
-            // Serialize uint256 as hex string quoted
-            uint256_t l_u256 = a_value->number.u256;
-            char l_u256_str[128];
-            snprintf(l_u256_str, sizeof(l_u256_str), "\"0x%016" PRIx64 "%016" PRIx64 "\"",
-                     (uint64_t)(l_u256.hi), (uint64_t)(l_u256.lo));
-            return s_append_string(a_buffer, a_size, a_capacity, l_u256_str);
-        }
+            // Phase 2.0.4: Same as INT/DOUBLE - lazily parsed
+            const char *num_str = dap_json_get_ptr(a_value, a_source_buffer);
+            size_t num_len = dap_json_get_length(a_value);
             
-        case DAP_JSON_TYPE_DOUBLE: {
-            // Format double with appropriate precision
-            double d = a_value->number.d;
+            if (num_len >= sizeof(l_buf)) {
+                log_it(L_ERROR, "Number too long: %zu bytes", num_len);
+                return false;
+            }
+            memcpy(l_buf, num_str, num_len);
+            l_buf[num_len] = '\0';
             
-            // Handle Infinity and NaN (not standard JSON, but useful)
-            if (isinf(d)) {
-                return s_append_string(a_buffer, a_size, a_capacity, 
-                                      d > 0 ? "\"Infinity\"" : "\"-Infinity\"");
-            }
-            if (isnan(d)) {
-                return s_append_string(a_buffer, a_size, a_capacity, "\"NaN\"");
-            }
-            
-            if (d == (int64_t)d) {
-                s_snprintf_double_c_locale(l_buf, sizeof(l_buf), "%.1f", d); // e.g., 3.0
-            } else {
-                // IEEE 754 double precision requires 17 significant digits for lossless round-trip
-                // (53 bits mantissa = log10(2^53) ≈ 15.95 digits, need 17 for full precision)
-                s_snprintf_double_c_locale(l_buf, sizeof(l_buf), "%.17g", d);
-            }
             return s_append_string(a_buffer, a_size, a_capacity, l_buf);
         }
             
         case DAP_JSON_TYPE_STRING: {
-            // Use explicit length for zero-copy strings (may not be null-terminated)
-            char *l_escaped = s_escape_string_n(a_value->string.data, a_value->string.length);
+            // Phase 2.0.4: String in source buffer (zero-copy!)
+            const char *str_data = dap_json_get_ptr(a_value, a_source_buffer);
+            size_t str_len = dap_json_get_length(a_value);
+            
+            char *l_escaped = s_escape_string_n(str_data, str_len);
             if (!l_escaped) {
                 return false;
             }
-            bool l_result = s_append_string(a_buffer, a_size, a_capacity, l_escaped);
+            bool result = s_append_string(a_buffer, a_size, a_capacity, l_escaped);
             DAP_DELETE(l_escaped);
-            return l_result;
+            return result;
         }
             
         case DAP_JSON_TYPE_ARRAY:
-            return s_stringify_array(&a_value->array, a_buffer, a_size, a_capacity, a_indent, a_pretty);
+            return s_stringify_array(a_value, a_source_buffer, a_stage2, a_buffer, a_size, a_capacity, a_indent, a_pretty);
             
         case DAP_JSON_TYPE_OBJECT:
-            return s_stringify_object(&a_value->object, a_buffer, a_size, a_capacity, a_indent, a_pretty);
+            return s_stringify_object(a_value, a_source_buffer, a_stage2, a_buffer, a_size, a_capacity, a_indent, a_pretty);
             
         default:
+            log_it(L_ERROR, "Unknown JSON type: %d", a_value->type);
             return false;
     }
 }
@@ -397,49 +451,25 @@ static bool s_stringify_value(dap_json_value_t *a_value, char **a_buffer, size_t
 
 /**
  * @brief Serialize JSON value to string (compact format)
+ * Phase 2.0.4: Needs source_buffer and stage2 context
  */
 char* dap_json_value_serialize(dap_json_value_t *a_value)
 {
-    if (!a_value) {
-        return NULL;
-    }
-    
-    size_t l_capacity = 1024;
-    size_t l_size = 0;
-    char *l_buffer = DAP_NEW_Z_SIZE(char, l_capacity);
-    if (!l_buffer) {
-        return NULL;
-    }
-    
-    if (!s_stringify_value(a_value, &l_buffer, &l_size, &l_capacity, 0, false)) {
-        DAP_DELETE(l_buffer);
-        return NULL;
-    }
-    
-    return l_buffer;
+    // TODO Phase 2.0.4: This needs refactoring to accept source_buffer + stage2
+    log_it(L_ERROR, "dap_json_value_serialize: Needs source_buffer + stage2 context (Phase 2.0.4)");
+    return NULL;
 }
 
 /**
- * @brief Serialize JSON value to string (pretty-printed format)
+ * @brief Phase 2.0.4: Serialize JSON value to string (NOT YET IMPLEMENTED)
+ * @note This function requires context (source_buffer + stage2 for ARENA, or wrapper for MALLOC)
+ *       Use dap_json_object_to_string() instead, which works with wrappers.
  */
 char* dap_json_value_serialize_pretty(dap_json_value_t *a_value)
 {
-    if (!a_value) {
-        return NULL;
-    }
-    
-    size_t l_capacity = 1024;
-    size_t l_size = 0;
-    char *l_buffer = DAP_NEW_Z_SIZE(char, l_capacity);
-    if (!l_buffer) {
-        return NULL;
-    }
-    
-    if (!s_stringify_value(a_value, &l_buffer, &l_size, &l_capacity, 0, true)) {
-        DAP_DELETE(l_buffer);
-        return NULL;
-    }
-    
-    return l_buffer;
+    (void)a_value;
+    // TODO Phase 2.0.4: This needs refactoring to accept source_buffer + stage2
+    log_it(L_ERROR, "dap_json_value_serialize_pretty: Needs source_buffer + stage2 context (Phase 2.0.4)");
+    return NULL;
 }
 
