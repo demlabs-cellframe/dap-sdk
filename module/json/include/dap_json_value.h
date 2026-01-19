@@ -91,8 +91,11 @@ static inline bool dap_json_is_extended(const dap_json_value_t *val) {
  */
 static inline size_t dap_json_get_length(const dap_json_value_t *val) {
     if (dap_json_is_extended(val)) {
-        const dap_json_value_ext_t *ext = (const dap_json_value_ext_t *)val;
-        return ext->ext_length;
+        // ⚠️ ВАЖНО: Не кастим packed → unpacked напрямую (alignment warning)!
+        // Читаем ext_length через memcpy для корректного alignment
+        size_t ext_length;
+        memcpy(&ext_length, &((const dap_json_value_ext_t *)val)->ext_length, sizeof(size_t));
+        return ext_length;
     }
     return val->length;
 }

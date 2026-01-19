@@ -133,6 +133,9 @@ struct dap_json {
     
     dap_json_mode_t mode;            /**< ⭐ NEW: Operation mode (arena/malloc) */
     
+    // ⭐ NEW: Source buffer for zero-copy string access
+    const char *input_buffer;        /**< Original JSON input buffer (for offset-based strings) */
+    
     // Mode-specific data (union to save memory)
     union {
         // ARENA_IMMUTABLE mode (parsed JSON)
@@ -290,6 +293,9 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
         // Parent owns stage2/arena, so as long as parent is alive, value is valid
         l_json->arena.parent = a_parent;
         // Phase 2.0.4: No arena_page_handle in borrowed refs - parent owns stage2
+        
+        // ⭐ Phase 2.0.5: Inherit input_buffer for zero-copy strings
+        l_json->input_buffer = a_parent->input_buffer;
         
         // Increment parent refcount to keep it alive
         a_parent->ref_count++;
@@ -482,8 +488,11 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     l_result->arena.stage2 = l_stage2; // ROOT wrapper owns stage2
     l_result->arena.parent = NULL; // Root has no parent
     
-    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: mode=ARENA_IMMUTABLE, stage2=%p", 
-             l_result->arena.stage2);
+    // ⭐ Phase 2.0.5: Set input buffer for zero-copy string access
+    l_result->input_buffer = (const char*)l_parse_input;
+    
+    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: mode=ARENA_IMMUTABLE, stage2=%p, input_buffer=%p", 
+             l_result->arena.stage2, l_result->input_buffer);
     
     // Cleanup Stage 1 (transcoded buffer ownership transferred to Stage 2)
     dap_json_stage1_free(l_stage1);
@@ -1700,8 +1709,8 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
         *a_out_length = l_value->length;
     }
     
-    // Phase 2.0.4: Use helper to get string pointer (mode-aware)
-    return dap_json_get_ptr(l_value, a_json);
+    // ⭐ Phase 2.0.5: Zero-copy string access via offset
+    return dap_json_get_ptr(l_value, a_json->input_buffer);
 }
 
 /**
@@ -2266,8 +2275,8 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
         *a_out_length = l_value->length;
     }
     
-    // Phase 2.0.4: Use helper to get string pointer (mode-aware)
-    return dap_json_get_ptr(l_value, a_json);
+    // ⭐ Phase 2.0.5: Zero-copy string access via offset
+    return dap_json_get_ptr(l_value, a_json->input_buffer);
 }
 
 /**
