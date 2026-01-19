@@ -204,28 +204,9 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # =========================================
-# Test 11: Stage 2 Reference Implementation
+# Note: test_stage2_ref removed - legacy test for old 56-byte structure
+# Current Phase 2.0.4 uses 8-byte offset-based dap_json_value_t
 # =========================================
-# Coverage: DOM building, value parsing, tree assembly
-# Tests: 13+ test cases (Phase 1.2)
-project(test_json_stage2_ref)
-
-add_executable(${PROJECT_NAME}
-    test_stage2_ref.c
-)
-
-dap_test_add_includes(${PROJECT_NAME})
-dap_test_link_libraries(${PROJECT_NAME})
-
-add_test(
-    NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
-)
-
-set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
-    LABELS "unit;json;stage2;reference;critical"
-)
 
 # =========================================
 # Test 11: SIMD Correctness Tests (Phase 1.4)
