@@ -70,7 +70,7 @@ BEGIN {
     is_void = 0
     macro_type = ""  # "CUSTOM", "NONVOID", "VOID"
 }
-/DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
+/(^|[^a-zA-Z0-9_])(DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)($|[^a-zA-Z0-9_])/ {
     in_custom = 1
     paren_level = 0
     found_opening_paren = 0
@@ -81,13 +81,13 @@ BEGIN {
     is_void = 0
     macro_type = ""
     
-    if (match($0, /DAP_MOCK_CUSTOM\s*\(/)) {
+    if (match($0, /(^|[^a-zA-Z0-9_])DAP_MOCK_CUSTOM\s*\(/)) {
         macro_type = "CUSTOM"
-    } else if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+    } else if (match($0, /(^|[^a-zA-Z0-9_])DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
         macro_type = "CUSTOM"
-    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
+    } else if (match($0, /(^|[^a-zA-Z0-9_])_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
         macro_type = "NONVOID"
-    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID\s*\(/)) {
+    } else if (match($0, /(^|[^a-zA-Z0-9_])_DAP_MOCK_WRAPPER_CUSTOM_VOID\s*\(/)) {
         macro_type = "VOID"
     }
     
