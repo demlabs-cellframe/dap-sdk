@@ -26,6 +26,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_arena.h"  // For arena allocation
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage1_ref.h"
 
@@ -34,6 +35,10 @@
 
 // Debug flag: detailed logs (below WARNING level)
 static bool s_debug_more = false;
+
+// ⚡ Thread-local arena shared with Stage 2 (forward declaration)
+// NOTE: This is defined in stage2_ref.c and MUST be initialized before Stage 1 use
+extern _Thread_local dap_arena_t *s_thread_json_arena;
 
 // Initial capacity for structural indices array
 #define INITIAL_INDICES_CAPACITY    256
@@ -513,6 +518,26 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
     a_stage1->string_chars = 0;
     a_stage1->whitespace_chars = 0;
     a_stage1->structural_chars = 0;
+    
+    // ⚡ Phase 2.3: Initialize container size tracking (integrated into Stage 1)
+    a_stage1->container_sizes_count = 0;
+    a_stage1->nesting_depth = -1;  // -1 = root level
+    
+    // ⚡ Allocate container_sizes array using thread-local arena (zero malloc overhead!)
+    // Arena is shared with Stage 2 and will be reset between parses
+    if (!a_stage1->container_sizes && s_thread_json_arena) {
+        a_stage1->container_sizes_capacity = 256;  // Initial capacity
+        a_stage1->container_sizes = (size_t*)dap_arena_alloc(s_thread_json_arena, 
+                                                              sizeof(size_t) * a_stage1->container_sizes_capacity);
+        if (!a_stage1->container_sizes) {
+            log_it(L_ERROR, "Failed to allocate container_sizes array from arena");
+            a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
+            return a_stage1->error_code;
+        }
+        debug_if(s_debug_more, L_DEBUG, "⚡ Allocated container_sizes from arena (%zu entries)", 
+                 a_stage1->container_sizes_capacity);
+    }
+    
     a_stage1->error_code = STAGE1_SUCCESS;
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
@@ -548,6 +573,25 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                         return a_stage1->error_code;
                     }
                     
+                    // ⚡ Phase 2.3: Count array elements during tokenization
+                    if (a_stage1->nesting_depth >= 0) {
+                        int32_t l_container_idx = a_stage1->nesting_stack[a_stage1->nesting_depth];
+                        // Only increment for arrays (not objects - objects use ':')
+                        // Check previous token: if it's NOT ':', this is an array element
+                        if (a_stage1->indices_count >= 2) {
+                            dap_json_struct_index_t *l_prev = &a_stage1->indices[a_stage1->indices_count - 2];
+                            if (l_prev->character != ':') {
+                                a_stage1->container_sizes[l_container_idx]++;
+                            }
+                        } else if (a_stage1->indices_count == 1) {
+                            // First element after '[' or '{'
+                            dap_json_struct_index_t *l_prev = &a_stage1->indices[0];
+                            if (l_prev->character == '[') {
+                                a_stage1->container_sizes[l_container_idx]++;
+                            }
+                        }
+                    }
+                    
                     // Update position
                     a_stage1->current_pos = l_new_pos;
                 }
@@ -562,10 +606,78 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                 }
                 
                 // Count arrays and objects for Phase 2.1 pre-allocation
-                if (c == '[') {
-                    a_stage1->array_count++;
-                } else if (c == '{') {
-                    a_stage1->object_count++;
+                // ⚡ Phase 2.3: Track container sizes DURING tokenization (zero overhead!)
+                if (c == '[' || c == '{') {
+                    // Container start - push to stack
+                    a_stage1->nesting_depth++;
+                    if (a_stage1->nesting_depth >= 1000) {
+                        log_it(L_ERROR, "Max nesting depth exceeded");
+                        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                        return a_stage1->error_code;
+                    }
+                    
+                    // Allocate size entry (grow if needed)
+                    if (a_stage1->container_sizes_count >= a_stage1->container_sizes_capacity) {
+                        size_t l_new_cap = a_stage1->container_sizes_capacity * 2;
+                        
+                        // ⚡ Use arena allocation for growth (no malloc!)
+                        if (s_thread_json_arena) {
+                            size_t *l_new_sizes = (size_t*)dap_arena_alloc(s_thread_json_arena, 
+                                                                            l_new_cap * sizeof(size_t));
+                            if (!l_new_sizes) {
+                                log_it(L_ERROR, "Failed to grow container_sizes array from arena");
+                                a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
+                                return a_stage1->error_code;
+                            }
+                            
+                            // Copy old data
+                            memcpy(l_new_sizes, a_stage1->container_sizes, 
+                                   a_stage1->container_sizes_count * sizeof(size_t));
+                            
+                            a_stage1->container_sizes = l_new_sizes;
+                            a_stage1->container_sizes_capacity = l_new_cap;
+                            
+                            debug_if(s_debug_more, L_DEBUG, "⚡ Grew container_sizes array to %zu entries (arena)", l_new_cap);
+                        } else {
+                            // Fallback to realloc if arena not available
+                            size_t *l_new_sizes = (size_t*)DAP_REALLOC(a_stage1->container_sizes, 
+                                                                        l_new_cap * sizeof(size_t));
+                            if (!l_new_sizes) {
+                                log_it(L_ERROR, "Failed to grow container_sizes array");
+                                a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
+                                return a_stage1->error_code;
+                            }
+                            a_stage1->container_sizes = l_new_sizes;
+                            a_stage1->container_sizes_capacity = l_new_cap;
+                        }
+                    }
+                    
+                    a_stage1->nesting_stack[a_stage1->nesting_depth] = (int32_t)a_stage1->container_sizes_count;
+                    a_stage1->container_sizes[a_stage1->container_sizes_count] = 0;  // Initial size
+                    a_stage1->container_sizes_count++;
+                    
+                    if (c == '[') {
+                        a_stage1->array_count++;
+                    } else {
+                        a_stage1->object_count++;
+                    }
+                    
+                } else if (c == ']' || c == '}') {
+                    // Container end - pop from stack
+                    if (a_stage1->nesting_depth >= 0) {
+                        a_stage1->nesting_depth--;
+                    }
+                    
+                } else if (c == ',') {
+                    // Element/pair separator - we'll count actual elements below
+                    // (not here, as ',' can be misleading for empty values)
+                    
+                } else if (c == ':') {
+                    // Key-value separator in object
+                    if (a_stage1->nesting_depth >= 0) {
+                        int32_t l_container_idx = a_stage1->nesting_stack[a_stage1->nesting_depth];
+                        a_stage1->container_sizes[l_container_idx]++;  // Count pairs
+                    }
                 }
                 
                 a_stage1->current_pos++;

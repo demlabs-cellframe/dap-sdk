@@ -87,7 +87,8 @@ static bool s_debug_more = false;
 
 // ⭐ Thread-local refcounted arena for JSON parsing
 // Reused across multiple parse calls in the same thread for efficiency
-static _Thread_local dap_arena_t *s_thread_json_arena = NULL;
+// EXPORTED for Stage 1 container size allocation (zero malloc overhead!)
+_Thread_local dap_arena_t *s_thread_json_arena = NULL;
 
 // ⭐ Thread-local string pool for object keys
 // Reused across multiple parse calls in the same thread for efficiency
@@ -1428,13 +1429,27 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     l_stage2->values_count = 0;
     l_stage2->root_value_index = 0;
     
-    // ⚡ Phase 2.2: Pre-calculate container sizes for zero-reallocation parsing
-    l_stage2->container_sizes = s_precalc_container_sizes(a_stage1, s_thread_json_arena);
-    if (!l_stage2->container_sizes) {
-        log_it(L_ERROR, "Failed to pre-calculate container sizes");
-        DAP_DELETE(l_stage2);
-        return NULL;
+    // ⚡ Phase 2.2: ADAPTIVE pre-calculation with Stage 1 integration (in progress)
+    // Threshold: 1 MB+ (configurable, optimal based on benchmarks)
+    // TODO Phase 2.3: Move calculation INTO Stage 1 for zero overhead
+    const size_t PRECALC_THRESHOLD = 1024 * 1024;  // 1 MB
+    
+    if (a_stage1->input_len >= PRECALC_THRESHOLD) {
+        l_stage2->container_sizes = s_precalc_container_sizes(a_stage1, s_thread_json_arena);
+        if (!l_stage2->container_sizes) {
+            log_it(L_WARNING, "Pre-calc failed, falling back to dynamic allocation");
+        } else {
+            debug_if(s_debug_more, L_DEBUG, 
+                     "⚡ ADAPTIVE: Using pre-calc for large JSON (%zu KB)", 
+                     a_stage1->input_len / 1024);
+        }
+    } else {
+        l_stage2->container_sizes = NULL;
+        debug_if(s_debug_more, L_DEBUG, 
+                 "⚡ ADAPTIVE: Skipping pre-calc for small JSON (%zu KB < %zu KB threshold)",
+                 a_stage1->input_len / 1024, PRECALC_THRESHOLD / 1024);
     }
+    
     l_stage2->current_array_idx = 0;
     l_stage2->current_object_idx = 0;
     

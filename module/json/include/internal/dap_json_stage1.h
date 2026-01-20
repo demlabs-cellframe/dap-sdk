@@ -155,6 +155,13 @@ typedef struct {
     size_t whitespace_chars;    /**< Number of whitespace chars */
     size_t structural_chars;    /**< Number of structural chars */
     
+    /* ⚡ Phase 2.3: Container size pre-calculation (integrated into Stage 1) */
+    size_t *container_sizes;    /**< Array of container sizes (alternating: array, object, array, object...) */
+    size_t container_sizes_capacity; /**< Allocated capacity */
+    size_t container_sizes_count;    /**< Number of containers */
+    int32_t nesting_stack[1000]; /**< Stack for tracking nested containers during tokenization */
+    int32_t nesting_depth;       /**< Current nesting depth */
+    
     /* Error handling */
     int error_code;             /**< Error code (0 = success) */
     size_t error_position;      /**< Position of error */
