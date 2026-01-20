@@ -1799,10 +1799,11 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
                  "Created thread-local %s string pool (capacity: %zu)", 
                  l_arena_tier, l_string_pool_capacity);
     } else {
-        // Clear string pool for reuse (это также сбросит арену!)
-        dap_string_pool_clear(*l_selected_string_pool);
+        // ⚠️ DON'T clear string pool here - it would reset arena!
+        // String pool will naturally reuse entries via hash table
+        // Arena grows and reuses freed space automatically
         debug_if(s_debug_more, L_DEBUG, 
-                 "Reusing thread-local %s string pool (cleared, arena reset)",
+                 "Reusing thread-local %s string pool (arena grows naturally)",
                  l_arena_tier);
     }
     
@@ -1972,8 +1973,8 @@ void dap_json_stage2_free(dap_json_stage2_t *a_stage2)
     // String Pool also uses arena memory, so no need to free it separately
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: arena is thread-local, not freed (will be reused)");
     
-    // NOTE: root pointer and all values remain valid until next parse or thread exit
-    // Caller should keep ref'd borrowed references alive via dap_arena_page_ref()
+    // NOTE: Allocated memory remains valid until next parse or thread exit
+    // For long-running threads, user can explicitly call cleanup functions
     DAP_DELETE(a_stage2);
     debug_if(s_debug_more, L_DEBUG, "Stage 2 free: complete");
 }
