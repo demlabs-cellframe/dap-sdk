@@ -1471,6 +1471,16 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
         return NULL;
     }
     
+    // ⚡ PHASE 2.1.5: Small JSON Fast Path Detection
+    // For tiny JSON (<1KB, <100 tokens), use optimized allocation strategy
+    const bool l_is_small_json = (a_stage1->input_len < 1024 && a_stage1->indices_count < 100);
+    
+    if (l_is_small_json) {
+        debug_if(dap_json_get_debug(), L_DEBUG, 
+                 "⚡ Small JSON fast path: %zu bytes, %zu tokens", 
+                 a_stage1->input_len, a_stage1->indices_count);
+    }
+    
     dap_json_stage2_t *l_stage2 = DAP_NEW_Z(dap_json_stage2_t);
     if(!l_stage2) {
         log_it(L_ERROR, "Failed to allocate Stage 2 parser");
@@ -1531,23 +1541,34 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
              l_total_values, l_array_count, l_object_count, l_estimated_size);
     
     // ⚡ PHASE 2.2: More aggressive caps to reduce memory (SimdJSON target: <10 MB)
-    // Small JSON (<1KB): cap at 8KB (was 16KB)
-    // Medium JSON (<100KB): cap at 256KB (was 512KB)
-    // Large JSON: cap at 2x JSON size (was 4x)
-    const size_t MAX_PREALLOC_SMALL = 8 * 1024;    // 8 KB
-    const size_t MAX_PREALLOC_MEDIUM = 256 * 1024; // 256 KB
-    const size_t MAX_PREALLOC_LARGE = a_stage1->input_len * 2; // 2x JSON size
+    // PHASE 2.1.5: Special handling for small JSON
+    size_t MAX_PREALLOC_SMALL, MAX_PREALLOC_MEDIUM, MAX_PREALLOC_LARGE;
+    
+    if (l_is_small_json) {
+        // ⚡ Small JSON Fast Path: ultra-minimal allocation
+        MAX_PREALLOC_SMALL = 4 * 1024;      // 4 KB (was 8 KB)
+        MAX_PREALLOC_MEDIUM = 128 * 1024;   // 128 KB
+        MAX_PREALLOC_LARGE = a_stage1->input_len;  // 1x JSON size (was 2x)
+        
+        debug_if(dap_json_get_debug(), L_DEBUG,
+                 "⚡ Small JSON: minimal allocation strategy (4KB cap)");
+    } else {
+        // Normal path
+        MAX_PREALLOC_SMALL = 8 * 1024;      // 8 KB
+        MAX_PREALLOC_MEDIUM = 256 * 1024;   // 256 KB
+        MAX_PREALLOC_LARGE = a_stage1->input_len * 2;  // 2x JSON size
+    }
     
     if (a_stage1->input_len < 1024 && l_estimated_size > MAX_PREALLOC_SMALL) {
-        log_it(L_DEBUG, "Pre-allocation capped (small JSON): requested=%zu KB, capped to=%zu KB", 
+        debug_if(dap_json_get_debug(),L_DEBUG, "Pre-allocation capped (small JSON): requested=%zu KB, capped to=%zu KB", 
                l_estimated_size / 1024, MAX_PREALLOC_SMALL / 1024);
         l_estimated_size = MAX_PREALLOC_SMALL;
     } else if (a_stage1->input_len < 102400 && l_estimated_size > MAX_PREALLOC_MEDIUM) {
-        log_it(L_DEBUG, "Pre-allocation capped (medium JSON): requested=%zu KB, capped to=%zu KB", 
+        debug_if(dap_json_get_debug(),L_DEBUG, "Pre-allocation capped (medium JSON): requested=%zu KB, capped to=%zu KB", 
                l_estimated_size / 1024, MAX_PREALLOC_MEDIUM / 1024);
         l_estimated_size = MAX_PREALLOC_MEDIUM;
     } else if (l_estimated_size > MAX_PREALLOC_LARGE) {
-        log_it(L_DEBUG, "Pre-allocation capped (large JSON): requested=%zu MB, capped to=%zu MB", 
+        debug_if(dap_json_get_debug(),L_DEBUG, "Pre-allocation capped (large JSON): requested=%zu MB, capped to=%zu MB", 
                l_estimated_size / (1024*1024), MAX_PREALLOC_LARGE / (1024*1024));
         l_estimated_size = MAX_PREALLOC_LARGE;
     }
@@ -1582,9 +1603,15 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     // ⚠️ DON'T reset arena here - string_pool_clear will do it!
     
     // ⭐ Reuse thread-local string pool (create if first time)
-    size_t l_string_pool_capacity = a_stage1->indices_count / 4;
-    if (l_string_pool_capacity < 32) {
-        l_string_pool_capacity = 32;
+    // ⚡ PHASE 2.1.5: For small JSON, use minimal string pool (most strings are short)
+    size_t l_string_pool_capacity;
+    if (l_is_small_json) {
+        l_string_pool_capacity = 16;  // Minimal capacity for small JSON
+    } else {
+        l_string_pool_capacity = a_stage1->indices_count / 4;
+        if (l_string_pool_capacity < 32) {
+            l_string_pool_capacity = 32;
+        }
     }
     
     if (!s_thread_string_pool) {
