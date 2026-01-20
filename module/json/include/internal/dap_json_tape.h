@@ -34,71 +34,51 @@ extern "C" {
 /**
  * @brief Tape entry - 64-bit value representing one JSON element
  * 
- * Layout: [8-bit type][8-bit flags][48-bit payload]
+ * Layout: [8-bit type][56-bit payload]
  * 
- * The payload interpretation depends on type:
+ * This is a SIMPLE uint64_t with embedded type in high byte.
+ * No bitfields, no unions, no complexity - just fast bit operations.
  * 
- * **Containers (OBJECT/ARRAY):**
- *   - payload = tape index of matching closing bracket
+ * **Payload Interpretation (depends on type):**
+ * 
+ * **Containers (OBJECT/ARRAY START):**
+ *   - payload = tape index of matching closing bracket (from Stage 1!)
  *   - Enables O(1) skip over entire container
  * 
  * **Strings:**
- *   - payload.offset = byte offset into input buffer (24 bits = 16MB limit)
- *   - payload.length = string length in bytes (24 bits = 16MB limit)
+ *   - payload = offset into input buffer (56 bits = 64 PB limit!)
+ *   - Length: stored separately in Stage 1 OR computed on-demand
  *   - Zero-copy: string data lives in input buffer
  * 
  * **Numbers:**
- *   - payload.offset = byte offset into input buffer (48 bits)
+ *   - payload = offset into input buffer
  *   - Lazy parse: converted to int64/double only when accessed
  * 
  * **Literals (true/false/null):**
- *   - payload = literal value encoded in low bits
+ *   - payload = unused (type byte is enough)
  * 
  * **Design Rationale:**
- * - 8 bytes = cache-line friendly, fast to scan
- * - Type byte = quick dispatch without unpacking
- * - 48-bit payload = enough for 16MB JSON documents
- * - Compact format = better cache utilization than pointer-based tree
+ * - Pure uint64_t = portable, fast, no alignment issues
+ * - 56-bit payload = enough for ANY realistic use case
+ * - Type in high byte = fast extraction with single shift
+ * - Compatible with SimdJSON architecture
+ * - Perfect for SIMD operations (8 entries = 64 bytes = cache line)
+ * 
+ * **Performance:**
+ * - sizeof = 8 bytes (verified at compile time)
+ * - Alignment = 8 bytes (natural uint64_t alignment)
+ * - Cache-friendly sequential access
  */
-typedef struct {
-    uint8_t type;        ///< dap_json_type_t - JSON element type
-    uint8_t flags;       ///< Extension flags (reserved for future)
-    uint16_t reserved;   ///< Padding/future use
-    
-    /// Payload - interpretation depends on type
-    union {
-        uint32_t u32;    ///< Generic 32-bit value
-        
-        /// String payload (for TYPE_STRING)
-        struct {
-            uint32_t offset : 24;  ///< Offset into input buffer (0-16MB)
-            uint32_t length : 24;  ///< String length in bytes (0-16MB)
-        } string;
-        
-        /// Container payload (for TYPE_OBJECT/TYPE_ARRAY)
-        struct {
-            uint32_t close_idx;    ///< Tape index of closing bracket
-        } container;
-        
-        /// Number payload (for TYPE_INT/TYPE_UINT64/TYPE_DOUBLE)
-        struct {
-            uint32_t offset : 24;  ///< Offset into input buffer
-            uint32_t length : 8;   ///< Number string length (for validation)
-        } number;
-        
-        /// Literal payload (for TYPE_BOOL/TYPE_NULL)
-        struct {
-            uint32_t value : 1;    ///< For bool: 0=false, 1=true
-        } literal;
-        
-        /// Raw 48-bit payload for direct access
-        uint64_t u48 : 48;
-    } payload;
-} dap_json_tape_entry_t;
+typedef uint64_t dap_json_tape_entry_t;
+
+/// Type byte position (high 8 bits)
+#define DAP_TAPE_TYPE_SHIFT     56
+#define DAP_TAPE_TYPE_MASK      0xFF00000000000000ULL
+#define DAP_TAPE_PAYLOAD_MASK   0x00FFFFFFFFFFFFFFULL
 
 /// Compile-time size check
 _Static_assert(sizeof(dap_json_tape_entry_t) == 8, 
-               "Tape entry must be exactly 8 bytes for optimal performance");
+               "Tape entry must be exactly 8 bytes");
 
 /* ========================================================================== */
 /*                              TAPE TYPES                                    */
@@ -129,24 +109,26 @@ typedef enum {
  *          into a flat tape array in ONE pass.
  * 
  * Algorithm:
- * 1. Allocate tape array (size ≈ indices_count)
+ * 1. Allocate tape array from arena (size ≈ indices_count)
  * 2. Walk Stage 1 indices sequentially
  * 3. For each structural character, create tape entry:
- *    - Containers: use Stage 1 jump pointers for close_idx
- *    - Strings: extract offset/length from Stage 1
- *    - Numbers: mark for lazy parsing
+ *    - Containers: use Stage 1 jump pointers DIRECTLY for close_idx
+ *    - Strings: store offset into input buffer (zero-copy!)
+ *    - Numbers: store offset for lazy parsing
  * 4. Result: Linear tape ready for iteration
  * 
  * Performance: O(n) single pass, excellent cache locality
  * Memory: ~8 bytes per JSON element (vs ~40+ bytes for tree node)
  * 
  * @param[in] stage1 Stage 1 output with structural indices
+ * @param[in] arena Arena for allocation (thread-local preferred)
  * @param[out] out_tape Pointer to receive tape array
  * @param[out] out_count Pointer to receive tape entry count
  * @return true on success, false on error
  */
 bool dap_json_build_tape(
     const struct dap_json_stage1 *stage1,
+    struct dap_arena *arena,
     dap_json_tape_entry_t **out_tape,
     size_t *out_count
 );
@@ -178,19 +160,61 @@ bool dap_json_tape_validate(
 );
 
 /* ========================================================================== */
-/*                            TAPE HELPERS                                    */
+/*                         TAPE ENTRY HELPERS                                 */
+/* ========================================================================== */
+
+/**
+ * @brief Extract type from tape entry
+ * @param[in] entry Tape entry (uint64_t)
+ * @return Type byte (8 bits)
+ */
+static inline uint8_t dap_tape_get_type(dap_json_tape_entry_t entry)
+{
+    return (uint8_t)(entry >> DAP_TAPE_TYPE_SHIFT);
+}
+
+/**
+ * @brief Extract payload from tape entry
+ * @param[in] entry Tape entry (uint64_t)
+ * @return Payload (56 bits)
+ */
+static inline uint64_t dap_tape_get_payload(dap_json_tape_entry_t entry)
+{
+    return entry & DAP_TAPE_PAYLOAD_MASK;
+}
+
+/**
+ * @brief Create tape entry from type and payload
+ * @param[in] type Type byte
+ * @param[in] payload Payload value (56 bits)
+ * @return Tape entry (uint64_t)
+ */
+static inline dap_json_tape_entry_t dap_tape_make_entry(
+    uint8_t type, 
+    uint64_t payload
+)
+{
+    return ((uint64_t)type << DAP_TAPE_TYPE_SHIFT) | 
+           (payload & DAP_TAPE_PAYLOAD_MASK);
+}
+
+/* ========================================================================== */
+/*                         TAPE NAVIGATION HELPERS                            */
 /* ========================================================================== */
 
 /**
  * @brief Get next tape index (skip current value)
- * @details Uses jump pointers for O(1) skip over containers
+ * @details ⚡ O(1) skip using jump pointers!
+ * 
+ * For containers, uses payload as jump pointer to closing bracket.
+ * For other values, simply advances to next entry.
  * 
  * @param[in] tape Tape array
  * @param[in] count Total tape entries
  * @param[in] current Current index
  * @return Next index, or count if at end
  */
-static inline size_t dap_json_tape_next(
+static inline size_t dap_tape_next(
     const dap_json_tape_entry_t *tape,
     size_t count,
     size_t current
@@ -200,12 +224,13 @@ static inline size_t dap_json_tape_next(
         return count;
     }
     
-    const dap_json_tape_entry_t *entry = &tape[current];
+    dap_json_tape_entry_t entry = tape[current];
+    uint8_t type = dap_tape_get_type(entry);
     
     // Containers: jump to closing bracket + 1
-    if (entry->type == TAPE_TYPE_OBJECT_START || 
-        entry->type == TAPE_TYPE_ARRAY_START) {
-        return entry->payload.container.close_idx + 1;
+    if (type == TAPE_TYPE_OBJECT_START || type == TAPE_TYPE_ARRAY_START) {
+        uint64_t close_idx = dap_tape_get_payload(entry);
+        return (size_t)(close_idx + 1);
     }
     
     // Other types: just move to next entry
@@ -215,34 +240,28 @@ static inline size_t dap_json_tape_next(
 /**
  * @brief Check if tape entry is a container start
  */
-static inline bool dap_json_tape_is_container_start(
-    const dap_json_tape_entry_t *entry
-)
+static inline bool dap_tape_is_container_start(dap_json_tape_entry_t entry)
 {
-    return entry->type == TAPE_TYPE_OBJECT_START || 
-           entry->type == TAPE_TYPE_ARRAY_START;
+    uint8_t type = dap_tape_get_type(entry);
+    return type == TAPE_TYPE_OBJECT_START || type == TAPE_TYPE_ARRAY_START;
 }
 
 /**
  * @brief Check if tape entry is a container end
  */
-static inline bool dap_json_tape_is_container_end(
-    const dap_json_tape_entry_t *entry
-)
+static inline bool dap_tape_is_container_end(dap_json_tape_entry_t entry)
 {
-    return entry->type == TAPE_TYPE_OBJECT_END || 
-           entry->type == TAPE_TYPE_ARRAY_END;
+    uint8_t type = dap_tape_get_type(entry);
+    return type == TAPE_TYPE_OBJECT_END || type == TAPE_TYPE_ARRAY_END;
 }
 
 /**
  * @brief Check if tape entry is a value (not structural)
  */
-static inline bool dap_json_tape_is_value(
-    const dap_json_tape_entry_t *entry
-)
+static inline bool dap_tape_is_value(dap_json_tape_entry_t entry)
 {
-    return entry->type >= TAPE_TYPE_STRING && 
-           entry->type <= TAPE_TYPE_NULL;
+    uint8_t type = dap_tape_get_type(entry);
+    return type >= TAPE_TYPE_STRING && type <= TAPE_TYPE_NULL;
 }
 
 #ifdef __cplusplus
