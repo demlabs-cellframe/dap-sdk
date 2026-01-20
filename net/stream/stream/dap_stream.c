@@ -127,6 +127,52 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
 /**
+ * @brief Write data via transport layer (wrapper for trans->ops->write)
+ * 
+ * Calls transport-specific write callback. For UDP this goes through Flow Control.
+ * FAIL-FAST: Returns error if trans->ops->write is not set (no fallback).
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to write
+ * @param a_size Data size
+ * @return Number of bytes written, or 0 on error
+ */
+ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    if (!a_stream->trans_ctx) {
+        log_it(L_ERROR, "Stream has no trans_ctx");
+        return 0;
+    }
+    
+    if (!a_stream->trans_ctx->trans || 
+        !a_stream->trans_ctx->trans->ops || 
+        !a_stream->trans_ctx->trans->ops->write) {
+        log_it(L_CRITICAL, "Stream trans has no write callback - ARCHITECTURE BUG!");
+        return 0;
+    }
+    
+    debug_if(s_debug, L_DEBUG, 
+             "dap_stream_trans_write_unsafe: writing %zu bytes via trans->ops->write", a_size);
+    
+    ssize_t l_ret = a_stream->trans_ctx->trans->ops->write(
+        a_stream,  // stream
+        a_data,    // data
+        a_size     // size
+    );
+    
+    if (l_ret < 0) {
+        log_it(L_WARNING, "trans->ops->write failed: ret=%zd", l_ret);
+        return 0;
+    }
+    
+    return l_ret;
+}
+
+/**
  * @brief Send data to datagram stream using flow callback
  * 
  * Helper function to send data via datagram stream (UDP, etc), properly resolving
@@ -145,32 +191,12 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
         return 0;
     }
     
-    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
-        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
-        return 0;
-    }
-    
     if (!a_stream->flow) {
         log_it(L_ERROR, "Datagram stream %p has no flow set", a_stream);
         return 0;
     }
     
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
-    dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
-    
-    debug_if(s_debug, L_DEBUG, "s_stream_send_datagram_unsafe: stream %p flow %p getting remote addr", a_stream, l_flow);
-    
-    // Get destination address from datagram flow callback
-    struct sockaddr_storage l_dest_addr;
-    socklen_t l_dest_addr_len;
-    
-    if (!dap_io_flow_datagram_get_remote_addr(l_flow, &l_dest_addr, &l_dest_addr_len)) {
-        log_it(L_ERROR, "Failed to get datagram destination address from flow callback");
-        return 0;
-    }
-    
-    debug_if(s_debug, L_DEBUG, "s_stream_send_datagram_unsafe: sending %zu bytes via sendto_unsafe", a_size);
-    return dap_events_socket_sendto_unsafe(l_es, a_data, a_size, &l_dest_addr, l_dest_addr_len);
+    return dap_stream_trans_write_unsafe(a_stream, a_data, a_size);
 }
 
 /**

@@ -194,6 +194,20 @@ size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
  */
 ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 
+/**
+ * @brief Write data via transport layer (wrapper for trans->ops->write)
+ * 
+ * Generic wrapper to call transport-specific write callback.
+ * For UDP this goes through Flow Control for reliable delivery.
+ * FAIL-FAST: No fallback, returns error if trans->ops->write is not set.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to write
+ * @param a_size Data size
+ * @return Number of bytes written, or 0 on error
+ */
+ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
