@@ -289,6 +289,9 @@ static inline int dap_json_stage1_build_jump_pointers(dap_json_stage1_t *a_stage
     // Reset jump stack
     a_stage1->jump_depth = 0;
     
+    int structural_found = 0;  // DEBUG counter
+    int payloads_written = 0;  // DEBUG: count payload writes
+    
     // Walk through indices and build jump pointers
     for (size_t i = 0; i < a_stage1->indices_count; i++) {
         dap_json_struct_index_t *l_token = &a_stage1->indices[i];
@@ -297,6 +300,7 @@ static inline int dap_json_stage1_build_jump_pointers(dap_json_stage1_t *a_stage
             continue;  // Skip non-structural tokens
         }
         
+        structural_found++;  // DEBUG: count structural tokens
         char l_char = l_token->character;
         
         if (l_char == '[' || l_char == '{') {
@@ -329,6 +333,14 @@ static inline int dap_json_stage1_build_jump_pointers(dap_json_stage1_t *a_stage
             // Set jump pointers (bidirectional)
             a_stage1->indices[l_open_idx].payload = (uint32_t)i;  // [ or { → ]
             a_stage1->indices[i].payload = l_open_idx;  // ] or } → [
+            payloads_written += 2;  // DEBUG: count writes
+            
+            // DEBUG: Verify write succeeded
+            if (a_stage1->indices[l_open_idx].payload != (uint32_t)i) {
+                // Write failed! This should never happen
+                a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                return STAGE1_ERROR_INVALID_INPUT;
+            }
         }
     }
     
@@ -336,6 +348,18 @@ static inline int dap_json_stage1_build_jump_pointers(dap_json_stage1_t *a_stage
     if (a_stage1->jump_depth != 0) {
         a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
         return a_stage1->error_code;
+    }
+    
+    // DEBUG: If no structural tokens found, something is wrong
+    if (structural_found == 0 && a_stage1->indices_count > 0) {
+        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+        return STAGE1_ERROR_INVALID_INPUT;
+    }
+    
+    // DEBUG: If no payloads written but we have brackets, something is wrong
+    if (payloads_written == 0 && structural_found > 0) {
+        // Probably no containers in JSON (only literals/numbers)
+        // This is OK for bare values like "123" or "true"
     }
     
     return STAGE1_SUCCESS;
@@ -610,7 +634,27 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     
     // ⚡ Phase 2.3: Build jump pointers for tape format (all architectures)
     if (result == STAGE1_SUCCESS) {
+        // Store counts before build_jump_pointers
+        size_t indices_before = a_stage1->indices_count;
+        uint32_t payload_before = (indices_before > 0 && 
+                                    a_stage1->indices[0].type == TOKEN_TYPE_STRUCTURAL &&
+                                    (a_stage1->indices[0].character == '{' || a_stage1->indices[0].character == '['))
+                                   ? a_stage1->indices[0].payload : 99999;
+        
         result = dap_json_stage1_build_jump_pointers(a_stage1);
+        
+        // Verify payload changed
+        uint32_t payload_after = (indices_before > 0 && 
+                                   a_stage1->indices[0].type == TOKEN_TYPE_STRUCTURAL &&
+                                   (a_stage1->indices[0].character == '{' || a_stage1->indices[0].character == '['))
+                                  ? a_stage1->indices[0].payload : 88888;
+        
+        // If payload didn't change from 0, build_jump_pointers didn't work
+        if (result == STAGE1_SUCCESS && payload_before == 0 && payload_after == 0 && indices_before > 2) {
+            // ERROR: payload not filled!
+            a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+            return STAGE1_ERROR_INVALID_INPUT;
+        }
         
         // DEBUG: Verify first opening bracket has payload set
         if (result == STAGE1_SUCCESS && a_stage1->indices_count > 0) {

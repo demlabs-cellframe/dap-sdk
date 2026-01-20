@@ -347,7 +347,7 @@ static inline dap_json_array_storage_t* s_get_array_storage(dap_json_value_t *a_
     if (!a_value || a_value->type != DAP_JSON_TYPE_ARRAY) {
         return NULL;
     }
-    return (dap_json_array_storage_t*)(uintptr_t)a_value->offset;
+    return (dap_json_array_storage_t*)dap_json_get_storage_ptr(a_value);
 }
 
 /**
@@ -359,7 +359,7 @@ static inline dap_json_object_storage_t* s_get_object_storage(dap_json_value_t *
     if (!a_value || a_value->type != DAP_JSON_TYPE_OBJECT) {
         return NULL;
     }
-    return (dap_json_object_storage_t*)(uintptr_t)a_value->offset;
+    return (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_value);
 }
 
 /* ========================================================================== */
@@ -822,8 +822,8 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         
         l_element = &l_stage2->values[l_element_idx];
     } else {
-        // MALLOC mode: offset → array_storage structure
-        dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)(uintptr_t)l_array_value->offset;
+        // MALLOC mode: get storage using helper
+        dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(l_array_value);
         if (!l_storage || a_idx >= l_storage->count) {
             log_it(L_ERROR, "Invalid MALLOC array access: storage=%p, idx=%zu, count=%zu",
                    l_storage, a_idx, l_storage ? l_storage->count : 0);

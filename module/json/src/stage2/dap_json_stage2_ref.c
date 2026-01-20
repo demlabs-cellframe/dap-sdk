@@ -282,11 +282,12 @@ static size_t s_count_array_elements(
 )
 {
     // ⚡ Use tape format payload to get closing bracket index (O(1)!)
-    uint32_t l_close_idx = a_stage2->indices[a_start_idx].payload;
+    const dap_json_struct_index_t *l_start_token = &a_stage2->indices[a_start_idx];
+    uint32_t l_close_idx = l_start_token->payload;
     
     if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
-        log_it(L_ERROR, "Invalid payload for array at index %zu (payload=%u)", 
-               a_start_idx, l_close_idx);
+        log_it(L_ERROR, "Invalid payload for array at index %zu (payload=%u, l_start_token->payload=%u, direct_read=%u, char='%c')", 
+               a_start_idx, l_close_idx, l_start_token->payload, a_stage2->indices[a_start_idx].payload, l_start_token->character);
         return 0;
     }
     
@@ -369,12 +370,26 @@ static size_t s_count_object_pairs(
     size_t a_start_idx
 )
 {
+    // DEBUG: Check what token is at start_idx
+    if (a_start_idx >= a_stage2->indices_count) {
+        log_it(L_ERROR, "Invalid a_start_idx=%zu (indices_count=%zu)", 
+               a_start_idx, a_stage2->indices_count);
+        return 0;
+    }
+    
+    const dap_json_struct_index_t *l_start_token = &a_stage2->indices[a_start_idx];
+    if (l_start_token->type != TOKEN_TYPE_STRUCTURAL || l_start_token->character != '{') {
+        log_it(L_ERROR, "Token at a_start_idx=%zu is not '{' (type=%u, char='%c')", 
+               a_start_idx, l_start_token->type, l_start_token->character);
+        return 0;
+    }
+    
     // ⚡ Use tape format payload to get closing brace index (O(1)!)
-    uint32_t l_close_idx = a_stage2->indices[a_start_idx].payload;
+    uint32_t l_close_idx = l_start_token->payload;  // Use l_start_token instead of re-indexing
     
     if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
-        log_it(L_ERROR, "Invalid payload for object at index %zu (payload=%u)", 
-               a_start_idx, l_close_idx);
+        log_it(L_ERROR, "Invalid payload for object at index %zu (payload=%u, l_start_token->payload=%u, direct_read=%u)", 
+               a_start_idx, l_close_idx, l_start_token->payload, a_stage2->indices[a_start_idx].payload);
         return 0;
     }
     
@@ -553,8 +568,7 @@ dap_json_value_t *dap_json_value_v2_create_int(int64_t a_value)
             return NULL;
         }
         *l_allocated = a_value;
-        l_value->offset = (uint32_t)(uintptr_t)l_allocated;
-        l_value->length = 1; // Flag: allocated
+        dap_json_set_storage_ptr(l_value, l_allocated);  // ⚡ Store with MALLOC flag
     }
     
     return l_value;
@@ -584,8 +598,7 @@ dap_json_value_t *dap_json_value_v2_create_double(double a_value)
     
     l_value->type = DAP_JSON_TYPE_DOUBLE;
     l_value->flags = 0;
-    l_value->length = 1; // Flag: allocated
-    l_value->offset = (uint32_t)(uintptr_t)l_allocated;
+    dap_json_set_storage_ptr(l_value, l_allocated);  // ⚡ Store with MALLOC flag
     
     return l_value;
 }
@@ -623,8 +636,7 @@ dap_json_value_t *dap_json_value_v2_create_string(const char *a_data, size_t a_l
     // Setup 8-byte value
     l_value->type = DAP_JSON_TYPE_STRING;
     l_value->flags = 0; // Not escaped
-    l_value->length = (uint16_t)a_length;
-    l_value->offset = (uint32_t)(uintptr_t)l_str_copy; // Pointer to allocated string
+    dap_json_set_storage_ptr(l_value, l_str_copy);  // ⚡ Store full 64-bit pointer correctly
     
     return l_value;
 }
@@ -665,8 +677,7 @@ dap_json_value_t *dap_json_value_v2_create_array(void)
     // Setup 8-byte value
     l_value->type = DAP_JSON_TYPE_ARRAY;
     l_value->flags = 0;
-    l_value->length = 0; // Will be updated on add
-    l_value->offset = (uint32_t)(uintptr_t)l_storage; // Pointer as offset!
+    dap_json_set_storage_ptr(l_value, l_storage);  // ⚡ Store full 64-bit pointer correctly
     
     return l_value;
 }
@@ -710,8 +721,7 @@ dap_json_value_t *dap_json_value_v2_create_object(void)
     // Setup 8-byte value
     l_value->type = DAP_JSON_TYPE_OBJECT;
     l_value->flags = 0;
-    l_value->length = 0; // Will be updated on add
-    l_value->offset = (uint32_t)(uintptr_t)l_storage; // Pointer as offset!
+    dap_json_set_storage_ptr(l_value, l_storage);  // ⚡ Store full 64-bit pointer correctly
     
     return l_value;
 }
@@ -732,46 +742,54 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
     switch (a_value->type) {
         case DAP_JSON_TYPE_INT:
         case DAP_JSON_TYPE_UINT64: {
-            // Check if allocated (length==1) or inline (length==0)
-            if (a_value->length == 1 && a_value->offset) {
-                // Allocated int64/uint64
-                void *l_ptr = (void*)(uintptr_t)a_value->offset;
-                DAP_DELETE(l_ptr);
+            // ⚡ Phase 2.0.4: Check MALLOC flag instead of length
+            if (dap_json_is_malloc(a_value)) {
+                // Allocated int64/uint64 - get pointer using helper
+                void *l_ptr = dap_json_get_storage_ptr(a_value);
+                if (l_ptr) {
+                    DAP_DELETE(l_ptr);
+                }
             }
-            // Inline ints (length==0): nothing to free
+            // Inline ints (no MALLOC flag): nothing to free
             break;
         }
         
         case DAP_JSON_TYPE_UINT256: {
-            // uint256 always allocated
-            if (a_value->offset) {
-                uint256_t *l_ptr = (uint256_t*)(uintptr_t)a_value->offset;
-                DAP_DELETE(l_ptr);
+            // uint256 always allocated if MALLOC flag set
+            if (dap_json_is_malloc(a_value)) {
+                uint256_t *l_ptr = (uint256_t*)dap_json_get_storage_ptr(a_value);
+                if (l_ptr) {
+                    DAP_DELETE(l_ptr);
+                }
             }
             break;
         }
         
         case DAP_JSON_TYPE_DOUBLE: {
-            // Doubles are always allocated (length==1)
-            if (a_value->offset) {
-                double *l_ptr = (double*)(uintptr_t)a_value->offset;
-                DAP_DELETE(l_ptr);
+            // Doubles always allocated if MALLOC flag set
+            if (dap_json_is_malloc(a_value)) {
+                double *l_ptr = (double*)dap_json_get_storage_ptr(a_value);
+                if (l_ptr) {
+                    DAP_DELETE(l_ptr);
+                }
             }
             break;
         }
         
         case DAP_JSON_TYPE_STRING: {
-            // For MALLOC strings, offset points to malloc'd string data
-            if (a_value->offset) {
-                char *l_str = (char*)(uintptr_t)a_value->offset;
-                DAP_DELETE(l_str);
+            // For MALLOC strings, get pointer using helper
+            if (dap_json_is_malloc(a_value)) {
+                char *l_str = (char*)dap_json_get_storage_ptr(a_value);
+                if (l_str) {
+                    DAP_DELETE(l_str);
+                }
             }
             break;
         }
         
         case DAP_JSON_TYPE_ARRAY: {
-            // offset → array_storage
-            dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)(uintptr_t)a_value->offset;
+            // Get storage using helper function
+            dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(a_value);
             if (l_storage) {
                 // Recursively free all elements
                 for (size_t i = 0; i < l_storage->count; i++) {
@@ -784,8 +802,8 @@ void dap_json_value_v2_free(dap_json_value_t *a_value)
         }
         
         case DAP_JSON_TYPE_OBJECT: {
-            // offset → object_storage
-            dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)(uintptr_t)a_value->offset;
+            // Get storage using helper function
+            dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_value);
             if (l_storage) {
                 // Free all keys and values
                 for (size_t i = 0; i < l_storage->count; i++) {
@@ -828,8 +846,8 @@ bool dap_json_array_v2_add(dap_json_value_t *a_array, dap_json_value_t *a_elemen
         return false;
     }
     
-    // Get storage
-    dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)(uintptr_t)a_array->offset;
+    // Get storage using helper function
+    dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(a_array);
     if (!l_storage) {
         log_it(L_ERROR, "Array has no storage");
         return false;
@@ -855,8 +873,8 @@ bool dap_json_array_v2_add(dap_json_value_t *a_array, dap_json_value_t *a_elemen
     // Add element
     l_storage->elements[l_storage->count++] = a_element;
     
-    // Update length in 8-byte value
-    a_array->length = (uint16_t)l_storage->count;
+    // ⚡ Phase 2.0.4: DO NOT update length for MALLOC arrays - it stores pointer high bits!
+    // Count is stored in storage->count, not in value->length
     
     return true;
 }
@@ -877,8 +895,8 @@ bool dap_json_object_v2_add(dap_json_value_t *a_object, const char *a_key, dap_j
         return false;
     }
     
-    // Get storage
-    dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)(uintptr_t)a_object->offset;
+    // Get storage using helper function
+    dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_object);
     if (!l_storage) {
         log_it(L_ERROR, "Object has no storage");
         return false;
@@ -925,8 +943,8 @@ bool dap_json_object_v2_add(dap_json_value_t *a_object, const char *a_key, dap_j
     l_storage->values[l_storage->count] = a_value;
     l_storage->count++;
     
-    // Update length in 8-byte value
-    a_object->length = (uint16_t)l_storage->count;
+    // ⚡ Phase 2.0.4: DO NOT update length for MALLOC objects - it stores pointer high bits!
+    // Count is stored in storage->count, not in value->length
     
     return true;
 }
@@ -1464,6 +1482,20 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     l_stage2->indices = a_stage1->indices;
     l_stage2->indices_count = a_stage1->indices_count;
     l_stage2->max_depth = MAX_NESTING_DEPTH;
+    
+    // ⚡ DEBUG: Verify jump pointers are filled (Phase 2.3)
+    if (a_stage1->indices_count > 0) {
+        for (size_t i = 0; i < a_stage1->indices_count && i < 5; i++) {
+            if (a_stage1->indices[i].type == TOKEN_TYPE_STRUCTURAL && 
+                (a_stage1->indices[i].character == '[' || a_stage1->indices[i].character == '{')) {
+                if (a_stage1->indices[i].payload == 0) {
+                    log_it(L_ERROR, "⚡ BUG: payload not set for opening bracket at index %zu (char='%c', indices_count=%zu)",
+                           i, a_stage1->indices[i].character, a_stage1->indices_count);
+                }
+                break;
+            }
+        }
+    }
     
     // Phase 2.1: Predictive pre-allocation based on Stage 1 token counts
     // Get token counts from Stage 1 for accurate memory sizing

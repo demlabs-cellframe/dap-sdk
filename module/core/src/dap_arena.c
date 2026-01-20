@@ -650,6 +650,6 @@ void dap_arena_free(dap_arena_t *a_arena)
     s_arena_free_pages(a_arena->first_page);
     DAP_DELETE(a_arena);
     
-    debug_if(trus_debug_more, L_DEBUG, "Arena freed");
+    debug_if(s_debug_more, L_DEBUG, "Arena freed");
 }
 

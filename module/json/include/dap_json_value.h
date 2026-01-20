@@ -58,8 +58,10 @@ typedef enum {
     /** String is UTF-8 validated */
     DAP_JSON_FLAG_UTF8_VALID   = (1 << 5),
     
+    /** ⚡ Phase 2.0.4: Value allocated via malloc (not arena) - offset/length store pointer */
+    DAP_JSON_FLAG_MALLOC       = (1 << 6),
+    
     /** Reserved for future use */
-    DAP_JSON_FLAG_RESERVED_6   = (1 << 6),
     DAP_JSON_FLAG_RESERVED_7   = (1 << 7)
 } dap_json_flags_t;
 
@@ -84,6 +86,39 @@ typedef struct {
  */
 static inline bool dap_json_is_extended(const dap_json_value_t *val) {
     return (val->flags & DAP_JSON_FLAG_OVERFLOW) != 0;
+}
+
+/**
+ * @brief ⚡ Phase 2.0.4: Check if value uses malloc storage (not arena)
+ */
+static inline bool dap_json_is_malloc(const dap_json_value_t *val) {
+    return (val->flags & DAP_JSON_FLAG_MALLOC) != 0;
+}
+
+/**
+ * @brief ⚡ Phase 2.0.4: Store pointer in offset/length fields (for malloc values)
+ * @details On 64-bit: stores pointer in offset (low 32 bits) and length (high 16 bits)
+ * WARNING: Only works reliably if pointer is in lower 48 bits of address space!
+ */
+static inline void dap_json_set_storage_ptr(dap_json_value_t *val, void *ptr) {
+    uintptr_t ptr_value = (uintptr_t)ptr;
+    val->offset = (uint32_t)(ptr_value & 0xFFFFFFFF);         // Low 32 bits
+    val->length = (uint16_t)((ptr_value >> 32) & 0xFFFF);     // Mid 16 bits (bits 32-47)
+    val->flags |= DAP_JSON_FLAG_MALLOC;
+}
+
+/**
+ * @brief ⚡ Phase 2.0.4: Get pointer from offset/length fields (for malloc values)
+ * @details On 64-bit: reconstructs pointer from offset (low 32 bits) and length (high 16 bits)
+ */
+static inline void *dap_json_get_storage_ptr(const dap_json_value_t *val) {
+    if (!(val->flags & DAP_JSON_FLAG_MALLOC)) {
+        return NULL;  // Not a malloc value
+    }
+    
+    // Reconstruct 48-bit pointer: offset (32 bits) + length (16 bits)
+    uintptr_t ptr_value = (uintptr_t)val->offset | (((uintptr_t)val->length & 0xFFFF) << 32);
+    return (void*)ptr_value;
 }
 
 /**
