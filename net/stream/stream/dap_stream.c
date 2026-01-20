@@ -781,6 +781,12 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
 
+        // Log incoming channel packet for debugging VPN issues
+        log_it(L_DEBUG, "Stream pkt received: session_id=%u, channel='%c', size=%u, seq_id=%"DAP_UINT64_FORMAT_U", type=0x%02X",
+               a_stream->session ? a_stream->session->id : 0,
+               (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size,
+               l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.type);
+
         // If seq_id is less than previous - doomp eet
         if (!s_detect_loose_packet(a_stream)) {
             dap_stream_ch_t * l_ch = NULL;
@@ -810,6 +816,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             } else{
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
             }
+        } else {
+            log_it(L_WARNING, "Packet dropped due to replay/seq_id issue: session_id=%u, channel='%c', seq_id=%"DAP_UINT64_FORMAT_U,
+                   a_stream->session ? a_stream->session->id : 0,
+                   (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.seq_id);
         }
         // packet already defragmented
         if(a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
