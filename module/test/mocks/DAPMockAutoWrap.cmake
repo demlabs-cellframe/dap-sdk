@@ -102,7 +102,11 @@ function(dap_mock_autowrap TARGET_NAME)
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
         # Use cmake -E env to set environment variable (works with CMake 3.10+)
-        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env "DAP_TPL_DIR=${DAP_TPL_DIR}" ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+        # Pass CMAKE_SYSTEM_NAME for platform detection (macOS vs Linux)
+        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
+            "DAP_TPL_DIR=${DAP_TPL_DIR}"
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
     execute_process(
@@ -119,7 +123,10 @@ function(dap_mock_autowrap TARGET_NAME)
     
     # For STAGE 2 (add_custom_command) - prepare separate command
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
-        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env "DAP_TPL_DIR=${DAP_TPL_DIR}" ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
+        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
+            "DAP_TPL_DIR=${DAP_TPL_DIR}"
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
     endif()
