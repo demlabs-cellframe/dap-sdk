@@ -1472,10 +1472,16 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     }
     
     // ⚡ PHASE 2.1.5: Small JSON Fast Path Detection
-    // For tiny JSON (<1KB, <100 tokens), use optimized allocation strategy
-    const bool l_is_small_json = (a_stage1->input_len < 1024 && a_stage1->indices_count < 100);
+    // Tier 1: Tiny JSON (<256 bytes, <50 tokens) - stack-allocated buffer
+    // Tier 2: Small JSON (<1KB, <100 tokens) - minimal arena
+    const bool l_is_tiny_json = (a_stage1->input_len < 256 && a_stage1->indices_count < 50);
+    const bool l_is_small_json = (!l_is_tiny_json && a_stage1->input_len < 1024 && a_stage1->indices_count < 100);
     
-    if (l_is_small_json) {
+    if (l_is_tiny_json) {
+        debug_if(dap_json_get_debug(), L_DEBUG, 
+                 "⚡⚡ TINY JSON ultra-fast path: %zu bytes, %zu tokens (stack-allocated)", 
+                 a_stage1->input_len, a_stage1->indices_count);
+    } else if (l_is_small_json) {
         debug_if(dap_json_get_debug(), L_DEBUG, 
                  "⚡ Small JSON fast path: %zu bytes, %zu tokens", 
                  a_stage1->input_len, a_stage1->indices_count);
@@ -1541,11 +1547,19 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
              l_total_values, l_array_count, l_object_count, l_estimated_size);
     
     // ⚡ PHASE 2.2: More aggressive caps to reduce memory (SimdJSON target: <10 MB)
-    // PHASE 2.1.5: Special handling for small JSON
+    // PHASE 2.1.5: Special handling for tiny and small JSON
     size_t MAX_PREALLOC_SMALL, MAX_PREALLOC_MEDIUM, MAX_PREALLOC_LARGE;
     
-    if (l_is_small_json) {
-        // ⚡ Small JSON Fast Path: ultra-minimal allocation
+    if (l_is_tiny_json) {
+        // ⚡⚡ Tiny JSON Ultra-Fast Path: absolute minimal allocation
+        MAX_PREALLOC_SMALL = 2 * 1024;      // 2 KB (ultra-minimal)
+        MAX_PREALLOC_MEDIUM = 64 * 1024;    // 64 KB
+        MAX_PREALLOC_LARGE = a_stage1->input_len / 2;  // 0.5x JSON size
+        
+        debug_if(dap_json_get_debug(), L_DEBUG,
+                 "⚡⚡ Tiny JSON: ultra-minimal allocation (2KB cap)");
+    } else if (l_is_small_json) {
+        // ⚡ Small JSON Fast Path: minimal allocation
         MAX_PREALLOC_SMALL = 4 * 1024;      // 4 KB (was 8 KB)
         MAX_PREALLOC_MEDIUM = 128 * 1024;   // 128 KB
         MAX_PREALLOC_LARGE = a_stage1->input_len;  // 1x JSON size (was 2x)
@@ -1603,9 +1617,11 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     // ⚠️ DON'T reset arena here - string_pool_clear will do it!
     
     // ⭐ Reuse thread-local string pool (create if first time)
-    // ⚡ PHASE 2.1.5: For small JSON, use minimal string pool (most strings are short)
+    // ⚡ PHASE 2.1.5: Tiered string pool sizing
     size_t l_string_pool_capacity;
-    if (l_is_small_json) {
+    if (l_is_tiny_json) {
+        l_string_pool_capacity = 8;   // Ultra-minimal for tiny JSON
+    } else if (l_is_small_json) {
         l_string_pool_capacity = 16;  // Minimal capacity for small JSON
     } else {
         l_string_pool_capacity = a_stage1->indices_count / 4;
