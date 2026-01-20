@@ -48,6 +48,26 @@
 extern "C" {
 #endif
 
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+/**
+ * @brief Initialize dap_io_flow_socket module
+ * @details Reads debug flags from config
+ * @return 0 on success
+ */
+int dap_io_flow_socket_init(void);
+
+/**
+ * @brief Deinitialize dap_io_flow_socket module
+ */
+void dap_io_flow_socket_deinit(void);
+
+// =============================================================================
+// SOCKET SEND/RECEIVE API
+// =============================================================================
+
 /**
  * @brief Send datagram to specific address (thread-safe)
  * 

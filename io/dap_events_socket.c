@@ -97,6 +97,10 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #define DAP_PACKET_QUEUE_INITIAL_CAPACITY 16
 #define DAP_PACKET_QUEUE_MAX_CAPACITY 4096  // Limit to prevent memory exhaustion
 
+// Maximum UDP datagram size (theoretical max UDP payload)
+#ifndef DAP_UDP_MAX_DATAGRAM_SIZE
+#define DAP_UDP_MAX_DATAGRAM_SIZE 65507  // 65535 - 8 (UDP header) - 20 (IP header)
+#endif
 /**
  * @brief Create datagram packet queue
  */
@@ -2490,75 +2494,13 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
 #endif
 
-    // DATAGRAM PROTOCOLS (UDP, SCTP, etc.): Try direct sendto first, queue if EAGAIN
     if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
-        if (!a_es->addr_size || a_es->addr_storage.ss_family == 0) {
-            log_it(L_ERROR, "Datagram socket has no destination address set");
-            return 0;
-        }
-        
-        // Check maximum datagram size (UDP MTU limitation)
-        // Typical safe UDP payload: 1200-1400 bytes to avoid IP fragmentation
-        #define DAP_UDP_MAX_DATAGRAM_SIZE 65507  // Theoretical max UDP payload (65535 - 8 UDP header - 20 IP header)
-        if (a_data_size > DAP_UDP_MAX_DATAGRAM_SIZE) {
-            log_it(L_ERROR, "UDP datagram too large: %zu bytes (max %d bytes). "
-                   "Use dap_stream fragmentation for large data!",
-                   a_data_size, DAP_UDP_MAX_DATAGRAM_SIZE);
-            return 0;
-        }
-        
-        // If queue already has packets, add to queue (maintain ordering!)
-        if (a_es->packet_queue && a_es->packet_queue->count > 0) {
-            if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size,
-                                    &a_es->addr_storage, a_es->addr_size) == 0) {
-                // Mark socket as writable to trigger queue flush
-                dap_events_socket_set_writable_unsafe(a_es, true);
-                return a_data_size;  // Queued successfully
-            }
-            return 0;  // Queue full
-        }
-        
-        // Try direct sendto
-        ssize_t l_sent = sendto(a_es->fd, a_data, a_data_size, 0,
-                                (struct sockaddr*)&a_es->addr_storage, a_es->addr_size);
-        
-        if (l_sent < 0) {
-            int l_errno = errno;
-            if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
-                // Socket would block, create queue and add packet
-                if (!a_es->packet_queue) {
-                    a_es->packet_queue = s_packet_queue_create();
-                    if (!a_es->packet_queue) {
-                        log_it(L_ERROR, "Failed to create packet queue");
-                        return 0;
-                    }
-                }
-                
-                if (s_packet_queue_push(a_es->packet_queue, a_data, a_data_size,
-                                        &a_es->addr_storage, a_es->addr_size) == 0) {
-                    // Mark socket as writable to trigger queue flush later
-                    dap_events_socket_set_writable_unsafe(a_es, true);
-                    
-                    debug_if(g_debug_reactor, L_DEBUG,
-                             "Datagram sendto would block, queued %zu bytes", a_data_size);
-                    return a_data_size;  // Queued successfully
-                }
-                return 0;  // Queue full
-            }
-            
-            // Permanent error
-            log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
-            return 0;
-        }
-        
-        debug_if(g_debug_reactor, L_DEBUG,
-                 "Datagram direct sendto: sent %zd bytes (requested %zu)",
-                 l_sent, a_data_size);
-        
-        return (size_t)l_sent;
+        log_it(L_CRITICAL, "ARCHITECTURE VIOLATION: dap_events_socket_write_unsafe() called on UDP socket! "
+               "UDP requires explicit destination address per packet. Use dap_events_socket_sendto_unsafe() instead!");
+        return 0;
     }
 
-    // TCP/other: Use buffered writes
+    // TCP/stream sockets: Use buffered writes
     byte_t *l_write_pos = s_events_socket_ensure_buf_space(a_es, a_data_size);
     if (!l_write_pos)
         return 0;

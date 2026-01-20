@@ -448,6 +448,32 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
 /**
+ * @brief Check if esocket is datagram-oriented
+ * 
+ * Returns true for datagram transports (UDP, SCTP, etc) that require explicit addressing.
+ * Returns false for stream-oriented transports (TCP, local sockets).
+ * 
+ * @param a_es Event socket
+ * @return true if datagram-oriented, false otherwise
+ */
+DAP_STATIC_INLINE bool dap_events_socket_is_datagram(dap_events_socket_t *a_es)
+{
+    if (!a_es) {
+        return false;
+    }
+    
+    switch (a_es->type) {
+        case DESCRIPTOR_TYPE_SOCKET_UDP:
+            // Add other datagram types here as they are implemented:
+            // case DESCRIPTOR_TYPE_SOCKET_SCTP:
+            // case DESCRIPTOR_TYPE_SOCKET_DCCP:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
  * @brief Send datagram (UDP/SCTP) to specific address
  * 
  * Specialized function for datagram sockets that accepts destination address explicitly.

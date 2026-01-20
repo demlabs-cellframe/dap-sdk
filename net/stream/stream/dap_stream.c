@@ -33,6 +33,9 @@
 #include <ws2tcpip.h>
 #include <io.h>
 #include <pthread.h>
+#else
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #endif
 
 #include "dap_common.h"
@@ -45,6 +48,7 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_session.h"
 #include "dap_events_socket.h"
+#include "dap_io_flow_datagram.h"  // For UDP remote_addr access
 
 #include "dap_http_server.h"
 #include "dap_http_header_server.h"
@@ -115,11 +119,89 @@ static bool s_callback_client_keepalive(void *a_arg);
 
 static bool s_dump_packet_headers = false;
 static bool s_debug = false;
+#define LOG_TAG "dap_stream"
 
 bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
+
+/**
+ * @brief Send data to datagram stream using flow callback
+ * 
+ * Helper function to send data via datagram stream (UDP, etc), properly resolving
+ * the destination address through the datagram flow's get_remote_addr callback.
+ * 
+ * Works for both CLIENT and SERVER streams via stream->flow.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @return Number of bytes sent, or 0 on error
+ */
+static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
+        return 0;
+    }
+    
+    if (!a_stream->flow) {
+        log_it(L_ERROR, "Datagram stream %p has no flow set", a_stream);
+        return 0;
+    }
+    
+    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
+    
+    debug_if(s_debug, L_DEBUG, "s_stream_send_datagram_unsafe: stream %p flow %p getting remote addr", a_stream, l_flow);
+    
+    // Get destination address from datagram flow callback
+    struct sockaddr_storage l_dest_addr;
+    socklen_t l_dest_addr_len;
+    
+    if (!dap_io_flow_datagram_get_remote_addr(l_flow, &l_dest_addr, &l_dest_addr_len)) {
+        log_it(L_ERROR, "Failed to get datagram destination address from flow callback");
+        return 0;
+    }
+    
+    debug_if(s_debug, L_DEBUG, "s_stream_send_datagram_unsafe: sending %zu bytes via sendto_unsafe", a_size);
+    return dap_events_socket_sendto_unsafe(l_es, a_data, a_size, &l_dest_addr, l_dest_addr_len);
+}
+
+/**
+ * @brief Send raw data to stream (datagram-aware, public API)
+ * 
+ * Sends raw data to the stream, handling datagram (UDP, etc) destination resolution automatically.
+ * For datagram streams (_server_session is datagram flow), uses callback to get destination.
+ * For stream-oriented (TCP), uses direct esocket write.
+ */
+ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
+        return 0;
+    }
+    
+    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    
+    // Check if this is a datagram transport (UDP, SCTP, etc)
+    if (dap_events_socket_is_datagram(l_es)) {
+        debug_if(s_debug, L_DEBUG, "dap_stream_send_unsafe: stream %p using datagram path, flow=%p", a_stream, a_stream->flow);
+        return s_stream_send_datagram_unsafe(a_stream, a_data, a_size);
+    }
+    
+    // Stream-oriented transport (TCP, etc) - use direct write
+    return dap_events_socket_write_unsafe(l_es, a_data, a_size);
+}
 
 
 #ifdef  DAP_SYS_DEBUG
@@ -958,7 +1040,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: packet type=0x%02X size=%u", 
+    log_it(L_INFO, "s_stream_proc_pkt_in: stream=%p, session=%p, key=%p, packet type=0x%02X size=%u",
+           a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL,
            a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
@@ -1026,6 +1109,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
+            
+            log_it(L_INFO, "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
+                   a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
@@ -1034,8 +1120,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr),
-                                                                                              l_dec_pkt_size);
+            log_it(L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
+                   l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_ch_pkt->hdr.data_size, sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
@@ -1107,8 +1193,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             .type = STREAM_PKT_TYPE_ALIVE
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
-        if (a_stream->trans_ctx)
-            dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
+        if (a_stream->trans_ctx) {
+            dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
+        }
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
             dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
@@ -1204,7 +1291,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
-        dap_events_socket_write_unsafe( l_es, &l_pkt, sizeof(l_pkt));
+        dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
         return true;
     }else{
         if(s_debug)

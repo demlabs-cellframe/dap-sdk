@@ -37,6 +37,7 @@
 #include "json.h"  // For json-c API
 #include "dap_io_flow.h"        // For dap_io_flow_t
 #include "dap_io_flow_ctrl.h"  // For Flow Control
+#include "dap_io_flow_datagram.h"  // For datagram flow API
 #include "dap_arena.h"          // For arena allocator
 
 #ifdef DAP_OS_WINDOWS
@@ -406,14 +407,38 @@ static int s_client_flow_ctrl_packet_send_cb(
         return -1;
     }
     
-    // CRITICAL: Use packet queue for proper ordering!
-    // write_unsafe is safe here - FC callbacks run on esocket's worker
-    size_t l_written = dap_events_socket_write_unsafe(l_trans_ctx->esocket, a_packet, a_packet_size);
+    // Log destination address for debugging
+    struct sockaddr_in *l_sin = (struct sockaddr_in *)&l_udp_ctx->remote_addr;
+    if (l_udp_ctx->remote_addr.ss_family == AF_INET) {
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        
+        // Log every 100th packet to see if address changes
+        static uint64_t s_addr_log_count = 0;
+        s_addr_log_count++;
+        if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
+            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%lu)",
+                   l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
+        }
+    }
+    
+    // CRITICAL: Use udp_ctx->remote_addr (server address), NOT esocket->addr_storage!
+    // esocket->addr_storage is overwritten by recvfrom() on every incoming packet!
+    size_t l_written = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket, a_packet, a_packet_size,
+                                                       &l_udp_ctx->remote_addr,
+                                                       l_udp_ctx->remote_addr_len);
     
     if (l_written != a_packet_size) {
-        log_it(L_ERROR, "CLIENT FC send: failed to write %zu bytes (written: %zu)", 
-               a_packet_size, l_written);
+        log_it(L_ERROR, "CLIENT FC send: failed to write %zu bytes (written: %zu), errno=%d (%s)", 
+               a_packet_size, l_written, errno, strerror(errno));
         return -1;
+    }
+    
+    // Log every 50th packet + errors
+    static uint64_t s_send_count = 0;
+    s_send_count++;
+    if (s_send_count % 50 == 0 || s_send_count < 10) {
+        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
     }
     
     return 0;
@@ -901,6 +926,59 @@ int dap_stream_trans_udp_get_remote_addr(dap_net_trans_t *a_trans,
 //=============================================================================
 // Tranport operations implementation
 //=============================================================================
+
+/**
+ * @brief Callback to get remote address for datagram flow
+ * 
+ * For CLIENT flows: returns stable server address from trans UDP context
+ * For SERVER flows: returns client address from stream session
+ * 
+ */
+static bool s_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                  struct sockaddr_storage *a_addr_out,
+                                  socklen_t *a_addr_len_out)
+{
+    if (!a_flow || !a_addr_out || !a_addr_len_out) {
+        log_it(L_ERROR, "Invalid arguments to s_get_remote_addr_cb");
+        return false;
+    }
+    
+    // Get stream from protocol_data (set in s_udp_stage_prepare or server flow creation)
+    dap_stream_t *l_stream = (dap_stream_t*)a_flow->protocol_data;
+    if (!l_stream) {
+        log_it(L_ERROR, "No stream in datagram flow protocol_data!");
+        return false;
+    }
+    
+    // CLIENT flow: get address from trans UDP context (stable copy)
+    if (l_stream->is_client_to_uplink || !l_stream->_server_session) {
+        // Use helper function to get UDP context (handles both client and server-side)
+        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(l_stream);
+        if (!l_udp_ctx) {
+            log_it(L_ERROR, "CLIENT stream has no UDP context!");
+            return false;
+        }
+        
+        if (l_udp_ctx->remote_addr.ss_family == 0 || l_udp_ctx->remote_addr_len == 0) {
+            log_it(L_ERROR, "CLIENT UDP context has no remote_addr!");
+            return false;
+        }
+        
+        memcpy(a_addr_out, &l_udp_ctx->remote_addr, sizeof(struct sockaddr_storage));
+        *a_addr_len_out = l_udp_ctx->remote_addr_len;
+        return true;
+    }
+    
+    // SERVER flow: get address from flow->remote_addr (filled by datagram layer)
+    if (a_flow->remote_addr.ss_family == 0 || a_flow->remote_addr_len == 0) {
+        log_it(L_ERROR, "SERVER flow has no remote_addr!");
+        return false;
+    }
+    
+    memcpy(a_addr_out, &a_flow->remote_addr, sizeof(struct sockaddr_storage));
+    *a_addr_len_out = a_flow->remote_addr_len;
+    return true;
+}
 
 /**
  * @brief Initialize UDP trans
@@ -1638,8 +1716,8 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     dap_io_flow_ctrl_config_t l_fc_config = {
         .retransmit_timeout_ms = 1000,  // 1 second retransmit timeout
         .max_retransmit_count = 3,      // Max 3 retries
-        .send_window_size = 256,        // 256 packets in-flight
-        .recv_window_size = 256,        // 256 packets reorder buffer
+        .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
+        .recv_window_size = 65536,      // 64K packets reorder buffer
         .max_out_of_order_delay_ms = 5000,  // 5 seconds out-of-order window
         .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
         .keepalive_timeout_ms = 0,      // Not used
@@ -1922,6 +2000,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
+            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
+            
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
                 l_udp_ctx->handshake_key,
@@ -1962,13 +2042,14 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session_id=0x%lx)",
-                   a_stream, l_udp_ctx->session_id);
+            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
+                   a_stream, a_stream->session, a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
             dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
             if (l_trans_ctx && l_trans_ctx->session_create_cb) {
-                debug_if(s_debug_more, L_DEBUG, "CLIENT: Calling session_create_cb");
+                debug_if(s_debug_more, L_DEBUG, "CLIENT: Calling session_create_cb (stream=%p, session=%p, key=%p)",
+                         a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL);
                 l_trans_ctx->session_create_cb(a_stream, (uint32_t)l_udp_ctx->session_id, NULL, 0, 0);
                 l_trans_ctx->session_create_cb = NULL;
             }
@@ -2090,6 +2171,18 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
     
+    // Log remote_addr for debugging
+    if (l_udp_ctx->remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
+               l_addr_str, ntohs(l_sin->sin_port), l_udp_ctx->remote_addr_len);
+    } else {
+        log_it(L_WARNING, "UDP write: remote_addr has INVALID family: %d",
+               l_udp_ctx->remote_addr.ss_family);
+    }
+    
 
     // HANDSHAKE packets are OBFUSCATED (size-based encryption)
     if (a_pkt_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
@@ -2111,9 +2204,12 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
         
-        // Send obfuscated handshake
-        ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, 
-                                                         l_obfuscated, l_obfuscated_size);
+        // Send obfuscated handshake (CLIENT UDP)
+        // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
+        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, 
+                                                         l_obfuscated, l_obfuscated_size,
+                                                         &l_udp_ctx->remote_addr,
+                                                         l_udp_ctx->remote_addr_len);
         DAP_DELETE(l_obfuscated);
     
         if (l_sent < 0) {
@@ -2254,8 +2350,11 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         return -1;
     }
     
-    // Send encrypted blob (no headers, no magic, just encrypted data)
-    ssize_t l_sent = dap_events_socket_write_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size);
+    // Send encrypted blob (no headers, no magic, just encrypted data) - CLIENT UDP
+    // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size,
+                                                     &l_udp_ctx->remote_addr,
+                                                     l_udp_ctx->remote_addr_len);
     
     DAP_DELETE(l_encrypted);
     
@@ -2557,6 +2656,33 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // Store client context for later retrieval in get_client_context
     l_udp_ctx->client_ctx = a_params->client_ctx;
     l_udp_ctx->stream = l_stream;
+    
+    // CRITICAL: Copy remote_addr from esocket to UDP context!
+    // esocket->addr_storage will be overwritten by recvfrom(), so we need a stable copy.
+    memcpy(&l_udp_ctx->remote_addr, &l_es->addr_storage, sizeof(struct sockaddr_storage));
+    l_udp_ctx->remote_addr_len = l_es->addr_size;
+    
+    // Log remote_addr for debugging
+    if (l_udp_ctx->remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
+               l_addr_str, ntohs(l_sin->sin_port));
+    }
+    
+    // CRITICAL: Create CLIENT datagram flow for address resolution callback
+    // This allows stream->flow to work uniformly for CLIENT and SERVER
+    l_stream->flow = dap_io_flow_datagram_new(s_get_remote_addr_cb, l_stream);
+    if (!l_stream->flow) {
+        log_it(L_CRITICAL, "Failed to allocate CLIENT datagram flow");
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_stream);
+        a_result->error_code = -1;
+        return -1;
+    }
+    
+    debug_if(s_debug_more, L_INFO, "UDP CLIENT: created datagram flow %p for stream %p", l_stream->flow, l_stream);
     
     // CRITICAL: Store trans_ctx in callbacks.arg (NOT _inheritor!)
     // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx

@@ -381,7 +381,10 @@ static void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a
             DAP_DELETE(a_response_data);
         } else {
             // Transport provided only session_id
-            log_it(L_DEBUG, "Processing session_id only, stream_key=%p", l_client_pvt->stream_key);
+            log_it(L_DEBUG, "Processing session_id only: stream=%p, session=%p, stream_key=%p, session->key=%p",
+                   a_stream, a_stream ? a_stream->session : NULL,
+                   l_client_pvt->stream_key,
+                   (a_stream && a_stream->session) ? a_stream->session->key : NULL);
             
             // For transports that set stream->session->key directly (e.g. UDP with KDF),
             // check if we have key in stream (don't copy SALSA2012, it doesn't serialize well)

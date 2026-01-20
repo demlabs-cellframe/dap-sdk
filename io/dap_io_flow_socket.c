@@ -270,6 +270,40 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             return -3;
         }
         
+        // CRITICAL: Set large socket buffers (4 MB) for high-throughput UDP
+        // MUST be set BEFORE bind() for maximum effectiveness
+        if (a_socket_type == SOCK_DGRAM) {
+            int l_buffer_size = 4 * 1024 * 1024;  // 4 MB
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes for listener %u: %s",
+                       l_buffer_size, i, strerror(errno));
+            } else {
+                // Check actual size set by kernel (may be limited by rmem_max)
+                int l_actual_size = 0;
+                socklen_t l_optlen = sizeof(l_actual_size);
+                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_actual_size, &l_optlen) == 0) {
+                    log_it(L_WARNING, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d (rmem_max may limit this)",
+                           i, l_buffer_size, l_actual_size);
+                } else {
+                    log_it(L_INFO, "Set SO_RCVBUF to %d bytes (4 MB) for UDP listener %u", l_buffer_size, i);
+                }
+            }
+            
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes for listener %u: %s",
+                       l_buffer_size, i, strerror(errno));
+            } else {
+                int l_actual_size = 0;
+                socklen_t l_optlen = sizeof(l_actual_size);
+                if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_actual_size, &l_optlen) == 0) {
+                    log_it(L_WARNING, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d (wmem_max may limit this)",
+                           i, l_buffer_size, l_actual_size);
+                } else {
+                    log_it(L_INFO, "Set SO_SNDBUF to %d bytes (4 MB) for UDP listener %u", l_buffer_size, i);
+                }
+            }
+        }
+        
         // Set SO_REUSEADDR
         int l_opt = 1;
         if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, &l_opt, sizeof(l_opt)) < 0) {

@@ -362,12 +362,13 @@ void dap_io_flow_ctrl_get_default_config(dap_io_flow_ctrl_config_t *a_config)
     }
     
     // Default retransmit configuration
-    // Tuned for UDP with potential network delays
+    // Tuned for UDP with potential network delays and VERY large transfers (gigabytes)
+    // Window size = 65536 packets allows ~64MB in-flight at 1KB/packet
     a_config->retransmit_timeout_ms = 1000;  // 1 second
     a_config->max_retransmit_count = 5;
-    a_config->send_window_size = 64;
-    a_config->recv_window_size = 128;
-    a_config->max_out_of_order_delay_ms = 1000;
+    a_config->send_window_size = 65536;  // 64K packets (~64MB for 1KB packets)
+    a_config->recv_window_size = 65536;  // 64K packets reorder buffer  
+    a_config->max_out_of_order_delay_ms = 5000;  // 5 seconds for large transfers
     a_config->keepalive_interval_ms = 5000;
     a_config->keepalive_timeout_ms = 15000;
 }

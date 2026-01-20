@@ -76,17 +76,17 @@ typedef struct test_scenario {
 
 static const test_scenario_t g_scenarios[] = {
     // Basic scenarios - verify functionality
-    {"1 server, 1 client",      1,    1,    10*1024, CALC_TIMEOUT(1)},     // 13 sec
-    {"1 server, 10 clients",    1,   10,    10*1024, CALC_TIMEOUT(10)},    // 40 sec
+    {"1 server, 1 client",      1,    1,    10*1024*1024, CALC_TIMEOUT(1)},     // 13 sec
+    {"1 server, 10 clients",    1,   10,    10*1024*1024, CALC_TIMEOUT(10)},    // 40 sec
     
     // Scaling scenarios - test concurrency
-    {"1 server, 100 clients",   1,  100,     5*1024, CALC_TIMEOUT(100)},   // 310 sec
-    {"10 servers, 10 clients", 10,   10,    10*1024, CALC_TIMEOUT(10)},
-    {"10 servers, 100 clients", 10, 100,     5*1024, CALC_TIMEOUT(100)},
+    {"1 server, 100 clients",   1,  100,     5*1024*1024, CALC_TIMEOUT(100)},   // 310 sec
+    {"10 servers, 10 clients", 10,   10,    10*1024*1024, CALC_TIMEOUT(10)},
+    {"10 servers, 100 clients", 10, 100,     5*1024*1024, CALC_TIMEOUT(100)},
     
     // Stress scenarios - test system limits
-    {"1 server, 1000 clients",  1, 1000,     1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
-    {"10 servers, 1000 clients", 10, 1000,   1*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
+    {"1 server, 1000 clients",  1, 1000,     1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
+    {"10 servers, 1000 clients", 10, 1000,   1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
@@ -825,29 +825,56 @@ static void *test_trans_worker(void *a_arg)
     
     // Wait for all clients to complete handshake
     log_it(L_INFO, "Waiting for all %zu clients to complete handshake...", l_ctx->scenario.num_clients);
+    
+    // Track overall timeout for all clients
+    uint64_t l_overall_start = dap_test_get_time_ms();
+    uint64_t l_overall_timeout_ms = l_ctx->scenario.timeout_ms;
+    
     bool l_all_ready = true;
     size_t l_handshake_completed = 0;
+    
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
-        bool l_ready = test_wait_for_full_handshake(l_ctx->clients[i], l_ctx->scenario.timeout_ms);
-        if (!l_ready) {
-            TEST_ERROR("Client %zu for %s failed to complete handshake", i, l_ctx->config.name);
+        // Check overall timeout
+        uint64_t l_elapsed = dap_test_get_time_ms() - l_overall_start;
+        if (l_elapsed >= l_overall_timeout_ms) {
+            log_it(L_ERROR, "Overall handshake timeout after %llu ms - only %zu/%zu clients completed",
+                   (unsigned long long)l_elapsed, l_handshake_completed, l_ctx->scenario.num_clients);
             l_all_ready = false;
             l_ctx->result = -4;
             break;
         }
         
+        // Calculate remaining time for this client
+        uint64_t l_remaining_ms = l_overall_timeout_ms - l_elapsed;
+        uint32_t l_client_timeout = (l_remaining_ms < l_ctx->scenario.timeout_ms) 
+                                    ? (uint32_t)l_remaining_ms 
+                                    : l_ctx->scenario.timeout_ms;
+        
+        bool l_ready = test_wait_for_full_handshake(l_ctx->clients[i], l_client_timeout);
+        if (!l_ready) {
+            log_it(L_ERROR, "Client %zu (ptr=%p) for %s failed to complete handshake", 
+                   i, (void*)l_ctx->clients[i], l_ctx->config.name);
+            l_all_ready = false;
+            l_ctx->result = -4;
+            break;  // Stop on first failure
+        }
+        
         l_handshake_completed++;
-        if (l_handshake_completed % 100 == 0) {
-            log_it(L_INFO, "Handshake completed: %zu/%zu clients", 
+        
+        // Log progress every 10 clients
+        if (l_handshake_completed % 10 == 0 || l_handshake_completed == l_ctx->scenario.num_clients) {
+            log_it(L_INFO, "Handshake progress: %zu/%zu clients completed",
                    l_handshake_completed, l_ctx->scenario.num_clients);
         }
     }
     
     if (!l_all_ready) {
-        log_it(L_ERROR, "Handshake failed after %zu/%zu clients", 
+        log_it(L_ERROR, "Handshake FAILED after %zu/%zu clients",
                l_handshake_completed, l_ctx->scenario.num_clients);
         l_ctx->running = false;
         return NULL;
+    } else {
+        log_it(L_INFO, "Handshake SUCCESS: all %zu clients completed", l_handshake_completed);
     }
     
     pthread_mutex_lock(&s_test_mutex);
@@ -1147,27 +1174,27 @@ int main(void)
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
                                 "[general]\n"
-                                "debug_reactor=false\n"
+                                "debug_reactor=true\n"
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "debug_channels=false\n"
                                 "debug_dump_stream_headers=false\n"
                                 "[stream_udp]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "[io_flow]\n"
-                                "debug_more=false\n";
+                                "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout and level to INFO (before dap_common_init)
+    // Set logging output to stdout and level to DEBUG for deep investigation
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     dap_log_level_set(L_DEBUG);
     

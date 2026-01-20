@@ -89,6 +89,17 @@ typedef struct dap_stream {
     dap_net_trans_ctx_t *trans_ctx;
     
     /**
+     * @brief Datagram flow (for UDP, SCTP, etc)
+     * 
+     * For datagram-based transports, points to dap_io_flow_datagram_t.
+     * Used for both CLIENT and SERVER to get remote address via callback.
+     * NULL for stream-oriented transports (TCP, HTTP).
+     * 
+     * @see dap_io_flow_datagram.h
+     */
+    void *flow;
+    
+    /**
      * @brief Server-side session backlink
      * 
      * On server, points to the protocol-specific session structure
@@ -168,6 +179,21 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_no
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
+
+/**
+ * @brief Send raw data to stream (datagram-aware)
+ * 
+ * Sends raw data to the stream, handling datagram (UDP, SCTP, etc) destination resolution automatically.
+ * For datagram streams, uses flow callback to get destination address.
+ * For stream-oriented (TCP), uses direct esocket write.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @return Number of bytes sent, or 0 on error
+ */
+ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 

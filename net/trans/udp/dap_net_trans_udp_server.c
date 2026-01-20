@@ -26,7 +26,7 @@
 #include "dap_net_trans_udp_stream.h"
 #include "dap_net_trans_server.h"
 #include "dap_io_flow.h"
-#include "dap_io_flow_udp.h"
+#include "dap_io_flow_datagram.h"
 #include "dap_io_flow_socket.h"
 #include "dap_io_flow_ctrl.h"  // Flow Control for reliable delivery
 #include "dap_stream.h"
@@ -135,10 +135,10 @@ const dap_serialize_schema_t g_udp_full_header_schema = {
 static _Thread_local dap_net_trans_udp_server_t *s_tls_current_server = NULL;
 
 /**
- * @brief Protocol-specific session extension (extends dap_io_flow_udp_t)
+ * @brief Protocol-specific session extension (extends dap_io_flow_datagram_t)
  */
 typedef struct stream_udp_session {
-    dap_io_flow_udp_t base;              // UDP flow (MUST be first!)
+    dap_io_flow_datagram_t base;              // UDP flow (MUST be first!)
     
     // Stream protocol fields
     dap_stream_t *stream;                // Associated dap_stream_t
@@ -254,7 +254,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
  * stream->trans->ops->write (this function) 
  *   -> gets stream_udp_session_t via stream->_server_session
  *   -> calls s_send_udp_packet with DAP_STREAM_UDP_PKT_DATA
- *   -> which encrypts and sends via dap_io_flow_udp_send
+ *   -> which encrypts and sends via dap_io_flow_datagram_send
  */
 static ssize_t s_udp_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
@@ -318,16 +318,19 @@ static const dap_net_trans_ops_t s_udp_server_trans_ops = {
 };
 
 // UDP flow callbacks
-static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
+static bool s_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                  struct sockaddr_storage *a_addr_out,
+                                  socklen_t *a_addr_len_out);
+static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                                     const uint8_t *a_data,
                                     size_t a_size);
-static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
-                                                     dap_io_flow_udp_t *a_flow);
-static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow);
-static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow);
+static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
+                                                     dap_io_flow_datagram_t *a_flow);
+static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow);
+static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow);
 
 // VTable for UDP flow
-static dap_io_flow_udp_ops_t s_stream_udp_ops = {
+static dap_io_flow_datagram_ops_t s_stream_udp_ops = {
     .packet_received = s_udp_packet_received_cb,
     .protocol_create = s_udp_protocol_create_cb,
     .protocol_finalize = s_udp_protocol_finalize_cb,
@@ -415,10 +418,10 @@ static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
         debug_if(s_debug_more, L_DEBUG, "Creating flow server '%s'", l_flow_name);
         
         // Create flow server
-        dap_io_flow_server_t *l_flow_server = dap_io_flow_server_new_udp(
+        dap_io_flow_server_t *l_flow_server = dap_io_flow_server_new_datagram(
             l_flow_name, &s_stream_flow_ops, &s_stream_udp_ops);
         
-        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_udp returned %p", 
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_datagram returned %p", 
                  (void*)l_flow_server);
         
         if (!l_flow_server) {
@@ -663,7 +666,7 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
  * Called by UDP flow layer when packet arrives. Parses stream UDP
  * protocol header and dispatches to appropriate handler.
  */
-static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
+static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                                     const uint8_t *a_data,
                                     size_t a_size)
 {
@@ -679,9 +682,10 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         return -2;
     }
     
-    // OBFUSCATED HANDSHAKE DETECTION: Size in range 600-900 bytes
-    // This could be an obfuscated handshake packet!
-    if (dap_transport_is_obfuscated_handshake_size(a_size)) {
+    // OBFUSCATED HANDSHAKE DETECTION: Size in range [MIN, MAX] AND session not established
+    // CRITICAL: Only try deobfuscation if session_id == 0 (handshake not completed)!
+    // Otherwise FC packets (which may be in same size range) will be incorrectly treated as obfuscated.
+    if (l_session->session_id == 0 && dap_transport_is_obfuscated_handshake_size(a_size)) {
         // Try to deobfuscate as handshake
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
@@ -701,13 +705,11 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
                      "Deobfuscated HANDSHAKE: %zu bytes → %zu bytes",
                      a_size, l_handshake_size);
             
-            // Initialize session_id if not set
-            if (l_session->session_id == 0) {
-                randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
-                debug_if(s_debug_more, L_DEBUG,
-                         "HANDSHAKE: generated session_id=0x%lx for session %p",
-                         l_session->session_id, l_session);
-            }
+            // Initialize session_id
+            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            debug_if(s_debug_more, L_DEBUG,
+                     "HANDSHAKE: generated session_id=0x%lx for session %p",
+                     l_session->session_id, l_session);
             
             // Process deobfuscated handshake
             int l_result = s_handle_handshake(l_session, l_handshake, l_handshake_size);
@@ -720,7 +722,8 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
         // Continue to try decryption with session key
     } else {
         debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Packet size %zu not in obfuscated range", a_size);
+                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%lx)",
+                 a_size, l_session->session_id);
     }
     
     // ALL OTHER PACKETS: Must be encrypted!
@@ -754,10 +757,44 @@ static int s_udp_packet_received_cb(dap_io_flow_udp_t *a_flow,
 
 
 /**
+ * @brief Callback to get remote address for datagram flow (SERVER side)
+ * 
+ * For SERVER flows: returns client address from stream's trans UDP context
+ * 
+ * This callback resolves circular dependencies between stream and datagram layers.
+ */
+static bool s_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                  struct sockaddr_storage *a_addr_out,
+                                  socklen_t *a_addr_len_out)
+{
+    if (!a_flow || !a_addr_out || !a_addr_len_out) {
+        log_it(L_ERROR, "Invalid arguments to s_get_remote_addr_cb (SERVER)");
+        return false;
+    }
+    
+    // Get stream from protocol_data (set in s_udp_protocol_finalize_cb)
+    dap_stream_t *l_stream = (dap_stream_t*)a_flow->protocol_data;
+    if (!l_stream) {
+        log_it(L_ERROR, "No stream in datagram flow protocol_data! (SERVER)");
+        return false;
+    }
+    
+    // SERVER flow: get address from flow->remote_addr (filled by datagram layer)
+    if (a_flow->remote_addr.ss_family == 0 || a_flow->remote_addr_len == 0) {
+        log_it(L_ERROR, "SERVER flow has no remote_addr!");
+        return false;
+    }
+    
+    memcpy(a_addr_out, &a_flow->remote_addr, sizeof(struct sockaddr_storage));
+    *a_addr_len_out = a_flow->remote_addr_len;
+    return true;
+}
+
+/**
  * @brief Protocol create callback - allocate stream_udp_session_t
  */
-static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
-                                                     dap_io_flow_udp_t *a_flow)
+static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_server,
+                                                     dap_io_flow_datagram_t *a_flow)
 {
     UNUSED(a_flow);  // We allocate fresh structure
     
@@ -768,7 +805,7 @@ static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_serve
         return NULL;
     }
     
-    // Allocate FULL structure (stream_udp_session_t extends dap_io_flow_udp_t)
+    // Allocate FULL structure (stream_udp_session_t extends dap_io_flow_datagram_t)
     stream_udp_session_t *l_session = DAP_NEW_Z(stream_udp_session_t);
     if (!l_session) {
         log_it(L_CRITICAL, "Failed to allocate stream_udp_session_t");
@@ -808,13 +845,13 @@ static dap_io_flow_udp_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_serve
              "Allocated stream_udp_session_t at %p (stream=%p)",
              l_session, l_session->stream);
     
-    return &l_session->base;  // Return pointer to base dap_io_flow_udp_t
+    return &l_session->base;  // Return pointer to base dap_io_flow_datagram_t
 }
 
 /**
  * @brief Protocol finalize callback - complete initialization after UDP layer setup
  */
-static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow)
+static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
 {
     if (!a_flow || !a_flow->listener_es) {
         log_it(L_ERROR, "Invalid flow or listener_es in finalize");
@@ -825,6 +862,13 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow)
     
     // Now we can set stream_worker using listener_es->worker
     l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+    
+    // CRITICAL: Set callback for getting remote address (resolves circular dependencies)
+    a_flow->get_remote_addr_cb = s_get_remote_addr_cb;
+    a_flow->protocol_data = l_session->stream;  // Store stream for callback
+    
+    // CRITICAL: Link SERVER flow to stream (same as CLIENT)
+    l_session->stream->flow = &l_session->base;
     
     debug_if(s_debug_more, L_DEBUG,
              "Finalized stream_udp_session_t %p (stream=%p, worker=%u)",
@@ -837,7 +881,7 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_udp_t *a_flow)
 /**
  * @brief Protocol destroy callback - cleanup stream_udp_session_t
  */
-static void s_udp_protocol_destroy_cb(dap_io_flow_udp_t *a_flow)
+static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
 {
     if (!a_flow) {
         return;
@@ -1078,7 +1122,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         }
         
         // Send obfuscated handshake
-        l_ret = dap_io_flow_udp_send(&a_session->base, l_obfuscated, l_obfuscated_size);
+        l_ret = dap_io_flow_datagram_send(&a_session->base, l_obfuscated, l_obfuscated_size);
         DAP_DELETE(l_obfuscated);
         
         if (l_ret < 0) {
@@ -1195,7 +1239,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     debug_if(s_debug_more, L_DEBUG,
              "Sending ENCRYPTED (FC disabled): type=%u, size=%zu", a_type, l_encrypted_size);
     
-    l_ret = dap_io_flow_udp_send(&a_session->base, l_encrypted, l_encrypted_size);
+    l_ret = dap_io_flow_datagram_send(&a_session->base, l_encrypted, l_encrypted_size);
     DAP_DELETE(l_encrypted);
     
     if (l_ret < 0) {
@@ -1758,6 +1802,8 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
     
+    log_it(L_INFO, "SERVER: Deriving session key with KDF counter=%lu", l_kdf_counter);
+    
     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
         a_session->encryption_key,
         DAP_ENC_KEY_TYPE_SALSA2012,
@@ -1799,7 +1845,11 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // dap_stream.c relies on stream->session->key for FRAGMENT_PACKET decryption
     if (a_session->stream && a_session->stream->session) {
         a_session->stream->session->key = l_session_key;
-        log_it(L_INFO, "Set session key in stream->session->key for stream %p", a_session->stream);
+        log_it(L_INFO, "SERVER: Set session key in stream->session->key (stream=%p, session=%p, key=%p)",
+               a_session->stream, a_session->stream->session, l_session_key);
+    } else {
+        log_it(L_ERROR, "SERVER: Cannot set stream->session->key! stream=%p, session=%p",
+               a_session->stream, a_session->stream ? a_session->stream->session : NULL);
     }
     
     return l_ret;
@@ -1821,10 +1871,17 @@ static int s_handle_data(stream_udp_session_t *a_session, const uint8_t *a_paylo
     
     // Process data through stream
     if (a_session->stream && a_session->base.base.stream_context) {
-        return (int)s_stream_udp_stream_write_cb(&a_session->base.base,
+        log_it(L_INFO, "SERVER: calling s_stream_udp_stream_write_cb (stream=%p, size=%zu)",
+               a_session->stream, a_payload_size);
+        int l_ret = (int)s_stream_udp_stream_write_cb(&a_session->base.base,
                                                   a_session->base.base.stream_context,
                                                   a_payload,
                                                   a_payload_size);
+        log_it(L_INFO, "SERVER: s_stream_udp_stream_write_cb returned %d", l_ret);
+        return l_ret;
+    } else {
+        log_it(L_WARNING, "SERVER: s_handle_data: stream=%p or stream_context=%p is NULL!",
+               a_session->stream, a_session->base.base.stream_context);
     }
     
     return 0;
@@ -2150,10 +2207,10 @@ static int s_flow_ctrl_packet_send_cb(dap_io_flow_t *a_flow,
              "SERVER: Sending FC packet: size=%zu, session=%p", a_packet_size, l_session);
     
     // Send via UDP flow
-    ssize_t l_ret = dap_io_flow_udp_send(&l_session->base, a_packet, a_packet_size);
+    ssize_t l_ret = dap_io_flow_datagram_send(&l_session->base, a_packet, a_packet_size);
     
     debug_if(s_debug_more, L_DEBUG,
-             "SERVER: dap_io_flow_udp_send returned: %zd", l_ret);
+             "SERVER: dap_io_flow_datagram_send returned: %zd", l_ret);
     
     if (l_ret < 0) {
         log_it(L_WARNING, "Failed to send Flow Control packet: ret=%zd", l_ret);

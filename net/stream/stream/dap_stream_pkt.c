@@ -29,7 +29,53 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_pkt.h"
 
+#include "dap_io_flow_datagram.h"  // For datagram remote_addr callback
+
 #define LOG_TAG "stream_pkt"
+
+/**
+ * @brief Send data to datagram stream using flow callback
+ * 
+ * Helper function to send data via datagram stream (UDP, etc), properly resolving
+ * the destination address through the datagram flow's get_remote_addr callback.
+ * 
+ * Works for both CLIENT and SERVER streams via stream->flow.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @return Number of bytes sent, or 0 on error
+ */
+static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0) {
+        return 0;
+    }
+    
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
+        return 0;
+    }
+    
+    if (!a_stream->flow) {
+        log_it(L_ERROR, "Datagram stream has no flow set");
+        return 0;
+    }
+    
+    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
+    
+    // Get destination address from datagram flow callback
+    struct sockaddr_storage l_dest_addr;
+    socklen_t l_dest_addr_len;
+    
+    if (!dap_io_flow_datagram_get_remote_addr(l_flow, &l_dest_addr, &l_dest_addr_len)) {
+        log_it(L_ERROR, "Failed to get datagram destination address from flow callback");
+        return 0;
+    }
+    
+    return dap_events_socket_sendto_unsafe(l_es, a_data, a_size, &l_dest_addr, l_dest_addr_len);
+}
 
 const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
 
@@ -99,8 +145,16 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
         log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using trans->ops->write, l_full_size=%zu", l_full_size);
         return a_stream->trans->ops->write(a_stream, s_pkt_buf, l_full_size);
     } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
+        dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
         log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using direct esocket write, l_full_size=%zu", l_full_size);
-        return dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, s_pkt_buf, l_full_size);
+        
+        // Check if this is a datagram transport (UDP, SCTP, etc)
+        if (dap_events_socket_is_datagram(l_es)) {
+            return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
+        }
+        
+        // Stream-oriented transport (TCP, etc)
+        return dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
     }
     return 0;
 }

@@ -29,7 +29,7 @@
  * Tests ONLY UDP-specific functionality:
  * - UDP packet format (DAP_STREAM_UDP_PKT_*)
  * - UDP sequence numbering
- * - UDP flow control (dap_io_flow_udp)
+ * - UDP flow control (dap_io_flow_datagram)
  * - UDP worker assignment and cross-worker forwarding
  * - UDP socket sharding
  * - UDP MTU limits
@@ -57,7 +57,7 @@
 #include "dap_net_trans_udp_stream.h"
 #include "dap_server.h"
 #include "dap_io_flow.h"
-#include "dap_io_flow_udp.h"
+#include "dap_io_flow_datagram.h"
 #include "dap_enc_server.h"
 #include "dap_enc_key.h"
 #include "dap_enc_kyber.h"
