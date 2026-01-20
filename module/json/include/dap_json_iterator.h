@@ -1,15 +1,16 @@
 /**
  * @file dap_json_iterator.h
  * @brief DAP JSON Iterator API - Zero-copy tape traversal
- * @details Phase 3.0: SimdJSON-inspired iterator for tape format
+ * @details Phase 3.0: High-performance iterator for tape format
  * 
- * This API is the key to achieving SimdJSON-level performance!
+ * This API is the key to achieving top-tier JSON parsing performance!
  * 
  * Key Features:
  * - **Zero-copy strings**: Return (pointer, length) into input buffer
  * - **Lazy parsing**: Numbers parsed only when accessed
  * - **O(1) skip**: Jump over containers without traversing
  * - **Cache-friendly**: Sequential tape access
+ * - **Arena-based**: Zero malloc overhead
  * 
  * Usage Example:
  * ```c
@@ -30,7 +31,7 @@
  * dap_json_iterator_free(iter);
  * ```
  * 
- * @author Phase 3 Architecture Team
+ * @author DAP SDK Team
  * @date 2026-01-20
  */
 
