@@ -5,9 +5,9 @@
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${LIB_DIR}/dap_mock_common.sh"
 
-# Generate linker response file with --wrap options (platform-aware)
-# macOS: check for ld64.lld (LLVM linker with --wrap support) or use empty file
-# Linux/other: uses --wrap=func (GNU ld)
+# Generate linker response file with platform-specific options
+# macOS: uses dyld interposition (proper way for runtime function replacement)
+# Linux/other: uses --wrap=func (GNU ld feature)
 generate_wrap_file() {
     local wrap_file="$1"
     local mock_functions="$2"
@@ -16,23 +16,53 @@ generate_wrap_file() {
     if [ -n "$mock_functions" ]; then
         local func_count=$(echo "$mock_functions" | wc -l)
         
-        # Detect platform using CMAKE_SYSTEM_NAME (passed from CMake)
-        # Fallback to OSTYPE if CMAKE_SYSTEM_NAME not set
-        local system_name="${CMAKE_SYSTEM_NAME:-${OSTYPE}}"
+        # Determine platform from CMake (not from $OSTYPE!)
+        # CMAKE_SYSTEM_NAME is set by CMake and passed via environment
+        local system_name="${CMAKE_SYSTEM_NAME:-Linux}"
         
-        if [[ "$system_name" == "Darwin"* ]] || [[ "$system_name" == "darwin"* ]]; then
-            # macOS: Use ld64 native -alias feature
-            # Note: -alias creates both __wrap_ symbols, so we DON'T generate trampolines
-            # because they would conflict (duplicate symbols)
+        if [ "$system_name" == "Darwin" ]; then
+            # macOS: Generate dyld interposition file using dap_tpl
+            # Dyld interposition is the proper macOS way to intercept function calls.
+            # It works by registering replacement functions in a special __DATA,__interpose section
+            # that dyld processes during library load, before the program starts.
+            #
+            # Benefits over -alias:
+            # - No symbol conflicts (works with existing __wrap_ definitions in code)
+            # - __real_ symbols work naturally (just reference original function)
+            # - Standard Apple mechanism (documented in TN2123)
             
-            echo "$mock_functions" | while read func; do
-                # Generate -alias to redirect calls (Mach-O symbols have underscore prefix)
-                # Note: For response file (@file), we write raw linker options WITHOUT -Wl, prefix
-                # CMake will add -Wl,@file which passes the file content to linker
-                echo "-alias _${func} ___wrap_${func}" >> "$wrap_file"
-            done
+            local interpose_dir="$(dirname "$wrap_file")"
+            local interpose_c="${interpose_dir}/mock_interpose_macos.c"
+            local interpose_o="${interpose_dir}/mock_interpose_macos.o"
             
-            print_success "Generated $func_count -alias options (macOS ld64)"
+            # Generate interposition C file using dap_tpl template
+            MOCK_FUNCTIONS="$mock_functions" \
+            replace_template_placeholders_with_mocking \
+                "${TEMPLATES_DIR}/mock_interpose_macos.c.tpl" \
+                "$interpose_c"
+            
+            if [ ! -f "$interpose_c" ] || [ ! -s "$interpose_c" ]; then
+                print_error "Failed to generate interposition file"
+                return 1
+            fi
+            
+            # Compile interposition file with clang
+            if command -v clang &> /dev/null; then
+                clang -c -o "$interpose_o" "$interpose_c" 2>&1
+                if [ $? -ne 0 ]; then
+                    print_error "Failed to compile macOS interposition file"
+                    print_error "Interposition source:"
+                    cat "$interpose_c" >&2
+                    return 1
+                fi
+                
+                # Add interposition object to link line
+                echo "$interpose_o" >> "$wrap_file"
+                print_success "Generated $func_count dyld interpositions (macOS)"
+            else
+                print_error "clang not found, cannot compile interposition for macOS"
+                return 1
+            fi
         else
             # Linux/BSD: Use --wrap=func (GNU ld)
             echo "$mock_functions" | while read func; do
