@@ -674,7 +674,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         return -1;
     }
     
-    log_it(L_NOTICE, "SERVER: packet received: size=%zu, flow=%p", a_size, a_flow);
+    debug_if(s_debug_more, L_DEBUG, "SERVER: packet received: size=%zu, flow=%p", a_size, a_flow);
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     if (!l_session) {
@@ -784,6 +784,10 @@ static bool s_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
         log_it(L_ERROR, "SERVER flow has no remote_addr!");
         return false;
     }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "SERVER s_get_remote_addr_cb: returning remote_addr=%s",
+             dap_io_flow_socket_addr_to_string(&a_flow->remote_addr));
     
     memcpy(a_addr_out, &a_flow->remote_addr, sizeof(struct sockaddr_storage));
     *a_addr_len_out = a_flow->remote_addr_len;
@@ -1802,7 +1806,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
     
-    log_it(L_INFO, "SERVER: Deriving session key with KDF counter=%lu", l_kdf_counter);
+    debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%lu", l_kdf_counter);
     
     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
         a_session->encryption_key,
@@ -1845,7 +1849,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // dap_stream.c relies on stream->session->key for FRAGMENT_PACKET decryption
     if (a_session->stream && a_session->stream->session) {
         a_session->stream->session->key = l_session_key;
-        log_it(L_INFO, "SERVER: Set session key in stream->session->key (stream=%p, session=%p, key=%p)",
+        debug_if(s_debug_more, L_DEBUG, "SERVER: Set session key in stream->session->key (stream=%p, session=%p, key=%p)",
                a_session->stream, a_session->stream->session, l_session_key);
     } else {
         log_it(L_ERROR, "SERVER: Cannot set stream->session->key! stream=%p, session=%p",
@@ -1871,13 +1875,13 @@ static int s_handle_data(stream_udp_session_t *a_session, const uint8_t *a_paylo
     
     // Process data through stream
     if (a_session->stream && a_session->base.base.stream_context) {
-        log_it(L_INFO, "SERVER: calling s_stream_udp_stream_write_cb (stream=%p, size=%zu)",
+        debug_if(s_debug_more, L_DEBUG, "SERVER: calling s_stream_udp_stream_write_cb (stream=%p, size=%zu)",
                a_session->stream, a_payload_size);
         int l_ret = (int)s_stream_udp_stream_write_cb(&a_session->base.base,
                                                   a_session->base.base.stream_context,
                                                   a_payload,
                                                   a_payload_size);
-        log_it(L_INFO, "SERVER: s_stream_udp_stream_write_cb returned %d", l_ret);
+        debug_if(s_debug_more, L_DEBUG, "SERVER: s_stream_udp_stream_write_cb returned %d", l_ret);
         return l_ret;
     } else {
         log_it(L_WARNING, "SERVER: s_handle_data: stream=%p or stream_context=%p is NULL!",

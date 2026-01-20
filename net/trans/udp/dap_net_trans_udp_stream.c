@@ -638,7 +638,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
+    log_it(L_NOTICE, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
@@ -703,7 +703,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
         
-        debug_if(s_debug_more, L_DEBUG, "s_udp_read returned %zd, buf_in_size now=%zu", 
+        log_it(L_NOTICE, "CLIENT: s_udp_read returned %zd, buf_in_size now=%zu", 
                  l_result, a_es->buf_in_size);
         
         // If buf_in_size didn't change, break to prevent infinite loop
@@ -2124,12 +2124,12 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
     } else {
         // FLOW CONTROL PATH: FC is ready - pass packet directly
-        debug_if(s_debug_more, L_DEBUG,
+        log_it(L_NOTICE,
                  "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, l_es->buf_in_size);
         
         int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
         
-        debug_if(s_debug_more, L_DEBUG,
+        log_it(L_NOTICE,
                  "CLIENT: FC recv returned: %d", l_ret);
         
         if (l_ret != 0) {

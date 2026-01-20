@@ -124,6 +124,16 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
         return -1;
     }
     
+    // DEBUG: Always log destination address
+    if (a_addr->ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_DEBUG, 
+                 "dap_io_flow_socket_send_to: DEST=%s:%u, size=%zu, fd=%d",
+                 l_addr_str, ntohs(l_sin->sin_port), a_size, a_es->fd);
+    }
+    
     // DEBUG: Always log socket type
     debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d (UDP=%d, CLIENT=%d)",
            a_es, a_es->fd, a_es->type, DESCRIPTOR_TYPE_SOCKET_UDP, DESCRIPTOR_TYPE_SOCKET_CLIENT);

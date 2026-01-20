@@ -1182,11 +1182,18 @@ int main(void)
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
                                 "debug_more=true\n"
+                                "dump_packet_headers=true\n"
                                 "debug_channels=false\n"
                                 "debug_dump_stream_headers=false\n"
                                 "[stream_udp]\n"
                                 "debug_more=true\n"
                                 "[io_flow]\n"
+                                "debug_more=true\n"
+                                "[io_flow_datagram]\n"
+                                "debug_more=true\n"
+                                "[dap_io_flow_socket]\n"
+                                "debug_more=true\n"
+                                "[net_trans]\n"
                                 "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {

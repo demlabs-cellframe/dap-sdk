@@ -212,20 +212,24 @@ bool dap_io_flow_datagram_get_remote_addr(
         return false;
     }
     
-    // Try callback first (CLIENT uses this)
-    if (a_flow->get_remote_addr_cb) {
-        return a_flow->get_remote_addr_cb(a_flow, a_addr_out, a_addr_len_out);
-    }
-    
-    // Fallback to direct remote_addr (SERVER uses this if no callback)
-    if (a_flow->remote_addr.ss_family == 0 || a_flow->remote_addr_len == 0) {
-        debug_if(s_debug_more, L_ERROR, "Datagram flow has no remote_addr and no callback!");
+    // Callback is REQUIRED - no fallbacks
+    if (!a_flow->get_remote_addr_cb) {
+        log_it(L_CRITICAL, "Datagram flow has no get_remote_addr_cb callback!");
         return false;
     }
     
-    memcpy(a_addr_out, &a_flow->remote_addr, sizeof(struct sockaddr_storage));
-    *a_addr_len_out = a_flow->remote_addr_len;
-    return true;
+    bool l_result = a_flow->get_remote_addr_cb(a_flow, a_addr_out, a_addr_len_out);
+    
+    // DEBUG: Log what callback returned
+    if (l_result && a_addr_out->ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr_out;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_NOTICE, "dap_io_flow_datagram_get_remote_addr: callback returned %s:%u",
+               l_addr_str, ntohs(l_sin->sin_port));
+    }
+    
+    return l_result;
 }
 
 /**
@@ -313,6 +317,21 @@ static void s_datagram_packet_received_wrapper(dap_io_flow_server_t *a_srv,
     
     // Update remote_addr for SERVER flows (datagram layer responsibility)
     if (a_remote_addr) {
+        // DEBUG: Log BEFORE update
+        if (l_datagram_flow->remote_addr.ss_family == AF_INET) {
+            struct sockaddr_in *l_sin_old = (struct sockaddr_in*)&l_datagram_flow->remote_addr;
+            char l_addr_str_old[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &l_sin_old->sin_addr, l_addr_str_old, sizeof(l_addr_str_old));
+            
+            struct sockaddr_in *l_sin_new = (struct sockaddr_in*)a_remote_addr;
+            char l_addr_str_new[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &l_sin_new->sin_addr, l_addr_str_new, sizeof(l_addr_str_new));
+            
+            log_it(L_NOTICE, "DATAGRAM packet_received: remote_addr UPDATE: %s:%u -> %s:%u",
+                   l_addr_str_old, ntohs(l_sin_old->sin_port),
+                   l_addr_str_new, ntohs(l_sin_new->sin_port));
+        }
+        
         memcpy(&l_datagram_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
         l_datagram_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
             ? sizeof(struct sockaddr_in) 
@@ -360,6 +379,15 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
     l_datagram_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
         ? sizeof(struct sockaddr_in) 
         : sizeof(struct sockaddr_in6);
+    
+    // DEBUG: Log initial remote_addr
+    if (a_remote_addr->ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_remote_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_NOTICE, "DATAGRAM flow_create: INITIAL remote_addr=%s:%u",
+               l_addr_str, ntohs(l_sin->sin_port));
+    }
     
     l_datagram_flow->listener_es = a_listener_es;
     
