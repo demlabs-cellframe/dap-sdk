@@ -1,0 +1,19 @@
+# Competitors directory (downloaded by script)
+competitors/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+benchmark_competitive_full
+benchmark_stage1_multi_arch
+
+# Test data
+*.json
+datasets/
+
+# Results
+results/
+*.log
+*.csv

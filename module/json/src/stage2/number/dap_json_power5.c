@@ -132,7 +132,7 @@ const dap_json_power5_table_t* dap_json_power5_init(void) {
     if (non_normalized > 0) {
         log_it(L_ERROR, "Power5 table has %d non-normalized entries", non_normalized);
     } else {
-        log_it(L_DEBUG, "Power5 table: all entries normalized (lz=0 or 1)");
+        debug_if(true, L_DEBUG, "Power5 table: all entries normalized (lz=0 or 1)");
     }
 #endif
     

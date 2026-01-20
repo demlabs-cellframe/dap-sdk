@@ -188,6 +188,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_crypto_benchmarks.c)
     set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT 1200)
 endif()
 
+# JSON performance benchmarks (dap_json vs competitors)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
+    add_subdirectory(performance/json)
+    message("[+] JSON performance benchmarks configured")
+endif()
+
 # Build Regression Tests  
 message("[+] Configuring Regression Tests")
 

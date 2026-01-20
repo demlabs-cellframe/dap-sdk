@@ -120,7 +120,7 @@ generate_cmake_file "$CMAKE_FILE" "$MOCK_FUNCTIONS"
 # Use fixed name instead of PID to ensure file exists for later steps
 TMP_CUSTOM_MOCKS="${OUTPUT_DIR}/custom_mocks_list.txt"
 > "$TMP_CUSTOM_MOCKS"
-TEMP_FILES+=("$TMP_CUSTOM_MOCKS")
+# NOTE: Do NOT add to TEMP_FILES - this file is needed for CMake dependencies
 
 # Scan all source files for DAP_MOCK_WRAPPER_CUSTOM and extract full information
 [ "$VERBOSE" = "1" ] && print_info "Scanning ${#SOURCE_FILES[@]} source files for custom mocks..."

@@ -77,7 +77,7 @@ static benchmark_result_t benchmark_architecture(
     result.size_bytes = a_input_len;
     
     // Set architecture
-    if (!dap_json_set_simd_arch(a_arch)) {
+    if (dap_json_set_arch(a_arch) != 0) {
         log_it(L_ERROR, "[%s] Architecture not available", result.name);
         return result;
     }

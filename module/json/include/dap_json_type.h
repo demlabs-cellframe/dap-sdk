@@ -61,99 +61,55 @@ typedef enum {
     DAP_JSON_TYPE_STRING         /**< string */
 } dap_json_type_t;
 
-/**
- * @brief JSON number representation (Phase 2.1: Optimized layout)
- * @details Supports int64, uint64, uint128, uint256, and double
- * 
- * Layout optimization:
- * - Hot field is_double first (frequently checked)
- * - Proper alignment for uint256_t (32 bytes)
- * Total size: 40 bytes (1 byte flag + 7 padding + 32 byte union)
- */
-typedef struct {
-    bool is_double;       /**< true if double, false otherwise (check type) - HOT FIELD */
-    uint8_t _pad[7];      /**< Padding for 8-byte alignment of union */
-    union {
-        int64_t i;        /**< Signed 64-bit integer */
-        uint64_t u64;     /**< Unsigned 64-bit integer */
-        uint128_t u128;   /**< Unsigned 128-bit integer */
-        uint256_t u256;   /**< Unsigned 256-bit integer */
-        double d;         /**< IEEE 754 double precision */
-    };
-} dap_json_number_t;
-
-/**
- * @brief JSON string representation
- * @details Supports both zero-copy and materialized strings
- *          - data: points to original JSON buffer (zero-copy) OR materialized copy
- *          - length: string length (for zero-copy access)
- *          - data_materialized: cached null-terminated copy (lazy allocation)
- *          - is_zero_copy: true if data points to original buffer (not null-terminated)
- */
-typedef struct {
-    const char *data;              /**< String data (zero-copy: NOT null-terminated) */
-    size_t length;                 /**< String length (excluding null terminator) */
-    char *data_materialized;       /**< Cached null-terminated copy (NULL if not yet materialized) */
-    bool is_zero_copy;             /**< true if data is zero-copy (not null-terminated) */
-    bool needs_free;               /**< true if data_materialized needs to be freed */
-} dap_json_string_t;
-
-/* Forward declarations for recursive types */
-typedef struct dap_json_value dap_json_value_t;
+/* Forward declaration for recursive type */
 typedef struct dap_json dap_json_t;
 
 /**
- * @brief JSON array representation
- */
-typedef struct {
-    dap_json_value_t **elements;  /**< Array of value pointers */
-    size_t count;                  /**< Number of elements */
-    size_t capacity;               /**< Allocated capacity */
-    dap_json_t **wrappers;         /**< Cached wrappers for borrowed refs (json-c compatible) */
-} dap_json_array_t;
-
-/**
- * @brief JSON object key-value pair
- */
-typedef struct {
-    char *key;                     /**< Key string (null-terminated) */
-    dap_json_value_t *value;       /**< Value pointer */
-} dap_json_object_pair_t;
-
-/**
- * @brief JSON object representation
- */
-typedef struct {
-    dap_json_object_pair_t *pairs; /**< Array of key-value pairs */
-    size_t count;                   /**< Number of pairs */
-    size_t capacity;                /**< Allocated capacity */
-    dap_json_t **wrappers;         /**< Cached wrappers for borrowed refs (json-c compatible) */
-} dap_json_object_t;
-
-/**
- * @brief JSON value (unified type for all JSON values)
- * @details Phase 2.1: Optimized struct layout for cache efficiency
+ * @brief JSON value (compact 8-byte zero-copy representation)
+ * @details Phase 2.0.4: UNIFIED structure - THE ONLY internal representation
  * 
- * Layout optimization:
- * - type as uint8_t (1 byte instead of 4) - HOT FIELD first
- * - Explicit padding for alignment
- * - Union aligned to 8 bytes
- * Total size: 48 bytes (1+7 pad + 40 union)
+ * This structure achieves:
+ * - 7x memory reduction (56 bytes → 8 bytes per value)
+ * - Zero-copy string storage (reference source buffer)
+ * - Lazy number parsing
+ * - Flat array storage for containers
+ * 
+ * **Memory Layout (8 bytes total, packed):**
+ * ```
+ * Byte 0: type     (dap_json_type_t)
+ * Byte 1: flags    (optimization hints)
+ * Byte 2-3: length (value length in source, 0-64KB)
+ * Byte 4-7: offset (start position in source, 0-4GB)
+ * ```
+ * 
+ * **Zero-Copy Semantics:**
+ * - Strings: offset points to '"' character in source, length excludes quotes
+ * - Numbers: offset points to first digit, length includes all digits/symbols
+ * - Objects/Arrays: offset stores pointer to indices array (cast to uint32_t)
+ * - Booleans/Null: offset points to literal in source
+ * 
+ * **Source Buffer Lifetime:**
+ * ⚠️ WARNING: The source buffer MUST remain valid for the entire lifetime
+ * of any dap_json_t object. Freeing the source buffer while values exist
+ * will cause crashes.
+ * 
+ * @see dap_json_value.h for extended formats and utility functions
  */
-struct dap_json_value {
-    uint8_t type;                  /**< Value type (dap_json_type_t) - HOT FIELD */
-    uint8_t _pad[7];               /**< Padding for 8-byte alignment */
-    union {
-        bool boolean;              /**< Boolean value (for TYPE_BOOLEAN) */
-        dap_json_number_t number;  /**< Number value (for TYPE_INT/TYPE_DOUBLE) */
-        dap_json_string_t string;  /**< String value (for TYPE_STRING) */
-        dap_json_array_t array;    /**< Array value (for TYPE_ARRAY) */
-        dap_json_object_t object;  /**< Object value (for TYPE_OBJECT) */
-    };
-    
-    // ⭐ Arena refcounting support
-    void *arena_page_handle;       /**< Page handle from refcounted arena (for borrowed refs) */
-};
+typedef struct dap_json_value {
+    uint8_t type;       /**< Value type (TYPE_STRING, TYPE_NUMBER, etc) */
+    uint8_t flags;      /**< Optimization flags (escaped, cached, etc) */
+    uint16_t length;    /**< Length in source buffer (0-64KB) */
+    uint32_t offset;    /**< Start offset in source buffer (0-4GB) */
+} DAP_ALIGN_PACKED dap_json_value_t;
+
+// Compile-time assertion: ensure 8 bytes
+#ifdef __cplusplus
+static_assert(sizeof(dap_json_value_t) == 8, 
+              "dap_json_value_t must be exactly 8 bytes");
+#else
+_Static_assert(sizeof(dap_json_value_t) == 8, 
+               "dap_json_value_t must be exactly 8 bytes");
+#endif
 
 #ifdef __cplusplus
 }
