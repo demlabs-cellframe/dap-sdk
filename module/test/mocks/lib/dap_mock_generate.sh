@@ -5,7 +5,9 @@
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${LIB_DIR}/dap_mock_common.sh"
 
-# Generate linker response file with --wrap options
+# Generate linker response file with platform-specific options
+# macOS: uses dyld interposition (proper way for runtime function replacement)
+# Linux/other: uses --wrap=func (GNU ld feature)
 generate_wrap_file() {
     local wrap_file="$1"
     local mock_functions="$2"
@@ -13,11 +15,62 @@ generate_wrap_file() {
     > "$wrap_file"  # Clear file
     if [ -n "$mock_functions" ]; then
         local func_count=$(echo "$mock_functions" | wc -l)
-        echo "$mock_functions" | while read func; do
-            # Note: For -Wl,@file usage, we need just --wrap=func (without -Wl,)
-            echo "--wrap=$func" >> "$wrap_file"
-        done
-        print_success "Generated $func_count --wrap options"
+        
+        # Determine platform from CMake (not from $OSTYPE!)
+        # CMAKE_SYSTEM_NAME is set by CMake and passed via environment
+        local system_name="${CMAKE_SYSTEM_NAME:-Linux}"
+        
+        if [ "$system_name" == "Darwin" ]; then
+            # macOS: Generate dyld interposition file using dap_tpl
+            # Dyld interposition is the proper macOS way to intercept function calls.
+            # It works by registering replacement functions in a special __DATA,__interpose section
+            # that dyld processes during library load, before the program starts.
+            #
+            # Benefits over -alias:
+            # - No symbol conflicts (works with existing __wrap_ definitions in code)
+            # - __real_ symbols work naturally (just reference original function)
+            # - Standard Apple mechanism (documented in TN2123)
+            
+            local interpose_dir="$(dirname "$wrap_file")"
+            local interpose_c="${interpose_dir}/mock_interpose_macos.c"
+            local interpose_o="${interpose_dir}/mock_interpose_macos.o"
+            
+            # Generate interposition C file using dap_tpl template
+            MOCK_FUNCTIONS="$mock_functions" \
+            replace_template_placeholders_with_mocking \
+                "${TEMPLATES_DIR}/mock_interpose_macos.c.tpl" \
+                "$interpose_c"
+            
+            if [ ! -f "$interpose_c" ] || [ ! -s "$interpose_c" ]; then
+                print_error "Failed to generate interposition file"
+                return 1
+            fi
+            
+            # Compile interposition file with clang
+            if command -v clang &> /dev/null; then
+                clang -c -o "$interpose_o" "$interpose_c" 2>&1
+                if [ $? -ne 0 ]; then
+                    print_error "Failed to compile macOS interposition file"
+                    print_error "Interposition source:"
+                    cat "$interpose_c" >&2
+                    return 1
+                fi
+                
+                # Add interposition object to link line
+                echo "$interpose_o" >> "$wrap_file"
+                print_success "Generated $func_count dyld interpositions (macOS)"
+            else
+                print_error "clang not found, cannot compile interposition for macOS"
+                return 1
+            fi
+        else
+            # Linux/BSD: Use --wrap=func (GNU ld)
+            echo "$mock_functions" | while read func; do
+                # Note: For -Wl,@file usage, we need just --wrap=func (without -Wl,)
+                echo "--wrap=$func" >> "$wrap_file"
+            done
+            print_success "Generated $func_count --wrap options (GNU ld)"
+        fi
     else
         # Create truly empty file - linker response files cannot contain comments
         > "$wrap_file"
