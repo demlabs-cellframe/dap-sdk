@@ -20,6 +20,9 @@ generate_wrap_file() {
         # CMAKE_SYSTEM_NAME is set by CMake and passed via environment
         local system_name="${CMAKE_SYSTEM_NAME:-Linux}"
         
+        # Debug: Print platform detection (goes to stderr so CMake sees it)
+        echo "[dap_mock] Platform detection: CMAKE_SYSTEM_NAME='${CMAKE_SYSTEM_NAME}' -> system_name='${system_name}'" >&2
+        
         if [ "$system_name" == "Darwin" ]; then
             # macOS: Generate dyld interposition file using dap_tpl
             # Dyld interposition is the proper macOS way to intercept function calls.

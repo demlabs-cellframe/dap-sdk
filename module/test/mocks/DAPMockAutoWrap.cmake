@@ -97,17 +97,21 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
     # Prepare command for mock generation
-    # For STAGE 1 (execute_process) - use list
-    set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    # For STAGE 1 (execute_process) - use list with cmake -E env
+    # We need to pass environment variables:
+    # 1. DAP_TPL_DIR - location of centralized dap_tpl (if available)
+    # 2. CMAKE_SYSTEM_NAME - target platform for proper linker option generation (Darwin vs Linux)
+    #
+    # Note: We use `cmake -E env` instead of execute_process(ENVIRONMENT ...) because:
+    # - ENVIRONMENT parameter was added in CMake 3.22
+    # - We support CMake 3.12+
+    # - cmake -E env is available since CMake 3.1
+    set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}")
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
-        # Use cmake -E env to set environment variables (works with CMake 3.10+)
-        # Pass CMAKE_SYSTEM_NAME so script can detect target platform (not just host)
-        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
-            "DAP_TPL_DIR=${DAP_TPL_DIR}" 
-            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+        list(APPEND MOCK_GEN_CMD_STAGE1 "DAP_TPL_DIR=${DAP_TPL_DIR}")
     endif()
+    list(APPEND MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     
     execute_process(
         COMMAND ${MOCK_GEN_CMD_STAGE1}
@@ -117,19 +121,22 @@ function(dap_mock_autowrap TARGET_NAME)
         ERROR_VARIABLE MOCK_GEN_ERROR
     )
     
+    # Show debug output from mock generator (if any)
+    if(MOCK_GEN_ERROR)
+        message(STATUS "${MOCK_GEN_ERROR}")
+    endif()
+    
     if(NOT MOCK_GEN_RESULT EQUAL 0)
         message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
-    # For STAGE 2 (add_custom_command) - prepare separate command
+    # For STAGE 2 (add_custom_command) - prepare command with environment variables
+    # Use cmake -E env to set both DAP_TPL_DIR and CMAKE_SYSTEM_NAME
+    set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}")
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
-        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
-            "DAP_TPL_DIR=${DAP_TPL_DIR}"
-            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
-    else()
-        set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
+        list(APPEND MOCK_GEN_CMD_STAGE2 "DAP_TPL_DIR=${DAP_TPL_DIR}")
     endif()
+    list(APPEND MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
     
     # STAGE 2: Setup re-generation on source file changes
     add_custom_command(
