@@ -573,25 +573,6 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                         return a_stage1->error_code;
                     }
                     
-                    // ⚡ Phase 2.3: Count array elements during tokenization
-                    if (a_stage1->nesting_depth >= 0) {
-                        int32_t l_container_idx = a_stage1->nesting_stack[a_stage1->nesting_depth];
-                        // Only increment for arrays (not objects - objects use ':')
-                        // Check previous token: if it's NOT ':', this is an array element
-                        if (a_stage1->indices_count >= 2) {
-                            dap_json_struct_index_t *l_prev = &a_stage1->indices[a_stage1->indices_count - 2];
-                            if (l_prev->character != ':') {
-                                a_stage1->container_sizes[l_container_idx]++;
-                            }
-                        } else if (a_stage1->indices_count == 1) {
-                            // First element after '[' or '{'
-                            dap_json_struct_index_t *l_prev = &a_stage1->indices[0];
-                            if (l_prev->character == '[') {
-                                a_stage1->container_sizes[l_container_idx]++;
-                            }
-                        }
-                    }
-                    
                     // Update position
                     a_stage1->current_pos = l_new_pos;
                 }
@@ -654,30 +635,61 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                     }
                     
                     a_stage1->nesting_stack[a_stage1->nesting_depth] = (int32_t)a_stage1->container_sizes_count;
-                    a_stage1->container_sizes[a_stage1->container_sizes_count] = 0;  // Initial size
-                    a_stage1->container_sizes_count++;
                     
+                    // Mark as array (positive) or object (negative) in stack
                     if (c == '[') {
+                        // Array: store positive index
+                        a_stage1->nesting_stack[a_stage1->nesting_depth] = (int32_t)a_stage1->container_sizes_count;
                         a_stage1->array_count++;
                     } else {
+                        // Object: store negative index (to distinguish from arrays)
+                        a_stage1->nesting_stack[a_stage1->nesting_depth] = -((int32_t)a_stage1->container_sizes_count + 1);
                         a_stage1->object_count++;
                     }
                     
+                    a_stage1->container_sizes[a_stage1->container_sizes_count] = 0;  // Initial size = 0
+                    
+                    a_stage1->container_sizes_count++;
+                    
                 } else if (c == ']' || c == '}') {
-                    // Container end - pop from stack
+                    // Container end - finalize count and pop from stack
                     if (a_stage1->nesting_depth >= 0) {
+                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
+                        
+                        if (l_stack_val >= 0) {
+                            // Positive = array
+                            // ⚡ CRITICAL: If count > 0 (had elements), add 1 because ',' counts gaps, not elements
+                            // [1,2,3] has 2 commas but 3 elements!
+                            if (a_stage1->container_sizes[l_stack_val] > 0) {
+                                a_stage1->container_sizes[l_stack_val]++;
+                            }
+                        }
+                        // Objects are already correct (counted by ':')
+                        
                         a_stage1->nesting_depth--;
                     }
                     
                 } else if (c == ',') {
-                    // Element/pair separator - we'll count actual elements below
-                    // (not here, as ',' can be misleading for empty values)
+                    // Element/pair separator - increment count for current container
+                    if (a_stage1->nesting_depth >= 0) {
+                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
+                        
+                        if (l_stack_val >= 0) {
+                            // Positive = array - ',' means +1 element
+                            a_stage1->container_sizes[l_stack_val]++;
+                        }
+                        // For objects, ',' separates pairs but doesn't count them (we use ':')
+                    }
                     
                 } else if (c == ':') {
-                    // Key-value separator in object
+                    // Key-value separator in object - INCREMENT counter (pair found!)
                     if (a_stage1->nesting_depth >= 0) {
-                        int32_t l_container_idx = a_stage1->nesting_stack[a_stage1->nesting_depth];
-                        a_stage1->container_sizes[l_container_idx]++;  // Count pairs
+                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
+                        if (l_stack_val < 0) {
+                            // Negative = object
+                            int32_t l_container_idx = -(l_stack_val + 1);
+                            a_stage1->container_sizes[l_container_idx]++;  // Count pairs by ':'
+                        }
                     }
                 }
                 

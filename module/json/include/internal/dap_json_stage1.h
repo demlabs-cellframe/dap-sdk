@@ -159,7 +159,8 @@ typedef struct {
     size_t *container_sizes;    /**< Array of container sizes (alternating: array, object, array, object...) */
     size_t container_sizes_capacity; /**< Allocated capacity */
     size_t container_sizes_count;    /**< Number of containers */
-    int32_t nesting_stack[1000]; /**< Stack for tracking nested containers during tokenization */
+    int32_t nesting_stack[1000]; /**< Stack for tracking nested containers (stores container index) */
+    uint8_t nesting_flags[1000]; /**< Flags for each nesting level: bit 0 = expect_element */
     int32_t nesting_depth;       /**< Current nesting depth */
     
     /* Error handling */
