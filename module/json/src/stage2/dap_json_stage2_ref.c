@@ -1163,23 +1163,26 @@ dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
     size_t l_total_values = l_string_count + l_number_count + l_literal_count + 
                             l_array_count + l_object_count;
     
+    // ⚡ PHASE 2.2 OPTIMIZATION: Single allocation instead of Arena
+    // SimdJSON-style: ONE malloc for everything (values + array/object storage)
+    // NO Arena overhead, NO dynamic growth, PERFECT cache locality
+    
     size_t l_estimated_size = 
-        (l_total_values * 8) +                               // Value refs (8 bytes each!)
-        (l_array_count * INITIAL_ARRAY_CAPACITY * 8) +      // Array storage (refs)
-        (l_object_count * INITIAL_OBJECT_CAPACITY * 16);    // Object storage (ref pairs)
+        (l_total_values * sizeof(dap_json_value_t)) +           // Value refs (8 bytes each)
+        (l_array_count * INITIAL_ARRAY_CAPACITY * sizeof(uint32_t)) +  // Array storage
+        (l_object_count * INITIAL_OBJECT_CAPACITY * sizeof(uint32_t) * 2);  // Object pairs
     
     debug_if(dap_json_get_debug(), L_DEBUG,
-             "Phase 2.0.3: Pre-allocation (8-byte refs) BEFORE cap - strings:%zu numbers:%zu literals:%zu arrays:%zu objects:%zu → arena:%zu bytes",
-             l_string_count, l_number_count, l_literal_count, l_array_count, l_object_count,
-             l_estimated_size);
+             "Phase 2.2: Single allocation calc - values:%zu arrays:%zu objects:%zu → %zu bytes",
+             l_total_values, l_array_count, l_object_count, l_estimated_size);
     
-    // ⚡ ОПТИМИЗАЦИЯ: Более агрессивный cap для экономии памяти
-    // Для JSON <1KB: максимум 16KB арены
-    // Для JSON <100KB: максимум 512KB арены
-    // Для JSON >100KB: cap на 4x от размера JSON
-    const size_t MAX_PREALLOC_SMALL = 16 * 1024;   // 16 KB для маленьких JSON
-    const size_t MAX_PREALLOC_MEDIUM = 512 * 1024; // 512 KB для средних JSON
-    const size_t MAX_PREALLOC_LARGE = a_stage1->input_len * 4; // 4x от размера JSON
+    // ⚡ PHASE 2.2: More aggressive caps to reduce memory (SimdJSON target: <10 MB)
+    // Small JSON (<1KB): cap at 8KB (was 16KB)
+    // Medium JSON (<100KB): cap at 256KB (was 512KB)
+    // Large JSON: cap at 2x JSON size (was 4x)
+    const size_t MAX_PREALLOC_SMALL = 8 * 1024;    // 8 KB
+    const size_t MAX_PREALLOC_MEDIUM = 256 * 1024; // 256 KB
+    const size_t MAX_PREALLOC_LARGE = a_stage1->input_len * 2; // 2x JSON size
     
     if (a_stage1->input_len < 1024 && l_estimated_size > MAX_PREALLOC_SMALL) {
         log_it(L_DEBUG, "Pre-allocation capped (small JSON): requested=%zu KB, capped to=%zu KB", 
