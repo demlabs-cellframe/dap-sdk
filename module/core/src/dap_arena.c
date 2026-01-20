@@ -293,6 +293,80 @@ void *dap_arena_alloc(dap_arena_t *a_arena, size_t a_size)
 }
 
 /**
+ * @brief Reallocate memory in arena (optimized for last allocation)
+ * 
+ * If a_ptr is the LAST allocation in current page, realloc can grow in-place.
+ * Otherwise, allocates new block and copies data (like standard realloc).
+ * 
+ * @param[in] a_arena Arena allocator
+ * @param[in] a_ptr Original pointer (from dap_arena_alloc)
+ * @param[in] a_old_size Original size
+ * @param[in] a_new_size New size
+ * @return New pointer, or NULL on error
+ * 
+ * @note a_ptr MUST be from this arena! No validation is performed.
+ * @note If realloc succeeds in-place, returns same pointer.
+ */
+void *dap_arena_realloc(dap_arena_t *a_arena, void *a_ptr, size_t a_old_size, size_t a_new_size)
+{
+    if (!a_arena) {
+        log_it(L_ERROR, "NULL arena pointer");
+        return NULL;
+    }
+    
+    if (!a_ptr || a_new_size == 0) {
+        // Edge cases: NULL ptr or zero size
+        if (a_new_size == 0) {
+            return NULL;  // Free (no-op in arena)
+        }
+        return dap_arena_alloc(a_arena, a_new_size);  // New allocation
+    }
+    
+    // Align sizes
+    size_t l_old_aligned = ALIGN_UP(a_old_size, DAP_ARENA_ALIGNMENT);
+    size_t l_new_aligned = ALIGN_UP(a_new_size, DAP_ARENA_ALIGNMENT);
+    
+    // ⚡ OPTIMIZATION: Check if a_ptr is the LAST allocation in current page
+    dap_arena_page_t *l_page = a_arena->current_page;
+    if (l_page) {
+        // Calculate where last allocation starts
+        uintptr_t l_page_data = (uintptr_t)l_page->data;
+        uintptr_t l_last_alloc_start = l_page_data + l_page->used - l_old_aligned;
+        uintptr_t l_ptr_addr = (uintptr_t)a_ptr;
+        
+        if (l_ptr_addr == l_last_alloc_start) {
+            // ✅ This IS the last allocation! Can grow in-place!
+            size_t l_space_needed = l_new_aligned - l_old_aligned;
+            size_t l_space_available = l_page->size - l_page->used;
+            
+            if (l_space_needed <= l_space_available) {
+                // ⚡ IN-PLACE GROWTH (zero copy!)
+                l_page->used += l_space_needed;
+                debug_if(s_debug_more, L_DEBUG, 
+                         "⚡ Arena realloc IN-PLACE: %zu → %zu bytes (zero copy!)",
+                         a_old_size, a_new_size);
+                return a_ptr;  // Same pointer!
+            }
+        }
+    }
+    
+    // ❌ Can't grow in-place - allocate new block and copy
+    void *l_new_ptr = dap_arena_alloc(a_arena, a_new_size);
+    if (!l_new_ptr) {
+        return NULL;
+    }
+    
+    // Copy old data
+    memcpy(l_new_ptr, a_ptr, a_old_size < a_new_size ? a_old_size : a_new_size);
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "Arena realloc with copy: %zu → %zu bytes (not last allocation)",
+             a_old_size, a_new_size);
+    
+    return l_new_ptr;
+}
+
+/**
  * @brief Allocate memory from refcounted arena (extended version)
  */
 bool dap_arena_alloc_ex(dap_arena_t *a_arena, size_t a_size, dap_arena_alloc_ex_t *a_result)

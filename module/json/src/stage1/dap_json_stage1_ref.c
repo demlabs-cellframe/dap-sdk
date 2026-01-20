@@ -620,30 +620,31 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                     if (a_stage1->container_sizes_count >= a_stage1->container_sizes_capacity) {
                         size_t l_new_cap = a_stage1->container_sizes_capacity * 2;
                         
-                        // ⚡ Use arena allocation for growth (no malloc!)
+                        // ⚡ Use arena REALLOC for growth (zero copy if last allocation!)
                         if (s_thread_json_arena) {
-                            size_t *l_new_sizes = (size_t*)dap_arena_alloc(s_thread_json_arena, 
-                                                                            l_new_cap * sizeof(size_t));
+                            size_t l_old_size = a_stage1->container_sizes_capacity * sizeof(size_t);
+                            size_t l_new_size = l_new_cap * sizeof(size_t);
+                            
+                            size_t *l_new_sizes = (size_t*)dap_arena_realloc(s_thread_json_arena, 
+                                                                              a_stage1->container_sizes,
+                                                                              l_old_size,
+                                                                              l_new_size);
                             if (!l_new_sizes) {
-                                log_it(L_ERROR, "Failed to grow container_sizes array from arena");
+                                log_it(L_ERROR, "Failed to realloc container_sizes array from arena");
                                 a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
                                 return a_stage1->error_code;
                             }
                             
-                            // Copy old data
-                            memcpy(l_new_sizes, a_stage1->container_sizes, 
-                                   a_stage1->container_sizes_count * sizeof(size_t));
-                            
                             a_stage1->container_sizes = l_new_sizes;
                             a_stage1->container_sizes_capacity = l_new_cap;
                             
-                            debug_if(s_debug_more, L_DEBUG, "⚡ Grew container_sizes array to %zu entries (arena)", l_new_cap);
+                            debug_if(s_debug_more, L_DEBUG, "⚡ Realloc container_sizes to %zu (zero-copy if last!)", l_new_cap);
                         } else {
-                            // Fallback to realloc if arena not available
+                            // Fallback to DAP_REALLOC if arena not available
                             size_t *l_new_sizes = (size_t*)DAP_REALLOC(a_stage1->container_sizes, 
                                                                         l_new_cap * sizeof(size_t));
                             if (!l_new_sizes) {
-                                log_it(L_ERROR, "Failed to grow container_sizes array");
+                                log_it(L_ERROR, "Failed to realloc container_sizes array");
                                 a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
                                 return a_stage1->error_code;
                             }

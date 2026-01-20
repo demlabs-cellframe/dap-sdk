@@ -189,6 +189,19 @@ dap_arena_t *dap_arena_new_thread_local(size_t a_initial_size);
 void *dap_arena_alloc(dap_arena_t *a_arena, size_t a_size);
 
 /**
+ * @brief Reallocate memory in arena (optimized for last allocation)
+ * 
+ * ⚡ If a_ptr is the LAST allocation, grows IN-PLACE (zero copy!).
+ * 
+ * @param[in] a_arena Arena allocator
+ * @param[in] a_ptr Original pointer
+ * @param[in] a_old_size Original size
+ * @param[in] a_new_size New size
+ * @return New pointer (may be same if in-place), or NULL on error
+ */
+void *dap_arena_realloc(dap_arena_t *a_arena, void *a_ptr, size_t a_old_size, size_t a_new_size);
+
+/**
  * @brief Allocate memory from refcounted arena (extended version)
  * 
  * Use this for arenas created with use_refcount=true.
