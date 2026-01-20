@@ -516,29 +516,6 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
     a_stage1->array_count = 0;   // Phase 2.1 - for pre-allocation
     a_stage1->object_count = 0;  // Phase 2.1 - for pre-allocation
     a_stage1->string_chars = 0;
-    a_stage1->whitespace_chars = 0;
-    a_stage1->structural_chars = 0;
-    
-    // ⚡ Phase 2.3: Initialize container size tracking (integrated into Stage 1)
-    a_stage1->container_sizes_count = 0;
-    a_stage1->nesting_depth = -1;  // -1 = root level
-    
-    // ⚡ Allocate container_sizes array using thread-local arena (zero malloc overhead!)
-    // Arena is shared with Stage 2 and will be reset between parses
-    if (!a_stage1->container_sizes && s_thread_json_arena) {
-        a_stage1->container_sizes_capacity = 256;  // Initial capacity
-        a_stage1->container_sizes = (size_t*)dap_arena_alloc(s_thread_json_arena, 
-                                                              sizeof(size_t) * a_stage1->container_sizes_capacity);
-        if (!a_stage1->container_sizes) {
-            log_it(L_ERROR, "Failed to allocate container_sizes array from arena");
-            a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
-            return a_stage1->error_code;
-        }
-        debug_if(s_debug_more, L_DEBUG, "⚡ Allocated container_sizes from arena (%zu entries)", 
-                 a_stage1->container_sizes_capacity);
-    }
-    
-    a_stage1->error_code = STAGE1_SUCCESS;
     a_stage1->error_position = 0;
     a_stage1->error_message[0] = '\0';
     
@@ -587,110 +564,10 @@ int dap_json_stage1_run_ref(dap_json_stage1_t *a_stage1)
                 }
                 
                 // Count arrays and objects for Phase 2.1 pre-allocation
-                // ⚡ Phase 2.3: Track container sizes DURING tokenization (zero overhead!)
-                if (c == '[' || c == '{') {
-                    // Container start - push to stack
-                    a_stage1->nesting_depth++;
-                    if (a_stage1->nesting_depth >= 1000) {
-                        log_it(L_ERROR, "Max nesting depth exceeded");
-                        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
-                        return a_stage1->error_code;
-                    }
-                    
-                    // Allocate size entry (grow if needed)
-                    if (a_stage1->container_sizes_count >= a_stage1->container_sizes_capacity) {
-                        size_t l_new_cap = a_stage1->container_sizes_capacity * 2;
-                        
-                        // ⚡ Use arena REALLOC for growth (zero copy if last allocation!)
-                        if (s_thread_json_arena) {
-                            size_t l_old_size = a_stage1->container_sizes_capacity * sizeof(size_t);
-                            size_t l_new_size = l_new_cap * sizeof(size_t);
-                            
-                            size_t *l_new_sizes = (size_t*)dap_arena_realloc(s_thread_json_arena, 
-                                                                              a_stage1->container_sizes,
-                                                                              l_old_size,
-                                                                              l_new_size);
-                            if (!l_new_sizes) {
-                                log_it(L_ERROR, "Failed to realloc container_sizes array from arena");
-                                a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
-                                return a_stage1->error_code;
-                            }
-                            
-                            a_stage1->container_sizes = l_new_sizes;
-                            a_stage1->container_sizes_capacity = l_new_cap;
-                            
-                            debug_if(s_debug_more, L_DEBUG, "⚡ Realloc container_sizes to %zu (zero-copy if last!)", l_new_cap);
-                        } else {
-                            // Fallback to DAP_REALLOC if arena not available
-                            size_t *l_new_sizes = (size_t*)DAP_REALLOC(a_stage1->container_sizes, 
-                                                                        l_new_cap * sizeof(size_t));
-                            if (!l_new_sizes) {
-                                log_it(L_ERROR, "Failed to realloc container_sizes array");
-                                a_stage1->error_code = STAGE1_ERROR_OUT_OF_MEMORY;
-                                return a_stage1->error_code;
-                            }
-                            a_stage1->container_sizes = l_new_sizes;
-                            a_stage1->container_sizes_capacity = l_new_cap;
-                        }
-                    }
-                    
-                    a_stage1->nesting_stack[a_stage1->nesting_depth] = (int32_t)a_stage1->container_sizes_count;
-                    
-                    // Mark as array (positive) or object (negative) in stack
-                    if (c == '[') {
-                        // Array: store positive index
-                        a_stage1->nesting_stack[a_stage1->nesting_depth] = (int32_t)a_stage1->container_sizes_count;
-                        a_stage1->array_count++;
-                    } else {
-                        // Object: store negative index (to distinguish from arrays)
-                        a_stage1->nesting_stack[a_stage1->nesting_depth] = -((int32_t)a_stage1->container_sizes_count + 1);
-                        a_stage1->object_count++;
-                    }
-                    
-                    a_stage1->container_sizes[a_stage1->container_sizes_count] = 0;  // Initial size = 0
-                    
-                    a_stage1->container_sizes_count++;
-                    
-                } else if (c == ']' || c == '}') {
-                    // Container end - finalize count and pop from stack
-                    if (a_stage1->nesting_depth >= 0) {
-                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
-                        
-                        if (l_stack_val >= 0) {
-                            // Positive = array
-                            // ⚡ CRITICAL: If count > 0 (had elements), add 1 because ',' counts gaps, not elements
-                            // [1,2,3] has 2 commas but 3 elements!
-                            if (a_stage1->container_sizes[l_stack_val] > 0) {
-                                a_stage1->container_sizes[l_stack_val]++;
-                            }
-                        }
-                        // Objects are already correct (counted by ':')
-                        
-                        a_stage1->nesting_depth--;
-                    }
-                    
-                } else if (c == ',') {
-                    // Element/pair separator - increment count for current container
-                    if (a_stage1->nesting_depth >= 0) {
-                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
-                        
-                        if (l_stack_val >= 0) {
-                            // Positive = array - ',' means +1 element
-                            a_stage1->container_sizes[l_stack_val]++;
-                        }
-                        // For objects, ',' separates pairs but doesn't count them (we use ':')
-                    }
-                    
-                } else if (c == ':') {
-                    // Key-value separator in object - INCREMENT counter (pair found!)
-                    if (a_stage1->nesting_depth >= 0) {
-                        int32_t l_stack_val = a_stage1->nesting_stack[a_stage1->nesting_depth];
-                        if (l_stack_val < 0) {
-                            // Negative = object
-                            int32_t l_container_idx = -(l_stack_val + 1);
-                            a_stage1->container_sizes[l_container_idx]++;  // Count pairs by ':'
-                        }
-                    }
+                if (c == '[') {
+                    a_stage1->array_count++;
+                } else if (c == '{') {
+                    a_stage1->object_count++;
                 }
                 
                 a_stage1->current_pos++;

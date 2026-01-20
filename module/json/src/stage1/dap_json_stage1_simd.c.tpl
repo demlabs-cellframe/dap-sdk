@@ -280,6 +280,7 @@ static inline int s_add_token_{{ARCH_LOWER}}(
     a_stage1->indices[a_stage1->indices_count].length = a_len;
     a_stage1->indices[a_stage1->indices_count].type = a_type;
     a_stage1->indices[a_stage1->indices_count].character = a_char;
+    a_stage1->indices[a_stage1->indices_count].payload = 0;  // ⚡ Phase 2.3: Initialize payload (will be filled by build_jump_pointers)
     a_stage1->indices_count++;
     
     return STAGE1_SUCCESS;

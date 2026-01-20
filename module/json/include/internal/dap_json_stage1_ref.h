@@ -99,6 +99,7 @@ static inline bool dap_json_stage1_add_token(
     l_token->length = a_length;
     l_token->type = a_type;
     l_token->character = a_character_or_subtype;
+    l_token->payload = 0;  // ⚡ Phase 2.3: Initialize payload (will be filled for [ and { later)
     
     a_stage1->indices_count++;
     

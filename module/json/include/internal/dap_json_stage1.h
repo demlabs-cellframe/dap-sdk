@@ -86,24 +86,37 @@ typedef enum {
 } dap_json_literal_type_t;
 
 /**
- * @brief Structural index entry (Phase 1.3 enhanced)
+ * @brief Structural index entry (Phase 1.3 enhanced, Phase 2.3 tape format)
  * 
  * Универсальный token descriptor для всех JSON elements.
  * 
  * Phase 1.3: Добавлены поля length и type для support value tokens.
+ * Phase 2.3: Добавлено поле payload для jump pointers (SimdJSON-style tape).
  * 
- * Размер: 12 bytes (cache-friendly, aligned to 4 bytes)
+ * Размер: 16 bytes (cache-friendly, aligned to 8 bytes)
+ * 
+ * **Tape Format with Jump Pointers:**
+ * 
+ * - For `[` (array start): `payload` = index of corresponding `]` (closing bracket)
+ * - For `{` (object start): `payload` = index of corresponding `}` (closing brace)
+ * - For `]`, `}`: `payload` = index of corresponding opening tag
+ * - For other tokens: `payload` = 0 (unused)
+ * 
+ * **Benefits:**
+ * - O(1) skip: jump directly to end of container
+ * - O(1) counting: `count = (close_idx - open_idx - 1) / 2` for objects
+ * - Fast iteration without recursive tree traversal
  * 
  * Examples:
  * 
  * Input: [123, "hello"]
  * 
  * Indices:
- * { position: 0, length: 0, type: STRUCTURAL, character: '[' }
- * { position: 1, length: 3, type: NUMBER, character: 0 }      // "123"
- * { position: 4, length: 0, type: STRUCTURAL, character: ',' }
- * { position: 6, length: 7, type: STRING, character: 0 }      // "hello" with quotes
- * { position: 13, length: 0, type: STRUCTURAL, character: ']' }
+ * { position: 0, length: 0, type: STRUCTURAL, character: '[', payload: 4 }  // Jump to index 4 (])
+ * { position: 1, length: 3, type: NUMBER, character: 0, payload: 0 }        // "123"
+ * { position: 4, length: 0, type: STRUCTURAL, character: ',', payload: 0 }
+ * { position: 6, length: 7, type: STRING, character: 0, payload: 0 }        // "hello" with quotes
+ * { position: 13, length: 0, type: STRUCTURAL, character: ']', payload: 0 } // Jump to index 0 ([)
  */
 typedef struct {
     uint32_t position;  /**< Byte offset in input buffer (start of token) */
@@ -111,6 +124,7 @@ typedef struct {
     uint8_t type;       /**< Token type (dap_json_token_type_t) */
     uint8_t character;  /**< For structural: actual char, for values: subtype/flags */
     uint16_t _reserved; /**< Reserved for future use (alignment) */
+    uint32_t payload;   /**< ⚡ Tape format: jump index for [ and {, back-reference for ] and } */
 } dap_json_struct_index_t;
 
 /**
@@ -162,6 +176,10 @@ typedef struct {
     int32_t nesting_stack[1000]; /**< Stack for tracking nested containers (stores container index) */
     uint8_t nesting_flags[1000]; /**< Flags for each nesting level: bit 0 = expect_element */
     int32_t nesting_depth;       /**< Current nesting depth */
+    
+    /* ⚡ Phase 2.3: Tape format - Jump pointers stack */
+    uint32_t jump_stack[1000];   /**< Stack of indices of opening [ and { for payload linking */
+    int32_t jump_depth;          /**< Current depth in jump stack */
     
     /* Error handling */
     int error_code;             /**< Error code (0 = success) */
@@ -250,6 +268,78 @@ const dap_json_struct_index_t *dap_json_stage1_get_indices(
     const dap_json_stage1_t *stage1,
     size_t *out_count
 );
+
+/**
+ * @brief Build jump pointers for tape format (Phase 2.3)
+ * 
+ * Post-processes indices array to fill payload fields with jump pointers.
+ * This is automatically called by dap_json_stage1_run() for all architectures.
+ * 
+ * ⚡ Phase 2.3: Enables O(1) skip and bounded scanning in Stage 2
+ * 
+ * @param[in,out] a_stage1 Stage 1 parser with indices filled
+ * @return STAGE1_SUCCESS on success, error code otherwise
+ */
+static inline int dap_json_stage1_build_jump_pointers(dap_json_stage1_t *a_stage1)
+{
+    if (!a_stage1) {
+        return STAGE1_ERROR_INVALID_INPUT;
+    }
+    
+    // Reset jump stack
+    a_stage1->jump_depth = 0;
+    
+    // Walk through indices and build jump pointers
+    for (size_t i = 0; i < a_stage1->indices_count; i++) {
+        dap_json_struct_index_t *l_token = &a_stage1->indices[i];
+        
+        if (l_token->type != TOKEN_TYPE_STRUCTURAL) {
+            continue;  // Skip non-structural tokens
+        }
+        
+        char l_char = l_token->character;
+        
+        if (l_char == '[' || l_char == '{') {
+            // Opening tag - push to jump stack
+            if (a_stage1->jump_depth >= 1000) {
+                a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                return a_stage1->error_code;
+            }
+            a_stage1->jump_stack[a_stage1->jump_depth++] = (uint32_t)i;
+        }
+        else if (l_char == ']' || l_char == '}') {
+            // Closing tag - pop from jump stack and link
+            if (a_stage1->jump_depth <= 0) {
+                // ERROR: stack underflow - probably a bug in our logic or malformed JSON
+                a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                return a_stage1->error_code;
+            }
+            
+            uint32_t l_open_idx = a_stage1->jump_stack[--a_stage1->jump_depth];
+            
+            // Verify matching brackets/braces
+            uint8_t l_open_char = a_stage1->indices[l_open_idx].character;
+            bool l_match = (l_char == ']' && l_open_char == '[') || 
+                           (l_char == '}' && l_open_char == '{');
+            if (!l_match) {
+                a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                return a_stage1->error_code;
+            }
+            
+            // Set jump pointers (bidirectional)
+            a_stage1->indices[l_open_idx].payload = (uint32_t)i;  // [ or { → ]
+            a_stage1->indices[i].payload = l_open_idx;  // ] or } → [
+        }
+    }
+    
+    // Verify jump stack is empty (all brackets matched)
+    if (a_stage1->jump_depth != 0) {
+        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+        return a_stage1->error_code;
+    }
+    
+    return STAGE1_SUCCESS;
+}
 
 /**
  * @brief Get Stage 1 statistics
@@ -474,6 +564,8 @@ void dap_json_stage1_init(void);
  *   x86/x64: AVX-512 → AVX2 → SSE2 → Reference C
  *   ARM:     SVE2 → SVE → NEON → Reference C
  * 
+ * ⚡ Phase 2.3: Calls dap_json_stage1_build_jump_pointers() after parsing
+ * 
  * @param[in,out] a_stage1 Initialized Stage 1 parser
  * @return STAGE1_SUCCESS on success, error code otherwise
  */
@@ -486,27 +578,58 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     // Get current architecture (respects manual override if set)
     dap_cpu_arch_t arch = dap_cpu_arch_get();
     
+    int result;
     switch (arch) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
         case DAP_CPU_ARCH_SSE2:
-            return dap_json_stage1_run_sse2(a_stage1);
+            result = dap_json_stage1_run_sse2(a_stage1);
+            break;
         case DAP_CPU_ARCH_AVX2:
-            return dap_json_stage1_run_avx2(a_stage1);
+            result = dap_json_stage1_run_avx2(a_stage1);
+            break;
         case DAP_CPU_ARCH_AVX512:
-            return dap_json_stage1_run_avx512(a_stage1);
+            result = dap_json_stage1_run_avx512(a_stage1);
+            break;
 #elif defined(__arm__) || defined(__aarch64__)
         case DAP_CPU_ARCH_NEON:
-            return dap_json_stage1_run_neon(a_stage1);
+            result = dap_json_stage1_run_neon(a_stage1);
+            break;
         case DAP_CPU_ARCH_SVE:
-            return dap_json_stage1_run_sve(a_stage1);
+            result = dap_json_stage1_run_sve(a_stage1);
+            break;
         case DAP_CPU_ARCH_SVE2:
-            return dap_json_stage1_run_sve2(a_stage1);
+            result = dap_json_stage1_run_sve2(a_stage1);
+            break;
 #endif
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:
         default:
-            return dap_json_stage1_run_ref(a_stage1);
+            result = dap_json_stage1_run_ref(a_stage1);
+            break;
     }
+    
+    // ⚡ Phase 2.3: Build jump pointers for tape format (all architectures)
+    if (result == STAGE1_SUCCESS) {
+        result = dap_json_stage1_build_jump_pointers(a_stage1);
+        
+        // DEBUG: Verify first opening bracket has payload set
+        if (result == STAGE1_SUCCESS && a_stage1->indices_count > 0) {
+            for (size_t i = 0; i < a_stage1->indices_count && i < 5; i++) {
+                if (a_stage1->indices[i].type == TOKEN_TYPE_STRUCTURAL && 
+                    (a_stage1->indices[i].character == '[' || a_stage1->indices[i].character == '{')) {
+                    // Found opening bracket - check payload
+                    if (a_stage1->indices[i].payload == 0) {
+                        // ERROR: payload not set! build_jump_pointers didn't work
+                        a_stage1->error_code = STAGE1_ERROR_INVALID_INPUT;
+                        return STAGE1_ERROR_INVALID_INPUT;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    return result;
 }
 
 /**

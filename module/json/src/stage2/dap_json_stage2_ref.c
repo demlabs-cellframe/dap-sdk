@@ -256,6 +256,172 @@ static dap_json_container_sizes_t *s_precalc_container_sizes(
 }
 
 /**
+ * @brief ⚡ Count array elements by scanning Stage 1 indices (SimdJSON-style on-demand)
+ * 
+ * Scans forward through structural indices to count elements between '[' and ']'.
+ * This is O(n) but only done ONCE per array, and data is in cache from Stage 1.
+ * 
+ * @param[in] a_stage2 Stage 2 parser
+ * @param[in] a_start_idx Index of '[' token
+ * @return Number of elements, or 0 for empty array
+ */
+/**
+ * @brief Count array elements using tape format jump pointers (O(1) boundary + O(N) scan)
+ * @details Uses payload field in structural indices to get closing bracket index.
+ *          Then scans only the range [open_idx, close_idx] instead of full array.
+ * 
+ * ⚡ Phase 2.3: Optimized with tape format - much faster than full scan!
+ * 
+ * @param[in] a_stage2 Stage 2 parser
+ * @param[in] a_start_idx Index of '[' token
+ * @return Number of elements in array
+ */
+static size_t s_count_array_elements(
+    dap_json_stage2_t *a_stage2,
+    size_t a_start_idx
+)
+{
+    // ⚡ Use tape format payload to get closing bracket index (O(1)!)
+    uint32_t l_close_idx = a_stage2->indices[a_start_idx].payload;
+    
+    if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
+        log_it(L_ERROR, "Invalid payload for array at index %zu (payload=%u)", 
+               a_start_idx, l_close_idx);
+        return 0;
+    }
+    
+    // Empty array check
+    if (l_close_idx == a_start_idx + 1) {
+        return 0;  // "[]"
+    }
+    
+    // Count elements by scanning ONLY from open to close (bounded by payload)
+    size_t l_count = 0;
+    size_t l_idx = a_start_idx + 1;  // Skip '['
+    int32_t l_depth = 0;  // Track nesting
+    bool l_has_elements = false;  // Track if we saw any non-structural tokens
+    
+    while (l_idx < l_close_idx) {  // ⚡ Use close_idx as boundary (from payload)!
+        const dap_json_struct_index_t *l_token = &a_stage2->indices[l_idx];
+        
+        if (l_token->type == TOKEN_TYPE_STRUCTURAL) {
+            char l_char = l_token->character;
+            
+            if (l_char == '[' || l_char == '{') {
+                // ⚡ Skip nested container using payload (O(1) skip!)
+                // When jumping over nested container, depth stays balanced
+                if (l_token->payload > 0 && l_token->payload < l_close_idx) {
+                    if (l_depth == 0) {
+                        l_has_elements = true;  // We have at least one element (nested container)
+                    }
+                    l_idx = l_token->payload;  // Jump to closing tag
+                    // Next l_idx++ will skip past the closing tag
+                } else {
+                    // Malformed JSON or no payload - track depth manually
+                    l_depth++;
+                    if (l_depth == 1) {
+                        l_has_elements = true;
+                    }
+                }
+            } else if (l_char == ']' || l_char == '}') {
+                // Only reached if we didn't skip via payload
+                l_depth--;
+            } else if (l_char == ',' && l_depth == 0) {
+                // Comma at depth 0 = element separator
+                l_count++;
+            }
+        } else {
+            // Value token (string, number, literal) at depth 0 = element
+            if (l_depth == 0) {
+                l_has_elements = true;
+            }
+        }
+        
+        l_idx++;
+    }
+    
+    // Number of elements = commas + 1 (if we saw any elements)
+    // Empty array returns 0
+    return l_has_elements ? l_count + 1 : 0;
+}
+
+/**
+ * @brief ⚡ Count object pairs by scanning Stage 1 indices (SimdJSON-style on-demand)
+ * 
+ * Scans forward through structural indices to count pairs between '{' and '}'.
+ * 
+ * @param[in] a_stage2 Stage 2 parser
+ * @param[in] a_start_idx Index of '{' token
+ * @return Number of key-value pairs, or 0 for empty object
+ */
+/**
+ * @brief Count object key-value pairs using tape format jump pointers
+ * @details Uses payload field to get closing brace index and scans only that range.
+ * 
+ * ⚡ Phase 2.3: Optimized with tape format - bounded scan instead of full array!
+ * 
+ * @param[in] a_stage2 Stage 2 parser
+ * @param[in] a_start_idx Index of '{' token
+ * @return Number of key-value pairs in object
+ */
+static size_t s_count_object_pairs(
+    dap_json_stage2_t *a_stage2,
+    size_t a_start_idx
+)
+{
+    // ⚡ Use tape format payload to get closing brace index (O(1)!)
+    uint32_t l_close_idx = a_stage2->indices[a_start_idx].payload;
+    
+    if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
+        log_it(L_ERROR, "Invalid payload for object at index %zu (payload=%u)", 
+               a_start_idx, l_close_idx);
+        return 0;
+    }
+    
+    // Empty object check
+    if (l_close_idx == a_start_idx + 1) {
+        return 0;  // "{}"
+    }
+    
+    // Count pairs by scanning ONLY from open to close (bounded by payload)
+    size_t l_count = 0;
+    size_t l_idx = a_start_idx + 1;  // Skip '{'
+    int32_t l_depth = 0;  // Track nesting
+    
+    while (l_idx < l_close_idx) {  // ⚡ Use close_idx as boundary (from payload)!
+        const dap_json_struct_index_t *l_token = &a_stage2->indices[l_idx];
+        
+        if (l_token->type == TOKEN_TYPE_STRUCTURAL) {
+            char l_char = l_token->character;
+            
+            if (l_char == '[' || l_char == '{') {
+                // ⚡ Skip nested container using payload (O(1) skip!)
+                // IMPORTANT: When jumping, we skip both opening and closing tags,
+                // so we don't need to adjust depth (it stays balanced)
+                if (l_token->payload > 0 && l_token->payload < l_close_idx) {
+                    l_idx = l_token->payload;  // Jump to closing tag
+                    // Next iteration will skip past closing tag with l_idx++
+                    // Depth remains unchanged (we skipped both [ and ])
+                } else {
+                    // Malformed JSON or no payload - track depth manually
+                    l_depth++;
+                }
+            } else if (l_char == ']' || l_char == '}') {
+                // Only reached if we didn't skip via payload
+                l_depth--;
+            } else if (l_char == ':' && l_depth == 0) {
+                // Colon at depth 0 = key-value separator
+                l_count++;
+            }
+        }
+        
+        l_idx++;
+    }
+    
+    return l_count;
+}
+
+/**
  * @brief Add ref to Stage 2 refs array (Phase 2.0.3)
  * @details Adds an 8-byte value ref to the flat array
  * @return Index of added ref, or -1 on error
@@ -1596,21 +1762,17 @@ static int32_t s_parse_array(
     
     a_stage2->current_depth++;
     
-    // ⚡ Phase 2.2: Use pre-calculated size for EXACT allocation (zero reallocation!)
-    dap_json_container_sizes_t *l_sizes = (dap_json_container_sizes_t*)a_stage2->container_sizes;
-    size_t element_capacity = INITIAL_ARRAY_CAPACITY;  // Default fallback
+    // ⚡ Phase 2.3: ACCURATE on-demand counting (SimdJSON-style)
+    // Count elements by scanning indices ONCE (data in cache from Stage 1)
+    size_t element_capacity = s_count_array_elements(a_stage2, *a_idx);
     
-    if (l_sizes && a_stage2->current_array_idx < l_sizes->array_count) {
-        element_capacity = l_sizes->array_sizes[a_stage2->current_array_idx];
-        if (element_capacity == 0) {
-            element_capacity = 1;  // Empty arrays still need 1 slot
-        }
-        debug_if(s_debug_more, L_DEBUG, 
-                 "⚡ Array #%zu: pre-calculated size = %zu (zero reallocation!)",
-                 a_stage2->current_array_idx, element_capacity);
+    if (element_capacity == 0) {
+        element_capacity = 1;  // Empty arrays still need 1 slot (for correct size calculation)
     }
     
-    a_stage2->current_array_idx++;  // Move to next array
+    debug_if(s_debug_more, L_DEBUG, 
+             "⚡ Array: on-demand counted %zu elements (exact pre-alloc, zero realloc!)",
+             element_capacity);
     
     // Track array elements as ref indices
     uint32_t *element_ref_indices = NULL;
@@ -1734,21 +1896,17 @@ static int32_t s_parse_object(
     
     a_stage2->current_depth++;
     
-    // ⚡ Phase 2.2: Use pre-calculated size for EXACT allocation (zero reallocation!)
-    dap_json_container_sizes_t *l_sizes = (dap_json_container_sizes_t*)a_stage2->container_sizes;
-    size_t pair_capacity = INITIAL_OBJECT_CAPACITY;  // Default fallback
+    // ⚡ Phase 2.3: ACCURATE on-demand counting (SimdJSON-style)
+    // Count pairs by scanning indices ONCE (data in cache from Stage 1)
+    size_t pair_capacity = s_count_object_pairs(a_stage2, *a_idx);
     
-    if (l_sizes && a_stage2->current_object_idx < l_sizes->object_count) {
-        pair_capacity = l_sizes->object_sizes[a_stage2->current_object_idx];
-        if (pair_capacity == 0) {
-            pair_capacity = 1;  // Empty objects still need 1 slot
-        }
-        debug_if(s_debug_more, L_DEBUG, 
-                 "⚡ Object #%zu: pre-calculated size = %zu (zero reallocation!)",
-                 a_stage2->current_object_idx, pair_capacity);
+    if (pair_capacity == 0) {
+        pair_capacity = 1;  // Empty objects still need 1 slot
     }
     
-    a_stage2->current_object_idx++;  // Move to next object
+    debug_if(s_debug_more, L_DEBUG, 
+             "⚡ Object: on-demand counted %zu pairs (exact pre-alloc, zero realloc!)",
+             pair_capacity);
     
     // Track object pairs as ref indices [key, val, key, val, ...]
     uint32_t *pair_ref_indices = NULL;
