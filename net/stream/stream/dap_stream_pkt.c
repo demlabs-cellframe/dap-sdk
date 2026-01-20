@@ -140,13 +140,18 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
     
     // NEW ARCHITECTURE: Use trans->ops->write if available (for UDP dispatcher)
-    // Fall back to direct esocket write for compatibility
-    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->write) {
-        log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using trans->ops->write, l_full_size=%zu", l_full_size);
-        return a_stream->trans->ops->write(a_stream, s_pkt_buf, l_full_size);
+    // Try trans_ctx->trans first (SERVER), then fall back to stream->trans (CLIENT)
+    dap_net_trans_t *l_trans = NULL;
+    if (a_stream->trans_ctx && a_stream->trans_ctx->trans) {
+        l_trans = a_stream->trans_ctx->trans;
+    } else if (a_stream->trans) {
+        l_trans = a_stream->trans;
+    }
+    
+    if (l_trans && l_trans->ops && l_trans->ops->write) {
+        return l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
     } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
         dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
-        log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: using direct esocket write, l_full_size=%zu", l_full_size);
         
         // Check if this is a datagram transport (UDP, SCTP, etc)
         if (dap_events_socket_is_datagram(l_es)) {

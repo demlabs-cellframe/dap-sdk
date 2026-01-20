@@ -1066,8 +1066,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    log_it(L_INFO, "s_stream_proc_pkt_in: stream=%p, session=%p, key=%p, packet type=0x%02X size=%u",
-           a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL,
+    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: packet type=0x%02X size=%u", 
            a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
@@ -1136,8 +1135,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
             
-            log_it(L_INFO, "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
-                   a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
+            debug_if(s_dump_packet_headers, L_INFO, 
+                     "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
+                     a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
