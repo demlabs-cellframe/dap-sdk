@@ -120,6 +120,11 @@ struct dap_json_stage2 {
     struct dap_arena *arena;                 /**< Arena allocator for DOM nodes */
     struct dap_string_pool *string_pool;     /**< String pool for object keys */
     
+    /* ⚡ Phase 2.2: Pre-calculated container sizes for zero-reallocation parsing */
+    void *container_sizes;                   /**< dap_json_container_sizes_t* (opaque to header) */
+    size_t current_array_idx;                /**< Current array index for size lookup */
+    size_t current_object_idx;               /**< Current object index for size lookup */
+    
     /* Error handling */
     dap_json_stage2_error_t error_code;      /**< Last error code */
     size_t error_position;                   /**< Position of error in input */

@@ -104,9 +104,155 @@ static _Thread_local dap_string_pool_t *s_thread_string_pool = NULL;
 // Maximum nesting depth (защита от stack overflow)
 #define MAX_NESTING_DEPTH 1000
 
+/**
+ * @brief Pre-calculated array/object sizes for exact allocation
+ * 
+ * ⚡ OPTIMIZATION: Pre-calculate sizes from Stage 1 indices to eliminate
+ * reallocation and memcpy overhead during parsing.
+ */
+typedef struct {
+    size_t *array_sizes;    /**< Size of each array (indexed by appearance order) */
+    size_t *object_sizes;   /**< Size of each object (indexed by appearance order) */
+    size_t array_count;     /**< Total number of arrays */
+    size_t object_count;    /**< Total number of objects */
+} dap_json_container_sizes_t;
+
 /* ========================================================================== */
 /*                    INTERNAL ARENA-BASED HELPERS                            */
 /* ========================================================================== */
+
+/**
+ * @brief ⚡ Pre-calculate array/object sizes for zero-reallocation parsing
+ * 
+ * Walks through Stage 1 indices and calculates EXACT size of each array/object.
+ * This eliminates all reallocation and memcpy overhead during parsing.
+ * 
+ * @param[in] a_stage1 Stage 1 indices
+ * @param[in] a_arena Arena for allocation
+ * @return Container sizes structure, or NULL on error
+ */
+static dap_json_container_sizes_t *s_precalc_container_sizes(
+    const dap_json_stage1_t *a_stage1,
+    dap_arena_t *a_arena
+)
+{
+    if (!a_stage1 || !a_arena) {
+        return NULL;
+    }
+    
+    // Allocate result structure
+    dap_json_container_sizes_t *l_sizes = (dap_json_container_sizes_t*)dap_arena_alloc(
+        a_arena, sizeof(dap_json_container_sizes_t)
+    );
+    
+    if (!l_sizes) {
+        log_it(L_ERROR, "Failed to allocate container sizes");
+        return NULL;
+    }
+    
+    // Count total containers
+    size_t l_array_count = 0, l_object_count = 0;
+    for (size_t i = 0; i < a_stage1->indices_count; i++) {
+        char l_char = a_stage1->indices[i].character;
+        if (l_char == '[') l_array_count++;
+        if (l_char == '{') l_object_count++;
+    }
+    
+    // Allocate size arrays
+    l_sizes->array_count = l_array_count;
+    l_sizes->object_count = l_object_count;
+    
+    if (l_array_count > 0) {
+        l_sizes->array_sizes = (size_t*)dap_arena_alloc(a_arena, sizeof(size_t) * l_array_count);
+        if (!l_sizes->array_sizes) {
+            log_it(L_ERROR, "Failed to allocate array sizes");
+            return NULL;
+        }
+        memset(l_sizes->array_sizes, 0, sizeof(size_t) * l_array_count);
+    } else {
+        l_sizes->array_sizes = NULL;
+    }
+    
+    if (l_object_count > 0) {
+        l_sizes->object_sizes = (size_t*)dap_arena_alloc(a_arena, sizeof(size_t) * l_object_count);
+        if (!l_sizes->object_sizes) {
+            log_it(L_ERROR, "Failed to allocate object sizes");
+            return NULL;
+        }
+        memset(l_sizes->object_sizes, 0, sizeof(size_t) * l_object_count);
+    } else {
+        l_sizes->object_sizes = NULL;
+    }
+    
+    // Walk indices and count elements
+    size_t l_array_idx = 0, l_object_idx = 0;
+    int32_t l_depth_stack[MAX_NESTING_DEPTH];  // Stack of container indices
+    int32_t l_depth = -1;  // Current depth
+    
+    for (size_t i = 0; i < a_stage1->indices_count; i++) {
+        char l_char = a_stage1->indices[i].character;
+        
+        if (l_char == '[') {
+            // Array start - push to stack
+            l_depth++;
+            if (l_depth >= MAX_NESTING_DEPTH) {
+                log_it(L_ERROR, "Max nesting depth exceeded in pre-calc");
+                return NULL;
+            }
+            l_depth_stack[l_depth] = (int32_t)l_array_idx;
+            l_array_idx++;
+            
+        } else if (l_char == '{') {
+            // Object start - push to stack (negative index to distinguish from arrays)
+            l_depth++;
+            if (l_depth >= MAX_NESTING_DEPTH) {
+                log_it(L_ERROR, "Max nesting depth exceeded in pre-calc");
+                return NULL;
+            }
+            l_depth_stack[l_depth] = -((int32_t)l_object_idx + 1);  // Negative = object
+            l_object_idx++;
+            
+        } else if (l_char == ']' || l_char == '}') {
+            // Container end - pop from stack
+            if (l_depth < 0) {
+                log_it(L_ERROR, "Mismatched brackets in pre-calc");
+                return NULL;
+            }
+            l_depth--;
+            
+        } else if (l_char == ',') {
+            // Element separator - we DON'T increment here!
+            // Elements are counted when we see their tokens (strings/numbers/etc)
+            // ',' just separates them
+            
+        } else if (a_stage1->indices[i].type != TOKEN_TYPE_STRUCTURAL) {
+            // Value token (string, number, literal) - increment counter for current container
+            if (l_depth >= 0) {
+                int32_t l_container_idx = l_depth_stack[l_depth];
+                if (l_container_idx >= 0) {
+                    // Array element
+                    l_sizes->array_sizes[l_container_idx]++;
+                }
+                // Note: Object key-value pairs are counted at ':' below
+            }
+        }
+        
+        if (l_char == ':' && l_depth >= 0) {
+            // Key-value separator in object
+            int32_t l_container_idx = l_depth_stack[l_depth];
+            if (l_container_idx < 0) {
+                // Object (negative index)
+                l_sizes->object_sizes[-(l_container_idx + 1)]++;
+            }
+        }
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, 
+             "⚡ Pre-calculated container sizes: %zu arrays, %zu objects",
+             l_array_count, l_object_count);
+    
+    return l_sizes;
+}
 
 /**
  * @brief Add ref to Stage 2 refs array (Phase 2.0.3)
@@ -1282,6 +1428,16 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     l_stage2->values_count = 0;
     l_stage2->root_value_index = 0;
     
+    // ⚡ Phase 2.2: Pre-calculate container sizes for zero-reallocation parsing
+    l_stage2->container_sizes = s_precalc_container_sizes(a_stage1, s_thread_json_arena);
+    if (!l_stage2->container_sizes) {
+        log_it(L_ERROR, "Failed to pre-calculate container sizes");
+        DAP_DELETE(l_stage2);
+        return NULL;
+    }
+    l_stage2->current_array_idx = 0;
+    l_stage2->current_object_idx = 0;
+    
     debug_if(s_debug_more, L_DEBUG, 
              "Phase 2.0.3: Allocated refs array - capacity:%zu refs (%zu bytes)",
              l_stage2->values_capacity,
@@ -1425,10 +1581,25 @@ static int32_t s_parse_array(
     
     a_stage2->current_depth++;
     
+    // ⚡ Phase 2.2: Use pre-calculated size for EXACT allocation (zero reallocation!)
+    dap_json_container_sizes_t *l_sizes = (dap_json_container_sizes_t*)a_stage2->container_sizes;
+    size_t element_capacity = INITIAL_ARRAY_CAPACITY;  // Default fallback
+    
+    if (l_sizes && a_stage2->current_array_idx < l_sizes->array_count) {
+        element_capacity = l_sizes->array_sizes[a_stage2->current_array_idx];
+        if (element_capacity == 0) {
+            element_capacity = 1;  // Empty arrays still need 1 slot
+        }
+        debug_if(s_debug_more, L_DEBUG, 
+                 "⚡ Array #%zu: pre-calculated size = %zu (zero reallocation!)",
+                 a_stage2->current_array_idx, element_capacity);
+    }
+    
+    a_stage2->current_array_idx++;  // Move to next array
+    
     // Track array elements as ref indices
     uint32_t *element_ref_indices = NULL;
     size_t element_count = 0;
-    size_t element_capacity = INITIAL_ARRAY_CAPACITY;
     
     // Pre-allocate element indices array in Arena
     element_ref_indices = (uint32_t*)dap_arena_alloc(
@@ -1548,10 +1719,25 @@ static int32_t s_parse_object(
     
     a_stage2->current_depth++;
     
+    // ⚡ Phase 2.2: Use pre-calculated size for EXACT allocation (zero reallocation!)
+    dap_json_container_sizes_t *l_sizes = (dap_json_container_sizes_t*)a_stage2->container_sizes;
+    size_t pair_capacity = INITIAL_OBJECT_CAPACITY;  // Default fallback
+    
+    if (l_sizes && a_stage2->current_object_idx < l_sizes->object_count) {
+        pair_capacity = l_sizes->object_sizes[a_stage2->current_object_idx];
+        if (pair_capacity == 0) {
+            pair_capacity = 1;  // Empty objects still need 1 slot
+        }
+        debug_if(s_debug_more, L_DEBUG, 
+                 "⚡ Object #%zu: pre-calculated size = %zu (zero reallocation!)",
+                 a_stage2->current_object_idx, pair_capacity);
+    }
+    
+    a_stage2->current_object_idx++;  // Move to next object
+    
     // Track object pairs as ref indices [key, val, key, val, ...]
     uint32_t *pair_ref_indices = NULL;
     size_t pair_count = 0;
-    size_t pair_capacity = INITIAL_OBJECT_CAPACITY;
     
     // Pre-allocate pair indices array in Arena (2 indices per pair)
     pair_ref_indices = (uint32_t*)dap_arena_alloc(
