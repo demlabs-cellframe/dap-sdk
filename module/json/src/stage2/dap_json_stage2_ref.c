@@ -286,8 +286,8 @@ static size_t s_count_array_elements(
     uint32_t l_close_idx = l_start_token->payload;
     
     if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
-        log_it(L_ERROR, "Invalid payload for array at index %zu (payload=%u, l_start_token->payload=%u, direct_read=%u, char='%c')", 
-               a_start_idx, l_close_idx, l_start_token->payload, a_stage2->indices[a_start_idx].payload, l_start_token->character);
+        log_it(L_ERROR, "Invalid payload for array at index %zu (payload=%u)", 
+               a_start_idx, l_close_idx);
         return 0;
     }
     
@@ -370,26 +370,14 @@ static size_t s_count_object_pairs(
     size_t a_start_idx
 )
 {
-    // DEBUG: Check what token is at start_idx
-    if (a_start_idx >= a_stage2->indices_count) {
-        log_it(L_ERROR, "Invalid a_start_idx=%zu (indices_count=%zu)", 
-               a_start_idx, a_stage2->indices_count);
-        return 0;
-    }
-    
     const dap_json_struct_index_t *l_start_token = &a_stage2->indices[a_start_idx];
-    if (l_start_token->type != TOKEN_TYPE_STRUCTURAL || l_start_token->character != '{') {
-        log_it(L_ERROR, "Token at a_start_idx=%zu is not '{' (type=%u, char='%c')", 
-               a_start_idx, l_start_token->type, l_start_token->character);
-        return 0;
-    }
     
     // ⚡ Use tape format payload to get closing brace index (O(1)!)
-    uint32_t l_close_idx = l_start_token->payload;  // Use l_start_token instead of re-indexing
+    uint32_t l_close_idx = l_start_token->payload;
     
     if (l_close_idx == 0 || l_close_idx >= a_stage2->indices_count) {
-        log_it(L_ERROR, "Invalid payload for object at index %zu (payload=%u, l_start_token->payload=%u, direct_read=%u)", 
-               a_start_idx, l_close_idx, l_start_token->payload, a_stage2->indices[a_start_idx].payload);
+        log_it(L_ERROR, "Invalid payload for object at index %zu (payload=%u)", 
+               a_start_idx, l_close_idx);
         return 0;
     }
     
@@ -1498,20 +1486,6 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
     l_stage2->indices = a_stage1->indices;
     l_stage2->indices_count = a_stage1->indices_count;
     l_stage2->max_depth = MAX_NESTING_DEPTH;
-    
-    // ⚡ DEBUG: Verify jump pointers are filled (Phase 2.3)
-    if (a_stage1->indices_count > 0) {
-        for (size_t i = 0; i < a_stage1->indices_count && i < 5; i++) {
-            if (a_stage1->indices[i].type == TOKEN_TYPE_STRUCTURAL && 
-                (a_stage1->indices[i].character == '[' || a_stage1->indices[i].character == '{')) {
-                if (a_stage1->indices[i].payload == 0) {
-                    log_it(L_ERROR, "⚡ BUG: payload not set for opening bracket at index %zu (char='%c', indices_count=%zu)",
-                           i, a_stage1->indices[i].character, a_stage1->indices_count);
-                }
-                break;
-            }
-        }
-    }
     
     // Phase 2.1: Predictive pre-allocation based on Stage 1 token counts
     // Get token counts from Stage 1 for accurate memory sizing
