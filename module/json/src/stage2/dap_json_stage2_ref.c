@@ -1117,9 +1117,18 @@ const char *dap_json_stage2_error_to_string(dap_json_stage2_error_t a_error)
 }
 
 /**
- * @brief Initialize Stage 2 parser
+ * @brief Create new Stage 2 parser and build DOM from Stage 1 indices
+ * 
+ * This function creates a NEW Stage 2 parser instance for each JSON document.
+ * It reuses thread-local resources (arena, string pool) for efficiency.
+ * 
+ * @param[in] a_stage1 Stage 1 output (structural indices)
+ * @return Stage 2 parser with built DOM, or NULL on error
+ * 
+ * @note Thread-safe: uses thread-local arena and string pool
+ * @note Arena is reset on each call for memory reuse (SimdJSON-style)
  */
-dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1)
+dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
 {
     if(!a_stage1) {
         log_it(L_ERROR, "NULL Stage 1 input");

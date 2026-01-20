@@ -437,7 +437,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     }
     
     // Stage 2: DOM Building
-    dap_json_stage2_t *l_stage2 = dap_json_stage2_init(l_stage1);
+    dap_json_stage2_t *l_stage2 = dap_json_stage2_new(l_stage1);
     if (!l_stage2) {
         log_it(L_ERROR, "Failed to initialize Stage 2");
         dap_json_stage1_free(l_stage1);

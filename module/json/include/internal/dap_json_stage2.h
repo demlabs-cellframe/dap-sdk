@@ -144,7 +144,7 @@ struct dap_json_stage2 {
  * @param[in] a_stage1 Stage 1 parser (must have been run successfully)
  * @return Initialized Stage 2 parser, or NULL on error
  */
-dap_json_stage2_t *dap_json_stage2_init(const dap_json_stage1_t *a_stage1);
+dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1);
 
 /**
  * @brief Run Stage 2 DOM building
