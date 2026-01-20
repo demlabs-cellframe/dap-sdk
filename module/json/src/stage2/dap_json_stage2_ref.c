@@ -1760,7 +1760,8 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
             .use_refcount = true,
             .initial_size = l_estimated_size,
             .max_page_size = l_estimated_size * 2,  // ⚠️ Cap page growth
-            .thread_local = true
+            .thread_local = true,
+            .allow_small_pages = l_is_tiny_json  // ⚡⚡ Allow <4KB pages for tiny JSON!
         });
         if (!(*l_selected_arena)) {
             log_it(L_ERROR, "Failed to create thread-local %s arena", l_arena_tier);
@@ -1768,8 +1769,8 @@ dap_json_stage2_t *dap_json_stage2_new(const dap_json_stage1_t *a_stage1)
             return NULL;
         }
         debug_if(s_debug_more, L_DEBUG, 
-                 "⚡ Created thread-local %s arena (size: %zu)", 
-                 l_arena_tier, l_estimated_size);
+                 "⚡ Created thread-local %s arena (size: %zu, small_pages: %s)", 
+                 l_arena_tier, l_estimated_size, l_is_tiny_json ? "YES" : "NO");
     }
     // ⚠️ DON'T reset arena here - string_pool_clear will do it!
     

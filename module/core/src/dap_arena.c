@@ -83,6 +83,7 @@ struct dap_arena {
     
     bool is_thread_local;           // Thread-local flag
     bool use_refcount;              // Enable reference counting
+    bool allow_small_pages;         // ⚡⚡ Allow pages <4KB for tiny allocations
 };
 
 
@@ -95,11 +96,16 @@ static bool s_debug_more = false;
 /**
  * @brief Create new arena page
  */
-static dap_arena_page_t *s_arena_page_new(size_t a_size, bool a_use_refcount)
+static dap_arena_page_t *s_arena_page_new(size_t a_size, bool a_use_refcount, bool a_allow_small_pages)
 {
-    // Ensure minimum size
-    if (a_size < DAP_ARENA_MIN_PAGE_SIZE) {
+    // Ensure minimum size (unless small pages allowed)
+    if (!a_allow_small_pages && a_size < DAP_ARENA_MIN_PAGE_SIZE) {
         a_size = DAP_ARENA_MIN_PAGE_SIZE;
+    }
+    
+    // For small pages, enforce reasonable minimum (512 bytes)
+    if (a_allow_small_pages && a_size < 512) {
+        a_size = 512;
     }
     
     // Allocate page
@@ -168,7 +174,7 @@ dap_arena_t *dap_arena_new_opt(dap_arena_opt_t a_opt)
     }
     
     // Create first page
-    dap_arena_page_t *l_page = s_arena_page_new(l_initial_size, a_opt.use_refcount);
+    dap_arena_page_t *l_page = s_arena_page_new(l_initial_size, a_opt.use_refcount, a_opt.allow_small_pages);
     if (!l_page) {
         DAP_DELETE(l_arena);
         return NULL;
@@ -183,6 +189,7 @@ dap_arena_t *dap_arena_new_opt(dap_arena_opt_t a_opt)
     l_arena->allocation_count = 0;
     l_arena->is_thread_local = a_opt.thread_local;
     l_arena->use_refcount = a_opt.use_refcount;
+    l_arena->allow_small_pages = a_opt.allow_small_pages;
     
     debug_if(s_debug_more, L_DEBUG, "Arena created (page size: %zu, refcount: %s, thread_local: %s)", 
            l_initial_size, 
@@ -254,7 +261,7 @@ static inline void *s_arena_alloc_internal(dap_arena_t *a_arena, size_t a_size, 
             l_new_page_size = l_aligned_size * 2; // Double for future allocations
         }
         
-        dap_arena_page_t *l_new_page = s_arena_page_new(l_new_page_size, a_arena->use_refcount);
+        dap_arena_page_t *l_new_page = s_arena_page_new(l_new_page_size, a_arena->use_refcount, a_arena->allow_small_pages);
         if (!l_new_page) {
             return NULL;
         }

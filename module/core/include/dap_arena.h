@@ -106,6 +106,10 @@ typedef struct {
     size_t max_page_size;       ///< Maximum page size (0 = unlimited)
                                 ///< Prevents unbounded growth for long-lived arenas
     
+    bool allow_small_pages;     ///< ⚡⚡ Allow pages <4KB (default: false)
+                                ///< Use for tiny allocations (<1KB) to reduce memory overhead
+                                ///< Warning: many small pages can fragment memory
+    
     // Future expansion options (zero-initialized = disabled):
     // bool use_guard_pages;    ///< Add guard pages to detect overflows
     // bool collect_stats;      ///< Enable detailed statistics collection
