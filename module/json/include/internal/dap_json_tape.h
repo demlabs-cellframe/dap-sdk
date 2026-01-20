@@ -148,11 +148,28 @@ bool dap_json_build_tape(
 /**
  * @brief Free tape array
  * @details Tape is allocated from thread-local arena, so this is NO-OP!
- *          Arena cleanup happens automatically or via explicit reset.
+ *          Arena memory persists across parses for efficiency.
  * 
  * @param[in] tape Tape array (ignored)
  */
 void dap_json_tape_free(dap_json_tape_entry_t *tape);
+
+/**
+ * @brief Reset thread-local tape arena (optional cleanup)
+ * @details Reclaims tape arena memory in current thread.
+ *          Call after processing burst of JSON documents.
+ * 
+ * ⚠️ WARNING: Invalidates ALL tapes in this thread!
+ */
+void dap_json_tape_arena_reset(void);
+
+/**
+ * @brief Free thread-local tape arena (thread cleanup)
+ * @details Call when thread is exiting to free all arena memory.
+ * 
+ * ⚠️ WARNING: Invalidates ALL tapes in this thread!
+ */
+void dap_json_tape_arena_free(void);
 
 /* ========================================================================== */
 /*                            TAPE VALIDATION                                 */

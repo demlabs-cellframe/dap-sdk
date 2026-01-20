@@ -112,8 +112,8 @@ bool dap_json_build_tape(
                  "⚡ Created thread-local tape arena (64KB initial, 16MB max)");
     }
     
-    // Reset arena for reuse (keeps allocated pages, resets pointer)
-    dap_arena_reset(s_thread_tape_arena);
+    // ⚡ Arena auto-reuses freed space from previous allocations
+    // No reset needed here - arena grows naturally and reuses memory
     
     // Allocate tape from thread-local arena
     // Max size = indices_count + 2 for ROOT markers
@@ -237,11 +237,53 @@ bool dap_json_build_tape(
  * @details Tape is allocated from arena, so this is NO-OP!
  *          Arena cleanup happens when arena is freed.
  */
+/**
+ * @brief Free tape array
+ * @details Tape is allocated from thread-local arena, so this is NO-OP!
+ *          Arena memory persists across parses for efficiency.
+ * 
+ * NOTE: Arena grows naturally and reuses memory automatically.
+ *       Use dap_json_tape_arena_reset() for explicit cleanup if needed.
+ */
 void dap_json_tape_free(dap_json_tape_entry_t *tape)
 {
-    // NO-OP: tape allocated from arena, freed with arena
-    // This function exists for API compatibility
+    // NO-OP: tape allocated from thread-local arena
+    // Arena memory persists across parses for efficiency
+    // Will be freed when thread exits or via explicit cleanup
     (void)tape;
+}
+
+/**
+ * @brief Reset thread-local tape arena (optional cleanup)
+ * @details Call this to reclaim tape arena memory in current thread.
+ *          Useful for long-running threads to free memory after processing.
+ * 
+ * ⚠️ WARNING: Invalidates ALL tapes created in this thread!
+ *             Only call when you're sure no tapes are in use.
+ */
+void dap_json_tape_arena_reset(void)
+{
+    if (s_thread_tape_arena) {
+        dap_arena_reset(s_thread_tape_arena);
+        debug_if(dap_json_get_debug(), L_DEBUG,
+                 "⚡ Reset thread-local tape arena (memory reclaimed)");
+    }
+}
+
+/**
+ * @brief Free thread-local tape arena (thread cleanup)
+ * @details Call this when thread is exiting to free all arena memory.
+ * 
+ * ⚠️ WARNING: Invalidates ALL tapes created in this thread!
+ */
+void dap_json_tape_arena_free(void)
+{
+    if (s_thread_tape_arena) {
+        dap_arena_free(s_thread_tape_arena);
+        s_thread_tape_arena = NULL;
+        debug_if(dap_json_get_debug(), L_DEBUG,
+                 "⚡ Freed thread-local tape arena (thread cleanup)");
+    }
 }
 
 /**
