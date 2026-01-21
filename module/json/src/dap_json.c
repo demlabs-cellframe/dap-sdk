@@ -254,7 +254,7 @@ static inline dap_json_array_storage_t* s_get_array_storage(dap_json_value_t *a_
 
 /**
  * @brief  Get object storage from value
- * @details Works ONLY for MALLOC_MUTABLE objects
+ * @details Works ONLY for MUTABLE objects
  */
 static inline dap_json_object_storage_t* s_get_object_storage(dap_json_value_t *a_value)
 {
@@ -262,6 +262,38 @@ static inline dap_json_object_storage_t* s_get_object_storage(dap_json_value_t *
         return NULL;
     }
     return (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_value);
+}
+
+/**
+ * @brief Get type from value (wrapper for value->type)
+ */
+static inline dap_json_type_t dap_json_get_type_value(const dap_json_value_t *a_value)
+{
+    return a_value ? a_value->type : DAP_JSON_TYPE_NULL;
+}
+
+/**
+ * @brief Get array length from value
+ */
+static inline size_t dap_json_get_array_len(const dap_json_value_t *a_value)
+{
+    if (!a_value || a_value->type != DAP_JSON_TYPE_ARRAY) {
+        return 0;
+    }
+    return a_value->length;
+}
+
+/**
+ * @brief Get string from value (for MUTABLE mode)
+ * @note Returns pointer to null-terminated string
+ */
+static inline const char* dap_json_get_string_value(const dap_json_value_t *a_value)
+{
+    if (!a_value || a_value->type != DAP_JSON_TYPE_STRING) {
+        return NULL;
+    }
+    // In MUTABLE mode, strings are stored as malloc'd pointers
+    return (const char*)(uintptr_t)a_value->offset;
 }
 
 /* ========================================================================== */
@@ -652,6 +684,43 @@ size_t dap_json_array_length(dap_json_t* a_array)
 /* ========================================================================== */
 /*                          ARRAY ELEMENT ACCESSORS                           */
 /* ========================================================================== */
+
+/**
+ * @brief Get array element by index
+ * @details Works for MUTABLE mode only (DOM-based arrays)
+ * @note For IMMUTABLE mode (tape), use iterator API instead
+ */
+dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
+{
+    if (!a_array) {
+        return NULL;
+    }
+    
+    // Only works for MUTABLE mode
+    if (a_array->mode != DAP_JSON_MODE_MUTABLE) {
+        log_it(L_ERROR, "array_get_idx only works for MUTABLE mode. Use iterator for IMMUTABLE (tape) mode.");
+        return NULL;
+    }
+    
+    dap_json_value_t *l_array_value = s_unwrap_value(a_array);
+    if (!l_array_value || l_array_value->type != DAP_JSON_TYPE_ARRAY) {
+        return NULL;
+    }
+    
+    // MUTABLE mode: get storage
+    dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(l_array_value);
+    if (!l_storage || a_idx >= l_storage->count) {
+        return NULL;
+    }
+    
+    dap_json_value_t *l_element = l_storage->elements[a_idx];
+    if (!l_element) {
+        return NULL;
+    }
+    
+    // Create borrowed wrapper
+    return s_wrap_value_borrowed(l_element, a_array);
+}
 
 /**
  * @brief Get string element from array by index (with length for zero-copy)
