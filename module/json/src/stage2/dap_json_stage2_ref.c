@@ -1091,13 +1091,28 @@ dap_json_value_t *dap_json_array_v2_get(const dap_json_value_t *a_array, size_t 
 }
 
 /**
- * @brief Phase 2.0.4: REMOVED - Use dap_json_object_get() with wrapper instead  
+ * @brief Get value from object by key (Phase 2.0.4+ with 8-byte architecture)
+ * @details Uses storage pointer to access object pairs
  */
 dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const char *a_key)
 {
-    (void)a_object;
-    (void)a_key;
-    log_it(L_ERROR, "dap_json_object_v2_get: REMOVED in Phase 2.0.4 - use dap_json_object_get() with wrapper");
+    if (!a_object || a_object->type != DAP_JSON_TYPE_OBJECT || !a_key) {
+        return NULL;
+    }
+    
+    // Get storage pointer (Phase 2.0.4+ architecture)
+    dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_object);
+    if (!l_storage) {
+        return NULL;
+    }
+    
+    // Linear search through keys
+    for (size_t i = 0; i < l_storage->count; i++) {
+        if (strcmp(l_storage->keys[i], a_key) == 0) {
+            return l_storage->values[i];
+        }
+    }
+    
     return NULL;
 }
 
