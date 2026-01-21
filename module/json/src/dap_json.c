@@ -304,7 +304,15 @@ static inline size_t dap_json_get_array_len(const dap_json_value_t *a_value)
     if (!a_value || a_value->type != DAP_JSON_TYPE_ARRAY) {
         return 0;
     }
-    return a_value->length;
+    
+    // For arrays, length field stores the count
+    // But we should verify by checking storage as well
+    dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(a_value);
+    if (!l_storage) {
+        return 0;
+    }
+    
+    return l_storage->count;
 }
 
 /**
