@@ -1266,7 +1266,7 @@ int main(void)
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
                                 "debug_more=false\n"
