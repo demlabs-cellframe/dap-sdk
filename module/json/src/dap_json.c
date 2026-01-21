@@ -101,7 +101,7 @@ bool dap_json_get_debug(void)
 /* ========================================================================== */
 
 /**
- * @brief Phase 2.0.4: Internal storage for mutable arrays
+ * @brief  Internal storage for mutable arrays
  * @details Used only in MALLOC_MUTABLE mode. Arena arrays use flat indices instead.
  *          This is a PRIVATE structure - never exposed in public API.
  */
@@ -112,7 +112,7 @@ typedef struct {
 } dap_json_array_storage_t;
 
 /**
- * @brief Phase 2.0.4: Internal storage for mutable objects
+ * @brief  Internal storage for mutable objects
  * @details Used only in MALLOC_MUTABLE mode. Arena objects use flat key-value pairs instead.
  *          This is a PRIVATE structure - never exposed in public API.
  */
@@ -132,13 +132,13 @@ struct dap_json {
     int ref_count;                   /**< Reference counter for dap_json_object_ref */
     bool owns_value;                 /**< True if wrapper owns value and should free it */
     
-    dap_json_mode_t mode;            /**< ⭐ NEW: Operation mode (arena/malloc) */
+    dap_json_mode_t mode;            /**< NEW: Operation mode (arena/malloc) */
     
-    // ⭐ NEW: Source buffer for zero-copy string access
+    // NEW: Source buffer for zero-copy string access
     const char *input_buffer;        /**< Original JSON input buffer (for offset-based strings) */
     size_t input_len;                /**< Input buffer length */
     
-    // ⭐ Phase 3: Tape format for high-performance iteration
+    //  Tape format for high-performance iteration
     dap_json_tape_entry_t *tape;     /**< Tape array (NULL if not built) */
     size_t tape_count;               /**< Number of tape entries */
     
@@ -146,7 +146,7 @@ struct dap_json {
     union {
         // ARENA_IMMUTABLE mode (parsed JSON)
         struct {
-            void *stage2;                  /**< Phase 2.0.4: Pointer to dap_json_stage2_t (for root only) */
+            void *stage2;                  /**<  Pointer to dap_json_stage2_t (for root only) */
             struct dap_json *parent;       /**< Parent wrapper for borrowed refs */
         } arena;
         
@@ -244,7 +244,7 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
     l_json->ref_count = 1;
     l_json->owns_value = a_owns;
     
-    // ⭐ Manual creation → MALLOC_MUTABLE mode
+    // Manual creation → MALLOC_MUTABLE mode
     l_json->mode = DAP_JSON_MODE_MALLOC_MUTABLE;
     // malloc union fields are zero-initialized
     
@@ -298,15 +298,15 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
         // ARENA mode: Phase 2.0.4 - just keep parent reference
         // Parent owns stage2/arena, so as long as parent is alive, value is valid
         l_json->arena.parent = a_parent;
-        // Phase 2.0.4: No arena_page_handle in borrowed refs - parent owns stage2
+        //  No arena_page_handle in borrowed refs - parent owns stage2
         
-        // ⭐ Phase 2.0.5: Inherit input_buffer for zero-copy strings
+        //  Inherit input_buffer for zero-copy strings
         l_json->input_buffer = a_parent->input_buffer;
         
         // Increment parent refcount to keep it alive
         a_parent->ref_count++;
         
-        debug_if(s_debug_more, L_DEBUG, "Borrowed ref (ARENA Phase 2.0.4): value=%p, parent=%p (parent refcount=%d)",
+        debug_if(s_debug_more, L_DEBUG, "Borrowed ref (ARENA  value=%p, parent=%p (parent refcount=%d)",
                  a_value, a_parent, a_parent->ref_count);
     } else {
         // MALLOC mode: just create wrapper (value owned by parent)
@@ -327,7 +327,7 @@ static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 
 /**
  * @brief Get stage2 from wrapper (walk up to root)
- * @details Phase 2.0.4: stage2 is stored only in root wrapper (ARENA_IMMUTABLE mode)
+ * @details  stage2 is stored only in root wrapper (ARENA_IMMUTABLE mode)
  */
 static inline dap_json_stage2_t* s_get_stage2(dap_json_t *a_json)
 {
@@ -345,7 +345,7 @@ static inline dap_json_stage2_t* s_get_stage2(dap_json_t *a_json)
 }
 
 /**
- * @brief Phase 2.0.4: Get array storage from value
+ * @brief  Get array storage from value
  * @details Works ONLY for MALLOC_MUTABLE arrays
  */
 static inline dap_json_array_storage_t* s_get_array_storage(dap_json_value_t *a_value)
@@ -357,7 +357,7 @@ static inline dap_json_array_storage_t* s_get_array_storage(dap_json_value_t *a_
 }
 
 /**
- * @brief Phase 2.0.4: Get object storage from value
+ * @brief  Get object storage from value
  * @details Works ONLY for MALLOC_MUTABLE objects
  */
 static inline dap_json_object_storage_t* s_get_object_storage(dap_json_value_t *a_value)
@@ -489,12 +489,12 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     // Wrap for public API (value lives in arena)
     dap_json_t *l_result = s_wrap_value_ex(l_root, false); // owns_value = false (in arena)
     
-    // ⭐ Phase 2.0.4: Set mode to ARENA_IMMUTABLE (parsed JSON)
+    //  Set mode to ARENA_IMMUTABLE (parsed JSON)
     l_result->mode = DAP_JSON_MODE_ARENA_IMMUTABLE;
     l_result->arena.stage2 = l_stage2; // ROOT wrapper owns stage2
     l_result->arena.parent = NULL; // Root has no parent
     
-    // ⭐ Phase 2.0.5: Set input buffer for zero-copy string access
+    //  Set input buffer for zero-copy string access
     l_result->input_buffer = (const char*)l_parse_input;
     
     debug_if(s_debug_more, L_DEBUG, "Parsed JSON: mode=ARENA_IMMUTABLE, stage2=%p, input_buffer=%p", 
@@ -636,7 +636,7 @@ void dap_json_object_free(dap_json_t* a_json)
     
     // Borrowed reference handling (mode-aware)
     if (!a_json->owns_value) {
-        // ⭐ Phase 2.0.4: Mode-specific cleanup for borrowed refs
+        //  Mode-specific cleanup for borrowed refs
         if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
             // Arena-based: decrement parent refcount
             if (a_json->arena.parent) {
@@ -652,10 +652,10 @@ void dap_json_object_free(dap_json_t* a_json)
         return;
     }
     
-    // ⭐ Phase 2.0.4: No cached wrappers - they're created on-demand and ref parent
+    //  No cached wrappers - they're created on-demand and ref parent
     // When parent dies, borrowed refs automatically become invalid
     
-    // ⭐ Phase 2.0.4: If owns_value=true, we're in MALLOC_MUTABLE mode
+    //  If owns_value=true, we're in MALLOC_MUTABLE mode
     // Values in ARENA_IMMUTABLE live in stage2 and are freed when stage2 is destroyed
     if (a_json->owns_value && a_json->value) {
         // Malloc-based value (manually created via dap_json_object_new, etc.)
@@ -766,7 +766,7 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 
 /**
  * @brief Get array length
- * @details Phase 2.0.4: length stored directly in 8-byte dap_json_value_t
+ * @details  length stored directly in 8-byte dap_json_value_t
  */
 size_t dap_json_array_length(dap_json_t* a_array)
 {
@@ -779,13 +779,13 @@ size_t dap_json_array_length(dap_json_t* a_array)
         return 0;
     }
     
-    // Phase 2.0.4: length is in the value itself
+    //  length is in the value itself
     return l_array->length;
 }
 
 /**
  * @brief Get array element by index
- * @details Phase 2.0.4: Works in BOTH modes (ARENA and MALLOC)
+ * @details  Works in BOTH modes (ARENA and MALLOC)
  * @note Like json-c, returns "borrowed reference" - do NOT free it manually!
  *       The wrapper holds parent refcount and will be freed when you're done.
  */
@@ -806,7 +806,7 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
     
     dap_json_value_t *l_element = NULL;
     
-    // Phase 2.0.4: Mode-specific access
+    //  Mode-specific access
     if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
         // ARENA mode: offset → indices in arena
         dap_json_stage2_t *l_stage2 = s_get_stage2(a_array);
@@ -962,7 +962,7 @@ dap_json_t* dap_json_array_get_array(dap_json_t* a_array, size_t a_idx)
 /* ========================================================================== */
 
 /**
- * @brief Phase 2.0.4: Internal helper: insert element into array at specified position
+ * @brief  Internal helper: insert element into array at specified position
  * @details Works ONLY for MALLOC_MUTABLE arrays
  * @param a_array Array to insert into
  * @param a_idx Index where to insert (shifts existing elements right)
@@ -1123,7 +1123,7 @@ int dap_json_array_insert_array(dap_json_t* a_array, size_t a_idx, dap_json_t* a
 
 
 /**
- * @brief Phase 2.0.4: Delete array elements (MALLOC_MUTABLE only)
+ * @brief  Delete array elements (MALLOC_MUTABLE only)
  * @details ARENA arrays are immutable - cannot delete
  */
 int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
@@ -1132,7 +1132,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
         return -1;
     }
     
-    // Phase 2.0.4: Check mode
+    //  Check mode
     if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
         log_it(L_ERROR, "Cannot delete from ARENA (immutable) array");
         return -1;
@@ -1174,7 +1174,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
 }
 
 /**
- * @brief Phase 2.0.4: Sort array (MALLOC_MUTABLE only)
+ * @brief  Sort array (MALLOC_MUTABLE only)
  * @details ARENA arrays are immutable - cannot sort
  */
 void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
@@ -1183,7 +1183,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
         return;
     }
     
-    // Phase 2.0.4: Check mode
+    //  Check mode
     if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
         log_it(L_ERROR, "Cannot sort ARENA (immutable) array");
         return;
@@ -1337,7 +1337,7 @@ int dap_json_object_add_int64(dap_json_t* a_json, const char* a_key, int64_t a_v
 }
 
 /**
- * @brief Phase 2.0.4: Add uint64 field to object
+ * @brief  Add uint64 field to object
  */
 int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a_value)
 {
@@ -1394,7 +1394,7 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
 }
 
 /**
- * @brief Phase 2.0.4: Add uint256 field to object
+ * @brief  Add uint256 field to object
  */
 int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t a_value)
 {
@@ -1637,7 +1637,7 @@ int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value
  * @brief Get string field from object
  */
 /**
- * @brief Phase 2.0.4: Materialize zero-copy string to null-terminated copy
+ * @brief  Materialize zero-copy string to null-terminated copy
  * @details For ARENA_IMMUTABLE: creates null-terminated copy from source buffer
  *          For MALLOC_MUTABLE: strings already null-terminated, just return pointer
  * @param[in] a_json JSON wrapper (needed to access source buffer for ARENA mode)
@@ -1659,7 +1659,7 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     // ARENA_IMMUTABLE: offset → position in source buffer
     // Need to check if we have cached materialized copy
     // For now, we'll create a temporary null-terminated copy
-    // TODO Phase 2.1: Add string pool for caching materialized strings
+    // TODO  Add string pool for caching materialized strings
     
     dap_json_stage2_t *l_stage2 = s_get_stage2(a_json);
     if (!l_stage2 || !l_stage2->input) {
@@ -1715,7 +1715,7 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
         *a_out_length = l_value->length;
     }
     
-    // ⭐ Phase 2.0.5: Zero-copy string access via offset
+    //  Zero-copy string access via offset
     return dap_json_get_ptr(l_value, a_json->input_buffer);
 }
 
@@ -1775,7 +1775,7 @@ uint64_t dap_json_object_get_uint64(dap_json_t* a_json, const char* a_key)
 }
 
 /**
- * @brief Phase 2.0.4: Get int64 field with error checking
+ * @brief  Get int64 field with error checking
  */
 bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_t *a_out)
 {
@@ -1815,7 +1815,7 @@ bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_
 }
 
 /**
- * @brief Phase 2.0.4: Get uint64 field with error checking
+ * @brief  Get uint64 field with error checking
  */
 bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint64_t *a_out)
 {
@@ -1994,7 +1994,7 @@ bool dap_json_object_get_bool(dap_json_t* a_json, const char* a_key)
         return false;
     }
     
-    // Phase 2.0.4: boolean stored in offset (0=false, 1=true)
+    //  boolean stored in offset (0=false, 1=true)
     return (l_value->offset != 0);
 }
 
@@ -2060,7 +2060,7 @@ dap_json_t* dap_json_object_get_array(dap_json_t* a_json, const char* a_key)
  * @return true if key exists and value retrieved, false otherwise
  */
 /**
- * @brief Phase 2.0.4: Get wrapper for value at key (JSON-C compatible)
+ * @brief  Get wrapper for value at key (JSON-C compatible)
  * @details Creates wrapper for value, cached within parent wrapper
  */
 bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** a_value)
@@ -2081,8 +2081,8 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    // Phase 2.0.4: Create borrowed wrapper (no caching for now)
-    // TODO Phase 2.1: Add wrapper cache to dap_json wrapper struct
+    //  Create borrowed wrapper (no caching for now)
+    // TODO  Add wrapper cache to dap_json wrapper struct
     *a_value = s_wrap_value_borrowed(l_val, a_json);
     if (!*a_value) {
         log_it(L_ERROR, "Failed to create wrapper for key '%s'", a_key);
@@ -2093,7 +2093,7 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
 }
 
 /**
- * @brief Phase 2.0.4: Delete key from object
+ * @brief  Delete key from object
  * @return 0 on success, -1 on failure
  * @note For ARENA_IMMUTABLE objects: NOT SUPPORTED (returns -1)
  *       For MALLOC_MUTABLE objects: removes key and frees value
@@ -2281,7 +2281,7 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
         *a_out_length = l_value->length;
     }
     
-    // ⭐ Phase 2.0.5: Zero-copy string access via offset
+    //  Zero-copy string access via offset
     return dap_json_get_ptr(l_value, a_json->input_buffer);
 }
 
@@ -2307,7 +2307,7 @@ const char* dap_json_get_string(dap_json_t* a_json)
 }
 
 /**
- * @brief Phase 2.0.4: Get int64 value from JSON
+ * @brief  Get int64 value from JSON
  * @return Integer value or 0 if not an integer
  */
 int64_t dap_json_get_int64(dap_json_t* a_json)
@@ -2351,7 +2351,7 @@ int dap_json_get_int(dap_json_t* a_json)
 }
 
 /**
- * @brief Phase 2.0.4: Get boolean value from JSON
+ * @brief  Get boolean value from JSON
  * @return Boolean value or false if not a boolean
  */
 bool dap_json_get_bool(dap_json_t* a_json)
@@ -2365,12 +2365,12 @@ bool dap_json_get_bool(dap_json_t* a_json)
         return false;
     }
     
-    // Phase 2.0.4: boolean stored in offset (0=false, 1=true)
+    //  boolean stored in offset (0=false, 1=true)
     return (l_value->offset != 0);
 }
 
 /**
- * @brief Phase 2.0.4: Get double value from JSON
+ * @brief  Get double value from JSON
  * @return Double value or 0.0 if not a number
  */
 double dap_json_get_double(dap_json_t* a_json)
@@ -2445,7 +2445,7 @@ size_t dap_json_object_length(dap_json_t* a_json)
         return 0;
     }
     
-    // Phase 2.0.4: count stored in length field
+    //  count stored in length field
     return l_value->length;
 }
 
@@ -2468,7 +2468,7 @@ dap_json_type_t dap_json_get_type(dap_json_t* a_json)
 }
 
 /**
- * @brief Phase 2.0.4: Iterate over object key-value pairs
+ * @brief  Iterate over object key-value pairs
  * @param a_json JSON object
  * @param callback Callback function for each key-value pair
  * @param user_data User data passed to callback

@@ -1,7 +1,7 @@
 /**
  * @file dap_json_iterator.h
  * @brief DAP JSON Iterator API - Zero-copy tape traversal
- * @details Phase 3.0: High-performance iterator for tape format
+ * @details  High-performance iterator for tape format
  * 
  * This API is the key to achieving top-tier JSON parsing performance!
  * 
@@ -145,7 +145,7 @@ bool dap_json_iterator_at_end(const dap_json_iterator_t *iter);
 
 /**
  * @brief Get string value as (pointer, length) - ZERO COPY!
- * @details ⚡⚡ THE killer feature! No allocation, no copy, just pointer math.
+ * @details THE killer feature! No allocation, no copy, just pointer math.
  * 
  * Returned pointer points DIRECTLY into input buffer.
  * Valid until input buffer is freed.
@@ -173,7 +173,7 @@ char* dap_json_iterator_get_string_dup(const dap_json_iterator_t *iter);
 
 /**
  * @brief Get int64 value - LAZY PARSE!
- * @details ⚡ Number is parsed from input buffer on-demand.
+ * @details Number is parsed from input buffer on-demand.
  *          No allocation, no pre-parsing overhead.
  * 
  * @param[in] iter Iterator

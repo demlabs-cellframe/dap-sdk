@@ -1,7 +1,7 @@
 /**
  * @file dap_json_tape.h
  * @brief DAP JSON Tape Format - High-performance linear tape structure
- * @details Phase 3.0: Revolutionary architecture change
+ * @details  Revolutionary architecture change
  * 
  * Instead of building DOM tree, we create a flat tape array that represents
  * the JSON document in linear form. This enables:
@@ -237,7 +237,7 @@ static inline dap_json_tape_entry_t dap_tape_make_entry(
 
 /**
  * @brief Get next tape index (skip current value)
- * @details ⚡ O(1) skip using jump pointers!
+ * @details O(1) skip using jump pointers!
  * 
  * For containers, uses payload as jump pointer to closing bracket.
  * For other values, simply advances to next entry.

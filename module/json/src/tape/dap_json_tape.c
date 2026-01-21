@@ -1,13 +1,12 @@
 /**
  * @file dap_json_tape.c
  * @brief DAP JSON Tape Format Implementation
- * @details Phase 3.0: Tape builder - replaces tree construction
+ * @details Tape builder - converts structural indices to linear tape
  * 
- * This is THE revolutionary change. Instead of allocating tree nodes,
- * we build a flat tape array. Expected speedup: 8-12x!
+ * Instead of allocating tree nodes, we build a flat tape array.
  * 
- * **Our Key Innovations:**
- * - Arena allocation: 3-5x faster than malloc
+ * **Key Optimizations:**
+ * - Arena allocation: faster than malloc
  * - Direct Stage 1 reuse: zero redundant calculations
  * - Single-pass construction: optimal cache behavior
  * - Pure uint64_t entries: portable and fast
@@ -41,7 +40,7 @@ static _Thread_local dap_arena_t *s_thread_tape_arena = NULL;
 
 /**
  * @brief Build tape from Stage 1 structural indices
- * @details ⚡⚡ Phase 3.0: Revolutionary high-performance tape builder
+ * @details High-performance tape builder
  * 
  * Algorithm walkthrough:
  * ---------------------
@@ -111,10 +110,10 @@ bool dap_json_build_tape(
         }
         
         debug_if(dap_json_get_debug(), L_DEBUG,
-                 "⚡ Created thread-local tape arena (64KB initial, 16MB max)");
+                 "Created thread-local tape arena (64KB initial, 16MB max)");
     }
     
-    // ⚡ Arena auto-reuses freed space from previous allocations
+    // Arena auto-reuses freed space from previous allocations
     // No reset needed here - arena grows naturally and reuses memory
     
     // Allocate tape from thread-local arena
@@ -137,7 +136,7 @@ bool dap_json_build_tape(
     size_t root_start_idx = tape_idx;
     tape_idx++;
     
-    // ⚡⚡ MAIN LOOP: Transform Stage 1 indices to tape entries
+    // MAIN LOOP: Transform Stage 1 indices to tape entries
     // This is where the magic happens - direct use of Stage 1 data!
     for (size_t i = 0; i < a_stage1->indices_count; i++) {
         const dap_json_struct_index_t *idx = &a_stage1->indices[i];
@@ -147,7 +146,7 @@ bool dap_json_build_tape(
                 char c = idx->character;
                 
                 if (c == '{') {
-                    // ⚡ CRITICAL: Use Stage 1 payload directly as jump pointer!
+                    // CRITICAL: Use Stage 1 payload directly as jump pointer!
                     // No need to recalculate - Stage 1 already did the work!
                     uint64_t close_idx = (uint64_t)idx->payload + tape_idx;
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, close_idx);
@@ -172,7 +171,7 @@ bool dap_json_build_tape(
             }
             
             case TOKEN_TYPE_STRING: {
-                // ⚡ Zero-copy: payload = offset into input buffer
+                // Zero-copy: payload = offset into input buffer
                 // Length is in Stage 1 idx->length, we'll access it when needed
                 uint64_t offset = (uint64_t)idx->position;
                 tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_STRING, offset);
@@ -181,7 +180,7 @@ bool dap_json_build_tape(
             }
             
             case TOKEN_TYPE_NUMBER: {
-                // ⚡ Lazy parse: payload = offset, parse later
+                // Lazy parse: payload = offset, parse later
                 uint64_t offset = (uint64_t)idx->position;
                 tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_NUMBER, offset);
                 tape_idx++;
@@ -227,7 +226,7 @@ bool dap_json_build_tape(
     *out_count = tape_idx;
     
     debug_if(dap_json_get_debug(), L_DEBUG,
-             "⚡⚡⚡ PHASE 3.0: Built tape with %zu entries "
+             "⚡PHASE 3.0: Built tape with %zu entries "
              "(thread-local arena, ZERO malloc, direct Stage 1 copy!)",
              tape_idx);
     
@@ -268,7 +267,7 @@ void dap_json_tape_arena_reset(void)
     if (s_thread_tape_arena) {
         dap_arena_reset(s_thread_tape_arena);
         debug_if(dap_json_get_debug(), L_DEBUG,
-                 "⚡ Reset thread-local tape arena (memory reclaimed)");
+                 "Reset thread-local tape arena (memory reclaimed)");
     }
 }
 
@@ -284,7 +283,7 @@ void dap_json_tape_arena_free(void)
         dap_arena_free(s_thread_tape_arena);
         s_thread_tape_arena = NULL;
         debug_if(dap_json_get_debug(), L_DEBUG,
-                 "⚡ Freed thread-local tape arena (thread cleanup)");
+                 "Freed thread-local tape arena (thread cleanup)");
     }
 }
 

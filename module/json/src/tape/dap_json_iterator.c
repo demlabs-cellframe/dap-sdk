@@ -1,7 +1,7 @@
 /**
  * @file dap_json_iterator.c
  * @brief DAP JSON Iterator implementation - Zero-copy tape traversal
- * @details Phase 3.3: High-performance iterator for tape format
+ * @details  High-performance iterator for tape format
  * 
  * Our Key Innovations:
  * - Zero-copy strings (pointer into input buffer)
