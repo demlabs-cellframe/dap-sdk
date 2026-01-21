@@ -1,7 +1,7 @@
 /*
  * Authors:
  * Dmitriy A. Gerasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Ltd.   https://demlabs.net
+ * DeM Labs Ltd.   https://demlabs.net>
  * Copyright  (c) 2026
  * All rights reserved.
  *
@@ -26,34 +26,21 @@
 #include "dap_events_socket.h"
 #include "dap_context.h"
 
-#include <sys/eventfd.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-
 #define LOG_TAG "dap_worker_queue"
 
 // Default ring buffer capacity (power of 2)
 #define DAP_WORKER_QUEUE_DEFAULT_CAPACITY 16384
 
 /**
- * @brief Callback from reactor when eventfd is readable (items available in queue)
+ * @brief Callback from reactor when event is signaled (items available in queue)
  */
-static void s_eventfd_read_callback(dap_events_socket_t *a_es, void *a_arg) {
-    dap_worker_queue_t *l_queue = (dap_worker_queue_t *)a_arg;
+static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
+    (void)a_value; // Unused - we just process all available items
+    
+    dap_worker_queue_t *l_queue = (dap_worker_queue_t *)a_es->_inheritor;
     
     if (!l_queue) {
-        log_it(L_ERROR, "Eventfd callback: NULL queue pointer");
-        return;
-    }
-    
-    // Read eventfd to clear notification (must read 8 bytes)
-    uint64_t l_value = 0;
-    ssize_t l_ret = read(a_es->fd, &l_value, sizeof(l_value));
-    if (l_ret != sizeof(l_value)) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_it(L_WARNING, "Failed to read eventfd: %s", strerror(errno));
-        }
+        log_it(L_ERROR, "Event callback: NULL queue pointer in _inheritor");
         return;
     }
     
@@ -61,8 +48,8 @@ static void s_eventfd_read_callback(dap_events_socket_t *a_es, void *a_arg) {
     size_t l_processed = dap_worker_queue_process(l_queue);
     
     if (l_processed > 0) {
-        debug_if(g_debug_reactor, L_DEBUG, "Worker queue processed %zu items (eventfd value=%"PRIu64")",
-                 l_processed, l_value);
+        debug_if(g_debug_reactor, L_DEBUG, "Worker queue processed %zu items (event value=%"PRIu64")",
+                 l_processed, a_value);
     }
 }
 
@@ -93,40 +80,25 @@ dap_worker_queue_t *dap_worker_queue_create(dap_worker_t *a_worker, size_t a_cap
     l_queue->callback = a_callback;
     l_queue->worker = a_worker;
     
-    // Create eventfd for notifications (EFD_NONBLOCK | EFD_SEMAPHORE)
-    // EFD_SEMAPHORE: each read decrements counter by 1 (better for multiple items)
-    int l_eventfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC | EFD_SEMAPHORE);
-    if (l_eventfd < 0) {
-        log_it(L_ERROR, "Failed to create eventfd: %s", strerror(errno));
-        dap_ring_buffer_delete(l_queue->ring_buffer);
-        DAP_DELETE(l_queue);
-        return NULL;
-    }
-    
-    // Wrap eventfd in dap_events_socket for reactor integration
-    l_queue->event_socket = dap_events_socket_wrap_no_add(l_eventfd, s_eventfd_read_callback, l_queue);
+    // Create cross-platform event socket for notifications
+    // This will use eventfd on Linux, kqueue on BSD/macOS, IOCP on Windows
+    l_queue->event_socket = dap_context_create_event(a_worker->context, s_event_read_callback);
     if (!l_queue->event_socket) {
-        log_it(L_ERROR, "Failed to wrap eventfd in events_socket");
-        close(l_eventfd);
+        log_it(L_ERROR, "Failed to create event socket");
         dap_ring_buffer_delete(l_queue->ring_buffer);
         DAP_DELETE(l_queue);
         return NULL;
     }
     
-    l_queue->event_socket->type = DESCRIPTOR_TYPE_EVENT;
-    l_queue->event_socket->flags |= DAP_SOCK_READY_TO_READ;
+    // Store queue pointer in event socket's _inheritor for callback
+    l_queue->event_socket->_inheritor = l_queue;
+    l_queue->event_socket->worker = a_worker;
     
-    // Add event socket to worker's reactor
-    if (dap_worker_add_events_socket(a_worker, l_queue->event_socket) != 0) {
-        log_it(L_ERROR, "Failed to add eventfd to worker reactor");
-        dap_events_socket_delete_unsafe(l_queue->event_socket, false);
-        dap_ring_buffer_delete(l_queue->ring_buffer);
-        DAP_DELETE(l_queue);
-        return NULL;
-    }
+    // Add event socket to worker's reactor (already done in dap_context_create_event for worker context)
+    // Event socket is already added to context during creation
     
-    log_it(L_INFO, "Created worker queue: worker=%u, capacity=%zu, eventfd=%d",
-           a_worker->id, l_capacity, l_eventfd);
+    log_it(L_INFO, "Created worker queue: worker=%u, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
+           a_worker->id, l_capacity, l_queue->event_socket->fd);
     
     return l_queue;
 }
@@ -181,15 +153,12 @@ bool dap_worker_queue_push(dap_worker_queue_t *a_queue, void *a_item) {
         return false;
     }
     
-    // Signal eventfd to wake up reactor (increment counter by 1)
-    uint64_t l_value = 1;
-    ssize_t l_ret = write(a_queue->event_socket->fd, &l_value, sizeof(l_value));
-    if (l_ret != sizeof(l_value)) {
-        // Write failed, but item is already in ring buffer
+    // Signal event socket to wake up reactor (cross-platform)
+    int l_ret = dap_events_socket_event_signal(a_queue->event_socket, 1);
+    if (l_ret != 0) {
+        // Signal failed, but item is already in ring buffer
         // Reactor will eventually process it on next wakeup
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_it(L_WARNING, "Failed to signal eventfd: %s", strerror(errno));
-        }
+        log_it(L_WARNING, "Failed to signal event socket: error %d", l_ret);
     }
     
     return true;
@@ -214,10 +183,9 @@ size_t dap_worker_queue_process(dap_worker_queue_t *a_queue) {
         
         // Limit batch size to prevent starvation of other sockets
         if (l_processed >= 1024) {
-            // Re-signal eventfd if more items remain
+            // Re-signal event if more items remain
             if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
-                uint64_t l_value = 1;
-                write(a_queue->event_socket->fd, &l_value, sizeof(l_value));
+                dap_events_socket_event_signal(a_queue->event_socket, 1);
             }
             break;
         }
