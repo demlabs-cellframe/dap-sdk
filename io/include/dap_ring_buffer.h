@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdalign.h>
 
 /**
  * @brief Lock-free SPSC (Single Producer Single Consumer) ring buffer for inter-worker communication
@@ -103,7 +104,7 @@ void *dap_ring_buffer_pop(dap_ring_buffer_t *a_rb);
  * @param a_rb Ring buffer
  * @return true if empty
  */
-static inline bool dap_ring_buffer_is_empty(const dap_ring_buffer_t *a_rb) {
+static inline bool dap_ring_buffer_is_empty(dap_ring_buffer_t *a_rb) {
     size_t l_read = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
     size_t l_write = atomic_load_explicit(&a_rb->write_pos, memory_order_acquire);
     return l_read == l_write;
@@ -114,7 +115,7 @@ static inline bool dap_ring_buffer_is_empty(const dap_ring_buffer_t *a_rb) {
  * @param a_rb Ring buffer
  * @return true if full
  */
-static inline bool dap_ring_buffer_is_full(const dap_ring_buffer_t *a_rb) {
+static inline bool dap_ring_buffer_is_full(dap_ring_buffer_t *a_rb) {
     size_t l_write = atomic_load_explicit(&a_rb->write_pos, memory_order_relaxed);
     size_t l_read = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
     // Full when next write position would equal read position
@@ -126,7 +127,7 @@ static inline bool dap_ring_buffer_is_full(const dap_ring_buffer_t *a_rb) {
  * @param a_rb Ring buffer
  * @return Number of elements in buffer
  */
-static inline size_t dap_ring_buffer_size(const dap_ring_buffer_t *a_rb) {
+static inline size_t dap_ring_buffer_size(dap_ring_buffer_t *a_rb) {
     size_t l_write = atomic_load_explicit(&a_rb->write_pos, memory_order_acquire);
     size_t l_read = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
     return (l_write - l_read) & a_rb->mask;
@@ -140,7 +141,7 @@ static inline size_t dap_ring_buffer_size(const dap_ring_buffer_t *a_rb) {
  * @param a_total_full Output: total times buffer was full
  * @param a_total_empty Output: total times buffer was empty
  */
-void dap_ring_buffer_get_stats(const dap_ring_buffer_t *a_rb, 
+void dap_ring_buffer_get_stats(dap_ring_buffer_t *a_rb, 
                                  uint64_t *a_total_pushes,
                                  uint64_t *a_total_pops,
                                  uint64_t *a_total_full,

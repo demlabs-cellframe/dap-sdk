@@ -173,7 +173,7 @@ void *dap_ring_buffer_pop(dap_ring_buffer_t *a_rb) {
 /**
  * @brief Get statistics from ring buffer
  */
-void dap_ring_buffer_get_stats(const dap_ring_buffer_t *a_rb,
+void dap_ring_buffer_get_stats(dap_ring_buffer_t *a_rb,
                                  uint64_t *a_total_pushes,
                                  uint64_t *a_total_pops,
                                  uint64_t *a_total_full,

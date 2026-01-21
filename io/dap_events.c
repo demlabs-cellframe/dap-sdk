@@ -420,18 +420,12 @@ int dap_events_start()
             goto lb_err;
         }
         for (size_t i = 0; i < s_threads_count; i++) {
-            // Input of queue for new esockets
-            s_workers[n]->queue_es_new_input[i]      = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_new);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_new_input[i]);
-            // Input of queue for removed esockets
-            s_workers[n]->queue_es_delete_input[i]   = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_delete);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_delete_input[i]);
-            // Input of queue for writing to esockets
-            s_workers[n]->queue_es_io_input[i]       = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_io);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_io_input[i]);
-            // Input of queue for esockets reassigning
-            s_workers[n]->queue_es_reassign_input[i] = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_reassign);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_reassign_input[i]);
+            // Setup cross-worker queue references (no need for separate input sockets)
+            // Each worker's queue can be accessed directly from other workers
+            s_workers[n]->queue_es_new_input[i]      = s_workers[i]->queue_es_new;
+            s_workers[n]->queue_es_delete_input[i]   = s_workers[i]->queue_es_delete;
+            s_workers[n]->queue_es_io_input[i]       = s_workers[i]->queue_es_io;
+            s_workers[n]->queue_es_reassign_input[i] = s_workers[i]->queue_es_reassign;
         }
     }
 #endif

@@ -79,6 +79,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_config.h"
 #include "dap_list.h"
 #include "dap_worker.h"
+#include "dap_context_queue.h"
 #include "dap_uuid.h"
 #include "dap_events.h"
 #include "dap_io_flow_socket.h"
@@ -89,6 +90,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_events_socket"
+
 
 // =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
@@ -591,7 +593,7 @@ void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, 
     l_msg->esocket = a_es;
     l_msg->esocket_uuid = a_es->uuid;
     l_msg->worker_new = a_worker_new;
-    if( dap_events_socket_queue_ptr_send(a_worker_old->queue_es_reassign, l_msg) != 0 ){
+    if( !dap_context_queue_push(a_worker_old->queue_es_reassign, l_msg) ){
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR,"Haven't sent reassign message with esocket %"DAP_UINT64_FORMAT_U, a_es ? a_es->socket : (SOCKET)-1);
 #else
@@ -2137,7 +2139,7 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t *a_w, dap_events_socket
     }
     *l_es_uuid_ptr = a_es_uuid;
 
-    if( dap_events_socket_queue_ptr_send( a_w->queue_es_delete, l_es_uuid_ptr ) != 0 ){
+    if( !dap_context_queue_push(a_w->queue_es_delete, l_es_uuid_ptr) ){
         log_it(L_ERROR,"Can't send %"DAP_UINT64_FORMAT_U" uuid in queue",a_es_uuid);
         DAP_DELETE(l_es_uuid_ptr);
     }
@@ -2172,9 +2174,8 @@ void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uui
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_READ;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "set readable mt: wasn't send pointer to queue with set readble flag: code %d", l_ret);
+    if( !dap_context_queue_push(a_w->queue_es_io, l_msg) ){
+        log_it(L_ERROR, "set readable mt: wasn't send pointer to queue with set readble flag");
         DAP_DELETE(l_msg);
     }
 #endif
@@ -2209,9 +2210,8 @@ void dap_events_socket_set_writable_mt(dap_worker_t *a_w, dap_events_socket_uuid
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "set writable mt: wasn't send pointer to queue: code %d", l_ret);
+    if( !dap_context_queue_push(a_w->queue_es_io, l_msg) ){
+        log_it(L_ERROR, "set writable mt: wasn't send pointer to queue");
         DAP_DELETE(l_msg);
     }
 #endif
@@ -2360,10 +2360,12 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
-    return l_ret
-        ? log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
-        : a_data_size;
+    if( !dap_context_queue_push(a_w->queue_es_io, l_msg) ){
+        log_it(L_ERROR, "write mt: wasn't send pointer to queue");
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+        return 0;
+    }
+    return a_data_size;
 #endif
 }
 
@@ -2414,9 +2416,8 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wrrite f mt: wasn't send pointer to queue: code %d", l_ret);
+    if( !dap_context_queue_push(a_w->queue_es_io, l_msg) ){
+        log_it(L_ERROR, "Write f mt: wasn't send pointer to queue");
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;

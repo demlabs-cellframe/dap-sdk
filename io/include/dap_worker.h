@@ -30,24 +30,26 @@
 typedef struct dap_context dap_context_t;
 typedef struct dap_timerfd dap_timerfd_t;
 typedef struct dap_proc_thread dap_proc_thread_t;
+typedef struct dap_context_queue dap_context_queue_t;
+
 typedef struct dap_worker {
     uint32_t  id;
     dap_proc_thread_t *proc_queue_input;
 #ifndef DAP_EVENTS_CAPS_IOCP
-    // worker control queues
-    dap_events_socket_t *queue_es_new; // Queue socket for new socket
-    dap_events_socket_t **queue_es_new_input; // Queue socket for new socket
+    // worker control queues (lock-free ring buffer based)
+    dap_context_queue_t *queue_es_new;       ///< Queue for new socket assignment
+    dap_context_queue_t **queue_es_new_input; ///< Input queues array for cross-worker new socket
 
-    dap_events_socket_t *queue_es_delete; // Queue socke
-    dap_events_socket_t **queue_es_delete_input; // Queue socke
+    dap_context_queue_t *queue_es_delete;     ///< Queue for socket deletion
+    dap_context_queue_t **queue_es_delete_input; ///< Input queues array for cross-worker delete
 
-    dap_events_socket_t *queue_es_reassign; // Queue for reassign between workers
-    dap_events_socket_t **queue_es_reassign_input; // Queue for reassign between workers
+    dap_context_queue_t *queue_es_reassign;   ///< Queue for reassign between workers
+    dap_context_queue_t **queue_es_reassign_input; ///< Input queues array for cross-worker reassign
 
-    dap_events_socket_t *queue_es_io; // Queue socket for io ops
-    dap_events_socket_t **queue_es_io_input; // Queue socket for io ops between workers
+    dap_context_queue_t *queue_es_io;         ///< Queue for I/O operations
+    dap_context_queue_t **queue_es_io_input;  ///< Input queues array for cross-worker I/O
 #endif
-    dap_events_socket_t *queue_callback;  /* Queue for pure callback on worker */
+    dap_context_queue_t *queue_callback;      ///< Queue for pure callback execution on worker
 
     dap_timerfd_t * timer_check_activity;
 

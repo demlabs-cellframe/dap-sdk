@@ -2,7 +2,7 @@
  * Authors:
  * Dmitriy A. Gerasimov <gerasimov.dmitriy@demlabs.net>
  * DeM Labs Ltd.   https://demlabs.net
- * Copyright  (c) 2025
+ * Copyright  (c) 2026
  * All rights reserved.
  *
  * This file is part of DAP SDK the open source project
@@ -27,39 +27,40 @@
 #include "dap_events_socket.h"
 
 /**
- * @brief Ring buffer-based queue for inter-worker communication
+ * @brief Ring buffer-based queue for inter-context communication
  * 
- * Replacement for pipe-based dap_events_socket queues.
- * Uses lock-free ring buffer + eventfd for notifications.
+ * Universal queue for workers and proc_threads.
+ * Uses lock-free ring buffer + cross-platform event socket for notifications.
  * 
  * Benefits over pipes:
  * - No system call overhead for push/pop
  * - Better cache locality
  * - Lock-free operation
  * - Lower latency
+ * - Cross-platform (eventfd/kqueue/IOCP)
  */
 
-typedef struct dap_worker_queue {
+typedef struct dap_context_queue {
     dap_ring_buffer_t *ring_buffer;     ///< Lock-free ring buffer for data
-    dap_events_socket_t *event_socket;  ///< Event socket for reactor integration (eventfd)
+    dap_events_socket_t *event_socket;  ///< Event socket for reactor integration
     void (*callback)(void *);           ///< Callback function for processing popped items
-    dap_worker_t *worker;               ///< Associated worker
-} dap_worker_queue_t;
+    dap_context_t *context;             ///< Associated context (worker or proc_thread)
+} dap_context_queue_t;
 
 /**
- * @brief Create worker queue
- * @param a_worker Associated worker
- * @param a_capacity Ring buffer capacity
+ * @brief Create context queue
+ * @param a_context Associated context (worker->context or proc_thread->context)
+ * @param a_capacity Ring buffer capacity (0 = default)
  * @param a_callback Callback function for processing items
  * @return Queue instance or NULL on error
  */
-dap_worker_queue_t *dap_worker_queue_create(dap_worker_t *a_worker, size_t a_capacity, void (*a_callback)(void *));
+dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a_capacity, void (*a_callback)(void *));
 
 /**
- * @brief Delete worker queue
+ * @brief Delete context queue
  * @param a_queue Queue to delete
  */
-void dap_worker_queue_delete(dap_worker_queue_t *a_queue);
+void dap_context_queue_delete(dap_context_queue_t *a_queue);
 
 /**
  * @brief Push item to queue (thread-safe, lock-free)
@@ -67,14 +68,14 @@ void dap_worker_queue_delete(dap_worker_queue_t *a_queue);
  * @param a_item Item to push
  * @return true if successful, false if full
  */
-bool dap_worker_queue_push(dap_worker_queue_t *a_queue, void *a_item);
+bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item);
 
 /**
  * @brief Process all available items in queue (called by reactor)
  * @param a_queue Queue
  * @return Number of items processed
  */
-size_t dap_worker_queue_process(dap_worker_queue_t *a_queue);
+size_t dap_context_queue_process(dap_context_queue_t *a_queue);
 
 /**
  * @brief Get queue statistics
@@ -84,7 +85,7 @@ size_t dap_worker_queue_process(dap_worker_queue_t *a_queue);
  * @param a_total_pops Total pops
  * @param a_total_full Total times full
  */
-void dap_worker_queue_get_stats(const dap_worker_queue_t *a_queue,
+void dap_context_queue_get_stats(dap_context_queue_t *a_queue,
                                   size_t *a_size,
                                   uint64_t *a_total_pushes,
                                   uint64_t *a_total_pops,

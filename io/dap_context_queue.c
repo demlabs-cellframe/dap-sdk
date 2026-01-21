@@ -21,15 +21,15 @@
  *    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "dap_worker_queue.h"
+#include "dap_context_queue.h"
 #include "dap_common.h"
 #include "dap_events_socket.h"
 #include "dap_context.h"
 
-#define LOG_TAG "dap_worker_queue"
+#define LOG_TAG "dap_context_queue"
 
 // Default ring buffer capacity (power of 2)
-#define DAP_WORKER_QUEUE_DEFAULT_CAPACITY 16384
+#define DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY 16384
 
 /**
  * @brief Callback from reactor when event is signaled (items available in queue)
@@ -37,7 +37,7 @@
 static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
     (void)a_value; // Unused - we just process all available items
     
-    dap_worker_queue_t *l_queue = (dap_worker_queue_t *)a_es->_inheritor;
+    dap_context_queue_t *l_queue = (dap_context_queue_t *)a_es->_inheritor;
     
     if (!l_queue) {
         log_it(L_ERROR, "Event callback: NULL queue pointer in _inheritor");
@@ -45,44 +45,44 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
     }
     
     // Process all available items in queue
-    size_t l_processed = dap_worker_queue_process(l_queue);
+    size_t l_processed = dap_context_queue_process(l_queue);
     
     if (l_processed > 0) {
-        debug_if(g_debug_reactor, L_DEBUG, "Worker queue processed %zu items (event value=%"PRIu64")",
+        debug_if(g_debug_reactor, L_DEBUG, "Context queue processed %zu items (event value=%"PRIu64")",
                  l_processed, a_value);
     }
 }
 
 /**
- * @brief Create worker queue
+ * @brief Create context queue
  */
-dap_worker_queue_t *dap_worker_queue_create(dap_worker_t *a_worker, size_t a_capacity, void (*a_callback)(void *)) {
-    if (!a_worker || !a_callback) {
-        log_it(L_ERROR, "Worker queue create: NULL worker or callback");
+dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a_capacity, void (*a_callback)(void *)) {
+    if (!a_context || !a_callback) {
+        log_it(L_ERROR, "Context queue create: NULL context or callback");
         return NULL;
     }
     
-    dap_worker_queue_t *l_queue = DAP_NEW_Z(dap_worker_queue_t);
+    dap_context_queue_t *l_queue = DAP_NEW_Z(dap_context_queue_t);
     if (!l_queue) {
-        log_it(L_CRITICAL, "Failed to allocate worker queue");
+        log_it(L_CRITICAL, "Failed to allocate context queue");
         return NULL;
     }
     
     // Create ring buffer
-    size_t l_capacity = a_capacity > 0 ? a_capacity : DAP_WORKER_QUEUE_DEFAULT_CAPACITY;
+    size_t l_capacity = a_capacity > 0 ? a_capacity : DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY;
     l_queue->ring_buffer = dap_ring_buffer_create(l_capacity);
     if (!l_queue->ring_buffer) {
-        log_it(L_ERROR, "Failed to create ring buffer for worker queue");
+        log_it(L_ERROR, "Failed to create ring buffer for context queue");
         DAP_DELETE(l_queue);
         return NULL;
     }
     
     l_queue->callback = a_callback;
-    l_queue->worker = a_worker;
+    l_queue->context = a_context;
     
     // Create cross-platform event socket for notifications
     // This will use eventfd on Linux, kqueue on BSD/macOS, IOCP on Windows
-    l_queue->event_socket = dap_context_create_event(a_worker->context, s_event_read_callback);
+    l_queue->event_socket = dap_context_create_event(a_context, s_event_read_callback);
     if (!l_queue->event_socket) {
         log_it(L_ERROR, "Failed to create event socket");
         dap_ring_buffer_delete(l_queue->ring_buffer);
@@ -92,21 +92,20 @@ dap_worker_queue_t *dap_worker_queue_create(dap_worker_t *a_worker, size_t a_cap
     
     // Store queue pointer in event socket's _inheritor for callback
     l_queue->event_socket->_inheritor = l_queue;
-    l_queue->event_socket->worker = a_worker;
     
-    // Add event socket to worker's reactor (already done in dap_context_create_event for worker context)
+    // Add event socket to context's reactor (already done in dap_context_create_event for worker context)
     // Event socket is already added to context during creation
     
-    log_it(L_INFO, "Created worker queue: worker=%u, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
-           a_worker->id, l_capacity, l_queue->event_socket->fd);
+    log_it(L_INFO, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
+           a_context, l_capacity, l_queue->event_socket->fd);
     
     return l_queue;
 }
 
 /**
- * @brief Delete worker queue
+ * @brief Delete context queue
  */
-void dap_worker_queue_delete(dap_worker_queue_t *a_queue) {
+void dap_context_queue_delete(dap_context_queue_t *a_queue) {
     if (!a_queue) {
         return;
     }
@@ -115,11 +114,11 @@ void dap_worker_queue_delete(dap_worker_queue_t *a_queue) {
     uint64_t l_pushes, l_pops, l_full, l_empty;
     dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
     
-    log_it(L_INFO, "Deleting worker queue: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
+    log_it(L_INFO, "Deleting context queue: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
            l_pushes, l_pops, l_full, l_empty);
     
     if (l_full > 0) {
-        log_it(L_WARNING, "Worker queue was full %"PRIu64" times - consider increasing capacity", l_full);
+        log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
     }
     
     // Remove event socket from reactor and delete
@@ -140,7 +139,7 @@ void dap_worker_queue_delete(dap_worker_queue_t *a_queue) {
 /**
  * @brief Push item to queue (thread-safe, lock-free)
  */
-bool dap_worker_queue_push(dap_worker_queue_t *a_queue, void *a_item) {
+bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     if (!a_queue || !a_item) {
         return false;
     }
@@ -148,8 +147,7 @@ bool dap_worker_queue_push(dap_worker_queue_t *a_queue, void *a_item) {
     // Push to ring buffer (lock-free)
     if (!dap_ring_buffer_push(a_queue->ring_buffer, a_item)) {
         // Ring buffer full
-        log_it(L_WARNING, "Worker queue full, dropping item (worker=%u)",
-               a_queue->worker ? a_queue->worker->id : 0);
+        log_it(L_WARNING, "Context queue full, dropping item (context=%p)", a_queue->context);
         return false;
     }
     
@@ -167,7 +165,7 @@ bool dap_worker_queue_push(dap_worker_queue_t *a_queue, void *a_item) {
 /**
  * @brief Process all available items in queue (called by reactor)
  */
-size_t dap_worker_queue_process(dap_worker_queue_t *a_queue) {
+size_t dap_context_queue_process(dap_context_queue_t *a_queue) {
     if (!a_queue || !a_queue->callback) {
         return 0;
     }
@@ -197,7 +195,7 @@ size_t dap_worker_queue_process(dap_worker_queue_t *a_queue) {
 /**
  * @brief Get queue statistics
  */
-void dap_worker_queue_get_stats(const dap_worker_queue_t *a_queue,
+void dap_context_queue_get_stats(dap_context_queue_t *a_queue,
                                   size_t *a_size,
                                   uint64_t *a_total_pushes,
                                   uint64_t *a_total_pops,
