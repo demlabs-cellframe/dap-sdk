@@ -616,21 +616,6 @@ void dap_json_object_free(dap_json_t* a_json)
     // Free wrapper
     DAP_DELETE(a_json);
 }
-    
-    //  No cached wrappers - they're created on-demand and ref parent
-    // When parent dies, borrowed refs automatically become invalid
-    
-    //  If owns_value=true, we're in MALLOC_MUTABLE mode
-    // Values in ARENA_IMMUTABLE live in stage2 and are freed when stage2 is destroyed
-    if (a_json->owns_value && a_json->value) {
-        // Malloc-based value (manually created via dap_json_object_new, etc.)
-        dap_json_value_v2_free(a_json->value);
-        debug_if(s_debug_more, L_DEBUG, "Freed value (MALLOC mode)");
-    }
-    
-    // Free wrapper
-    DAP_DELETE(a_json);
-}
 
 /**
  * @brief Increment reference count
@@ -735,17 +720,29 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
  */
 size_t dap_json_array_length(dap_json_t* a_array)
 {
-    if (!a_array) {
+    if (!a_array || !a_array->tape || a_array->tape_count == 0) {
         return 0;
     }
     
-    dap_json_value_t *l_array = s_unwrap_value(a_array);
-    if (!l_array || l_array->type != DAP_JSON_TYPE_ARRAY) {
+    // Check if root is array
+    uint8_t l_type = dap_tape_get_type(a_array->tape[0]);
+    if (l_type != TAPE_TYPE_ARRAY_START) {
         return 0;
     }
     
-    //  length is in the value itself
-    return l_array->length;
+    // Use jump pointer to get close position
+    uint64_t l_close_idx = dap_tape_get_payload(a_array->tape[0]);
+    
+    // Count elements between start and close
+    size_t l_count = 0;
+    size_t l_pos = 1;  // Skip array start
+    
+    while (l_pos < l_close_idx && l_pos < a_array->tape_count) {
+        l_count++;
+        l_pos = dap_tape_next(a_array->tape, a_array->tape_count, l_pos);
+    }
+    
+    return l_count;
 }
 
 /**
@@ -2420,16 +2417,23 @@ size_t dap_json_object_length(dap_json_t* a_json)
  */
 dap_json_type_t dap_json_get_type(dap_json_t* a_json)
 {
-    if (!a_json) {
+    if (!a_json || !a_json->tape || a_json->tape_count == 0) {
         return DAP_JSON_TYPE_NULL;
     }
     
-    dap_json_value_t *l_value = s_unwrap_value(a_json);
-    if (!l_value) {
-        return DAP_JSON_TYPE_NULL;
-    }
+    // Root is always first tape entry
+    uint8_t l_type = dap_tape_get_type(a_json->tape[0]);
     
-    return l_value->type;
+    switch (l_type) {
+        case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
+        case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
+        case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;
+        case TAPE_TYPE_NUMBER:        return DAP_JSON_TYPE_INT;
+        case TAPE_TYPE_TRUE:
+        case TAPE_TYPE_FALSE:         return DAP_JSON_TYPE_BOOLEAN;
+        case TAPE_TYPE_NULL:          return DAP_JSON_TYPE_NULL;
+        default:                      return DAP_JSON_TYPE_NULL;
+    }
 }
 
 /**
