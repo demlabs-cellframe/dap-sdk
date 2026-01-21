@@ -733,7 +733,8 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    // Only works for MUTABLE mode
+    // IMMUTABLE mode: tape doesn't support wrapped array elements easily
+    // Tests should use iterator API directly for array traversal
     if (a_array->mode != DAP_JSON_MODE_MUTABLE) {
         log_it(L_ERROR, "array_get_idx only works for MUTABLE mode. Use iterator for IMMUTABLE (tape) mode.");
         return NULL;
