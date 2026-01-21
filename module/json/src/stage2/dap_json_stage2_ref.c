@@ -1104,32 +1104,15 @@ dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const
     }
     
     // MUTABLE mode: use storage
-    uintptr_t ptr_val = (uintptr_t)a_object->offset | (((uintptr_t)a_object->length & 0xFFFF) << 32);
-    printf("DEBUG object_v2_get: type=%d, flags=0x%x, offset=0x%x, length=0x%x, ptr=%p\n",
-           a_object->type, a_object->flags, a_object->offset, a_object->length, (void*)ptr_val);
-    
     dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_object);
-    
-    printf("DEBUG: l_storage=%p\n", l_storage);
-    if (l_storage) {
-        printf("DEBUG: l_storage->count=%zu, capacity=%zu\n", l_storage->count, l_storage->capacity);
-    }
-    
     if (!l_storage) {
-        log_it(L_ERROR, "object_v2_get: storage is NULL! type=%d, flags=0x%x, offset=0x%x, length=0x%x",
-               a_object->type, a_object->flags, a_object->offset, a_object->length);
         return NULL;
     }
     
     // Linear search (OK for small objects, can optimize later with hash table)
-    printf("DEBUG: searching for key '%s' in %zu entries\n", a_key, l_storage->count);
     for (size_t i = 0; i < l_storage->count; i++) {
-        printf("DEBUG: i=%zu, keys[i]=%p\n", i, l_storage->keys[i]);
-        if (l_storage->keys[i]) {
-            printf("DEBUG: comparing with '%s'\n", l_storage->keys[i]);
-            if (strcmp(l_storage->keys[i], a_key) == 0) {
-                return l_storage->values[i];
-            }
+        if (l_storage->keys[i] && strcmp(l_storage->keys[i], a_key) == 0) {
+            return l_storage->values[i];
         }
     }
     
