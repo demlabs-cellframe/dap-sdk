@@ -47,6 +47,7 @@
 #include "dap_arena.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
+#include "internal/dap_json_tape.h"
 #include "internal/dap_json_encoding.h"
 #include "internal/dap_json_float.h"
 #include "internal/dap_json_transcode.h"
@@ -135,6 +136,11 @@ struct dap_json {
     
     // ⭐ NEW: Source buffer for zero-copy string access
     const char *input_buffer;        /**< Original JSON input buffer (for offset-based strings) */
+    size_t input_len;                /**< Input buffer length */
+    
+    // ⭐ Phase 3: Tape format for high-performance iteration
+    dap_json_tape_entry_t *tape;     /**< Tape array (NULL if not built) */
+    size_t tape_count;               /**< Number of tape entries */
     
     // Mode-specific data (union to save memory)
     union {

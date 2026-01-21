@@ -41,8 +41,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <string.h>
 #include "dap_json_type.h"
-#include "dap_json.h"
+
+// Forward declarations
+typedef struct dap_json dap_json_t;
 
 #ifdef __cplusplus
 extern "C" {

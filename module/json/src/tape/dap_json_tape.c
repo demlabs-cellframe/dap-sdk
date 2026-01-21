@@ -13,12 +13,14 @@
  * - Pure uint64_t entries: portable and fast
  */
 
-#include "dap_json_tape.h"
-#include "dap_json_stage1.h"
+#include "internal/dap_json_tape.h"
+#include "internal/dap_json_stage1.h"
 #include "dap_arena.h"
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
+
+#define LOG_TAG "dap_json_tape"
 
 /* ========================================================================== */
 /*                      THREAD-LOCAL TAPE ARENA                               */
@@ -98,10 +100,10 @@ bool dap_json_build_tape(
     if (!s_thread_tape_arena) {
         dap_arena_opt_t opts = {
             .initial_size = 64 * 1024,  // 64KB initial (good for most JSON)
-            .max_size = 16 * 1024 * 1024,  // 16MB max
+            .max_page_size = 16 * 1024 * 1024,  // 16MB max
             .allow_small_pages = false
         };
-        s_thread_tape_arena = dap_arena_new_opt(&opts);
+        s_thread_tape_arena = dap_arena_new_opt(opts);  // Pass by value
         
         if (!s_thread_tape_arena) {
             log_it(L_ERROR, "Failed to create thread-local tape arena");

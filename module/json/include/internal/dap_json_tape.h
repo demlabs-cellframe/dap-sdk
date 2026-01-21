@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "dap_json_type.h"
+#include "dap_json_stage1.h"  // For dap_json_stage1_t typedef
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,7 +141,7 @@ typedef enum {
  * @return true on success, false on error
  */
 bool dap_json_build_tape(
-    const struct dap_json_stage1 *stage1,
+    const dap_json_stage1_t *stage1,
     dap_json_tape_entry_t **out_tape,
     size_t *out_count
 );

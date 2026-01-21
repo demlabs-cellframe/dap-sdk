@@ -12,6 +12,7 @@ file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
 file(GLOB JSON_SRCS src/*.c)
 file(GLOB JSON_STAGE1_SRCS src/stage1/*.c)
 file(GLOB JSON_STAGE2_SRCS src/stage2/*.c src/stage2/string/*.c src/stage2/number/*.c)
+file(GLOB JSON_TAPE_SRCS src/tape/*.c)
 
 # Generate SIMD implementations from templates at configure time
 # Generated files go to build directory to keep source tree clean
@@ -67,7 +68,7 @@ set(JSON_ARCH_SRCS "")
 file(GLOB JSON_ARCH_SRCS ${SIMD_GEN_DIR}/*.c)
 
 # Combine all sources
-set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_ARCH_SRCS})
+set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_TAPE_SRCS} ${JSON_ARCH_SRCS})
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_INTERNAL_HEADERS})
