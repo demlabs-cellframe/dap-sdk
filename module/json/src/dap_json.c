@@ -1745,6 +1745,39 @@ bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_
         return false;
     }
     
+    // IMMUTABLE mode (tape): use iterator
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            return false;
+        }
+        
+        // Check if root is object
+        if (dap_json_iterator_type(l_iter) != DAP_JSON_TYPE_OBJECT) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Enter object
+        if (!dap_json_iterator_enter(l_iter)) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Find key
+        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Get int64 value
+        bool l_result = dap_json_iterator_get_int64(l_iter, a_out);
+        dap_json_iterator_free(l_iter);
+        
+        return l_result;
+    }
+    
+    // MUTABLE mode (DOM): use value-based access
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return false;
