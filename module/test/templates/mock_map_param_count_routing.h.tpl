@@ -1,13 +1,13 @@
 // ============================================================================
 // Direct macros based on param_count - Universal template based on code analysis
 // ============================================================================
-// Generator creates macros directly for each param_count value from PARAM_COUNTS_ARRAY
+// Generator creates macros directly for each param_count value from PARAM_COUNTS_LIST
 // All macros are generated directly without dispatchers - NO HARDCODED VALUES
-// Based on real code analysis: PARAM_COUNTS_ARRAY contains unique param_count values
+// Based on real code analysis: PARAM_COUNTS_LIST contains unique param_count values
 
 // Generate direct macros for all param_count values from code analysis
-{{#if PARAM_COUNTS_ARRAY}}
-    {{#for param_count in PARAM_COUNTS_ARRAY}}
+{{#if PARAM_COUNTS_LIST}}
+    {{#for param_count in PARAM_COUNTS_LIST}}
         {{#if param_count == '0'}}
 // Direct macro for param_count=0 - generated from code analysis
 // Routes to first_arg-specific macros for handling "void" vs empty

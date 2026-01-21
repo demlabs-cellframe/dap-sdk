@@ -146,22 +146,28 @@ generate_macros_file() {
     
     # NOTE: DO NOT set PARAM_COUNTS_ARRAY in environment here - it will corrupt the global array!
     # The template only needs PARAM_COUNTS_ARRAY_PIPE (passed as argument below)
-    MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
-    MAP_COUNT_PARAMS_BY_COUNT_DATA="$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
-    MAP_COUNT_PARAMS_HELPER_DATA="$MAP_COUNT_PARAMS_HELPER_DATA" \
-    MAP_IMPL_COND_1_DATA="$MAP_IMPL_COND_1_DATA" \
-    MAP_IMPL_COND_DATA="$MAP_IMPL_COND_DATA" \
-    replace_template_placeholders_with_mocking \
-        "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
-        "${macros_file}.map_content" \
-        "RETURN_TYPE_MACROS_FILE=$return_type_macros_file" \
-        "SIMPLE_WRAPPER_MACROS_FILE=$simple_wrapper_macros_file" \
-        "PARAM_COUNTS_ARRAY=$PARAM_COUNTS_ARRAY_PIPE" \
-        "MAX_ARGS_COUNT=$MAX_ARGS_COUNT" \
-        "MAP_COUNT_PARAMS_BY_COUNT_DATA=$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
-        "MAP_COUNT_PARAMS_HELPER_DATA=$MAP_COUNT_PARAMS_HELPER_DATA" \
-        "MAP_IMPL_COND_1_DATA=$MAP_IMPL_COND_1_DATA" \
-        "MAP_IMPL_COND_DATA=$MAP_IMPL_COND_DATA"
+    
+    # WORKAROUND: Pass variables via file to avoid export issues in nested shells
+    # Create temporary file with all template variables
+    local template_vars_file=$(create_temp_file "template_vars")
+    cat > "$template_vars_file" << TEMPLATE_VARS_EOF
+export PARAM_COUNTS_LIST='$PARAM_COUNTS_ARRAY_PIPE'
+export MAX_ARGS_COUNT='$MAX_ARGS_COUNT'
+export MAP_COUNT_PARAMS_BY_COUNT_DATA='$MAP_COUNT_PARAMS_BY_COUNT_DATA'
+export MAP_COUNT_PARAMS_HELPER_DATA='$MAP_COUNT_PARAMS_HELPER_DATA'
+export MAP_IMPL_COND_1_DATA='$MAP_IMPL_COND_1_DATA'
+export MAP_IMPL_COND_DATA='$MAP_IMPL_COND_DATA'
+TEMPLATE_VARS_EOF
+    
+    # Source variables file and generate .map_content
+    (
+        source "$template_vars_file"
+        replace_template_placeholders_with_mocking \
+            "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
+            "${macros_file}.map_content"
+    )
+    
+    rm -f "$template_vars_file"
     
     # Export file paths for template processing
     export RETURN_TYPE_MACROS_FILE="$return_type_macros_file"
@@ -169,7 +175,7 @@ generate_macros_file() {
     export FUNCTION_WRAPPERS_FILE="$function_wrappers_file"
     export MAP_MACROS_CONTENT_FILE="${macros_file}.map_content"
     
-    # Verify files exist before template processing
+    # CRITICAL: Export all variables BEFORE calling template processor
     if [ ! -f "$RETURN_TYPE_MACROS_FILE" ]; then
         print_error "RETURN_TYPE_MACROS_FILE does not exist: $RETURN_TYPE_MACROS_FILE"
         return 1
@@ -226,6 +232,16 @@ EOF_HEADER
         generate_single_map_macro "$count" >> "$macros_file"
         echo "" >> "$macros_file"
     done
+    
+    # CRITICAL FIX: Include full MAP macro implementation from .map_content
+    # This file contains _DAP_MOCK_MAP and all related infrastructure
+    local map_content_file="${macros_file}.map_content"
+    if [ -f "$map_content_file" ] && [ -s "$map_content_file" ]; then
+        cat "$map_content_file" >> "$macros_file"
+        print_success "Included MAP macro implementation from .map_content"
+    else
+        print_warning "MAP content file not found or empty: $map_content_file"
+    fi
     
     # Append return type macros if they exist
     if [ -n "$saved_return_type_macros_file" ] && [ -f "$saved_return_type_macros_file" ] && [ -s "$saved_return_type_macros_file" ]; then
