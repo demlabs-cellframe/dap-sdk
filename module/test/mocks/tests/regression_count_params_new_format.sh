@@ -34,7 +34,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, test_func,
 }
 EOF
 
-OUTPUT1=$(gawk -f "$AWK_SCRIPT" /tmp/test_count_params_old.c)
+OUTPUT1=$(awk -f "$AWK_SCRIPT" /tmp/test_count_params_old.c)
 COUNT1=$(echo "$OUTPUT1" | head -1)
 
 if [ "$COUNT1" = "2" ]; then
@@ -52,7 +52,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, test_func,
 }
 EOF
 
-OUTPUT2=$(gawk -f "$AWK_SCRIPT" /tmp/test_count_params_new.c)
+OUTPUT2=$(awk -f "$AWK_SCRIPT" /tmp/test_count_params_new.c)
 COUNT2=$(echo "$OUTPUT2" | head -1)
 
 if [ "$COUNT2" = "2" ]; then
@@ -70,7 +70,7 @@ DAP_MOCK_WRAPPER_CUSTOM(int, dap_ledger_tx_add,
 }
 EOF
 
-OUTPUT3=$(gawk -f "$AWK_SCRIPT" /tmp/test_count_params_real.c)
+OUTPUT3=$(awk -f "$AWK_SCRIPT" /tmp/test_count_params_real.c)
 COUNT3=$(echo "$OUTPUT3" | head -1)
 
 if [ "$COUNT3" = "5" ]; then

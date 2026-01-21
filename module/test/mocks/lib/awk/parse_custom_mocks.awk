@@ -74,7 +74,7 @@ BEGIN {
     is_void = 0
     macro_type = ""  # "CUSTOM", "NONVOID", "VOID"
 }
-/(^|[^a-zA-Z0-9_])(DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)($|[^a-zA-Z0-9_])/ {
+/^[[:space:]]*(DAP_MOCK_CUSTOM|DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)[[:space:]]*\(/ {
     in_custom = 1
     paren_level = 0
     found_opening_paren = 0

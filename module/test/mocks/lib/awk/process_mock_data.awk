@@ -12,7 +12,7 @@
 #   - ALL_TYPES_PAIRS (multiline string)
 #   - ORIGINAL_TYPES (associative array)
 #
-# The output can be executed via: eval "$(gawk -f process_mock_data.awk ...)"
+# The output can be executed via: eval "$(awk -f process_mock_data.awk ...)"
 
 # Function to escape shell special characters
 function shell_escape(str) {
@@ -123,8 +123,8 @@ BEGIN {
     }
     close(return_types_file)
     
-    # Sort and join return types
-    asort(return_types_array)
+    # Sort and join return types (sorting removed for mawk compatibility)
+    # asort(return_types_array)
     for (i = 1; i <= return_types_count; i++) {
         if (return_types_str == "") {
             return_types_str = return_types_array[i]
@@ -133,8 +133,8 @@ BEGIN {
         }
     }
     
-    # Sort and join return pairs
-    asort(return_pairs_array)
+    # Sort and join return pairs (sorting removed for mawk compatibility)
+    # asort(return_pairs_array)
     for (i = 1; i <= return_pairs_count; i++) {
         if (return_types_pairs_str == "") {
             return_types_pairs_str = return_pairs_array[i]
@@ -177,8 +177,8 @@ BEGIN {
     }
     close(all_types_file)
     
-    # Sort and join all pairs
-    asort(all_pairs_array)
+    # Sort and join all pairs (sorting removed for mawk compatibility)
+    # asort(all_pairs_array)
     for (i = 1; i <= all_pairs_count; i++) {
         if (all_types_pairs_str == "") {
             all_types_pairs_str = all_pairs_array[i]

@@ -89,6 +89,30 @@ function process_sanitize_name(base_value, func_arg,    result) {
     return result
 }
 
+# Process names_only function: extracts parameter names from C parameter list
+# Input: "type1 name1, type2 name2, type3 name3"
+# Output: "name1, name2, name3"
+function process_names_only(base_value, func_arg,    result, params, i, n, param, parts) {
+    result = ""
+    # Split by comma
+    n = split(base_value, params, ",")
+    for (i = 1; i <= n; i++) {
+        param = params[i]
+        # Remove leading/trailing whitespace
+        gsub(/^[ \t]+|[ \t]+$/, "", param)
+        # Extract last word (parameter name)
+        # Match: word at the end (after last space/*)
+        if (match(param, /[a-zA-Z_][a-zA-Z0-9_]*$/)) {
+            if (result == "") {
+                result = substr(param, RSTART, RLENGTH)
+            } else {
+                result = result ", " substr(param, RSTART, RLENGTH)
+            }
+        }
+    }
+    return result
+}
+
 # Register mock-specific variable functions in dispatch table
 BEGIN {
     register_variable_function("c_escape", "process_c_escape", 0)
@@ -99,5 +123,6 @@ BEGIN {
     register_variable_function("escape_char", "process_escape_char", 0)
     register_variable_function("escape_star", "process_escape_char", 0)
     register_variable_function("sanitize_name", "process_sanitize_name", 0)
+    register_variable_function("names_only", "process_names_only", 0)
 }
 
