@@ -53,7 +53,6 @@
 
 #define LOG_TAG "test_trans"
 
-
 // Test configuration  
 #define TEST_STREAM_CH_ID 'A'
 // Test scenario timeouts scale with client count for realistic performance
@@ -267,38 +266,73 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     if (!a_ctx)
         return;
     
-    log_it(L_DEBUG, "Cleaning up test context for scenario '%s'", a_ctx->scenario.name);
+    log_it(L_INFO, "🧹 Starting cleanup for scenario '%s' (%zu clients, %zu servers)", 
+           a_ctx->scenario.name, a_ctx->scenario.num_clients, a_ctx->scenario.num_servers);
+    uint64_t l_cleanup_start = dap_test_get_time_ms();
     
-    // Cleanup client certificates FIRST (before clients)
+    // ============================================================================
+    // PHASE 1: Prepare for client shutdown
+    // ============================================================================
     if (a_ctx->clients) {
+        log_it(L_DEBUG, "Phase 1: Preparing %zu clients for shutdown...", a_ctx->scenario.num_clients);
+        // NOTE: dap_client_disconnect is not available, clients will be closed during deletion
+        // Wait a bit for any pending operations to complete
+        dap_test_sleep_ms(100);
+        log_it(L_DEBUG, "Phase 1 complete: clients prepared for shutdown");
+    }
+    
+    // ============================================================================
+    // PHASE 2: Delete client certificates (before client deletion)
+    // ============================================================================
+    if (a_ctx->clients) {
+        log_it(L_DEBUG, "Phase 2: Deleting %zu client certificates...", a_ctx->scenario.num_clients);
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             char l_cert_name[256];
             snprintf(l_cert_name, sizeof(l_cert_name), "test_client_%s_%zu_%zu", 
                      a_ctx->config.name, (size_t)pthread_self(), i);
             dap_cert_delete_by_name(l_cert_name);
-            log_it(L_DEBUG, "Deleted certificate '%s'", l_cert_name);
         }
+        log_it(L_DEBUG, "Phase 2 complete: certificates deleted");
     }
     
-    // Cleanup clients - MUST wait for async deletion!
+    // ============================================================================
+    // PHASE 3: Delete clients (async with wait)
+    // ============================================================================
     if (a_ctx->clients) {
+        log_it(L_DEBUG, "Phase 3: Deleting %zu clients (async)...", a_ctx->scenario.num_clients);
+        uint64_t l_phase3_start = dap_test_get_time_ms();
+        
+        // Start all async deletions first
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->clients[i]) {
-                // Start async deletion
                 dap_client_delete_mt(a_ctx->clients[i]);
-                
-                // CRITICAL: Wait for deletion to complete before freeing associated data
-                if (!test_wait_for_client_deleted(&a_ctx->clients[i], 2000)) {
-                    log_it(L_WARNING, "Client #%zu deletion timeout", i);
-                }
-                a_ctx->clients[i] = NULL;
             }
         }
+        
+        // Wait for all deletions to complete
+        size_t l_deleted_count = 0;
+        for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
+            if (a_ctx->clients[i]) {
+                if (test_wait_for_client_deleted(&a_ctx->clients[i], 3000)) {
+                    a_ctx->clients[i] = NULL;
+                    l_deleted_count++;
+                } else {
+                    log_it(L_WARNING, "Client #%zu deletion timeout", i);
+                }
+            }
+        }
+        
         DAP_DEL_Z(a_ctx->clients);
+        log_it(L_DEBUG, "Phase 3 complete: %zu/%zu clients deleted (took %"PRIu64" ms)", 
+               l_deleted_count, a_ctx->scenario.num_clients, 
+               dap_test_get_time_ms() - l_phase3_start);
     }
     
-    // NOW safe to cleanup stream contexts (clients are fully deleted)
+    // ============================================================================
+    // PHASE 4: Cleanup stream contexts (data buffers)
+    // ============================================================================
     if (a_ctx->stream_ctxs) {
+        log_it(L_DEBUG, "Phase 4: Cleaning up %zu stream contexts...", a_ctx->scenario.num_clients);
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->stream_ctxs[i].sent_data) {
                 DAP_DELETE(a_ctx->stream_ctxs[i].sent_data);
@@ -310,68 +344,122 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
             }
         }
         DAP_DEL_Z(a_ctx->stream_ctxs);
+        log_it(L_DEBUG, "Phase 4 complete: stream contexts cleaned");
     }
     
-    // Cleanup servers - MUST stop before delete
+    // ============================================================================
+    // PHASE 5: Stop servers (closes listeners, stops accepting)
+    // ============================================================================
     if (a_ctx->servers) {
+        log_it(L_DEBUG, "Phase 5: Stopping %zu servers...", a_ctx->scenario.num_servers);
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i]) {
                 dap_net_trans_server_stop(a_ctx->servers[i]);
+            }
+        }
+        log_it(L_DEBUG, "Phase 5 complete: servers stopped");
+    }
+    
+    // ============================================================================
+    // PHASE 6: Wait for UDP flow cleanup (pending callbacks and active flows)
+    // ============================================================================
+    if (a_ctx->servers && a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) {
+        log_it(L_DEBUG, "Phase 6: Waiting for UDP flow cleanup...");
+        uint64_t l_phase6_start = dap_test_get_time_ms();
+        bool l_all_clean = true;
+        
+        for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+            if (a_ctx->servers[i] && a_ctx->servers[i]->trans_specific) {
+                dap_net_trans_udp_server_t *l_udp_server = 
+                    (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
                 
-                // CRITICAL: For UDP servers, poll flow_servers cleanup!
-                if (a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC && a_ctx->servers[i]->trans_specific) {
-                    dap_net_trans_udp_server_t *l_udp_server = 
-                        (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
+                uint64_t l_start = dap_test_get_time_ms();
+                uint32_t l_timeout_ms = 15000; // Increased timeout for many clients
+                bool l_server_clean = false;
+                
+                while (dap_test_get_time_ms() - l_start < l_timeout_ms) {
+                    bool l_pending = false;
+                    uint32_t l_total_pending = 0;
+                    uint32_t l_total_active = 0;
                     
-                    // Poll all flow servers for cleanup completion
-                    uint64_t l_start = dap_test_get_time_ms();
-                    uint32_t l_timeout_ms = 10000;
-                    bool l_all_cleaned = false;
-                    
-                    while (dap_test_get_time_ms() - l_start < l_timeout_ms) {
-                        bool l_pending = false;
-                        
-                        for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
-                            if (l_udp_server->flow_servers[j]) {
-                                uint32_t l_p = atomic_load(&l_udp_server->flow_servers[j]->pending_cleanups);
-                                uint32_t l_a = atomic_load(&l_udp_server->flow_servers[j]->active_callbacks);
-                                if (l_p > 0 || l_a > 0) {
-                                    l_pending = true;
-                                    break;
-                                }
+                    for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
+                        if (l_udp_server->flow_servers[j]) {
+                            uint32_t l_p = atomic_load(&l_udp_server->flow_servers[j]->pending_cleanups);
+                            uint32_t l_a = atomic_load(&l_udp_server->flow_servers[j]->active_callbacks);
+                            l_total_pending += l_p;
+                            l_total_active += l_a;
+                            if (l_p > 0 || l_a > 0) {
+                                l_pending = true;
                             }
                         }
-                        
-                        if (!l_pending) {
-                            l_all_cleaned = true;
-                            log_it(L_DEBUG, "UDP flow cleanup complete (took %llu ms)",
-                                   dap_test_get_time_ms() - l_start);
-                            break;
-                        }
-                        
-                        dap_test_sleep_ms(50);
                     }
                     
-                    if (!l_all_cleaned) {
-                        log_it(L_WARNING, "UDP flow cleanup timeout after %u ms", l_timeout_ms);
+                    if (!l_pending) {
+                        l_server_clean = true;
+                        log_it(L_DEBUG, "  Server #%zu flow cleanup complete (took %"PRIu64" ms)",
+                               i, dap_test_get_time_ms() - l_start);
+                        break;
                     }
+                    
+                    // Log progress for long waits
+                    if ((dap_test_get_time_ms() - l_start) % 1000 < 100) {
+                        log_it(L_DEBUG, "  Server #%zu: pending=%u, active=%u...", 
+                               i, l_total_pending, l_total_active);
+                    }
+                    
+                    dap_test_sleep_ms(100);
                 }
                 
+                if (!l_server_clean) {
+                    log_it(L_WARNING, "  Server #%zu flow cleanup timeout after %u ms", i, l_timeout_ms);
+                    l_all_clean = false;
+                }
+            }
+        }
+        
+        if (l_all_clean) {
+            log_it(L_DEBUG, "Phase 6 complete: UDP flows cleaned (took %"PRIu64" ms)",
+                   dap_test_get_time_ms() - l_phase6_start);
+        } else {
+            log_it(L_WARNING, "Phase 6 completed with warnings");
+        }
+    }
+    
+    // ============================================================================
+    // PHASE 7: Delete servers (final cleanup)
+    // ============================================================================
+    if (a_ctx->servers) {
+        log_it(L_DEBUG, "Phase 7: Deleting %zu servers...", a_ctx->scenario.num_servers);
+        for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+            if (a_ctx->servers[i]) {
                 dap_net_trans_server_delete(a_ctx->servers[i]);
                 a_ctx->servers[i] = NULL;
             }
         }
-        
         DAP_DEL_Z(a_ctx->servers);
+        log_it(L_DEBUG, "Phase 7 complete: servers deleted");
     }
+    
+    // ============================================================================
+    // PHASE 8: Final stabilization (let event loops settle)
+    // ============================================================================
+    log_it(L_DEBUG, "Phase 8: Final stabilization...");
+    dap_test_sleep_ms(200);
+    log_it(L_DEBUG, "Phase 8 complete: system stabilized");
     
     // Cleanup node addresses array
     DAP_DEL_Z(a_ctx->client_node_addrs);
     
+    // Save scenario name before freeing context
+    uint64_t l_total_cleanup_time = dap_test_get_time_ms() - l_cleanup_start;
+    char l_scenario_name[256];
+    snprintf(l_scenario_name, sizeof(l_scenario_name), "%s", a_ctx->scenario.name);
+    
     // Free the context itself
     DAP_DEL_Z(a_ctx);
     
-    log_it(L_DEBUG, "Test context cleanup complete");
+    log_it(L_INFO, "✅ Cleanup complete for scenario '%s' (took %"PRIu64" ms)", 
+           l_scenario_name, l_total_cleanup_time);
 }
 
 /**
@@ -1174,36 +1262,39 @@ int main(void)
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
                                 "[general]\n"
-                                "debug_reactor=true\n"
+                                "debug_reactor=false\n"
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
-                                "debug_more=true\n"
-                                "dump_packet_headers=true\n"
-                                "debug_channels=false\n"
+                                "debug_more=false\n"
                                 "debug_dump_stream_headers=false\n"
+                                "debug_channels=false\n"
                                 "[stream_udp]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[io_flow]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[io_flow_datagram]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[dap_io_flow_socket]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[net_trans]\n"
-                                "debug_more=true\n";
+                                "debug_more=false\n"
+                                "[dap_net_trans_udp_server]\n"
+                                "debug_more=false\n"
+                                "[test_trans_helpers]\n"
+                                "debug_more=false\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout and level to DEBUG for deep investigation
+    // Set logging output to stdout and level to WARNING for performance tests
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_NOTICE);
     
     // Initialize config system first
     dap_config_init(".");

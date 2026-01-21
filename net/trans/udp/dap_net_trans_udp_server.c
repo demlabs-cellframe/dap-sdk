@@ -674,12 +674,42 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "SERVER: packet received: size=%zu, flow=%p", a_size, a_flow);
+    if(s_debug_more){    // Log source address for debugging loopback issue
+        char l_src_addr_str[64] = "unknown";
+        if (a_flow->remote_addr.ss_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in*)&a_flow->remote_addr;
+            snprintf(l_src_addr_str, sizeof(l_src_addr_str), "%s:%u",
+                    inet_ntoa(l_sin->sin_addr), ntohs(l_sin->sin_port));
+        }
+        
+        debug_if(s_debug_more, L_DEBUG, "SERVER: packet received: size=%zu, flow=%p, src=%s", 
+                a_size, a_flow, l_src_addr_str);
+    }
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     if (!l_session) {
         log_it(L_ERROR, "NULL session in packet callback");
         return -2;
+    }
+    
+    // CRITICAL: Filter localhost loopback packets!
+    // When SERVER sends via listener socket on localhost, kernel may deliver packets back to sender.
+    // Check if source port == listener port (our own echo coming back)
+    if (a_flow->remote_addr.ss_family == AF_INET && a_flow->listener_es) {
+        struct sockaddr_in *l_remote = (struct sockaddr_in*)&a_flow->remote_addr;
+        struct sockaddr_in l_local;
+        socklen_t l_local_len = sizeof(l_local);
+        
+        if (getsockname(a_flow->listener_es->fd, (struct sockaddr*)&l_local, &l_local_len) == 0) {
+            uint16_t l_remote_port = ntohs(l_remote->sin_port);
+            uint16_t l_local_port = ntohs(l_local.sin_port);
+            
+            if (l_remote_port == l_local_port) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "SERVER: IGNORING loopback packet from port %u (our listener port)", l_remote_port);
+                return 0; // Ignore loopback
+            }
+        }
     }
     
     // OBFUSCATED HANDSHAKE DETECTION: Size in range [MIN, MAX] AND session not established
@@ -949,12 +979,12 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     // dap_stream.c relies on stream->session->key for packet decryption
     if (l_session->stream) {
         l_session->stream->session = l_stream_session;
-        log_it(L_DEBUG, "Linked stream->session for stream %p", l_session->stream);
+        debug_if(s_debug_more,L_DEBUG, "Linked stream->session for stream %p", l_session->stream);
         
         // CRITICAL: Create channels from session params!
         if (l_params && l_params->channels) {
             size_t l_channel_count = strlen(l_params->channels);
-            log_it(L_INFO, "Creating %zu channels for session: %s", l_channel_count, l_params->channels);
+            debug_if(s_debug_more,L_INFO, "Creating %zu channels for session: %s", l_channel_count, l_params->channels);
             
             // Copy channels to session->active_channels
             strncpy(l_stream_session->active_channels, l_params->channels, 
@@ -970,21 +1000,24 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
                     continue;
                 }
                 l_ch->ready_to_read = true;
-                log_it(L_INFO, "Created channel '%c' for stream %p", l_ch_id, l_session->stream);
+                debug_if(s_debug_more,L_INFO, "Created channel '%c' for stream %p", l_ch_id, l_session->stream);
             }
             
-            log_it(L_INFO, "Stream %p now has %zu channels", l_session->stream, l_session->stream->channel_count);
+            debug_if(s_debug_more,L_INFO, "Stream %p now has %zu channels", l_session->stream, l_session->stream->channel_count);
         }
     }
     
     // Create Flow Control (DAP_IO_FLOW_CTRL_RELIABLE: retransmit + reorder, NO keepalive)
     // DAP Stream has its own keep-alive mechanism, so we don't enable flow control keep-alive
+    // CRITICAL: Window sizes must be large enough to handle fragmented packets!
+    // For 10MB @ 988 bytes/fragment = ~10,600 fragments. Use 64K window for safety.
+    // Retransmit timeout MUST be aggressive for high packet rate scenarios!
     dap_io_flow_ctrl_config_t l_fc_config = {
-        .retransmit_timeout_ms = 1000,     // 1 second
-        .max_retransmit_count = 3,
-        .send_window_size = 256,
-        .recv_window_size = 256,
-        .max_out_of_order_delay_ms = 5000, // 5 seconds
+        .retransmit_timeout_ms = 100,      // 100ms for localhost (was 1000ms - TOO SLOW!)
+        .max_retransmit_count = 20,        // Increased for large transfers with many packets
+        .send_window_size = 16384*4,       // 64K packets (was 256 - CAUSED PACKET LOSS!)
+        .recv_window_size = 16384*4,       // 64K packets (was 256 - CAUSED PACKET LOSS!)
+        .max_out_of_order_delay_ms = 10000, // 10 seconds for large transfers
         .keepalive_interval_ms = 0,        // Not used (DAP Stream handles keep-alive)
         .keepalive_timeout_ms = 0,         // Not used
     };
@@ -1103,6 +1136,17 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     if (!a_session) {
         return -1;
     }
+    
+    // CRITICAL: Log destination address for this send
+    char l_dest_addr[64] = "UNKNOWN";
+    if (a_session->base.remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)&a_session->base.remote_addr;
+        snprintf(l_dest_addr, sizeof(l_dest_addr), "%s:%u", 
+                 inet_ntoa(l_sin->sin_addr), ntohs(l_sin->sin_port));
+    }
+    
+    debug_if(s_debug_more,L_DEBUG, "s_send_udp_packet: type=%u, size=%zu, session=0x%lx, dest=%s, flow=%p",
+           a_type, a_payload_size, a_session->session_id, l_dest_addr, (void*)&a_session->base);
     
     // Get sequence number from UDP flow
     uint32_t l_seq_num = atomic_load(&a_session->base.seq_num_out);

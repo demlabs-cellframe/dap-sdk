@@ -308,7 +308,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
-    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_max_size); /* a_ch->buf; */
 
     dap_stream_ch_pkt_hdr_t l_hdr = {
         .id         = a_ch->proc->id,
@@ -334,6 +333,10 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     }
 
     size_t l_max_fragm_size = l_target_size - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
+    
+    // Allocate buffer: for non-fragmented packets use l_max_size, for fragmented use fragment buffer size
+    size_t l_buf_size = (l_data_size <= l_max_fragm_size) ? l_max_size : (l_max_fragm_size + sizeof(dap_stream_fragment_pkt_t));
+    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buf_size);
 
     if (l_data_size > 0 && l_data_size <= l_max_fragm_size) {
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
@@ -347,21 +350,47 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
          The rest fragments just concatenate as-is */
         size_t l_fragment_size;
         dap_stream_fragment_pkt_t *l_fragment;
+        size_t l_iteration = 0;
+        size_t l_remaining = l_data_size;
+        
+        debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
+                 "Fragmenting large packet: total_size=%zu, max_frag=%zu", l_data_size, l_max_fragm_size);
+        
         for (l_fragment = (dap_stream_fragment_pkt_t*)l_buf, l_fragment_size = sizeof(dap_stream_ch_pkt_hdr_t);
-             l_data_size > 0;
-             l_data_size -= l_fragment_size, l_fragment_size = dap_min(l_data_size, l_max_fragm_size))
+             l_remaining > 0;
+             l_remaining -= l_fragment_size, l_fragment_size = dap_min(l_remaining, l_max_fragm_size), l_iteration++)
         {
+            // Sanity check
+            if (l_fragment_size > l_max_fragm_size) {
+                log_it(L_ERROR, "Fragment size %zu exceeds max %zu (iteration %zu)", 
+                       l_fragment_size, l_max_fragm_size, l_iteration);
+                break;
+            }
+            
             l_fragment->size        = l_fragment_size;
             l_fragment->full_size   = l_max_size;
-            l_fragment->mem_shift   = l_max_size - l_data_size;
-            memcpy(l_fragment->data, l_fragment->mem_shift ? a_data + l_fragment->mem_shift - sizeof(dap_stream_ch_pkt_hdr_t) : &l_hdr,
-                   l_fragment_size);
+            l_fragment->mem_shift   = l_max_size - l_remaining;
+            
+            // Copy data safely
+            const void *l_src = l_fragment->mem_shift ? 
+                                a_data + l_fragment->mem_shift - sizeof(dap_stream_ch_pkt_hdr_t) : 
+                                (const void*)&l_hdr;
+            
+            memcpy(l_fragment->data, l_src, l_fragment_size);
+            
+            debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
+                     "Fragment[%zu]: size=%zu, mem_shift=%zu, remaining=%zu",
+                     l_iteration, l_fragment_size, l_fragment->mem_shift, l_remaining);
+            
             l_ret += dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_FRAGMENT_PACKET, l_fragment,
                                                   l_fragment_size + sizeof(dap_stream_fragment_pkt_t));
 #ifndef DAP_EVENTS_CAPS_IOCP
             dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
 #endif
         }
+        
+        debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
+                 "Fragmentation complete: %zu fragments sent", l_iteration);
     } else {
         a_ch->stat.bytes_write = 0;
         log_it(L_WARNING, "Empty pkt, seq_id %"DAP_UINT64_FORMAT_U, l_hdr.seq_id);

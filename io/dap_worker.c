@@ -402,16 +402,14 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
  */
 static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
 {
-    log_it(L_NOTICE, "s_queue_callback_callback CALLED with arg=%p", a_arg);
     
     dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
     assert(l_msg);
     assert(l_msg->callback);
     
-    log_it(L_NOTICE, "Calling callback=%p with arg=%p", l_msg->callback, l_msg->arg);
+    debug_if(g_debug_reactor, L_INFO, "Calling callback=%p with arg=%p", l_msg->callback, l_msg->arg);
     l_msg->callback(l_msg->arg);
     
-    log_it(L_NOTICE, "Callback completed");
     DAP_DELETE(l_msg);
 }
 

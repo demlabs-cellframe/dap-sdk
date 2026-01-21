@@ -8,9 +8,13 @@
  */
 
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_worker.h"
 #include "dap_io_flow_datagram.h"
 #include "dap_io_flow_socket.h"
 
@@ -142,15 +146,23 @@ int dap_io_flow_datagram_send(dap_io_flow_datagram_t *a_flow,
     // Increment sequence number atomically
     uint32_t l_seq = atomic_fetch_add(&a_flow->seq_num_out, 1);
     
-    // Send via socket
+    // Choose socket: use send_es if available (SERVER), otherwise listener_es (CLIENT)
+    dap_events_socket_t *l_send_socket = a_flow->send_es ? a_flow->send_es : a_flow->listener_es;
+    
     debug_if(s_debug_more, L_DEBUG,
-             "dap_io_flow_datagram_send: BEFORE send, listener_es=%p, fd=%d, type=%u",
-             a_flow->listener_es, 
+             "dap_io_flow_datagram_send: BEFORE send, send_socket=%p (fd=%d, worker=%u), "
+             "send_es=%p (fd=%d), listener_es=%p (fd=%d), dest=%s",
+             l_send_socket,
+             l_send_socket ? l_send_socket->fd : -1,
+             l_send_socket && l_send_socket->worker ? l_send_socket->worker->id : 999,
+             a_flow->send_es,
+             a_flow->send_es ? a_flow->send_es->fd : -1,
+             a_flow->listener_es,
              a_flow->listener_es ? a_flow->listener_es->fd : -1,
-             a_flow->listener_es ? (unsigned)a_flow->listener_es->type : 0);
+             dap_io_flow_socket_addr_to_string(&l_dest_addr));
     
     int l_ret = dap_io_flow_socket_send_to(
-        a_flow->listener_es,
+        l_send_socket,  // Use separate send socket for SERVER, listener for CLIENT
         a_data,
         a_size,
         &l_dest_addr,
@@ -161,6 +173,10 @@ int dap_io_flow_datagram_send(dap_io_flow_datagram_t *a_flow,
         log_it(L_WARNING, "Failed to send DATAGRAM packet (seq=%u, size=%zu)", l_seq, a_size);
         return -2;
     }
+    
+    debug_if(s_debug_more, L_DEBUG,
+             "dap_io_flow_datagram_send: SENT successfully via fd=%d, size=%zu, ret=%d",
+             l_send_socket ? l_send_socket->fd : -1, a_size, l_ret);
     
     // Update activity time
     dap_io_flow_datagram_update_activity(a_flow);
@@ -220,14 +236,7 @@ bool dap_io_flow_datagram_get_remote_addr(
     
     bool l_result = a_flow->get_remote_addr_cb(a_flow, a_addr_out, a_addr_len_out);
     
-    // DEBUG: Log what callback returned
-    if (l_result && a_addr_out->ss_family == AF_INET) {
-        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr_out;
-        char l_addr_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_NOTICE, "dap_io_flow_datagram_get_remote_addr: callback returned %s:%u",
-               l_addr_str, ntohs(l_sin->sin_port));
-    }
+    debug_if(s_debug_more && l_result, L_DEBUG, "dap_io_flow_datagram_get_remote_addr: callback returned address");
     
     return l_result;
 }
@@ -315,28 +324,9 @@ static void s_datagram_packet_received_wrapper(dap_io_flow_server_t *a_srv,
     
     dap_io_flow_datagram_t *l_datagram_flow = (dap_io_flow_datagram_t*)a_flow;
     
-    // Update remote_addr for SERVER flows (datagram layer responsibility)
-    if (a_remote_addr) {
-        // DEBUG: Log BEFORE update
-        if (l_datagram_flow->remote_addr.ss_family == AF_INET) {
-            struct sockaddr_in *l_sin_old = (struct sockaddr_in*)&l_datagram_flow->remote_addr;
-            char l_addr_str_old[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &l_sin_old->sin_addr, l_addr_str_old, sizeof(l_addr_str_old));
-            
-            struct sockaddr_in *l_sin_new = (struct sockaddr_in*)a_remote_addr;
-            char l_addr_str_new[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &l_sin_new->sin_addr, l_addr_str_new, sizeof(l_addr_str_new));
-            
-            log_it(L_NOTICE, "DATAGRAM packet_received: remote_addr UPDATE: %s:%u -> %s:%u",
-                   l_addr_str_old, ntohs(l_sin_old->sin_port),
-                   l_addr_str_new, ntohs(l_sin_new->sin_port));
-        }
-        
-        memcpy(&l_datagram_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
-        l_datagram_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
-            ? sizeof(struct sockaddr_in) 
-            : sizeof(struct sockaddr_in6);
-    }
+    // NOTE: remote_addr is set ONCE during flow creation (s_datagram_flow_create_wrapper)
+    // Flow is tracked by (remote_addr, remote_port), so address CANNOT change for existing flow
+    // No need to update remote_addr here!
     
     // Update activity time
     dap_io_flow_datagram_update_activity(l_datagram_flow);
@@ -374,27 +364,60 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         return NULL;
     }
     
-    // Initialize remote_addr (SERVER flow)
+    // Initialize remote_addr (SERVER flow) - SET ONCE, NEVER CHANGED!
     memcpy(&l_datagram_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
     l_datagram_flow->remote_addr_len = (a_remote_addr->ss_family == AF_INET) 
         ? sizeof(struct sockaddr_in) 
         : sizeof(struct sockaddr_in6);
     
-    // DEBUG: Log initial remote_addr
-    if (a_remote_addr->ss_family == AF_INET) {
-        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_remote_addr;
-        char l_addr_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_NOTICE, "DATAGRAM flow_create: INITIAL remote_addr=%s:%u",
-               l_addr_str, ntohs(l_sin->sin_port));
-    }
+    debug_if(s_debug_more, L_DEBUG, "DATAGRAM flow_create: INITIAL remote_addr set");
     
     l_datagram_flow->listener_es = a_listener_es;
     
-    // DEBUG: Log listener_es at creation
-    log_it(L_INFO, "DATAGRAM flow created: listener_es=%p, fd=%d, type=%u",
+    // Create separate sending socket ONLY for SERVER flows (to avoid localhost loopback)
+    // CLIENT flows use their own listener_es for sending (which is fine, no loopback)
+    // SERVER flow marker: a_srv is not NULL
+    if (a_srv) {
+        // Create separate sending socket for this SERVER session
+        int l_send_fd = socket(a_remote_addr->ss_family, SOCK_DGRAM, 0);
+        if (l_send_fd < 0) {
+            log_it(L_ERROR, "Failed to create sending socket: %s", strerror(errno));
+            s_datagram_ops->protocol_destroy(l_datagram_flow);
+            return NULL;
+        }
+        
+        // Create esocket wrapper with callbacks (for proper worker integration)
+        dap_events_socket_callbacks_t l_send_callbacks = {0};
+        // No read callback needed - this socket is write-only
+        
+        l_datagram_flow->send_es = dap_events_socket_wrap_no_add(l_send_fd, &l_send_callbacks);
+        
+        if (!l_datagram_flow->send_es) {
+            log_it(L_ERROR, "Failed to wrap send socket");
+            close(l_send_fd);
+            s_datagram_ops->protocol_destroy(l_datagram_flow);
+            return NULL;
+        }
+        
+        l_datagram_flow->send_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+        l_datagram_flow->send_es->flags |= DAP_SOCK_READY_TO_WRITE;
+        
+        // Add to worker with auto-balancing
+        dap_worker_t *l_assigned_worker = dap_worker_add_events_socket_auto(l_datagram_flow->send_es);
+        
+        log_it(L_NOTICE, "DATAGRAM flow_create: created separate send socket fd=%d (worker=%u) for SERVER flow %s", 
+               l_send_fd, 
+               l_assigned_worker ? l_assigned_worker->id : 999,
+               dap_io_flow_socket_addr_to_string(a_remote_addr));
+    } else {
+        // CLIENT flow: no separate send socket needed
+        l_datagram_flow->send_es = NULL;
+        log_it(L_DEBUG, "DATAGRAM flow_create: CLIENT flow, will use listener_es for sending");
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "DATAGRAM flow created: listener_es=%p (fd=%d), send_es=%p (fd=%d)",
            a_listener_es, a_listener_es ? a_listener_es->fd : -1,
-           a_listener_es ? (unsigned)a_listener_es->type : 0);
+           l_datagram_flow->send_es, l_datagram_flow->send_es ? l_datagram_flow->send_es->fd : -1);
     
     l_datagram_flow->seq_num_out = 0;
     l_datagram_flow->last_seq_num_in = 0;
@@ -430,6 +453,21 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     
     log_it(L_DEBUG, "Destroying DATAGRAM flow for %s",
            dap_io_flow_datagram_get_remote_addr_str(l_datagram_flow));
+    
+    // Close separate send socket if exists (SERVER flows)
+    if (l_datagram_flow->send_es) {
+        // Remove from worker and delete (MT-safe via UUID)
+        if (l_datagram_flow->send_es->worker) {
+            dap_events_socket_remove_and_delete_mt(l_datagram_flow->send_es->worker, 
+                                                   l_datagram_flow->send_es->uuid);
+            log_it(L_DEBUG, "Removed and deleted separate send socket from worker");
+        } else {
+            // Fallback: if no worker, delete directly
+            dap_events_socket_delete_unsafe(l_datagram_flow->send_es, true);
+            log_it(L_DEBUG, "Deleted separate send socket (no worker)");
+        }
+        l_datagram_flow->send_es = NULL;
+    }
     
     // Call protocol-specific destruction
     if (s_datagram_ops && s_datagram_ops->protocol_destroy) {

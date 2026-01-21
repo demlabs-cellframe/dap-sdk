@@ -146,7 +146,7 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,
                             void *a_buf_out, const size_t a_buf_out_size_max,
                       dap_enc_data_type_t a_data_type_in)
 {
-    log_it(L_NOTICE, "dap_enc_decode: key_type=%d, a_buf_in_size=%zu, a_data_type_in=%d, dec_na=%p",
+    debug_if(s_debug_more, L_DEBUG, "dap_enc_decode: key_type=%d, a_buf_in_size=%zu, a_data_type_in=%d, dec_na=%p",
            a_key ? a_key->type : -1, a_buf_in_size, a_data_type_in, a_key ? a_key->dec_na : NULL);
     
     dap_return_val_if_fail_err(a_key && a_key->enc_na && a_buf_in && a_buf_out, 0, "Invalid params");
@@ -155,9 +155,7 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,
         return log_it(L_ERROR, "Insufficient out buffer size: %zu < %zu", a_buf_out_size_max, l_ret), 0;
     switch ( a_data_type_in ) {
     case DAP_ENC_DATA_TYPE_RAW:
-        log_it(L_INFO, "dap_enc_decode: calling dec_na (RAW mode)");
         l_ret = a_key->dec_na(a_key, a_buf_in, a_buf_in_size, a_buf_out, a_buf_out_size_max);
-        log_it(L_INFO, "dap_enc_decode: dec_na returned %zu bytes", l_ret);
         break;
     case DAP_ENC_DATA_TYPE_B64:
     case DAP_ENC_DATA_TYPE_B64_URLSAFE: {

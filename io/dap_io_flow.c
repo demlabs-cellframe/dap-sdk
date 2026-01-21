@@ -114,7 +114,7 @@ dap_io_flow_server_t* dap_io_flow_server_new(
         s_debug_more = dap_config_get_item_bool_default(g_config, "io_flow", "debug_more", false);
         s_debug_initialized = true;
         if (s_debug_more) {
-            log_it(L_NOTICE, "IO Flow debug mode ENABLED");
+            debug_if(s_debug_more, L_DEBUG, "IO Flow debug mode ENABLED");
         }
     }
     
@@ -936,15 +936,10 @@ static void s_process_flow_packet_common(
         return;
     }
     
-    // UNCONDITIONAL log for debugging 50% packet loss
-    log_it(L_NOTICE, "packet_common ENTRY: worker=%u, size=%zu, remote=%s, listener_fd=%d",
-           l_worker->id, a_data_size, dap_io_flow_socket_addr_to_string(a_remote_addr), a_listener_es->fd);
     
     // Find or create flow
     dap_io_flow_t *l_flow = dap_io_flow_find(a_server, a_remote_addr);
     
-    log_it(L_NOTICE, "packet_common: flow=%p (found=%s)",
-           l_flow, l_flow ? "YES" : "NO");
     
     debug_if(s_debug_more, L_DEBUG, "packet_common: worker=%u, flow=%p, remote=%s",
              l_worker->id, l_flow, dap_io_flow_socket_addr_to_string(a_remote_addr));
@@ -1144,7 +1139,7 @@ create_local:
     }
     
     // Call protocol's packet_received callback (flow is on current worker OR new flow)
-    log_it(L_NOTICE, "packet_common: CALLING packet_received (flow=%p, size=%zu, worker=%u)",
+    debug_if(s_debug_more, L_DEBUG, "packet_common: CALLING packet_received (flow=%p, size=%zu, worker=%u)",
            l_flow, a_data_size, l_worker->id);
     
     if (a_server->ops->packet_received) {
@@ -1152,7 +1147,7 @@ create_local:
                                        a_data, a_data_size,
                                        a_remote_addr, a_listener_es);
         
-        log_it(L_NOTICE, "packet_common: packet_received RETURNED");
+        debug_if(s_debug_more, L_DEBUG, "packet_common: packet_received RETURNED");
     } else {
         log_it(L_ERROR, "packet_common: packet_received is NULL!");
     }

@@ -1066,8 +1066,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: packet type=0x%02X size=%u", 
-           a_pkt->hdr.type, a_pkt->hdr.size);
+    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
+           a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1075,13 +1075,22 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_INFO, "Processing FRAGMENT_PACKET, size=%u", a_pkt->hdr.size);
 
         size_t l_fragm_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+        debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
+                 a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
+        
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
+        
+        debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: CALLING dap_stream_pkt_read_unsafe (stream=%p, pkt=%p, out=%p, out_size=%zu)",
+                 a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+        
         size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
 
+        debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
+                 l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
 
         if(l_dec_pkt_size == 0) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu", a_pkt_size);
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: can't decode packet size = %zu (stream=%p)", a_pkt_size, a_stream);
             l_is_clean_fragments = true;
             break;
         }
@@ -1159,6 +1168,21 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             debug_if(s_dump_packet_headers, L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)", 
                    (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.id, a_stream->channel_count);
             
+            // DEBUG: Check for duplicate channels
+            size_t l_duplicates = 0;
+            for(size_t j=0;j<a_stream->channel_count;j++){
+                if(a_stream->channel[j]->proc && a_stream->channel[j]->proc->id == l_ch_pkt->hdr.id) {
+                    debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%zu)",
+                           (char)l_ch_pkt->hdr.id, j, a_stream->channel[j], 
+                           dap_list_length(a_stream->channel[j]->packet_in_notifiers));
+                    l_duplicates++;
+                }
+            }
+            if (l_duplicates > 1) {
+                log_it(L_ERROR, "s_stream_proc_pkt_in: Found %zu DUPLICATE channels for ID '%c'!", 
+                       l_duplicates, (char)l_ch_pkt->hdr.id);
+            }
+            
             for(size_t i=0;i<a_stream->channel_count;i++){
                 if(a_stream->channel[i]->proc){
                     if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
@@ -1175,14 +1199,15 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
-                                                            DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
-                                                            l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                                                            DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
+                                                            l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
+                                                            a_stream);
                     
                     // DEBUG: Check notifiers status
                     size_t l_notifier_count = dap_list_length(l_ch->packet_in_notifiers);
                     debug_if(s_dump_packet_headers, L_INFO, 
-                             "Channel '%c' notifiers: count=%zu, security_passed=%s, closing=%s",
-                             (char)l_ch->proc->id, l_notifier_count,
+                             "Channel '%c' (%p) notifiers: count=%zu, security_passed=%s, closing=%s",
+                             (char)l_ch->proc->id, l_ch, l_notifier_count,
                              l_security_check_passed ? "YES" : "NO",
                              l_ch->closing ? "YES" : "NO");
                     

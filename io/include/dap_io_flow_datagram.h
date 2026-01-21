@@ -77,7 +77,8 @@ struct dap_io_flow_datagram {
     dap_io_flow_t base;                  ///< Generic flow (MUST be first!)
     
     // DATAGRAM-specific fields
-    dap_events_socket_t *listener_es;    ///< Listener esocket
+    dap_events_socket_t *listener_es;    ///< Listener esocket (for receiving)
+    dap_events_socket_t *send_es;        ///< Sending esocket (SERVER only, to avoid loopback)
     
     // Remote address (SERVER: filled by datagram layer, CLIENT: can be ignored)
     struct sockaddr_storage remote_addr; ///< Client address (for SERVER flows)

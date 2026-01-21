@@ -455,17 +455,11 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         l_seq_num = a_ctrl->send_seq_next++;
         pthread_mutex_unlock(&a_ctrl->send_mutex);
         
-        // UNCONDITIONAL log for debugging metadata corruption
-        log_it(L_NOTICE, "FC send: ASSIGNED seq=%lu (flags=0x%02x, send_seq_next=%lu, flow=%p)",
-               l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next, a_ctrl->flow);
         
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: assigned seq=%lu (flags=0x%02x, send_seq_next=%lu)",
                  l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
     } else {
-        // UNCONDITIONAL log for NO RETRANSMIT case
-        log_it(L_WARNING, "FC send: NO RETRANSMIT flag, seq=0 (flags=0x%02x, flow=%p)",
-               a_ctrl->flags, a_ctrl->flow);
         
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: NO RETRANSMIT flag, seq=0 (flags=0x%02x)",
@@ -571,9 +565,6 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     
     a_ctrl->last_activity_ns = dap_nanotime_now();
     
-    // DEBUG: Log incoming packet
-    log_it(L_NOTICE, "FC recv: seq=%lu, ack_seq=%lu, is_keepalive=%d, payload_size=%zu",
-           l_metadata.seq_num, l_metadata.ack_seq, l_metadata.is_keepalive, l_payload_size);
     
     // Process ACK if retransmission enabled
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.ack_seq > 0) {
@@ -593,7 +584,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
         
         if (l_metadata.ack_seq > a_ctrl->send_seq_acked) {
-            log_it(L_NOTICE, "FC recv: UPDATING send_seq_acked: %lu → %lu",
+            debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %lu → %lu",
                    a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
         }
@@ -615,7 +606,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             
             uint64_t l_seq = l_metadata.seq_num;
             
-            log_it(L_NOTICE, "FC recv: REORDER CHECK: seq=%lu, recv_seq_expected=%lu", 
+            debug_if(s_debug_more, L_DEBUG, "FC recv: REORDER CHECK: seq=%lu, recv_seq_expected=%lu", 
                    l_seq, a_ctrl->recv_seq_expected);
             
             // Check if this is the expected sequence
@@ -627,12 +618,12 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                          a_ctrl, a_ctrl->flow, a_ctrl->callbacks.payload_deliver, a_ctrl->callbacks.arg);
                 
                 // Deliver payload
-                log_it(L_NOTICE, "FC recv: CALLING payload_deliver (flow=%p, payload_size=%zu, arg=%p)",
+                debug_if(s_debug_more, L_DEBUG, "FC recv: CALLING payload_deliver (flow=%p, payload_size=%zu, arg=%p)",
                        a_ctrl->flow, l_payload_size, a_ctrl->callbacks.arg);
                 
                 int l_deliver_ret = a_ctrl->callbacks.payload_deliver(a_ctrl->flow, l_payload, l_payload_size, a_ctrl->callbacks.arg);
                 
-                log_it(L_NOTICE, "FC recv: payload_deliver RETURNED: ret=%d", l_deliver_ret);
+                debug_if(s_debug_more, L_DEBUG, "FC recv: payload_deliver RETURNED: ret=%d", l_deliver_ret);
                 
                 // Free packet buffer after immediate delivery
                 // packet_parse stored buffer pointer in metadata->private_ctx
@@ -669,7 +660,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else if (l_seq > a_ctrl->recv_seq_expected) {
                 // OUT-OF-ORDER: Buffer for later delivery
-                log_it(L_NOTICE, "FC recv: BUFFERING OUT-OF-ORDER seq=%lu (expected=%lu)", 
+                debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%lu (expected=%lu)", 
                        l_seq, a_ctrl->recv_seq_expected);
                 size_t l_idx = (l_seq - 1) % a_ctrl->recv_window_size;
                 
@@ -712,7 +703,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else {
                 // DUPLICATE or REPLAY: seq < expected
-                log_it(L_WARNING, "Old/duplicate packet: seq=%lu, expected=%lu", 
+                debug_if(s_debug_more, L_NOTICE, "Old/duplicate packet: seq=%lu, expected=%lu", 
                        l_seq, a_ctrl->recv_seq_expected);
                 atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
             }
@@ -741,6 +732,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // REORDERING enabled: Send ACK ONLY if we delivered in-order packets
             // (recv_seq_expected increased beyond initial state)
             pthread_mutex_lock(&a_ctrl->recv_mutex);
+            debug_if(s_debug_more, L_DEBUG, "FC recv: ACK decision: recv_seq_expected=%lu, should_send=%s",
+                   a_ctrl->recv_seq_expected, (a_ctrl->recv_seq_expected > 1) ? "YES" : "NO");
             if (a_ctrl->recv_seq_expected > 1) {
                 l_should_send_ack = true;
                 l_ack_seq_to_send = a_ctrl->recv_seq_expected - 1;
@@ -769,16 +762,20 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 .is_retransmit = false,
             };
             
-            debug_if(s_debug_more, L_DEBUG,
-                     "FC recv: Sending ACK for seq_num up to %lu", l_ack_seq_to_send);
+            debug_if(s_debug_more, L_DEBUG, "FC recv: Preparing ACK for seq_num up to %lu", l_ack_seq_to_send);
             
             void *l_ack_packet = NULL;
             size_t l_ack_packet_size = 0;
             int l_ack_ret = a_ctrl->callbacks.packet_prepare(a_ctrl->flow, &l_ack_metadata, NULL, 0,
                                                               &l_ack_packet, &l_ack_packet_size, a_ctrl->callbacks.arg);
+            debug_if(s_debug_more, L_DEBUG, "FC recv: packet_prepare returned: ret=%d, packet=%p, size=%zu",
+                   l_ack_ret, l_ack_packet, l_ack_packet_size);
+            
             if (l_ack_ret == 0 && l_ack_packet) {
                 l_ack_ret = a_ctrl->callbacks.packet_send(a_ctrl->flow, l_ack_packet, l_ack_packet_size,
                                                            a_ctrl->callbacks.arg);
+                debug_if(s_debug_more, L_DEBUG, "FC recv: packet_send returned: ret=%d", l_ack_ret);
+                
                 a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
                 
                 if (l_ack_ret == 0) {

@@ -638,7 +638,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
 
-    log_it(L_NOTICE, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
+    debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
@@ -703,7 +703,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
         
-        log_it(L_NOTICE, "CLIENT: s_udp_read returned %zd, buf_in_size now=%zu", 
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: s_udp_read returned %zd, buf_in_size now=%zu", 
                  l_result, a_es->buf_in_size);
         
         // If buf_in_size didn't change, break to prevent infinite loop
@@ -1004,13 +1004,9 @@ static int s_udp_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     // Per-stream data (session_id, seq_num, alice_key, remote_addr) is now in dap_net_trans_udp_ctx_t
     
     // Read debug configuration
-    log_it(L_NOTICE, "UDP transport init called: a_config=%p", a_config);
     if (a_config) {
         s_debug_more = dap_config_get_item_bool_default(a_config, "stream_udp", "debug_more", false);
-        log_it(L_NOTICE, "UDP transport: read debug_more=%d from config section [stream_udp]", s_debug_more);
-        if (s_debug_more) {
-            log_it(L_NOTICE, "UDP transport: verbose debugging ENABLED");
-        }
+        log_it( L_INFO, "UDP transport: read debug_more=%d from config section [stream_udp]", s_debug_more);
     } else {
         log_it(L_WARNING, "UDP transport init: no config provided, debug_more remains disabled");
     }
@@ -1628,7 +1624,7 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     // Mark SESSION_CREATE as sent to prevent duplicates
     l_ctx->session_create_sent = true;
     
-    log_it(L_INFO, "UDP session create request sent with channels '%s'", l_channels);
+    debug_if(s_debug_more, L_DEBUG, "UDP session create request sent with channels '%s'", l_channels);
     
     return 0;
 }
@@ -1646,7 +1642,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP session start: session_id=%u", a_session_id);
+    debug_if(s_debug_more, L_DEBUG, "UDP session start: session_id=%u", a_session_id);
     
     // Get UDP context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
@@ -1658,7 +1654,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -2;
     }
     
-    log_it(L_NOTICE, "SESSION_START: udp_ctx=%p, stream=%p, flow_ctrl=%p (BEFORE FC create)", 
+    debug_if(s_debug_more, L_DEBUG, "SESSION_START: udp_ctx=%p, stream=%p, flow_ctrl=%p (BEFORE FC create)", 
            l_udp_ctx, a_stream, l_udp_ctx->flow_ctrl);
     
     // IDEMPOTENCY CHECK: If FC already created, just process buffered packets
@@ -1714,11 +1710,11 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     }
     
     dap_io_flow_ctrl_config_t l_fc_config = {
-        .retransmit_timeout_ms = 1000,  // 1 second retransmit timeout
-        .max_retransmit_count = 3,      // Max 3 retries
+        .retransmit_timeout_ms = 100,   // 100ms for localhost (was 1000ms - TOO SLOW!)
+        .max_retransmit_count = 20,     // Increased for large transfers
         .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
         .recv_window_size = 65536,      // 64K packets reorder buffer
-        .max_out_of_order_delay_ms = 5000,  // 5 seconds out-of-order window
+        .max_out_of_order_delay_ms = 10000,  // 10 seconds out-of-order window
         .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
         .keepalive_timeout_ms = 0,      // Not used
     };
@@ -2116,7 +2112,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             l_udp_ctx->buffered_packet_sizes[l_udp_ctx->buffered_count] = l_es->buf_in_size;
             l_udp_ctx->buffered_count++;
             
-            log_it(L_NOTICE, "CLIENT: Buffered packet #%zu (type=%u) - FC will process after creation",
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: Buffered packet #%zu (type=%u) - FC will process after creation",
                    l_udp_ctx->buffered_count, l_type);
             
             dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
@@ -2124,13 +2120,10 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
     } else {
         // FLOW CONTROL PATH: FC is ready - pass packet directly
-        log_it(L_NOTICE,
+        debug_if(s_debug_more, L_DEBUG,
                  "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, l_es->buf_in_size);
         
         int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
-        
-        log_it(L_NOTICE,
-                 "CLIENT: FC recv returned: %d", l_ret);
         
         if (l_ret != 0) {
             log_it(L_WARNING, "CLIENT: Flow Control packet processing failed: ret=%d", l_ret);

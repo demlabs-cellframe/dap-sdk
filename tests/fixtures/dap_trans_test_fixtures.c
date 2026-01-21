@@ -28,6 +28,7 @@
  * @date 2025-01-07
  */
 
+#include <stddef.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include "dap_trans_test_fixtures.h"
@@ -71,21 +72,16 @@ int dap_trans_test_setup(void)
     dap_log_set_external_output(LOGGER_OUTPUT_STDERR, NULL);
 
     // Don't try to open config from file for tests, but create an empty config
-    // and set debug flags for better test visibility
     g_config = DAP_NEW_Z(dap_config_t);
     if (g_config) {
-        // Enable debug logging for tests
-        dap_trans_test_config_set_bool(g_config, "general", "debug_more", true);
-        dap_trans_test_config_set_int(g_config, "general", "log_level", L_DEBUG);
+        // Minimal logging for performance tests
+        dap_trans_test_config_set_bool(g_config, "general", "debug_more", false);
+        dap_trans_test_config_set_int(g_config, "general", "log_level", L_WARNING);
     }
     
-    // Set log level directly (config setting alone may not be enough)
-    dap_log_level_set(L_DEBUG);
-    log_it(L_NOTICE, "=== Log level set to L_DEBUG ===");
+    // Set log level to WARNING (only errors and warnings)
+    dap_log_level_set(L_NOTICE);
     
-    // Enable SALSA2012 debug output
-    extern void dap_enc_salsa2012_set_debug(bool);
-    dap_enc_salsa2012_set_debug(true);
 
     // Initialize encryption system
     dap_enc_init();

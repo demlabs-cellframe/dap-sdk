@@ -62,6 +62,7 @@ static dap_serialize_schema_t s_obfuscated_header_schema = {
     .validate_func = NULL
 };
 
+static bool s_debug_more = false;
 /**
  * @brief Get header size using dap_serialize RAW (no metadata)
  */
@@ -195,7 +196,7 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     }
     
     // Create cipher key (KDF based on cleartext_total_size)
-    log_it(L_DEBUG, "OBFUSCATE: final_size=%zu, handshake=%zu, padding=%zu", 
+    debug_if(s_debug_more,L_DEBUG, "OBFUSCATE: final_size=%zu, handshake=%zu, padding=%zu", 
            l_final_size, a_handshake_size, l_padding_size);
     dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_final_size, NULL);
     if (!l_key) {
@@ -231,7 +232,7 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     *a_obfuscated_data = l_encrypted;
     *a_obfuscated_size = l_encrypted_size;
     
-    log_it(L_DEBUG, "Obfuscated handshake: %zu bytes → %zu bytes (padding=%zu), cleartext=%zu",
+    debug_if(s_debug_more,L_DEBUG, "Obfuscated handshake: %zu bytes → %zu bytes (padding=%zu), cleartext=%zu",
            a_handshake_size, l_encrypted_size, l_padding_size, l_final_size);
     
     return 0;
@@ -256,7 +257,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     size_t l_cleartext_size = a_obfuscated_size - SALSA20_NONCE_SIZE;
     
     // Create cipher key for decryption using cleartext_size for KDF
-    log_it(L_DEBUG, "DEOBFUSCATE: encrypted_size=%zu, cleartext_size=%zu", 
+    debug_if(s_debug_more,L_DEBUG, "DEOBFUSCATE: encrypted_size=%zu, cleartext_size=%zu", 
            a_obfuscated_size, l_cleartext_size);
     
     dap_enc_key_t *l_key = s_get_cipher_key_for_size(l_cleartext_size, NULL);
@@ -291,7 +292,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     
     // Parse cleartext header using dap_serialize
     if (l_decrypted_size < l_header_size) {
-        log_it(L_WARNING, "Decrypted packet too small: %zu bytes (need %zu for header)", 
+        debug_if(s_debug_more, L_WARNING, "Decrypted packet too small: %zu bytes (need %zu for header)", 
                l_decrypted_size, l_header_size);
         DAP_DELETE(l_decrypted);
         return -6;
@@ -308,14 +309,14 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     );
     
     if (l_deser_result.error_code != 0) {
-        log_it(L_WARNING, "Failed to deserialize header: %s", l_deser_result.error_message);
+        debug_if(s_debug_more,L_WARNING, "Failed to deserialize header: %s", l_deser_result.error_message);
         DAP_DELETE(l_decrypted);
         return -7;
     }
     
     // Validate cleartext_total_size matches actual decrypted size
     if (l_header.cleartext_total_size != l_decrypted_size) {
-        log_it(L_WARNING, "Cleartext size mismatch: header=%u, actual=%zu",
+        debug_if(s_debug_more, L_WARNING, "Cleartext size mismatch: header=%u, actual=%zu",
                l_header.cleartext_total_size, l_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -8;
@@ -344,7 +345,7 @@ int dap_transport_deobfuscate_handshake(const uint8_t *a_obfuscated_data,
     *a_handshake_data = l_handshake;
     *a_handshake_size = l_header.handshake_size;
     
-    log_it(L_DEBUG, "Deobfuscated: %zu bytes → %u bytes (cleartext_total=%u)",
+    debug_if(s_debug_more,L_DEBUG, "Deobfuscated: %zu bytes → %u bytes (cleartext_total=%u)",
            a_obfuscated_size, l_header.handshake_size, l_header.cleartext_total_size);
     
     return 0;

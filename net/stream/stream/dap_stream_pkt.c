@@ -87,13 +87,23 @@ const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e
  */
 size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a_pkt, void * a_buf_out, size_t a_buf_out_size)
 {
+    log_it(L_DEBUG, "dap_stream_pkt_read_unsafe: ENTRY stream=%p, session=%p, key=%p, pkt_size=%u, buf_out_size=%zu",
+             a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, a_pkt->hdr.size, a_buf_out_size);
+    
     // Handle unencrypted packet or missing session key
     if (!a_stream->session || !a_stream->session->key) {
+        log_it(L_WARNING, "dap_stream_pkt_read_unsafe: NO SESSION or NO KEY! stream=%p", a_stream);
         size_t l_copy_size = a_pkt->hdr.size > a_buf_out_size ? a_buf_out_size : a_pkt->hdr.size;
         memcpy(a_buf_out, a_pkt->data, l_copy_size);
         return l_copy_size;
     }
-    return a_stream->session->key->dec_na(a_stream->session->key,a_pkt->data,a_pkt->hdr.size,a_buf_out, a_buf_out_size);
+    
+    size_t l_result = a_stream->session->key->dec_na(a_stream->session->key,a_pkt->data,a_pkt->hdr.size,a_buf_out, a_buf_out_size);
+    
+    log_it(L_DEBUG, "dap_stream_pkt_read_unsafe: RETURNED dec_na result=%zu (stream=%p, key=%p)",
+             l_result, a_stream, a_stream->session->key);
+    
+    return l_result;
 }
 
 /**
@@ -111,9 +121,11 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
     a_stream->is_active = true;
     
-    log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: stream=%p, type=0x%02x, data_size=%zu", a_stream, a_type, a_data_size);
-    
     dap_enc_key_t *l_key = (a_stream->session) ? a_stream->session->key : NULL;
+    
+    log_it(L_DEBUG, "dap_stream_pkt_write_unsafe: stream=%p, session=%p, key=%p, type=0x%02x, data_size=%zu", 
+             a_stream, a_stream->session, l_key, a_type, a_data_size);
+    
     size_t l_full_size;
     
     if (l_key) {

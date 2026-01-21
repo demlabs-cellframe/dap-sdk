@@ -100,7 +100,7 @@ DAP_MOCK_DECLARE(dap_enc_code);
 
 // Mock dap_io_flow functions (for UDP isolation)
 DAP_MOCK_DECLARE(dap_io_flow_server_new);
-DAP_MOCK_DECLARE(dap_io_flow_server_new_udp);
+DAP_MOCK_DECLARE(dap_io_flow_server_new_datagram);
 DAP_MOCK_DECLARE(dap_io_flow_server_listen);
 DAP_MOCK_DECLARE(dap_io_flow_server_stop);
 DAP_MOCK_DECLARE(dap_io_flow_server_delete);
