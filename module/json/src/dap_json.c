@@ -442,65 +442,42 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
-    // Stage 2: DOM Building
-    dap_json_stage2_t *l_stage2 = dap_json_stage2_new(l_stage1);
-    if (!l_stage2) {
-        log_it(L_ERROR, "Failed to initialize Stage 2");
+    // Build tape from Stage 1 output
+    dap_json_tape_entry_t *l_tape = NULL;
+    size_t l_tape_count = 0;
+    
+    if (!dap_json_build_tape(l_stage1, &l_tape, &l_tape_count)) {
+        log_it(L_ERROR, "Failed to build tape");
         dap_json_stage1_free(l_stage1);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
     
-    // Transfer ownership of transcoded buffer to Stage 2 (will be freed with Stage 2)
-    if (l_transcoded) {
-        l_stage2->transcoded_buffer = l_transcoded;
-        l_transcoded = NULL;  // Ownership transferred
-    }
-    
-    dap_json_stage2_error_t l_err = dap_json_stage2_run(l_stage2);
-    if (l_err != STAGE2_SUCCESS) {
-        log_it(L_ERROR, "Failed to parse JSON: %s", dap_json_stage2_error_to_string(l_err));
-        dap_json_stage2_free(l_stage2);
+    // Create wrapper with tape (NO DOM!)
+    dap_json_t *l_result = DAP_NEW_Z(dap_json_t);
+    if (!l_result) {
+        log_it(L_ERROR, "Failed to allocate JSON wrapper");
         dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
     
-    // Get root value
-    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
-    if (!l_root) {
-        log_it(L_ERROR, "Stage 2 returned NULL root");
-        dap_json_stage2_free(l_stage2);
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    
-    // Add new arena to thread-local list
-    dap_json_arena_node_t *l_node = DAP_NEW_Z(dap_json_arena_node_t);
-    if (!l_node) {
-        log_it(L_ERROR, "Failed to allocate arena list node");
-        dap_json_stage2_free(l_stage2);
-        dap_json_stage1_free(l_stage1);
-        return NULL;
-    }
-    l_node->stage2 = l_stage2;
-    l_node->next = s_arena_list;
-    s_arena_list = l_node;
-    
-    // Wrap for public API (value lives in arena)
-    dap_json_t *l_result = s_wrap_value_ex(l_root, false); // owns_value = false (in arena)
-    
-    //  Set mode to ARENA_IMMUTABLE (parsed JSON)
-    l_result->mode = DAP_JSON_MODE_ARENA_IMMUTABLE;
-    l_result->arena.stage2 = l_stage2; // ROOT wrapper owns stage2
-    l_result->arena.parent = NULL; // Root has no parent
-    
-    //  Set input buffer for zero-copy string access
+    l_result->ref_count = 1;
     l_result->input_buffer = (const char*)l_parse_input;
+    l_result->input_len = l_parse_len;
+    l_result->tape = l_tape;
+    l_result->tape_count = l_tape_count;
     
-    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: mode=ARENA_IMMUTABLE, stage2=%p, input_buffer=%p", 
-             l_result->arena.stage2, l_result->input_buffer);
+    // Store transcoded buffer if any (will be freed with wrapper)
+    if (l_transcoded) {
+        // TODO: Store transcoded buffer ownership
+        (void)l_transcoded;
+    }
     
-    // Cleanup Stage 1 (transcoded buffer ownership transferred to Stage 2)
+    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: tape=%p (%zu entries)", 
+             l_tape, l_tape_count);
+    
+    // Cleanup Stage 1
     dap_json_stage1_free(l_stage1);
     
     return l_result;
@@ -634,23 +611,11 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // Borrowed reference handling (mode-aware)
-    if (!a_json->owns_value) {
-        //  Mode-specific cleanup for borrowed refs
-        if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
-            // Arena-based: decrement parent refcount
-            if (a_json->arena.parent) {
-                dap_json_object_free(a_json->arena.parent); // Recursive dec-ref
-                debug_if(s_debug_more, L_DEBUG, "Borrowed ref freed (ARENA): parent=%p",
-                         a_json->arena.parent);
-            }
-        }
-        // MALLOC_MUTABLE borrowed refs don't exist
-        
-        // Free wrapper only
-        DAP_DELETE(a_json);
-        return;
-    }
+    // Tape and input_buffer are managed by arenas - no manual free needed
+    
+    // Free wrapper
+    DAP_DELETE(a_json);
+}
     
     //  No cached wrappers - they're created on-demand and ref parent
     // When parent dies, borrowed refs automatically become invalid
