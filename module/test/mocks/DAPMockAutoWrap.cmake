@@ -104,8 +104,6 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
-<<<<<<< HEAD
-=======
     # Prepare command for mock generation
     # For STAGE 1 (execute_process) - use list
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
@@ -119,7 +117,6 @@ function(dap_mock_autowrap TARGET_NAME)
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
->>>>>>> 08b4e91dabc59ca8943a960367f6cf73967c76ee
     execute_process(
         COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -129,9 +126,6 @@ function(dap_mock_autowrap TARGET_NAME)
     )
     
     if(NOT MOCK_GEN_RESULT EQUAL 0)
-<<<<<<< HEAD
-        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
-=======
         message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
@@ -143,7 +137,6 @@ function(dap_mock_autowrap TARGET_NAME)
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
->>>>>>> 08b4e91dabc59ca8943a960367f6cf73967c76ee
     endif()
     
     # STAGE 2: Setup re-generation on source file changes
