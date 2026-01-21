@@ -530,7 +530,21 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // Tape and input_buffer are managed by arenas - no manual free needed
+    // For IMMUTABLE mode (tape), reset arena to reuse memory
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        // Arena can be reused immediately after last reference is freed
+        dap_json_tape_arena_reset();
+    }
+    
+    // For MUTABLE mode (DOM), free the value
+    if (a_json->mode == DAP_JSON_MODE_MUTABLE && a_json->mode_data.mutable.value) {
+        dap_json_value_v2_free(a_json->mode_data.mutable.value);
+        
+        // Free stage2 if present
+        if (a_json->mode_data.mutable.stage2) {
+            dap_json_stage2_free((dap_json_stage2_t*)a_json->mode_data.mutable.stage2);
+        }
+    }
     
     // Free wrapper
     DAP_DELETE(a_json);
