@@ -1803,14 +1803,20 @@ bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_
             // Inline: stored in offset as int32
             *a_out = (int64_t)(int32_t)l_value->offset;
         } else {
-            // Allocated: offset → pointer to int64
-            int64_t *l_ptr = (int64_t*)(uintptr_t)l_value->offset;
+            // Allocated: use storage pointer
+            int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
+            if (!l_ptr) {
+                return false;
+            }
             *a_out = *l_ptr;
         }
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
-        // offset → pointer to double
-        double *l_ptr = (double*)(uintptr_t)l_value->offset;
+        // Use storage pointer for double
+        double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
+        if (!l_ptr) {
+            return false;
+        }
         *a_out = (int64_t)(*l_ptr);
         return true;
     }
@@ -1845,24 +1851,24 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
             l_int_val = (int64_t)(int32_t)l_value->offset;
         } else {
             // Allocated int64
-            int64_t *l_ptr = (int64_t*)(uintptr_t)l_value->offset;
+            int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
         }
         *a_out = (uint64_t)l_int_val;
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_UINT64) {
         // offset → pointer to uint64
-        uint64_t *l_ptr = (uint64_t*)(uintptr_t)l_value->offset;
+        uint64_t *l_ptr = (uint64_t*)dap_json_get_storage_ptr(l_value);
         *a_out = *l_ptr;
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_UINT256) {
         // offset → pointer to uint256, truncate to lower 64 bits
-        uint256_t *l_ptr = (uint256_t*)(uintptr_t)l_value->offset;
+        uint256_t *l_ptr = (uint256_t*)dap_json_get_storage_ptr(l_value);
         *a_out = (uint64_t)l_ptr->lo;
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         // offset → pointer to double
-        double *l_ptr = (double*)(uintptr_t)l_value->offset;
+        double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
         *a_out = (uint64_t)(*l_ptr);
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_STRING) {
@@ -1915,7 +1921,7 @@ int dap_json_object_get_uint256(dap_json_t* a_json, const char* a_key, uint256_t
     
     if (l_value->type == DAP_JSON_TYPE_UINT256) {
         // offset → pointer to uint256
-        uint256_t *l_ptr = (uint256_t*)(uintptr_t)l_value->offset;
+        uint256_t *l_ptr = (uint256_t*)dap_json_get_storage_ptr(l_value);
         *a_out = *l_ptr;
         return 0;
     } else if (l_value->type == DAP_JSON_TYPE_STRING) {
@@ -1950,7 +1956,7 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
     
     if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         // offset → pointer to double
-        double *l_ptr = (double*)(uintptr_t)l_value->offset;
+        double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
         return *l_ptr;
     } else if (l_value->type == DAP_JSON_TYPE_INT) {
         // Extract int64
@@ -1960,7 +1966,7 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
             l_int_val = (int64_t)(int32_t)l_value->offset;
         } else {
             // Allocated int64
-            int64_t *l_ptr = (int64_t*)(uintptr_t)l_value->offset;
+            int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
         }
         return (double)l_int_val;
@@ -2348,14 +2354,14 @@ int64_t dap_json_get_int64(dap_json_t* a_json)
             return (int64_t)(int32_t)l_value->offset;
         } else {
             // Allocated int64
-            int64_t *l_ptr = (int64_t*)(uintptr_t)l_value->offset;
+            int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             return *l_ptr;
         }
     }
     
     if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         // offset → pointer to double
-        double *l_ptr = (double*)(uintptr_t)l_value->offset;
+        double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
         return (int64_t)(*l_ptr);
     }
     
@@ -2406,7 +2412,7 @@ double dap_json_get_double(dap_json_t* a_json)
     
     if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         // offset → pointer to double
-        double *l_ptr = (double*)(uintptr_t)l_value->offset;
+        double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
         return *l_ptr;
     }
     
@@ -2418,7 +2424,7 @@ double dap_json_get_double(dap_json_t* a_json)
             l_int_val = (int64_t)(int32_t)l_value->offset;
         } else {
             // Allocated int64
-            int64_t *l_ptr = (int64_t*)(uintptr_t)l_value->offset;
+            int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
         }
         return (double)l_int_val;
