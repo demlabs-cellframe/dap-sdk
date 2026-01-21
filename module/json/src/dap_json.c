@@ -208,15 +208,39 @@ static inline dap_json_t* s_wrap_value(dap_json_value_t *a_value)
 }
 
 /**
- * @brief Create borrowed reference (NOT IMPLEMENTED for hybrid mode yet)
- * @note Will be implemented when DOM mode is fully restored
+ * @brief Create borrowed reference (for MUTABLE mode array/object elements)
+ * @note Simplified implementation - just wraps the value pointer
  */
 static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_json_t *a_parent)
 {
-    (void)a_value;
-    (void)a_parent;
-    log_it(L_ERROR, "Borrowed references not yet implemented in hybrid mode");
-    return NULL;
+    if (!a_value || !a_parent) {
+        return NULL;
+    }
+    
+    // For MUTABLE mode: create non-owning wrapper
+    dap_json_t *l_json = DAP_NEW_Z(dap_json_t);
+    if (!l_json) {
+        log_it(L_ERROR, "Failed to allocate borrowed wrapper");
+        return NULL;
+    }
+    
+    l_json->ref_count = 1;
+    l_json->mode = a_parent->mode;
+    
+    if (a_parent->mode == DAP_JSON_MODE_MUTABLE) {
+        l_json->mode_data.mutable.value = a_value;
+        l_json->mode_data.mutable.stage2 = NULL; // Don't copy stage2 (parent owns it)
+        
+        // Increment parent refcount to keep parent alive
+        a_parent->ref_count++;
+    } else {
+        // IMMUTABLE mode: not supported yet (tape doesn't need borrowed refs)
+        log_it(L_ERROR, "Borrowed references for IMMUTABLE mode not yet implemented");
+        DAP_DELETE(l_json);
+        return NULL;
+    }
+    
+    return l_json;
 }
 
 /**
@@ -1533,22 +1557,19 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     
     // Check mode
     if (a_json->mode == DAP_JSON_MODE_MUTABLE) {
-        // MALLOC strings: offset → malloc'd null-terminated string
-        return (const char*)(uintptr_t)a_string_value->offset;
+        // MUTABLE strings: storage_ptr → malloc'd null-terminated string
+        return (const char*)dap_json_get_storage_ptr(a_string_value);
     }
     
-    // ARENA_IMMUTABLE: offset → position in source buffer
-    // Need to check if we have cached materialized copy
-    // For now, we'll create a temporary null-terminated copy
-    // TODO  Add string pool for caching materialized strings
+    // IMMUTABLE: offset → position in source buffer
+    // Materialize as null-terminated copy
     
-    dap_json_stage2_t *l_stage2 = s_get_stage2(a_json);
-    if (!l_stage2 || !l_stage2->input) {
-        log_it(L_ERROR, "No source buffer for ARENA string");
+    if (!a_json->mode_data.immutable.input_buffer) {
+        log_it(L_ERROR, "No source buffer for IMMUTABLE string");
         return NULL;
     }
     
-    const char *l_source_ptr = (const char*)l_stage2->input + a_string_value->offset;
+    const char *l_source_ptr = a_json->mode_data.immutable.input_buffer + a_string_value->offset;
     size_t l_length = a_string_value->length;
     
     // Allocate null-terminated copy
@@ -1561,8 +1582,8 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     memcpy(l_copy, l_source_ptr, l_length);
     l_copy[l_length] = '\0';
     
-    // ⚠️ WARNING: This is a memory leak for now!
-    // Phase 2.1 will add string pool to track and free these
+    // Note: Caller is responsible for freeing this string
+    // Alternative: could use arena-based string pool for auto-cleanup
     
     return l_copy;
 }
@@ -1610,9 +1631,69 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
 const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
 {
     if (!a_json || !a_key) {
+        log_it(L_ERROR, "object_get_string: NULL json or key");
         return NULL;
     }
     
+    log_it(L_DEBUG, "object_get_string: key='%s', mode=%d", a_key, a_json->mode);
+    
+    // IMMUTABLE mode (tape): use iterator to find key
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        log_it(L_DEBUG, "object_get_string: IMMUTABLE mode, creating iterator");
+        
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            log_it(L_ERROR, "object_get_string: Failed to create iterator");
+            return NULL;
+        }
+        
+        // Check if root is object
+        dap_json_type_t l_type = dap_json_iterator_type(l_iter);
+        log_it(L_DEBUG, "object_get_string: root type=%d", l_type);
+        
+        if (l_type != DAP_JSON_TYPE_OBJECT) {
+            log_it(L_ERROR, "object_get_string: root is not an object (type=%d)", l_type);
+            dap_json_iterator_free(l_iter);
+            return NULL;
+        }
+        
+        // Enter object to access keys
+        if (!dap_json_iterator_enter(l_iter)) {
+            log_it(L_ERROR, "object_get_string: Failed to enter object");
+            dap_json_iterator_free(l_iter);
+            return NULL;
+        }
+        
+        log_it(L_DEBUG, "object_get_string: Entered object, searching for key");
+        
+        // Find key in object
+        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
+            log_it(L_DEBUG, "object_get_string: Key '%s' not found", a_key);
+            dap_json_iterator_free(l_iter);
+            return NULL; // Key not found
+        }
+        
+        log_it(L_DEBUG, "object_get_string: Key found, checking value type");
+        
+        // Iterator now points to the value
+        dap_json_type_t l_value_type = dap_json_iterator_type(l_iter);
+        if (l_value_type != DAP_JSON_TYPE_STRING) {
+            log_it(L_ERROR, "object_get_string: Value is not a string (type=%d)", l_value_type);
+            dap_json_iterator_free(l_iter);
+            return NULL; // Value is not a string
+        }
+        
+        // Get string (makes a copy)
+        char *l_result = dap_json_iterator_get_string_dup(l_iter);
+        log_it(L_DEBUG, "object_get_string: Got string='%s'", l_result ? l_result : "(null)");
+        
+        dap_json_iterator_free(l_iter);
+        
+        // WARNING: Caller must free() this string!
+        return l_result;
+    }
+    
+    // MUTABLE mode (DOM): use value-based access
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return NULL;
@@ -1962,8 +2043,8 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    //  Create borrowed wrapper (no caching for now)
-    // TODO  Add wrapper cache to dap_json wrapper struct
+    // Create borrowed wrapper
+    // Note: borrowed wrapper holds ref to parent, will be freed when parent is freed
     *a_value = s_wrap_value_borrowed(l_val, a_json);
     if (!*a_value) {
         log_it(L_ERROR, "Failed to create wrapper for key '%s'", a_key);

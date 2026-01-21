@@ -74,10 +74,17 @@ dap_json_iterator_t* dap_json_iterator_new(dap_json_t *a_json)
     
     l_iter->tape = a_json->mode_data.immutable.tape;
     l_iter->tape_count = a_json->mode_data.immutable.tape_count;
-    l_iter->position = 0;
     l_iter->input_buffer = a_json->mode_data.immutable.input_buffer;
     l_iter->input_len = a_json->mode_data.immutable.input_len;
     l_iter->depth = 0;
+
+    // Skip ROOT_START marker if present
+    uint8_t l_first_type = dap_tape_get_type(l_iter->tape[0]);
+    if (l_first_type == TAPE_TYPE_ROOT_START && l_iter->tape_count > 1) {
+        l_iter->position = 1;  // Start at actual content
+    } else {
+        l_iter->position = 0;  // No ROOT marker
+    }
     
     return l_iter;
 }
@@ -109,6 +116,15 @@ dap_json_type_t dap_json_iterator_type(const dap_json_iterator_t *a_iter)
     uint8_t l_type = dap_tape_get_type(a_iter->tape[a_iter->position]);
     
     switch (l_type) {
+        case TAPE_TYPE_ROOT_START:    // Skip root marker, get actual content
+            if (a_iter->position + 1 < a_iter->tape_count) {
+                l_type = dap_tape_get_type(a_iter->tape[a_iter->position + 1]);
+                // Fall through to decode actual type
+            } else {
+                return DAP_JSON_TYPE_NULL;
+            }
+            // Intentional fallthrough to decode actual content type
+            
         case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
         case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
         case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;
