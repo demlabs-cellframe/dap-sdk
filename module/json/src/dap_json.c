@@ -44,6 +44,7 @@
 #include "dap_common.h"
 #include "dap_json.h"
 #include "dap_json_type.h"
+#include "dap_json_iterator.h"
 #include "dap_arena.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
@@ -468,17 +469,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     l_result->tape = l_tape;
     l_result->tape_count = l_tape_count;
     
-    // Store transcoded buffer if any (will be freed with wrapper)
-    if (l_transcoded) {
-        // TODO: Store transcoded buffer ownership
-        (void)l_transcoded;
-    }
-    
-    debug_if(s_debug_more, L_DEBUG, "Parsed JSON: tape=%p (%zu entries)", 
-             l_tape, l_tape_count);
-    
-    // Cleanup Stage 1
-    dap_json_stage1_free(l_stage1);
+    // Tape and input_buffer managed by arenas
     
     return l_result;
 }
@@ -745,76 +736,10 @@ size_t dap_json_array_length(dap_json_t* a_array)
     return l_count;
 }
 
-/**
- * @brief Get array element by index
- * @details  Works in BOTH modes (ARENA and MALLOC)
- * @note Like json-c, returns "borrowed reference" - do NOT free it manually!
- *       The wrapper holds parent refcount and will be freed when you're done.
- */
-dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
-{
-    if (!a_array) {
-        return NULL;
-    }
-    
-    dap_json_value_t *l_array_value = s_unwrap_value(a_array);
-    if (!l_array_value || l_array_value->type != DAP_JSON_TYPE_ARRAY) {
-        return NULL;
-    }
-    
-    if (a_idx >= l_array_value->length) {
-        return NULL; // Index out of bounds
-    }
-    
-    dap_json_value_t *l_element = NULL;
-    
-    //  Mode-specific access
-    if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
-        // ARENA mode: offset → indices in arena
-        dap_json_stage2_t *l_stage2 = s_get_stage2(a_array);
-        if (!l_stage2) {
-            log_it(L_ERROR, "Failed to get stage2 from ARENA array");
-            return NULL;
-        }
-        
-        // array.offset points to flat array of indices in arena
-        // These indices were allocated IN the arena, so offset is actual pointer offset from arena start
-        // But we stored them in arena, so we access via values array
-        uint32_t *l_element_indices = (uint32_t*)(void*)(uintptr_t)l_array_value->offset;
-        uint32_t l_element_idx = l_element_indices[a_idx];
-        
-        if (l_element_idx >= l_stage2->values_count) {
-            log_it(L_ERROR, "Invalid element index %u (values_count=%zu)", l_element_idx, l_stage2->values_count);
-            return NULL;
-        }
-        
-        l_element = &l_stage2->values[l_element_idx];
-    } else {
-        // MALLOC mode: get storage using helper
-        dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(l_array_value);
-        if (!l_storage || a_idx >= l_storage->count) {
-            log_it(L_ERROR, "Invalid MALLOC array access: storage=%p, idx=%zu, count=%zu",
-                   l_storage, a_idx, l_storage ? l_storage->count : 0);
-            return NULL;
-        }
-        
-        l_element = l_storage->elements[a_idx];
-    }
-    
-    if (!l_element) {
-        return NULL;
-    }
-    
-    // Create borrowed wrapper (NOT cached - user is responsible for lifetime)
-    return s_wrap_value_borrowed(l_element, a_array);
-}
+/* ========================================================================== */
+/*                          ARRAY ELEMENT ACCESSORS                           */
+/* ========================================================================== */
 
-/**
- * @brief Get string element from array by index
- * @param a_array Array object
- * @param a_idx Element index
- * @return String value or NULL if not found or wrong type
- */
 /**
  * @brief Get string element from array by index (with length for zero-copy)
  * @param[in] a_array Array object
@@ -2255,17 +2180,23 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
  */
 const char* dap_json_get_string(dap_json_t* a_json)
 {
-    if (!a_json) {
+    if (!a_json || !a_json->tape || a_json->tape_count == 0) {
         return NULL;
     }
     
-    dap_json_value_t *l_value = s_unwrap_value(a_json);
-    if (!l_value || l_value->type != DAP_JSON_TYPE_STRING) {
+    // Create iterator at root
+    dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+    if (!l_iter) {
         return NULL;
     }
     
-    // Materialize if needed (lazy null-termination)
-    return s_materialize_string(a_json, l_value);
+    // Get string via iterator (handles escapes properly)
+    char *l_result = dap_json_iterator_get_string_dup(l_iter);
+    
+    dap_json_iterator_free(l_iter);
+    
+    // WARNING: Caller must free() this string!
+    return l_result;
 }
 
 /**
@@ -2651,42 +2582,4 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
     }
 }
 
-/* ========================================================================== */
-/*                          LEGACY JSON-C API STUBS                           */
-/* ========================================================================== */
-
-/**
- * @brief Legacy json-c API: parse with verbose error reporting
- */
-dap_json_t* dap_json_tokener_parse_verbose(const char *a_str, dap_json_tokener_error_t *a_error)
-{
-    dap_json_t *l_result = dap_json_parse_string(a_str);
-    
-    if (a_error) {
-        *a_error = l_result ? DAP_JSON_TOKENER_SUCCESS : DAP_JSON_TOKENER_ERROR_PARSE_EOF;
-    }
-    
-    return l_result;
-}
-
-/**
- * @brief Legacy json-c API: get error description
- */
-const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_error)
-{
-    switch (a_error) {
-        case DAP_JSON_TOKENER_SUCCESS: return "success";
-        case DAP_JSON_TOKENER_ERROR_PARSE_EOF: return "unexpected end of data";
-        case DAP_JSON_TOKENER_ERROR_PARSE_UNEXPECTED: return "unexpected character";
-        case DAP_JSON_TOKENER_ERROR_PARSE_NULL: return "error parsing null";
-        case DAP_JSON_TOKENER_ERROR_PARSE_BOOLEAN: return "error parsing boolean";
-        case DAP_JSON_TOKENER_ERROR_PARSE_NUMBER: return "error parsing number";
-        case DAP_JSON_TOKENER_ERROR_PARSE_ARRAY: return "error parsing array";
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_NAME: return "error parsing object key";
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_SEP: return "error parsing object key separator";
-        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_VALUE_SEP: return "error parsing object value separator";
-        case DAP_JSON_TOKENER_ERROR_PARSE_STRING: return "error parsing string";
-        case DAP_JSON_TOKENER_ERROR_PARSE_COMMENT: return "error parsing comment";
-        default: return "unknown error";
-    }
-}
+// End of file
