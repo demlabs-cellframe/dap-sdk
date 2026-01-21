@@ -38,6 +38,8 @@
  */
 static _Thread_local dap_arena_t *s_thread_tape_arena = NULL;
 
+#define SMALL_TAPE_STACK_SIZE 256  // Stack buffer for small JSON (<1KB)
+
 /**
  * @brief Build tape from Stage 1 structural indices
  * @details High-performance tape builder

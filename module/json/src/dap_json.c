@@ -530,11 +530,10 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // For IMMUTABLE mode (tape), reset arena to reuse memory
-    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
-        // Arena can be reused immediately after last reference is freed
-        dap_json_tape_arena_reset();
-    }
+    // For IMMUTABLE mode (tape): arena is NOT reset here!
+    // Reason: Other parsed objects may still use the same arena
+    // Arena grows naturally and is reset manually via dap_json_tape_arena_reset()
+    // or freed at thread exit via dap_json_cleanup_thread_arena()
     
     // For MUTABLE mode (DOM), free the value
     if (a_json->mode == DAP_JSON_MODE_MUTABLE && a_json->mode_data.mutable.value) {
