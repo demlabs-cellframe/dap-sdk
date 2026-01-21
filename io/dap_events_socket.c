@@ -91,6 +91,28 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+// =============================================================================
+// Compatibility wrapper for old pipe-based API
+// =============================================================================
+
+/**
+ * @brief Compatibility wrapper for queue_ptr_send
+ * 
+ * Now accepts dap_context_queue_t* instead of dap_events_socket_t* (pipe).
+ * Uses lock-free ring buffer push instead of pipe write.
+ * 
+ * @param a_queue dap_context_queue_t* (cast from void*)
+ * @param a_arg Pointer to send
+ * @return 0 on success, -1 on error (queue full)
+ */
+int dap_events_socket_queue_ptr_send(void *a_queue, void *a_arg) {
+    if (!a_queue) {
+        return -1;
+    }
+    dap_context_queue_t *l_queue = (dap_context_queue_t*)a_queue;
+    return dap_context_queue_push(l_queue, a_arg) ? 0 : -1;
+}
+
 
 // =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
@@ -1969,114 +1991,6 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
 #endif
 }
 
-/**
- * @brief dap_events_socket_send_event
- * @param a_es
- * @param a_arg
- */
-int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
-{
-    dap_return_val_if_fail(a_es && a_arg, -1);
-
-    int l_ret = -1024, l_errno=0;
-
-    if (g_debug_reactor)
-        log_it(L_DEBUG,"Sent ptr %p to queue "DAP_FORMAT_ESOCKET_UUID, a_arg, a_es->uuid);
-
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    s_add_ptr_to_buf(a_es, a_arg);
-    return 0;
-#elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
-    assert(a_es);
-    assert(a_es->mqd);
-    //struct timespec tmo = {0};
-    //tmo.tv_sec = 7 + time(NULL);
-    if (!mq_send(a_es->mqd, (const char*)&a_arg, sizeof(a_arg), 0)) {
-        debug_if (g_debug_reactor, L_DEBUG,"Sent ptr %p to esocket queue %p (%d)", a_arg, a_es, a_es? a_es->fd : -1);
-        return 0;
-    }
-    switch (l_errno = errno) {
-    case EINVAL:
-    case EINTR:
-    case EWOULDBLOCK:
-        log_it(L_ERROR, "Can't send ptr to queue (err %d), will be resent again in a while...", l_errno);
-        log_it(L_ERROR, "Number of pending messages: %ld", a_es->buf_out_size);
-        s_add_ptr_to_buf(a_es, a_arg);
-        return 0;
-    default:
-        return log_it(L_ERROR, "Can't send ptr to queue, error %d:\"%s\"", l_errno, dap_strerror(l_errno)), l_errno;
-    }
-    l_ret = mq_send(a_es->mqd, (const char *)&a_arg, sizeof (a_arg), 0);
-    l_errno = errno;
-    if ( l_ret == EPERM){
-        log_it(L_ERROR,"No permissions to send data in mqueue");
-    }
-
-    if (l_errno == EINVAL || l_errno == EINTR || l_errno == ETIMEDOUT)
-        l_errno = EAGAIN;
-    if (l_ret == 0)
-        l_ret = sizeof(a_arg);
-    else if (l_ret > 0)
-        l_ret = -l_ret;
-#elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
-    struct timespec l_timeout;
-    clock_gettime(CLOCK_REALTIME, &l_timeout);
-    l_timeout.tv_sec+=2; // Not wait more than 1 second to get and 2 to send
-    int ret = mq_timedsend(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0, &l_timeout );
-    int l_errno = errno;
-    if (ret == sizeof(a_arg) )
-        return  0;
-    else
-        return l_errno;
-#elif defined DAP_EVENTS_CAPS_WEPOLL
-    //return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
-    queue_entry_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
-    l_work_item->data = a_arg;
-    InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry));
-    return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
-
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    struct kevent l_event={0};
-    dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
-    if(!l_es_w_data ) // Out of memory
-        return -666;
-
-    l_es_w_data->esocket = a_es;
-    l_es_w_data->ptr = a_arg;
-    EV_SET(&l_event,a_es->socket+arc4random()  , EVFILT_USER,EV_ADD | EV_ONESHOT, NOTE_FFNOP | NOTE_TRIGGER ,0, l_es_w_data);
-    int l_n;
-    if(a_es->pipe_out){ // If we have pipe out - we send events directly to the pipe out kqueue fd
-        if(a_es->pipe_out->context){
-            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %d",a_arg,a_es);
-            l_n = kevent(a_es->pipe_out->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        }
-        else {
-            log_it(L_WARNING,"Trying to send pointer in pipe out queue thats not assigned to any worker or proc thread");
-            l_n = 0;
-            DAP_DELETE(l_es_w_data);
-        }
-    }else if(a_es->context){
-        l_n = kevent(a_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %d",a_arg,a_es);
-    }else {
-        log_it(L_WARNING,"Trying to send pointer in queue thats not assigned to any worker or proc thread");
-        l_n = 0;
-        DAP_DELETE(l_es_w_data);
-    }
-
-    if(l_n != -1 ){
-        return 0;
-    } else {
-        l_errno = errno;
-        log_it(L_ERROR,"Sending kevent error code %d", l_errno);
-        return l_errno;
-    }
-
-#else
-#error "Not implemented dap_events_socket_queue_ptr_send() for this platform"
-#endif
-    return l_ret == sizeof(a_arg) ? 0 : ( log_it(L_ERROR,"Send queue ptr error %d: \"%s\"", l_errno, dap_strerror(l_errno)), l_errno );
-}
 
 #endif
 

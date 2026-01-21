@@ -206,7 +206,7 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
 
     int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
     return l_ret
-        ? log_it(L_ERROR, "Can't send msg to queue %d, error %d", a_w->queue_es_io->fd, l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
+        ? log_it(L_ERROR, "Can't send msg to queue, error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
         : a_data_size;
 #endif
 }

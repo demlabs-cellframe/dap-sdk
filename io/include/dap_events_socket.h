@@ -139,6 +139,7 @@ typedef struct queue_entry {
 typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_worker dap_worker_t;
 typedef struct dap_context dap_context_t;
+typedef struct dap_context_queue dap_context_queue_t;
 
 /**
  * @brief Single datagram packet for queuing
@@ -516,7 +517,9 @@ DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t
 
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);
-int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
+
+// Compatibility wrapper for old pipe-based API - now uses dap_context_queue
+int dap_events_socket_queue_ptr_send(void *a_queue, void *a_arg);
 #endif
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
