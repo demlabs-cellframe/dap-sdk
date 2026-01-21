@@ -21,18 +21,30 @@ extern "C" {
 
 /**
  * @brief Internal structure of dap_json_t
- * @details Simplified tape-only structure. NO DOM!
+ * @details Hybrid structure supporting both modes:
+ *          - IMMUTABLE: tape-based parsing (read-only, fast)
+ *          - MUTABLE: DOM-based creation (mutable, full API)
  */
 struct dap_json {
     int ref_count;                   /**< Reference counter */
+    dap_json_mode_t mode;            /**< Current mode */
     
-    // Zero-copy support
-    const char *input_buffer;        /**< Original JSON input buffer */
-    size_t input_len;                /**< Input buffer length */
-    
-    // Tape format (ONLY access method)
-    dap_json_tape_entry_t *tape;     /**< Tape array */
-    size_t tape_count;               /**< Number of tape entries */
+    // Mode-specific data (union to save memory)
+    union {
+        // IMMUTABLE mode (parsed JSON → tape)
+        struct {
+            const char *input_buffer;        /**< Original JSON input buffer */
+            size_t input_len;                /**< Input buffer length */
+            dap_json_tape_entry_t *tape;     /**< Tape array */
+            size_t tape_count;               /**< Number of tape entries */
+        } immutable;
+        
+        // MUTABLE mode (created JSON → DOM)
+        struct {
+            dap_json_value_t *value;         /**< Root DOM value */
+            void *stage2;                    /**< stage2 context (for cleanup) */
+        } mutable;
+    } mode_data;
 };
 
 #ifdef __cplusplus

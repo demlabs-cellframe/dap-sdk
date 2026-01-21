@@ -50,8 +50,19 @@ struct dap_json_iterator {
 
 dap_json_iterator_t* dap_json_iterator_new(dap_json_t *a_json)
 {
-    if (!a_json || !a_json->tape || a_json->tape_count == 0) {
-        log_it(L_ERROR, "Invalid JSON object (no tape)");
+    if (!a_json) {
+        log_it(L_ERROR, "NULL JSON object");
+        return NULL;
+    }
+    
+    // Only works for ARENA_IMMUTABLE mode (tape-based parsing)
+    if (a_json->mode != DAP_JSON_MODE_IMMUTABLE) {
+        log_it(L_ERROR, "Iterator only works for parsed JSON (ARENA_IMMUTABLE mode)");
+        return NULL;
+    }
+    
+    if (!a_json->mode_data.immutable.tape || a_json->mode_data.immutable.tape_count == 0) {
+        log_it(L_ERROR, "Empty tape");
         return NULL;
     }
     
@@ -61,11 +72,11 @@ dap_json_iterator_t* dap_json_iterator_new(dap_json_t *a_json)
         return NULL;
     }
     
-    l_iter->tape = a_json->tape;
-    l_iter->tape_count = a_json->tape_count;
+    l_iter->tape = a_json->mode_data.immutable.tape;
+    l_iter->tape_count = a_json->mode_data.immutable.tape_count;
     l_iter->position = 0;
-    l_iter->input_buffer = a_json->input_buffer;
-    l_iter->input_len = a_json->input_len;
+    l_iter->input_buffer = a_json->mode_data.immutable.input_buffer;
+    l_iter->input_len = a_json->mode_data.immutable.input_len;
     l_iter->depth = 0;
     
     return l_iter;

@@ -46,6 +46,7 @@
 #include "dap_json_type.h"
 #include "dap_json_iterator.h"
 #include "dap_arena.h"
+#include "internal/dap_json_internal.h"
 #include "internal/dap_json_stage1.h"
 #include "internal/dap_json_stage2.h"
 #include "internal/dap_json_tape.h"
@@ -103,7 +104,7 @@ bool dap_json_get_debug(void)
 
 /**
  * @brief  Internal storage for mutable arrays
- * @details Used only in MALLOC_MUTABLE mode. Arena arrays use flat indices instead.
+ * @details Used only in MUTABLE mode. Immutable arrays use tape indices.
  *          This is a PRIVATE structure - never exposed in public API.
  */
 typedef struct {
@@ -114,7 +115,7 @@ typedef struct {
 
 /**
  * @brief  Internal storage for mutable objects
- * @details Used only in MALLOC_MUTABLE mode. Arena objects use flat key-value pairs instead.
+ * @details Used only in MUTABLE mode. Immutable objects use tape key-value pairs.
  *          This is a PRIVATE structure - never exposed in public API.
  */
 typedef struct {
@@ -124,39 +125,7 @@ typedef struct {
     size_t capacity;               /**< Allocated capacity */
 } dap_json_object_storage_t;
 
-/**
- * @brief Wrapper structure for public API
- * @details Wraps dap_json_value_t with mode-specific metadata
- */
-struct dap_json {
-    dap_json_value_t *value;         /**< Internal native value */
-    int ref_count;                   /**< Reference counter for dap_json_object_ref */
-    bool owns_value;                 /**< True if wrapper owns value and should free it */
-    
-    dap_json_mode_t mode;            /**< NEW: Operation mode (arena/malloc) */
-    
-    // NEW: Source buffer for zero-copy string access
-    const char *input_buffer;        /**< Original JSON input buffer (for offset-based strings) */
-    size_t input_len;                /**< Input buffer length */
-    
-    //  Tape format for high-performance iteration
-    dap_json_tape_entry_t *tape;     /**< Tape array (NULL if not built) */
-    size_t tape_count;               /**< Number of tape entries */
-    
-    // Mode-specific data (union to save memory)
-    union {
-        // ARENA_IMMUTABLE mode (parsed JSON)
-        struct {
-            void *stage2;                  /**<  Pointer to dap_json_stage2_t (for root only) */
-            struct dap_json *parent;       /**< Parent wrapper for borrowed refs */
-        } arena;
-        
-        // MALLOC_MUTABLE mode (manual JSON)
-        struct {
-            // Reserved for future use (e.g., modification tracking)
-        } malloc;
-    };
-};
+// struct dap_json is defined in internal/dap_json_internal.h
 
 /* ========================================================================== */
 /*                          MODULE INITIALIZATION                             */
@@ -220,17 +189,6 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
  */
 static inline dap_json_t* s_wrap_value(dap_json_value_t *a_value)
 {
-    return s_wrap_value_ex(a_value, true);
-}
-
-/**
- * @brief Wrap dap_json_value_t into dap_json_t (with optional ownership)
- * @param a_value Value to wrap
- * @param a_owns Whether wrapper owns the value
- * @return Wrapper in MALLOC_MUTABLE mode (for manual creation)
- */
-static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns)
-{
     if (!a_value) {
         return NULL;
     }
@@ -241,81 +199,24 @@ static inline dap_json_t* s_wrap_value_ex(dap_json_value_t *a_value, bool a_owns
         return NULL;
     }
     
-    l_json->value = a_value;
     l_json->ref_count = 1;
-    l_json->owns_value = a_owns;
-    
-    // Manual creation → MALLOC_MUTABLE mode
-    l_json->mode = DAP_JSON_MODE_MALLOC_MUTABLE;
-    // malloc union fields are zero-initialized
+    l_json->mode = DAP_JSON_MODE_MUTABLE;
+    l_json->mode_data.mutable.value = a_value;
+    l_json->mode_data.mutable.stage2 = NULL;
     
     return l_json;
 }
 
 /**
- * @brief Wrap value as borrowed reference with parent tracking
- * @param a_value Value to wrap
- * @param a_parent Parent wrapper (will be ref'd to keep it alive)
- * @return Borrowed wrapper that keeps parent alive
- */
-/**
- * @brief Create borrowed reference wrapper with mode awareness
- * @details Creates a wrapper for a value that lives in parent's container.
- *          
- *          ARENA_IMMUTABLE mode (parsed JSON):
- *          - Zero-copy borrowed reference
- *          - Increments arena page refcount
- *          - Borrowed ref can outlive parent (if ref'd)
- *          - Wrapper cached in parent, freed automatically
- *          
- *          MALLOC_MUTABLE mode (manual JSON):
- *          - Creates non-owning wrapper (points to value in parent)
- *          - DOES NOT copy value (lightweight reference)
- *          - Wrapper cached in parent, freed automatically
- *          - Safe because parent owns the value
- *          
- * @param a_value Value to wrap
- * @param a_parent Parent wrapper
- * @return Borrowed wrapper (non-owning, cached)
+ * @brief Create borrowed reference (NOT IMPLEMENTED for hybrid mode yet)
+ * @note Will be implemented when DOM mode is fully restored
  */
 static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_json_t *a_parent)
 {
-    if (!a_value || !a_parent) {
-        return NULL;
-    }
-    
-    dap_json_t *l_json = DAP_NEW_Z(dap_json_t);
-    if (!l_json) {
-        log_it(L_ERROR, "Failed to allocate dap_json_t wrapper");
-        return NULL;
-    }
-    
-    l_json->value = a_value;
-    l_json->ref_count = 1;
-    l_json->owns_value = false; // Borrowed (non-owning)
-    l_json->mode = a_parent->mode; // Inherit mode from parent
-    
-    if (a_parent->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
-        // ARENA mode: Phase 2.0.4 - just keep parent reference
-        // Parent owns stage2/arena, so as long as parent is alive, value is valid
-        l_json->arena.parent = a_parent;
-        //  No arena_page_handle in borrowed refs - parent owns stage2
-        
-        //  Inherit input_buffer for zero-copy strings
-        l_json->input_buffer = a_parent->input_buffer;
-        
-        // Increment parent refcount to keep it alive
-        a_parent->ref_count++;
-        
-        debug_if(s_debug_more, L_DEBUG, "Borrowed ref (ARENA  value=%p, parent=%p (parent refcount=%d)",
-                 a_value, a_parent, a_parent->ref_count);
-    } else {
-        // MALLOC mode: just create wrapper (value owned by parent)
-        debug_if(s_debug_more, L_DEBUG, "Borrowed ref (MALLOC): value=%p, parent=%p (non-owning wrapper)",
-                 a_value, a_parent);
-    }
-    
-    return l_json;
+    (void)a_value;
+    (void)a_parent;
+    log_it(L_ERROR, "Borrowed references not yet implemented in hybrid mode");
+    return NULL;
 }
 
 /**
@@ -323,26 +224,20 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
  */
 static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 {
-    return a_json ? a_json->value : NULL;
+    return a_json && a_json->mode == DAP_JSON_MODE_MUTABLE ? a_json->mode_data.mutable.value : NULL;
 }
 
 /**
- * @brief Get stage2 from wrapper (walk up to root)
- * @details  stage2 is stored only in root wrapper (ARENA_IMMUTABLE mode)
+ * @brief Get stage2 from wrapper
+ * @details stage2 is stored only in MUTABLE mode
  */
 static inline dap_json_stage2_t* s_get_stage2(dap_json_t *a_json)
 {
-    if (!a_json || a_json->mode != DAP_JSON_MODE_ARENA_IMMUTABLE) {
-        return NULL; // Only ARENA mode has stage2
+    if (!a_json || a_json->mode != DAP_JSON_MODE_MUTABLE) {
+        return NULL;
     }
     
-    // Walk up to root
-    while (a_json->arena.parent) {
-        a_json = a_json->arena.parent;
-    }
-    
-    // Root wrapper holds stage2
-    return (dap_json_stage2_t*)a_json->arena.stage2;
+    return (dap_json_stage2_t*)a_json->mode_data.mutable.stage2;
 }
 
 /**
@@ -464,10 +359,11 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     }
     
     l_result->ref_count = 1;
-    l_result->input_buffer = (const char*)l_parse_input;
-    l_result->input_len = l_parse_len;
-    l_result->tape = l_tape;
-    l_result->tape_count = l_tape_count;
+    l_result->mode = DAP_JSON_MODE_IMMUTABLE;
+    l_result->mode_data.immutable.input_buffer = (const char*)l_parse_input;
+    l_result->mode_data.immutable.input_len = l_parse_len;
+    l_result->mode_data.immutable.tape = l_tape;
+    l_result->mode_data.immutable.tape_count = l_tape_count;
     
     // Tape and input_buffer managed by arenas
     
@@ -643,7 +539,7 @@ void dap_json_cleanup_thread_arena(void)
  */
 bool dap_json_is_mutable(const dap_json_t* a_json)
 {
-    return a_json && a_json->mode == DAP_JSON_MODE_MALLOC_MUTABLE;
+    return a_json && a_json->mode == DAP_JSON_MODE_MUTABLE;
 }
 
 /**
@@ -651,7 +547,7 @@ bool dap_json_is_mutable(const dap_json_t* a_json)
  */
 bool dap_json_is_immutable(const dap_json_t* a_json)
 {
-    return a_json && a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE;
+    return a_json && a_json->mode == DAP_JSON_MODE_IMMUTABLE;
 }
 
 /**
@@ -659,7 +555,7 @@ bool dap_json_is_immutable(const dap_json_t* a_json)
  */
 dap_json_mode_t dap_json_get_mode(const dap_json_t* a_json)
 {
-    return a_json ? a_json->mode : DAP_JSON_MODE_MALLOC_MUTABLE; // Default to mutable if NULL
+    return a_json ? a_json->mode : DAP_JSON_MODE_MUTABLE; // Default to mutable if NULL
 }
 
 /* ========================================================================== */
@@ -707,33 +603,50 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
 
 /**
  * @brief Get array length
- * @details  length stored directly in 8-byte dap_json_value_t
+ * @details Works for both modes:
+ *          - ARENA_IMMUTABLE: count elements in tape
+ *          - MALLOC_MUTABLE: use DOM storage
  */
 size_t dap_json_array_length(dap_json_t* a_array)
 {
-    if (!a_array || !a_array->tape || a_array->tape_count == 0) {
+    if (!a_array) {
         return 0;
     }
     
-    // Check if root is array
-    uint8_t l_type = dap_tape_get_type(a_array->tape[0]);
-    if (l_type != TAPE_TYPE_ARRAY_START) {
-        return 0;
+    if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
+        // Tape mode
+        if (!a_array->mode_data.immutable.tape || a_array->mode_data.immutable.tape_count == 0) {
+            return 0;
+        }
+        
+        // Check if root is array
+        uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[0]);
+        if (l_type != TAPE_TYPE_ARRAY_START) {
+            return 0;
+        }
+        
+        // Use jump pointer to get close position
+        uint64_t l_close_idx = dap_tape_get_payload(a_array->mode_data.immutable.tape[0]);
+        
+        // Count elements between start and close
+        size_t l_count = 0;
+        size_t l_pos = 1;  // Skip array start
+        
+        while (l_pos < l_close_idx && l_pos < a_array->mode_data.immutable.tape_count) {
+            l_count++;
+            l_pos = dap_tape_next(a_array->mode_data.immutable.tape, a_array->mode_data.immutable.tape_count, l_pos);
+        }
+        
+        return l_count;
+    } else {
+        // MALLOC_MUTABLE mode - use DOM
+        dap_json_value_t *l_value = a_array->mode_data.mutable.value;
+        if (!l_value || dap_json_get_type_value(l_value) != DAP_JSON_TYPE_ARRAY) {
+            return 0;
+        }
+        
+        return dap_json_get_array_len(l_value);
     }
-    
-    // Use jump pointer to get close position
-    uint64_t l_close_idx = dap_tape_get_payload(a_array->tape[0]);
-    
-    // Count elements between start and close
-    size_t l_count = 0;
-    size_t l_pos = 1;  // Skip array start
-    
-    while (l_pos < l_close_idx && l_pos < a_array->tape_count) {
-        l_count++;
-        l_pos = dap_tape_next(a_array->tape, a_array->tape_count, l_pos);
-    }
-    
-    return l_count;
 }
 
 /* ========================================================================== */
@@ -1020,7 +933,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
     }
     
     //  Check mode
-    if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+    if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
         log_it(L_ERROR, "Cannot delete from ARENA (immutable) array");
         return -1;
     }
@@ -1071,7 +984,7 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     }
     
     //  Check mode
-    if (a_array->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+    if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
         log_it(L_ERROR, "Cannot sort ARENA (immutable) array");
         return;
     }
@@ -1136,7 +1049,6 @@ void dap_json_array_sort(dap_json_t* a_array, dap_json_sort_fn_t a_sort_fn)
     
     // Free wrappers (but not values - they stay in array)
     for (size_t i = 0; i < l_count; i++) {
-        l_wrappers[i]->arena.parent = NULL; // Prevent parent dec-ref
         DAP_DELETE(l_wrappers[i]);
     }
     DAP_DELETE(l_wrappers);
@@ -1538,7 +1450,7 @@ static const char* s_materialize_string(dap_json_t* a_json, dap_json_value_t *a_
     }
     
     // Check mode
-    if (a_json->mode == DAP_JSON_MODE_MALLOC_MUTABLE) {
+    if (a_json->mode == DAP_JSON_MODE_MUTABLE) {
         // MALLOC strings: offset → malloc'd null-terminated string
         return (const char*)(uintptr_t)a_string_value->offset;
     }
@@ -1603,7 +1515,7 @@ const char* dap_json_object_get_string_n(dap_json_t* a_json, const char* a_key, 
     }
     
     //  Zero-copy string access via offset
-    return dap_json_get_ptr(l_value, a_json->input_buffer);
+    return dap_json_get_ptr(l_value, a_json->mode_data.immutable.input_buffer);
 }
 
 /**
@@ -1754,7 +1666,7 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
         dap_json_stage2_t *l_stage2 = s_get_stage2(a_json);
         const char *l_str_ptr;
         
-        if (a_json->mode == DAP_JSON_MODE_MALLOC_MUTABLE) {
+        if (a_json->mode == DAP_JSON_MODE_MUTABLE) {
             l_str_ptr = (const char*)(uintptr_t)l_value->offset;
         } else {
             l_str_ptr = (const char*)l_stage2->input + l_value->offset;
@@ -1997,7 +1909,7 @@ int dap_json_object_del(dap_json_t* a_json, const char* a_key)
     }
     
     // Check mode
-    if (a_json->mode != DAP_JSON_MODE_MALLOC_MUTABLE) {
+    if (a_json->mode != DAP_JSON_MODE_MUTABLE) {
         log_it(L_ERROR, "Cannot delete from ARENA_IMMUTABLE object");
         return -1;
     }
@@ -2169,7 +2081,7 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
     }
     
     //  Zero-copy string access via offset
-    return dap_json_get_ptr(l_value, a_json->input_buffer);
+    return dap_json_get_ptr(l_value, a_json->mode_data.immutable.input_buffer);
 }
 
 /**
@@ -2180,11 +2092,21 @@ const char* dap_json_get_string_n(dap_json_t* a_json, size_t *a_out_length)
  */
 const char* dap_json_get_string(dap_json_t* a_json)
 {
-    if (!a_json || !a_json->tape || a_json->tape_count == 0) {
+    if (!a_json) {
         return NULL;
     }
     
-    // Create iterator at root
+    // For MUTABLE mode, use DOM
+    if (a_json->mode == DAP_JSON_MODE_MUTABLE) {
+        dap_json_value_t *l_value = s_unwrap_value(a_json);
+        if (!l_value) {
+            return NULL;
+        }
+        // Return pointer from value (already null-terminated in DOM mode)
+        return dap_json_get_string_value(l_value);
+    }
+    
+    // For IMMUTABLE mode, use iterator
     dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
     if (!l_iter) {
         return NULL;
@@ -2348,22 +2270,33 @@ size_t dap_json_object_length(dap_json_t* a_json)
  */
 dap_json_type_t dap_json_get_type(dap_json_t* a_json)
 {
-    if (!a_json || !a_json->tape || a_json->tape_count == 0) {
+    if (!a_json) {
         return DAP_JSON_TYPE_NULL;
     }
     
-    // Root is always first tape entry
-    uint8_t l_type = dap_tape_get_type(a_json->tape[0]);
-    
-    switch (l_type) {
-        case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
-        case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
-        case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;
-        case TAPE_TYPE_NUMBER:        return DAP_JSON_TYPE_INT;
-        case TAPE_TYPE_TRUE:
-        case TAPE_TYPE_FALSE:         return DAP_JSON_TYPE_BOOLEAN;
-        case TAPE_TYPE_NULL:          return DAP_JSON_TYPE_NULL;
-        default:                      return DAP_JSON_TYPE_NULL;
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        // Tape mode
+        if (!a_json->mode_data.immutable.tape || a_json->mode_data.immutable.tape_count == 0) {
+            return DAP_JSON_TYPE_NULL;
+        }
+        
+        // Root is always first tape entry
+        uint8_t l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[0]);
+        
+        switch (l_type) {
+            case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
+            case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
+            case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;
+            case TAPE_TYPE_NUMBER:        return DAP_JSON_TYPE_INT;
+            case TAPE_TYPE_TRUE:
+            case TAPE_TYPE_FALSE:         return DAP_JSON_TYPE_BOOLEAN;
+            case TAPE_TYPE_NULL:          return DAP_JSON_TYPE_NULL;
+            default:                      return DAP_JSON_TYPE_NULL;
+        }
+    } else {
+        // MUTABLE mode - use DOM
+        dap_json_value_t *l_value = s_unwrap_value(a_json);
+        return l_value ? dap_json_get_type_value(l_value) : DAP_JSON_TYPE_NULL;
     }
 }
 
@@ -2385,7 +2318,7 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
     }
     
     // Mode-aware iteration
-    if (a_json->mode == DAP_JSON_MODE_ARENA_IMMUTABLE) {
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
         // ARENA: iterate using offset-based pairs in stage2
         dap_json_stage2_t *l_stage2 = s_get_stage2(a_json);
         if (!l_stage2) {

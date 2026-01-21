@@ -81,11 +81,11 @@ typedef struct dap_json dap_json_t;
 
 /**
  * @brief JSON operation mode
- * @details Determines memory model and mutability semantics
+ * @details Determines parsing vs creation semantics
  */
 typedef enum {
-    DAP_JSON_MODE_ARENA_IMMUTABLE,   /**< Arena-based, parsed JSON (read-only, fast borrowed refs) */
-    DAP_JSON_MODE_MALLOC_MUTABLE     /**< Malloc-based, manual JSON (mutable, no borrowed refs) */
+    DAP_JSON_MODE_IMMUTABLE,   /**< Parsed JSON (tape-based, read-only, fast) */
+    DAP_JSON_MODE_MUTABLE      /**< Created JSON (DOM-based, mutable, full API) */
 } dap_json_mode_t;
 
 typedef int (*dap_json_sort_fn_t)(const dap_json_t *a, const dap_json_t *b);
