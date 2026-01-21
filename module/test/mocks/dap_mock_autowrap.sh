@@ -172,6 +172,16 @@ prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}" || {
     exit 1
 }
 
+# CRITICAL: Export variables for template processor (dap_tpl) to access in {{#include}} directives
+# Convert PARAM_COUNTS_ARRAY to pipe-separated string for dap_tpl
+PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${PARAM_COUNTS_ARRAY[*]}")
+export PARAM_COUNTS_LIST="$PARAM_COUNTS_ARRAY_PIPE"
+export MAX_ARGS_COUNT
+export MAP_COUNT_PARAMS_BY_COUNT_DATA
+export MAP_COUNT_PARAMS_HELPER_DATA  
+export MAP_IMPL_COND_1_DATA
+export MAP_IMPL_COND_DATA
+
 # Step 7: Generate specialized macros header file
 generate_macros_file "$MACROS_FILE" "$TMP_CUSTOM_MOCKS" || {
     print_error "Failed to generate macros file"

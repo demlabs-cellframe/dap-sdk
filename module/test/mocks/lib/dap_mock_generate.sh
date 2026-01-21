@@ -144,30 +144,13 @@ generate_macros_file() {
     # dap_tpl for_evaluator expects pipe-separated or newline-separated arrays
     PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${PARAM_COUNTS_ARRAY[*]}")
     
-    # NOTE: DO NOT set PARAM_COUNTS_ARRAY in environment here - it will corrupt the global array!
-    # The template only needs PARAM_COUNTS_ARRAY_PIPE (passed as argument below)
+    # NOTE: Variables already exported in main script (dap_mock_autowrap.sh)
+    # Just call template processor - it will use PARAM_COUNTS_LIST from environment
     
-    # WORKAROUND: Pass variables via file to avoid export issues in nested shells
-    # Create temporary file with all template variables
-    local template_vars_file=$(create_temp_file "template_vars")
-    cat > "$template_vars_file" << TEMPLATE_VARS_EOF
-export PARAM_COUNTS_LIST='$PARAM_COUNTS_ARRAY_PIPE'
-export MAX_ARGS_COUNT='$MAX_ARGS_COUNT'
-export MAP_COUNT_PARAMS_BY_COUNT_DATA='$MAP_COUNT_PARAMS_BY_COUNT_DATA'
-export MAP_COUNT_PARAMS_HELPER_DATA='$MAP_COUNT_PARAMS_HELPER_DATA'
-export MAP_IMPL_COND_1_DATA='$MAP_IMPL_COND_1_DATA'
-export MAP_IMPL_COND_DATA='$MAP_IMPL_COND_DATA'
-TEMPLATE_VARS_EOF
-    
-    # Source variables file and generate .map_content
-    (
-        source "$template_vars_file"
-        replace_template_placeholders_with_mocking \
-            "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
-            "${macros_file}.map_content"
-    )
-    
-    rm -f "$template_vars_file"
+    # Generate .map_content file with all MAP macros via template processor
+    replace_template_placeholders_with_mocking \
+        "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
+        "${macros_file}.map_content"
     
     # Export file paths for template processing
     export RETURN_TYPE_MACROS_FILE="$return_type_macros_file"
