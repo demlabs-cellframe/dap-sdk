@@ -281,7 +281,8 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
         // After shift, MSB will be at position 63 of new high
         debug_if(dap_json_get_debug(), L_DEBUG, "Mantissa: normalizing with lz=%d", l_lz);
         
-        uint64_t l_norm_high, l_norm_low;
+        uint64_t l_norm_high;
+        uint64_t l_norm_low __attribute__((unused));  // Used in computation but result not needed
         if (l_lz < 64) {
             // Shift 128-bit left by lz
             l_norm_high = (l_prod_high << l_lz) | (l_prod_low >> (64 - l_lz));

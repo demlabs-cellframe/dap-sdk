@@ -2584,4 +2584,45 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
     }
 }
 
+/* ========================================================================== */
+/*                          LEGACY JSON-C API                                 */
+/* ========================================================================== */
+
+/**
+ * @brief Legacy json-c API: parse with verbose error reporting
+ */
+dap_json_t* dap_json_tokener_parse_verbose(const char* a_str, dap_json_tokener_error_t* a_error)
+{
+    dap_json_t *l_result = dap_json_parse_string(a_str);
+    
+    if (a_error) {
+        *a_error = l_result ? DAP_JSON_TOKENER_SUCCESS : DAP_JSON_TOKENER_ERROR_PARSE_EOF;
+    }
+    
+    return l_result;
+}
+
+/**
+ * @brief Legacy json-c API: get error description
+ */
+const char* dap_json_tokener_error_desc(dap_json_tokener_error_t a_error)
+{
+    switch (a_error) {
+        case DAP_JSON_TOKENER_SUCCESS: return "success";
+        case DAP_JSON_TOKENER_ERROR_PARSE_EOF: return "unexpected end of data";
+        case DAP_JSON_TOKENER_ERROR_PARSE_UNEXPECTED: return "unexpected character";
+        case DAP_JSON_TOKENER_ERROR_PARSE_NULL: return "error parsing null";
+        case DAP_JSON_TOKENER_ERROR_PARSE_BOOLEAN: return "error parsing boolean";
+        case DAP_JSON_TOKENER_ERROR_PARSE_NUMBER: return "error parsing number";
+        case DAP_JSON_TOKENER_ERROR_PARSE_ARRAY: return "error parsing array";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_NAME: return "error parsing object key";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_KEY_SEP: return "error parsing object key separator";
+        case DAP_JSON_TOKENER_ERROR_PARSE_OBJECT_VALUE_SEP: return "error parsing object value separator";
+        case DAP_JSON_TOKENER_ERROR_PARSE_STRING: return "error parsing string";
+        case DAP_JSON_TOKENER_ERROR_PARSE_COMMENT: return "error parsing comment";
+        case DAP_JSON_TOKENER_ERROR_DEPTH: return "maximum nesting depth exceeded";
+        default: return "unknown error";
+    }
+}
+
 // End of file
