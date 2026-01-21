@@ -1095,10 +1095,28 @@ dap_json_value_t *dap_json_array_v2_get(const dap_json_value_t *a_array, size_t 
  */
 dap_json_value_t *dap_json_object_v2_get(const dap_json_value_t *a_object, const char *a_key)
 {
-    (void)a_object;
-    (void)a_key;
-    log_it(L_ERROR, "dap_json_object_v2_get: REMOVED in Phase 2.0.4 - use dap_json_object_get() with wrapper");
-    return NULL;
+    if (!a_object || !a_key) {
+        return NULL;
+    }
+    
+    if (a_object->type != DAP_JSON_TYPE_OBJECT) {
+        return NULL;
+    }
+    
+    // MUTABLE mode: use storage
+    dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_object);
+    if (!l_storage) {
+        return NULL;
+    }
+    
+    // Linear search (OK for small objects, can optimize later with hash table)
+    for (size_t i = 0; i < l_storage->count; i++) {
+        if (l_storage->keys[i] && strcmp(l_storage->keys[i], a_key) == 0) {
+            return l_storage->values[i];
+        }
+    }
+    
+    return NULL; // Key not found
 }
 
 /* ========================================================================== */
