@@ -70,6 +70,7 @@ extern "C" {
 typedef struct dap_io_flow dap_io_flow_t;
 typedef struct dap_io_flow_server dap_io_flow_server_t;
 typedef struct dap_io_flow_ops dap_io_flow_ops_t;
+typedef struct dap_context_queue dap_context_queue_t;
 
 /**
  * @brief Load balancing tier enum
@@ -124,6 +125,7 @@ struct dap_io_flow {
     time_t last_activity;                   ///< Last packet timestamp (for timeout)
     uint32_t owner_worker_id;               ///< Owner worker ID
     _Atomic size_t remote_access_count;     ///< Cross-worker access counter
+    dap_io_flow_server_t *server;           ///< Back-reference to server (for cross-worker forwarding)
     
     // Protocol configuration
     dap_io_flow_boundary_type_t boundary_type;  ///< Data boundary type
@@ -333,9 +335,9 @@ struct dap_io_flow_server {
     dap_io_flow_t **flows_per_worker;       ///< Flow hash tables [worker_id]
     pthread_rwlock_t *flow_locks_per_worker; ///< RW locks for hash tables
     
-    // Inter-worker queues for zero-copy packet forwarding
-    dap_events_socket_t ***inter_worker_queues;  ///< Queue outputs [src_worker][dst_worker]
-    dap_events_socket_t **queue_inputs;     ///< Queue inputs [worker_id]
+    // Inter-worker queues for lock-free packet forwarding (ring buffer based)
+    dap_context_queue_t ***inter_worker_queues;  ///< Queue outputs [src_worker][dst_worker]
+    dap_context_queue_t **queue_inputs;     ///< Queue inputs [worker_id]
     
     // Synchronization for graceful cleanup
     pthread_mutex_t cleanup_mutex;          ///< Mutex for cleanup synchronization

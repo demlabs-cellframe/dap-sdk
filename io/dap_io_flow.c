@@ -33,6 +33,7 @@
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
 #include "dap_context.h"
+#include "dap_context_queue.h"
 #include "dap_proc_thread.h"
 #include "dap_arena.h"
 
@@ -47,7 +48,6 @@ static bool s_debug_more = false;
 static __thread dap_arena_t *tl_cross_worker_arena = NULL;
 
 // Forward declarations for internal structures
-typedef struct flow_worker_context flow_worker_context_t;
 typedef struct flow_cross_worker_packet flow_cross_worker_packet_t;
 
 /**
@@ -64,20 +64,9 @@ struct flow_cross_worker_packet {
     void *page_handle;                      // Arena page handle for refcounting
 };
 
-/**
- * @brief Per-worker context for inter-worker communication
- */
-struct flow_worker_context {
-    uint32_t worker_id;
-    dap_events_socket_t *queue_input_es;     // Queue input for receiving from other workers
-    dap_events_socket_t **queue_output_es;   // Queue outputs to other workers
-    _Atomic size_t packets_sent;
-    _Atomic size_t packets_received;
-};
-
 // Forward declarations for internal functions
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
-static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr);
+static void s_queue_ptr_callback(void *a_ptr);
 static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server);
 static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server, 
                                       uint32_t a_from_worker_id,
@@ -291,85 +280,13 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
 }
 
 /**
- * @brief Callback argument for queue input cleanup
- */
-typedef struct queue_input_cleanup_arg {
-    dap_events_socket_t *queue_input;      ///< Queue input to delete
-    dap_io_flow_server_t *server;          ///< Server for synchronization
-    uint32_t worker_id;                    ///< Worker ID (for logging)
-} queue_input_cleanup_arg_t;
-
-/**
- * @brief Callback to delete queue input on its native worker
- * 
- * Called via dap_proc_thread_callback_add to ensure queue_input is deleted
- * in the correct worker context. Decrements pending counter and signals
- * condition variable when all deletions complete.
- * 
- * @param a_arg queue_input_cleanup_arg_t* (freed by this callback)
- * @return false (one-shot callback)
- */
-static bool s_queue_input_delete_callback(void *a_arg)
-{
-    queue_input_cleanup_arg_t *l_arg = (queue_input_cleanup_arg_t*)a_arg;
-    
-    if (!l_arg) {
-        log_it(L_ERROR, "queue cleanup callback: NULL argument");
-        // NOTE: This should NEVER happen as we always allocate l_arg before scheduling
-        // But if it does, we still need to decrement active_callbacks
-        // (we don't have server pointer, so this is a leak - but prevents hang)
-        return false;
-    }
-    
-    // NOTE: active_callbacks was already incremented BEFORE scheduling this callback
-    // (in dap_io_flow_server_delete loop, before dap_proc_thread_callback_add)
-    // This prevents main thread from destroying sync primitives before we start
-    
-    debug_if(s_debug_more, L_DEBUG, 
-             "Deleting queue_input %p on worker %u (native context)", 
-             l_arg->queue_input, l_arg->worker_id);
-    
-    // Delete queue_input in its native worker context
-    // remove_and_delete_unsafe calls dap_context_remove to unregister from epoll AND hash
-    if (l_arg->queue_input) {
-        dap_events_socket_remove_and_delete_unsafe(l_arg->queue_input, true);  // Preserve inheritor
-    }
-    
-    // Decrement pending counter and signal if all done
-    if (l_arg->server) {
-        uint32_t l_remaining = atomic_fetch_sub(&l_arg->server->pending_cleanups, 1) - 1;
-        
-        debug_if(s_debug_more, L_DEBUG, 
-                 "Queue input deleted on worker %u, remaining=%u", 
-                 l_arg->worker_id, l_remaining);
-        
-        if (l_remaining == 0) {
-            // All queue_inputs deleted - signal waiting thread
-            pthread_mutex_lock(&l_arg->server->cleanup_mutex);
-            pthread_cond_signal(&l_arg->server->cleanup_cond);
-            pthread_mutex_unlock(&l_arg->server->cleanup_mutex);
-            
-            log_it(L_DEBUG, "All queue_inputs deleted, signaled main thread");
-        }
-        
-        // CRITICAL: Decrement active_callbacks counter LAST (before return)
-        // This tells main thread that we're done using sync primitives
-        // MUST be called on ALL code paths to match the increment before scheduling
-        atomic_fetch_sub(&l_arg->server->active_callbacks, 1);
-    }
-    
-    DAP_DELETE(l_arg);
-    return false; // One-shot callback
-}
-
-/**
  * @brief Delete IO flow server and cleanup all resources
  * 
- * CORRECT ORDER (all dap_io_flow resources deleted BEFORE stop):
+ * Simplified cleanup with lock-free context queues:
  * 1. Cleanup flows (user data)
- * 2. Delete inter_worker_queues (outputs)
- * 3. Delete queue_inputs via proc_thread callbacks (pthread_cond wait)
- * 4. Stop server (listeners) - NOW safe, all flow resources deleted
+ * 2. Free inter_worker_queues reference arrays
+ * 3. Delete queue_inputs (context queues)
+ * 4. Stop server (listeners)
  * 5. Free structures
  */
 void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
@@ -410,235 +327,29 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
     }
     
-    // Step 2: Delete inter_worker_queues (outputs) - close write ends of pipes
-    // These are on workers, must use MT-safe deletion
+    // Step 2: Delete inter_worker_queues references
+    // Note: inter_worker_queues[i][j] just references queue_inputs[j]
+    // So we only need to free the array pointers, not the queues themselves
     if (a_server->inter_worker_queues) {
-        log_it(L_DEBUG, "Deleting inter-worker queue OUTPUTS (write ends)");
+        log_it(L_DEBUG, "Freeing inter-worker queue reference arrays");
         for (uint32_t i = 0; i < l_worker_count; i++) {
-            if (a_server->inter_worker_queues[i]) {
-                for (uint32_t j = 0; j < l_worker_count; j++) {
-                    if (i != j && a_server->inter_worker_queues[i][j]) {
-                        dap_worker_t *l_worker = dap_events_worker_get(i);
-                        dap_events_socket_uuid_t l_uuid = a_server->inter_worker_queues[i][j]->uuid;
-                        
-                        // Use MT-safe deletion (queue output is on worker i)
-                        if (l_worker) {
-                            dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
-                        }
-                        
-                        a_server->inter_worker_queues[i][j] = NULL;
-                    }
-                }
-                DAP_DELETE(a_server->inter_worker_queues[i]);
-            }
+            DAP_DELETE(a_server->inter_worker_queues[i]);
         }
         DAP_DELETE(a_server->inter_worker_queues);
     }
     
-    // Step 3: Delete queue_inputs (read ends) - wait for graceful cleanup
-    // These esockets are on workers, need to schedule deletion via worker callbacks
+    // Step 3: Delete queue_inputs (actual queues)
+    // These can be deleted directly as they're not esockets anymore
     if (a_server->queue_inputs) {
-        log_it(L_DEBUG, "Scheduling queue_inputs deletion via worker callbacks");
-        
-        // Count non-NULL queue_inputs
-        uint32_t l_pending_count = 0;
+        log_it(L_DEBUG, "Deleting queue_inputs (context queues)");
         for (uint32_t i = 0; i < l_worker_count; i++) {
             if (a_server->queue_inputs[i]) {
-                l_pending_count++;
+                dap_context_queue_delete(a_server->queue_inputs[i]);
+                a_server->queue_inputs[i] = NULL;
             }
         }
-        
-        if (l_pending_count > 0) {
-            // Set pending counter
-            atomic_store(&a_server->pending_cleanups, l_pending_count);
-            
-            // Save UUIDs of queue_inputs for lifecycle tracking
-            dap_events_socket_uuid_t *l_queue_uuids = DAP_NEW_Z_COUNT(dap_events_socket_uuid_t, l_pending_count);
-            if (!l_queue_uuids) {
-                log_it(L_CRITICAL, "Failed to allocate UUID tracking array - proceeding without UUID tracking");
-            }
-            
-            uint32_t l_uuid_index = 0;
-            if (l_queue_uuids) {
-                for (uint32_t i = 0; i < l_worker_count; i++) {
-                    if (a_server->queue_inputs[i]) {
-                        l_queue_uuids[l_uuid_index++] = a_server->queue_inputs[i]->uuid;
-                    }
-                }
-            }
-            
-            // Schedule deletions on each worker via proc_thread callbacks
-            for (uint32_t i = 0; i < l_worker_count; i++) {
-                if (a_server->queue_inputs[i]) {
-                    dap_worker_t *l_worker = dap_events_worker_get(i);
-                    if (!l_worker || !l_worker->proc_queue_input) {
-                        log_it(L_ERROR, "Worker %u or its proc_queue not found", i);
-                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
-                        continue;
-                    }
-                    
-                    queue_input_cleanup_arg_t *l_arg = DAP_NEW_Z(queue_input_cleanup_arg_t);
-                    if (!l_arg) {
-                        log_it(L_ERROR, "Failed to allocate cleanup arg for worker %u", i);
-                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
-                        continue;
-                    }
-                    
-                    l_arg->queue_input = a_server->queue_inputs[i];
-                    l_arg->server = a_server;
-                    l_arg->worker_id = i;
-                    
-                    // Increment active_callbacks BEFORE scheduling callback
-                    atomic_fetch_add(&a_server->active_callbacks, 1);
-                    
-                    // Schedule callback on worker's proc_thread queue
-                    int l_ret = dap_proc_thread_callback_add(l_worker->proc_queue_input, 
-                                                              s_queue_input_delete_callback, 
-                                                              l_arg);
-                    if (l_ret != 0) {
-                        log_it(L_ERROR, "Failed to schedule cleanup callback for worker %u: %d", i, l_ret);
-                        atomic_fetch_sub(&a_server->pending_cleanups, 1);
-                        atomic_fetch_sub(&a_server->active_callbacks, 1); // Rollback
-                        DAP_DELETE(l_arg);
-                        continue;
-                    }
-                    
-                    a_server->queue_inputs[i] = NULL; // Marked for deletion
-                }
-            }
-            
-            // Wait for all deletions to complete
-            log_it(L_DEBUG, "Waiting for %u queue_inputs to be deleted...", l_pending_count);
-            pthread_mutex_lock(&a_server->cleanup_mutex);
-            
-            struct timespec l_timeout;
-            clock_gettime(CLOCK_REALTIME, &l_timeout);
-            l_timeout.tv_sec += 10; // 10 second timeout
-            
-            // STEP 1: Wait for all callbacks to be scheduled and signal (pending_cleanups==0)
-            while (atomic_load(&a_server->pending_cleanups) > 0) {
-                int l_ret = pthread_cond_timedwait(&a_server->cleanup_cond,
-                                                   &a_server->cleanup_mutex,
-                                                   &l_timeout);
-                if (l_ret == ETIMEDOUT) {
-                    uint32_t l_still_pending = atomic_load(&a_server->pending_cleanups);
-                    log_it(L_WARNING, "Timeout waiting for queue_inputs deletion, %u still pending",
-                           l_still_pending);
-                    break;
-                }
-            }
-            
-            log_it(L_DEBUG, "All queue_inputs deleted (pending_cleanups==0)");
-            
-            // STEP 2: Wait for ALL callbacks to FULLY COMPLETE execution (active_callbacks==0)
-            struct timespec l_active_timeout;
-            clock_gettime(CLOCK_REALTIME, &l_active_timeout);
-            l_active_timeout.tv_sec += 5; // 5 second timeout for callbacks to exit
-            
-            while (atomic_load(&a_server->active_callbacks) > 0) {
-                struct timespec l_short_wait;
-                clock_gettime(CLOCK_REALTIME, &l_short_wait);
-                l_short_wait.tv_nsec += 10000000; // 10ms
-                if (l_short_wait.tv_nsec >= 1000000000) {
-                    l_short_wait.tv_sec += 1;
-                    l_short_wait.tv_nsec -= 1000000000;
-                }
-                
-                pthread_cond_timedwait(&a_server->cleanup_cond, 
-                                      &a_server->cleanup_mutex, 
-                                      &l_short_wait);
-                
-                struct timespec l_now;
-                clock_gettime(CLOCK_REALTIME, &l_now);
-                if (l_now.tv_sec >= l_active_timeout.tv_sec) {
-                    uint32_t l_still_active = atomic_load(&a_server->active_callbacks);
-                    log_it(L_WARNING, "Timeout waiting for %u active callbacks to exit", l_still_active);
-                    break;
-                }
-            }
-            
-            pthread_mutex_unlock(&a_server->cleanup_mutex);
-            log_it(L_DEBUG, "All callbacks fully exited (active_callbacks==0)");
-            
-            // Memory barrier
-            __atomic_thread_fence(__ATOMIC_SEQ_CST);
-            
-            // STEP 3: Poll until all queue_input UUIDs are removed from worker contexts
-            // This ensures workers finished processing events from deleted esockets
-            if (l_queue_uuids) {
-                time_t l_uuid_wait_start = time(NULL);
-                time_t l_uuid_max_wait_sec = 5;  // 5 second max
-                
-                log_it(L_DEBUG, "Polling for %u queue_input UUIDs to be removed from worker hash tables", l_uuid_index);
-                
-                bool l_all_removed = false;
-                uint32_t l_poll_count = 0;
-                
-                while (time(NULL) - l_uuid_wait_start < l_uuid_max_wait_sec) {
-                    l_all_removed = true;
-                    l_poll_count++;
-                    
-                    // Check if any UUID still exists in worker hash tables
-                    for (uint32_t i = 0; i < l_uuid_index; i++) {
-                        bool l_found = false;
-                        
-                        // Search all worker contexts for this UUID
-                        for (uint32_t w = 0; w < l_worker_count; w++) {
-                            dap_worker_t *l_worker = dap_events_worker_get(w);
-                            if (l_worker && l_worker->context) {
-                                dap_events_socket_t *l_check = dap_context_find(l_worker->context, l_queue_uuids[i]);
-                                if (l_check) {
-                                    l_found = true;
-                                    l_all_removed = false;
-                                    
-                                    if (l_poll_count % 100 == 0) {  // Log every 100 polls (~1 sec)
-                                        log_it(L_DEBUG, "UUID 0x%016lx still in worker %u hash table (poll #%u)",
-                                               l_queue_uuids[i], w, l_poll_count);
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if (l_found) {
-                            break;  // Still has UUIDs, keep waiting
-                        }
-                    }
-                    
-                    if (l_all_removed) {
-                        log_it(L_DEBUG, "All queue_input UUIDs removed from workers after %u polls, safe to free",
-                               l_poll_count);
-                        break;
-                    }
-                    
-                    // Poll interval
-                    struct timespec l_sleep = {0, 10000000};  // 10ms
-                    nanosleep(&l_sleep, NULL);
-                }
-                
-                if (!l_all_removed) {
-                    log_it(L_WARNING, "Timeout waiting for UUID removal after %ld sec (%u polls)",
-                           l_uuid_max_wait_sec, l_poll_count);
-                    // Log which UUIDs are still present
-                    for (uint32_t i = 0; i < l_uuid_index; i++) {
-                        for (uint32_t w = 0; w < l_worker_count; w++) {
-                            dap_worker_t *l_worker = dap_events_worker_get(w);
-                            if (l_worker && l_worker->context) {
-                                if (dap_context_find(l_worker->context, l_queue_uuids[i])) {
-                                    log_it(L_WARNING, "UUID 0x%016lx still in worker %u", l_queue_uuids[i], w);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            DAP_DELETE(l_queue_uuids);
-        }
-        
-        log_it(L_DEBUG, "Freeing queue_inputs array");
         DAP_DELETE(a_server->queue_inputs);
-        log_it(L_DEBUG, "queue_inputs array freed");
+        log_it(L_DEBUG, "All queue_inputs deleted");
     }
     
     // Step 4: Stop server (listeners) - NOW it's safe
@@ -1064,6 +775,7 @@ create_local:
             memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
             l_flow->remote_addr_len = a_remote_addr_len;
             l_flow->owner_worker_id = l_worker->id;
+            l_flow->server = a_server;  // Back-reference for cross-worker forwarding
             l_flow->last_activity = time(NULL);
             l_flow->boundary_type = a_server->boundary_type;
             
@@ -1203,6 +915,9 @@ static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
 
 /**
  * @brief Initialize inter-worker queues for cross-worker forwarding
+ * 
+ * Creates lock-free ring buffer based queues for each worker pair.
+ * Uses dap_context_queue instead of pipe-based queues.
  */
 static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
 {
@@ -1214,28 +929,28 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
     }
     
     // Allocate queue inputs array (one per worker)
-    a_server->queue_inputs = DAP_NEW_Z_COUNT(dap_events_socket_t*, l_worker_count);
+    a_server->queue_inputs = DAP_NEW_Z_COUNT(dap_context_queue_t*, l_worker_count);
     if (!a_server->queue_inputs) {
         log_it(L_ERROR, "Failed to allocate queue inputs array");
         return -1;
     }
     
     // Allocate queue outputs 2D array [src_worker][dst_worker]
-    a_server->inter_worker_queues = DAP_NEW_Z_COUNT(dap_events_socket_t**, l_worker_count);
+    a_server->inter_worker_queues = DAP_NEW_Z_COUNT(dap_context_queue_t**, l_worker_count);
     if (!a_server->inter_worker_queues) {
         log_it(L_ERROR, "Failed to allocate queue outputs array");
         return -2;
     }
     
     for (uint32_t i = 0; i < l_worker_count; i++) {
-        a_server->inter_worker_queues[i] = DAP_NEW_Z_COUNT(dap_events_socket_t*, l_worker_count);
+        a_server->inter_worker_queues[i] = DAP_NEW_Z_COUNT(dap_context_queue_t*, l_worker_count);
         if (!a_server->inter_worker_queues[i]) {
             log_it(L_ERROR, "Failed to allocate queue outputs for worker %u", i);
             return -3;
         }
     }
     
-    // Create queue inputs for each worker
+    // Create queue inputs for each worker (receiving side)
     for (uint32_t dst = 0; dst < l_worker_count; dst++) {
         dap_worker_t *l_dst_worker = dap_events_worker_get(dst);
         if (!l_dst_worker) {
@@ -1243,62 +958,39 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
             return -4;
         }
         
-        // Create queue input esocket directly on destination worker's context
-        // This ensures it's immediately added to epoll and can receive events
-        a_server->queue_inputs[dst] = dap_context_create_queue(
-            l_dst_worker->context, s_queue_ptr_callback);
+        // Create context queue on destination worker's context
+        a_server->queue_inputs[dst] = dap_context_queue_create(
+            l_dst_worker->context, 0, s_queue_ptr_callback);
         
         if (!a_server->queue_inputs[dst]) {
             log_it(L_ERROR, "Failed to create queue input for worker %u", dst);
             return -5;
         }
         
-        a_server->queue_inputs[dst]->worker = l_dst_worker;
-        a_server->queue_inputs[dst]->_inheritor = a_server;
-        
         debug_if(s_debug_more, L_DEBUG, 
-                 "Created queue_input[%u]: es=%p, fd=%d, worker=%u, callback=%p",
-                 dst, a_server->queue_inputs[dst], 
-                 a_server->queue_inputs[dst]->fd,
-                 l_dst_worker->id,
-                 a_server->queue_inputs[dst]->callbacks.queue_ptr_callback);
+                 "Created queue_input[%u]: queue=%p, worker=%u",
+                 dst, a_server->queue_inputs[dst], l_dst_worker->id);
     }
     
-    // Create queue outputs from each source worker to each destination worker
+    // Setup queue references for cross-worker communication
+    // Each worker i can send to any other worker j via inter_worker_queues[i][j]
     for (uint32_t src = 0; src < l_worker_count; src++) {
-        dap_worker_t *l_src_worker = dap_events_worker_get(src);
-        if (!l_src_worker) {
-            log_it(L_ERROR, "Worker %u not found for queue output", src);
-            return -7;
-        }
-        
         for (uint32_t dst = 0; dst < l_worker_count; dst++) {
             if (src == dst) {
                 continue;  // No queue to self
             }
             
-            // Create queue output esocket (linked to queue input)
-            dap_events_socket_t *l_queue_out = dap_events_socket_queue_ptr_create_input(
-                a_server->queue_inputs[dst]);
-            
-            if (!l_queue_out) {
-                log_it(L_ERROR, "Failed to create queue output %u -> %u", src, dst);
-                return -6;
-            }
-            
-            // Add queue output to SOURCE worker so reactor can flush buf_out to pipe
-            // Use thread-safe version because we're in main thread adding to specific worker
-            dap_worker_add_events_socket(l_src_worker, l_queue_out);
+            // Reference the destination worker's input queue
+            // Multiple source workers can push to the same destination queue (thread-safe)
+            a_server->inter_worker_queues[src][dst] = a_server->queue_inputs[dst];
             
             debug_if(s_debug_more, L_DEBUG, 
-                     "Added queue_output[%u->%u]: es=%p, fd=%d to worker %u",
-                     src, dst, l_queue_out, l_queue_out->fd, src);
-            
-            a_server->inter_worker_queues[src][dst] = l_queue_out;
+                     "Linked queue_output[%u->%u] to queue_input[%u]",
+                     src, dst, dst);
         }
     }
     
-    log_it(L_INFO, "Initialized inter-worker queues for %u workers", l_worker_count);
+    log_it(L_INFO, "Initialized inter-worker queues for %u workers (lock-free ring buffers)", l_worker_count);
     return 0;
 }
 
@@ -1308,32 +1000,33 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
  * Called by reactor when packet pointer arrives from another worker's queue.
  * Processes the packet and frees the cross-worker packet structure.
  */
-static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
+static void s_queue_ptr_callback(void *a_ptr)
 {
-    debug_if(s_debug_more, L_DEBUG, "Queue callback ENTRY: a_es=%p, a_ptr=%p", a_es, a_ptr);
+    debug_if(s_debug_more, L_DEBUG, "Queue callback ENTRY: a_ptr=%p", a_ptr);
     
     if (!a_ptr) {
         debug_if(s_debug_more, L_DEBUG, "Queue callback: a_ptr is NULL, returning");
         return;
     }
     
-    dap_io_flow_server_t *l_server = (dap_io_flow_server_t*)a_es->_inheritor;
-    if (!l_server) {
-        log_it(L_ERROR, "Queue callback: server not found in _inheritor");
+    struct flow_cross_worker_packet *l_packet = (struct flow_cross_worker_packet*)a_ptr;
+    
+    // Get server from packet->flow (flow always knows its server)
+    if (!l_packet->flow || !l_packet->flow->server) {
+        log_it(L_ERROR, "Queue callback: flow or server not found in packet");
         // NOTE: Do NOT free a_ptr - it's allocated from thread-local arena!
         // Arena memory is automatically reused
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", l_server, l_server->lb_tier);
+    dap_io_flow_server_t *l_server = l_packet->flow->server;
     
-    struct flow_cross_worker_packet *l_packet = (struct flow_cross_worker_packet*)a_ptr;
+    debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", l_server, l_server->lb_tier);
     
     // Increment statistics
     atomic_fetch_add(&l_server->cross_worker_packets, 1);
     
     // CRITICAL: Find REAL UDP listener for current worker!
-    // Do NOT pass queue esocket (a_es) - it's type=10 (QUEUE), not type=4 (UDP)!
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_events_socket_t *l_real_listener = NULL;
     
@@ -1372,16 +1065,16 @@ static void s_queue_ptr_callback(dap_events_socket_t *a_es, void *a_ptr)
     }
     
     if (!l_real_listener) {
-        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (queue fd=%d, type=%d, tier=%d)",
-               l_worker ? l_worker->id : 999, a_es->fd, a_es->type, l_server->lb_tier);
+        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (tier=%d)",
+               l_worker ? l_worker->id : 999, l_server->lb_tier);
         // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
         // Arena memory is automatically reused
         return;
     }
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Queue callback: forwarding to flow processing with real listener fd=%d (type=%d) instead of queue fd=%d (type=%d)",
-             l_real_listener->fd, l_real_listener->type, a_es->fd, a_es->type);
+             "Queue callback: forwarding to flow processing with real listener fd=%d (type=%d)",
+             l_real_listener->fd, l_real_listener->type);
     
     // CRITICAL: Call s_process_flow_packet_common instead of packet_received directly!
     // s_process_flow_packet_common will:
@@ -1438,24 +1131,20 @@ static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server,
         return -2;
     }
     
-    // Get queue output for this worker pair
-    dap_events_socket_t *l_queue_out = a_server->inter_worker_queues[a_from_worker_id][a_to_worker_id];
-    if (!l_queue_out) {
-        log_it(L_ERROR, "No queue output for workers %u -> %u", a_from_worker_id, a_to_worker_id);
+    // Get queue output for this worker pair (references destination's input queue)
+    dap_context_queue_t *l_queue = a_server->inter_worker_queues[a_from_worker_id][a_to_worker_id];
+    if (!l_queue) {
+        log_it(L_ERROR, "No queue for workers %u -> %u", a_from_worker_id, a_to_worker_id);
         return -3;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Forwarding: src_worker=%u -> dst_worker=%u, queue_input[%u]=%p (fd=%d)",
-             a_from_worker_id, a_to_worker_id, a_to_worker_id,
-             a_server->queue_inputs[a_to_worker_id],
-             a_server->queue_inputs[a_to_worker_id] ? a_server->queue_inputs[a_to_worker_id]->fd : -1);
+             "Forwarding: src_worker=%u -> dst_worker=%u, queue=%p",
+             a_from_worker_id, a_to_worker_id, l_queue);
     
-    // Send packet pointer via queue (zero-copy)
-    int l_ret = dap_events_socket_queue_ptr_send_to_input(a_server->queue_inputs[a_to_worker_id], a_packet);
-    
-    if (l_ret != 0) {
-        log_it(L_WARNING, "Failed to send packet pointer to worker %u (ret=%d)", a_to_worker_id, l_ret);
+    // Send packet pointer via lock-free queue (zero-copy)
+    if (!dap_context_queue_push(l_queue, a_packet)) {
+        log_it(L_WARNING, "Failed to send packet pointer to worker %u (queue full)", a_to_worker_id);
         return -4;
     }
     
