@@ -204,6 +204,12 @@ bool dap_json_build_tape(
                         return false;
                     }
                     
+                    // STRICT: Check for missing value after colon
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_colon) {
+                        log_it(L_ERROR, "Missing value after ':' at position %u", idx->position);
+                        return false;
+                    }
+                    
                     // Write OBJECT_END
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_END, 0);
                     size_t close_position = tape_idx;
