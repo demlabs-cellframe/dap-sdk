@@ -95,6 +95,13 @@ void dap_json_iterator_reset(dap_json_iterator_t *iter);
 dap_json_type_t dap_json_iterator_type(const dap_json_iterator_t *iter);
 
 /**
+ * @brief Get current tape position (for sub-wrapper creation)
+ * @param[in] iter Iterator
+ * @return Current position in tape
+ */
+size_t dap_json_iterator_get_position(const dap_json_iterator_t *iter);
+
+/**
  * @brief Move to next value
  * @details Moves to next value at current depth.
  *          For containers, moves to NEXT sibling (not into container).

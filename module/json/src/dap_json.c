@@ -80,6 +80,14 @@ typedef struct dap_json_arena_node {
 
 static _Thread_local dap_json_arena_node_t *s_arena_list = NULL;
 
+/* ========================================================================== */
+/*                         FORWARD DECLARATIONS                               */
+/* ========================================================================== */
+
+static dap_json_t* s_create_immutable_sub_wrapper(const dap_json_t *a_parent, size_t a_tape_offset);
+
+/* ========================================================================== */
+
 /**
  * @brief Enable/disable detailed debug logging for ALL JSON parser components
  * @param a_enable true to enable debug logging, false to disable (for benchmarks)
@@ -538,6 +546,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     l_result->mode_data.immutable.input_len = l_parse_len;
     l_result->mode_data.immutable.tape = l_tape;
     l_result->mode_data.immutable.tape_count = l_tape_count;
+    l_result->mode_data.immutable.tape_offset = 0;  // Root wrapper starts at beginning
     
     // Tape and input_buffer managed by arenas
     
@@ -806,15 +815,24 @@ size_t dap_json_array_length(dap_json_t* a_array)
             return 0;
         }
         
-        // Skip ROOT_START if present
-        size_t l_start_pos = 0;
-        uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[0]);
-        if (l_type == TAPE_TYPE_ROOT_START && a_array->mode_data.immutable.tape_count > 1) {
-            l_start_pos = 1;
-            l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[1]);
+        // Start at tape_offset (0 for root, non-zero for sub-wrappers)
+        size_t l_start_pos = a_array->mode_data.immutable.tape_offset;
+        
+        // For root wrappers: skip ROOT_START marker if present
+        if (l_start_pos == 0 && a_array->mode_data.immutable.tape_count > 0) {
+            uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[0]);
+            if (l_type == TAPE_TYPE_ROOT_START && a_array->mode_data.immutable.tape_count > 1) {
+                l_start_pos = 1;
+            }
         }
         
-        // Check if root is array
+        // Bounds check
+        if (l_start_pos >= a_array->mode_data.immutable.tape_count) {
+            return 0;
+        }
+        
+        // Check if this position is an array
+        uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[l_start_pos]);
         if (l_type != TAPE_TYPE_ARRAY_START) {
             return 0;
         }
@@ -867,19 +885,71 @@ dap_json_t* dap_json_array_get_idx(dap_json_t* a_array, size_t a_idx)
         return NULL;
     }
     
-    // IMMUTABLE mode: tape doesn't support wrapped array elements easily
-    // Tests should use iterator API directly for array traversal
-    if (a_array->mode != DAP_JSON_MODE_MUTABLE) {
-        log_it(L_ERROR, "array_get_idx only works for MUTABLE mode. Use iterator for IMMUTABLE (tape) mode.");
+    // IMMUTABLE mode: use tape traversal to find element
+    if (a_array->mode == DAP_JSON_MODE_IMMUTABLE) {
+        if (!a_array->mode_data.immutable.tape || a_array->mode_data.immutable.tape_count == 0) {
+            return NULL;
+        }
+        
+        // Start at tape_offset
+        size_t l_start_pos = a_array->mode_data.immutable.tape_offset;
+        
+        // For root: skip ROOT_START if present
+        if (l_start_pos == 0 && a_array->mode_data.immutable.tape_count > 0) {
+            uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[0]);
+            if (l_type == TAPE_TYPE_ROOT_START && a_array->mode_data.immutable.tape_count > 1) {
+                l_start_pos = 1;
+            }
+        }
+        
+        // Bounds check
+        if (l_start_pos >= a_array->mode_data.immutable.tape_count) {
+            return NULL;
+        }
+        
+        // Check if this is an array
+        uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[l_start_pos]);
+        if (l_type != TAPE_TYPE_ARRAY_START) {
+            return NULL;
+        }
+        
+        // Get array close position
+        uint64_t l_close_idx = dap_tape_get_payload(a_array->mode_data.immutable.tape[l_start_pos]);
+        
+        // Traverse to a_idx-th element
+        size_t l_current_idx = 0;
+        size_t l_pos = l_start_pos + 1;  // Skip array start
+        
+        while (l_pos < l_close_idx && l_pos < a_array->mode_data.immutable.tape_count) {
+            uint8_t l_elem_type = dap_tape_get_type(a_array->mode_data.immutable.tape[l_pos]);
+            
+            // Stop at array end
+            if (l_elem_type == TAPE_TYPE_ARRAY_END) {
+                break;
+            }
+            
+            // Found the element?
+            if (l_current_idx == a_idx) {
+                // Create sub-wrapper for this element
+                return s_create_immutable_sub_wrapper(a_array, l_pos);
+            }
+            
+            l_current_idx++;
+            
+            // Skip to next element
+            l_pos = dap_tape_next(a_array->mode_data.immutable.tape, a_array->mode_data.immutable.tape_count, l_pos);
+        }
+        
+        // Index out of bounds
         return NULL;
     }
     
+    // MUTABLE mode: get storage
     dap_json_value_t *l_array_value = s_unwrap_value(a_array);
     if (!l_array_value || l_array_value->type != DAP_JSON_TYPE_ARRAY) {
         return NULL;
     }
     
-    // MUTABLE mode: get storage
     dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(l_array_value);
     if (!l_storage || a_idx >= l_storage->count) {
         return NULL;
@@ -1680,6 +1750,42 @@ int dap_json_object_set_bool(dap_json_t* a_json, const char* a_key, bool a_value
 /* ========================================================================== */
 
 /**
+ * @brief Create sub-wrapper for IMMUTABLE tape-based JSON
+ * @details Creates a new dap_json_t wrapper pointing to a sub-structure in the tape
+ * @param a_parent Parent JSON wrapper
+ * @param a_tape_offset Starting position in tape for sub-structure
+ * @return New sub-wrapper or NULL on error
+ */
+static dap_json_t* s_create_immutable_sub_wrapper(const dap_json_t *a_parent, size_t a_tape_offset)
+{
+    if (!a_parent || a_parent->mode != DAP_JSON_MODE_IMMUTABLE) {
+        return NULL;
+    }
+    
+    if (a_tape_offset >= a_parent->mode_data.immutable.tape_count) {
+        return NULL;
+    }
+    
+    // Allocate new wrapper
+    dap_json_t *l_sub = DAP_NEW_Z(dap_json_t);
+    if (!l_sub) {
+        log_it(L_ERROR, "Failed to allocate sub-wrapper");
+        return NULL;
+    }
+    
+    // Initialize with same tape/buffer, different offset
+    l_sub->ref_count = 1;
+    l_sub->mode = DAP_JSON_MODE_IMMUTABLE;
+    l_sub->mode_data.immutable.input_buffer = a_parent->mode_data.immutable.input_buffer;
+    l_sub->mode_data.immutable.input_len = a_parent->mode_data.immutable.input_len;
+    l_sub->mode_data.immutable.tape = a_parent->mode_data.immutable.tape;
+    l_sub->mode_data.immutable.tape_count = a_parent->mode_data.immutable.tape_count;
+    l_sub->mode_data.immutable.tape_offset = a_tape_offset;  // Key difference!
+    
+    return l_sub;
+}
+
+/**
  * @brief Get string field from object
  */
 /**
@@ -2257,7 +2363,7 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
-    // IMMUTABLE mode: use iterator API
+    // IMMUTABLE mode: use iterator API to find value, create sub-wrapper
     if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
         dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
         if (!l_iter) {
@@ -2276,13 +2382,15 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
             return false;
         }
         
-        // Key found - create wrapper for value
-        // For now, return the parent JSON with iterator at value position
-        // This is a simplified approach - proper implementation would need
-        // to create a sub-wrapper with correct tape position
-        *a_value = a_json;
+        // Key found - iterator is now positioned at the VALUE (after the key)
+        // Get current tape position using API function
+        size_t l_value_tape_pos = dap_json_iterator_get_position(l_iter);
+        
         dap_json_iterator_free(l_iter);
-        return true;
+        
+        // Create sub-wrapper pointing to this value
+        *a_value = s_create_immutable_sub_wrapper(a_json, l_value_tape_pos);
+        return (*a_value != NULL);
     }
     
     // MUTABLE mode: use existing logic
@@ -2710,16 +2818,25 @@ dap_json_type_t dap_json_get_type(dap_json_t* a_json)
             return DAP_JSON_TYPE_NULL;
         }
         
-        // Skip ROOT_START marker if present
-        size_t l_pos = 0;
-        uint8_t l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[0]);
+        // Start at tape_offset (0 for root, non-zero for sub-wrappers)
+        size_t l_pos = a_json->mode_data.immutable.tape_offset;
         
-        if (l_type == TAPE_TYPE_ROOT_START && a_json->mode_data.immutable.tape_count > 1) {
-            l_pos = 1;  // Skip to actual content
-            l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[1]);
+        // For root wrappers: skip ROOT_START marker if present
+        if (l_pos == 0 && a_json->mode_data.immutable.tape_count > 0) {
+            uint8_t l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[0]);
+            if (l_type == TAPE_TYPE_ROOT_START && a_json->mode_data.immutable.tape_count > 1) {
+                l_pos = 1;  // Skip to actual content
+            }
         }
         
-        switch (l_type) {
+        // Bounds check
+        if (l_pos >= a_json->mode_data.immutable.tape_count) {
+            return DAP_JSON_TYPE_NULL;
+        }
+        
+        uint8_t l_tape_type = dap_tape_get_type(a_json->mode_data.immutable.tape[l_pos]);
+        
+        switch (l_tape_type) {
             case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
             case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
             case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;

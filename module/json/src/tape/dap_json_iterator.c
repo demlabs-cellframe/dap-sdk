@@ -78,15 +78,28 @@ dap_json_iterator_t* dap_json_iterator_new(dap_json_t *a_json)
     l_iter->input_len = a_json->mode_data.immutable.input_len;
     l_iter->depth = 0;
 
-    // Skip ROOT_START marker if present
-    uint8_t l_first_type = dap_tape_get_type(l_iter->tape[0]);
-    if (l_first_type == TAPE_TYPE_ROOT_START && l_iter->tape_count > 1) {
-        l_iter->position = 1;  // Start at actual content
-    } else {
-        l_iter->position = 0;  // No ROOT marker
+    // Start position: tape_offset (0 for root wrapper, non-zero for sub-wrapper)
+    size_t l_start_pos = a_json->mode_data.immutable.tape_offset;
+    
+    // For root wrappers (tape_offset == 0): skip ROOT_START marker if present
+    if (l_start_pos == 0 && l_iter->tape_count > 0) {
+        uint8_t l_first_type = dap_tape_get_type(l_iter->tape[0]);
+        if (l_first_type == TAPE_TYPE_ROOT_START && l_iter->tape_count > 1) {
+            l_start_pos = 1;  // Start at actual content
+        }
     }
     
+    l_iter->position = l_start_pos;
+    
     return l_iter;
+}
+
+size_t dap_json_iterator_get_position(const dap_json_iterator_t *a_iter)
+{
+    if (!a_iter) {
+        return 0;
+    }
+    return a_iter->position;
 }
 
 void dap_json_iterator_free(dap_json_iterator_t *a_iter)

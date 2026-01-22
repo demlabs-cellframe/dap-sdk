@@ -37,6 +37,7 @@ struct dap_json {
             size_t input_len;                /**< Input buffer length */
             dap_json_tape_entry_t *tape;     /**< Tape array */
             size_t tape_count;               /**< Number of tape entries */
+            size_t tape_offset;              /**< Starting position in tape (for sub-wrappers, 0 for root) */
         } immutable;
         
         // MUTABLE mode (created JSON → DOM)
