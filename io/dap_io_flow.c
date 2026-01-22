@@ -380,23 +380,24 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     log_it(L_ERROR, "STEP 2 COMPLETE: Inter-worker queues freed");
     
-    // Step 3: Delete queue_inputs (actual queues)
-    // These can be deleted directly as they're not esockets anymore
-    log_it(L_ERROR, "STEP 3: Deleting queue_inputs");
+    // Step 3: DO NOT delete queue_inputs - MEMORY LEAK for debugging
+    // CRITICAL RACE CONDITION: Cannot safely delete queues from main thread
+    // while worker threads may still reference them in reactor callbacks!
+    //
+    // Proper solution requires:
+    // 1. Signal all workers to stop processing this server's queues
+    // 2. Wait for workers to acknowledge (barrier/completion tracking)
+    // 3. Only then safe to delete from main thread
+    // OR: Let workers delete their own queues on shutdown
+    //
+    // For now: intentional memory leak to prevent crash
+    log_it(L_ERROR, "STEP 3: SKIPPING queue deletion (avoiding cross-thread race)");
     if (a_server->queue_inputs) {
-        log_it(L_DEBUG, "Deleting queue_inputs (context queues)");
-        for (uint32_t i = 0; i < l_worker_count; i++) {
-            if (a_server->queue_inputs[i]) {
-                size_t l_remaining = dap_context_queue_count(a_server->queue_inputs[i]);
-                log_it(L_ERROR, "STEP 3: Deleting queue[%u] - %zu items remaining", i, l_remaining);
-                dap_context_queue_delete(a_server->queue_inputs[i]);
-                a_server->queue_inputs[i] = NULL;
-                log_it(L_ERROR, "STEP 3: Queue[%u] deleted successfully", i);
-            }
-        }
-        DAP_DELETE(a_server->queue_inputs);
-        log_it(L_ERROR, "STEP 3 COMPLETE: All queue_inputs deleted");
+        log_it(L_WARNING, "Leaving %u queue_inputs allocated (MEMORY LEAK) to avoid crash", l_worker_count);
+        // Set to NULL to prevent double-free attempts
+        a_server->queue_inputs = NULL;
     }
+    log_it(L_ERROR, "STEP 3 COMPLETE: Queue cleanup skipped (intentional leak)");
     
     // Step 5: Free structures
     log_it(L_ERROR, "STEP 5: Destroying %u flow locks", l_worker_count);
