@@ -790,12 +790,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 if(l_cur){
                     memcpy(&l_cur->kqueue_event_catched_data, l_es_w_data, sizeof (*l_es_w_data)); // Copy event info for further processing
 
-                    if ( l_cur->pipe_out == NULL){ // If we're not the input for pipe or queue
-                                                   // we must drop write flag and set read flag
-                        l_flag_read  = true;
-                    }else{
-                        l_flag_write = true;
-                    }
+                    // Always set read flag for user events
+                    l_flag_read  = true;
                     void * l_ptr = &l_cur->kqueue_event_catched_data;
                     if(l_es_w_data != l_ptr){
                         DAP_DELETE(l_es_w_data);
@@ -1719,7 +1715,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
         goto lb_exit;
     }
-    if ( a_es->type == DESCRIPTOR_TYPE_EVENT /*&& a_es->pipe_out*/){
+    if ( a_es->type == DESCRIPTOR_TYPE_EVENT ){
         goto lb_exit;
     }
 
@@ -1981,163 +1977,33 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 }
 
 /**
- * @brief dap_context_create_queue
- * @param a_context
- * @param a_callback
- * @return
+ * @brief Compatibility wrapper - create context queue (deprecated, use dap_context_queue_create)
+ * 
+ * Returns dap_events_socket_t* for backward compatibility, but internally creates dap_context_queue_t.
+ * The returned esocket is the event notification socket from the queue.
+ * 
+ * @param a_context Context to create queue in
+ * @param a_callback Callback function (old signature with 2 args, converted internally)
+ * @return Event socket for compatibility (actually queue->event_socket), or NULL on error
  */
- dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback)
+dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback)
 {
-    dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
-    if(!l_es){
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    log_it(L_WARNING, "dap_context_create_queue is deprecated, use dap_context_queue_create instead");
+    
+    if (!a_context) {
         return NULL;
     }
-
-    l_es->type = DESCRIPTOR_TYPE_QUEUE;
-    l_es->flags = DAP_SOCK_QUEUE_PTR;
-    l_es->uuid = dap_new_es_id();
-
-    l_es->callbacks.queue_ptr_callback = a_callback; // Arm event callback
-
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    pthread_rwlock_init(&l_es->buf_out_lock, NULL);
-#endif
-
-#if defined DAP_EVENTS_CAPS_IOCP
-    l_es->socket = INVALID_SOCKET;
-    l_es->buf_out = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(SLIST_HEADER));
-    InitializeSListHead((PSLIST_HEADER)l_es->buf_out);
-#else
-    l_es->buf_in_size_max = l_es->buf_out_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
-    l_es->buf_in    = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
-    l_es->buf_out   = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
-#if defined(DAP_EVENTS_CAPS_EPOLL)
-    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
-#elif defined(DAP_EVENTS_CAPS_POLL)
-    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
-#elif defined(DAP_EVENTS_CAPS_KQUEUE)
-    l_es->kqueue_event_catched_data.esocket = l_es;
-    //l_es->kqueue_base_flags =  EV_ONESHOT;
-    l_es->kqueue_base_fflags = NOTE_FFNOP | NOTE_TRIGGER;
-    l_es->kqueue_base_filter = EVFILT_USER;
-    l_es->socket = arc4random();
-#else
-#error "Not defined s_create_type_queue_ptr for your platform"
-#endif
-#endif
-
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
-    int l_pipe[2];
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    if( pipe2(l_pipe,O_DIRECT | O_NONBLOCK ) < 0 ){
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
-    if( pipe(l_pipe) < 0 ){
-#endif
-        return DAP_DELETE(l_es), log_it(L_ERROR, "pipe() failed, error %d: '%s'", errno, dap_strerror(errno)), NULL;
-    }
-    l_es->fd = l_pipe[0];
-    l_es->fd2 = l_pipe[1];
-
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
-    // If we have no pipe2() we should set nonblock mode via fcntl
-    if (l_es->fd > 0 && l_es->fd2 > 0 ) {
-    int l_flags = fcntl(l_es->fd, F_GETFL, 0);
-    if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd, F_SETFL, l_flags) == 0);
-    }
-    l_flags = fcntl(l_es->fd2, F_GETFL, 0);
-    if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd2, F_SETFL, l_flags) == 0);
-    }
-    }
-#endif
-
-#if !defined (DAP_OS_ANDROID)
-    FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
-    if (l_sys_max_pipe_size_fd) {
-        char l_file_buf[64] = "";
-        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
-        uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
-        fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
-        fclose(l_sys_max_pipe_size_fd);
-    }
-#endif
-
-#elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
-    int  l_errno;
-    char l_errbuf[128] = {0}, l_mq_name[64] = {0};
-    struct mq_attr l_mq_attr;
-    static atomic_uint l_mq_last_number = 0;
-
-
-    l_mq_attr.mq_maxmsg = DAP_QUEUE_MAX_MSGS;                               // Don't think we need to hold more than 1024 messages
-    l_mq_attr.mq_msgsize = sizeof (void*);                                  // We send only pointer on memory (???!!!),
-                                                                            // so use it with shared memory if you do access from another process
-
-    l_es->mqd_id = atomic_fetch_add( &l_mq_last_number, 1);
-    snprintf(l_mq_name,sizeof (l_mq_name), "/%s-queue_ptr-%u", dap_get_appname(), l_es->mqd_id );
-    // if ( (l_errno = mq_unlink(l_mq_name)) )                                 /* Mark this MQ to be deleted as the process will be terminated */
-    //    log_it(L_DEBUG, "mq_unlink(%s)->%d", l_mq_name, l_errno);
-
-    if ( 0 >= (l_es->mqd = mq_open(l_mq_name, O_CREAT|O_RDWR |O_NONBLOCK, 0700, &l_mq_attr)) )
-    {
-        log_it(L_CRITICAL,"Can't create mqueue descriptor %s: \"%s\" code %d (%s)", l_mq_name, l_errbuf, errno,
-                           (strerror_r(errno, l_errbuf, sizeof (l_errbuf)), l_errbuf) );
-
-        DAP_DELETE(l_es->buf_in);
-        DAP_DELETE(l_es);
+    
+    // Create new context queue with default capacity
+    dap_context_queue_t *l_queue = dap_context_queue_create(a_context, 0, (void(*)(void*))a_callback);
+    if (!l_queue) {
+        log_it(L_ERROR, "Failed to create context queue");
         return NULL;
     }
-
-#elif defined DAP_EVENTS_CAPS_WEPOLL
-    l_es->socket        = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (l_es->socket == INVALID_SOCKET) {
-        log_it(L_ERROR, "Error creating socket for TYPE_QUEUE: %d", WSAGetLastError());
-        DAP_DELETE(l_es);
-        return NULL;
-    }
-
-    int buffsize = 1024;
-    setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, (char *)&buffsize, sizeof(int));
-
-    int reuse = 1;
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
-        log_it(L_WARNING, "Can't set up REUSEADDR flag to the socket, err: %d", WSAGetLastError());
-
-    unsigned long l_mode = 1;
-    ioctlsocket(l_es->socket, FIONBIO, &l_mode);
-
-    struct sockaddr_in l_addr = { .sin_family = AF_INET, .sin_port = 0, .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }} };
-
-    if (bind(l_es->socket, (struct sockaddr*)&l_addr, sizeof(l_addr)) < 0) {
-        log_it(L_ERROR, "Bind error: %d", WSAGetLastError());
-    } else {
-        int dummy = 100;
-        getsockname(l_es->socket, (struct sockaddr*)&l_addr, &dummy);
-        l_es->port = l_addr.sin_port;
-    }
-#elif defined DAP_EVENTS_CAPS_IOCP
-    // Nothing to do
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    // We don't create descriptor for kqueue at all
-#else
-#error "Not implemented s_create_type_queue_ptr() on your platform"
-#endif
-
-    if ( a_context) {
-        if(dap_context_add(a_context, l_es)) {
-#ifdef DAP_OS_WINDOWS
-            errno = WSAGetLastError();
-#endif
-            log_it(L_ERROR, "Can't add esocket %"DAP_FORMAT_SOCKET" to polling, err %d", l_es->socket, errno);
-        }
-    }
-
-    return l_es;
+    
+    // Return event socket for backward compatibility
+    // Old code expects to add this to epoll/kqueue
+    return l_queue->event_socket;
 }
 
 /**

@@ -321,7 +321,6 @@ typedef struct dap_events_socket {
         buf_in_size,    buf_in_size_max,
         buf_out_size,   buf_out_size_max;
 
-    dap_events_socket_t * pipe_out; // Pipe socket with data for output
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
 #endif
@@ -434,7 +433,9 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_write_end_unsafe(dap_wo
                                                                           dap_events_socket_callbacks_t * a_callbacks);
 
 dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es);
-int dap_events_socket_queue_ptr_send_to_input( dap_events_socket_t * a_es, void* a_arg);
+
+// Compatibility wrapper - now accepts dap_context_queue_t* (void*) instead of dap_events_socket_t*
+int dap_events_socket_queue_ptr_send_to_input(void *a_queue, void *a_arg);
 
 int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value);
 

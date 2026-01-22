@@ -1428,57 +1428,23 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
 #endif
 
 /**
- * @brief dap_events_socket_queue_ptr_send_to_input
- * @param a_es_input
- * @param a_arg
- * @return
+ * @brief Send pointer to context queue (wrapper for compatibility)
+ * 
+ * Now accepts dap_context_queue_t* instead of dap_events_socket_t* (pipe).
+ * Uses lock-free ring buffer push instead of pipe write.
+ * 
+ * @param a_queue dap_context_queue_t* (cast from void* for backward compatibility)
+ * @param a_arg Pointer to send
+ * @return 0 on success, -1 on error (queue full or NULL)
  */
-int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t *a_es_input, void *a_arg)
+int dap_events_socket_queue_ptr_send_to_input(void *a_queue, void *a_arg)
 {
-    dap_return_val_if_fail(a_es_input && a_arg, -1);
-    debug_if(g_debug_reactor, L_DEBUG, "Send to queue input %p -> %p", a_es_input, a_es_input->pipe_out);
-#if defined (DAP_EVENTS_CAPS_KQUEUE)
-    if (a_es_input->pipe_out){
-        int l_ret;
-        struct kevent l_event={0};
-        dap_events_socket_t * l_es = a_es_input->pipe_out;
-        assert(l_es);
-
-        dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
-        if(!l_es_w_data){
-            log_it(L_CRITICAL, "Can't allocate, out of memory");
-            return -1024;
-        }
-
-        l_es_w_data->esocket = l_es;
-        l_es_w_data->ptr = a_arg;
-        EV_SET(&l_event,a_es_input->socket+arc4random()  , EVFILT_USER,EV_ADD | EV_ONESHOT, NOTE_FFNOP | NOTE_TRIGGER ,0, l_es_w_data);
-        if(l_es->context)
-            l_ret=kevent(l_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        else
-            l_ret=-100;
-        if(l_ret != -1 ){
-            return 0;
-        }else{
-            log_it(L_ERROR,"Can't send message in queue, code %d", errno);
-            DAP_DELETE(l_es_w_data);
-            return l_ret;
-        }
-    }else{
-        log_it(L_ERROR,"No pipe_out pointer for queue socket, possible created wrong");
-        return -2;
-    }
-
-#elif defined DAP_EVENTS_CAPS_IOCP
-    return dap_events_socket_queue_ptr_send(a_es_input->pipe_out, a_arg);
-#else
-    // Write to queue OUTPUT esocket (pipe_out), which will buffer and reactor will flush
-    if (!a_es_input->pipe_out) {
-        log_it(L_ERROR, "Queue input has no pipe_out");
+    if (!a_queue || !a_arg) {
         return -1;
     }
-    return dap_events_socket_write_unsafe(a_es_input->pipe_out, &a_arg, sizeof(a_arg)) == sizeof(a_arg) ? 0 : -1;
-#endif
+    
+    dap_context_queue_t *l_queue = (dap_context_queue_t*)a_queue;
+    return dap_context_queue_push(l_queue, a_arg) ? 0 : -1;
 }
 
 /**
