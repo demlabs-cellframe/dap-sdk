@@ -27,6 +27,7 @@
 #include "dap_json_value.h"  // Phase 2.0.4: For helper functions
 #include "internal/dap_json_stage2.h"   // Phase 2.0.4: For stage2 context
 #include "internal/dap_json_serialization.h"
+#include "internal/dap_json_internal.h"  // For storage structures
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -34,6 +35,20 @@
 #include <locale.h>
 
 #define LOG_TAG "json_serialization"
+
+// Forward declarations for MUTABLE mode storage structures
+typedef struct {
+    size_t count;
+    size_t capacity;
+    dap_json_value_t **elements;
+} dap_json_array_storage_t;
+
+typedef struct {
+    size_t count;
+    size_t capacity;
+    char **keys;
+    dap_json_value_t **values;
+} dap_json_object_storage_t;
 
 /* ========================================================================== */
 /*                     JSON SERIALIZATION IMPLEMENTATION                      */
@@ -453,11 +468,161 @@ static bool s_stringify_value(
  * @brief Serialize JSON value to string (compact format)
  * Phase 2.0.4: Needs source_buffer and stage2 context
  */
+/**
+ * @brief Recursively serialize JSON value to string buffer
+ * @param a_value Value to serialize
+ * @param a_buffer Output buffer (will be reallocated if needed)
+ * @param a_size Current size of data in buffer
+ * @param a_capacity Current capacity of buffer
+ * @param a_indent Current indentation level
+ * @param a_pretty Pretty-print mode
+ * @return true on success, false on error
+ */
+static bool s_serialize_value_recursive(
+    const dap_json_value_t *a_value,
+    char **a_buffer,
+    size_t *a_size,
+    size_t *a_capacity,
+    int a_indent,
+    bool a_pretty
+)
+{
+    if (!a_value) {
+        return s_append_string(a_buffer, a_size, a_capacity, "null");
+    }
+    
+    switch (a_value->type) {
+        case DAP_JSON_TYPE_NULL:
+            return s_append_string(a_buffer, a_size, a_capacity, "null");
+            
+        case DAP_JSON_TYPE_BOOLEAN:
+            return s_append_string(a_buffer, a_size, a_capacity,
+                                  a_value->offset ? "true" : "false");
+            
+        case DAP_JSON_TYPE_INT: {
+            char l_buf[32];
+            // Check if inline or allocated
+            if (a_value->length == 0) {
+                // Inline int32
+                snprintf(l_buf, sizeof(l_buf), "%d", (int32_t)a_value->offset);
+            } else {
+                // Allocated int64
+                int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(a_value);
+                if (!l_ptr) return false;
+                snprintf(l_buf, sizeof(l_buf), "%" PRId64, *l_ptr);
+            }
+            return s_append_string(a_buffer, a_size, a_capacity, l_buf);
+        }
+            
+        case DAP_JSON_TYPE_DOUBLE: {
+            char l_buf[64];
+            double *l_ptr = (double*)dap_json_get_storage_ptr(a_value);
+            if (!l_ptr) return false;
+            s_snprintf_double_c_locale(l_buf, sizeof(l_buf), "%.17g", *l_ptr);
+            return s_append_string(a_buffer, a_size, a_capacity, l_buf);
+        }
+            
+        case DAP_JSON_TYPE_STRING: {
+            const char *l_str = (const char*)dap_json_get_storage_ptr(a_value);
+            if (!l_str) return false;
+            
+            if (!s_append_string(a_buffer, a_size, a_capacity, "\"")) return false;
+            
+            // Escape special characters
+            for (const char *p = l_str; *p; p++) {
+                switch (*p) {
+                    case '"':  if (!s_append_string(a_buffer, a_size, a_capacity, "\\\"")) return false; break;
+                    case '\\': if (!s_append_string(a_buffer, a_size, a_capacity, "\\\\")) return false; break;
+                    case '\b': if (!s_append_string(a_buffer, a_size, a_capacity, "\\b")) return false; break;
+                    case '\f': if (!s_append_string(a_buffer, a_size, a_capacity, "\\f")) return false; break;
+                    case '\n': if (!s_append_string(a_buffer, a_size, a_capacity, "\\n")) return false; break;
+                    case '\r': if (!s_append_string(a_buffer, a_size, a_capacity, "\\r")) return false; break;
+                    case '\t': if (!s_append_string(a_buffer, a_size, a_capacity, "\\t")) return false; break;
+                    default: {
+                        char l_ch[2] = {*p, '\0'};
+                        if (!s_append_string(a_buffer, a_size, a_capacity, l_ch)) return false;
+                    }
+                }
+            }
+            
+            return s_append_string(a_buffer, a_size, a_capacity, "\"");
+        }
+            
+        case DAP_JSON_TYPE_ARRAY: {
+            dap_json_array_storage_t *l_storage = (dap_json_array_storage_t*)dap_json_get_storage_ptr(a_value);
+            if (!l_storage) return false;
+            
+            if (!s_append_string(a_buffer, a_size, a_capacity, "[")) return false;
+            
+            for (size_t i = 0; i < l_storage->count; i++) {
+                if (i > 0) {
+                    if (!s_append_string(a_buffer, a_size, a_capacity, ",")) return false;
+                }
+                
+                if (!s_serialize_value_recursive(l_storage->elements[i], a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
+                    return false;
+                }
+            }
+            
+            return s_append_string(a_buffer, a_size, a_capacity, "]");
+        }
+            
+        case DAP_JSON_TYPE_OBJECT: {
+            dap_json_object_storage_t *l_storage = (dap_json_object_storage_t*)dap_json_get_storage_ptr(a_value);
+            if (!l_storage) {
+                log_it(L_ERROR, "Object storage is NULL");
+                return false;
+            }
+            
+            if (!s_append_string(a_buffer, a_size, a_capacity, "{")) return false;
+            
+            for (size_t i = 0; i < l_storage->count; i++) {
+                if (i > 0) {
+                    if (!s_append_string(a_buffer, a_size, a_capacity, ",")) return false;
+                }
+                
+                // Check key validity
+                if (!l_storage->keys[i]) {
+                    log_it(L_ERROR, "NULL key at index %zu", i);
+                    return false;
+                }
+                
+                // Serialize key
+                if (!s_append_string(a_buffer, a_size, a_capacity, "\"")) return false;
+                if (!s_append_string(a_buffer, a_size, a_capacity, l_storage->keys[i])) return false;
+                if (!s_append_string(a_buffer, a_size, a_capacity, "\":")) return false;
+                
+                // Serialize value
+                if (!s_serialize_value_recursive(l_storage->values[i], a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
+                    return false;
+                }
+            }
+            
+            return s_append_string(a_buffer, a_size, a_capacity, "}");
+        }
+            
+        default:
+            log_it(L_ERROR, "Unknown JSON type: %d", a_value->type);
+            return false;
+    }
+}
+
 char* dap_json_value_serialize(dap_json_value_t *a_value)
 {
-    // TODO Phase 2.0.4: This needs refactoring to accept source_buffer + stage2
-    log_it(L_ERROR, "dap_json_value_serialize: Needs source_buffer + stage2 context (Phase 2.0.4)");
-    return NULL;
+    if (!a_value) {
+        return NULL;
+    }
+    
+    char *l_buffer = DAP_NEW_Z_COUNT(char, 256);
+    size_t l_size = 0;
+    size_t l_capacity = 256;
+    
+    if (!s_serialize_value_recursive(a_value, &l_buffer, &l_size, &l_capacity, 0, false)) {
+        DAP_DELETE(l_buffer);
+        return NULL;
+    }
+    
+    return l_buffer;
 }
 
 /**
