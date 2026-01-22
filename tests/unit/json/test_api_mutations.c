@@ -42,17 +42,23 @@ static bool s_test_add_key_to_object(void) {
     bool result = false;
     dap_json_t *l_json = NULL;
     
-    l_json = dap_json_parse_string("{\"existing\":\"value\"}");
-    DAP_TEST_FAIL_IF_NULL(l_json, "Parse initial JSON");
+    // Create new MUTABLE object instead of parsing (IMMUTABLE)
+    l_json = dap_json_object_new();
+    DAP_TEST_FAIL_IF_NULL(l_json, "Create JSON object");
+    
+    // Add initial key
+    dap_json_object_add_string(l_json, "existing", "value");
     
     // Add new key
     dap_json_object_add_string(l_json, "new_key", "new_value");
     
     const char *new_val = dap_json_object_get_string(l_json, "new_key");
+    DAP_TEST_FAIL_IF_NULL(new_val, "New key should exist");
     DAP_TEST_FAIL_IF(strcmp(new_val, "new_value") != 0, "New key added");
     
     // Existing key should still be there
     const char *existing_val = dap_json_object_get_string(l_json, "existing");
+    DAP_TEST_FAIL_IF_NULL(existing_val, "Existing key should exist");
     DAP_TEST_FAIL_IF(strcmp(existing_val, "value") != 0, "Existing key preserved");
     
     result = true;
@@ -72,8 +78,12 @@ static bool s_test_delete_key_from_object(void) {
     bool result = false;
     dap_json_t *l_json = NULL;
     
-    l_json = dap_json_parse_string("{\"key1\":\"value1\",\"key2\":\"value2\"}");
-    DAP_TEST_FAIL_IF_NULL(l_json, "Parse initial JSON");
+    // Create MUTABLE object
+    l_json = dap_json_object_new();
+    DAP_TEST_FAIL_IF_NULL(l_json, "Create JSON object");
+    
+    dap_json_object_add_string(l_json, "key1", "value1");
+    dap_json_object_add_string(l_json, "key2", "value2");
     
     // Delete key1
     dap_json_object_del(l_json, "key1");
@@ -83,6 +93,7 @@ static bool s_test_delete_key_from_object(void) {
     
     // key2 should still exist
     const char *remaining = dap_json_object_get_string(l_json, "key2");
+    DAP_TEST_FAIL_IF_NULL(remaining, "Key2 should exist");
     DAP_TEST_FAIL_IF(strcmp(remaining, "value2") != 0, "Key2 preserved");
     
     result = true;
