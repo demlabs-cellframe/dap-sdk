@@ -65,6 +65,17 @@ struct flow_cross_worker_packet {
     void *page_handle;                      // Arena page handle for refcounting
 };
 
+/**
+ * @brief Queue deletion callback arguments
+ * 
+ * Passed to worker thread for safe queue deletion from reactor context.
+ */
+typedef struct {
+    dap_io_flow_server_t *server;
+    dap_context_queue_t *queue;
+    uint32_t worker_id;
+} queue_delete_args_t;
+
 // Forward declarations for internal functions
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
 static void s_queue_ptr_callback(void *a_ptr);
@@ -502,13 +513,6 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Queues MUST be deleted from their own reactor threads!
     debug_if(s_debug_more, L_DEBUG, "Scheduling queue deletions on worker threads");
     if (a_server->queue_inputs) {
-        // Helper structure for deletion callback (typedef already defined above)
-        typedef struct {
-            dap_io_flow_server_t *server;
-            dap_context_queue_t *queue;
-            uint32_t worker_id;
-        } queue_delete_args_t;
-        
         // Set number of pending deletions
         atomic_store(&a_server->pending_queue_deletions, l_worker_count);
         
@@ -551,21 +555,16 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     
     // Step 5: Free structures
-    log_it(L_ERROR, "STEP 5: Destroying %u flow locks", l_worker_count);
+    debug_if(s_debug_more, L_DEBUG, "Destroying %u flow locks", l_worker_count);
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_destroy(&a_server->flow_locks_per_worker[i]);
     }
-    log_it(L_ERROR, "STEP 5A COMPLETE: Flow locks destroyed");
     
-    log_it(L_ERROR, "STEP 5B: Freeing flows_per_worker and flow_locks_per_worker");
     DAP_DELETE(a_server->flows_per_worker);
     DAP_DELETE(a_server->flow_locks_per_worker);
-    log_it(L_ERROR, "STEP 5B COMPLETE: Per-worker structures freed");
     
-    log_it(L_ERROR, "STEP 5C: Destroying cleanup synchronization");
     pthread_mutex_destroy(&a_server->cleanup_mutex);
     pthread_cond_destroy(&a_server->cleanup_cond);
-    log_it(L_ERROR, "STEP 5C COMPLETE: Cleanup synchronization destroyed");
     
     // Destroy queue deletion synchronization
     pthread_mutex_destroy(&a_server->queue_delete_mutex);
