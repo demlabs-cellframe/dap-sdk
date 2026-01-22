@@ -60,7 +60,7 @@ const dap_json_power5_table_t* dap_json_power5_init(void) {
         return &s_power5_table;
     }
     
-    log_it(L_INFO, "Initializing power-of-5 table for Eisel-Lemire algorithm");
+    debug_if(s_debug_more, L_DEBUG, "Initializing power-of-5 table for Eisel-Lemire algorithm");
     
     // Correct precomputed values from Eisel-Lemire paper (fast_float library)
     // These are normalized 128-bit representations of 5^exp
@@ -137,7 +137,7 @@ const dap_json_power5_table_t* dap_json_power5_init(void) {
 #endif
     
     s_initialized = true;
-    log_it(L_INFO, "Power-of-5 table initialized successfully (46 entries from 5^-22 to 5^22)");
+    debug_if(s_debug_more, L_DEBUG, "Power-of-5 table initialized successfully (46 entries from 5^-22 to 5^22)");
     
     return &s_power5_table;
 }

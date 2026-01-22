@@ -1893,7 +1893,7 @@ const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
         return NULL;
     }
     
-    log_it(L_DEBUG, "object_get_string: key='%s', mode=%d", a_key, a_json->mode);
+    debug_if(s_debug_more, L_DEBUG, "object_get_string: key='%s', mode=%d", a_key, a_json->mode);
     
     // IMMUTABLE mode (tape): use get_ex which implements "last wins"
     if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
