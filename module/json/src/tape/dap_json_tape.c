@@ -144,6 +144,14 @@ bool dap_json_build_tape(
     
     size_t i = 0;
     
+    // Stack for tracking open brackets (to fill jump pointers on close)
+    typedef struct {
+        size_t tape_position;  // Position of opening bracket in tape
+    } bracket_stack_t;
+    
+    bracket_stack_t bracket_stack[256];
+    int bracket_depth = 0;
+    
     // Stack for tracking context (are we in array or object?)
     typedef struct {
         bool is_array;  // true=array, false=object
@@ -161,10 +169,14 @@ bool dap_json_build_tape(
                 char c = idx->character;
                 
                 if (c == '{') {
-                    // CRITICAL: Use Stage 1 payload directly as jump pointer!
-                    // No need to recalculate - Stage 1 already did the work!
-                    uint64_t close_idx = (uint64_t)idx->payload + tape_idx;
-                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, close_idx);
+                    // Save position for later jump pointer fill
+                    if (bracket_depth < 256) {
+                        bracket_stack[bracket_depth].tape_position = tape_idx;
+                        bracket_depth++;
+                    }
+                    
+                    // Write OBJECT_START (payload=0, will be updated on close)
+                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, 0);
                     tape_idx++;
                     
                     // Push context
@@ -181,16 +193,31 @@ bool dap_json_build_tape(
                         return false;
                     }
                     
-                    // Closing bracket - payload points back to open (optional)
+                    // Write OBJECT_END
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_END, 0);
+                    size_t close_position = tape_idx;
                     tape_idx++;
+                    
+                    // Fill jump pointer in opening bracket
+                    if (bracket_depth > 0) {
+                        bracket_depth--;
+                        size_t open_pos = bracket_stack[bracket_depth].tape_position;
+                        // Update payload to point to closing bracket position
+                        tape[open_pos] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, close_position);
+                    }
                     
                     // Pop context
                     if (ctx_depth > 0) ctx_depth--;
                     
                 } else if (c == '[') {
-                    uint64_t close_idx = (uint64_t)idx->payload + tape_idx;
-                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, close_idx);
+                    // Save position for later jump pointer fill
+                    if (bracket_depth < 256) {
+                        bracket_stack[bracket_depth].tape_position = tape_idx;
+                        bracket_depth++;
+                    }
+                    
+                    // Write ARRAY_START (payload=0, will be updated on close)
+                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, 0);
                     tape_idx++;
                     
                     // Push context
@@ -207,8 +234,18 @@ bool dap_json_build_tape(
                         return false;
                     }
                     
+                    // Write ARRAY_END
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_END, 0);
+                    size_t close_position = tape_idx;
                     tape_idx++;
+                    
+                    // Fill jump pointer in opening bracket
+                    if (bracket_depth > 0) {
+                        bracket_depth--;
+                        size_t open_pos = bracket_stack[bracket_depth].tape_position;
+                        // Update payload to point to closing bracket position
+                        tape[open_pos] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, close_position);
+                    }
                     
                     // Pop context
                     if (ctx_depth > 0) ctx_depth--;
