@@ -1554,8 +1554,7 @@ int dap_json_object_add_uint256(dap_json_t* a_json, const char* a_key, uint256_t
     
     l_value->type = DAP_JSON_TYPE_UINT256;
     l_value->flags = 0;
-    l_value->length = 1; // Flag: allocated
-    l_value->offset = (uint32_t)(uintptr_t)l_allocated;
+    dap_json_set_storage_ptr(l_value, l_allocated);
     
     if (!dap_json_object_v2_add(l_obj, a_key, l_value)) {
         dap_json_value_v2_free(l_value);
