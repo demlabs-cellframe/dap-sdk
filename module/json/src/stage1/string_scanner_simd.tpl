@@ -54,6 +54,7 @@ static size_t s_scan_string_fast_{{ARCH_LOWER}}(
         
         // Fast path: quote found, no escapes before it
         // Use CTZ (Count Trailing Zeros) to find first set bit
+        // CRITICAL: SVE always uses 64-bit masks
         if (quote_mask) {
             int quote_offset = __builtin_ctzll(quote_mask);
             if (!backslash_mask || __builtin_ctzll(backslash_mask) > quote_offset) {
@@ -97,11 +98,27 @@ static size_t s_scan_string_fast_{{ARCH_LOWER}}(
         
         // Fast path: quote found, no escapes before it
         // Use CTZ (Count Trailing Zeros) to find first set bit
+        // CRITICAL: Use correct CTZ for mask type (16-bit/32-bit/64-bit)
         if (quote_mask) {
-            int quote_offset = __builtin_ctzll(quote_mask);
+{{#if MASK_TYPE == "uint16_t"}}
+            // 16-bit mask: cast to unsigned int for __builtin_ctz (requires 32-bit)
+            int quote_offset = __builtin_ctz((unsigned int)quote_mask);
+            if (!backslash_mask || __builtin_ctz((unsigned int)backslash_mask) > quote_offset) {
+                return l_pos + quote_offset + 1;  // After closing quote
+            }
+{{else}}
+{{#if MASK_TYPE == "uint32_t"}}
+            int quote_offset = __builtin_ctz(quote_mask);  // 32-bit mask
+            if (!backslash_mask || __builtin_ctz(backslash_mask) > quote_offset) {
+                return l_pos + quote_offset + 1;  // After closing quote
+            }
+{{else}}
+            int quote_offset = __builtin_ctzll(quote_mask);  // 64-bit mask
             if (!backslash_mask || __builtin_ctzll(backslash_mask) > quote_offset) {
                 return l_pos + quote_offset + 1;  // After closing quote
             }
+{{/if}}
+{{/if}}
         }
         
         // Escape found - fallback to scalar
