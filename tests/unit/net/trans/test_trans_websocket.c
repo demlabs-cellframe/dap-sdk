@@ -654,6 +654,13 @@ static void test_13_stream_handshake(void)
         l_priv->esocket = &s_mock_events_socket;
     }
     
+    // Setup mocks for worker and timer (needed by dap_client_http)
+    DAP_MOCK_ENABLE(dap_events_worker_get_auto);
+    DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, dap_worker_get_current());
+    
+    DAP_MOCK_ENABLE(dap_timerfd_start_on_worker);
+    DAP_MOCK_SET_RETURN(dap_timerfd_start_on_worker, &s_mock_timerfd);
+    
     // Test handshake_init operation
     dap_net_handshake_params_t l_params = {0};
     // WebSocket handshake needs alice_pub_key
@@ -671,6 +678,10 @@ static void test_13_stream_handshake(void)
                                                  sizeof(l_handshake_data),
                                                  &l_response, &l_response_size);
     TEST_ASSERT(l_ret == 0, "Handshake process should succeed");
+    
+    // Cleanup mocks
+    DAP_MOCK_DISABLE(dap_events_worker_get_auto);
+    DAP_MOCK_DISABLE(dap_timerfd_start_on_worker);
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);
