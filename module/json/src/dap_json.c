@@ -1896,60 +1896,32 @@ const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
     
     log_it(L_DEBUG, "object_get_string: key='%s', mode=%d", a_key, a_json->mode);
     
-    // IMMUTABLE mode (tape): use iterator to find key
+    // IMMUTABLE mode (tape): use get_ex which implements "last wins"
     if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
-        log_it(L_DEBUG, "object_get_string: IMMUTABLE mode, creating iterator");
-        
-        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
-        if (!l_iter) {
-            log_it(L_ERROR, "object_get_string: Failed to create iterator");
+        dap_json_t *l_value = NULL;
+        if (!dap_json_object_get_ex(a_json, a_key, &l_value) || !l_value) {
             return NULL;
         }
         
-        // Check if root is object
-        dap_json_type_t l_type = dap_json_iterator_type(l_iter);
-        log_it(L_DEBUG, "object_get_string: root type=%d", l_type);
-        
-        if (l_type != DAP_JSON_TYPE_OBJECT) {
-            log_it(L_ERROR, "object_get_string: root is not an object (type=%d)", l_type);
-            dap_json_iterator_free(l_iter);
+        // Check type
+        if (dap_json_get_type(l_value) != DAP_JSON_TYPE_STRING) {
+            dap_json_object_free(l_value);
             return NULL;
         }
         
-        // Enter object to access keys
-        if (!dap_json_iterator_enter(l_iter)) {
-            log_it(L_ERROR, "object_get_string: Failed to enter object");
-            dap_json_iterator_free(l_iter);
-            return NULL;
+        // Get string
+        const char *l_result = dap_json_get_string(l_value);
+        char *l_copy = NULL;
+        if (l_result) {
+            size_t len = strlen(l_result);
+            l_copy = DAP_NEW_Z_SIZE(char, len + 1);
+            if (l_copy) {
+                memcpy(l_copy, l_result, len);
+            }
         }
+        dap_json_object_free(l_value);
         
-        log_it(L_DEBUG, "object_get_string: Entered object, searching for key");
-        
-        // Find key in object
-        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
-            log_it(L_DEBUG, "object_get_string: Key '%s' not found", a_key);
-            dap_json_iterator_free(l_iter);
-            return NULL; // Key not found
-        }
-        
-        log_it(L_DEBUG, "object_get_string: Key found, checking value type");
-        
-        // Iterator now points to the value
-        dap_json_type_t l_value_type = dap_json_iterator_type(l_iter);
-        if (l_value_type != DAP_JSON_TYPE_STRING) {
-            log_it(L_ERROR, "object_get_string: Value is not a string (type=%d)", l_value_type);
-            dap_json_iterator_free(l_iter);
-            return NULL; // Value is not a string
-        }
-        
-        // Get string (makes a copy)
-        char *l_result = dap_json_iterator_get_string_dup(l_iter);
-        log_it(L_DEBUG, "object_get_string: Got string='%s'", l_result ? l_result : "(null)");
-        
-        dap_json_iterator_free(l_iter);
-        
-        // WARNING: Caller must free() this string!
-        return l_result;
+        return l_copy;
     }
     
     // MUTABLE mode (DOM): use value-based access
@@ -2427,20 +2399,49 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
             return false;
         }
         
-        // Use simple find_key (returns FIRST occurrence)
-        // TODO: Implement "last wins" for duplicate keys by scanning all entries
-        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
+        // Implement "last wins" for duplicate keys by scanning ALL entries
+        size_t l_last_value_pos = 0;
+        bool l_found = false;
+        size_t l_key_len = strlen(a_key);
+        
+        while (!dap_json_iterator_at_end(l_iter)) {
+            // Current position should be key
+            char *l_current_key = dap_json_iterator_get_string_dup(l_iter);
+            if (!l_current_key) {
+                // Failed to get key - abort
+                break;
+            }
+            
+            bool l_key_matches = (strlen(l_current_key) == l_key_len && 
+                                  memcmp(l_current_key, a_key, l_key_len) == 0);
+            DAP_DELETE(l_current_key);
+            
+            // Move to value
+            if (!dap_json_iterator_next(l_iter)) {
+                break;
+            }
+            
+            if (l_key_matches) {
+                // Key matches - save value position
+                l_last_value_pos = dap_json_iterator_get_position(l_iter);
+                l_found = true;
+            }
+            
+            // Skip value (could be nested object/array)
+            if (!dap_json_iterator_skip(l_iter)) {
+                break;
+            }
+        }
+        
+        if (!l_found) {
             dap_json_iterator_free(l_iter);
             return false;
         }
         
-        // Key found - iterator positioned at VALUE
-        size_t l_value_tape_pos = dap_json_iterator_get_position(l_iter);
-        
         dap_json_iterator_free(l_iter);
         
-        // Create sub-wrapper pointing to value
-        *a_value = s_create_immutable_sub_wrapper(a_json, l_value_tape_pos);
+        // Create sub-wrapper pointing to LAST occurrence of value
+        *a_value = s_create_immutable_sub_wrapper(a_json, l_last_value_pos);
         return (*a_value != NULL);
     }
     
