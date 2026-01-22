@@ -157,6 +157,7 @@ bool dap_json_build_tape(
         bool is_array;  // true=array, false=object
         bool after_comma;  // true if last token was ',' (for trailing comma detection)
         bool has_elements;  // true if at least one element was added (for leading comma detection)
+        bool after_colon;  // true if last token was ':' (for double colon detection in objects)
     } parse_ctx_t;
     
     parse_ctx_t ctx_stack[256];  // Max 256 levels deep
@@ -184,6 +185,7 @@ bool dap_json_build_tape(
                     if (ctx_depth > 0) {
                         ctx_stack[ctx_depth-1].after_comma = false;
                         ctx_stack[ctx_depth-1].has_elements = true;
+                        ctx_stack[ctx_depth-1].after_colon = false;
                     }
                     
                     // Push context
@@ -191,6 +193,7 @@ bool dap_json_build_tape(
                         ctx_stack[ctx_depth].is_array = false;
                         ctx_stack[ctx_depth].after_comma = false;
                         ctx_stack[ctx_depth].has_elements = false;
+                        ctx_stack[ctx_depth].after_colon = false;
                         ctx_depth++;
                     }
                     
@@ -235,6 +238,7 @@ bool dap_json_build_tape(
                     if (ctx_depth > 0) {
                         ctx_stack[ctx_depth-1].after_comma = false;
                         ctx_stack[ctx_depth-1].has_elements = true;
+                        ctx_stack[ctx_depth-1].after_colon = false;
                     }
                     
                     // Push context
@@ -242,6 +246,7 @@ bool dap_json_build_tape(
                         ctx_stack[ctx_depth].is_array = true;
                         ctx_stack[ctx_depth].after_comma = false;
                         ctx_stack[ctx_depth].has_elements = false;
+                        ctx_stack[ctx_depth].after_colon = false;
                         ctx_depth++;
                     }
                     
@@ -288,8 +293,19 @@ bool dap_json_build_tape(
                     if (ctx_depth > 0) {
                         ctx_stack[ctx_depth-1].after_comma = true;
                     }
+                } else if (c == ':') {
+                    // STRICT: Double colon detection
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_colon) {
+                        log_it(L_ERROR, "Double colon (::) at position %u", idx->position);
+                        return false;
+                    }
+                    
+                    // Set flag: after colon (only for objects)
+                    if (ctx_depth > 0 && !ctx_stack[ctx_depth-1].is_array) {
+                        ctx_stack[ctx_depth-1].after_colon = true;
+                    }
                 }
-                // Skip other structural chars like ':'
+                // Skip other structural chars
                 i++;
                 break;
             }
@@ -297,10 +313,20 @@ bool dap_json_build_tape(
             case TOKEN_TYPE_STRING:
             case TOKEN_TYPE_NUMBER:
             case TOKEN_TYPE_LITERAL: {
-                // Mark that we have elements, clear after_comma flag
+                // STRICT: In objects, keys MUST be strings (not numbers or literals)
+                if (ctx_depth > 0 && !ctx_stack[ctx_depth-1].is_array && !ctx_stack[ctx_depth-1].after_colon) {
+                    // We're in an object and NOT after colon = this is a KEY
+                    if (idx->type != TOKEN_TYPE_STRING) {
+                        log_it(L_ERROR, "Object keys must be strings (not numbers/literals) at position %u", idx->position);
+                        return false;
+                    }
+                }
+                
+                // Mark that we have elements, clear after_comma and after_colon flags
                 if (ctx_depth > 0) {
                     ctx_stack[ctx_depth-1].has_elements = true;
                     ctx_stack[ctx_depth-1].after_comma = false;
+                    ctx_stack[ctx_depth-1].after_colon = false;
                 }
                 
                 // Process value
