@@ -155,7 +155,8 @@ bool dap_json_build_tape(
     // Stack for tracking context (are we in array or object?)
     typedef struct {
         bool is_array;  // true=array, false=object
-        bool expect_value;  // After ',' we MUST have value/key
+        bool after_comma;  // true if last token was ',' (for trailing comma detection)
+        bool has_elements;  // true if at least one element was added (for leading comma detection)
     } parse_ctx_t;
     
     parse_ctx_t ctx_stack[256];  // Max 256 levels deep
@@ -179,16 +180,23 @@ bool dap_json_build_tape(
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, 0);
                     tape_idx++;
                     
+                    // Reset after_comma in PARENT, mark has_elements in PARENT (we wrote a value)
+                    if (ctx_depth > 0) {
+                        ctx_stack[ctx_depth-1].after_comma = false;
+                        ctx_stack[ctx_depth-1].has_elements = true;
+                    }
+                    
                     // Push context
                     if (ctx_depth < 256) {
                         ctx_stack[ctx_depth].is_array = false;
-                        ctx_stack[ctx_depth].expect_value = false;
+                        ctx_stack[ctx_depth].after_comma = false;
+                        ctx_stack[ctx_depth].has_elements = false;
                         ctx_depth++;
                     }
                     
                 } else if (c == '}') {
-                    // STRICT: Check for trailing comma (expect_value flag)
-                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].expect_value) {
+                    // STRICT: Check for trailing comma (after_comma flag)
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
                         log_it(L_ERROR, "Trailing comma before '}' at position %u", idx->position);
                         return false;
                     }
@@ -204,6 +212,9 @@ bool dap_json_build_tape(
                         size_t open_pos = bracket_stack[bracket_depth].tape_position;
                         // Update payload to point to closing bracket position
                         tape[open_pos] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, close_position);
+                    } else {
+                        log_it(L_ERROR, "Bracket stack underflow at '}' position %u", idx->position);
+                        return false;
                     }
                     
                     // Pop context
@@ -220,16 +231,23 @@ bool dap_json_build_tape(
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, 0);
                     tape_idx++;
                     
+                    // Reset after_comma in PARENT, mark has_elements in PARENT (we wrote a value)
+                    if (ctx_depth > 0) {
+                        ctx_stack[ctx_depth-1].after_comma = false;
+                        ctx_stack[ctx_depth-1].has_elements = true;
+                    }
+                    
                     // Push context
                     if (ctx_depth < 256) {
                         ctx_stack[ctx_depth].is_array = true;
-                        ctx_stack[ctx_depth].expect_value = false;
+                        ctx_stack[ctx_depth].after_comma = false;
+                        ctx_stack[ctx_depth].has_elements = false;
                         ctx_depth++;
                     }
                     
                 } else if (c == ']') {
-                    // STRICT: Check for trailing comma (expect_value flag)
-                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].expect_value) {
+                    // STRICT: Check for trailing comma (after_comma flag)
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
                         log_it(L_ERROR, "Trailing comma before ']' at position %u", idx->position);
                         return false;
                     }
@@ -245,15 +263,30 @@ bool dap_json_build_tape(
                         size_t open_pos = bracket_stack[bracket_depth].tape_position;
                         // Update payload to point to closing bracket position
                         tape[open_pos] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, close_position);
+                    } else {
+                        log_it(L_ERROR, "Bracket stack underflow at ']' position %u", idx->position);
+                        return false;
                     }
                     
                     // Pop context
                     if (ctx_depth > 0) ctx_depth--;
                     
                 } else if (c == ',') {
-                    // Set flag: next MUST be value (in array) or key (in object)
+                    // STRICT: Leading comma detection (comma without any elements)
+                    if (ctx_depth > 0 && !ctx_stack[ctx_depth-1].has_elements) {
+                        log_it(L_ERROR, "Leading comma at position %u", idx->position);
+                        return false;
+                    }
+                    
+                    // STRICT: Double comma detection
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
+                        log_it(L_ERROR, "Double comma at position %u", idx->position);
+                        return false;
+                    }
+                    
+                    // Set flag: after comma
                     if (ctx_depth > 0) {
-                        ctx_stack[ctx_depth-1].expect_value = true;
+                        ctx_stack[ctx_depth-1].after_comma = true;
                     }
                 }
                 // Skip other structural chars like ':'
@@ -264,9 +297,10 @@ bool dap_json_build_tape(
             case TOKEN_TYPE_STRING:
             case TOKEN_TYPE_NUMBER:
             case TOKEN_TYPE_LITERAL: {
-                // Clear expect_value flag - we got a value!
+                // Mark that we have elements, clear after_comma flag
                 if (ctx_depth > 0) {
-                    ctx_stack[ctx_depth-1].expect_value = false;
+                    ctx_stack[ctx_depth-1].has_elements = true;
+                    ctx_stack[ctx_depth-1].after_comma = false;
                 }
                 
                 // Process value
