@@ -18,6 +18,11 @@
 #include "internal/dap_json_tape.h"
 #include "internal/dap_json_stage1.h"  // For dap_json_stage1_t
 #include "internal/dap_json_internal.h"
+#include <math.h>    // For HUGE_VAL
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
@@ -141,7 +146,21 @@ dap_json_type_t dap_json_iterator_type(const dap_json_iterator_t *a_iter)
         case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;
         case TAPE_TYPE_ARRAY_START:   return DAP_JSON_TYPE_ARRAY;
         case TAPE_TYPE_STRING:        return DAP_JSON_TYPE_STRING;
-        case TAPE_TYPE_NUMBER:        return DAP_JSON_TYPE_INT;
+        case TAPE_TYPE_NUMBER: {
+            // Determine if INT or DOUBLE by checking number content
+            uint64_t l_offset = dap_tape_get_payload(a_iter->tape[a_iter->position]);
+            if (l_offset < a_iter->input_len) {
+                const char *l_num = a_iter->input_buffer + l_offset;
+                // Check for '.' or 'e'/'E' = floating point
+                while (*l_num && !isspace(*l_num) && *l_num != ',' && *l_num != ']' && *l_num != '}') {
+                    if (*l_num == '.' || *l_num == 'e' || *l_num == 'E') {
+                        return DAP_JSON_TYPE_DOUBLE;
+                    }
+                    l_num++;
+                }
+            }
+            return DAP_JSON_TYPE_INT;
+        }
         case TAPE_TYPE_TRUE:          return DAP_JSON_TYPE_BOOLEAN;
         case TAPE_TYPE_FALSE:         return DAP_JSON_TYPE_BOOLEAN;
         case TAPE_TYPE_NULL:          return DAP_JSON_TYPE_NULL;
@@ -574,7 +593,8 @@ bool dap_json_iterator_get_double(const dap_json_iterator_t *a_iter, double *out
     
     double l_value = strtod(l_num_str, &l_endptr);
     
-    if (errno == ERANGE) {
+    // Check for overflow (not underflow - subnormal doubles are valid)
+    if (errno == ERANGE && (l_value == HUGE_VAL || l_value == -HUGE_VAL)) {
         log_it(L_ERROR, "Number overflow at offset %lu", l_offset);
         return false;
     }

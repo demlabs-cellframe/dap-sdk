@@ -85,6 +85,9 @@ static _Thread_local dap_json_arena_node_t *s_arena_list = NULL;
 /* ========================================================================== */
 
 static dap_json_t* s_create_immutable_sub_wrapper(const dap_json_t *a_parent, size_t a_tape_offset);
+static char* s_serialize_immutable(dap_json_t* a_json, bool a_pretty);
+static void s_append_str(char **a_buf, size_t *a_size, size_t *a_pos, const char *a_str);
+static void s_append_escaped_str(char **a_buf, size_t *a_size, size_t *a_pos, const char *a_str);
 
 /* ========================================================================== */
 
@@ -3013,6 +3016,141 @@ void dap_json_object_foreach(dap_json_t* a_json, dap_json_object_foreach_callbac
 #include "internal/dap_json_serialization.h"
 
 /**
+ * @brief Append string to dynamic buffer
+ */
+static void s_append_str(char **a_buf, size_t *a_size, size_t *a_pos, const char *a_str)
+{
+    if (!a_str) return;
+    size_t l_len = strlen(a_str);
+    while (*a_pos + l_len + 1 > *a_size) {
+        *a_size *= 2;
+        *a_buf = DAP_REALLOC(*a_buf, *a_size);
+    }
+    memcpy(*a_buf + *a_pos, a_str, l_len);
+    *a_pos += l_len;
+    (*a_buf)[*a_pos] = '\0';
+}
+
+/**
+ * @brief Append escaped string (for JSON string values)
+ */
+static void s_append_escaped_str(char **a_buf, size_t *a_size, size_t *a_pos, const char *a_str)
+{
+    if (!a_str) return;
+    
+    for (const char *p = a_str; *p; p++) {
+        char esc[3] = {0};
+        const char *append = NULL;
+        
+        switch (*p) {
+            case '"':  append = "\\\""; break;
+            case '\\': append = "\\\\"; break;
+            case '\n': append = "\\n"; break;
+            case '\r': append = "\\r"; break;
+            case '\t': append = "\\t"; break;
+            case '\b': append = "\\b"; break;
+            case '\f': append = "\\f"; break;
+            default:
+                if ((unsigned char)*p < 0x20) {
+                    // Control character - use \uXXXX
+                    char hex[8];
+                    snprintf(hex, sizeof(hex), "\\u%04x", (unsigned char)*p);
+                    s_append_str(a_buf, a_size, a_pos, hex);
+                    continue;
+                }
+                esc[0] = *p;
+                append = esc;
+                break;
+        }
+        
+        s_append_str(a_buf, a_size, a_pos, append);
+    }
+}
+
+/**
+ * @brief Serialize IMMUTABLE JSON using iterator (recursive)
+ */
+static char* s_serialize_immutable(dap_json_t* a_json, bool a_pretty)
+{
+    (void)a_pretty;
+    if (!a_json || a_json->mode != DAP_JSON_MODE_IMMUTABLE) return NULL;
+    
+    size_t l_size = 256, l_pos = 0;
+    char *l_buf = DAP_NEW_Z_SIZE(char, l_size);
+    if (!l_buf) return NULL;
+    
+    dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+    if (!l_iter) { DAP_DELETE(l_buf); return NULL; }
+    
+    dap_json_type_t l_type = dap_json_iterator_type(l_iter);
+    
+    if (l_type == DAP_JSON_TYPE_OBJECT) {
+        s_append_str(&l_buf, &l_size, &l_pos, "{");
+        dap_json_iterator_enter(l_iter);
+        bool l_first = true;
+        while (!dap_json_iterator_at_end(l_iter)) {
+            if (!l_first) s_append_str(&l_buf, &l_size, &l_pos, ",");
+            l_first = false;
+            char *l_key = dap_json_iterator_get_string_dup(l_iter);
+            if (l_key) {
+                s_append_str(&l_buf, &l_size, &l_pos, "\"");
+                s_append_str(&l_buf, &l_size, &l_pos, l_key);
+                s_append_str(&l_buf, &l_size, &l_pos, "\":");
+                DAP_DELETE(l_key);
+            }
+            if (!dap_json_iterator_next(l_iter)) break;
+            dap_json_type_t vt = dap_json_iterator_type(l_iter);
+            if (vt == DAP_JSON_TYPE_STRING) {
+                char *v = dap_json_iterator_get_string_dup(l_iter);
+                if (v) { s_append_str(&l_buf, &l_size, &l_pos, "\""); s_append_escaped_str(&l_buf, &l_size, &l_pos, v); s_append_str(&l_buf, &l_size, &l_pos, "\""); DAP_DELETE(v); }
+            } else if (vt == DAP_JSON_TYPE_INT) {
+                int64_t v; if (dap_json_iterator_get_int64(l_iter, &v)) { char tmp[32]; snprintf(tmp, sizeof(tmp), "%lld", (long long)v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
+            } else if (vt == DAP_JSON_TYPE_DOUBLE) {
+                double v; if (dap_json_iterator_get_double(l_iter, &v)) { char tmp[64]; snprintf(tmp, sizeof(tmp), "%.17g", v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
+            } else if (vt == DAP_JSON_TYPE_BOOLEAN) {
+                bool v; if (dap_json_iterator_get_bool(l_iter, &v)) s_append_str(&l_buf, &l_size, &l_pos, v ? "true" : "false");
+            } else if (vt == DAP_JSON_TYPE_NULL) {
+                s_append_str(&l_buf, &l_size, &l_pos, "null");
+            } else {
+                dap_json_t *n = s_create_immutable_sub_wrapper(a_json, dap_json_iterator_get_position(l_iter));
+                if (n) { char *ns = s_serialize_immutable(n, a_pretty); if (ns) { s_append_str(&l_buf, &l_size, &l_pos, ns); DAP_DELETE(ns); } dap_json_object_free(n); }
+            }
+            if (!dap_json_iterator_next(l_iter)) break;
+        }
+        s_append_str(&l_buf, &l_size, &l_pos, "}");
+    } else if (l_type == DAP_JSON_TYPE_ARRAY) {
+        s_append_str(&l_buf, &l_size, &l_pos, "[");
+        dap_json_iterator_enter(l_iter);
+        bool l_first = true;
+        while (!dap_json_iterator_at_end(l_iter)) {
+            if (!l_first) s_append_str(&l_buf, &l_size, &l_pos, ",");
+            l_first = false;
+            dap_json_type_t et = dap_json_iterator_type(l_iter);
+            if (et == DAP_JSON_TYPE_STRING) {
+                char *v = dap_json_iterator_get_string_dup(l_iter);
+                if (v) { s_append_str(&l_buf, &l_size, &l_pos, "\""); s_append_str(&l_buf, &l_size, &l_pos, v); s_append_str(&l_buf, &l_size, &l_pos, "\""); DAP_DELETE(v); }
+            } else if (et == DAP_JSON_TYPE_INT) {
+                int64_t v; if (dap_json_iterator_get_int64(l_iter, &v)) { char tmp[32]; snprintf(tmp, sizeof(tmp), "%lld", (long long)v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
+            } else if (et == DAP_JSON_TYPE_DOUBLE) {
+                double v; if (dap_json_iterator_get_double(l_iter, &v)) { char tmp[32]; snprintf(tmp, sizeof(tmp), "%.15g", v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
+            } else if (et == DAP_JSON_TYPE_BOOLEAN) {
+                bool v; if (dap_json_iterator_get_bool(l_iter, &v)) s_append_str(&l_buf, &l_size, &l_pos, v ? "true" : "false");
+            } else if (et == DAP_JSON_TYPE_NULL) {
+                s_append_str(&l_buf, &l_size, &l_pos, "null");
+            } else {
+                dap_json_t *n = s_create_immutable_sub_wrapper(a_json, dap_json_iterator_get_position(l_iter));
+                if (n) { char *ns = s_serialize_immutable(n, a_pretty); if (ns) { s_append_str(&l_buf, &l_size, &l_pos, ns); DAP_DELETE(ns); } dap_json_object_free(n); }
+            }
+            if (!dap_json_iterator_next(l_iter)) break;
+        }
+        s_append_str(&l_buf, &l_size, &l_pos, "]");
+    }
+    
+    dap_json_iterator_free(l_iter);
+    return l_buf;
+}
+
+/**
  * @brief Convert JSON object to string (compact format)
  */
 char* dap_json_to_string(dap_json_t* a_json)
@@ -3021,6 +3159,12 @@ char* dap_json_to_string(dap_json_t* a_json)
         return NULL;
     }
     
+    // IMMUTABLE mode: use iterator-based serialization
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return s_serialize_immutable(a_json, false);
+    }
+    
+    // MUTABLE mode: use value serialization
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return dap_json_value_serialize(l_value);
 }
@@ -3034,6 +3178,12 @@ char* dap_json_to_string_pretty(dap_json_t* a_json)
         return NULL;
     }
     
+    // IMMUTABLE mode: use iterator-based serialization
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return s_serialize_immutable(a_json, true);
+    }
+    
+    // MUTABLE mode: use value serialization
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return dap_json_value_serialize_pretty(l_value);
 }
