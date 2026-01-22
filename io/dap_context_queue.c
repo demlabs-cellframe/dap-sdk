@@ -26,11 +26,13 @@
 #include "dap_events_socket.h"
 #include "dap_context.h"
 #include "dap_events.h"
+#include <sys/time.h>
 
 #define LOG_TAG "dap_context_queue"
 
 // Default ring buffer capacity (power of 2)
-#define DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY 16384
+// INCREASED for high-throughput scenarios with cross-worker packet forwarding
+#define DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY 65536  // Was 16384, now 64K
 
 /**
  * @brief Callback from reactor when event is signaled (items available in queue)
