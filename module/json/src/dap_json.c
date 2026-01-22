@@ -2112,9 +2112,17 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
         dap_json_type_t l_type = dap_json_iterator_type(l_iter);
         
         if (l_type == DAP_JSON_TYPE_INT) {
-            int64_t l_val;
-            if (dap_json_iterator_get_int64(l_iter, &l_val)) {
-                *a_out = (uint64_t)l_val;
+            // Try to get as uint64 directly (handles INT64_MAX+1 case)
+            uint64_t l_val;
+            if (dap_json_iterator_get_uint64(l_iter, &l_val)) {
+                *a_out = l_val;
+                dap_json_iterator_free(l_iter);
+                return true;
+            }
+            // Fallback to int64 (negative numbers cast to uint64)
+            int64_t l_ival;
+            if (dap_json_iterator_get_int64(l_iter, &l_ival)) {
+                *a_out = (uint64_t)l_ival;
                 dap_json_iterator_free(l_iter);
                 return true;
             }
