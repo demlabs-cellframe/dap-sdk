@@ -619,30 +619,26 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
         return;
     }
     
-    write(2, "=== DELETE START ===\n", 21);  // Direct syscall
+    // CRITICAL: Mark ALL flow servers as deleting IMMEDIATELY!
+    // This stops packet processing from queues before we start cleanup.
+    if (a_server->flow_servers) {
+        for (size_t i = 0; i < a_server->flow_servers_count; i++) {
+            if (a_server->flow_servers[i]) {
+                atomic_store(&a_server->flow_servers[i]->is_deleting, true);
+            }
+        }
+    }
     
     log_it(L_NOTICE, "Deleting Stream UDP server '%s'", a_server->server_name);
     
-    write(2, "=== AFTER FIRST LOG ===\n", 24);
-    write(2, "=== BEFORE Step 1 LOG ===\n", 26);
-    
     log_it(L_INFO, "Step 1: Deleting flows from %zu flow servers", 
            a_server->flow_servers ? a_server->flow_servers_count : 0);
-    
-    write(2, "=== AFTER Step 1 LOG ===\n", 25);
-    
-    write(2, "=== BEFORE flow_servers check ===\n", 35);
     
     // CRITICAL: Delete all flows BEFORE deleting flow servers!
     // This prevents use-after-free when flows hold pointers to listener_es
     // that will be freed when flow server is deleted.
     if (a_server->flow_servers) {
-        write(2, "=== INSIDE flow_servers check ===\n", 35);
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "=== Loop iteration %zu ===\n", i);
-            write(2, buf, strlen(buf));
-            
             if (a_server->flow_servers[i]) {
                 log_it(L_INFO, "Deleting flows for flow_server[%zu]...", i);
                 int l_deleted = dap_io_flow_delete_all_flows(a_server->flow_servers[i]);
@@ -650,8 +646,6 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
             }
         }
     }
-    
-    write(2, "=== AFTER flow_servers loop ===\n", 33);
     
     // Delete all flow servers
     if (a_server->flow_servers) {
