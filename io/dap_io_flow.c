@@ -272,13 +272,11 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
     
     a_server->is_running = false;
     
-    // Stop DAP server (closes all listener sockets)
-    if (a_server->dap_server) {
-        dap_server_delete(a_server->dap_server);
-        a_server->dap_server = NULL;
-    }
+    // NOTE: We do NOT delete dap_server here anymore!
+    // Listeners must stay alive until all queued packets are processed.
+    // dap_server_delete will be called in dap_io_flow_server_delete after queue drainage.
     
-    log_it(L_INFO, "Server '%s' stopped", a_server->name);
+    log_it(L_INFO, "Server '%s' stopped (listeners still active for queue drainage)", a_server->name);
 }
 
 /**
@@ -312,11 +310,11 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
     atomic_store(&a_server->is_deleting, true);
-    log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
+    log_it(L_ERROR, "SERVER DELETE: '%s' marked for deletion - draining queues", a_server->name);
     
     // Step 0: Stop server listeners first (prevent new packets)
     if (a_server->is_running) {
-        log_it(L_DEBUG, "Stopping server listeners to prevent new packets");
+        log_it(L_ERROR, "SERVER DELETE: Stopping server listeners to prevent new packets");
         dap_io_flow_server_stop(a_server);
     }
     
@@ -403,6 +401,14 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_mutex_destroy(&a_server->cleanup_mutex);
     pthread_cond_destroy(&a_server->cleanup_cond);
     log_it(L_DEBUG, "Cleanup synchronization destroyed");
+    
+    // Step 6: NOW safe to delete dap_server (listeners)
+    // All queues drained, no more references to listeners
+    if (a_server->dap_server) {
+        log_it(L_DEBUG, "Deleting dap_server (closing listeners)");
+        dap_server_delete(a_server->dap_server);
+        a_server->dap_server = NULL;
+    }
     
     // Preserve name pointer before freeing (for logging)
     char *l_name_copy = a_server->name ? dap_strdup(a_server->name) : NULL;

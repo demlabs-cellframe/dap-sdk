@@ -2237,7 +2237,8 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
     // Only for datagram sockets
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
-        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d)", a_es->type);
+        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d, fd=%d, uuid=0x%016lx, flags=0x%08x)", 
+               a_es->type, a_es->fd, a_es->uuid, a_es->flags);
         return 0;
     }
     
