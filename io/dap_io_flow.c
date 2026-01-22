@@ -56,7 +56,8 @@ typedef struct flow_cross_worker_packet flow_cross_worker_packet_t;
  * Includes page handle for refcounted arena management.
  */
 struct flow_cross_worker_packet {
-    dap_io_flow_t *flow;                   // Target flow (in remote worker)
+    dap_io_flow_server_t *server;          // Target server (always valid)
+    dap_io_flow_t *flow;                   // Target flow (NULL for new flows)
     uint8_t *data;                          // Packet data (arena-allocated)
     size_t size;                            // Data size
     struct sockaddr_storage remote_addr;   // Source address
@@ -737,6 +738,7 @@ static void s_process_flow_packet_common(
             
             // Fill packet (flow = NULL since not created yet)
             memcpy(l_data_copy, a_data, a_data_size);
+            l_packet->server = a_server;  // Always set server
             l_packet->data = l_data_copy;
             l_packet->size = a_data_size;
             l_packet->flow = NULL;  // Will be created on target worker
@@ -821,6 +823,7 @@ create_local:
         
         // Fill packet structure
         memcpy(l_data_copy, a_data, a_data_size);
+        l_packet->server = a_server;  // Always set server
         l_packet->data = l_data_copy;
         l_packet->size = a_data_size;
         l_packet->flow = l_flow;
@@ -1011,15 +1014,15 @@ static void s_queue_ptr_callback(void *a_ptr)
     
     struct flow_cross_worker_packet *l_packet = (struct flow_cross_worker_packet*)a_ptr;
     
-    // Get server from packet->flow (flow always knows its server)
-    if (!l_packet->flow || !l_packet->flow->server) {
-        log_it(L_ERROR, "Queue callback: flow or server not found in packet");
+    // Get server from packet (always valid)
+    if (!l_packet->server) {
+        log_it(L_ERROR, "Queue callback: server not found in packet");
         // NOTE: Do NOT free a_ptr - it's allocated from thread-local arena!
         // Arena memory is automatically reused
         return;
     }
     
-    dap_io_flow_server_t *l_server = l_packet->flow->server;
+    dap_io_flow_server_t *l_server = l_packet->server;
     
     debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", l_server, l_server->lb_tier);
     
