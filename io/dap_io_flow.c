@@ -479,61 +479,12 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         dap_io_flow_server_stop(a_server);
     }
     
-    // Step 0: STOP packet intake - disable read on listeners
-    // CRITICAL: We can't delete listeners yet - they're still needed for responses!
-    // Disable reading to stop NEW packets, but keep sockets alive for sending.
-    if (a_server->dap_server && a_server->dap_server->es_listeners) {
-        // Count listeners
-        uint32_t l_listener_count = 0;
-        for (dap_list_t *l_item = a_server->dap_server->es_listeners; l_item; l_item = l_item->next) {
-            l_listener_count++;
-        }
-        
-        log_it(L_INFO, "Step 0: Disabling read on %u listeners (keeping alive for responses)", l_listener_count);
-        
-        atomic_store(&a_server->pending_listener_disables, l_listener_count);
-        
-        dap_list_t *l_item = a_server->dap_server->es_listeners;
-        uint32_t l_scheduled = 0;
-        while (l_item) {
-            dap_events_socket_t *l_es = (dap_events_socket_t *)l_item->data;
-            if (l_es && l_es->worker) {
-                listener_disable_args_t *l_args = DAP_NEW_Z(listener_disable_args_t);
-                if (l_args) {
-                    l_args->server = a_server;
-                    l_args->listener = l_es;
-                    dap_worker_exec_callback_on(l_es->worker, s_listener_disable_read_callback, l_args);
-                    l_scheduled++;
-                }
-            }
-            l_item = l_item->next;
-        }
-        
-        log_it(L_INFO, "Scheduled %u/%u listener disable callbacks, waiting for completion...", 
-               l_scheduled, l_listener_count);
-        
-        // Wait for all listeners to disable (pthread_cond_wait with timeout)
-        pthread_mutex_lock(&a_server->listener_disable_mutex);
-        struct timespec l_timeout;
-        clock_gettime(CLOCK_REALTIME, &l_timeout);
-        l_timeout.tv_sec += 5;  // 5 second timeout
-        
-        int l_wait_result = 0;
-        while (atomic_load(&a_server->pending_listener_disables) > 0 && l_wait_result != ETIMEDOUT) {
-            l_wait_result = pthread_cond_timedwait(&a_server->listener_disable_cond, 
-                                                     &a_server->listener_disable_mutex, 
-                                                     &l_timeout);
-        }
-        
-        uint32_t l_remaining = atomic_load(&a_server->pending_listener_disables);
-        pthread_mutex_unlock(&a_server->listener_disable_mutex);
-        
-        if (l_remaining > 0) {
-            log_it(L_WARNING, "Listener disable timeout! %u listeners still pending", l_remaining);
-        } else {
-            log_it(L_INFO, "All listeners disabled successfully");
-        }
-    }
+    // Step 0: Packet intake is now stopped by is_deleting check in s_listener_read_callback
+    // No need for complex listener disable coordination - atomic flag is enough!
+    log_it(L_INFO, "Step 0: Packet intake stopped via is_deleting flag");
+    
+    // Give reactors time to process any in-flight read events
+    usleep(50000);  // 50ms
     
     // Step 0.5: Wait for all queued packets to drain
     // Give worker threads time to process remaining packets
@@ -810,6 +761,9 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
         log_it(L_ERROR, "dap_io_flow_delete_all_flows: NULL server");
         return -1;
     }
+    
+    log_it(L_INFO, "=== dap_io_flow_delete_all_flows START for server '%s' ===",
+           a_server->name ? a_server->name : "NULL");
     
     if (!a_server->ops || !a_server->ops->flow_destroy) {
         log_it(L_WARNING, "dap_io_flow_delete_all_flows: No flow_destroy callback, skipping");
@@ -1226,6 +1180,14 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
     dap_io_flow_server_t *l_server = (dap_io_flow_server_t*)a_arg;
     
     if (!l_server || !a_es) {
+        return;
+    }
+    
+    // CRITICAL: Drop all incoming packets if server is deleting!
+    // This prevents packet flood and callback queue overflow during cleanup.
+    if (atomic_load(&l_server->is_deleting)) {
+        // Silently drop packet - don't even log (would spam)
+        a_es->buf_in_size = 0;  // Clear buffer
         return;
     }
     
