@@ -2735,6 +2735,21 @@ bool dap_json_get_bool(dap_json_t* a_json)
         return false;
     }
     
+    // IMMUTABLE mode: use iterator
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            return false;
+        }
+        
+        bool l_result = false;
+        dap_json_iterator_get_bool(l_iter, &l_result);
+        dap_json_iterator_free(l_iter);
+        
+        return l_result;
+    }
+    
+    // MUTABLE mode: use DOM
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     if (!l_value || l_value->type != DAP_JSON_TYPE_BOOLEAN) {
         return false;
