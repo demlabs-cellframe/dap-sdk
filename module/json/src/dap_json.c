@@ -438,6 +438,15 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
             
             // Scan until closing quote
             for (const char *l_p = l_str_start; l_p < l_str_start + l_str_len && *l_p && *l_p != '"'; l_p++) {
+                // STRICT: Reject unescaped control characters (0x00-0x1F)
+                if ((unsigned char)*l_p < 0x20 && *l_p != '\t' && *l_p != '\n' && *l_p != '\r') {
+                    log_it(L_ERROR, "Unescaped control character 0x%02X in string at position %u", 
+                           (unsigned char)*l_p, l_str_pos);
+                    dap_json_stage1_free(l_stage1);
+                    if (l_transcoded) DAP_DELETE(l_transcoded);
+                    return NULL;
+                }
+                
                 if (*l_p == '\\' && (l_p + 1) < (l_str_start + l_str_len)) {
                     if (*(l_p + 1) == 'u') {
                         // Unicode escape
@@ -2388,26 +2397,26 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
             return false;
         }
         
-        // Enter object (required before find_key!)
+        // Enter object (required before scanning!)
         if (!dap_json_iterator_enter(l_iter)) {
             log_it(L_ERROR, "Failed to enter object");
             dap_json_iterator_free(l_iter);
             return false;
         }
         
-        // Find key
+        // Use simple find_key (returns FIRST occurrence)
+        // TODO: Implement "last wins" for duplicate keys by scanning all entries
         if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
             dap_json_iterator_free(l_iter);
             return false;
         }
         
-        // Key found - iterator is now positioned at the VALUE (after the key)
-        // Get current tape position using API function
+        // Key found - iterator positioned at VALUE
         size_t l_value_tape_pos = dap_json_iterator_get_position(l_iter);
         
         dap_json_iterator_free(l_iter);
         
-        // Create sub-wrapper pointing to this value
+        // Create sub-wrapper pointing to value
         *a_value = s_create_immutable_sub_wrapper(a_json, l_value_tape_pos);
         return (*a_value != NULL);
     }
