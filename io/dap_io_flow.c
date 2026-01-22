@@ -172,6 +172,17 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
     atomic_init(&l_server->is_deleting, false);   // Server is valid initially
     
+    // Initialize queue deletion coordination
+    pthread_mutex_init(&l_server->queue_delete_mutex, NULL);
+    pthread_cond_init(&l_server->queue_delete_cond, NULL);
+    atomic_init(&l_server->pending_queue_deletions, 0);
+    
+    // Initialize server deletion coordination
+    pthread_mutex_init(&l_server->server_delete_mutex, NULL);
+    pthread_cond_init(&l_server->server_delete_cond, NULL);
+    atomic_init(&l_server->server_delete_pending, false);
+    atomic_init(&l_server->server_delete_complete, false);
+    
     log_it(L_INFO, "Created flow server '%s' with %u workers, boundary_type=%d",
            a_name, l_worker_count, a_boundary_type);
     
@@ -280,6 +291,90 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
 }
 
 /**
+ * @brief Worker-thread callback to safely delete dap_server
+ * 
+ * CRITICAL: dap_server contains listener sockets registered in worker reactors!
+ * Must be deleted from a worker thread with proper reactor access.
+ * 
+ * We pick worker 0 as it's guaranteed to exist and handle the deletion there.
+ * 
+ * @param a_arg dap_io_flow_server_t* with server to delete
+ */
+static void s_server_delete_worker_callback(void *a_arg)
+{
+    dap_io_flow_server_t *l_server = (dap_io_flow_server_t *)a_arg;
+    if (!l_server || !l_server->dap_server) {
+        log_it(L_ERROR, "s_server_delete_worker_callback: invalid server");
+        if (l_server) {
+            atomic_store(&l_server->server_delete_complete, true);
+            pthread_cond_signal(&l_server->server_delete_cond);
+        }
+        return;
+    }
+    
+    log_it(L_DEBUG, "Worker thread: Deleting dap_server (listeners) from reactor context");
+    
+    // Safe to delete - we're in a worker reactor thread!
+    dap_server_delete(l_server->dap_server);
+    l_server->dap_server = NULL;
+    
+    log_it(L_DEBUG, "Worker thread: dap_server deleted successfully");
+    
+    // Signal completion
+    pthread_mutex_lock(&l_server->server_delete_mutex);
+    atomic_store(&l_server->server_delete_complete, true);
+    pthread_cond_signal(&l_server->server_delete_cond);
+    pthread_mutex_unlock(&l_server->server_delete_mutex);
+}
+
+/**
+ * @brief Worker-thread callback to safely delete context queue
+ * 
+ * CRITICAL: This callback runs in the worker's reactor thread!
+ * Safe to call dap_context_queue_delete() because we're in the owning thread.
+ * 
+ * @param a_arg queue_delete_args_t* with server, queue, and worker_id
+ */
+static void s_queue_delete_worker_callback(void *a_arg)
+{
+    typedef struct {
+        dap_io_flow_server_t *server;
+        dap_context_queue_t *queue;
+        uint32_t worker_id;
+    } queue_delete_args_t;
+    
+    queue_delete_args_t *l_args = (queue_delete_args_t *)a_arg;
+    if (!l_args || !l_args->server || !l_args->queue) {
+        log_it(L_ERROR, "s_queue_delete_worker_callback: invalid args");
+        if (l_args) {
+            if (l_args->server) {
+                atomic_fetch_sub(&l_args->server->pending_queue_deletions, 1);
+                pthread_cond_signal(&l_args->server->queue_delete_cond);
+            }
+            DAP_DELETE(l_args);
+        }
+        return;
+    }
+    
+    log_it(L_DEBUG, "Worker %u: Deleting context queue from reactor thread", l_args->worker_id);
+    
+    // Safe to delete - we're in the reactor thread that owns this queue!
+    dap_context_queue_delete(l_args->queue);
+    
+    // Decrement pending deletions counter
+    uint32_t l_remaining = atomic_fetch_sub(&l_args->server->pending_queue_deletions, 1) - 1;
+    
+    log_it(L_DEBUG, "Worker %u: Queue deleted, %u queues remaining", l_args->worker_id, l_remaining);
+    
+    // Signal if all queues deleted
+    pthread_mutex_lock(&l_args->server->queue_delete_mutex);
+    pthread_cond_signal(&l_args->server->queue_delete_cond);
+    pthread_mutex_unlock(&l_args->server->queue_delete_mutex);
+    
+    DAP_DELETE(l_args);
+}
+
+/**
  * @brief Delete IO flow server and cleanup all resources
  * 
  * Simplified cleanup with lock-free context queues:
@@ -310,11 +405,11 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
     atomic_store(&a_server->is_deleting, true);
-    log_it(L_ERROR, "SERVER DELETE: '%s' marked for deletion - draining queues", a_server->name);
+    log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
     
     // Step 0: Stop server listeners first (prevent new packets)
     if (a_server->is_running) {
-        log_it(L_ERROR, "SERVER DELETE: Stopping server listeners to prevent new packets");
+        log_it(L_DEBUG, "Stopping server listeners to prevent new packets");
         dap_io_flow_server_stop(a_server);
     }
     
@@ -322,7 +417,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // Give worker threads time to process remaining packets
     uint32_t l_worker_count = dap_proc_thread_get_count();
     if (a_server->queue_inputs) {
-        log_it(L_ERROR, "DRAIN START: Waiting for queue drainage (max 1 second)");
+        log_it(L_DEBUG, "Waiting for queue drainage (max 1 second)");
         for (int attempts = 0; attempts < 10; attempts++) {
             bool all_empty = true;
             for (uint32_t i = 0; i < l_worker_count; i++) {
@@ -330,12 +425,12 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                     size_t pending = dap_context_queue_count(a_server->queue_inputs[i]);
                     if (pending > 0) {
                         all_empty = false;
-                        log_it(L_ERROR, "DRAIN: Worker %u queue has %zu pending packets", i, pending);
+                        log_it(L_DEBUG, "Worker %u queue has %zu pending packets", i, pending);
                     }
                 }
             }
             if (all_empty) {
-                log_it(L_ERROR, "DRAIN COMPLETE: All queues drained successfully");
+                log_it(L_DEBUG, "All queues drained successfully");
                 break;
             }
             usleep(100000);  // 100ms between checks
@@ -344,12 +439,36 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     // CRITICAL: Wait for workers to finish processing current callbacks
     // Even though queues are drained, reactor callbacks may still be running
-    log_it(L_ERROR, "POST-DRAIN: Waiting 200ms for reactor callbacks to complete");
-    usleep(200000);  // 200ms to ensure all reactor callbacks finish
-    log_it(L_ERROR, "POST-DRAIN COMPLETE: Safe to delete queues now");
+    // AND cross-worker packets may still reference our listeners!
+    log_it(L_ERROR, "POST-DRAIN: Waiting for cross-worker packets to settle");
+    
+    // Wait until no cross-worker forwarding activity for this server
+    uint64_t l_last_count = atomic_load(&a_server->cross_worker_packets);
+    uint32_t l_stable_iterations = 0;
+    const uint32_t REQUIRED_STABLE = 5; // 5 iterations of no activity
+    
+    for (uint32_t i = 0; i < 50; i++) {  // Max 5 seconds total
+        usleep(100000);  // 100ms
+        uint64_t l_current_count = atomic_load(&a_server->cross_worker_packets);
+        
+        if (l_current_count == l_last_count) {
+            l_stable_iterations++;
+            if (l_stable_iterations >= REQUIRED_STABLE) {
+                log_it(L_DEBUG, "Cross-worker activity stabilized after %u iterations", i);
+                break;
+            }
+        } else {
+            l_stable_iterations = 0; // Reset if activity detected
+            log_it(L_DEBUG, "Cross-worker packets: %lu (still active)", l_current_count);
+        }
+        l_last_count = l_current_count;
+    }
+    
+    log_it(L_ERROR, "POST-DRAIN COMPLETE: Cross-worker packets settled (total: %lu)", 
+           atomic_load(&a_server->cross_worker_packets));
     
     // Step 1: Cleanup all flows (user data)
-    log_it(L_ERROR, "STEP 1: Cleaning up flows for %u workers", l_worker_count);
+    debug_if(s_debug_more, L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
         
@@ -365,39 +484,71 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
     }
-    log_it(L_ERROR, "STEP 1 COMPLETE: Flows cleaned");
+    debug_if(s_debug_more, L_DEBUG, "Flows cleanup complete");
     
     // Step 2: Delete inter_worker_queues references
     // Note: inter_worker_queues[i][j] just references queue_inputs[j]
     // So we only need to free the array pointers, not the queues themselves
-    log_it(L_ERROR, "STEP 2: Freeing inter-worker queue references");
+    debug_if(s_debug_more, L_DEBUG, "Freeing inter-worker queue references");
     if (a_server->inter_worker_queues) {
-        log_it(L_DEBUG, "Freeing inter-worker queue reference arrays");
         for (uint32_t i = 0; i < l_worker_count; i++) {
             DAP_DELETE(a_server->inter_worker_queues[i]);
         }
         DAP_DELETE(a_server->inter_worker_queues);
     }
-    log_it(L_ERROR, "STEP 2 COMPLETE: Inter-worker queues freed");
+    debug_if(s_debug_more, L_DEBUG, "Inter-worker queue references freed");
     
-    // Step 3: DO NOT delete queue_inputs - MEMORY LEAK for debugging
-    // CRITICAL RACE CONDITION: Cannot safely delete queues from main thread
-    // while worker threads may still reference them in reactor callbacks!
-    //
-    // Proper solution requires:
-    // 1. Signal all workers to stop processing this server's queues
-    // 2. Wait for workers to acknowledge (barrier/completion tracking)
-    // 3. Only then safe to delete from main thread
-    // OR: Let workers delete their own queues on shutdown
-    //
-    // For now: intentional memory leak to prevent crash
-    log_it(L_ERROR, "STEP 3: SKIPPING queue deletion (avoiding cross-thread race)");
+    // Step 3: Schedule queue deletion on each worker thread (thread-safe)
+    // CRITICAL: Queues MUST be deleted from their own reactor threads!
+    debug_if(s_debug_more, L_DEBUG, "Scheduling queue deletions on worker threads");
     if (a_server->queue_inputs) {
-        log_it(L_WARNING, "Leaving %u queue_inputs allocated (MEMORY LEAK) to avoid crash", l_worker_count);
-        // Set to NULL to prevent double-free attempts
+        // Helper structure for deletion callback (typedef already defined above)
+        typedef struct {
+            dap_io_flow_server_t *server;
+            dap_context_queue_t *queue;
+            uint32_t worker_id;
+        } queue_delete_args_t;
+        
+        // Set number of pending deletions
+        atomic_store(&a_server->pending_queue_deletions, l_worker_count);
+        
+        // Schedule deletion on each worker
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            if (a_server->queue_inputs[i]) {
+                queue_delete_args_t *l_args = DAP_NEW_Z(queue_delete_args_t);
+                l_args->server = a_server;
+                l_args->queue = a_server->queue_inputs[i];
+                l_args->worker_id = i;
+                
+                dap_proc_thread_t *l_proc = dap_proc_thread_get(i);
+                dap_worker_t *l_worker = l_proc ? (dap_worker_t *)l_proc->context->_inheritor : NULL;
+                if (l_worker) {
+                    log_it(L_DEBUG, "Scheduling queue[%u] deletion on worker %u", i, i);
+                    dap_worker_exec_callback_on(l_worker, s_queue_delete_worker_callback, l_args);
+                } else {
+                    log_it(L_ERROR, "Worker %u not found! Cannot schedule queue deletion", i);
+                    atomic_fetch_sub(&a_server->pending_queue_deletions, 1);
+                    DAP_DELETE(l_args);
+                }
+            } else {
+                // No queue to delete on this worker
+                atomic_fetch_sub(&a_server->pending_queue_deletions, 1);
+            }
+        }
+        
+        // Wait for all workers to complete queue deletions
+        pthread_mutex_lock(&a_server->queue_delete_mutex);
+        while (atomic_load(&a_server->pending_queue_deletions) > 0) {
+            debug_if(s_debug_more, L_DEBUG, "Waiting for %u queues to be deleted...", 
+                   atomic_load(&a_server->pending_queue_deletions));
+            pthread_cond_wait(&a_server->queue_delete_cond, &a_server->queue_delete_mutex);
+        }
+        pthread_mutex_unlock(&a_server->queue_delete_mutex);
+        
+        DAP_DELETE(a_server->queue_inputs);
         a_server->queue_inputs = NULL;
+        debug_if(s_debug_more, L_DEBUG, "All queues deleted safely from worker threads");
     }
-    log_it(L_ERROR, "STEP 3 COMPLETE: Queue cleanup skipped (intentional leak)");
     
     // Step 5: Free structures
     log_it(L_ERROR, "STEP 5: Destroying %u flow locks", l_worker_count);
@@ -416,16 +567,44 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_cond_destroy(&a_server->cleanup_cond);
     log_it(L_ERROR, "STEP 5C COMPLETE: Cleanup synchronization destroyed");
     
-    // Step 6: NOW safe to delete dap_server (listeners)
-    // All queues drained, no more references to listeners
+    // Destroy queue deletion synchronization
+    pthread_mutex_destroy(&a_server->queue_delete_mutex);
+    pthread_cond_destroy(&a_server->queue_delete_cond);
+    
+    // Step 6: Delete dap_server (listeners) via worker thread
+    // CRITICAL: Listeners are registered in worker reactors - must delete from worker context!
+    debug_if(s_debug_more, L_DEBUG, "Scheduling dap_server deletion on worker thread");
     if (a_server->dap_server) {
-        log_it(L_ERROR, "DELETE DAP_SERVER: Closing listeners NOW (all queues drained)");
-        dap_server_delete(a_server->dap_server);
-        a_server->dap_server = NULL;
-        log_it(L_ERROR, "DELETE DAP_SERVER: Listeners closed successfully");
+        atomic_store(&a_server->server_delete_pending, true);
+        atomic_store(&a_server->server_delete_complete, false);
+        
+        // Schedule deletion on worker 0 (guaranteed to exist)
+        dap_proc_thread_t *l_proc = dap_proc_thread_get(0);
+        dap_worker_t *l_worker = l_proc ? (dap_worker_t *)l_proc->context->_inheritor : NULL;
+        
+        if (l_worker) {
+            dap_worker_exec_callback_on(l_worker, s_server_delete_worker_callback, a_server);
+            
+            // Wait for deletion to complete
+            pthread_mutex_lock(&a_server->server_delete_mutex);
+            while (!atomic_load(&a_server->server_delete_complete)) {
+                pthread_cond_wait(&a_server->server_delete_cond, &a_server->server_delete_mutex);
+            }
+            pthread_mutex_unlock(&a_server->server_delete_mutex);
+            
+            debug_if(s_debug_more, L_DEBUG, "dap_server deleted safely from worker thread");
+        } else {
+            log_it(L_WARNING, "Worker 0 not found! Deleting dap_server directly (UNSAFE)");
+            dap_server_delete(a_server->dap_server);
+            a_server->dap_server = NULL;
+        }
     }
     
-    // Preserve name pointer before freeing (for logging)
+    // Destroy server deletion synchronization
+    pthread_mutex_destroy(&a_server->server_delete_mutex);
+    pthread_cond_destroy(&a_server->server_delete_cond);
+    
+    // Step 7: Final cleanup
     char *l_name_copy = a_server->name ? dap_strdup(a_server->name) : NULL;
     
     log_it(L_DEBUG, "Freeing server name and object");
