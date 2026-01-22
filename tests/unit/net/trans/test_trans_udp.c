@@ -865,7 +865,7 @@ static void test_13_stream_write(void)
     // Internal header = 1 + 4 + 8 = 13 bytes
     // Encrypted size may be larger due to padding/overhead
     
-    size_t l_min_expected_size = sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size;
+    size_t l_min_expected_size = sizeof(dap_stream_trans_udp_full_header_t) + l_test_data_size;
     TEST_ASSERT((size_t)l_bytes_written >= l_min_expected_size,
                 "Packet size should be at least internal header + payload");
     
@@ -1097,38 +1097,51 @@ static void test_15_encrypted_internal_header(void)
     TEST_INFO("✅ Packet decrypted: %zu bytes", l_decrypted_size);
     
     // ========================================================================
-    // STEP 4: Parse and validate internal header
+    // STEP 4: Parse and validate internal header (NEW FULL FORMAT)
     // ========================================================================
     
-    TEST_ASSERT(l_decrypted_size >= sizeof(dap_stream_trans_udp_encrypted_header_t),
-                "Decrypted size should include internal header");
+    TEST_ASSERT(l_decrypted_size >= sizeof(dap_stream_trans_udp_full_header_t),
+                "Decrypted size should include full header (need %zu, got %zu)",
+                sizeof(dap_stream_trans_udp_full_header_t), l_decrypted_size);
     
-    dap_stream_trans_udp_encrypted_header_t *l_header =
-        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    // Deserialize using dap_serialize API
+    extern const dap_serialize_schema_t g_udp_full_header_schema;
+    dap_stream_trans_udp_full_header_t l_hdr;
     
-    // Convert from network byte order
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_sess_id = be64toh(l_header->session_id);
+    dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL
+    );
     
-    TEST_ASSERT(l_header->type == DAP_STREAM_UDP_PKT_DATA,
-                "Packet type should be DATA (%u)", DAP_STREAM_UDP_PKT_DATA);
-    TEST_ASSERT(l_seq_num == l_initial_seq,
-                "Sequence number should match initial (expected %u, got %u)", l_initial_seq, l_seq_num);
-    TEST_ASSERT(l_sess_id == l_session_id,
-                "Session ID should match (expected 0x%016lX, got 0x%016lX)", l_session_id, l_sess_id);
+    if (l_deser.error_code != 0) {
+        TEST_FAIL("Header deserialization failed: %s",
+                  l_deser.error_message ? l_deser.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return;
+    }
     
-    TEST_INFO("✅ Internal header validated: type=%u, seq=%u, session=0x%016lX",
-              l_header->type, l_seq_num, l_sess_id);
+    TEST_ASSERT(l_hdr.type == DAP_STREAM_UDP_PKT_DATA,
+                "Packet type should be DATA (%u), got %u", DAP_STREAM_UDP_PKT_DATA, l_hdr.type);
+    TEST_ASSERT(l_hdr.seq_num == l_initial_seq,
+                "Sequence number should match initial (expected %u, got %lu)", l_initial_seq, l_hdr.seq_num);
+    TEST_ASSERT(l_hdr.session_id == l_session_id,
+                "Session ID should match (expected 0x%016lX, got 0x%016lX)", l_session_id, l_hdr.session_id);
+    
+    TEST_INFO("✅ Internal header validated: type=%u, seq=%lu, session=0x%016lX",
+              l_hdr.type, l_hdr.seq_num, l_hdr.session_id);
     
     // ========================================================================
     // STEP 5: Validate payload integrity
     // ========================================================================
     
-    const uint8_t *l_decrypted_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
-    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
+    const uint8_t *l_decrypted_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
     
     TEST_ASSERT(l_payload_size == sizeof(l_payload),
-                "Payload size should match original");
+                "Payload size should match original (expected %zu, got %zu)", sizeof(l_payload), l_payload_size);
     TEST_ASSERT(memcmp(l_decrypted_payload, l_payload, sizeof(l_payload)) == 0,
                 "Payload content should match original");
     
@@ -1424,12 +1437,27 @@ static void test_17_replay_protection(void)
         );
         TEST_ASSERT(l_decrypted_size > 0, "Packet %d decryption should succeed", i + 1);
         
-        dap_stream_trans_udp_encrypted_header_t *l_header =
-            (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+        // Deserialize full header
+        extern const dap_serialize_schema_t g_udp_full_header_schema;
+        dap_stream_trans_udp_full_header_t l_hdr;
         
-        // Parse internal header fields in network byte order
-        uint32_t l_seq_num = ntohl(l_header->seq_num);
-        uint64_t l_sess_id = be64toh(l_header->session_id);
+        dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw(
+            &g_udp_full_header_schema,
+            l_decrypted,
+            sizeof(dap_stream_trans_udp_full_header_t),
+            &l_hdr,
+            NULL
+        );
+        
+        if (l_deser.error_code != 0) {
+            TEST_FAIL("Packet %d: header deserialization failed: %s",
+                      i + 1, l_deser.error_message ? l_deser.error_message : "unknown");
+            DAP_DELETE(l_decrypted);
+            return;
+        }
+        
+        uint64_t l_seq_num = l_hdr.seq_num;
+        uint64_t l_sess_id = l_hdr.session_id;
         
         TEST_ASSERT(l_seq_num == l_expected_seq_nums[i],
                     "Packet %d seq_num should be %u (got %u)",
