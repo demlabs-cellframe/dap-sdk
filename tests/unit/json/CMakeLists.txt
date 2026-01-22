@@ -237,24 +237,27 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # =========================================
 # Coverage: Детальная отладка SSE2 tokenization
 # Tests: 3 focused debug tests with detailed token comparison
-project(test_json_stage1_sse2_debug)
+# NOTE: x86-only test (requires SSE2)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    project(test_json_stage1_sse2_debug)
 
-add_executable(${PROJECT_NAME}
-    test_stage1_sse2_debug.c
-)
+    add_executable(${PROJECT_NAME}
+        test_stage1_sse2_debug.c
+    )
 
-dap_test_add_includes(${PROJECT_NAME})
-dap_test_link_libraries(${PROJECT_NAME})
+    dap_test_add_includes(${PROJECT_NAME})
+    dap_test_link_libraries(${PROJECT_NAME})
 
-add_test(
-    NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
-)
+    add_test(
+        NAME ${PROJECT_NAME}
+        COMMAND ${PROJECT_NAME}
+    )
 
-set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
-    LABELS "unit;json;stage1;sse2;debug"
-)
+    set_tests_properties(${PROJECT_NAME} PROPERTIES
+        TIMEOUT 60
+        LABELS "unit;json;stage1;sse2;debug"
+    )
+endif()
 
 # =========================================
 # Test 11: UNIVERSAL SIMD String Spanning REGRESSION (Phase 1.4.4)
@@ -317,33 +320,34 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Coverage: SimdJSON-style Stage 1 implementation
 # Tests: Correctness tests + Performance benchmarks
 # Target: 4-5 GB/s throughput (AVX2), 6-8 GB/s (AVX-512)
-project(test_simdjson_stage1)
-
-add_executable(${PROJECT_NAME}
-    test_simdjson_stage1.c
-)
-
-dap_test_add_includes(${PROJECT_NAME})
-dap_test_link_libraries(${PROJECT_NAME})
-
-# Enable AVX2 for this test
+# NOTE: x86-only test (requires AVX2)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    project(test_simdjson_stage1)
+
+    add_executable(${PROJECT_NAME}
+        test_simdjson_stage1.c
+    )
+
+    dap_test_add_includes(${PROJECT_NAME})
+    dap_test_link_libraries(${PROJECT_NAME})
+
+    # Enable AVX2 for this test
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /arch:AVX2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -mavx2)
     endif()
+
+    add_test(
+        NAME ${PROJECT_NAME}
+        COMMAND ${PROJECT_NAME}
+    )
+
+    set_tests_properties(${PROJECT_NAME} PROPERTIES
+        TIMEOUT 300
+        LABELS "unit;json;stage1;simdjson;phase2;performance;critical"
+    )
 endif()
-
-add_test(
-    NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
-)
-
-set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300
-    LABELS "unit;json;stage1;simdjson;phase2;performance;critical"
-)
 
 # =========================================
 # Test 17: Memory DoS Protection (Phase 1.8.1 - CRITICAL SECURITY)
