@@ -1499,8 +1499,8 @@ static int32_t s_parse_string(
     *a_out_end_offset = a_start + l_end_offset;
     
     debug_if(dap_json_get_debug(), L_DEBUG,
-             "Phase 2.0.3: String ref[%d] - offset=%u, length=%zu, escapes=%d",
-             ref_index, (uint32_t)data_offset, l_scanned_string.length, 
+             "Phase 2.0.3: String ref[%d] - offset=%u, length=%u, escapes=%d",
+             ref_index, (uint32_t)data_offset, (uint32_t)l_scanned_string.length, 
              l_scanned_string.needs_unescape);
     
     return ref_index;

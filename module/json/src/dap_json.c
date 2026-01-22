@@ -1305,9 +1305,8 @@ int dap_json_object_add_uint64(dap_json_t* a_json, const char* a_key, uint64_t a
         *l_allocated = a_value;
         
         l_value->type = DAP_JSON_TYPE_UINT64;
-        l_value->flags = 0;
-        l_value->length = 1; // Flag: allocated
-        l_value->offset = (uint32_t)(uintptr_t)l_allocated;
+        l_value->flags = DAP_JSON_FLAG_MALLOC;
+        dap_json_set_storage_ptr(l_value, l_allocated);
     }
     
     if (!l_value) {
@@ -1850,6 +1849,48 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
         return false;
     }
     
+    // IMMUTABLE mode (tape): use iterator for parsed JSON
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            return false;
+        }
+        
+        // Check if root is object
+        if (dap_json_iterator_type(l_iter) != DAP_JSON_TYPE_OBJECT) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Enter object
+        if (!dap_json_iterator_enter(l_iter)) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Find key
+        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Get value type
+        dap_json_type_t l_type = dap_json_iterator_type(l_iter);
+        
+        if (l_type == DAP_JSON_TYPE_INT) {
+            int64_t l_val;
+            if (dap_json_iterator_get_int(l_iter, &l_val)) {
+                *a_out = (uint64_t)l_val;
+                dap_json_iterator_free(l_iter);
+                return true;
+            }
+        }
+        
+        dap_json_iterator_free(l_iter);
+        return false;
+    }
+    
+    // MUTABLE mode: use DOM
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return false;
@@ -1876,6 +1917,10 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
     } else if (l_value->type == DAP_JSON_TYPE_UINT64) {
         // offset → pointer to uint64
         uint64_t *l_ptr = (uint64_t*)dap_json_get_storage_ptr(l_value);
+        if (!l_ptr) {
+            log_it(L_ERROR, "NULL pointer for UINT64 storage");
+            return false;
+        }
         *a_out = *l_ptr;
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_UINT256) {
