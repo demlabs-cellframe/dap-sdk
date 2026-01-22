@@ -32,9 +32,13 @@ DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_write_unsafe,
 // Test case: Write RAW (no session)
 void test_write_raw()
 {
+    // Create real mock esocket instead of dummy pointer
+    dap_events_socket_t l_mock_esocket = {0};
+    l_mock_esocket.type = DESCRIPTOR_TYPE_SOCKET_CLIENT; // Stream-oriented, not datagram
+    
     dap_stream_t l_stream = {0};
     dap_net_trans_ctx_t l_trans_ctx = {0};
-    l_trans_ctx.esocket = (dap_events_socket_t*)0x12345; // Dummy address
+    l_trans_ctx.esocket = &l_mock_esocket; // Use real mock esocket
     l_stream.trans_ctx = &l_trans_ctx;
     l_stream.session = NULL;
     l_stream.node.uint64 = 1; // Dummy node addr
@@ -54,9 +58,13 @@ void test_write_raw()
 // Test case: Write Encrypted
 void test_write_encrypted()
 {
+    // Create real mock esocket instead of dummy pointer
+    dap_events_socket_t l_mock_esocket = {0};
+    l_mock_esocket.type = DESCRIPTOR_TYPE_SOCKET_CLIENT; // Stream-oriented, not datagram
+    
     dap_stream_t l_stream = {0};
     dap_net_trans_ctx_t l_trans_ctx = {0};
-    l_trans_ctx.esocket = (dap_events_socket_t*)0x12345;
+    l_trans_ctx.esocket = &l_mock_esocket; // Use real mock esocket
     l_stream.trans_ctx = &l_trans_ctx;
     dap_stream_session_t l_session = {0};
     dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, NULL, 0, NULL, 0, 32);
