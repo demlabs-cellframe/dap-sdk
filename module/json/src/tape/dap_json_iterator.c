@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <locale.h>  // For strtod_l
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
@@ -591,7 +592,16 @@ bool dap_json_iterator_get_double(const dap_json_iterator_t *a_iter, double *out
     char *l_endptr;
     errno = 0;
     
-    double l_value = strtod(l_num_str, &l_endptr);
+    // Use locale-independent parsing (C locale always uses '.')
+    #if defined(__GLIBC__) || defined(__FreeBSD__)
+        // Use strtod_l with C locale for locale-independent parsing
+        locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", NULL);
+        double l_value = strtod_l(l_num_str, &l_endptr, c_locale);
+        freelocale(c_locale);
+    #else
+        // Fallback for systems without strtod_l
+        double l_value = strtod(l_num_str, &l_endptr);
+    #endif
     
     // Check for overflow (not underflow - subnormal doubles are valid)
     if (errno == ERANGE && (l_value == HUGE_VAL || l_value == -HUGE_VAL)) {
