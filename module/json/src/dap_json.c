@@ -1211,6 +1211,12 @@ int dap_json_object_add_string_len(dap_json_t* a_json, const char* a_key, const 
         return -1;
     }
     
+    // IMMUTABLE mode doesn't support mutations
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        log_it(L_ERROR, "Cannot mutate IMMUTABLE JSON (parsed JSON is read-only)");
+        return -1;
+    }
+    
     if (a_len < 0) {
         log_it(L_ERROR, "Invalid length: %d", a_len);
         return -1;
@@ -1879,7 +1885,7 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
         
         if (l_type == DAP_JSON_TYPE_INT) {
             int64_t l_val;
-            if (dap_json_iterator_get_int(l_iter, &l_val)) {
+            if (dap_json_iterator_get_int64(l_iter, &l_val)) {
                 *a_out = (uint64_t)l_val;
                 dap_json_iterator_free(l_iter);
                 return true;
