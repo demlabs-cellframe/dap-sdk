@@ -559,6 +559,12 @@ static bool s_serialize_value_recursive(
                     if (!s_append_string(a_buffer, a_size, a_capacity, ",")) return false;
                 }
                 
+                // Check element validity
+                if (!l_storage->elements[i]) {
+                    log_it(L_ERROR, "NULL element at index %zu", i);
+                    return false;
+                }
+                
                 if (!s_serialize_value_recursive(l_storage->elements[i], a_buffer, a_size, a_capacity, a_indent + 1, a_pretty)) {
                     return false;
                 }
@@ -632,9 +638,19 @@ char* dap_json_value_serialize(dap_json_value_t *a_value)
  */
 char* dap_json_value_serialize_pretty(dap_json_value_t *a_value)
 {
-    (void)a_value;
-    // TODO Phase 2.0.4: This needs refactoring to accept source_buffer + stage2
-    log_it(L_ERROR, "dap_json_value_serialize_pretty: Needs source_buffer + stage2 context (Phase 2.0.4)");
-    return NULL;
+    if (!a_value) {
+        return NULL;
+    }
+    
+    char *l_buffer = DAP_NEW_Z_COUNT(char, 256);
+    size_t l_size = 0;
+    size_t l_capacity = 256;
+    
+    if (!s_serialize_value_recursive(a_value, &l_buffer, &l_size, &l_capacity, 0, true)) {
+        DAP_DELETE(l_buffer);
+        return NULL;
+    }
+    
+    return l_buffer;
 }
 
