@@ -413,36 +413,32 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
     atomic_store(&a_server->is_deleting, true);
-    log_it(L_INFO, "Server '%s' marked for deletion - closing listeners", a_server->name);
+    log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
     
-    // Step 0: Close listener sockets IMMEDIATELY to stop new packet intake
-    // CRITICAL: Do this BEFORE draining queues to prevent endless growth!
-    // Listeners are closed but dap_server structure remains (for already-queued packets).
+    // Mark server as stopped (if not already)
+    if (a_server->is_running) {
+        log_it(L_DEBUG, "Marking server as stopped to prevent new flows");
+        dap_io_flow_server_stop(a_server);
+    }
+    
+    // Step 0: Disable read callbacks on listener sockets to stop accepting NEW packets
+    // But keep sockets alive for sending responses to already-queued packets!
     if (a_server->dap_server && a_server->dap_server->es_listeners) {
-        debug_if(s_debug_more, L_DEBUG, "Closing listener sockets to stop packet intake");
+        debug_if(s_debug_more, L_DEBUG, "Disabling read callbacks on listeners to stop packet intake");
         
-        // Close all listener sockets (but don't delete dap_server structure yet)
         dap_list_t *l_item = a_server->dap_server->es_listeners;
         while (l_item) {
             dap_events_socket_t *l_es = (dap_events_socket_t *)l_item->data;
             if (l_es) {
-                // Remove from reactor and close socket
-                dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid);
+                // Disable read callback to stop accepting new packets
+                // But keep socket alive for sending responses!
+                l_es->callbacks.read_callback = NULL;
+                debug_if(s_debug_more, L_DEBUG, "Disabled read callback on listener fd=%d", l_es->fd);
             }
             l_item = l_item->next;
         }
         
-        // Clear the list (listeners are closed, but dap_server structure remains)
-        dap_list_free(a_server->dap_server->es_listeners);
-        a_server->dap_server->es_listeners = NULL;
-        
-        debug_if(s_debug_more, L_DEBUG, "Listener sockets closed - no new packets accepted");
-    }
-    
-    // Mark server as stopped (if not already)
-    if (a_server->is_running) {
-        log_it(L_DEBUG, "Stopping server listeners to prevent new packets");
-        dap_io_flow_server_stop(a_server);
+        debug_if(s_debug_more, L_DEBUG, "Listener read callbacks disabled - no new packets accepted");
     }
     
     // Step 0.5: Wait for all queued packets to drain
@@ -1275,6 +1271,10 @@ static void s_queue_ptr_callback(void *a_ptr)
     
     dap_io_flow_server_t *l_server = l_packet->server;
     
+    // CRITICAL: Increment statistics FIRST (before any checks that might return)
+    // This ensures we decrement on ALL exit paths
+    atomic_fetch_add(&l_server->cross_worker_packets, 1);
+    
     // CRITICAL: Check if server is being deleted
     if (atomic_load(&l_server->is_deleting)) {
         debug_if(s_debug_more, L_DEBUG, 
@@ -1284,6 +1284,8 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
+        // CRITICAL: Decrement counter (we incremented it above)
+        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
         return;
     }
     
@@ -1296,11 +1298,10 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
+        // CRITICAL: Decrement counter (we incremented it above)
+        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
         return;
     }
-    
-    // Increment statistics
-    atomic_fetch_add(&l_server->cross_worker_packets, 1);
     
     // CRITICAL: Find REAL UDP listener for current worker!
     dap_worker_t *l_worker = dap_worker_get_current();
@@ -1347,6 +1348,8 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
+        // CRITICAL: Decrement counter even on error path (we incremented it above)
+        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
         return;
     }
     
@@ -1386,6 +1389,13 @@ static void s_queue_ptr_callback(void *a_ptr)
     } else {
         log_it(L_WARNING, "Queue callback: packet has NULL page_handle");
     }
+    
+    // CRITICAL: Decrement cross-worker packet counter after processing!
+    // This counter is used in cleanup to wait for all packets to drain.
+    atomic_fetch_sub(&l_server->cross_worker_packets, 1);
+    debug_if(s_debug_more, L_DEBUG, 
+             "Queue callback: packet processed, cross_worker_packets now: %lu",
+             atomic_load(&l_server->cross_worker_packets));
 }
 
 /**
