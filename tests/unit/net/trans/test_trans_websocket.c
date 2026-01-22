@@ -119,7 +119,13 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto, void)
 }
 
 // Mock dap_timerfd_t for testing
-static dap_timerfd_t s_mock_timerfd = {0};
+static dap_events_socket_t s_mock_timer_esocket = {
+    .uuid = 0x1234567890ABCDEF,
+    .type = DESCRIPTOR_TYPE_TIMER
+};
+static dap_timerfd_t s_mock_timerfd = {
+    .events_socket = &s_mock_timer_esocket
+};
 
 // Wrapper for dap_timerfd_start_on_worker
 DAP_MOCK_WRAPPER_CUSTOM(dap_timerfd_t*, dap_timerfd_start_on_worker,

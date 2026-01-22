@@ -121,6 +121,10 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_client_ctx(
     }
     l_ctx->esocket->addr_size = sizeof(struct sockaddr_in);
     
+    // CRITICAL: Also setup remote_addr in UDP context (used by s_udp_write_typed)
+    memcpy(&l_ctx->remote_addr, &l_ctx->esocket->addr_storage, sizeof(struct sockaddr_in));
+    l_ctx->remote_addr_len = sizeof(struct sockaddr_in);
+    
     log_it(L_DEBUG, "Created mock client UDP context: session_id=0x%lx, dest=%s:%u",
            a_session_id, a_dest_addr, a_dest_port);
     
