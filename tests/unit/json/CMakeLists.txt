@@ -600,6 +600,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMA
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;benchmark;phase2.4")
 
+# Reference scanner 64-byte boundary test
+project(test_reference_scanner_64)
+add_executable(${PROJECT_NAME} test_reference_scanner_64.c)
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 10 
+    LABELS "unit;json;debug;reference"
+)
+
 # SIMD Chunk Boundary with Escape Sequences Test
 # Tests correct handling of escape sequences at SIMD chunk boundaries (16/32/64 bytes)
 # Critical for all SIMD architectures (SSE2, AVX2, AVX-512, NEON, SVE)
