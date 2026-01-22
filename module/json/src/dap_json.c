@@ -696,21 +696,37 @@ size_t dap_json_array_length(dap_json_t* a_array)
             return 0;
         }
         
-        // Check if root is array
+        // Skip ROOT_START if present
+        size_t l_start_pos = 0;
         uint8_t l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[0]);
+        if (l_type == TAPE_TYPE_ROOT_START && a_array->mode_data.immutable.tape_count > 1) {
+            l_start_pos = 1;
+            l_type = dap_tape_get_type(a_array->mode_data.immutable.tape[1]);
+        }
+        
+        // Check if root is array
         if (l_type != TAPE_TYPE_ARRAY_START) {
             return 0;
         }
         
         // Use jump pointer to get close position
-        uint64_t l_close_idx = dap_tape_get_payload(a_array->mode_data.immutable.tape[0]);
+        uint64_t l_close_idx = dap_tape_get_payload(a_array->mode_data.immutable.tape[l_start_pos]);
         
-        // Count elements between start and close
+        // Count only direct children (top-level elements)
         size_t l_count = 0;
-        size_t l_pos = 1;  // Skip array start
+        size_t l_pos = l_start_pos + 1;  // Skip array start
         
         while (l_pos < l_close_idx && l_pos < a_array->mode_data.immutable.tape_count) {
+            uint8_t l_elem_type = dap_tape_get_type(a_array->mode_data.immutable.tape[l_pos]);
+            
+            // Skip ARRAY_END and ROOT_END
+            if (l_elem_type == TAPE_TYPE_ARRAY_END || l_elem_type == TAPE_TYPE_ROOT_END) {
+                break;
+            }
+            
             l_count++;
+            
+            // Skip entire value (including nested containers)
             l_pos = dap_tape_next(a_array->mode_data.immutable.tape, a_array->mode_data.immutable.tape_count, l_pos);
         }
         
@@ -2185,6 +2201,12 @@ bool dap_json_is_array(dap_json_t* a_json)
         return false;
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_ARRAY;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_ARRAY;
 }
@@ -2498,8 +2520,14 @@ dap_json_type_t dap_json_get_type(dap_json_t* a_json)
             return DAP_JSON_TYPE_NULL;
         }
         
-        // Root is always first tape entry
+        // Skip ROOT_START marker if present
+        size_t l_pos = 0;
         uint8_t l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[0]);
+        
+        if (l_type == TAPE_TYPE_ROOT_START && a_json->mode_data.immutable.tape_count > 1) {
+            l_pos = 1;  // Skip to actual content
+            l_type = dap_tape_get_type(a_json->mode_data.immutable.tape[1]);
+        }
         
         switch (l_type) {
             case TAPE_TYPE_OBJECT_START:  return DAP_JSON_TYPE_OBJECT;

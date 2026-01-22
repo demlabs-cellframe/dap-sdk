@@ -38,9 +38,9 @@
 
 // Forward declarations for MUTABLE mode storage structures
 typedef struct {
-    size_t count;
-    size_t capacity;
-    dap_json_value_t **elements;
+    dap_json_value_t **elements;  // Array of pointers
+    size_t count;                  // Current number of elements
+    size_t capacity;               // Allocated capacity
 } dap_json_array_storage_t;
 
 typedef struct {
