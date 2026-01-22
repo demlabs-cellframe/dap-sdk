@@ -322,7 +322,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // Give worker threads time to process remaining packets
     uint32_t l_worker_count = dap_proc_thread_get_count();
     if (a_server->queue_inputs) {
-        log_it(L_DEBUG, "Waiting for queue drainage (max 1 second)");
+        log_it(L_ERROR, "DRAIN START: Waiting for queue drainage (max 1 second)");
         for (int attempts = 0; attempts < 10; attempts++) {
             bool all_empty = true;
             for (uint32_t i = 0; i < l_worker_count; i++) {
@@ -330,20 +330,26 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                     size_t pending = dap_context_queue_count(a_server->queue_inputs[i]);
                     if (pending > 0) {
                         all_empty = false;
-                        log_it(L_DEBUG, "Worker %u queue has %zu pending packets", i, pending);
+                        log_it(L_ERROR, "DRAIN: Worker %u queue has %zu pending packets", i, pending);
                     }
                 }
             }
             if (all_empty) {
-                log_it(L_DEBUG, "All queues drained successfully");
+                log_it(L_ERROR, "DRAIN COMPLETE: All queues drained successfully");
                 break;
             }
             usleep(100000);  // 100ms between checks
         }
     }
     
+    // CRITICAL: Wait for workers to finish processing current callbacks
+    // Even though queues are drained, reactor callbacks may still be running
+    log_it(L_ERROR, "POST-DRAIN: Waiting 200ms for reactor callbacks to complete");
+    usleep(200000);  // 200ms to ensure all reactor callbacks finish
+    log_it(L_ERROR, "POST-DRAIN COMPLETE: Safe to delete queues now");
+    
     // Step 1: Cleanup all flows (user data)
-    log_it(L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
+    log_it(L_ERROR, "STEP 1: Cleaning up flows for %u workers", l_worker_count);
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[i]);
         
@@ -359,10 +365,12 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
     }
+    log_it(L_ERROR, "STEP 1 COMPLETE: Flows cleaned");
     
     // Step 2: Delete inter_worker_queues references
     // Note: inter_worker_queues[i][j] just references queue_inputs[j]
     // So we only need to free the array pointers, not the queues themselves
+    log_it(L_ERROR, "STEP 2: Freeing inter-worker queue references");
     if (a_server->inter_worker_queues) {
         log_it(L_DEBUG, "Freeing inter-worker queue reference arrays");
         for (uint32_t i = 0; i < l_worker_count; i++) {
@@ -370,44 +378,50 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
         DAP_DELETE(a_server->inter_worker_queues);
     }
+    log_it(L_ERROR, "STEP 2 COMPLETE: Inter-worker queues freed");
     
     // Step 3: Delete queue_inputs (actual queues)
     // These can be deleted directly as they're not esockets anymore
+    log_it(L_ERROR, "STEP 3: Deleting queue_inputs");
     if (a_server->queue_inputs) {
         log_it(L_DEBUG, "Deleting queue_inputs (context queues)");
         for (uint32_t i = 0; i < l_worker_count; i++) {
             if (a_server->queue_inputs[i]) {
+                size_t l_remaining = dap_context_queue_count(a_server->queue_inputs[i]);
+                log_it(L_ERROR, "STEP 3: Deleting queue[%u] - %zu items remaining", i, l_remaining);
                 dap_context_queue_delete(a_server->queue_inputs[i]);
                 a_server->queue_inputs[i] = NULL;
+                log_it(L_ERROR, "STEP 3: Queue[%u] deleted successfully", i);
             }
         }
         DAP_DELETE(a_server->queue_inputs);
-        log_it(L_DEBUG, "All queue_inputs deleted");
+        log_it(L_ERROR, "STEP 3 COMPLETE: All queue_inputs deleted");
     }
     
     // Step 5: Free structures
-    log_it(L_DEBUG, "Destroying %u flow locks", l_worker_count);
+    log_it(L_ERROR, "STEP 5: Destroying %u flow locks", l_worker_count);
     for (uint32_t i = 0; i < l_worker_count; i++) {
         pthread_rwlock_destroy(&a_server->flow_locks_per_worker[i]);
     }
-    log_it(L_DEBUG, "Flow locks destroyed");
+    log_it(L_ERROR, "STEP 5A COMPLETE: Flow locks destroyed");
     
-    log_it(L_DEBUG, "Freeing flows_per_worker and flow_locks_per_worker");
+    log_it(L_ERROR, "STEP 5B: Freeing flows_per_worker and flow_locks_per_worker");
     DAP_DELETE(a_server->flows_per_worker);
     DAP_DELETE(a_server->flow_locks_per_worker);
-    log_it(L_DEBUG, "Per-worker structures freed");
+    log_it(L_ERROR, "STEP 5B COMPLETE: Per-worker structures freed");
     
-    log_it(L_DEBUG, "Destroying cleanup synchronization");
+    log_it(L_ERROR, "STEP 5C: Destroying cleanup synchronization");
     pthread_mutex_destroy(&a_server->cleanup_mutex);
     pthread_cond_destroy(&a_server->cleanup_cond);
-    log_it(L_DEBUG, "Cleanup synchronization destroyed");
+    log_it(L_ERROR, "STEP 5C COMPLETE: Cleanup synchronization destroyed");
     
     // Step 6: NOW safe to delete dap_server (listeners)
     // All queues drained, no more references to listeners
     if (a_server->dap_server) {
-        log_it(L_DEBUG, "Deleting dap_server (closing listeners)");
+        log_it(L_ERROR, "DELETE DAP_SERVER: Closing listeners NOW (all queues drained)");
         dap_server_delete(a_server->dap_server);
         a_server->dap_server = NULL;
+        log_it(L_ERROR, "DELETE DAP_SERVER: Listeners closed successfully");
     }
     
     // Preserve name pointer before freeing (for logging)
