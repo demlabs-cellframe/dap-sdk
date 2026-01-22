@@ -1,3 +1,6 @@
+#ifndef DAP_JSON_STAGE1_NEON_ARCH_H
+#define DAP_JSON_STAGE1_NEON_ARCH_H
+
 /**
  * @brief ARM NEON movemask implementation
  * @details OPTIMAL ARM-native bit extraction using SHRN + ADDP chain
@@ -46,4 +49,6 @@ static inline uint16_t dap_neon_movemask_u8(uint8x16_t a_input)
     
     return result;
 }
+
+#endif // DAP_JSON_STAGE1_NEON_ARCH_H
 

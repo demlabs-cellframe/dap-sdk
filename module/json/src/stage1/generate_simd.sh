@@ -6,17 +6,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Save original SCRIPT_DIR before sourcing dap_tpl.sh (which overwrites it)
+STAGE1_DIR="${SCRIPT_DIR}"
+
 # DAP_TPL_DIR can be provided via environment (from CMake) for flexibility
 # This allows using external dap_tpl (e.g., when dap-sdk is a submodule)
 if [[ -n "${DAP_TPL_DIR:-}" ]]; then
     echo "Using DAP_TPL_DIR from environment: ${DAP_TPL_DIR}"
 else
     # Default: relative path from this script
-    DAP_TPL_DIR="${SCRIPT_DIR}/../../../test/dap_tpl"
+    DAP_TPL_DIR="${STAGE1_DIR}/../../../test/dap_tpl"
 fi
 
-TPL_C="${SCRIPT_DIR}/dap_json_stage1_simd.c.tpl"
-TPL_H="${SCRIPT_DIR}/dap_json_stage1_simd.h.tpl"
+TPL_C="${STAGE1_DIR}/dap_json_stage1_simd.c.tpl"
+TPL_H="${STAGE1_DIR}/dap_json_stage1_simd.h.tpl"
 
 # Output directory - MUST be provided by CMake, no default to avoid source tree pollution
 if [[ -z "${1:-}" ]]; then
@@ -35,8 +38,8 @@ fi
 
 source "${DAP_TPL_DIR}/dap_tpl.sh"
 
-# Set TEMPLATES_DIR for {{#include}} to find sub-templates
-export TEMPLATES_DIR="${SCRIPT_DIR}"
+# Set TEMPLATES_DIR for {{#include}} to find sub-templates (use saved STAGE1_DIR)
+export TEMPLATES_DIR="${STAGE1_DIR}"
 
 echo "=== Generating SIMD implementations using dap_tpl ==="
 echo "Output directory: ${OUTPUT_DIR}"
@@ -180,7 +183,7 @@ case "${ARCH}" in
         # Generate ARM-specific arch helpers header (movemask, etc)
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
-            "${SCRIPT_DIR}/arch/arm/movemask_neon.tpl"
+            "${STAGE1_DIR}/arch/arm/movemask_neon.tpl"
         
         echo ""
         echo "Generating ARM SVE..."
@@ -207,7 +210,7 @@ case "${ARCH}" in
         # Generate SVE-specific arch helpers header
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_sve_arch.h" \
-            "${SCRIPT_DIR}/arch/arm/movemask_sve.tpl"
+            "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
         
         echo ""
         echo "Generating ARM SVE2..."
@@ -234,7 +237,7 @@ case "${ARCH}" in
         # Generate SVE2-specific arch helpers header (same as SVE for now)
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
-            "${SCRIPT_DIR}/arch/arm/movemask_sve.tpl"
+            "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
         ;;
     
     *)

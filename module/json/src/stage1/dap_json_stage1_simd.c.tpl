@@ -90,7 +90,12 @@
 // ============================================================================
 
 // Unified SIMD operation macros for non-SVE
+{{#if USE_NEON_HELPER}}
+// NEON: vld1q_u8 expects const uint8_t *, not vector pointer
+#define SIMD_LOAD(ptr)           {{LOADU}}((const uint8_t *)(ptr))
+{{else}}
 #define SIMD_LOAD(ptr)           {{LOADU}}((const VECTOR_TYPE *)(ptr))
+{{/if}}
 #define SIMD_SET1(val)           {{SET1_EPI8}}((val))
 #define SIMD_CMP_EQ(a, b)        {{CMPEQ_EPI8}}((a), (b))
 {{#if OR}}
@@ -184,8 +189,8 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
     // Non-SVE: Vector-based comparisons (SSE2, AVX2, AVX-512, NEON)
     // ========================================================================
     
-    // Load chunk
-    VECTOR_TYPE chunk = {{LOADU}}((const VECTOR_TYPE *)a_chunk);
+    // Load chunk using SIMD_LOAD macro (handles type cast correctly for each arch)
+    VECTOR_TYPE chunk = SIMD_LOAD(a_chunk);
     
     // Create comparison vectors
     VECTOR_TYPE v_space = {{SET1_EPI8}}(' ');

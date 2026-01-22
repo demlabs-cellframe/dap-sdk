@@ -1,3 +1,6 @@
+#ifndef DAP_JSON_STAGE1_SVE_ARCH_H
+#define DAP_JSON_STAGE1_SVE_ARCH_H
+
 // ============================================================================
 // ARM SVE Predicate to Bitmask Conversion
 // ============================================================================
@@ -47,4 +50,6 @@ static inline uint64_t dap_sve2_movemask_u8(svbool_t a_pred)
     // SVE2 has same predicate model as SVE, reuse the same implementation
     return dap_sve_movemask_u8(a_pred);
 }
+
+#endif // DAP_JSON_STAGE1_SVE_ARCH_H
 

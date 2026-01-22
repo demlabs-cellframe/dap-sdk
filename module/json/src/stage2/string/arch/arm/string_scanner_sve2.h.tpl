@@ -35,7 +35,8 @@
 
 // SVE2 specific: Use match instruction for faster character search
 // svmatch_u8 returns predicate where bytes match
-#define SIMD_MATCH(pred, vec, val) svmatch_u8(pred, vec, val)
+// Note: svmatch_u8 requires svuint8_t for third arg, so duplicate scalar to vector
+#define SIMD_MATCH(pred, vec, val) svmatch_u8(pred, vec, svdup_n_u8((uint8_t)(val)))
 
 // Check if any predicate bit is true
 #define SIMD_PRED_ANY(pred) svptest_any(svptrue_b8(), (pred))
