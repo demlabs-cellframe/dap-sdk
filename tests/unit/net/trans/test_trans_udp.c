@@ -808,6 +808,29 @@ static void test_13_stream_write(void)
               l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->esocket : NULL,
               l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->_inheritor : NULL);
     
+    // CRITICAL DEBUG: Check encryption key STATE BEFORE WRITE
+    TEST_INFO("=== KEY STATE BEFORE ENCRYPT (write) ===");
+    TEST_INFO("key=%p, priv_key_data=%p, priv_key_data_size=%zu",
+              l_mock_stream->session->key,
+              l_mock_stream->session->key->priv_key_data,
+              l_mock_stream->session->key->priv_key_data_size);
+    if (l_mock_stream->session->key->priv_key_data && 
+        l_mock_stream->session->key->priv_key_data_size >= 16) {
+        uint8_t *k = l_mock_stream->session->key->priv_key_data;
+        TEST_INFO("priv_key_data (first 16 bytes): %02x%02x%02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x%02x%02x",
+                  k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7],
+                  k[8], k[9], k[10], k[11], k[12], k[13], k[14], k[15]);
+    }
+    TEST_INFO("_inheritor=%p, _inheritor_size=%zu",
+              l_mock_stream->session->key->_inheritor,
+              l_mock_stream->session->key->_inheritor_size);
+    if (l_mock_stream->session->key->_inheritor && 
+        l_mock_stream->session->key->_inheritor_size >= 8) {
+        uint8_t *n = (uint8_t*)l_mock_stream->session->key->_inheritor;
+        TEST_INFO("_inheritor nonce: %02x%02x%02x%02x%02x%02x%02x%02x",
+                  n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7]);
+    }
+    
     // CRITICAL DEBUG: Check what write function we're about to call
     TEST_INFO("=== ABOUT TO CALL l_trans->ops->write ===");
     TEST_INFO("l_trans=%p, l_trans->ops=%p, l_trans->ops->write=%p",
@@ -876,10 +899,11 @@ static void test_13_stream_write(void)
               l_mock_stream->session->key->priv_key_data,
               l_mock_stream->session->key->priv_key_data_size);
     if (l_mock_stream->session->key->priv_key_data && 
-        l_mock_stream->session->key->priv_key_data_size >= 8) {
+        l_mock_stream->session->key->priv_key_data_size >= 16) {
         uint8_t *k = l_mock_stream->session->key->priv_key_data;
-        TEST_INFO("priv_key_data (first 8 bytes): %02x%02x%02x%02x%02x%02x%02x%02x",
-                  k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]);
+        TEST_INFO("priv_key_data (first 16 bytes): %02x%02x%02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x%02x%02x",
+                  k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7],
+                  k[8], k[9], k[10], k[11], k[12], k[13], k[14], k[15]);
     }
     TEST_INFO("_inheritor=%p, _inheritor_size=%zu",
               l_mock_stream->session->key->_inheritor,
@@ -912,46 +936,63 @@ static void test_13_stream_write(void)
     log_it(L_INFO, "TEST DEBUG: dap_enc_decode returned %zu bytes", l_decrypted_size);
     
     TEST_INFO("DEBUG: l_decrypted_size=%zu, expected_min=%zu", 
-              l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size);
+              l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t) + l_test_data_size);
     
     TEST_ASSERT(l_decrypted_size > 0, "Packet decryption should succeed (returned %zu bytes)", l_decrypted_size);
     
     // NOTE: SALSA2012 stream cipher may return aligned size, not exact cleartext size
     // For now, we accept any non-zero size and validate structure instead
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size) {
+    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t) + l_test_data_size) {
         TEST_INFO("⚠️  Decrypted size (%zu) is less than expected (%zu) - may be SALSA2012 alignment",
-                  l_decrypted_size, sizeof(dap_stream_trans_udp_encrypted_header_t) + l_test_data_size);
+                  l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t) + l_test_data_size);
     }
     
     TEST_INFO("✅ Packet decrypted: %zu bytes", l_decrypted_size);
     
-    // Debug: dump first 16 bytes of decrypted data
-    TEST_INFO("DEBUG: First 16 bytes of decrypted data:");
-    for (size_t i = 0; i < 16 && i < l_decrypted_size; i++) {
-        TEST_INFO("  [%zu] = 0x%02x", i, l_decrypted[i]);
+    // ========================================================================
+    // UDP NOW USES NEW FULL HEADER FORMAT (30 bytes)
+    // ========================================================================
+    // Structure: dap_stream_trans_udp_full_header_t
+    //   [seq_num(8)] [ack_seq(8)] [timestamp_ms(4)] [fc_flags(1)] [type(1)] [session_id(8)]
+    // Total: 30 bytes (not 13 as in old format!)
+    
+    // Deserialize using dap_serialize API
+    extern const dap_serialize_schema_t g_udp_full_header_schema;
+    dap_stream_trans_udp_full_header_t l_hdr;
+    
+    dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw(
+        &g_udp_full_header_schema,
+        l_decrypted,
+        sizeof(dap_stream_trans_udp_full_header_t),
+        &l_hdr,
+        NULL
+    );
+    
+    if (l_deser.error_code != 0) {
+        TEST_FAIL("Header deserialization failed: %s",
+                  l_deser.error_message ? l_deser.error_message : "unknown");
+        DAP_DELETE(l_decrypted);
+        return;
     }
     
-    // Parse internal header
-    dap_stream_trans_udp_encrypted_header_t *l_header = 
-        (dap_stream_trans_udp_encrypted_header_t*)l_decrypted;
+    TEST_INFO("Decrypted header: type=0x%02x, seq_num=%lu, session_id=0x%016lx, fc_flags=0x%02x",
+              l_hdr.type, l_hdr.seq_num, l_hdr.session_id, l_hdr.fc_flags);
     
-    // Convert from network byte order
-    uint32_t l_seq_num = ntohl(l_header->seq_num);
-    uint64_t l_sess_id = be64toh(l_header->session_id);
+    // Validate header fields
+    TEST_ASSERT(l_hdr.type == DAP_STREAM_UDP_PKT_DATA,
+                "Packet type should be DATA (0x03), got 0x%02x", l_hdr.type);
+    TEST_ASSERT(l_hdr.seq_num == 1,
+                "Sequence number should be 1 (first packet), got %lu", l_hdr.seq_num);
+    TEST_ASSERT(l_hdr.session_id == l_session_id,
+                "Session ID should match (expected 0x%016lX, got 0x%016lX)",
+                l_session_id, l_hdr.session_id);
     
-    TEST_ASSERT(l_header->type == DAP_STREAM_UDP_PKT_DATA,
-                "Packet type should be DATA");
-    TEST_ASSERT(l_seq_num == 1,
-                "Sequence number should be 1 (first packet), got %u", l_seq_num);
-    TEST_ASSERT(l_sess_id == l_session_id,
-                "Session ID should match (expected 0x%016lX, got 0x%016lX)", l_session_id, l_sess_id);
-    
-    TEST_INFO("✅ Internal header validated: type=%u, seq=%u, session=0x%016lX",
-              l_header->type, l_seq_num, l_sess_id);
+    TEST_INFO("✅ Internal header validated: type=%u, seq=%lu, session=0x%016lX",
+              l_hdr.type, l_hdr.seq_num, l_hdr.session_id);
     
     // Validate payload
-    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_encrypted_header_t);
-    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_encrypted_header_t);
+    const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
     
     TEST_ASSERT(l_payload_size == l_test_data_size,
                 "Payload size should match original data");
