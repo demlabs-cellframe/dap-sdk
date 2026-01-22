@@ -279,7 +279,9 @@ int dap_io_flow_server_listen(
 /**
  * @brief Stop IO flow server synchronously
  * 
- * Closes listener sockets. Workers continue processing but no new connections accepted.
+ * Marks server as stopped - no new packets should be enqueued.
+ * Listener sockets remain active until dap_io_flow_server_delete().
+ * This allows graceful queue drainage without accepting new connections.
  */
 void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
 {
@@ -293,12 +295,7 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
     }
     
     a_server->is_running = false;
-    
-    // NOTE: We do NOT delete dap_server here anymore!
-    // Listeners must stay alive until all queued packets are processed.
-    // dap_server_delete will be called in dap_io_flow_server_delete after queue drainage.
-    
-    log_it(L_INFO, "Server '%s' stopped (listeners still active for queue drainage)", a_server->name);
+    log_it(L_INFO, "Server '%s' marked as stopped (listeners will close on delete)", a_server->name);
 }
 
 /**
@@ -416,9 +413,33 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
     atomic_store(&a_server->is_deleting, true);
-    log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
+    log_it(L_INFO, "Server '%s' marked for deletion - closing listeners", a_server->name);
     
-    // Step 0: Stop server listeners first (prevent new packets)
+    // Step 0: Close listener sockets IMMEDIATELY to stop new packet intake
+    // CRITICAL: Do this BEFORE draining queues to prevent endless growth!
+    // Listeners are closed but dap_server structure remains (for already-queued packets).
+    if (a_server->dap_server && a_server->dap_server->es_listeners) {
+        debug_if(s_debug_more, L_DEBUG, "Closing listener sockets to stop packet intake");
+        
+        // Close all listener sockets (but don't delete dap_server structure yet)
+        dap_list_t *l_item = a_server->dap_server->es_listeners;
+        while (l_item) {
+            dap_events_socket_t *l_es = (dap_events_socket_t *)l_item->data;
+            if (l_es) {
+                // Remove from reactor and close socket
+                dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid);
+            }
+            l_item = l_item->next;
+        }
+        
+        // Clear the list (listeners are closed, but dap_server structure remains)
+        dap_list_free(a_server->dap_server->es_listeners);
+        a_server->dap_server->es_listeners = NULL;
+        
+        debug_if(s_debug_more, L_DEBUG, "Listener sockets closed - no new packets accepted");
+    }
+    
+    // Mark server as stopped (if not already)
     if (a_server->is_running) {
         log_it(L_DEBUG, "Stopping server listeners to prevent new packets");
         dap_io_flow_server_stop(a_server);
@@ -448,35 +469,39 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
     }
     
-    // CRITICAL: Wait for workers to finish processing current callbacks
-    // Even though queues are drained, reactor callbacks may still be running
-    // AND cross-worker packets may still reference our listeners!
-    log_it(L_ERROR, "POST-DRAIN: Waiting for cross-worker packets to settle");
+    // CRITICAL: Wait for ALL cross-worker packets to be processed
+    // Even though input queues are drained, workers may still have huge backlogs!
+    // We MUST wait for processing to complete BEFORE scheduling deletion callbacks,
+    // otherwise worker queues will be full and dap_worker_exec_callback_on will fail.
+    debug_if(s_debug_more, L_DEBUG, "Waiting for cross-worker packets to drain completely");
     
-    // Wait until no cross-worker forwarding activity for this server
-    uint64_t l_last_count = atomic_load(&a_server->cross_worker_packets);
-    uint32_t l_stable_iterations = 0;
-    const uint32_t REQUIRED_STABLE = 5; // 5 iterations of no activity
+    uint64_t l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
+    uint32_t l_iterations = 0;
+    const uint32_t MAX_WAIT_ITERATIONS = 600; // 60 seconds max (100ms each)
     
-    for (uint32_t i = 0; i < 50; i++) {  // Max 5 seconds total
+    while (l_cross_worker_packets > 0 && l_iterations < MAX_WAIT_ITERATIONS) {
         usleep(100000);  // 100ms
-        uint64_t l_current_count = atomic_load(&a_server->cross_worker_packets);
+        l_iterations++;
         
-        if (l_current_count == l_last_count) {
-            l_stable_iterations++;
-            if (l_stable_iterations >= REQUIRED_STABLE) {
-                log_it(L_DEBUG, "Cross-worker activity stabilized after %u iterations", i);
-                break;
-            }
-        } else {
-            l_stable_iterations = 0; // Reset if activity detected
-            log_it(L_DEBUG, "Cross-worker packets: %lu (still active)", l_current_count);
+        uint64_t l_prev = l_cross_worker_packets;
+        l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
+        
+        // Log progress every 10 iterations (1 second)
+        if (l_iterations % 10 == 0) {
+            debug_if(s_debug_more, L_DEBUG, 
+                   "Cross-worker packets draining: %lu remaining (-%lu since last report, %u sec elapsed)", 
+                   l_cross_worker_packets, l_prev > l_cross_worker_packets ? l_prev - l_cross_worker_packets : 0,
+                   l_iterations / 10);
         }
-        l_last_count = l_current_count;
     }
     
-    log_it(L_ERROR, "POST-DRAIN COMPLETE: Cross-worker packets settled (total: %lu)", 
-           atomic_load(&a_server->cross_worker_packets));
+    if (l_cross_worker_packets > 0) {
+        log_it(L_WARNING, "Cross-worker packet drain timeout! Still have %lu packets after %u seconds",
+               l_cross_worker_packets, l_iterations / 10);
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "All cross-worker packets drained successfully (%u sec)", 
+               l_iterations / 10);
+    }
     
     // Step 1: Cleanup all flows (user data)
     debug_if(s_debug_more, L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
