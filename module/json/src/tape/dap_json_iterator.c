@@ -295,16 +295,106 @@ char* dap_json_iterator_get_string_dup(const dap_json_iterator_t *a_iter)
         return NULL;
     }
     
-    char *l_dup = (char*)malloc(l_len + 1);
-    if (!l_dup) {
-        log_it(L_ERROR, "Failed to allocate string: %zu bytes", l_len + 1);
+    // Check if string contains escape sequences
+    bool l_has_escapes = false;
+    for (size_t i = 0; i < l_len; i++) {
+        if (l_str[i] == '\\') {
+            l_has_escapes = true;
+            break;
+        }
+    }
+    
+    // If no escapes - simple copy
+    if (!l_has_escapes) {
+        char *l_dup = (char*)malloc(l_len + 1);
+        if (!l_dup) {
+            log_it(L_ERROR, "Failed to allocate string: %zu bytes", l_len + 1);
+            return NULL;
+        }
+        
+        memcpy(l_dup, l_str, l_len);
+        l_dup[l_len] = '\0';
+        
+        return l_dup;
+    }
+    
+    // Has escapes - need to unescape
+    char *l_output = (char*)malloc(l_len + 1);  // worst case size
+    if (!l_output) {
+        log_it(L_ERROR, "Failed to allocate for unescaping: %zu bytes", l_len + 1);
         return NULL;
     }
     
-    memcpy(l_dup, l_str, l_len);
-    l_dup[l_len] = '\0';
+    size_t l_output_pos = 0;
+    size_t l_input_pos = 0;
     
-    return l_dup;
+    while (l_input_pos < l_len) {
+        if (l_str[l_input_pos] == '\\' && l_input_pos + 1 < l_len) {
+            // Escape sequence
+            l_input_pos++; // skip backslash
+            char l_escaped = l_str[l_input_pos++];
+            
+            switch (l_escaped) {
+                case '"':  l_output[l_output_pos++] = '"'; break;
+                case '\\': l_output[l_output_pos++] = '\\'; break;
+                case '/':  l_output[l_output_pos++] = '/'; break;
+                case 'b':  l_output[l_output_pos++] = '\b'; break;
+                case 'f':  l_output[l_output_pos++] = '\f'; break;
+                case 'n':  l_output[l_output_pos++] = '\n'; break;
+                case 'r':  l_output[l_output_pos++] = '\r'; break;
+                case 't':  l_output[l_output_pos++] = '\t'; break;
+                
+                case 'u': {
+                    // Unicode escape \uXXXX
+                    if (l_input_pos + 4 > l_len) {
+                        log_it(L_ERROR, "Incomplete Unicode escape");
+                        free(l_output);
+                        return NULL;
+                    }
+                    
+                    // Parse hex digits
+                    uint32_t l_codepoint = 0;
+                    for (int i = 0; i < 4; i++) {
+                        char c = l_str[l_input_pos++];
+                        uint32_t digit;
+                        if (c >= '0' && c <= '9') digit = c - '0';
+                        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+                        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+                        else {
+                            log_it(L_ERROR, "Invalid hex digit in Unicode escape");
+                            free(l_output);
+                            return NULL;
+                        }
+                        l_codepoint = (l_codepoint << 4) | digit;
+                    }
+                    
+                    // Convert to UTF-8
+                    if (l_codepoint <= 0x7F) {
+                        l_output[l_output_pos++] = (char)l_codepoint;
+                    } else if (l_codepoint <= 0x7FF) {
+                        l_output[l_output_pos++] = (char)(0xC0 | (l_codepoint >> 6));
+                        l_output[l_output_pos++] = (char)(0x80 | (l_codepoint & 0x3F));
+                    } else {
+                        l_output[l_output_pos++] = (char)(0xE0 | (l_codepoint >> 12));
+                        l_output[l_output_pos++] = (char)(0x80 | ((l_codepoint >> 6) & 0x3F));
+                        l_output[l_output_pos++] = (char)(0x80 | (l_codepoint & 0x3F));
+                    }
+                    break;
+                }
+                
+                default:
+                    log_it(L_ERROR, "Invalid escape sequence '\\%c'", l_escaped);
+                    free(l_output);
+                    return NULL;
+            }
+        } else {
+            // Regular character
+            l_output[l_output_pos++] = l_str[l_input_pos++];
+        }
+    }
+    
+    l_output[l_output_pos] = '\0';
+    return l_output;
 }
 
 bool dap_json_iterator_get_int64(const dap_json_iterator_t *a_iter, int64_t *out)
