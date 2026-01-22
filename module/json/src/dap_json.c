@@ -324,8 +324,8 @@ static inline const char* dap_json_get_string_value(const dap_json_value_t *a_va
     if (!a_value || a_value->type != DAP_JSON_TYPE_STRING) {
         return NULL;
     }
-    // In MUTABLE mode, strings are stored as malloc'd pointers
-    return (const char*)(uintptr_t)a_value->offset;
+    // In MUTABLE mode, strings are stored via storage pointer
+    return (const char*)dap_json_get_storage_ptr(a_value);
 }
 
 /* ========================================================================== */
@@ -946,7 +946,8 @@ static int s_array_insert_at(dap_json_t* a_array, size_t a_idx, dap_json_t* a_el
     // Insert new element
     l_storage->elements[a_idx] = l_elem;
     l_storage->count++;
-    l_array->length = (uint16_t)l_storage->count;
+    // ⚡ DO NOT update length for FLAG_MALLOC arrays - it stores pointer high bits!
+    // Count is in storage->count, not value->length
     
     return 0;
 }
@@ -1083,7 +1084,7 @@ int dap_json_array_del_idx(dap_json_t* a_array, size_t a_idx, size_t a_count)
     }
     
     l_storage->count -= a_count;
-    l_array->length = (uint16_t)l_storage->count;
+    // ⚡ DO NOT update length for FLAG_MALLOC arrays - it stores pointer high bits!
     
     return 0;
 }
@@ -2145,7 +2146,7 @@ int dap_json_object_del(dap_json_t* a_json, const char* a_key)
                 l_storage->values[j] = l_storage->values[j + 1];
             }
             l_storage->count--;
-            l_obj->length = (uint16_t)l_storage->count;
+            // ⚡ DO NOT update length for FLAG_MALLOC objects - it stores pointer high bits!
             
             return 0;
         }
