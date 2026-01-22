@@ -439,6 +439,7 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_write_end_unsafe(dap_wo
  * @param a_callback
  * @param a_flags
  * @return
+ */
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
@@ -516,8 +517,8 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 #ifndef DAP_EVENTS_CAPS_IOCP
 
 void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);
-size_t dap_events_socket_write_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
-DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid,const char * a_format,...);
+
+
 
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);

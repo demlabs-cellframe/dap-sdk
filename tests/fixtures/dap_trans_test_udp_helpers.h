@@ -357,6 +357,18 @@ void dap_udp_test_cleanup_mock_stream(dap_stream_t *a_stream);
 DAP_MOCK_DECLARE(dap_events_socket_write_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
 
 /**
+ * @brief Mock declaration for dap_events_socket_sendto_unsafe
+ * 
+ * This mock is defined in dap_trans_test_udp_helpers.c using DAP_MOCK_WRAPPER_CUSTOM.
+ * It captures UDP packets sent with explicit destination address.
+ * UDP transport uses sendto_unsafe for datagram sockets instead of write_unsafe.
+ * 
+ * Tests MUST include this header and call DAP_MOCK_ENABLE(dap_events_socket_sendto_unsafe)
+ * to activate packet capture for UDP transport.
+ */
+DAP_MOCK_DECLARE(dap_events_socket_sendto_unsafe, DAP_MOCK_CONFIG_PASSTHROUGH);
+
+/**
  * @brief Cleanup mock UDP client context and free all resources
  * 
  * This function deallocates:
