@@ -1024,7 +1024,14 @@ static void s_queue_ptr_callback(void *a_ptr)
     
     dap_io_flow_server_t *l_server = l_packet->server;
     
-    debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", l_server, l_server->lb_tier);
+    debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", 
+             l_server, l_server ? (int)l_server->lb_tier : -1);
+    
+    // Validate server and its dap_server field
+    if (!l_server->dap_server) {
+        log_it(L_ERROR, "Queue callback: server->dap_server is NULL (server may have been deleted)");
+        return;
+    }
     
     // Increment statistics
     atomic_fetch_add(&l_server->cross_worker_packets, 1);
