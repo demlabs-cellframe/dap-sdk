@@ -3106,7 +3106,14 @@ static char* s_serialize_immutable(dap_json_t* a_json, bool a_pretty)
             } else if (vt == DAP_JSON_TYPE_INT) {
                 int64_t v; if (dap_json_iterator_get_int64(l_iter, &v)) { char tmp[32]; snprintf(tmp, sizeof(tmp), "%lld", (long long)v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
             } else if (vt == DAP_JSON_TYPE_DOUBLE) {
-                double v; if (dap_json_iterator_get_double(l_iter, &v)) { char tmp[64]; snprintf(tmp, sizeof(tmp), "%.17g", v); s_append_str(&l_buf, &l_size, &l_pos, tmp); }
+                double v; if (dap_json_iterator_get_double(l_iter, &v)) { 
+                    char tmp[64]; 
+                    // Use C locale for consistent '.' decimal separator
+                    snprintf(tmp, sizeof(tmp), "%.17g", v); 
+                    // Ensure '.' is used (not locale-specific ',')
+                    for (char *p = tmp; *p; p++) if (*p == ',') *p = '.';
+                    s_append_str(&l_buf, &l_size, &l_pos, tmp); 
+                }
             } else if (vt == DAP_JSON_TYPE_BOOLEAN) {
                 bool v; if (dap_json_iterator_get_bool(l_iter, &v)) s_append_str(&l_buf, &l_size, &l_pos, v ? "true" : "false");
             } else if (vt == DAP_JSON_TYPE_NULL) {
