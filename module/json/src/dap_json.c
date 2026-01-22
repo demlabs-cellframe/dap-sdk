@@ -2237,6 +2237,18 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
         return 0.0;
     }
     
+    // IMMUTABLE mode: use iterator API
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_t *l_value = NULL;
+        if (!dap_json_object_get_ex(a_json, a_key, &l_value) || !l_value) {
+            return 0.0;
+        }
+        double result = dap_json_get_double(l_value);
+        dap_json_object_free(l_value);  // Free sub-wrapper
+        return result;
+    }
+    
+    // MUTABLE mode
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return 0.0;
