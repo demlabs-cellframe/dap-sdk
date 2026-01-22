@@ -162,6 +162,7 @@ int dap_io_flow_datagram_send(dap_io_flow_datagram_t *a_flow,
              dap_io_flow_socket_addr_to_string(&l_dest_addr));
     
     int l_ret = dap_io_flow_socket_send_to(
+        a_flow->base.server,  // Pass server for is_deleting check (via base flow)
         l_send_socket,  // Use separate send socket for SERVER, listener for CLIENT
         a_data,
         a_size,

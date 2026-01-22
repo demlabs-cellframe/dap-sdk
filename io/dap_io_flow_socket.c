@@ -45,6 +45,7 @@ static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
  * @brief Arguments for cross-worker sendto callback
  */
 typedef struct flow_sendto_args {
+    dap_io_flow_server_t *server;  ///< Server (for is_deleting check)
     dap_events_socket_t *esocket;
     uint8_t *data;
     size_t size;
@@ -58,7 +59,21 @@ typedef struct flow_sendto_args {
 static void s_flow_sendto_callback(void *a_arg)
 {
     flow_sendto_args_t *l_args = (flow_sendto_args_t*)a_arg;
-    if (!l_args || !l_args->esocket) {
+    if (!l_args || !l_args->esocket || !l_args->server) {
+        if (l_args) {
+            DAP_DELETE(l_args->data);
+        }
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    // CRITICAL: Check if server is being deleted
+    // If so, listener socket may have been freed - don't send!
+    if (atomic_load(&l_args->server->is_deleting)) {
+        debug_if(s_debug_more, L_DEBUG, 
+                 "s_flow_sendto_callback: server is deleting - dropping response (size=%zu)", 
+                 l_args->size);
+        DAP_DELETE(l_args->data);
         DAP_DELETE(l_args);
         return;
     }
@@ -113,7 +128,8 @@ void dap_io_flow_socket_deinit(void)
 // PUBLIC API IMPLEMENTATION
 // =============================================================================
 
-int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
+int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
+                                dap_events_socket_t *a_es,
                                 const uint8_t *a_data,
                                 size_t a_size,
                                 const struct sockaddr_storage *a_addr,
@@ -124,19 +140,17 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
         return -1;
     }
     
-    // DEBUG: Always log destination address
-    if (a_addr->ss_family == AF_INET) {
+    // DEBUG: Log destination address and socket info
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d, size=%zu",
+           a_es, a_es->fd, a_es->type, a_size);
+    
+    if (s_debug_more && a_addr->ss_family == AF_INET) {
         struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_DEBUG, 
-                 "dap_io_flow_socket_send_to: DEST=%s:%u, size=%zu, fd=%d",
-                 l_addr_str, ntohs(l_sin->sin_port), a_size, a_es->fd);
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: DEST=%s:%u",
+                 l_addr_str, ntohs(l_sin->sin_port));
     }
-    
-    // DEBUG: Always log socket type
-    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d (UDP=%d, CLIENT=%d)",
-           a_es, a_es->fd, a_es->type, DESCRIPTOR_TYPE_SOCKET_UDP, DESCRIPTOR_TYPE_SOCKET_CLIENT);
     
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
@@ -169,6 +183,7 @@ int dap_io_flow_socket_send_to(dap_events_socket_t *a_es,
             return -3;
         }
         
+        l_args->server = a_server;
         l_args->esocket = a_es;
         l_args->data = DAP_NEW_SIZE(uint8_t, a_size);
         if (!l_args->data) {

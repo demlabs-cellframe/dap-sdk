@@ -86,6 +86,7 @@ void dap_io_flow_socket_deinit(void);
  * @return Bytes queued for sending, or negative on error
  */
 int dap_io_flow_socket_send_to(
+    dap_io_flow_server_t *a_server,
     dap_events_socket_t *a_es,
     const uint8_t *a_data,
     size_t a_size,
