@@ -2676,6 +2676,21 @@ int64_t dap_json_get_int64(dap_json_t* a_json)
         return 0;
     }
     
+    // IMMUTABLE mode: use iterator
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            return 0;
+        }
+        
+        int64_t l_result = 0;
+        dap_json_iterator_get_int64(l_iter, &l_result);
+        dap_json_iterator_free(l_iter);
+        
+        return l_result;
+    }
+    
+    // MUTABLE mode: use DOM
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     if (!l_value) {
         return 0;
