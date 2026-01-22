@@ -25,6 +25,7 @@
 #include "dap_common.h"
 #include "dap_events_socket.h"
 #include "dap_context.h"
+#include "dap_events.h"
 
 #define LOG_TAG "dap_context_queue"
 
