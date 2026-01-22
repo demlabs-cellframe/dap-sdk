@@ -71,6 +71,11 @@ target_link_libraries(benchmark_competitive_full PRIVATE
     pthread
 )
 
+# Add librt for POSIX timers on Linux
+if(UNIX AND NOT APPLE)
+    target_link_libraries(benchmark_competitive_full PRIVATE rt)
+endif()
+
 target_include_directories(benchmark_competitive_full PRIVATE
     ${CMAKE_SOURCE_DIR}/module/core/include
     ${CMAKE_SOURCE_DIR}/module/json/include
