@@ -42,6 +42,7 @@
 #include "dap_enc_key.h"
 
 #include "dap_events_socket.h"
+#include "dap_context_queue.h"
 #include "dap_net_trans.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -112,9 +113,8 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     va_end(ap_copy);
     va_end(ap);
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_io, l_msg);
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_worker->queue_ch_io, l_msg)) {
+        log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;
@@ -164,9 +164,8 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     l_data_size = vsnprintf(l_msg->data, l_data_size, a_format, ap_copy);
     va_end(ap_copy);
 
-    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue , l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_queue, l_msg)) {
+        log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;
@@ -201,9 +200,8 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_msg->data_size = a_data_size;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_ch_io , l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_worker->queue_ch_io, l_msg)) {
+        log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;
@@ -232,9 +230,8 @@ int dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_u
     }
     l_msg->data_size = a_data_size;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_send, l_msg);
-    if (l_ret) {
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_worker->queue_ch_send, l_msg)) {
+        log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);
         return -4;
@@ -274,9 +271,8 @@ size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input, dap_st
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue_input, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+    if (!dap_context_queue_push(a_queue_input, l_msg)) {
+        log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;

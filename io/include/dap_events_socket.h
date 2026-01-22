@@ -432,12 +432,13 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_write_end_unsafe(dap_wo
                                                                           dap_events_socket_t * a_pipe_read_es,
                                                                           dap_events_socket_callbacks_t * a_callbacks);
 
-dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es);
 
-// Compatibility wrapper - now accepts dap_context_queue_t* (void*) instead of dap_events_socket_t*
-int dap_events_socket_queue_ptr_send_to_input(void *a_queue, void *a_arg);
-
-int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value);
+/**
+ * @brief dap_events_socket_create_type_queue_mt
+ * @param a_w
+ * @param a_callback
+ * @param a_flags
+ * @return
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
@@ -518,9 +519,6 @@ DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t
 
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);
-
-// Compatibility wrapper for old pipe-based API - now uses dap_context_queue
-int dap_events_socket_queue_ptr_send(void *a_queue, void *a_arg);
 #endif
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);

@@ -92,29 +92,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #define LOG_TAG "dap_events_socket"
 
 // =============================================================================
-// Compatibility wrapper for old pipe-based API
-// =============================================================================
-
-/**
- * @brief Compatibility wrapper for queue_ptr_send
- * 
- * Now accepts dap_context_queue_t* instead of dap_events_socket_t* (pipe).
- * Uses lock-free ring buffer push instead of pipe write.
- * 
- * @param a_queue dap_context_queue_t* (cast from void*)
- * @param a_arg Pointer to send
- * @return 0 on success, -1 on error (queue full)
- */
-int dap_events_socket_queue_ptr_send(void *a_queue, void *a_arg) {
-    if (!a_queue) {
-        return -1;
-    }
-    dap_context_queue_t *l_queue = (dap_context_queue_t*)a_queue;
-    return dap_context_queue_push(l_queue, a_arg) ? 0 : -1;
-}
-
-
-// =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
 // =============================================================================
 
@@ -950,79 +927,6 @@ static void s_socket_type_queue_ptr_input_callback_delete(dap_events_socket_t * 
  * @param a_es
  * @return
  */
-dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es)
-{
-     dap_events_socket_t *l_es = s_dap_evsock_alloc(); /* @RRL: #6901 */
-
-    l_es->type = DESCRIPTOR_TYPE_QUEUE;
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    pthread_rwlock_init(&l_es->buf_out_lock, NULL);
-#endif
-#ifdef   DAP_SYS_DEBUG
-    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
-    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);
-#endif
-    l_es->pipe_out = a_es;
-#if defined DAP_EVENTS_CAPS_IOCP
-    l_es->buf_out = a_es->buf_out;
-#else
-    l_es->buf_out_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
-    l_es->buf_out       = DAP_NEW_Z_SIZE(byte_t,l_es->buf_out_size_max);
-    l_es->buf_in_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
-    l_es->buf_in       = DAP_NEW_Z_SIZE(byte_t,l_es->buf_in_size_max);
-#if defined(DAP_EVENTS_CAPS_EPOLL)
-    l_es->ev_base_flags = EPOLLERR | EPOLLRDHUP | EPOLLHUP;
-#elif defined(DAP_EVENTS_CAPS_POLL)
-    l_es->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
-#elif defined(DAP_EVENTS_CAPS_KQUEUE)
-    // Here we have event identy thats we copy
-    l_es->fd = a_es->fd; //
-    l_es->kqueue_base_flags = EV_ONESHOT;
-    l_es->kqueue_base_fflags = NOTE_TRIGGER | NOTE_FFNOP;
-    l_es->kqueue_base_filter = EVFILT_USER;
-    l_es->kqueue_event_catched_data.esocket = l_es;    
-#else
-#error "Not defined s_create_type_pipe for your platform"
-#endif
-#endif
-
-#ifdef DAP_EVENTS_CAPS_QUEUE_MQUEUE
-    int  l_errno;
-    char l_errbuf[128] = {0}, l_mq_name[64] = {0};
-    struct mq_attr l_mq_attr = {0};
-
-    l_es->mqd_id = a_es->mqd_id;
-    l_mq_attr.mq_maxmsg = DAP_QUEUE_MAX_MSGS;                               // Don't think we need to hold more than 1024 messages
-    l_mq_attr.mq_msgsize = sizeof (void*);                                  // We send only pointer on memory (???!!!),
-                                                                            // so use it with shared memory if you do access from another process
-
-    snprintf(l_mq_name,sizeof (l_mq_name), "/%s-queue_ptr-%u", dap_get_appname(), l_es->mqd_id );
-
-    //if ( (l_errno = mq_unlink(l_mq_name)) )                                 /* Mark this MQ to be deleted as the process will be terminated */
-    //    log_it(L_DEBUG, "mq_unlink(%s)->%d", l_mq_name, l_errno);
-
-    if ( 0 >= (l_es->mqd = mq_open(l_mq_name, O_CREAT|O_WRONLY |O_NONBLOCK, 0700, &l_mq_attr)) )
-    {
-        log_it(L_CRITICAL,"Can't create mqueue descriptor %s, error %d: \"%s\"", l_mq_name, errno, dap_strerror(errno));
-        return DAP_DEL_MULTY(l_es->buf_in, l_es->buf_out, l_es), NULL;
-    }
-
-#elif defined (DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined (DAP_EVENTS_CAPS_QUEUE_PIPE)
-    l_es->fd = a_es->fd2;
-#elif defined DAP_EVENTS_CAPS_WEPOLL
-    l_es->socket        = a_es->socket;
-    l_es->port          = a_es->port;
-#elif defined DAP_EVENTS_CAPS_IOCP
-    l_es->socket        = INVALID_SOCKET;
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    // We don't create descriptor for kqueue at all
-#else
-#error "Not defined dap_events_socket_queue_ptr_create_input() for this platform"
-#endif
-    l_es->flags = DAP_SOCK_QUEUE_PTR;
-    return l_es;
-}
-
 
 /**
  * @brief dap_events_socket_create_type_queue_mt
@@ -1427,25 +1331,6 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
 }
 #endif
 
-/**
- * @brief Send pointer to context queue (wrapper for compatibility)
- * 
- * Now accepts dap_context_queue_t* instead of dap_events_socket_t* (pipe).
- * Uses lock-free ring buffer push instead of pipe write.
- * 
- * @param a_queue dap_context_queue_t* (cast from void* for backward compatibility)
- * @param a_arg Pointer to send
- * @return 0 on success, -1 on error (queue full or NULL)
- */
-int dap_events_socket_queue_ptr_send_to_input(void *a_queue, void *a_arg)
-{
-    if (!a_queue || !a_arg) {
-        return -1;
-    }
-    
-    dap_context_queue_t *l_queue = (dap_context_queue_t*)a_queue;
-    return dap_context_queue_push(l_queue, a_arg) ? 0 : -1;
-}
 
 /**
  * @brief dap_events_socket_event_signal

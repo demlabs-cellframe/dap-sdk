@@ -40,6 +40,7 @@
 #include <dap_list.h>
 #include <dap_strfuncs.h>
 #include <dap_context.h>
+#include <dap_context_queue.h>
 #include <dap_stream_worker.h>
 #include <dap_worker.h>
 #include <dap_events.h>
@@ -630,10 +631,10 @@ struct push_session_out * l_args = DAP_NEW_Z(struct push_session_out);
     l_args->content = a_content;
     l_args->flow_id = a_flow_id;
 
-    if ( (l_ret = dap_events_socket_queue_ptr_send( s_queue_app_sink , l_args)) )
-    {
-        log_it(L_ERROR,"Can't push data to app sink queue, code %d", l_ret);
+    if (!dap_context_queue_push(s_queue_app_sink, l_args)) {
+        log_it(L_ERROR,"Can't push data to app sink queue (queue full)");
         s_push_session_out_delete(l_args);
+        l_ret = -1;
     }
 
     return l_ret;

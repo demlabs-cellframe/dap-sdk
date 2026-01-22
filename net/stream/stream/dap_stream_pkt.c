@@ -20,6 +20,7 @@
 
 #include "dap_common.h"
 #include "dap_events_socket.h"
+#include "dap_context_queue.h"
 #include "dap_worker.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
@@ -204,10 +205,10 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     l_msg->data_size = sizeof(*l_pkt_hdr) + dap_enc_code(a_key, a_data, a_data_size,
         ((byte_t*)l_msg->data) + sizeof(*l_pkt_hdr), l_msg->data_size, DAP_ENC_DATA_TYPE_RAW);
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
+    bool l_ret = dap_context_queue_push(a_w->queue_es_io, l_msg);
     return l_ret
-        ? log_it(L_ERROR, "Can't send msg to queue, error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
-        : a_data_size;
+        ? a_data_size
+        : log_it(L_ERROR, "Can't send msg to queue (queue full)"), DAP_DEL_MULTY(l_msg->data, l_msg), 0;
 #endif
 }
 

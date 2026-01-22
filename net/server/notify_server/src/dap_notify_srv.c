@@ -25,6 +25,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include "dap_events_socket.h"
+#include "dap_context_queue.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_list.h"
@@ -153,7 +154,7 @@ int dap_notify_server_send_mt(const char *a_data)
     if (s_notify_data_user_callback) s_notify_data_user_callback(a_data);
     if(!s_notify_server_queue) // If not initialized - nothing to notify
         return 0;
-    return dap_events_socket_queue_ptr_send(s_notify_server_queue, dap_strdup(a_data));
+    return dap_context_queue_push(s_notify_server_queue, dap_strdup(a_data)) ? 0 : -1;
 }
 
 
@@ -190,9 +191,12 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     if (s_notify_data_user_callback)
         s_notify_data_user_callback(l_str);
     
-    int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
-    DAP_DELETE(l_str);
-    return l_ret;
+    bool l_ret = dap_context_queue_push(s_notify_server_queue, l_str);
+    if (!l_ret) {
+        DAP_DELETE(l_str);
+        return -1;
+    }
+    return 0;
 }
 
 /**
