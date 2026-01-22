@@ -2124,23 +2124,21 @@ static int32_t s_parse_array(
         else if(l_next == ',') {
             (*a_idx)++; // Skip ','
             
-            // Check for trailing comma (comma followed by closing bracket)
-            // After skipping comma, check if next structural character is ']'
-            if (*a_idx < a_stage2->indices_count) {
-                size_t l_peek_idx = *a_idx;
-                // Skip whitespace in input to find next structural
-                while (l_peek_idx < a_stage2->indices_count) {
-                    uint8_t l_peek_char = a_stage2->indices[l_peek_idx].character;
-                    if (l_peek_char == ']') {
-                        snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
-                                 "Trailing comma in array not allowed in standard JSON");
-                        a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
-                        a_stage2->error_position = a_stage2->indices[l_peek_idx].position;
-                        a_stage2->current_depth--;
-                        return -1;
-                    }
-                    break; // Only check immediate next structural
-                }
+            // STRICT JSON: After comma MUST follow a value, not closing bracket
+            if (*a_idx >= a_stage2->indices_count) {
+                a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
+                a_stage2->current_depth--;
+                return -1;
+            }
+            
+            uint8_t l_after_comma = a_stage2->indices[*a_idx].character;
+            if (l_after_comma == ']') {
+                snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
+                         "Trailing comma not allowed in standard JSON");
+                a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
+                a_stage2->error_position = a_stage2->indices[*a_idx].position;
+                a_stage2->current_depth--;
+                return -1;
             }
             
             continue;
@@ -2313,23 +2311,21 @@ static int32_t s_parse_object(
         else if(l_next == ',') {
             (*a_idx)++; // Skip ','
             
-            // Check for trailing comma (comma followed by closing brace)
-            // After skipping comma, check if next structural character is '}'
-            if (*a_idx < a_stage2->indices_count) {
-                size_t l_peek_idx = *a_idx;
-                // Skip whitespace in input to find next structural
-                while (l_peek_idx < a_stage2->indices_count) {
-                    uint8_t l_peek_char = a_stage2->indices[l_peek_idx].character;
-                    if (l_peek_char == '}') {
-                        snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
-                                 "Trailing comma in object not allowed in standard JSON");
-                        a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
-                        a_stage2->error_position = a_stage2->indices[l_peek_idx].position;
-                        a_stage2->current_depth--;
-                        return -1;
-                    }
-                    break; // Only check immediate next structural
-                }
+            // STRICT JSON: After comma MUST follow a key-value pair, not closing brace
+            if (*a_idx >= a_stage2->indices_count) {
+                a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_END;
+                a_stage2->current_depth--;
+                return -1;
+            }
+            
+            uint8_t l_after_comma = a_stage2->indices[*a_idx].character;
+            if (l_after_comma == '}') {
+                snprintf(a_stage2->error_message, sizeof(a_stage2->error_message),
+                         "Trailing comma not allowed in standard JSON");
+                a_stage2->error_code = STAGE2_ERROR_UNEXPECTED_TOKEN;
+                a_stage2->error_position = a_stage2->indices[*a_idx].position;
+                a_stage2->current_depth--;
+                return -1;
             }
             
             continue;

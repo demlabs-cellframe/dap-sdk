@@ -140,7 +140,20 @@ bool dap_json_build_tape(
     
     // MAIN LOOP: Transform Stage 1 indices to tape entries
     // This is where the magic happens - direct use of Stage 1 data!
-    for (size_t i = 0; i < a_stage1->indices_count; i++) {
+    // ALSO: Strict JSON validation (reject trailing commas, etc)
+    
+    size_t i = 0;
+    
+    // Stack for tracking context (are we in array or object?)
+    typedef struct {
+        bool is_array;  // true=array, false=object
+        bool expect_value;  // After ',' we MUST have value/key
+    } parse_ctx_t;
+    
+    parse_ctx_t ctx_stack[256];  // Max 256 levels deep
+    int ctx_depth = 0;
+    
+    while (i < a_stage1->indices_count) {
         const dap_json_struct_index_t *idx = &a_stage1->indices[i];
         
         switch (idx->type) {
@@ -154,64 +167,124 @@ bool dap_json_build_tape(
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, close_idx);
                     tape_idx++;
                     
+                    // Push context
+                    if (ctx_depth < 256) {
+                        ctx_stack[ctx_depth].is_array = false;
+                        ctx_stack[ctx_depth].expect_value = false;
+                        ctx_depth++;
+                    }
+                    
                 } else if (c == '}') {
+                    // STRICT: Check for trailing comma (expect_value flag)
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].expect_value) {
+                        log_it(L_ERROR, "Trailing comma before '}' at position %u", idx->position);
+                        return false;
+                    }
+                    
                     // Closing bracket - payload points back to open (optional)
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_END, 0);
                     tape_idx++;
+                    
+                    // Pop context
+                    if (ctx_depth > 0) ctx_depth--;
                     
                 } else if (c == '[') {
                     uint64_t close_idx = (uint64_t)idx->payload + tape_idx;
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, close_idx);
                     tape_idx++;
                     
+                    // Push context
+                    if (ctx_depth < 256) {
+                        ctx_stack[ctx_depth].is_array = true;
+                        ctx_stack[ctx_depth].expect_value = false;
+                        ctx_depth++;
+                    }
+                    
                 } else if (c == ']') {
+                    // STRICT: Check for trailing comma (expect_value flag)
+                    if (ctx_depth > 0 && ctx_stack[ctx_depth-1].expect_value) {
+                        log_it(L_ERROR, "Trailing comma before ']' at position %u", idx->position);
+                        return false;
+                    }
+                    
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_END, 0);
                     tape_idx++;
+                    
+                    // Pop context
+                    if (ctx_depth > 0) ctx_depth--;
+                    
+                } else if (c == ',') {
+                    // Set flag: next MUST be value (in array) or key (in object)
+                    if (ctx_depth > 0) {
+                        ctx_stack[ctx_depth-1].expect_value = true;
+                    }
                 }
-                // Skip other structural chars like ':', ','
+                // Skip other structural chars like ':'
+                i++;
                 break;
             }
             
-            case TOKEN_TYPE_STRING: {
-                // Zero-copy: payload = offset into input buffer
-                // Length is in Stage 1 idx->length, we'll access it when needed
-                uint64_t offset = (uint64_t)idx->position;
-                tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_STRING, offset);
-                tape_idx++;
-                break;
-            }
-            
-            case TOKEN_TYPE_NUMBER: {
-                // Lazy parse: payload = offset, parse later
-                uint64_t offset = (uint64_t)idx->position;
-                tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_NUMBER, offset);
-                tape_idx++;
-                break;
-            }
-            
+            case TOKEN_TYPE_STRING:
+            case TOKEN_TYPE_NUMBER:
             case TOKEN_TYPE_LITERAL: {
-                // Determine literal type from input
-                const uint8_t *ptr = a_stage1->input + idx->position;
-                uint8_t lit_type;
-                
-                if (*ptr == 't') {  // "true"
-                    lit_type = TAPE_TYPE_TRUE;
-                } else if (*ptr == 'f') {  // "false"
-                    lit_type = TAPE_TYPE_FALSE;
-                } else if (*ptr == 'n') {  // "null"
-                    lit_type = TAPE_TYPE_NULL;
-                } else {
-                    log_it(L_ERROR, "Unknown literal at position %u", idx->position);
-                    return false;
+                // Clear expect_value flag - we got a value!
+                if (ctx_depth > 0) {
+                    ctx_stack[ctx_depth-1].expect_value = false;
                 }
                 
-                tape[tape_idx] = dap_tape_make_entry(lit_type, 0);
-                tape_idx++;
+                // Process value
+                if (idx->type == TOKEN_TYPE_STRING) {
+                    uint64_t offset = (uint64_t)idx->position;
+                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_STRING, offset);
+                    tape_idx++;
+                } else if (idx->type == TOKEN_TYPE_NUMBER) {
+                    uint64_t offset = (uint64_t)idx->position;
+                    tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_NUMBER, offset);
+                    tape_idx++;
+                } else {  // LITERAL
+                    const uint8_t *ptr = a_stage1->input + idx->position;
+                    uint8_t lit_type;
+                    
+                    if (*ptr == 't') {
+                        lit_type = TAPE_TYPE_TRUE;
+                    } else if (*ptr == 'f') {
+                        lit_type = TAPE_TYPE_FALSE;
+                    } else if (*ptr == 'n') {
+                        lit_type = TAPE_TYPE_NULL;
+                    } else {
+                        log_it(L_ERROR, "Unknown literal at position %u", idx->position);
+                        return false;
+                    }
+                    
+                    tape[tape_idx] = dap_tape_make_entry(lit_type, 0);
+                    tape_idx++;
+                }
+                
+                // STRICT: After a value, next MUST be ',' or closing bracket
+                // (unless we're at root level)
+                if (ctx_depth > 0 && (i + 1) < a_stage1->indices_count) {
+                    const dap_json_struct_index_t *next_idx = &a_stage1->indices[i + 1];
+                    if (next_idx->type == TOKEN_TYPE_STRUCTURAL) {
+                        char next_c = next_idx->character;
+                        bool is_valid_next = (next_c == ',' || next_c == ']' || next_c == '}' || next_c == ':');
+                        if (!is_valid_next) {
+                            log_it(L_ERROR, "Missing comma between values at position %u", next_idx->position);
+                            return false;
+                        }
+                    } else {
+                        // Next token is another value without comma!
+                        log_it(L_ERROR, "Missing comma between values at position %u", next_idx->position);
+                        return false;
+                    }
+                }
+                
+                i++;
                 break;
             }
             
             default:
                 // Unknown token type - skip
+                i++;
                 break;
         }
     }
