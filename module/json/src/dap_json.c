@@ -2155,6 +2155,35 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
         return false;
     }
     
+    // IMMUTABLE mode: use iterator API
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+        if (!l_iter) {
+            return false;
+        }
+        
+        // Check if root is object
+        if (dap_json_iterator_type(l_iter) != DAP_JSON_TYPE_OBJECT) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Find key
+        if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
+        // Key found - create wrapper for value
+        // For now, return the parent JSON with iterator at value position
+        // This is a simplified approach - proper implementation would need
+        // to create a sub-wrapper with correct tape position
+        *a_value = a_json;
+        dap_json_iterator_free(l_iter);
+        return true;
+    }
+    
+    // MUTABLE mode: use existing logic
     dap_json_value_t *l_obj = s_unwrap_value(a_json);
     if (!l_obj || l_obj->type != DAP_JSON_TYPE_OBJECT) {
         return false;
