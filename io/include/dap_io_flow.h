@@ -358,6 +358,11 @@ struct dap_io_flow_server {
     pthread_mutex_t queue_delete_mutex;        ///< Mutex for queue deletion wait
     pthread_cond_t queue_delete_cond;          ///< Condition variable signaled when all queues deleted
     
+    // Listener disable coordination (stop packet intake before cleanup)
+    _Atomic uint32_t pending_listener_disables; ///< Number of listeners still pending disable
+    pthread_mutex_t listener_disable_mutex;     ///< Mutex for listener disable wait
+    pthread_cond_t listener_disable_cond;       ///< Condition variable signaled when all listeners disabled
+    
     // Server deletion coordination (for dap_server with listeners)
     _Atomic bool server_delete_pending;        ///< dap_server deletion scheduled
     _Atomic bool server_delete_complete;       ///< dap_server deletion finished

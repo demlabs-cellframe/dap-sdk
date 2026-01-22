@@ -76,6 +76,16 @@ typedef struct {
     uint32_t worker_id;
 } queue_delete_args_t;
 
+/**
+ * @brief Listener disable callback arguments
+ * 
+ * Passed to worker thread for safe listener read disable from reactor context.
+ */
+typedef struct {
+    dap_io_flow_server_t *server;
+    dap_events_socket_t *listener;
+} listener_disable_args_t;
+
 // Forward declarations for internal functions
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
 static void s_queue_ptr_callback(void *a_ptr);
@@ -187,6 +197,11 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     pthread_mutex_init(&l_server->queue_delete_mutex, NULL);
     pthread_cond_init(&l_server->queue_delete_cond, NULL);
     atomic_init(&l_server->pending_queue_deletions, 0);
+    
+    // Initialize listener disable coordination
+    pthread_mutex_init(&l_server->listener_disable_mutex, NULL);
+    pthread_cond_init(&l_server->listener_disable_cond, NULL);
+    atomic_init(&l_server->pending_listener_disables, 0);
     
     // Initialize server deletion coordination
     pthread_mutex_init(&l_server->server_delete_mutex, NULL);
@@ -336,6 +351,47 @@ static void s_server_delete_worker_callback(void *a_arg)
 }
 
 /**
+ * @brief Worker-thread callback to disable reading on listener socket
+ * 
+ * CRITICAL: Must be called from listener's owner worker thread!
+ * Removes socket from reactor's read poll set to stop accepting new packets.
+ * Socket remains alive for sending responses to already-queued packets.
+ * 
+ * @param a_arg listener_disable_args_t* with server and listener socket
+ */
+static void s_listener_disable_read_callback(void *a_arg)
+{
+    listener_disable_args_t *l_args = (listener_disable_args_t *)a_arg;
+    if (!l_args) {
+        log_it(L_ERROR, "Listener disable callback: NULL args!");
+        return;
+    }
+    
+    dap_io_flow_server_t *l_server = l_args->server;
+    dap_events_socket_t *l_es = l_args->listener;
+    
+    log_it(L_INFO, "Listener disable callback ENTRY: fd=%d", l_es ? l_es->fd : -1);
+    
+    if (l_es) {
+        // Disable reading - removes from poll/epoll read set
+        dap_events_socket_set_readable_unsafe(l_es, false);
+        log_it(L_INFO, "Disabled read on listener fd=%d", l_es->fd);
+    }
+    
+    // Signal completion
+    pthread_mutex_lock(&l_server->listener_disable_mutex);
+    uint32_t l_remaining = atomic_fetch_sub(&l_server->pending_listener_disables, 1) - 1;
+    log_it(L_INFO, "Listener disable: decremented counter, remaining=%u", l_remaining);
+    if (l_remaining == 0) {
+        pthread_cond_signal(&l_server->listener_disable_cond);
+        log_it(L_INFO, "All listeners disabled - signaling condition variable");
+    }
+    pthread_mutex_unlock(&l_server->listener_disable_mutex);
+    
+    DAP_DELETE(l_args);
+}
+
+/**
  * @brief Worker-thread callback to safely delete context queue
  * 
  * CRITICAL: This callback runs in the worker's reactor thread!
@@ -413,6 +469,8 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
     atomic_store(&a_server->is_deleting, true);
+    log_it(L_INFO, "=== Server '%s' deletion START (marked is_deleting=true) ===", 
+           a_server->name ? a_server->name : "unknown");
     log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
     
     // Mark server as stopped (if not already)
@@ -421,24 +479,60 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         dap_io_flow_server_stop(a_server);
     }
     
-    // Step 0: Disable read callbacks on listener sockets to stop accepting NEW packets
-    // But keep sockets alive for sending responses to already-queued packets!
+    // Step 0: STOP packet intake - disable read on listeners
+    // CRITICAL: We can't delete listeners yet - they're still needed for responses!
+    // Disable reading to stop NEW packets, but keep sockets alive for sending.
     if (a_server->dap_server && a_server->dap_server->es_listeners) {
-        debug_if(s_debug_more, L_DEBUG, "Disabling read callbacks on listeners to stop packet intake");
+        // Count listeners
+        uint32_t l_listener_count = 0;
+        for (dap_list_t *l_item = a_server->dap_server->es_listeners; l_item; l_item = l_item->next) {
+            l_listener_count++;
+        }
+        
+        log_it(L_INFO, "Step 0: Disabling read on %u listeners (keeping alive for responses)", l_listener_count);
+        
+        atomic_store(&a_server->pending_listener_disables, l_listener_count);
         
         dap_list_t *l_item = a_server->dap_server->es_listeners;
+        uint32_t l_scheduled = 0;
         while (l_item) {
             dap_events_socket_t *l_es = (dap_events_socket_t *)l_item->data;
-            if (l_es) {
-                // Disable read callback to stop accepting new packets
-                // But keep socket alive for sending responses!
-                l_es->callbacks.read_callback = NULL;
-                debug_if(s_debug_more, L_DEBUG, "Disabled read callback on listener fd=%d", l_es->fd);
+            if (l_es && l_es->worker) {
+                listener_disable_args_t *l_args = DAP_NEW_Z(listener_disable_args_t);
+                if (l_args) {
+                    l_args->server = a_server;
+                    l_args->listener = l_es;
+                    dap_worker_exec_callback_on(l_es->worker, s_listener_disable_read_callback, l_args);
+                    l_scheduled++;
+                }
             }
             l_item = l_item->next;
         }
         
-        debug_if(s_debug_more, L_DEBUG, "Listener read callbacks disabled - no new packets accepted");
+        log_it(L_INFO, "Scheduled %u/%u listener disable callbacks, waiting for completion...", 
+               l_scheduled, l_listener_count);
+        
+        // Wait for all listeners to disable (pthread_cond_wait with timeout)
+        pthread_mutex_lock(&a_server->listener_disable_mutex);
+        struct timespec l_timeout;
+        clock_gettime(CLOCK_REALTIME, &l_timeout);
+        l_timeout.tv_sec += 5;  // 5 second timeout
+        
+        int l_wait_result = 0;
+        while (atomic_load(&a_server->pending_listener_disables) > 0 && l_wait_result != ETIMEDOUT) {
+            l_wait_result = pthread_cond_timedwait(&a_server->listener_disable_cond, 
+                                                     &a_server->listener_disable_mutex, 
+                                                     &l_timeout);
+        }
+        
+        uint32_t l_remaining = atomic_load(&a_server->pending_listener_disables);
+        pthread_mutex_unlock(&a_server->listener_disable_mutex);
+        
+        if (l_remaining > 0) {
+            log_it(L_WARNING, "Listener disable timeout! %u listeners still pending", l_remaining);
+        } else {
+            log_it(L_INFO, "All listeners disabled successfully");
+        }
     }
     
     // Step 0.5: Wait for all queued packets to drain
@@ -473,7 +567,10 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     uint64_t l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
     uint32_t l_iterations = 0;
-    const uint32_t MAX_WAIT_ITERATIONS = 600; // 60 seconds max (100ms each)
+    const uint32_t MAX_WAIT_ITERATIONS = 100; // 10 seconds max (100ms each) - was 60 sec
+    
+    // Always log drain start
+    log_it(L_INFO, "Cross-worker packet drain START: %lu packets pending", l_cross_worker_packets);
     
     while (l_cross_worker_packets > 0 && l_iterations < MAX_WAIT_ITERATIONS) {
         usleep(100000);  // 100ms
@@ -482,21 +579,20 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         uint64_t l_prev = l_cross_worker_packets;
         l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
         
-        // Log progress every 10 iterations (1 second)
-        if (l_iterations % 10 == 0) {
-            debug_if(s_debug_more, L_DEBUG, 
-                   "Cross-worker packets draining: %lu remaining (-%lu since last report, %u sec elapsed)", 
-                   l_cross_worker_packets, l_prev > l_cross_worker_packets ? l_prev - l_cross_worker_packets : 0,
-                   l_iterations / 10);
+        // Log progress every second for first 10 iterations, then every 5 seconds
+        if (l_iterations <= 10 || l_iterations % 50 == 0) {
+            int64_t l_delta = (int64_t)l_prev - (int64_t)l_cross_worker_packets;
+            log_it(L_INFO, 
+                   "  drain progress: %lu packets (delta: %ld, elapsed: %.1f sec)", 
+                   l_cross_worker_packets, l_delta, l_iterations * 0.1);
         }
     }
     
     if (l_cross_worker_packets > 0) {
-        log_it(L_WARNING, "Cross-worker packet drain timeout! Still have %lu packets after %u seconds",
-               l_cross_worker_packets, l_iterations / 10);
+        log_it(L_WARNING, "Cross-worker packet drain TIMEOUT! %lu packets still pending after %.1f seconds",
+               l_cross_worker_packets, l_iterations * 0.1);
     } else {
-        debug_if(s_debug_more, L_DEBUG, "All cross-worker packets drained successfully (%u sec)", 
-               l_iterations / 10);
+        log_it(L_INFO, "Cross-worker packet drain COMPLETE (%.1f sec)", l_iterations * 0.1);
     }
     
     // Step 1: Cleanup all flows (user data)
@@ -586,6 +682,10 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     pthread_mutex_destroy(&a_server->cleanup_mutex);
     pthread_cond_destroy(&a_server->cleanup_cond);
+    
+    // Destroy listener disable synchronization
+    pthread_mutex_destroy(&a_server->listener_disable_mutex);
+    pthread_cond_destroy(&a_server->listener_disable_cond);
     
     // Destroy queue deletion synchronization
     pthread_mutex_destroy(&a_server->queue_delete_mutex);

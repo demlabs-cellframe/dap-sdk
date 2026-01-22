@@ -177,6 +177,14 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
     } else {
         // SLOW PATH: Cross-worker, use callback
         debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
+        
+        // CRITICAL: Drop if server is deleting - prevents callback queue overflow
+        // during cleanup when we try to schedule deletion callbacks!
+        if (atomic_load(&a_server->is_deleting)) {
+            debug_if(s_debug_more, L_DEBUG, "Server is deleting - dropping sendto (size=%zu)", a_size);
+            return a_size;  // Pretend success to avoid upstream errors
+        }
+        
         flow_sendto_args_t *l_args = DAP_NEW_Z(flow_sendto_args_t);
         if (!l_args) {
             log_it(L_ERROR, "Failed to allocate sendto args");
