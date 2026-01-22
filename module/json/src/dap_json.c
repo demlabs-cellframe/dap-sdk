@@ -455,7 +455,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                         // Unicode escape
                         l_p += 2; // skip \u
                         if ((l_p + 4) > (l_str_start + l_str_len)) {
-                            log_it(L_ERROR, "Incomplete Unicode escape at position %zu", l_str_pos);
+                            log_it(L_ERROR, "Incomplete Unicode escape at position %u", l_str_pos);
                             dap_json_stage1_free(l_stage1);
                             if (l_transcoded) DAP_DELETE(l_transcoded);
                             return NULL;
