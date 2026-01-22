@@ -104,7 +104,7 @@ if(UNIX)
     endif()
     
     # Base warning flags (compatible with both GCC and Clang)
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter -Wno-error=builtin-declaration-mismatch")
     
     # Add Clang-specific flags only when using Clang
     if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
