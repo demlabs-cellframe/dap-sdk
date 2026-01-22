@@ -784,10 +784,11 @@ static void test_13_stream_write(void)
     // NOTE: The actual DAP_MOCK_WRAPPER_CUSTOM is declared at the top of this file
     // It calls dap_udp_test_mock_write_unsafe_callback which captures the packet
     
-    // Enable the mock
+    // Enable the mocks (both write_unsafe and sendto_unsafe for UDP)
     DAP_MOCK_ENABLE(dap_events_socket_write_unsafe);
+    DAP_MOCK_ENABLE(dap_events_socket_sendto_unsafe);
     
-    TEST_INFO("✅ Mock for dap_events_socket_write_unsafe enabled");
+    TEST_INFO("✅ Mock for dap_events_socket_write_unsafe and sendto_unsafe enabled");
     
     // ========================================================================
     // STEP 4: Call trans->ops->write with test data
@@ -1016,6 +1017,7 @@ static void test_15_encrypted_internal_header(void)
     
     dap_udp_test_reset_captured_packet();
     DAP_MOCK_ENABLE(dap_events_socket_write_unsafe);
+    DAP_MOCK_ENABLE(dap_events_socket_sendto_unsafe);
     
     dap_net_trans_t *l_trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
     TEST_ASSERT_NOT_NULL(l_trans, "UDP trans should exist");
@@ -1339,6 +1341,7 @@ static void test_17_replay_protection(void)
     // ========================================================================
     
     DAP_MOCK_ENABLE(dap_events_socket_write_unsafe);
+    DAP_MOCK_ENABLE(dap_events_socket_sendto_unsafe);
     
     dap_net_trans_t *l_trans = dap_net_trans_find(DAP_NET_TRANS_UDP_BASIC);
     TEST_ASSERT_NOT_NULL(l_trans, "UDP trans should exist");

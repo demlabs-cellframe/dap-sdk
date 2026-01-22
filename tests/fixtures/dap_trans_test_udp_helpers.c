@@ -806,3 +806,38 @@ DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_events_socket_write_unsafe,
     return (ssize_t)a_size;
 }
 
+/**
+ * @brief Custom mock wrapper for dap_events_socket_sendto_unsafe
+ * 
+ * This mock captures UDP packets with explicit destination address.
+ * UDP transport uses sendto_unsafe instead of write_unsafe for datagram sockets.
+ */
+DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_sendto_unsafe,
+    PARAM(dap_events_socket_t*, a_es),
+    PARAM(const void*, a_data),
+    PARAM(size_t, a_size),
+    PARAM(const struct sockaddr_storage*, a_addr),
+    PARAM(socklen_t, a_addr_len)
+)
+{
+    // Validate input
+    if (!a_data || a_size == 0 || a_size > DAP_UDP_TEST_MAX_PACKET_SIZE || !a_addr) {
+        log_it(L_ERROR, "Mock sendto_unsafe: Invalid params: data=%p, size=%zu, addr=%p", a_data, a_size, a_addr);
+        return 0;
+    }
+    
+    // Capture packet data
+    memcpy(s_captured_packet.data, a_data, a_size);
+    s_captured_packet.size = a_size;
+    s_captured_packet.is_valid = true;
+    
+    // Copy destination address from explicit parameter
+    memcpy(&s_captured_packet.dest_addr, a_addr, a_addr_len);
+    s_captured_packet.dest_addr_len = a_addr_len;
+    
+    log_it(L_DEBUG, "Mock sendto_unsafe: Captured UDP packet: %zu bytes to explicit address", a_size);
+    
+    // Simulate successful write - return number of bytes written
+    return a_size;
+}
+
