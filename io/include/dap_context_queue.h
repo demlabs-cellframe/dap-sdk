@@ -71,6 +71,15 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue);
 bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item);
 
 /**
+ * @brief Get number of items in queue
+ * @param a_queue Queue
+ * @return Number of pending items
+ */
+static inline size_t dap_context_queue_count(dap_context_queue_t *a_queue) {
+    return a_queue ? dap_ring_buffer_size(a_queue->ring_buffer) : 0;
+}
+
+/**
  * @brief Process one item from queue (called by reactor)
  * @param a_queue Queue
  * @return 0 on success, -1 on error

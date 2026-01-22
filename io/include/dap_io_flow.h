@@ -351,6 +351,7 @@ struct dap_io_flow_server {
     _Atomic size_t cross_worker_packets;    ///< Cross-worker forwarded packets
     
     bool is_running;                        ///< Server is running
+    _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
 };
 
 // =============================================================================

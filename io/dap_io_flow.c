@@ -170,6 +170,7 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     pthread_cond_init(&l_server->cleanup_cond, NULL);
     atomic_init(&l_server->pending_cleanups, 0);
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
+    atomic_init(&l_server->is_deleting, false);   // Server is valid initially
     
     log_it(L_INFO, "Created flow server '%s' with %u workers, boundary_type=%d",
            a_name, l_worker_count, a_boundary_type);
@@ -308,7 +309,40 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
     }
     
+    // CRITICAL: Mark server as deleting BEFORE stopping
+    // This invalidates all queued packets that reference this server
+    atomic_store(&a_server->is_deleting, true);
+    log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);
+    
+    // Step 0: Stop server listeners first (prevent new packets)
+    if (a_server->is_running) {
+        log_it(L_DEBUG, "Stopping server listeners to prevent new packets");
+        dap_io_flow_server_stop(a_server);
+    }
+    
+    // Step 0.5: Wait for all queued packets to drain
+    // Give worker threads time to process remaining packets
     uint32_t l_worker_count = dap_proc_thread_get_count();
+    if (a_server->queue_inputs) {
+        log_it(L_DEBUG, "Waiting for queue drainage (max 1 second)");
+        for (int attempts = 0; attempts < 10; attempts++) {
+            bool all_empty = true;
+            for (uint32_t i = 0; i < l_worker_count; i++) {
+                if (a_server->queue_inputs[i]) {
+                    size_t pending = dap_context_queue_count(a_server->queue_inputs[i]);
+                    if (pending > 0) {
+                        all_empty = false;
+                        log_it(L_DEBUG, "Worker %u queue has %zu pending packets", i, pending);
+                    }
+                }
+            }
+            if (all_empty) {
+                log_it(L_DEBUG, "All queues drained successfully");
+                break;
+            }
+            usleep(100000);  // 100ms between checks
+        }
+    }
     
     // Step 1: Cleanup all flows (user data)
     log_it(L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
@@ -351,13 +385,6 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         }
         DAP_DELETE(a_server->queue_inputs);
         log_it(L_DEBUG, "All queue_inputs deleted");
-    }
-    
-    // Step 4: Stop server (listeners) - NOW it's safe
-    if (a_server->is_running) {
-        log_it(L_DEBUG, "Stopping server listeners");
-        dap_io_flow_server_stop(a_server);
-        log_it(L_DEBUG, "Server listeners stopped");
     }
     
     // Step 5: Free structures
@@ -1024,12 +1051,27 @@ static void s_queue_ptr_callback(void *a_ptr)
     
     dap_io_flow_server_t *l_server = l_packet->server;
     
+    // CRITICAL: Check if server is being deleted
+    if (atomic_load(&l_server->is_deleting)) {
+        debug_if(s_debug_more, L_DEBUG, 
+                 "Queue callback: server '%s' is being deleted - dropping packet",
+                 l_server->name ? l_server->name : "NULL");
+        // Release arena page for this packet
+        if (l_packet->page_handle) {
+            dap_arena_page_unref(l_packet->page_handle);
+        }
+        return;
+    }
+    
     debug_if(s_debug_more, L_DEBUG, "Queue callback: server=%p, lb_tier=%d", 
              l_server, l_server ? (int)l_server->lb_tier : -1);
     
     // Validate server and its dap_server field
     if (!l_server->dap_server) {
         log_it(L_ERROR, "Queue callback: server->dap_server is NULL (server may have been deleted)");
+        if (l_packet->page_handle) {
+            dap_arena_page_unref(l_packet->page_handle);
+        }
         return;
     }
     
