@@ -402,6 +402,14 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
+    // Check for empty/whitespace-only input (no structural tokens)
+    if (l_stage1->indices_count == 0) {
+        log_it(L_ERROR, "No JSON content found (whitespace-only or empty input)");
+        dap_json_stage1_free(l_stage1);
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    
     // Build tape from Stage 1 output
     dap_json_tape_entry_t *l_tape = NULL;
     size_t l_tape_count = 0;
