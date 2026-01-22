@@ -82,6 +82,8 @@
 #include "dap_common.h"
 #include "dap_uuid.h"
 #include "dap_context.h"
+#include "dap_events_socket.h"
+#include "dap_context_queue.h"
 #include "dap_list.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
@@ -1994,8 +1996,8 @@ dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_ev
         return NULL;
     }
     
-    // Create new context queue with default capacity
-    dap_context_queue_t *l_queue = dap_context_queue_create(a_context, 0, (void(*)(void*))a_callback);
+    // Create new context queue with default capacity (4096)
+    dap_context_queue_t *l_queue = dap_context_queue_create(a_context, 4096, (void(*)(void*))a_callback);
     if (!l_queue) {
         log_it(L_ERROR, "Failed to create context queue");
         return NULL;

@@ -60,5 +60,5 @@ int dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_u
 // Send to channel by stream addr
 int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 
-DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t *a_queue , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
-size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
+DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_context_queue_t *a_queue_input , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
+size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);

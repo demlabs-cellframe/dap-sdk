@@ -61,13 +61,13 @@ int avrs_ch_pkt_send_retcode_unsafe(dap_stream_ch_t * a_ch, int a_code, const ch
 
 /**
  * @brief avrs_ch_pkt_send_retcode_inter
- * @param a_es_input
+ * @param a_queue_input
  * @param a_ch_uuid
  * @param a_code
  * @param a_text
  * @return
  */
-int avrs_ch_pkt_send_retcode_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, int a_code, const char * a_text)
+int avrs_ch_pkt_send_retcode_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, int a_code, const char * a_text)
 {
     size_t l_text_size = strlen(a_text)+1;
     avrs_ch_pkt_retcode_t * l_err = DAP_NEW_STACK_SIZE(avrs_ch_pkt_retcode_t, sizeof(avrs_ch_pkt_retcode_t)+l_text_size);
@@ -75,7 +75,7 @@ int avrs_ch_pkt_send_retcode_inter(dap_events_socket_t * a_es_input, dap_stream_
     l_err->msgnum = a_code;
     memcpy(l_err->msg, a_text, l_text_size);
 
-    if (dap_stream_ch_pkt_write_inter(a_es_input, a_ch_uuid, 'r', l_err, sizeof(avrs_ch_pkt_retcode_t) + l_text_size) == sizeof(avrs_ch_pkt_retcode_t)+l_text_size)
+    if (dap_stream_ch_pkt_write_inter(a_queue_input, a_ch_uuid, 'r', l_err, sizeof(avrs_ch_pkt_retcode_t) + l_text_size) == sizeof(avrs_ch_pkt_retcode_t)+l_text_size)
         return 0;
 
     return -EIO;
@@ -107,14 +107,14 @@ avrs_ch_pkt_cluster_t * l_pkt_cluster = DAP_NEW_STACK_SIZE(avrs_ch_pkt_cluster_t
 
 /**
  * @brief avrs_ch_pkt_send_cluster_inter
- * @param a_es_input
+ * @param a_queue_input
  * @param a_ch_uuid
  * @param a_type
  * @param a_args
  * @param a_args_size
  * @return
  */
-int avrs_ch_pkt_send_cluster_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_args, size_t a_args_size )
+int avrs_ch_pkt_send_cluster_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_args, size_t a_args_size )
 {
 size_t  l_pkt_cluster_size = sizeof(avrs_ch_pkt_cluster_t) + a_args_size, l_rc;
 avrs_ch_pkt_cluster_t * l_pkt_cluster = DAP_NEW_STACK_SIZE(avrs_ch_pkt_cluster_t, l_pkt_cluster_size);
@@ -123,7 +123,7 @@ avrs_ch_pkt_cluster_t * l_pkt_cluster = DAP_NEW_STACK_SIZE(avrs_ch_pkt_cluster_t
     l_pkt_cluster->type = a_type;
     memcpy(l_pkt_cluster->args, a_args, a_args_size);
 
-    if ( dap_stream_ch_pkt_write_inter(a_es_input, a_ch_uuid, DAP_AVRS$K_CH_CLUSTER, l_pkt_cluster,l_pkt_cluster_size) == l_pkt_cluster_size )
+    if ( dap_stream_ch_pkt_write_inter(a_queue_input, a_ch_uuid, DAP_AVRS$K_CH_CLUSTER, l_pkt_cluster,l_pkt_cluster_size) == l_pkt_cluster_size )
         return 0;
 
     return -EIO;
@@ -156,7 +156,7 @@ avrs_ch_pkt_content_t * l_pkt_content = DAP_NEW_STACK_SIZE(avrs_ch_pkt_content_t
 
 /**
  * @brief avrs_ch_pkt_send_content_inter
- * @param a_es_input
+ * @param a_queue_input
  * @param a_ch_uuid
  * @param a_flow_id
  * @param a_content_id
@@ -164,7 +164,7 @@ avrs_ch_pkt_content_t * l_pkt_content = DAP_NEW_STACK_SIZE(avrs_ch_pkt_content_t
  * @param a_data_size
  * @return
  */
-int avrs_ch_pkt_send_content_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_flow_id, uint32_t a_content_id, const void *a_data, size_t a_data_size)
+int avrs_ch_pkt_send_content_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_flow_id, uint32_t a_content_id, const void *a_data, size_t a_data_size)
 {
     size_t l_pkt_content_size = sizeof(avrs_ch_pkt_content_t) + a_data_size;
     avrs_ch_pkt_content_t * l_pkt_content = DAP_NEW_STACK_SIZE(avrs_ch_pkt_content_t, l_pkt_content_size);

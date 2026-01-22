@@ -25,6 +25,7 @@
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #define LOG_TAG "dap_ring_buffer"
 
@@ -98,8 +99,7 @@ void dap_ring_buffer_delete(dap_ring_buffer_t *a_rb) {
     uint64_t l_full = atomic_load_explicit(&a_rb->total_full, memory_order_relaxed);
     uint64_t l_empty = atomic_load_explicit(&a_rb->total_empty, memory_order_relaxed);
     
-    log_it(L_DEBUG, "Deleting ring buffer: capacity=%zu, total_pushes=%"PRIu64", total_pops=%"PRIu64", "
-                    "total_full=%"PRIu64", total_empty=%"PRIu64,
+    log_it(L_DEBUG, "Deleting ring buffer: capacity=%zu, total_pushes=%" PRIu64 ", total_pops=%" PRIu64 ", total_full=%" PRIu64 ", total_empty=%" PRIu64,
            a_rb->capacity, l_pushes, l_pops, l_full, l_empty);
     
     free(a_rb);

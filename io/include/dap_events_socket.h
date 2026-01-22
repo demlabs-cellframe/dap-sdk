@@ -447,6 +447,8 @@ void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct da
 void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
 void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
 
+int dap_events_socket_event_signal(dap_events_socket_t * a_es, uint64_t a_value);
+
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 

@@ -163,33 +163,28 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
 }
 
 /**
- * @brief Process all available items in queue (called by reactor)
+ * @brief Process one item from queue (called by reactor)
+ * @return 0 on success, -1 on error
  */
-size_t dap_context_queue_process(dap_context_queue_t *a_queue) {
+int dap_context_queue_process(dap_context_queue_t *a_queue) {
     if (!a_queue || !a_queue->callback) {
-        return 0;
+        return -1;
     }
     
-    size_t l_processed = 0;
-    void *l_item;
-    
-    // Process all available items (lock-free pop)
-    while ((l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
+    // Process only ONE item per reactor iteration (atomic operation)
+    // This prevents blocking event loop with heavy callbacks
+    void *l_item = dap_ring_buffer_pop(a_queue->ring_buffer);
+    if (l_item) {
         // Call user callback
         a_queue->callback(l_item);
-        l_processed++;
         
-        // Limit batch size to prevent starvation of other sockets
-        if (l_processed >= 1024) {
-            // Re-signal event if more items remain
-            if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
-                dap_events_socket_event_signal(a_queue->event_socket, 1);
-            }
-            break;
+        // Re-signal event if more items remain
+        if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
+            dap_events_socket_event_signal(a_queue->event_socket, 1);
         }
     }
     
-    return l_processed;
+    return 0;
 }
 
 /**

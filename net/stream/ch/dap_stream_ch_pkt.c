@@ -125,13 +125,13 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
 
 /**
  * @brief dap_stream_ch_pkt_write_f_inter
- * @param a_queue
+ * @param a_queue_input
  * @param a_ch_uuid
  * @param a_type
  * @param a_format
  * @return
  */
-size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
+size_t dap_stream_ch_pkt_write_f_inter(dap_context_queue_t * a_queue_input  , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
 {
     va_list ap, ap_copy;
     va_start(ap, a_format);
@@ -164,7 +164,7 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     l_data_size = vsnprintf(l_msg->data, l_data_size, a_format, ap_copy);
     va_end(ap_copy);
 
-    if (!dap_context_queue_push(a_queue, l_msg)) {
+    if (!dap_context_queue_push(a_queue_input, l_msg)) {
         log_it(L_ERROR, "Can't send pointer to queue (queue full)");
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
@@ -250,14 +250,14 @@ int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_
 
 /**
  * @brief dap_stream_ch_pkt_write_inter
- * @param a_queue
+ * @param a_queue_input
  * @param a_ch_uuid
  * @param a_type
  * @param a_data
  * @param a_data_size
  * @return
  */
-size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
+size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     if (!l_msg) {

@@ -649,8 +649,8 @@ static void s_app_sink_callback_queue_ptr_iter(dap_worker_t * a_worker,void * a_
         avrs_session_t * l_session = l_content_session->session;
         assert(l_session);
         dap_stream_ch_uuid_t l_avrs_ch_uuid = l_session->ch_uuid;
-        dap_events_socket_t * l_es_input = DAP_STREAM_WORKER(a_worker)->queue_ch_io_input[l_session->ch_worker_id] ;
-        avrs_ch_pkt_send_content_inter(l_es_input, l_avrs_ch_uuid, l_args->flow_id, l_content_session->content_session_id,
+        dap_context_queue_t * l_queue_input = DAP_STREAM_WORKER(a_worker)->queue_ch_io_input[l_session->ch_worker_id] ;
+        avrs_ch_pkt_send_content_inter(l_queue_input, l_avrs_ch_uuid, l_args->flow_id, l_content_session->content_session_id,
                                        l_args->data, l_args->data_size);
         // We break iterations by parts to not to overload the worker a lot
         dap_worker_exec_callback_on(a_worker,s_app_sink_callback_queue_ptr_iter, l_args );
@@ -695,8 +695,8 @@ int avrs_content_data_push_for_everyone_unsafe( avrs_content_t * a_content, uint
         avrs_session_t * l_session = l_content_session->session;
         assert(l_session);
         dap_stream_ch_uuid_t l_avrs_ch_uuid = l_session->ch_uuid;
-        dap_events_socket_t * l_es_input = DAP_STREAM_WORKER(l_worker)->queue_ch_io_input[l_session->ch_worker_id] ;
-        avrs_ch_pkt_send_content_inter(l_es_input, l_avrs_ch_uuid, a_flow_id, l_content_session->content_session_id, a_data, a_data_size);
+        dap_context_queue_t * l_queue_input = DAP_STREAM_WORKER(l_worker)->queue_ch_io_input[l_session->ch_worker_id] ;
+        avrs_ch_pkt_send_content_inter(l_queue_input, l_avrs_ch_uuid, a_flow_id, l_content_session->content_session_id, a_data, a_data_size);
     }
 
     return 0;

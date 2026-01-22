@@ -24,14 +24,14 @@
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_context.h"
+#include "dap_context_queue.h"
 #include "dap_stream_worker.h"
 #include "dap_stream_ch_pkt.h"
 
 #define LOG_TAG "dap_stream_worker"
 
-static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg);
-static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg);
-static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) ;
+static void s_ch_io_callback(void * a_msg);
+static void s_ch_send_callback(void *a_msg);
 
 
 /**
@@ -58,11 +58,10 @@ int dap_stream_worker_init()
         l_stream_worker->worker = l_worker;
         pthread_rwlock_init( &l_stream_worker->channels_rwlock, NULL);
 
-        l_stream_worker->queue_ch_io = dap_events_socket_create_type_queue_ptr_mt( l_worker, s_ch_io_callback);
+        l_stream_worker->queue_ch_io = dap_context_queue_create(l_worker->context, 4096, s_ch_io_callback);
         if(! l_stream_worker->queue_ch_io)
             return -6;
-        l_stream_worker->queue_ch_send = dap_events_socket_create_type_queue_ptr_mt(l_worker, s_ch_send_callback);
-        l_stream_worker->queue_ch_send->cb_buf_cleaner = s_cb_msg_buf_clean; 
+        l_stream_worker->queue_ch_send = dap_context_queue_create(l_worker->context, 4096, s_ch_send_callback);
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
@@ -70,7 +69,7 @@ int dap_stream_worker_init()
     for (uint32_t i = 0; i < l_worker_count; i++){
         dap_worker_t *l_worker_inp = dap_events_worker_get(i);
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
-        l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
+        l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_context_queue_t *, sizeof(dap_context_queue_t *) * l_worker_count);
         if (!l_stream_worker_inp->queue_ch_io_input) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -8;
@@ -78,8 +77,8 @@ int dap_stream_worker_init()
         for (uint32_t j = 0; j < l_worker_count; j++) {
             dap_worker_t * l_worker = dap_events_worker_get(j);
             dap_stream_worker_t *l_stream_worker = (dap_stream_worker_t*) l_worker->_inheritor;
-            l_stream_worker_inp->queue_ch_io_input[j] = dap_events_socket_queue_ptr_create_input(l_stream_worker->queue_ch_io);
-            dap_events_socket_assign_on_worker_mt(l_stream_worker_inp->queue_ch_io_input[j], l_worker_inp);
+            // Simply reference the same queue - dap_context_queue handles cross-worker signaling internally
+            l_stream_worker_inp->queue_ch_io_input[j] = l_stream_worker->queue_ch_io;
         }
     }
 #endif
@@ -88,15 +87,16 @@ int dap_stream_worker_init()
 
 /**
  * @brief s_ch_io_callback
- * @param a_es
  * @param a_msg
  */
-static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
+static void s_ch_io_callback(void * a_msg)
 {
-    dap_stream_worker_t * l_stream_worker = DAP_STREAM_WORKER( a_es->worker );
     dap_stream_worker_msg_io_t * l_msg = (dap_stream_worker_msg_io_t*) a_msg;
-
     assert(l_msg);
+    
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_stream_worker_t * l_stream_worker = DAP_STREAM_WORKER(l_worker);
+    
     // Check if it was removed from the list
     dap_stream_ch_t *l_msg_ch = NULL;
     pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
@@ -126,12 +126,16 @@ static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
     DAP_DELETE(l_msg);
 }
 
-static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg)
+static void s_ch_send_callback(void *a_msg)
 {
     dap_stream_worker_msg_send_t *l_msg = (dap_stream_worker_msg_send_t *)a_msg;
     assert(l_msg);
+    
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_context_t *l_context = l_worker->context;
+    
     // Check if it was removed from the list
-    dap_events_socket_t *l_es = dap_context_find(a_es->context, l_msg->uuid);
+    dap_events_socket_t *l_es = dap_context_find(l_context, l_msg->uuid);
     if (!l_es) {
         log_it(L_DEBUG, "We got i/o message for client thats now not in list");
         goto ret_n_clear;
@@ -154,16 +158,4 @@ ret_n_clear:
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
-}
-
-static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) 
-{
-    size_t l_total_size = 0;
-    for (size_t shift = 0; shift < a_buf_size; shift += sizeof(dap_stream_worker_msg_send_t*)) {
-        dap_stream_worker_msg_send_t* l_msg = *(dap_stream_worker_msg_send_t**)(a_buf_out + shift);
-        l_total_size += l_msg->data_size;
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-    }
-    return l_total_size;
 }

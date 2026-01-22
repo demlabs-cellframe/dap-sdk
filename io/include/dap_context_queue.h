@@ -71,11 +71,11 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue);
 bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item);
 
 /**
- * @brief Process all available items in queue (called by reactor)
+ * @brief Process one item from queue (called by reactor)
  * @param a_queue Queue
- * @return Number of items processed
+ * @return 0 on success, -1 on error
  */
-size_t dap_context_queue_process(dap_context_queue_t *a_queue);
+int dap_context_queue_process(dap_context_queue_t *a_queue);
 
 /**
  * @brief Get queue statistics

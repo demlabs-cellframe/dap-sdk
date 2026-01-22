@@ -158,6 +158,6 @@ int avrs_ch_pkt_send_retcode_unsafe(dap_stream_ch_t * a_ch, int a_code, const ch
 int avrs_ch_pkt_send_cluster_unsafe(dap_stream_ch_t * a_ch, uint8_t a_type, const void * a_args, size_t a_args_size );
 int avrs_ch_pkt_send_content_unsafe(dap_stream_ch_t * a_ch, uint8_t a_flow_id, uint32_t a_content_id, const void *a_data, size_t a_data_size);
 
-int avrs_ch_pkt_send_retcode_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, int a_code, const char * a_text);
-int avrs_ch_pkt_send_cluster_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_args, size_t a_args_size );
-int avrs_ch_pkt_send_content_inter(dap_events_socket_t * a_es_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_flow_id, uint32_t a_content_id, const void *a_data, size_t a_data_size);
+int avrs_ch_pkt_send_retcode_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, int a_code, const char * a_text);
+int avrs_ch_pkt_send_cluster_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_args, size_t a_args_size );
+int avrs_ch_pkt_send_content_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_flow_id, uint32_t a_content_id, const void *a_data, size_t a_data_size);
