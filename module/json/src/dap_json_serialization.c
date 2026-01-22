@@ -44,10 +44,10 @@ typedef struct {
 } dap_json_array_storage_t;
 
 typedef struct {
-    size_t count;
-    size_t capacity;
     char **keys;
     dap_json_value_t **values;
+    size_t count;
+    size_t capacity;
 } dap_json_object_storage_t;
 
 /* ========================================================================== */
