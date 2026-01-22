@@ -1117,10 +1117,12 @@ static void s_queue_ptr_callback(void *a_ptr)
     }
     
     if (!l_real_listener) {
-        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (tier=%d)",
+        log_it(L_ERROR, "Queue callback: Failed to find UDP listener for worker %u (tier=%d) - server may be stopping",
                l_worker ? l_worker->id : 999, l_server->lb_tier);
-        // NOTE: Do NOT free l_packet or l_packet->data - they're allocated from thread-local arena!
-        // Arena memory is automatically reused
+        // Release arena page for this packet
+        if (l_packet->page_handle) {
+            dap_arena_page_unref(l_packet->page_handle);
+        }
         return;
     }
     
