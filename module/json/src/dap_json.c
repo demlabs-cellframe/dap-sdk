@@ -414,6 +414,108 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     dap_json_tape_entry_t *l_tape = NULL;
     size_t l_tape_count = 0;
     
+    // STRICT JSON: Validate string escapes (surrogate pairs, control chars)
+    // Pre-scan all strings before building tape
+    for (size_t i = 0; i < l_stage1->indices_count; i++) {
+        if (l_stage1->indices[i].type == TOKEN_TYPE_STRING) {
+            uint32_t l_str_pos = l_stage1->indices[i].position;
+            uint32_t l_str_len = l_stage1->indices[i].length;
+            
+            if (l_str_pos + l_str_len > l_parse_len) continue;
+            
+            const char *l_str_start = (const char*)(l_parse_input + l_str_pos);
+            
+            // Skip opening quote
+            if (*l_str_start == '"') l_str_start++;
+            
+            // Scan until closing quote
+            for (const char *l_p = l_str_start; l_p < l_str_start + l_str_len && *l_p && *l_p != '"'; l_p++) {
+                if (*l_p == '\\' && (l_p + 1) < (l_str_start + l_str_len)) {
+                    if (*(l_p + 1) == 'u') {
+                        // Unicode escape
+                        l_p += 2; // skip \u
+                        if ((l_p + 4) > (l_str_start + l_str_len)) {
+                            log_it(L_ERROR, "Incomplete Unicode escape at position %zu", l_str_pos);
+                            dap_json_stage1_free(l_stage1);
+                            if (l_transcoded) DAP_DELETE(l_transcoded);
+                            return NULL;
+                        }
+                        
+                        // Parse codepoint
+                        uint32_t cp = 0;
+                        for (int j = 0; j < 4; j++) {
+                            char c = l_p[j];
+                            uint32_t digit;
+                            if (c >= '0' && c <= '9') digit = c - '0';
+                            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+                            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+                            else {
+                                log_it(L_ERROR, "Invalid hex digit in Unicode escape");
+                                dap_json_stage1_free(l_stage1);
+                                if (l_transcoded) DAP_DELETE(l_transcoded);
+                                return NULL;
+                            }
+                            cp = (cp << 4) | digit;
+                        }
+                        l_p += 3; // will be incremented by loop
+                        
+                        // Check for unpaired surrogates
+                        if (cp >= 0xD800 && cp <= 0xDBFF) {
+                            // High surrogate - MUST have low surrogate following
+                            const char *l_next = l_p + 1;
+                            if ((l_next + 6) > (l_str_start + l_str_len) || 
+                                l_next[0] != '\\' || l_next[1] != 'u') {
+                                log_it(L_ERROR, "Unpaired high surrogate U+%04X at position %zu", 
+                                       cp, (size_t)(l_p - (const char*)l_parse_input));
+                                dap_json_stage1_free(l_stage1);
+                                if (l_transcoded) DAP_DELETE(l_transcoded);
+                                return NULL;
+                            }
+                            
+                            l_next += 2; // skip \u
+                            uint32_t low = 0;
+                            for (int j = 0; j < 4; j++) {
+                                char c = l_next[j];
+                                uint32_t digit;
+                                if (c >= '0' && c <= '9') digit = c - '0';
+                                else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+                                else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+                                else {
+                                    log_it(L_ERROR, "Invalid hex in low surrogate");
+                                    dap_json_stage1_free(l_stage1);
+                                    if (l_transcoded) DAP_DELETE(l_transcoded);
+                                    return NULL;
+                                }
+                                low = (low << 4) | digit;
+                            }
+                            
+                            if (low < 0xDC00 || low > 0xDFFF) {
+                                log_it(L_ERROR, "Invalid low surrogate U+%04X after high U+%04X", low, cp);
+                                dap_json_stage1_free(l_stage1);
+                                if (l_transcoded) DAP_DELETE(l_transcoded);
+                                return NULL;
+                            }
+                            
+                            // Skip low surrogate in loop
+                            l_p += 6; // \uXXXX
+                        } 
+                        else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                            // Low surrogate without high - INVALID
+                            log_it(L_ERROR, "Unpaired low surrogate U+%04X at position %zu", 
+                                   cp, (size_t)(l_p - (const char*)l_parse_input));
+                            dap_json_stage1_free(l_stage1);
+                            if (l_transcoded) DAP_DELETE(l_transcoded);
+                            return NULL;
+                        }
+                    } else {
+                        // Other escape - skip it
+                        l_p++;
+                    }
+                }
+            }
+        }
+    }
+    
     if (!dap_json_build_tape(l_stage1, &l_tape, &l_tape_count)) {
         log_it(L_ERROR, "Failed to build tape");
         dap_json_stage1_free(l_stage1);
