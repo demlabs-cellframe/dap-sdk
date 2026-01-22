@@ -2376,6 +2376,13 @@ bool dap_json_object_get_ex(dap_json_t* a_json, const char* a_key, dap_json_t** 
             return false;
         }
         
+        // Enter object (required before find_key!)
+        if (!dap_json_iterator_enter(l_iter)) {
+            log_it(L_ERROR, "Failed to enter object");
+            dap_json_iterator_free(l_iter);
+            return false;
+        }
+        
         // Find key
         if (!dap_json_iterator_find_key(l_iter, a_key, strlen(a_key))) {
             dap_json_iterator_free(l_iter);
