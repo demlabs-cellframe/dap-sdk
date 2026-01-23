@@ -671,12 +671,19 @@ static void test_23_edge_cases(void)
     
     dap_print_module_name("Edge Cases");
     
-    // Test with very large size
+    // Test with very large size (suppress GCC alloc-size warning for this intentional test)
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#endif
     void *l_ptr1 = DAP_MALLOC((size_t)-1);
     TEST_ASSERT_NULL(l_ptr1, "DAP_MALLOC should handle overflow");
     
     // Test with negative size (should be handled by cast)
     void *l_ptr2 = DAP_MALLOC(-1);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
     TEST_ASSERT_NULL(l_ptr2, "DAP_MALLOC should handle negative size");
     
     // Test DAP_DUP_SIZE with size smaller than type size
