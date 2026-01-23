@@ -250,11 +250,11 @@ static void *s_context_thread(void *a_arg)
         l_priority = THREAD_PRIORITY_NORMAL;
     }
     if ( !DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &l_context->th, 0, FALSE, DUPLICATE_SAME_ACCESS) )
-        log_it(L_ERROR, "DuplicateHandle() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "DuplicateHandle() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadAffinityMask( l_context->th, (DWORD_PTR)(1 << l_msg->cpu_id) ) ) 
-        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadPriority(l_context->th, l_priority) )
-        log_it(L_ERROR, "Couldn't set thread priority, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "Couldn't set thread priority, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
 #else
     if(l_msg->cpu_id!=-1)
         dap_cpu_assign_thread_on(l_msg->cpu_id );
