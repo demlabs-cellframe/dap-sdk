@@ -412,8 +412,10 @@ add_executable(${PROJECT_NAME}
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 
-# Link pthread
-target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+# Link pthread (not needed on Windows/Android - built into runtime)
+if(UNIX AND NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
 
 # Optional: Enable ThreadSanitizer (uncomment for TSan builds)
 # target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=thread)

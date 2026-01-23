@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10)
 
 project(crypto_cert_test)
 
@@ -15,7 +15,7 @@ target_link_libraries(${PROJECT_NAME}
     dap_test
 )
 
-if(UNIX)
+if(UNIX AND NOT ANDROID)
     target_link_libraries(${PROJECT_NAME} m pthread)
 endif()
 
