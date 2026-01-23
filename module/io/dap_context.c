@@ -92,7 +92,8 @@ int dap_context_init()
     l_fdlimit.rlim_cur = l_fdlimit.rlim_max;
     if (setrlimit(RLIMIT_NOFILE, &l_fdlimit))
         return -2;
-    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, l_oldlimit, l_fdlimit.rlim_cur);
+    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, 
+           (uint64_t)l_oldlimit, (uint64_t)l_fdlimit.rlim_cur);
 #endif
     return 0;
 }
