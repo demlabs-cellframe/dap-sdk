@@ -308,8 +308,8 @@ uint8_t *dap_enc_chipmunk_write_private_key(const void *a_key, size_t *a_buflen_
     log_it(L_INFO, "l_private_key address: %p", (void*)l_private_key);
     log_it(L_INFO, "chipmunk_private_key_t structure size: %zu", sizeof(chipmunk_private_key_t));
     
-    // Check if the address is reasonable 
-    if ((uintptr_t)l_private_key < 0x1000 || (uintptr_t)l_private_key > 0x7fffffffffff) {
+    // Check if the address is reasonable (lower bound only - upper bound is platform-specific)
+    if ((uintptr_t)l_private_key < 0x1000) {
         log_it(L_ERROR, "❌ Suspicious private key address: %p", (void*)l_private_key);
         log_it(L_ERROR, "This looks like corrupted memory or invalid pointer!");
         return NULL;
@@ -361,8 +361,8 @@ uint8_t *dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_o
     log_it(L_INFO, "l_public_key address: %p", (void*)l_public_key);
     log_it(L_INFO, "chipmunk_public_key_t structure size: %zu", sizeof(chipmunk_public_key_t));
     
-    // Check if the address is reasonable 
-    if ((uintptr_t)l_public_key < 0x1000 || (uintptr_t)l_public_key > 0x7fffffffffff) {
+    // Check if the address is reasonable (lower bound only - upper bound is platform-specific)
+    if ((uintptr_t)l_public_key < 0x1000) {
         log_it(L_ERROR, "❌ Suspicious public key address: %p", (void*)l_public_key);
         log_it(L_ERROR, "This looks like corrupted memory or invalid pointer!");
         return NULL;

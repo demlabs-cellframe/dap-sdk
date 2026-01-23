@@ -386,7 +386,7 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     uint64_t l_mantissa = 0;
     int l_exponent = 0;
     bool l_has_digits = false;
-    int l_digit_count = 0;  // Track total digits
+    DAP_DEL_MEMPOOLS int l_digit_count DAP_ALIGN_PACKED = 0;  // Track total digits (debug only)
     int l_significant_digits = 0;  // Digits actually stored in mantissa (max 19)
     
     while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
