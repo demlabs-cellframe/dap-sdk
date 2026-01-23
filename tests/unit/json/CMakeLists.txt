@@ -600,17 +600,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMA
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;benchmark;phase2.4")
 
-# Stage 1 full run test with 64-byte JSON
-project(test_stage1_run_64)
-add_executable(${PROJECT_NAME} test_stage1_run_64.c)
-dap_test_add_includes(${PROJECT_NAME})
-dap_test_link_libraries(${PROJECT_NAME})
-add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 10 
-    LABELS "unit;json;debug;stage1"
-)
-
 # Reference scanner 64-byte boundary test
 project(test_reference_scanner_64)
 add_executable(${PROJECT_NAME} test_reference_scanner_64.c)
@@ -633,6 +622,28 @@ add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30 
     LABELS "unit;json;simd;boundary;escape;critical"
+)
+
+# Simple 64-byte test with debug output
+project(test_64byte_simple)
+add_executable(${PROJECT_NAME} test_64byte_simple.c)
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 10 
+    LABELS "unit;json;debug;64byte"
+)
+
+# Bitmap classification verification helper test
+project(test_bitmap_classification)
+add_executable(${PROJECT_NAME} test_bitmap_classification.c)
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 10 
+    LABELS "unit;json;debug;verification"
 )
 
 # Small JSON Profiling Micro-benchmark (Phase 3)

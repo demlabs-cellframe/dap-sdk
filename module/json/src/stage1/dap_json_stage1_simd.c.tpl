@@ -136,6 +136,11 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
 {
     dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = {0};
     
+    // DEBUG: Log EVERY call to see which chunks are processed
+    log_it(L_NOTICE, "s_classify_chunk called: first='%c' last='%c'", 
+           (a_chunk[0] >= 32 && a_chunk[0] < 127) ? a_chunk[0] : '?',
+           (a_chunk[15] >= 32 && a_chunk[15] < 127) ? a_chunk[15] : '?');
+    
 {{#if ARCH_LOWER == "sve" || ARCH_LOWER == "sve2"}}
     // ========================================================================
     // ARM SVE/SVE2: Predicate-based comparisons
@@ -253,6 +258,24 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
 {{/if}}  // USE_AVX512_MASK
 {{/if}}  // ARCH_LOWER != "sve" && != "sve2"
     
+    // DEBUG: Detailed logging for problematic chunk (ALWAYS when last byte is '}')
+    if (a_chunk[15] == '}') {
+        log_it(L_NOTICE, "=== s_classify_chunk: Detected chunk ending with '}' ===");
+        log_it(L_NOTICE, "Chunk first byte: '%c' (0x%02x)", a_chunk[0], a_chunk[0]);
+        log_it(L_NOTICE, "Chunk last byte: '%c' (0x%02x)", a_chunk[15], a_chunk[15]);
+        log_it(L_NOTICE, "Structural bitmap computed: 0x%04x", (unsigned int)bitmaps.structural);
+        log_it(L_NOTICE, "Expected: bit 15 MUST be set for '}'");
+        
+        // Show each byte and its classification
+        for (int i = 0; i < 16; i++) {
+            unsigned char byte = a_chunk[i];
+            int is_struct = !!(bitmaps.structural & (1 << i));
+            log_it(L_NOTICE, "  Byte %2d: '%c' (0x%02x) structural=%d%s", 
+                     i, (byte >= 32 && byte < 127) ? byte : '?', byte, is_struct,
+                     (i == 15) ? " <- CRITICAL!" : "");
+        }
+    }
+    
     return bitmaps;
 }
 
@@ -348,6 +371,24 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
         // SIMD: Classify chunk in parallel
         dap_json_bitmaps_{{ARCH_LOWER}}_t bitmaps = s_classify_chunk_{{ARCH_LOWER}}(input + pos);
         
+        // DEBUG: Log bitmap for problematic chunk (64-byte boundary)
+        // ALWAYS log for 64-byte inputs at position 48 (CRITICAL BUG DEBUGGING)
+        if (pos == 48 && input_len == 64) {
+            log_it(L_NOTICE, "=== CRITICAL CHUNK 48-63 (last 16 bytes) ===");
+            log_it(L_NOTICE, "Structural bitmap: 0x%04x", (unsigned int)bitmaps.structural);
+            log_it(L_NOTICE, "Expected bits: bit 6 for ':' at pos 54, bit 15 for '}' at pos 63");
+            log_it(L_NOTICE, "Bit 15 check: %s", (bitmaps.structural & (((MASK_TYPE)1) << 15)) ? "SET" : "NOT SET");
+            
+            // Show actual characters in chunk for verification
+            log_it(L_NOTICE, "Chunk contents:");
+            for (size_t i = 0; i < chunk_size && (pos + i) < input_len; i++) {
+                unsigned char c = input[pos + i];
+                log_it(L_NOTICE, "  [%zu] bit %zu: '%c' (0x%02x)%s", 
+                         pos + i, i, (c >= 32 && c < 127) ? c : '?', c,
+                         (i == 15) ? " <- MUST BE STRUCTURAL!" : "");
+            }
+        }
+        
         // Process chunk sequentially in position order, using bitmaps as hints
         size_t chunk_pos = pos;
         size_t chunk_limit = pos + chunk_size;
@@ -374,6 +415,18 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
                 a_stage1->structural_chars++;
                 chunk_pos++;
                 continue;
+            }
+            
+            // DEBUG: Log when we check position 63 (ALWAYS for 64-byte inputs)
+            if (chunk_pos == 63 && input_len == 64) {
+                log_it(L_NOTICE, "=== CHECKING POSITION 63 ===");
+                log_it(L_NOTICE, "Character: '%c' (0x%02x)", c, c);
+                log_it(L_NOTICE, "bit_offset: %zu (should be 15)", bit_offset);
+                log_it(L_NOTICE, "Structural bitmap: 0x%04x", (unsigned int)bitmaps.structural);
+                log_it(L_NOTICE, "Mask for bit 15: 0x%04x", (unsigned int)(((MASK_TYPE)1) << bit_offset));
+                log_it(L_NOTICE, "AND result: 0x%04x", (unsigned int)(bitmaps.structural & (((MASK_TYPE)1) << bit_offset)));
+                log_it(L_NOTICE, "Passed structural check: %s", 
+                         (bit_offset < chunk_size && (bitmaps.structural & (((MASK_TYPE)1) << bit_offset))) ? "YES" : "NO");
             }
             
             // Slow path: Skip whitespace (not in chunk or missed by bitmap)

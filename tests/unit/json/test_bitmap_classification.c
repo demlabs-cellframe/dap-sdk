@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "dap_common.h"
+#include "dap_test.h"
+#include "dap_test_helpers.h"
 
 int main(void)
 {
