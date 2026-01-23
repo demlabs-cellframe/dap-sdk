@@ -70,7 +70,7 @@ typedef struct dap_worker_msg_callback {
 
 static _Thread_local dap_worker_t* s_worker = NULL;
 
-static time_t s_connection_timeout = 60;    // seconds
+static dap_time_t s_connection_timeout = 60;    // seconds
 
 static bool s_socket_all_check_activity( void * a_arg);
 #ifndef DAP_EVENTS_CAPS_IOCP
@@ -206,7 +206,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-            a_esocket->last_time_active = time(NULL);
+            a_esocket->last_time_active = dap_time_now();
 #ifdef SO_INCOMING_CPU
             int l_cpu = a_worker->context->cpu_id;
             setsockopt(a_esocket->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
@@ -430,7 +430,7 @@ static bool s_socket_all_check_activity( void * a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    time_t l_curtime = time(NULL); // + 1000;
+    dap_time_t l_curtime = dap_time_now(); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
     bool l_removed;
@@ -449,9 +449,9 @@ static bool s_socket_all_check_activity( void * a_arg)
                     !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
                      l_curtime >= l_es->last_time_active + s_connection_timeout &&
                     !l_es->no_close) {
-                time_t l_diff = l_curtime - (time_t)l_es->last_time_active - s_connection_timeout;
+                dap_time_t l_diff = l_curtime - l_es->last_time_active - s_connection_timeout;
                 log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                                l_es->socket, (uint64_t)l_diff );
+                                l_es->socket, l_diff );
                 if (l_es->callbacks.error_callback) {
                     l_es->callbacks.error_callback(l_es, ETIMEDOUT);
                 }
@@ -730,7 +730,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->buf_in_size += l_bytes;
                     }
                     if (l_cur->callbacks.read_callback) {
-                        l_cur->last_time_active = time(NULL);
+                        l_cur->last_time_active = dap_time_now();
                         debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
                         l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
@@ -915,7 +915,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         }
 
         a_context->esockets_selected = l_selected_sockets;
-        time_t l_cur_time = time( NULL);
+        dap_time_t l_cur_time = dap_time_now();
         for (a_context->esocket_current = 0; a_context->esocket_current < l_sockets_max; a_context->esocket_current++) {
             ssize_t n = a_context->esocket_current;
             bool l_flag_hup, l_flag_rdhup, l_flag_read, l_flag_write, l_flag_error, l_flag_nval, l_flag_msg, l_flag_pri;

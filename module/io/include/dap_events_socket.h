@@ -331,9 +331,9 @@ typedef struct dap_events_socket {
 
     dap_events_socket_callbacks_t callbacks;
 
-    time_t time_connection;
-    time_t last_time_active;
-    time_t last_ping_request;
+    dap_time_t time_connection;
+    dap_time_t last_time_active;
+    dap_time_t last_ping_request;
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types

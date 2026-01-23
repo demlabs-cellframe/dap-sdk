@@ -372,7 +372,7 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
  */
 void dap_events_socket_assign_on_worker(dap_events_socket_t * a_es, struct dap_worker * a_worker)
 {
-    a_es->last_ping_request = time(NULL);
+    a_es->last_ping_request = dap_time_now();
    // log_it(L_DEBUG, "Assigned %p on worker %u", a_es, a_worker->id);
     dap_worker_add_events_socket(a_worker, a_es);
 }
@@ -958,7 +958,7 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
 #endif
 
     l_es->flags = DAP_SOCK_READY_TO_READ;
-    l_es->last_time_active = l_es->last_ping_request = time( NULL );
+    l_es->last_time_active = l_es->last_ping_request = dap_time_now();
     l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, 2 * sizeof(struct sockaddr_storage) + 32);
     return l_es;
 }
