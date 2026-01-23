@@ -449,8 +449,9 @@ static bool s_socket_all_check_activity( void * a_arg)
                     !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
                      l_curtime >= l_es->last_time_active + s_connection_timeout &&
                     !l_es->no_close) {
+                time_t l_diff = l_curtime - (time_t)l_es->last_time_active - s_connection_timeout;
                 log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                                l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
+                                l_es->socket, (uint64_t)l_diff );
                 if (l_es->callbacks.error_callback) {
                     l_es->callbacks.error_callback(l_es, ETIMEDOUT);
                 }

@@ -196,8 +196,10 @@ bool createRandomTape(const uint8_t* seed, uint8_t* tape,
 }
 
 /* GCC false positive: warns about array bounds but state[] points to dynamically allocated buffers */
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 void mpc_xor(uint32_t* state[3], uint32_t* in[3], uint32_t len, int players)
 {
     uint8_t i;
@@ -205,7 +207,9 @@ void mpc_xor(uint32_t* state[3], uint32_t* in[3], uint32_t len, int players)
         xor_array(state[i], in[i], state[i], len);
     }
 }
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 /* Compute the XOR of in with the first state vectors. */
 void mpc_xor_constant(uint32_t* state[3], const uint32_t* in, uint32_t len)
@@ -449,8 +453,10 @@ void mpc_substitution_verify(uint32_t* state[2], randomTape_t* rand, view_t* vie
 }
 
 /* GCC false positive: warns about array bounds but state[] points to dynamically allocated buffers */
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 void mpc_matrix_mul(uint32_t* state[3], const uint32_t* matrix,
                     uint32_t* output[3], paramset_t* params, size_t players)
 {
@@ -459,12 +465,16 @@ void mpc_matrix_mul(uint32_t* state[3], const uint32_t* matrix,
         matrix_mul(state[player], matrix, output[player], params);
     }
 }
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 /* GCC false positive: warns about mpc_matrix_mul/mpc_xor array bounds
  * but state[]/roundKey[] point to dynamically allocated tmp buffer */
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 void mpc_LowMC_verify(view_t* view1, view_t* view2,
                       randomTape_t* tapes, uint32_t* tmp,
                       const uint32_t* plaintext, paramset_t* params, uint8_t challenge)
@@ -504,7 +514,9 @@ void mpc_LowMC_verify(view_t* view1, view_t* view2,
     memcpy(view1->outputShare, state[0], params->stateSizeBytes);
     memcpy(view2->outputShare, state[1], params->stateSizeBytes);
 }
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 void verifyProof(const proof_t* proof, view_t* view1, view_t* view2,
                  uint8_t challenge, uint8_t* tmp,
