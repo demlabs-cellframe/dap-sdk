@@ -71,8 +71,8 @@ target_link_libraries(benchmark_competitive_full PRIVATE
 
 # Platform-specific system libraries
 if(WIN32)
-    # Windows: psapi for GetProcessMemoryInfo
-    target_link_libraries(benchmark_competitive_full PRIVATE psapi)
+    # Windows: psapi for GetProcessMemoryInfo, pthread for winpthreads
+    target_link_libraries(benchmark_competitive_full PRIVATE psapi pthread)
 elseif(NOT ANDROID)
     # Linux/BSD: pthread and libm (Android has them in bionic)
     target_link_libraries(benchmark_competitive_full PRIVATE m pthread)

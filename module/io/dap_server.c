@@ -335,7 +335,7 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  */
 static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
+    log_it(L_WARNING, "Server socket %"DAP_FORMAT_SOCKET" error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**
@@ -354,11 +354,11 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                                          "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
                                          a_es_listener->socket, a_es_listener->uuid,
                                          a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
-    if (a_remote_socket < 0) {
+    if (a_remote_socket == INVALID_SOCKET) {
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
 #endif
-        log_it(L_ERROR, "Server socket %d accept() error %d: %s",
+        log_it(L_ERROR, "Server socket %"DAP_FORMAT_SOCKET" accept() error %d: %s",
                         a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }
