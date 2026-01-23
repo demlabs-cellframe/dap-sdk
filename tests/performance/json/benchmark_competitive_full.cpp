@@ -35,8 +35,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>
+
+#ifndef _WIN32
 #include <sys/time.h>
 #include <sys/resource.h>
+#else
+#include <windows.h>
+#include <psapi.h>
+#endif
 
 #include "dap_common.h"
 
@@ -194,16 +200,33 @@ typedef struct {
 
 static inline uint64_t s_get_timestamp_ns(void)
 {
+#ifndef _WIN32
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+#else
+    // Windows: QueryPerformanceCounter for high-resolution timing
+    LARGE_INTEGER frequency, counter;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return (uint64_t)((counter.QuadPart * 1000000000ULL) / frequency.QuadPart);
+#endif
 }
 
 static inline uint64_t s_get_rss_bytes(void)
 {
+#ifndef _WIN32
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
     return (uint64_t)usage.ru_maxrss * 1024ULL; // KB to bytes
+#else
+    // Windows: GetProcessMemoryInfo for RSS
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return (uint64_t)pmc.WorkingSetSize;  // Working set = RSS on Windows
+    }
+    return 0;
+#endif
 }
 
 /**
