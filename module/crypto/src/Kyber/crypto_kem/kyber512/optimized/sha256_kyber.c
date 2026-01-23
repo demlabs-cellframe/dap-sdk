@@ -231,7 +231,7 @@ void sha256(uint8_t *out,const uint8_t *in,size_t inlen)
   uint8_t h[32];
   uint8_t padded[128];
   unsigned int i;
-  size_t bits = inlen << 3;
+  uint64_t bits = ((uint64_t)inlen) << 3;  // Cast to uint64_t for 32-bit systems
 
   for (i = 0;i < 32;++i) h[i] = iv[i];
 

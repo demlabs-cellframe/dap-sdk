@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <inttypes.h>  // For PRIu64
 #include <locale.h>  // For strtod_l
 #include "dap_common.h"
 #include <stdlib.h>
@@ -290,7 +291,7 @@ bool dap_json_iterator_get_string(
     uint64_t l_offset = dap_tape_get_payload(a_iter->tape[a_iter->position]);
     
     if (l_offset >= a_iter->input_len) {
-        log_it(L_ERROR, "String offset out of bounds: %lu >= %zu", l_offset, a_iter->input_len);
+        log_it(L_ERROR, "String offset out of bounds: %"PRIu64" >= %zu", l_offset, a_iter->input_len);
         return false;
     }
     
@@ -299,7 +300,7 @@ bool dap_json_iterator_get_string(
     size_t l_len = 0;
     
     if (l_str[0] != '"') {
-        log_it(L_ERROR, "String does not start with quote at offset %lu", l_offset);
+        log_it(L_ERROR, "String does not start with quote at offset %"PRIu64, l_offset);
         return false;
     }
     
@@ -509,7 +510,7 @@ bool dap_json_iterator_get_int64(const dap_json_iterator_t *a_iter, int64_t *out
     uint64_t l_offset = dap_tape_get_payload(a_iter->tape[a_iter->position]);
     
     if (l_offset >= a_iter->input_len) {
-        log_it(L_ERROR, "Number offset out of bounds: %lu >= %zu", l_offset, a_iter->input_len);
+        log_it(L_ERROR, "Number offset out of bounds: %"PRIu64" >= %zu", l_offset, a_iter->input_len);
         return false;
     }
     
@@ -521,7 +522,7 @@ bool dap_json_iterator_get_int64(const dap_json_iterator_t *a_iter, int64_t *out
     int64_t l_value = strtoll(l_num_str, &l_endptr, 10);
     
     if (errno == ERANGE) {
-        log_it(L_ERROR, "Number overflow at offset %lu", l_offset);
+        log_it(L_ERROR, "Number overflow at offset %"PRIu64, l_offset);
         return false;
     }
     
@@ -547,7 +548,7 @@ bool dap_json_iterator_get_uint64(const dap_json_iterator_t *a_iter, uint64_t *o
     uint64_t l_offset = dap_tape_get_payload(a_iter->tape[a_iter->position]);
     
     if (l_offset >= a_iter->input_len) {
-        log_it(L_ERROR, "Number offset out of bounds: %lu >= %zu", l_offset, a_iter->input_len);
+        log_it(L_ERROR, "Number offset out of bounds: %"PRIu64" >= %zu", l_offset, a_iter->input_len);
         return false;
     }
     
@@ -558,7 +559,7 @@ bool dap_json_iterator_get_uint64(const dap_json_iterator_t *a_iter, uint64_t *o
     uint64_t l_value = strtoull(l_num_str, &l_endptr, 10);
     
     if (errno == ERANGE) {
-        log_it(L_ERROR, "Number overflow at offset %lu", l_offset);
+        log_it(L_ERROR, "Number overflow at offset %"PRIu64, l_offset);
         return false;
     }
     
@@ -584,7 +585,7 @@ bool dap_json_iterator_get_double(const dap_json_iterator_t *a_iter, double *out
     uint64_t l_offset = dap_tape_get_payload(a_iter->tape[a_iter->position]);
     
     if (l_offset >= a_iter->input_len) {
-        log_it(L_ERROR, "Number offset out of bounds: %lu >= %zu", l_offset, a_iter->input_len);
+        log_it(L_ERROR, "Number offset out of bounds: %"PRIu64" >= %zu", l_offset, a_iter->input_len);
         return false;
     }
     
@@ -605,7 +606,7 @@ bool dap_json_iterator_get_double(const dap_json_iterator_t *a_iter, double *out
     
     // Check for overflow (not underflow - subnormal doubles are valid)
     if (errno == ERANGE && (l_value == HUGE_VAL || l_value == -HUGE_VAL)) {
-        log_it(L_ERROR, "Number overflow at offset %lu", l_offset);
+        log_it(L_ERROR, "Number overflow at offset %"PRIu64, l_offset);
         return false;
     }
     

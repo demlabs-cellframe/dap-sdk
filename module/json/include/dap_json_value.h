@@ -99,25 +99,38 @@ static inline bool dap_json_is_malloc(const dap_json_value_t *val) {
  * @brief ⚡ Phase 2.0.4: Store pointer in offset/length fields (for malloc values)
  * @details On 64-bit: stores pointer in offset (low 32 bits) and length (high 16 bits)
  * WARNING: Only works reliably if pointer is in lower 48 bits of address space!
+ * On 32-bit: stores pointer directly in offset, length remains 0
  */
 static inline void dap_json_set_storage_ptr(dap_json_value_t *val, void *ptr) {
     uintptr_t ptr_value = (uintptr_t)ptr;
     val->offset = (uint32_t)(ptr_value & 0xFFFFFFFF);         // Low 32 bits
+#if UINTPTR_MAX > UINT32_MAX
+    // 64-bit system: store high 16 bits in length field
     val->length = (uint16_t)((ptr_value >> 32) & 0xFFFF);     // Mid 16 bits (bits 32-47)
+#else
+    // 32-bit system: pointer fits in offset, length unused
+    val->length = 0;
+#endif
     val->flags |= DAP_JSON_FLAG_MALLOC;
 }
 
 /**
  * @brief ⚡ Phase 2.0.4: Get pointer from offset/length fields (for malloc values)
  * @details On 64-bit: reconstructs pointer from offset (low 32 bits) and length (high 16 bits)
+ * On 32-bit: pointer is directly in offset
  */
 static inline void *dap_json_get_storage_ptr(const dap_json_value_t *val) {
     if (!(val->flags & DAP_JSON_FLAG_MALLOC)) {
         return NULL;  // Not a malloc value
     }
     
-    // Reconstruct 48-bit pointer: offset (32 bits) + length (16 bits)
+#if UINTPTR_MAX > UINT32_MAX
+    // 64-bit: Reconstruct 48-bit pointer: offset (32 bits) + length (16 bits)
     uintptr_t ptr_value = (uintptr_t)val->offset | (((uintptr_t)val->length & 0xFFFF) << 32);
+#else
+    // 32-bit: pointer is directly in offset
+    uintptr_t ptr_value = (uintptr_t)val->offset;
+#endif
     return (void*)ptr_value;
 }
 

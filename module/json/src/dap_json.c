@@ -625,7 +625,7 @@ dap_json_t* dap_json_object_new_uint64(uint64_t a_value)
     // Store as int64_t - if value > INT64_MAX, will wrap to negative
     // This matches JSON spec behavior (numbers are always signed in JSON)
     if (a_value > INT64_MAX) {
-        log_it(L_WARNING, "uint64 value %lu > INT64_MAX, will be stored as negative", a_value);
+        log_it(L_WARNING, "uint64 value %"PRIu64" > INT64_MAX, will be stored as negative", a_value);
     }
     dap_json_value_t *l_value = dap_json_value_v2_create_int((int64_t)a_value);
     return s_wrap_value(l_value);
@@ -2139,7 +2139,13 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
     } else if (l_value->type == DAP_JSON_TYPE_UINT256) {
         // offset → pointer to uint256, truncate to lower 64 bits
         uint256_t *l_ptr = (uint256_t*)dap_json_get_storage_ptr(l_value);
+#ifdef DAP_GLOBAL_IS_INT128
+        // Native __int128: direct cast
         *a_out = (uint64_t)l_ptr->lo;
+#else
+        // Emulated uint128_t: extract .lo field (struct)
+        *a_out = l_ptr->lo.lo;
+#endif
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
         // offset → pointer to double
