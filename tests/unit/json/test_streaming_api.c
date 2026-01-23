@@ -48,9 +48,9 @@ static bool s_test_incremental_feed(void) {
     log_it(L_DEBUG, "Testing incremental feed parsing");
     bool result = false;
     
-    __attribute__((unused)) const char *json_part1 = "{\"key\":";
-    __attribute__((unused)) const char *json_part2 = "\"value\",";
-    __attribute__((unused)) const char *json_part3 = "\"number\":42}";
+    const char *json_part1 = "{\"key\":";
+    const char *json_part2 = "\"value\",";
+    const char *json_part3 = "\"number\":42}";
     
     // Check if streaming API exists
     // Assuming hypothetical API: dap_json_stream_create, dap_json_stream_feed, dap_json_stream_finish

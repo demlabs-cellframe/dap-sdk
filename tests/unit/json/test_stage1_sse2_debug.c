@@ -83,7 +83,7 @@ static void s_print_tokens(const dap_json_stage1_t *a_stage1, const char *a_labe
 static bool s_compare_tokens_detailed(
     const dap_json_stage1_t *a_ref,
     const dap_json_stage1_t *a_simd,
-    __attribute__((unused)) const char *a_input
+    const char *a_input
 )
 {
     if (a_ref->indices_count != a_simd->indices_count) {
