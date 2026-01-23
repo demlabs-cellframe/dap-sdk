@@ -127,8 +127,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %u is already assigned to current thread %ld",
-                               s_worker->id, s_worker->context->thread_id),
+        return log_it(L_ERROR, "Worker %u is already assigned to current thread %llu",
+                               s_worker->id, (unsigned long long)s_worker->context->thread_id),
             -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
@@ -157,8 +157,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
-        return log_it(L_CRITICAL, "Creating IOCP failed! Error %d: \"%s\"",
-                                  GetLastError(), dap_strerror(GetLastError())), -1;
+        return log_it(L_CRITICAL, "Creating IOCP failed! Error %lu: \"%s\"",
+                                  (unsigned long)GetLastError(), dap_strerror(GetLastError())), -1;
 #else
 #error "Unimplemented dap_context_init for this platform"
 #endif
@@ -375,7 +375,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
 void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_ol->Pointer;
     if (!l_es->worker)
-        return log_it(L_ERROR, "Es %p error: worker unset");
+        return log_it(L_ERROR, "Es %p error: worker unset", l_es);
     dap_events_socket_t *l_sought_es = dap_context_find(a_c, l_es->uuid);
     if ( l_sought_es ) {
         if ( l_sought_es == l_es )
@@ -632,7 +632,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, ntstatus 0x%llx : %s",
                                     l_cur->uuid, l_cur->socket, ol->ol.Internal, dap_str_ntstatus(ol->ol.Internal));
                     closesocket(l_cur->socket2);
-                    if ( ol->ol.Internal == STATUS_CONNECTION_RESET ) {
+                    if ( (NTSTATUS)ol->ol.Internal == STATUS_CONNECTION_RESET ) {
                         l_errno = WSAECONNRESET; // It's ok, just continue accept()'ing
                         dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
                         ol = NULL;
