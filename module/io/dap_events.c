@@ -227,15 +227,8 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
             -1;
 #ifdef DAP_EVENTS_CAPS_IOCP
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type"
-#endif
-    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
+    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)(void*)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
         return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), -1;
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
 
     SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
     DWORD l_bytes = 0;
