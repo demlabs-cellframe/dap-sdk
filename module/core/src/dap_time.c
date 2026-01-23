@@ -102,9 +102,9 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     TIME_ZONE_INFORMATION l_tz_info;
     GetTimeZoneInformation(&l_tz_info);
     char l_tz_str[8];
-    snprintf(l_tz_str, sizeof(l_tz_str), l_tz_info.Bias <= 0 ? " +%02d%02d" : " %03d%02d", -l_tz_info.Bias / 60, l_tz_info.Bias % 60);
-    a_time -= l_tz_info.Bias * 60;
-    if ( gmtime_s(&l_tm, &a_time) )
+    snprintf(l_tz_str, sizeof(l_tz_str), l_tz_info.Bias <= 0 ? " +%02ld%02ld" : " %03ld%02ld", -l_tz_info.Bias / 60, l_tz_info.Bias % 60);
+    time_t l_time_win = a_time - l_tz_info.Bias * 60;
+    if ( gmtime_s(&l_tm, &l_time_win) )
 #else
     const time_t l_time = a_time;
     if ( !localtime_r(&l_time, &l_tm) )
@@ -120,7 +120,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
         return -1;
     }
 #ifdef DAP_OS_WINDOWS
-    if (l_ret < a_out_size_max)
+    if ((size_t)l_ret < a_out_size_max)
         l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
 #endif
     a_out[l_ret] = '\0';
@@ -146,7 +146,8 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
     time_t l_off = 0;
 #ifdef DAP_OS_WINDOWS
-    char sign, hr, min;
+    char sign;
+    int hr, min;
     if ( sscanf(ret, " %c%2d%2d", &sign, &hr, &min) == 3 && ( ( sign == '+' && hr <= 14 ) || ( sign == '-' && hr <= 11 ) ) && ( !min || min == 30 ) )
         l_off = hr * 3600 + min * 60;
     else

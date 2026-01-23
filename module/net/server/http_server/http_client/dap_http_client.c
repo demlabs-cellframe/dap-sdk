@@ -408,7 +408,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 // Check if present cache
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
                 if ( (l_http_cache = l_http_client->proc->cache) ) {
-                    if ( ! l_http_cache->ts_expire || l_http_cache->ts_expire >= time(NULL) ){
+                    if ( ! l_http_cache->ts_expire || (dap_time_t)l_http_cache->ts_expire >= dap_time_now() ){
                         l_http_client->out_headers = dap_http_headers_dup(l_http_cache->headers);
                         l_http_client->out_content_length = l_http_cache->body_size;
                         l_http_client->reply_status_code = l_http_cache->response_code;
@@ -554,7 +554,7 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
                     a_http_client->reply_reason_phrase : dap_http_status_reason_phrase(a_http_client->reply_status_code) );
     /* Write HTTP headres */
     char l_buf[DAP_TIME_STR_SIZE];
-    dap_time_to_str_rfc822( l_buf, DAP_TIME_STR_SIZE, time( NULL ) );
+    dap_time_to_str_rfc822( l_buf, DAP_TIME_STR_SIZE, dap_time_now() );
     dap_http_header_add( &a_http_client->out_headers, "Date", l_buf );
 
     for ( dap_http_header_t *hdr = a_http_client->out_headers; hdr; hdr = a_http_client->out_headers ) {

@@ -7,6 +7,7 @@
 
 #include "dap_test_async.h"
 #include "dap_test.h"
+#include "dap_time.h"
 #include <errno.h>
 #include <stdio.h>
 
@@ -107,12 +108,11 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
     
     // Calculate absolute timeout
     struct timespec l_timeout;
-    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    dap_nanotime_t now_ns = dap_nanotime_now();
+    dap_nanotime_t timeout_ns = now_ns + (dap_nanotime_t)a_timeout_ms * DAP_NSEC_PER_MSEC;
     
-    // Add timeout (handle overflow correctly)
-    uint64_t l_nsec = l_timeout.tv_nsec + (uint64_t)(a_timeout_ms % 1000) * 1000000;
-    l_timeout.tv_sec += a_timeout_ms / 1000 + l_nsec / 1000000000;
-    l_timeout.tv_nsec = l_nsec % 1000000000;
+    l_timeout.tv_sec = dap_nanotime_to_sec(timeout_ns);
+    l_timeout.tv_nsec = timeout_ns % DAP_NSEC_PER_SEC;
     
     // Wait with timeout
     int l_result = pthread_cond_timedwait(&a_ctx->cond, &a_ctx->mutex, &l_timeout);

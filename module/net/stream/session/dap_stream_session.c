@@ -33,6 +33,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_stream_session.h"
 #include "rand/dap_rand.h"
 
@@ -50,7 +51,7 @@ static void * session_check(void * data);
 void dap_stream_session_init()
 {
     log_it(L_INFO,"Init module");
-    srand ( time(NULL) );
+    srand ( (unsigned int)dap_time_now() );
 }
 
 void dap_stream_session_deinit()
@@ -120,7 +121,7 @@ uint32_t session_id = 0;
 
        /* Prefill session context with data ... */
        pthread_mutex_init(&l_stm_sess->mutex, NULL);
-       l_stm_sess->time_created = time(NULL);
+       l_stm_sess->time_created = dap_time_now();
        l_stm_sess->create_empty = true;
 
        log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);

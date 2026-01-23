@@ -1665,7 +1665,7 @@ unsigned char kSeltTestGost89ImitaValue[8] =
 
 int SelfTestGost14Ecb()
 {
-     unsigned char ctx[kEcb14ContextLen];
+     unsigned char ctx[kEcb14ContextLen] = {0};
      unsigned char output[textLen14];
 
      if(init_ecb_14_impl(kSeltTestGost14MasterKeyData, ctx, 0, 0))
@@ -1682,7 +1682,7 @@ int SelfTestGost14Ecb()
 
 int SelfTestGost89Ecb()
 {
-     unsigned char ctx[kEcb89ContextLen];
+     unsigned char ctx[kEcb89ContextLen] = {0};
      unsigned char output[textLen89];
 
      if(init_ecb_89_impl(kSeltTestGost89MasterKeyData, ctx, 0, 0))
@@ -1700,7 +1700,7 @@ int SelfTestGost89Ecb()
 int SelfTestGost14Ctr()
 {
      unsigned char outText[textLen14];
-     unsigned char ctx[kCtr14ContextLen];
+     unsigned char ctx[kCtr14ContextLen] = {0};
 
      if(init_ctr_14_impl(kSeltTestGost14MasterKeyData, kSeltTestGost14CtrSV, kBlockLen14, ctx, 0, 0))
           return -1;
@@ -1717,7 +1717,7 @@ int SelfTestGost89Ctr()
 {
 
      unsigned char outText[textLen89];
-     unsigned char ctx[kCtr89ContextLen];
+     unsigned char ctx[kCtr89ContextLen] = {0};
 
      if(init_ctr_89_impl(kSeltTestGost89MasterKeyData, kSeltTestGost89CtrSV, kBlockLen89, ctx, 0, 0))
           return -1;
@@ -1735,7 +1735,7 @@ int SelfTestGost14Ofb()
      const size_t svLen = sizeof(kSeltTestGost14OfbSV)/sizeof(kSeltTestGost14OfbSV[0]);
 
      unsigned char outText[textLen14];
-     unsigned char ctx[kOfb14ContextLen];
+     unsigned char ctx[kOfb14ContextLen] = {0};
 
      if(init_ofb_14_impl(kSeltTestGost14MasterKeyData, ctx, kBlockLen14, kSeltTestGost14OfbSV, svLen, 0, 0))
           return -1;
@@ -1753,7 +1753,7 @@ int SelfTestGost89Ofb()
      const size_t svLen = sizeof(kSeltTestGost89OfbSV)/sizeof(kSeltTestGost89OfbSV[0]);
 
      unsigned char outText[textLen89];
-     unsigned char ctx[kOfb89ContextLen];
+     unsigned char ctx[kOfb89ContextLen] = {0};
 
      if(init_ofb_89_impl(kSeltTestGost89MasterKeyData, ctx, kBlockLen89, kSeltTestGost89OfbSV, svLen, 0, 0))
           return -1;
@@ -1772,7 +1772,7 @@ int SelfTestGost14Cbc()
 
      unsigned char outText[textLen14];
      unsigned char outTextDec[textLen14];
-     unsigned char ctx[kCbc14ContextLen];
+     unsigned char ctx[kCbc14ContextLen] = {0};
 
 
      if(init_cbc_14_impl(kSeltTestGost14MasterKeyData, ctx, kSeltTestGost14CbcSV, svLen, 0, 0))
@@ -1804,7 +1804,7 @@ int SelfTestGost89Cbc()
 
      unsigned char outText[textLen89];
      unsigned char outTextDec[textLen89];
-     unsigned char ctx[kCbc89ContextLen];
+     unsigned char ctx[kCbc89ContextLen] = {0};
 
 
      if(init_cbc_89_impl(kSeltTestGost89MasterKeyData, ctx, kSeltTestGost89CbcSV, svLen, 0, 0))
@@ -1836,7 +1836,7 @@ int SelfTestGost14Cfb()
 
      unsigned char outText[textLen14];
      unsigned char outTextDec[textLen14];
-     unsigned char ctx[kCfb14ContextLen];
+     unsigned char ctx[kCfb14ContextLen] = {0};
 
      if(init_cfb_14_impl(kSeltTestGost14MasterKeyData, ctx, kBlockLen14, kSeltTestGost14CfbSV, svLen, 0, 0))
           return -1;
@@ -1869,7 +1869,7 @@ int SelfTestGost89Cfb()
 
      unsigned char outText[textLen89];
      unsigned char outTextDec[textLen89];
-     unsigned char ctx[kCfb89ContextLen];
+     unsigned char ctx[kCfb89ContextLen] = {0};
 
      if(init_cfb_89_impl(kSeltTestGost89MasterKeyData, ctx, kBlockLen89, kSeltTestGost89CfbSV, svLen, 0, 0))
           return -1;
@@ -1899,7 +1899,7 @@ int SelfTestGost89Cfb()
 int SelfTestGost14Imit()
 {
      unsigned char outText[textLen89];
-     unsigned char ctx[kImit14ContextLen];
+     unsigned char ctx[kImit14ContextLen] = {0};
 
      if(init_imit_14_impl(kSeltTestGost14MasterKeyData, kBlockLen14, ctx, 0, 0))
           return -1;
@@ -1917,7 +1917,7 @@ int SelfTestGost14Imit()
 int SelfTestGost89Imit()
 {
      unsigned char outText[textLen89];
-     unsigned char ctx[kImit89ContextLen];
+     unsigned char ctx[kImit89ContextLen] = {0};
 
      if(init_imit_89_impl(kSeltTestGost89MasterKeyData, kBlockLen89, ctx, 0, 0))
           return -1;

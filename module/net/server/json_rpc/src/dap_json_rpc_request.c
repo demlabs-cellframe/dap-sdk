@@ -1,5 +1,6 @@
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_params.h"
+#include "dap_time.h"
 #include "dap_cert.h"
 #include "dap_enc.h"
 #include "dap_enc_ks.h"

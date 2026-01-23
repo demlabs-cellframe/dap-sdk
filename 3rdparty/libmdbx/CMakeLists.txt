@@ -947,6 +947,10 @@ set_target_properties(mdbx-static PROPERTIES PUBLIC_HEADER "${LIBMDBX_PUBLIC_HEA
 target_compile_definitions(mdbx-static PRIVATE MDBX_BUILD_SHARED_LIBRARY=0)
 target_setup_options(mdbx-static)
 libmdbx_setup_libs(mdbx-static INTERFACE)
+# Disable format warnings on MinGW due to missing %z support
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(mdbx-static PRIVATE -Wno-format -Wno-format-extra-args)
+endif()
 if(MDBX_BUILD_SHARED_LIBRARY)
   set_target_properties(mdbx-static PROPERTIES OUTPUT_NAME mdbx-static)
 else()

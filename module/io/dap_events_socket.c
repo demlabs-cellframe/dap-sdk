@@ -77,6 +77,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_time.h"
 #include "dap_list.h"
 #include "dap_worker.h"
 #include "dap_uuid.h"
@@ -1445,8 +1446,9 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         l_ret = -l_ret;
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
     struct timespec l_timeout;
-    clock_gettime(CLOCK_REALTIME, &l_timeout);
-    l_timeout.tv_sec+=2; // Not wait more than 1 second to get and 2 to send
+    dap_nanotime_t now_ns = dap_nanotime_now();
+    l_timeout.tv_sec = dap_nanotime_to_sec(now_ns) + 2; // Not wait more than 1 second to get and 2 to send
+    l_timeout.tv_nsec = now_ns % DAP_NSEC_PER_SEC;
     int ret = mq_timedsend(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0, &l_timeout );
     int l_errno = errno;
     if (ret == sizeof(a_arg) )

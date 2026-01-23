@@ -2007,8 +2007,9 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
         if(dap_file_test(l_storage_path) || dap_dir_test(l_storage_path)) {
             // Backup filename: backup_global_db_ver.X_DATE_TIME.zip
             char l_ts_now_str[255];
-            time_t t = time(NULL);
-            strftime(l_ts_now_str, 200, "%y.%m.%d-%H_%M_%S", localtime(&t));
+            dap_time_t t = dap_time_now();
+            time_t tt = (time_t)t;
+            strftime(l_ts_now_str, 200, "%y.%m.%d-%H_%M_%S", localtime(&tt));
 #ifdef DAP_BUILD_WITH_ZIP
             char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.zip", dap_path_get_basename(l_storage_path), l_gdb_version, now);
             char *l_output_file_path = dap_build_filename(l_storage_path, "../", l_output_file_name, NULL);

@@ -12,6 +12,7 @@
 #include <sys/time.h>
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_mock.h"
 #include "dap_mock_async.h"
 
@@ -252,7 +253,7 @@ void dap_mock_record_call(
     
     dap_mock_call_record_t *l_record = &a_state->calls[a_state->call_count];
     l_record->function_name = a_state->name;
-    l_record->timestamp = (uint64_t)time(NULL);
+    l_record->timestamp = dap_time_now();
     l_record->return_value = a_return_value;
     l_record->call_count = a_state->call_count;
     
@@ -383,7 +384,7 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     // Use rand_r for thread safety
     static __thread unsigned int l_seed = 0;
     if (l_seed == 0)
-        l_seed = (unsigned int)time(NULL) ^ (unsigned int)pthread_self();
+        l_seed = (unsigned int)dap_time_now() ^ (unsigned int)pthread_self();
     
     uint64_t l_range = a_max - a_min;
     return a_min + (rand_r(&l_seed) % (l_range + 1));

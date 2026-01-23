@@ -57,6 +57,7 @@
 #define LOG_TAG "dap_context"
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_events.h"
