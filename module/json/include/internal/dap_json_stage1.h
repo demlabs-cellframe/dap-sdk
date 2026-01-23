@@ -528,8 +528,11 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 
 #elif defined(__arm__) || defined(__aarch64__)
 #include "dap_json_stage1_neon.h"
+// SVE/SVE2 are ARM64-only (ARMv8-A 64-bit)
+#ifdef __aarch64__
 #include "dap_json_stage1_sve.h"
 #include "dap_json_stage1_sve2.h"
+#endif
 #endif
 
 /**

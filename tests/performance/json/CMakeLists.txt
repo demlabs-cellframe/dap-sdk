@@ -67,12 +67,19 @@ add_executable(benchmark_competitive_full
 target_link_libraries(benchmark_competitive_full PRIVATE
     dap_core
     dap_json
-    m
-    pthread
 )
 
+# Platform-specific system libraries
+if(WIN32)
+    # Windows: psapi for GetProcessMemoryInfo
+    target_link_libraries(benchmark_competitive_full PRIVATE psapi)
+elseif(NOT ANDROID)
+    # Linux/BSD: pthread and libm (Android has them in bionic)
+    target_link_libraries(benchmark_competitive_full PRIVATE m pthread)
+endif()
+
 # Add librt for POSIX timers on Linux
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_libraries(benchmark_competitive_full PRIVATE rt)
 endif()
 
