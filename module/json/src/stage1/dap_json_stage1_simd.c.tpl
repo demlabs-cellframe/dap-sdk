@@ -363,6 +363,7 @@ int dap_json_stage1_run_{{ARCH_LOWER}}(dap_json_stage1_t *a_stage1)
             
             // Fast path: Check bitmap for whitespace (skip without token)
             if (bit_offset < chunk_size && (bitmaps.whitespace & (((MASK_TYPE)1) << bit_offset))) {
+                a_stage1->whitespace_chars++;
                 chunk_pos++;
                 continue;
             }
