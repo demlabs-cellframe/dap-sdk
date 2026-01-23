@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_json.h"
 
 static char* gen_int_json(size_t n, size_t *len) {
@@ -35,8 +36,7 @@ int main() {
     }
     
     // Benchmark
-    struct timespec t1, t2;
-    clock_gettime(CLOCK_MONOTONIC, &t1);
+    dap_nanotime_t t1_ns = dap_nanotime_now();
     
     const int iter = 100;
     for (int i = 0; i < iter; i++) {
@@ -45,8 +45,8 @@ int main() {
         dap_json_object_free(o);
     }
     
-    clock_gettime(CLOCK_MONOTONIC, &t2);
-    double sec = (t2.tv_sec - t1.tv_sec) + (t2.tv_nsec - t1.tv_nsec)/1e9;
+    dap_nanotime_t t2_ns = dap_nanotime_now();
+    double sec = (t2_ns - t1_ns) / 1e9;
     double mb = (len * iter) / (1024.0 * 1024.0);
     double throughput = mb / sec;
     

@@ -22,6 +22,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_time.h"
 #include "dap_cpu_arch.h"
 #include "internal/dap_json_stage1.h"
 #include <time.h>
@@ -58,9 +59,7 @@ typedef struct {
  */
 static inline int64_t get_time_ns(void)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+    return (int64_t)dap_nanotime_now();
 }
 
 /**

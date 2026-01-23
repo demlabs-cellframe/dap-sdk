@@ -16,6 +16,7 @@
 
 #include "dap_json.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
@@ -87,8 +88,7 @@ int main() {
         
         // Benchmark
         const int l_iterations = 1000;
-        struct timespec l_start, l_end;
-        clock_gettime(CLOCK_MONOTONIC, &l_start);
+        dap_nanotime_t l_start_ns = dap_nanotime_now();
         
         for (int i = 0; i < l_iterations; i++) {
             dap_json_t *l_parsed = dap_json_parse_string(l_json);
@@ -96,10 +96,9 @@ int main() {
             dap_json_cleanup_thread_arena();
         }
         
-        clock_gettime(CLOCK_MONOTONIC, &l_end);
+        dap_nanotime_t l_end_ns = dap_nanotime_now();
         
-        double l_elapsed = (l_end.tv_sec - l_start.tv_sec) + 
-                          (l_end.tv_nsec - l_start.tv_nsec) / 1e9;
+        double l_elapsed = (l_end_ns - l_start_ns) / 1e9;
         double l_throughput_mb_s = (l_json_size * l_iterations) / (l_elapsed * 1024 * 1024);
         double l_latency_ns = (l_elapsed / l_iterations) * 1e9;
         
@@ -137,8 +136,7 @@ int main() {
         
         // Benchmark
         const int l_iterations = 1000;
-        struct timespec l_start, l_end;
-        clock_gettime(CLOCK_MONOTONIC, &l_start);
+        dap_nanotime_t l_start_ns = dap_nanotime_now();
         
         for (int i = 0; i < l_iterations; i++) {
             dap_json_t *l_parsed = dap_json_parse_string(l_json);
@@ -146,10 +144,9 @@ int main() {
             dap_json_cleanup_thread_arena();
         }
         
-        clock_gettime(CLOCK_MONOTONIC, &l_end);
+        dap_nanotime_t l_end_ns = dap_nanotime_now();
         
-        double l_elapsed = (l_end.tv_sec - l_start.tv_sec) + 
-                          (l_end.tv_nsec - l_start.tv_nsec) / 1e9;
+        double l_elapsed = (l_end_ns - l_start_ns) / 1e9;
         double l_throughput_mb_s = (l_json_size * l_iterations) / (l_elapsed * 1024 * 1024);
         double l_latency_ns = (l_elapsed / l_iterations) * 1e9;
         

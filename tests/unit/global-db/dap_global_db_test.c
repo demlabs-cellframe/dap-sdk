@@ -3,6 +3,7 @@
 #include <stdatomic.h>
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_events.h"
@@ -104,7 +105,7 @@ static int s_test_write(size_t a_count)
     char l_key[64] = {0}, l_value[sizeof(dap_db_test_record_t) + DAP_DB$SZ_DATA + 1] = {0};
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
     dap_db_test_record_t *prec;
-    struct timespec now;
+    dap_nanotime_t now_ns;
 
     dap_test_msg("Start writing %zu records ...", a_count);
 
@@ -122,8 +123,8 @@ static int s_test_write(size_t a_count)
         l_store_obj.group = s_group; 
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i); // add bad to check rewrite          /* Generate a key of record */
 
-        clock_gettime(CLOCK_REALTIME, &now);                                /* Get and save record's timestamp */
-        l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
+        now_ns = dap_nanotime_now();                                /* Get and save record's timestamp */
+        l_store_obj.timestamp = ((uint64_t)(now_ns / DAP_NSEC_PER_SEC) << 32) | ((uint32_t)(now_ns % DAP_NSEC_PER_SEC));
         if (i % 2) {
             l_store_obj.value = (uint8_t *) l_value;                                /* Point <.value> to static buffer area */
             prec->len = rand() % DAP_DB$SZ_DATA + 1;                                /* Variable payload length */
@@ -154,7 +155,7 @@ static int s_test_write(size_t a_count)
         // rewrite block
         if ( i < l_rewrite_count) {
             DAP_DEL_Z(l_store_obj.sign);
-            clock_gettime(CLOCK_REALTIME, &now);
+            now_ns = dap_nanotime_now();
             l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
             sprintf(prec->data, "DATA$%08zx", i);
             dap_hash_fast (prec->data, prec->len, &prec->csum);

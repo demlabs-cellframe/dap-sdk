@@ -15,6 +15,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_time.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,8 +77,7 @@ int main(int argc, char **argv) {
     }
     
     // Profiling run
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    dap_nanotime_t start_ns = dap_nanotime_now();
     
     for (int i = 0; i < ITERATIONS; i++) {
         dap_json_t *json = dap_json_parse_string(json_data);
@@ -88,14 +88,13 @@ int main(int argc, char **argv) {
         dap_json_object_free(json);
     }
     
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    dap_nanotime_t end_ns = dap_nanotime_now();
     
     // Cleanup thread-local arena
     dap_json_cleanup_thread_arena();
     
     // Calculate stats
-    double elapsed = (end.tv_sec - start.tv_sec) + 
-                    (end.tv_nsec - start.tv_nsec) / 1e9;
+    double elapsed = (end_ns - start_ns) / 1e9;
     double throughput_mb = (json_size * ITERATIONS / (1024.0 * 1024.0)) / elapsed;
     double ns_per_parse = (elapsed * 1e9) / ITERATIONS;
     

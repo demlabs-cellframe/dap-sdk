@@ -4,6 +4,7 @@
  */
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_json.h"
 #include <stdio.h>
 #include <time.h>
@@ -27,12 +28,7 @@ int main(int argc, char **argv)
     
     printf("Starting profiling: %d iterations of Small JSON parsing\n", ITERATIONS);
     
-#ifndef _WIN32
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-#else
-    uint64_t start = GetTickCount64();
-#endif
+    dap_nanotime_t start_ns = dap_nanotime_now();
     
     size_t total_parsed = 0;
     
@@ -45,15 +41,8 @@ int main(int argc, char **argv)
         }
     }
     
-#ifndef _WIN32
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    
-    double elapsed = (end.tv_sec - start.tv_sec) + 
-                     (end.tv_nsec - start.tv_nsec) / 1e9;
-#else
-    uint64_t end = GetTickCount64();
-    double elapsed = (end - start) / 1000.0;  // ms to seconds
-#endif
+    dap_nanotime_t end_ns = dap_nanotime_now();
+    double elapsed = (end_ns - start_ns) / 1e9;
     
     printf("Completed: %zu/%d successful parses\n", total_parsed, ITERATIONS);
     printf("Total time: %.3f seconds\n", elapsed);

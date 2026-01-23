@@ -58,12 +58,10 @@ static inline uint32_t zRAND( void ) {          //period 2^96-1
 static inline uint64_t gettime64( void )
 {
   uint64_t t64;
-  struct timespec now;
+  dap_nanotime_t now_ns;
 
-  clock_gettime( CLOCK_MONOTONIC, &now );
-  t64 = now.tv_sec;
-  t64 *= 1000000000;
-  t64 += now.tv_nsec;
+  now_ns = dap_nanotime_now();
+  t64 = now_ns;
 
   return t64;
 }

@@ -51,6 +51,7 @@
 #define LOG_TAG "benchmark_stage2_dom"
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_json.h"
 #include "internal/dap_json_string.h"
 #include <time.h>
@@ -158,21 +159,20 @@ static char* s_generate_mixed_json(size_t a_num_items, size_t *a_out_len)
 // =============================================================================
 
 typedef struct {
-    struct timespec start;
-    struct timespec end;
+    dap_nanotime_t start_ns;
+    dap_nanotime_t end_ns;
     uint64_t total_ns;
 } dap_benchmark_timer_t;
 
 static inline void s_timer_start(dap_benchmark_timer_t *a_timer)
 {
-    clock_gettime(CLOCK_MONOTONIC, &a_timer->start);
+    a_timer->start_ns = dap_nanotime_now();
 }
 
 static inline void s_timer_stop(dap_benchmark_timer_t *a_timer)
 {
-    clock_gettime(CLOCK_MONOTONIC, &a_timer->end);
-    a_timer->total_ns = (uint64_t)(a_timer->end.tv_sec - a_timer->start.tv_sec) * 1000000000ULL +
-                        (uint64_t)(a_timer->end.tv_nsec - a_timer->start.tv_nsec);
+    a_timer->end_ns = dap_nanotime_now();
+    a_timer->total_ns = a_timer->end_ns - a_timer->start_ns;
 }
 
 static inline double s_timer_get_seconds(const dap_benchmark_timer_t *a_timer)

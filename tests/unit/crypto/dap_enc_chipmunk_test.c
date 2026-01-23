@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_test.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
@@ -1235,9 +1236,8 @@ static double s_test_start_time = 0.0;
  * @brief Get current time in milliseconds
  */
 double chipmunk_get_time_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+    dap_nanotime_t ts_ns = dap_nanotime_now();
+    return ts_ns / 1000000.0;
 }
 
 /**

@@ -10,6 +10,7 @@
 #include <assert.h>
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "internal/dap_json_string.h"
 #include "dap_json.h"
 
@@ -64,8 +65,7 @@ int main() {
     // Benchmark: Parse same JSON 100 times
     printf("Benchmarking: 100 iterations...\n\n");
     
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    dap_nanotime_t start_ns = dap_nanotime_now();
     
     const int iterations = 100;
     for (int i = 0; i < iterations; i++) {
@@ -78,10 +78,9 @@ int main() {
         dap_json_object_free(obj);
     }
     
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    dap_nanotime_t end_ns = dap_nanotime_now();
     
-    double elapsed = (end.tv_sec - start.tv_sec) + 
-                     (end.tv_nsec - start.tv_nsec) / 1e9;
+    double elapsed = (end_ns - start_ns) / 1e9;
     
     double total_mb = (double)(json_len * iterations) / (1024.0 * 1024.0);
     double throughput = total_mb / elapsed;

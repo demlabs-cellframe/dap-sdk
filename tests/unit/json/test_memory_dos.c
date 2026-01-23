@@ -39,6 +39,7 @@
 #define LOG_TAG "test_memory_dos"
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_json.h"
 #include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
@@ -55,23 +56,20 @@
 // =============================================================================
 
 typedef struct {
-    struct timespec start;
-    struct timespec end;
+    dap_nanotime_t start_ns;
+    dap_nanotime_t end_ns;
     uint64_t total_ns;
 } dos_timer_t;
 
 static inline void s_timer_start(dos_timer_t *a_timer)
 {
-    clock_gettime(CLOCK_MONOTONIC, &a_timer->start);
+    a_timer->start_ns = dap_nanotime_now();
 }
 
 static inline void s_timer_stop(dos_timer_t *a_timer)
 {
-    clock_gettime(CLOCK_MONOTONIC, &a_timer->end);
-    
-    uint64_t start_ns = (uint64_t)a_timer->start.tv_sec * 1000000000ULL + a_timer->start.tv_nsec;
-    uint64_t end_ns = (uint64_t)a_timer->end.tv_sec * 1000000000ULL + a_timer->end.tv_nsec;
-    a_timer->total_ns = end_ns - start_ns;
+    a_timer->end_ns = dap_nanotime_now();
+    a_timer->total_ns = a_timer->end_ns - a_timer->start_ns;
 }
 
 static inline double s_timer_get_seconds(dos_timer_t *a_timer)
