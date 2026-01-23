@@ -60,8 +60,8 @@ const uint128_t uint128_1 = {.hi = 0, .lo = 1};
 const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
 
 const uint256_t uint256_0 = {};
-const uint256_t uint256_1 = {.hi = {{0}, {0}}, .lo = {.hi = 0, .lo = 1}};
-const uint256_t uint256_max = {.hi = {{.hi = UINT64_MAX, .lo = UINT64_MAX}, {.hi = UINT64_MAX, .lo = UINT64_MAX}}, .lo = {.hi = UINT64_MAX, .lo = UINT64_MAX}};
+const uint256_t uint256_1 = {.hi = {.lo = 0, .hi = 0}, .lo = {.lo = 1, .hi = 0}};
+const uint256_t uint256_max = {.hi = {.lo = UINT64_MAX, .hi = UINT64_MAX}, .lo = {.lo = UINT64_MAX, .hi = UINT64_MAX}};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
