@@ -381,13 +381,21 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     if (a_min >= a_max)
         return a_min;
     
-    // Use rand_r for thread safety
+    // Use thread-safe random with seed
     static __thread unsigned int l_seed = 0;
     if (l_seed == 0)
         l_seed = (unsigned int)dap_time_now() ^ (unsigned int)pthread_self();
     
     uint64_t l_range = a_max - a_min;
+#ifdef _WIN32
+    // Windows doesn't have rand_r, use regular rand with seed manipulation
+    srand(l_seed);
+    unsigned int l_rand = rand();
+    l_seed = l_rand; // Update seed for next call
+    return a_min + (l_rand % (l_range + 1));
+#else
     return a_min + (rand_r(&l_seed) % (l_range + 1));
+#endif
 }
 
 void dap_mock_set_delay_fixed(dap_mock_function_state_t *a_state, uint64_t a_delay_us)
@@ -487,12 +495,14 @@ static void s_log_mock_call(const char *a_func_name, const char *a_action)
         return;
     
     if (s_settings.log_timestamps) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm *tm_info = localtime(&tv.tv_sec);
+        dap_nanotime_t now_ns = dap_nanotime_now();
+        dap_time_t now_sec = dap_nanotime_to_sec(now_ns);
+        time_t tv_sec = (time_t)now_sec;
+        uint64_t tv_usec = (now_ns % DAP_NSEC_PER_SEC) / 1000;
+        struct tm *tm_info = localtime(&tv_sec);
         char time_buf[32];
         strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
-        log_it(L_DEBUG, "[%s.%06ld] MOCK %s: %s", time_buf, tv.tv_usec, a_func_name, a_action);
+        log_it(L_DEBUG, "[%s.%06lu] MOCK %s: %s", time_buf, tv_usec, a_func_name, a_action);
     } else {
         log_it(L_DEBUG, "MOCK %s: %s", a_func_name, a_action);
     }
