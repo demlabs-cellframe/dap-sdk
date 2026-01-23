@@ -25,20 +25,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../net/server/cli_server/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../io/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/json-c
 )
-
-# Include paths for json_config.h - support both standalone and embedded builds  
-# Removed hardcoded path - now handled via DAP_SDK_PATH_BUILD logic below
-if(DEFINED DAP_SDK_PATH_BUILD)
-    # When built as submodule (e.g., in python-cellframe)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${DAP_SDK_PATH_BUILD}/module/core/json-c)
-    message("[+] DAP Plugin: Using external build path for json-c: ${DAP_SDK_PATH_BUILD}/module/core/json-c")
-else()
-    # Fallback paths for standalone builds
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/module/core/json-c)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/module/core/json-c)
-endif()
 
 target_link_libraries(${PROJECT_NAME} dap_json_rpc)
 

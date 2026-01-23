@@ -263,7 +263,7 @@ char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
                 jobj_tmp = dap_json_object_new_string((char*)a_params->params[i]->value_param);
                 break;
             case TYPE_PARAM_INTEGER:
-                jobj_tmp = dap_json_object_new_int64(*((int64_t*)a_params->params[i]->value_param));
+                jobj_tmp = dap_json_object_new_int(*((int64_t*)a_params->params[i]->value_param));
                 break;
             case TYPE_PARAM_DOUBLE:
                 jobj_tmp = dap_json_object_new_double(*((double*)a_params->params[i]->value_param));

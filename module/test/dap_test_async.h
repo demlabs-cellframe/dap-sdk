@@ -16,14 +16,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
-#include <pthread.h>
+#include "dap_common.h"
+#include "dap_test.h"
+
 #ifndef _WIN32
+// POSIX: signals, setjmp for timeout handling
+#include <pthread.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <unistd.h>
+#else
+// Windows: threads, synchronization
+#include <windows.h>
+#include <process.h>
 #endif
-#include "dap_common.h"
-#include "dap_test.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -150,32 +156,34 @@ void dap_test_cond_signal(dap_test_cond_wait_ctx_t *a_ctx);
 bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms);
 
 // =============================================================================
-// WHOLE TEST TIMEOUT (CROSS-PLATFORM)
+// WHOLE TEST TIMEOUT (ALARM-BASED)
 // =============================================================================
 
 /**
  * @brief Global timeout context for entire test suite
  */
 typedef struct dap_test_global_timeout {
-    pthread_t watchdog_thread;
-    pthread_mutex_t lock;
-    volatile bool timeout_triggered;
-    volatile bool cancelled;
+#ifndef _WIN32
+    sigjmp_buf jump_buf;
+    volatile sig_atomic_t timeout_triggered;
+#else
+    HANDLE timer_handle;
+    volatile LONG timeout_triggered;
+    void (*exit_callback)(void);
+#endif
     uint32_t timeout_sec;
     const char *test_name;
 } dap_test_global_timeout_t;
 
 /**
  * @brief Set global timeout for entire test suite
- * @details Creates a watchdog thread that monitors test execution time.
- *          On timeout, sets a flag that can be checked periodically.
+ * @details Uses alarm() to limit test execution time.
+ *          On timeout, siglongjmp is called to exit the test.
  * 
  * @param a_timeout Timeout context
  * @param a_timeout_sec Timeout in seconds
  * @param a_test_name Test name for logging
- * @return 0 on success, -1 on error
- * 
- * @note Call dap_test_check_timeout() periodically in your test to check for timeout
+ * @return 0 on first call, 1 if timeout occurred (after longjmp)
  * 
  * @code
  * int main(int argc, char **argv) {
@@ -183,21 +191,16 @@ typedef struct dap_test_global_timeout {
  *     
  *     // Set 30 sec timeout for entire test suite
  *     if (dap_test_set_global_timeout(&l_timeout, 30, "VPN State Machine Tests")) {
- *         log_it(L_ERROR, "Failed to setup timeout");
+ *         // Timeout triggered
+ *         log_it(L_CRITICAL, "Test suite timeout!");
  *         return 1;
  *     }
  *     
- *     // Run tests with periodic timeout checks
- *     for (int i = 0; i < test_count; i++) {
- *         if (dap_test_check_timeout(&l_timeout)) {
- *             log_it(L_CRITICAL, "Test timeout!");
- *             break;
- *         }
- *         run_test(i);
- *     }
+ *     // Run tests
+ *     run_all_tests();
  *     
  *     // Cancel timeout
- *     dap_test_cancel_global_timeout(&l_timeout);
+ *     dap_test_cancel_global_timeout();
  *     return 0;
  * }
  * @endcode
@@ -209,15 +212,9 @@ int dap_test_set_global_timeout(
 );
 
 /**
- * @brief Check if global timeout has been triggered
- * @return true if timeout triggered, false otherwise
- */
-bool dap_test_check_timeout(dap_test_global_timeout_t *a_timeout);
-
-/**
  * @brief Cancel global timeout
  */
-void dap_test_cancel_global_timeout(dap_test_global_timeout_t *a_timeout);
+void dap_test_cancel_global_timeout(void);
 
 // =============================================================================
 // SIMPLE DELAY HELPERS
@@ -228,7 +225,11 @@ void dap_test_cancel_global_timeout(dap_test_global_timeout_t *a_timeout);
  * @param a_delay_ms Delay in ms
  */
 static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
+#ifndef _WIN32
     usleep(a_delay_ms * 1000);
+#else
+    Sleep(a_delay_ms);
+#endif
 }
 
 /**
@@ -236,9 +237,13 @@ static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
  * @return Time in ms
  */
 static inline uint64_t dap_test_get_time_ms(void) {
+#ifndef _WIN32
     struct timespec l_ts;
     clock_gettime(CLOCK_MONOTONIC, &l_ts);
     return (uint64_t)l_ts.tv_sec * 1000 + (uint64_t)l_ts.tv_nsec / 1000000;
+#else
+    return (uint64_t)GetTickCount64();
+#endif
 }
 
 // =============================================================================

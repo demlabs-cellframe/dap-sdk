@@ -310,7 +310,11 @@ endif()
 if(NOT DEFINED THREADS_PREFER_PTHREAD_FLAG)
   set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 endif()
-find_package(Threads REQUIRED)
+
+# Android: threads are built into libc (bionic), no separate pthread library
+if(NOT ANDROID)
+  find_package(Threads REQUIRED)
+endif()
 
 include(cmake/compiler.cmake)
 include(cmake/profile.cmake)
@@ -331,7 +335,8 @@ if(NOT APPLE
 endif()
 
 check_function_exists(pow NOT_NEED_LIBM)
-if(NOT_NEED_LIBM)
+if(NOT_NEED_LIBM OR ANDROID)
+  # Android: math functions (pow, etc.) are built into bionic libc, no separate libm
   set(LIB_MATH "")
 else()
   set(CMAKE_REQUIRED_LIBRARIES m)
@@ -894,10 +899,13 @@ macro(target_setup_options TARGET)
 endmacro()
 
 macro(libmdbx_setup_libs TARGET MODE)
-  if(CMAKE_VERSION VERSION_LESS 3.1)
-    target_link_libraries(${TARGET} ${MODE} ${CMAKE_THREAD_LIBS_INIT})
-  else()
-    target_link_libraries(${TARGET} ${MODE} Threads::Threads)
+  # Android: pthread is built into bionic, no separate Threads target
+  if(NOT ANDROID)
+    if(CMAKE_VERSION VERSION_LESS 3.1)
+      target_link_libraries(${TARGET} ${MODE} ${CMAKE_THREAD_LIBS_INIT})
+    else()
+      target_link_libraries(${TARGET} ${MODE} Threads::Threads)
+    endif()
   endif()
   if(WIN32)
     target_link_libraries(
@@ -939,6 +947,10 @@ set_target_properties(mdbx-static PROPERTIES PUBLIC_HEADER "${LIBMDBX_PUBLIC_HEA
 target_compile_definitions(mdbx-static PRIVATE MDBX_BUILD_SHARED_LIBRARY=0)
 target_setup_options(mdbx-static)
 libmdbx_setup_libs(mdbx-static INTERFACE)
+# Disable format warnings on MinGW due to missing %z support
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(mdbx-static PRIVATE -Wno-format -Wno-format-extra-args)
+endif()
 if(MDBX_BUILD_SHARED_LIBRARY)
   set_target_properties(mdbx-static PROPERTIES OUTPUT_NAME mdbx-static)
 else()

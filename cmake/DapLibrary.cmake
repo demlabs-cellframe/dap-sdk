@@ -47,9 +47,7 @@ endmacro()
 macro(dap_create_final_library)
     # Collect 3rd party libraries that need to be linked
     set(DAP_LINK_LIBS "")
-    if(TARGET dap_json-c)
-        list(APPEND DAP_LINK_LIBS dap_json-c)
-    endif()
+    # json-c removed - using native dap_json instead
     if(TARGET mdbx-static)
         list(APPEND DAP_LINK_LIBS mdbx-static)
     endif()

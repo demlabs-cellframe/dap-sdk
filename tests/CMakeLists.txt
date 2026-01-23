@@ -132,6 +132,18 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/dap_json/dap_json_tests.c)
     register_dap_test(test_unit_dap_json "unit;core")
 endif()
 
+# Core module unit tests (Arena, String Pool, etc.)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/core/CMakeLists.txt)
+    add_subdirectory(unit/core)
+    message("[+] Core module unit tests configured (Arena, etc.)")
+endif()
+
+# JSON module unit tests (Phase 0.2 + Phase 1.1)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/json/CMakeLists.txt)
+    add_subdirectory(unit/json)
+    message("[+] JSON module unit tests configured (Phase 0.2 + Phase 1.1)")
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)
@@ -165,7 +177,6 @@ message("[+] Configuring Integration Tests")
 #    register_dap_test(test_integration_crypto_network "integration;crypto;network")
 #endif()
 
-
 # Build Performance Tests
 message("[+] Configuring Performance Tests")
 
@@ -175,6 +186,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_crypto_benchmarks.c)
     
     # Performance tests need longer timeout
     set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT 1200)
+endif()
+
+# JSON performance benchmarks (dap_json vs competitors)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
+    add_subdirectory(performance/json)
+    message("[+] JSON performance benchmarks configured")
 endif()
 
 # Build Regression Tests  
@@ -242,28 +259,36 @@ add_custom_target(test_all
 # Test discovery for dynamic test addition
 file(GLOB_RECURSE UNIT_TEST_FILES "unit/**/*.c")
 file(GLOB_RECURSE INTEGRATION_TEST_FILES "integration/*.c")
+file(GLOB_RECURSE E2E_TEST_FILES "e2e/*.c")
 file(GLOB_RECURSE PERFORMANCE_TEST_FILES "performance/*.c")
+file(GLOB_RECURSE FUNCTIONAL_TEST_FILES "functional/*.c")
 file(GLOB_RECURSE REGRESSION_TEST_FILES "regression/*.c")
 file(GLOB_RECURSE SECURITY_TEST_FILES "security/*.c")
 
 # Report test configuration
 list(LENGTH UNIT_TEST_FILES UNIT_COUNT)
 list(LENGTH INTEGRATION_TEST_FILES INTEGRATION_COUNT)
+list(LENGTH E2E_TEST_FILES E2E_COUNT)
 list(LENGTH PERFORMANCE_TEST_FILES PERFORMANCE_COUNT)
+list(LENGTH FUNCTIONAL_TEST_FILES FUNCTIONAL_COUNT)
 list(LENGTH REGRESSION_TEST_FILES REGRESSION_COUNT)
 list(LENGTH SECURITY_TEST_FILES SECURITY_COUNT)
 
 message("[+] Test Discovery Results:")
 message("[+] - Unit test files found: ${UNIT_COUNT}")
 message("[+] - Integration test files found: ${INTEGRATION_COUNT}")
+message("[+] - E2E test files found: ${E2E_COUNT}")
 message("[+] - Performance test files found: ${PERFORMANCE_COUNT}")
+message("[+] - Functional test files found: ${FUNCTIONAL_COUNT}")
 message("[+] - Regression test files found: ${REGRESSION_COUNT}")
 message("[+] - Security test files found: ${SECURITY_COUNT}")
 
 message("[+] Test targets available:")
 message("[+] - make test_unit        : Run only unit tests")
 message("[+] - make test_integration : Run only integration tests")
+message("[+] - make test_e2e         : Run only E2E tests")
 message("[+] - make test_performance : Run only performance tests")
+message("[+] - make test_functional  : Run only functional tests")
 message("[+] - make test_regression  : Run only regression tests")
 message("[+] - make test_security    : Run only security tests")
 message("[+] - make test_crypto      : Run all crypto-related tests")

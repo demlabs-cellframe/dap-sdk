@@ -1,4 +1,4 @@
-#!/usr/bin/awk -f
+#!/usr/bin/gawk -f
 # Prepare normalization macros data from NORMALIZATION_MACROS associative array
 # Input: macro_key|base_type (one per line)
 # Output: NORMALIZATION_MACROS_DATA (newline-separated macro_key|base_type|normalized_key|escaped_base_key|escaped_original_key|escaped_macro_key_for_escape)

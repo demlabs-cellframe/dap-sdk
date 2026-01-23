@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.10)
 project (dap_app_cli)
 
 file(GLOB DAP_APP_CLI_SRCS *.c)
-
 file(GLOB DAP_APP_CLI_HEADERS include/*.h)
 
-add_library(${PROJECT_NAME} STATIC ${DAP_APP_CLI_SRCS} ${DAP_APP_CLI_HEADERS} )
+# Use dap_add_library to register as OBJECT library in DAP_INTERNAL_MODULES
+dap_add_library(${PROJECT_NAME} ${DAP_APP_CLI_SRCS} HEADERS ${DAP_APP_CLI_HEADERS})
 
 # Link dependencies
 # Note: dap_json_rpc depends on dap_enc_server and dap_client_http

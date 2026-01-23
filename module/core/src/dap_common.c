@@ -28,6 +28,7 @@
 #include "dap_string.h"
 #include "dap_list.h"
 #include "dap_file_utils.h"
+#include "dap_time.h"
 #include "../../../3rdparty/uthash/src/utlist.h"
 #include "uthash.h"
 
@@ -44,6 +45,8 @@
   #include <processthreadsapi.h>
   #include <process.h>
   #include "win32/dap_console_manager.h"
+  // strptime is not available in MinGW - use 3rdparty implementation
+  extern char* strptime(const char* s, const char* format, struct tm* tm);
 #endif
 
 
@@ -60,8 +63,8 @@ const uint128_t uint128_1 = {.hi = 0, .lo = 1};
 const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
 
 const uint256_t uint256_0 = {};
-const uint256_t uint256_1 = {.hi = {0,0}, .lo = {.hi = 0, .lo = 1}};
-const uint256_t uint256_max = {.hi = {.hi = UINT64_MAX, .lo = UINT64_MAX}, .lo = {.hi = UINT64_MAX, .lo = UINT64_MAX}};
+const uint256_t uint256_1 = {.hi = {.lo = 0, .hi = 0}, .lo = {.lo = 1, .hi = 0}};
+const uint256_t uint256_max = {.hi = {.lo = UINT64_MAX, .hi = UINT64_MAX}, .lo = {.lo = UINT64_MAX, .hi = UINT64_MAX}};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
@@ -403,7 +406,7 @@ static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
 int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_file_path ) {
 
     // init randomer
-    srand( (unsigned int)time(NULL) );
+    srand( (unsigned int)dap_time_now() );
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
@@ -423,7 +426,7 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
 int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename ) {
 
     // init randomer
-    srand( (unsigned int)time(NULL) );
+    srand( (unsigned int)dap_time_now() );
     (void) a_console_title;
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
@@ -546,7 +549,7 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
     memset(l_ret, ' ', l_len);
     for (i = 0; i < l_div; ++i) {
 print_line:
-        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
+        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04zx:  ", i * BYTES_IN_LINE);
         //memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
         for (j = 0; j < l_line_len; ++j, ++a_data) {
             short l_pos = l_shift + j*3;
@@ -600,7 +603,7 @@ const char	lfmt [] = {"%02u-%02u-%04u %02u:%02u:%02u.%03u  "  PID_FMT "  %s [%s:
 char	out[1024] = {0};
 ssize_t     olen = 0, len = 0;
 struct tm _tm;
-struct timespec now;
+dap_nanotime_t now_ns;
 
     if ( ((int) a_ll == -1) )
         return;
@@ -608,16 +611,18 @@ struct timespec now;
     if ( (a_ll < s_dap_log_level) )
         return;
 
-    clock_gettime(CLOCK_REALTIME, &now);
+    now_ns = dap_nanotime_now();
+    dap_time_t now_sec = dap_nanotime_to_sec(now_ns);
+    time_t now_tt = (time_t)now_sec;
 
 #ifdef	WIN32
-	localtime_s(&_tm, (time_t *)&now);
+	localtime_s(&_tm, &now_tt);
 #else
-	localtime_r((time_t *)&now, &_tm);
+	localtime_r(&now_tt, &_tm);
 #endif
 
 	olen = snprintf (out, sizeof(out) - 1, lfmt, _tm.tm_mday, _tm.tm_mon + 1, 1900 + _tm.tm_year,
-			_tm.tm_hour, _tm.tm_min, _tm.tm_sec, (unsigned) now.tv_nsec/(1024*1024),
+			_tm.tm_hour, _tm.tm_min, _tm.tm_sec, (unsigned) ((now_ns % DAP_NSEC_PER_SEC)/(1024*1024)),
             dap_gettid(), s_log_level_tag[a_ll], a_rtn_name, a_line_no);
 
     assert( olen < (ssize_t ) sizeof(out) );
@@ -663,19 +668,21 @@ char	out[512] = {0};
 unsigned char *srcp = (unsigned char *) src, low, high;
 unsigned olen = 0, i, j, len;
 struct tm _tm;
-struct timespec now;
+dap_nanotime_t now_ns;
 
 
-    clock_gettime(CLOCK_REALTIME, &now);
+    now_ns = dap_nanotime_now();
+    dap_time_t now_sec = dap_nanotime_to_sec(now_ns);
+    time_t now_tt = (time_t)now_sec;
 
     #ifdef	WIN32
-    localtime_s(&_tm, (time_t *)&now);
+    localtime_s(&_tm, &now_tt);
     #else
-    localtime_r((time_t *)&now, &_tm);
+    localtime_r(&now_tt, &_tm);
     #endif
 
     olen = snprintf (out, sizeof(out), lfmt, _tm.tm_mday, _tm.tm_mon + 1, 1900 + _tm.tm_year,
-            _tm.tm_hour, _tm.tm_min, _tm.tm_sec, (unsigned) now.tv_nsec/(1024*1024),
+            _tm.tm_hour, _tm.tm_min, _tm.tm_sec, (unsigned) ((now_ns % DAP_NSEC_PER_SEC)/(1024*1024)),
             (unsigned) dap_gettid(), a_rtn_name, a_line_no, 48, a_var_name, srclen);
 
     if(s_log_file)
@@ -918,7 +925,7 @@ dap_error_str_t dap_str_ntstatus_(DWORD err) {
                   ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
         ? *(s_nterror + l_len - 1) = '\0'
-        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), l_ret;
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lu", err) ), l_ret;
 }
 #endif
 
@@ -1614,7 +1621,7 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
                 *a_err = l_err;
             DAP_PAGE_ALFREE(l_seg_arr);
             CloseHandle(l_ol.hEvent);
-            log_it(L_ERROR, "Write file err: %d", l_err);
+            log_it(L_ERROR, "Write file err: %lu", l_err);
             return -1;
         }
         DWORD l_tmp;
@@ -1624,7 +1631,7 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
                 *a_err = l_err;
             DAP_PAGE_ALFREE(l_seg_arr);
             CloseHandle(l_ol.hEvent);
-            log_it(L_ERROR, "Async writing failure, err %d", l_err);
+            log_it(L_ERROR, "Async writing failure, err %lu", l_err);
             return -1;
         }
         if (l_tmp < l_ret)
@@ -1651,14 +1658,14 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
             CloseHandle(l_hf);
             if (a_err)
                 *a_err = GetLastError();
-            log_it(L_ERROR, "File pointer setting err: %d", l_err);
+            log_it(L_ERROR, "File pointer setting err: %lu", l_err);
             return -1;
         }
         if (!SetEndOfFile(l_hf)) {
             if (a_err)
                 *a_err = GetLastError();
             CloseHandle(l_hf);
-            log_it(L_ERROR, "EOF setting err: %d", l_err);
+            log_it(L_ERROR, "EOF setting err: %lu", l_err);
             return -1;
         }
         CloseHandle(l_hf);

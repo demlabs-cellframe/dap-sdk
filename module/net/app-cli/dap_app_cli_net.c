@@ -44,6 +44,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_net.h"
 #include "dap_string.h"
 #include "dap_strfuncs.h"
@@ -133,7 +134,7 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
         DAP_DELETE(l_addr);
 #endif
     } else if (( l_addr = (char*)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS) )) {
-        if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
+        if ( INVALID_SOCKET == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
 #ifdef DAP_OS_WINDOWS
             _set_errno( WSAGetLastError() );
 #endif
@@ -228,12 +229,12 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
     }
 
     //wait for command execution
-    time_t l_start_time = time(NULL);
+    dap_time_t l_start_time = dap_time_now();
     int l_status = 1;
     a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
     while (l_status > 0) {
         l_status = dap_app_cli_http_read(a_socket, a_cmd, l_status);
-        if ((time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
+        if ((dap_time_now() - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
             l_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result

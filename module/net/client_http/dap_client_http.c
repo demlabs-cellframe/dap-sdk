@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include "dap_net.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
 #include "dap_events_socket.h"
@@ -260,7 +261,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
-        if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
+        if ( dap_time_now()- l_client_http->ts_last_read >= (dap_time_t) s_client_timeout_read_after_connect_ms){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
                    
@@ -343,7 +344,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         log_it(L_ERROR, "s_http_read: l_client_http is NULL!");
         return;
     }
-    l_client_http->ts_last_read = time(NULL);
+    l_client_http->ts_last_read = dap_time_now();
     // read data
     l_client_http->response_size += dap_events_socket_pop_from_buf_in(a_es,
             l_client_http->response + l_client_http->response_size,

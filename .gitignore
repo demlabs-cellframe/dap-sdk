@@ -1,4 +1,7 @@
 # Prerequisites
+.context/
+slc
+.cursorrules
 build*/*
 debug/*
 crypto/XKCP/Makefile
@@ -82,4 +85,9 @@ debug/
 
 # Context working files
 context/.local/
-
+.context/
+slc
+.cursorrules
+# Downloaded/temporary files
+*.tmp
+*.download

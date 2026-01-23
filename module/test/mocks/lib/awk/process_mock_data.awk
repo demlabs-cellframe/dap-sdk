@@ -12,8 +12,7 @@
 #   - ALL_TYPES_PAIRS (multiline string)
 #   - ORIGINAL_TYPES (associative array)
 #
-# The output can be executed via: eval "$(awk -f process_mock_data.awk ...)"
-# MAWK COMPATIBLE - uses bubble sort instead of asort()
+# The output can be executed via: eval "$(gawk -f process_mock_data.awk ...)"
 
 # Function to escape shell special characters
 function shell_escape(str) {
@@ -28,20 +27,6 @@ function shell_escape_key(str) {
     gsub(/[\[\]"]/, "", str)
     gsub(/'/, "'\\''", str)
     return str
-}
-
-# Bubble sort for arrays (mawk compatible replacement for asort)
-# Sorts array in-place, returns nothing
-function bubble_sort(arr, n,    i, j, temp) {
-    for (i = 1; i <= n; i++) {
-        for (j = i + 1; j <= n; j++) {
-            if (arr[i] > arr[j]) {
-                temp = arr[i]
-                arr[i] = arr[j]
-                arr[j] = temp
-            }
-        }
-    }
 }
 
 BEGIN {
@@ -138,8 +123,8 @@ BEGIN {
     }
     close(return_types_file)
     
-    # Sort and join return types (mawk compatible)
-    bubble_sort(return_types_array, return_types_count)
+    # Sort and join return types
+    asort(return_types_array)
     for (i = 1; i <= return_types_count; i++) {
         if (return_types_str == "") {
             return_types_str = return_types_array[i]
@@ -148,8 +133,8 @@ BEGIN {
         }
     }
     
-    # Sort and join return pairs (mawk compatible)
-    bubble_sort(return_pairs_array, return_pairs_count)
+    # Sort and join return pairs
+    asort(return_pairs_array)
     for (i = 1; i <= return_pairs_count; i++) {
         if (return_types_pairs_str == "") {
             return_types_pairs_str = return_pairs_array[i]
@@ -192,8 +177,8 @@ BEGIN {
     }
     close(all_types_file)
     
-    # Sort and join all pairs (mawk compatible)
-    bubble_sort(all_pairs_array, all_pairs_count)
+    # Sort and join all pairs
+    asort(all_pairs_array)
     for (i = 1; i <= all_pairs_count; i++) {
         if (all_types_pairs_str == "") {
             all_types_pairs_str = all_pairs_array[i]

@@ -130,7 +130,8 @@ extract_custom_mocks "$TMP_CUSTOM_MOCKS" "${SOURCE_FILES[@]}" || {
     }
 
 # Step 5.5: Generate named headers for each custom mock
-generate_custom_mock_headers "$OUTPUT_DIR" "$BASENAME" "$TMP_CUSTOM_MOCKS" "$WRAPPER_FUNCTIONS"
+# Also generate default wrappers for DAP_MOCK_DECLARE functions without custom wrappers
+generate_custom_mock_headers "$OUTPUT_DIR" "$BASENAME" "$TMP_CUSTOM_MOCKS" "$WRAPPER_FUNCTIONS" "$MOCK_FUNCTIONS"
 
 # Step 6: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect return types and parameter counts
 [ "$VERBOSE" = "1" ] && print_info "Analyzing DAP_MOCK_WRAPPER_CUSTOM usage for macro generation..."
