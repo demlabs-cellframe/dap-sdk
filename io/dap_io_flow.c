@@ -1054,9 +1054,9 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
             return -4;
         }
         
-        // Create context queue on destination worker's context
+        // Create context queue on destination worker's context  
         a_server->queue_inputs[dst] = dap_context_queue_create(
-            l_dst_worker->context, 0, s_queue_ptr_callback);
+            l_dst_worker->context, 1048576, s_queue_ptr_callback);  // 1M capacity for cross-worker packet forwarding
         
         if (!a_server->queue_inputs[dst]) {
             log_it(L_ERROR, "Failed to create queue input for worker %u", dst);

@@ -159,7 +159,7 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
         return -1;
     }
 #endif
-    l_worker->queue_callback = dap_context_queue_create(a_context, 0, s_queue_callback_callback);
+    l_worker->queue_callback = dap_context_queue_create(a_context, 1048576, s_queue_callback_callback);  // 1M capacity for high load
     if (!l_worker->queue_callback) {
         log_it(L_CRITICAL, "Failed to create callback queue");
         return -1;
