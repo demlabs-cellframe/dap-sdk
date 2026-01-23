@@ -114,8 +114,8 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
     char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll",a_manifest->path,a_manifest->name,dap_get_arch());
     l_pvt_data->handle = LoadLibraryA(l_path);
     if(l_pvt_data->handle){
-        l_pvt_data->callback_init = (plugin_init_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_init");
-        l_pvt_data->callback_deinit = (plugin_deinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
+        l_pvt_data->callback_init = (plugin_init_callback_t)(void*)GetProcAddress(l_pvt_data->handle, "plugin_init");
+        l_pvt_data->callback_deinit = (plugin_deinit_callback_t)(void*)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
     }else{
         log_it(L_ERROR,"Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)GetLastError());
         *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)GetLastError());

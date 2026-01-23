@@ -1276,8 +1276,8 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
                 if(l_pos_endl) {
                     if(*(l_pos_endl + 1) == '\n') {
                         dap_events_socket_shrink_buf_in(a_es, l_pos_endl - (char*)a_es->buf_in);
-                        log_it(L_DEBUG, "Header passed, go to streaming (%zu bytes already are in input buffer",
-                                a_es->buf_in_size);
+                        log_it(L_DEBUG, "Header passed, go to streaming (%lu bytes already are in input buffer",
+                                (unsigned long)a_es->buf_in_size);
 
                         l_client_pvt->stage = STAGE_STREAM_STREAMING;
                         l_client_pvt->stage_status = STAGE_STATUS_DONE;
