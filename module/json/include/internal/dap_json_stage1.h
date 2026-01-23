@@ -597,12 +597,14 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
         case DAP_CPU_ARCH_NEON:
             result = dap_json_stage1_run_neon(a_stage1);
             break;
+#ifdef __aarch64__
         case DAP_CPU_ARCH_SVE:
             result = dap_json_stage1_run_sve(a_stage1);
             break;
         case DAP_CPU_ARCH_SVE2:
             result = dap_json_stage1_run_sve2(a_stage1);
             break;
+#endif
 #endif
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:

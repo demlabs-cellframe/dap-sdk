@@ -27,7 +27,8 @@ if(UNIX)
     endif()
 elseif(WIN32)
     file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c)
-    # NOTE: strptime.c is now included in dap_core_win32 library to ensure proper symbol export
+    # Windows: Add strptime.c from 3rdparty (POSIX function not available)
+    list(APPEND CORE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/strptime.c")
 endif()
 
 if (DAP_USE_RPMALLOC)
