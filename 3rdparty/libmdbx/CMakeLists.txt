@@ -335,7 +335,8 @@ if(NOT APPLE
 endif()
 
 check_function_exists(pow NOT_NEED_LIBM)
-if(NOT_NEED_LIBM)
+if(NOT_NEED_LIBM OR ANDROID)
+  # Android: math functions (pow, etc.) are built into bionic libc, no separate libm
   set(LIB_MATH "")
 else()
   set(CMAKE_REQUIRED_LIBRARIES m)

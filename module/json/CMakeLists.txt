@@ -63,9 +63,37 @@ else()
     message(STATUS "[dap_json] String scanner SIMD codegen completed successfully")
 endif()
 
-# Architecture-specific sources - collect from GENERATED directory in build
+# Architecture-specific sources - ADD only what's needed for target architecture
+# DO NOT use file(GLOB ...) - explicitly add per-architecture
 set(JSON_ARCH_SRCS "")
-file(GLOB JSON_ARCH_SRCS ${SIMD_GEN_DIR}/*.c)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+    # x86/x64: Add AVX2, SSE2, AVX-512 implementations
+    list(APPEND JSON_ARCH_SRCS 
+        ${SIMD_GEN_DIR}/dap_json_stage1_avx2.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_sse2.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_avx512.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_avx2.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_sse2.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c
+    )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    # ARM64: Add NEON, SVE, SVE2 implementations
+    list(APPEND JSON_ARCH_SRCS 
+        ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_sve.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c
+    )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
+    # ARM32: ONLY NEON (no SVE/SVE2)
+    list(APPEND JSON_ARCH_SRCS 
+        ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
+    )
+endif()
 
 # Combine all sources
 set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_TAPE_SRCS} ${JSON_ARCH_SRCS})
@@ -76,61 +104,43 @@ dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_
 # Set architecture-specific compiler flags for SIMD implementations
 # This enables compile-time dispatch based on available instruction sets
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-    # x86/x64 architecture - sources are GENERATED, search in build directory
-    file(GLOB AVX2_SRCS ${SIMD_GEN_DIR}/*avx2.c)
-    file(GLOB SSE2_SRCS ${SIMD_GEN_DIR}/*sse2.c)
-    file(GLOB AVX512_SRCS ${SIMD_GEN_DIR}/*avx512.c)
+    # x86/x64 architecture
+    set(AVX2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_avx2.c ${SIMD_GEN_DIR}/dap_json_string_simd_avx2.c)
+    set(SSE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sse2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sse2.c)
+    set(AVX512_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_avx512.c ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c)
     
-    if(AVX2_SRCS)
-        set_source_files_properties(${AVX2_SRCS} PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi -mbmi2 -mpopcnt")
-        message(STATUS "[dap_json] AVX2 implementation enabled: ${AVX2_SRCS}")
-    endif()
+    set_source_files_properties(${AVX2_SRCS} PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi -mbmi2 -mpopcnt")
+    set_source_files_properties(${SSE2_SRCS} PROPERTIES COMPILE_FLAGS "-msse2 -msse4.2")
+    set_source_files_properties(${AVX512_SRCS} PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
     
-    if(SSE2_SRCS)
-        set_source_files_properties(${SSE2_SRCS} PROPERTIES COMPILE_FLAGS "-msse2 -msse4.2")
-        message(STATUS "[dap_json] SSE2 implementation enabled: ${SSE2_SRCS}")
-    endif()
+    message(STATUS "[dap_json] AVX2 implementation enabled: ${AVX2_SRCS}")
+    message(STATUS "[dap_json] SSE2 implementation enabled: ${SSE2_SRCS}")
+    message(STATUS "[dap_json] AVX-512 implementation enabled: ${AVX512_SRCS}")
     
-    if(AVX512_SRCS)
-        set_source_files_properties(${AVX512_SRCS} PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
-        message(STATUS "[dap_json] AVX-512 implementation enabled: ${AVX512_SRCS}")
-    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    # ARM64 architecture
+    set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
+    set(SVE_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c)
+    set(SVE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c)
     
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|aarch64|ARM")
-    # ARM architecture - sources are GENERATED, search in build directory
-    file(GLOB NEON_SRCS ${SIMD_GEN_DIR}/*neon.c)
-    file(GLOB SVE_SRCS ${SIMD_GEN_DIR}/*sve.c)
-    file(GLOB SVE2_SRCS ${SIMD_GEN_DIR}/*sve2.c)
+    # ARM64 - NEON is always available (no extra flags)
+    set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "")
+    set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+    set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
     
-    if(NEON_SRCS)
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-            # ARM64 - NEON is always available
-            set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "")
-        else()
-            # ARM32 - explicit NEON flag
-            set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon")
-        endif()
-        message(STATUS "[dap_json] NEON implementation enabled: ${NEON_SRCS}")
-    endif()
+    message(STATUS "[dap_json] NEON implementation enabled: ${NEON_SRCS}")
+    message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
+    message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
     
-    # SVE/SVE2 are ARMv8-A (64-bit) only, not available on ARMv7 (32-bit)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-        if(SVE_SRCS)
-            set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
-            message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
-        endif()
-        
-        if(SVE2_SRCS)
-            set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
-            message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
-        endif()
-    else()
-        # ARM32: SVE/SVE2 not available, exclude from build
-        if(SVE_SRCS OR SVE2_SRCS)
-            message(STATUS "[dap_json] SVE/SVE2 skipped on ARM32 (ARMv8-A 64-bit required)")
-            list(REMOVE_ITEM DAP_JSON_SOURCES ${SVE_SRCS} ${SVE2_SRCS})
-        endif()
-    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
+    # ARM32 architecture (ARMv7)
+    set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
+    
+    # ARM32 - explicit NEON flag required
+    set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon")
+    
+    message(STATUS "[dap_json] NEON implementation enabled (ARM32): ${NEON_SRCS}")
+    message(STATUS "[dap_json] SVE/SVE2 skipped (ARM64 only)")
 endif()
 
 # Register headers for component-based installation
@@ -141,7 +151,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
 )
 
 # Add include directory for generated SIMD headers
@@ -152,16 +161,6 @@ set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")
 
 # Link dependencies
 target_link_libraries(${PROJECT_NAME} PUBLIC dap_core PRIVATE ${JSON_LIBRARIES})
-
-# Tests
-if(BUILD_DAP_TESTS)
-    add_definitions("-DDAP_JSON_TESTS")
-    message("Enabled dap_json comprehensive test suite")
-    enable_testing()
-    # Note: Tests are in tests/unit/json/ and managed by tests/CMakeLists.txt
-    # New test suite (Phase 0.2): Unicode, numeric edges, invalid JSON, boundaries, benchmarks
-endif()
-
 # Installation
 if(INSTALL_DAP_SDK)
     set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${JSON_HEADERS}")
