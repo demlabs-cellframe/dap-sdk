@@ -4,6 +4,7 @@
  */
 
 #include "dap_mock_async.h"
+#include "dap_time.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -55,9 +56,7 @@ static struct {
 
 // Helper: Get current time in milliseconds
 static uint64_t s_get_time_ms(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    return dap_nanotime_to_millitime(dap_nanotime_now());
 }
 
 // Helper: Dequeue next task (caller must hold queue_mutex)
@@ -313,14 +312,10 @@ bool dap_mock_async_wait_task(dap_mock_async_task_t *a_task, int a_timeout_ms) {
     } else {
         // Timed wait
         struct timespec ts;
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        ts.tv_sec = tv.tv_sec + a_timeout_ms / 1000;
-        ts.tv_nsec = (tv.tv_usec + (a_timeout_ms % 1000) * 1000) * 1000;
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
+        dap_nanotime_t now_ns = dap_nanotime_now();
+        dap_nanotime_t timeout_ns = now_ns + (dap_nanotime_t)a_timeout_ms * DAP_NSEC_PER_MSEC;
+        ts.tv_sec = dap_nanotime_to_sec(timeout_ns);
+        ts.tv_nsec = timeout_ns % DAP_NSEC_PER_SEC;
         
         int ret = 0;
         while (a_task->state != DAP_MOCK_ASYNC_TASK_COMPLETED &&

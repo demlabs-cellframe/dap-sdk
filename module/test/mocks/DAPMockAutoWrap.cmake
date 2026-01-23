@@ -14,7 +14,15 @@
 # For static libraries, use dap_mock_autowrap_with_static to wrap with --whole-archive
 
 # Save module directory for script paths
-get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+# Use CACHE INTERNAL to persist across multiple include() calls
+get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY CACHE)
+set(DAP_MOCK_AUTOWRAP_MODULE_DIR "${DAP_MOCK_AUTOWRAP_MODULE_DIR}" CACHE INTERNAL "Directory containing DAPMockAutoWrap.cmake")
+
+# Debug: print module directory
+if(NOT DAP_MOCK_AUTOWRAP_MODULE_DIR)
+    message(FATAL_ERROR "DAPMockAutoWrap: Failed to determine module directory from ${CMAKE_CURRENT_LIST_FILE}")
+endif()
+#message(STATUS "DAPMockAutoWrap module directory: ${DAP_MOCK_AUTOWRAP_MODULE_DIR}")
 
 # Detect script executor (bash on Unix, PowerShell on Windows)
 # Note: PowerShell version (ps1) is basic and may not support all features
@@ -96,6 +104,8 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
+<<<<<<< HEAD
+=======
     # Prepare command for mock generation
     # For STAGE 1 (execute_process) - use list
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
@@ -109,8 +119,9 @@ function(dap_mock_autowrap TARGET_NAME)
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
+>>>>>>> 08b4e91dabc59ca8943a960367f6cf73967c76ee
     execute_process(
-        COMMAND ${MOCK_GEN_CMD_STAGE1}
+        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         RESULT_VARIABLE MOCK_GEN_RESULT
         OUTPUT_VARIABLE MOCK_GEN_OUTPUT
@@ -118,6 +129,9 @@ function(dap_mock_autowrap TARGET_NAME)
     )
     
     if(NOT MOCK_GEN_RESULT EQUAL 0)
+<<<<<<< HEAD
+        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
+=======
         message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
@@ -129,12 +143,13 @@ function(dap_mock_autowrap TARGET_NAME)
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME})
+>>>>>>> 08b4e91dabc59ca8943a960367f6cf73967c76ee
     endif()
     
     # STAGE 2: Setup re-generation on source file changes
     add_custom_command(
         OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT} ${MACROS_HEADER} ${CUSTOM_MOCKS_HEADER} ${LINKER_WRAPPER_HEADER}
-        COMMAND ${MOCK_GEN_CMD_STAGE2} ${ALL_SOURCES}
+        COMMAND ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES}
         DEPENDS ${ALL_SOURCES}
         COMMENT "Regenerating mock wrappers for ${TARGET_NAME}"
         VERBATIM

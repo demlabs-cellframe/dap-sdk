@@ -1,4 +1,4 @@
-#!/usr/bin/awk -f
+#!/usr/bin/gawk -f
 # Prepare type-to-selector wrapper macros data
 # Input: NORMALIZATION_MACROS (associative array data as macro_key|base_type pairs)
 # Output: TYPE_TO_SELECT_DATA (newline-separated macro_key|normalized_key|selector_name|is_pointer)

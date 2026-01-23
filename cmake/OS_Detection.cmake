@@ -102,14 +102,23 @@ if(UNIX)
     if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" )
         add_definitions ("-DDAP_OS_LINUX")
     endif()
-    
-    # Base warning flags (compatible with both GCC and Clang)
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
-    
-    # Add Clang-specific flags only when using Clang
-    if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
-        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
-    endif()
+
+endif()
+
+# Base warning flags (compatible with both GCC and Clang on all platforms)
+set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+
+# Add GCC-specific flags only when using GCC
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-error=builtin-declaration-mismatch")
+endif()
+
+# Add Clang-specific flags only when using Clang
+if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument -Wno-unused-but-set-variable")
+endif()
+
+if(UNIX)
     if (LINUX)
         set(CCOPT_SYSTEM "")
         set(LDOPT_SYSTEM "")

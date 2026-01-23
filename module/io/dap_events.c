@@ -227,7 +227,7 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
             -1;
 #ifdef DAP_EVENTS_CAPS_IOCP
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
-    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
+    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)(void*)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
         return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), -1;
 
     SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);

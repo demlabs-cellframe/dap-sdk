@@ -183,7 +183,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #ifdef DAP_OS_WINDOWS
     _set_errno(WSAGetLastError());
 #endif
-    if (l_socket < 0) {
+    if (l_socket == INVALID_SOCKET) {
         log_it (L_ERROR,"Socket error %d: \"%s\"", errno, dap_strerror(errno));
         return 3;
     }
@@ -215,7 +215,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         close_socket_due_to_fail("bind()");
         return 6;
     }
-    log_it(L_INFO, "Socket %d \"%s : %d\" binded", l_socket, a_addr, a_port);
+    log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" \"%s : %d\" binded", l_socket, a_addr, a_port);
 
     if (a_type != DESCRIPTOR_TYPE_SOCKET_UDP) {
         if ( listen(l_socket, SOMAXCONN) < 0 ) {
@@ -325,7 +325,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
  */
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
 {
-    log_it(L_DEBUG, "Created server socket %d with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
+    log_it(L_DEBUG, "Created server socket %"DAP_FORMAT_SOCKET" with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
 }
 
 /**
@@ -335,7 +335,7 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  */
 static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
+    log_it(L_WARNING, "Server socket %"DAP_FORMAT_SOCKET" error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**
@@ -354,11 +354,11 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                                          "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
                                          a_es_listener->socket, a_es_listener->uuid,
                                          a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
-    if (a_remote_socket < 0) {
+    if (a_remote_socket == INVALID_SOCKET) {
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
 #endif
-        log_it(L_ERROR, "Server socket %d accept() error %d: %s",
+        log_it(L_ERROR, "Server socket %"DAP_FORMAT_SOCKET" accept() error %d: %s",
                         a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }

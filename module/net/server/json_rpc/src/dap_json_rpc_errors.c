@@ -41,8 +41,8 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create()
 }
 void dap_json_rpc_error_JSON_free(dap_json_rpc_error_JSON_t *a_error_json)
 {
-//    json_object_put(a_error_json->obj_code);
-//    json_object_put(a_error_json->obj_msg);
+//    dap_json_object_free(a_error_json->obj_code);
+//    dap_json_object_free(a_error_json->obj_msg);
     DAP_FREE(a_error_json);
 }
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const char *msg)
@@ -98,15 +98,15 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 }
 
 // json_object * dap_json_rpc_error_get(){
-//     json_object* json_arr_errors = json_object_new_array();
+//     json_object* json_arr_errors = dap_json_array_new();
 //     dap_json_rpc_error_t * error = NULL;
 //     LL_FOREACH(s_errors, error) {
-//         json_object_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
+//         dap_json_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
 //     }
 //     if (dap_json_array_length(json_arr_errors) > 0) {
 //         return json_arr_errors;
 //     } else {
-//         json_object_put(json_arr_errors);
+//         dap_json_object_free(json_arr_errors);
 //         return NULL;
 //     }
 // }
@@ -131,12 +131,12 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 
 // json_object *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error)
 // {
-//     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
+//     json_object *l_jobj_code = dap_json_object_new_int(a_error->code_error);
 //     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
-//     json_object *l_jobj = json_object_new_object();
+//     json_object *l_jobj = dap_json_object_new();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);
-//     json_object *l_jobj_err = json_object_new_object();
+//     json_object *l_jobj_err = dap_json_object_new();
 //     json_object_object_add(l_jobj_err, "error", l_jobj);
 //     return l_jobj_err;
 // }
@@ -144,15 +144,15 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 // char *dap_json_rpc_error_get_json_str(dap_json_rpc_error_t *a_error)
 // {
 //     log_it(L_NOTICE, "Translation JSON string to struct dap_json_rpc_error");
-//     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
+//     json_object *l_jobj_code = dap_json_object_new_int(a_error->code_error);
 //     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
-//     json_object *l_jobj = json_object_new_object();
+//     json_object *l_jobj = dap_json_object_new();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);
-//     json_object *l_jobj_err = json_object_new_object();
+//     json_object *l_jobj_err = dap_json_object_new();
 //     json_object_object_add(l_jobj_err, "error", l_jobj);
-//     char *l_json_str = dap_strdup(json_object_to_json_string(l_jobj_err));
-//     json_object_put(l_jobj);
+//     char *l_json_str = dap_strdup(dap_json_to_string(l_jobj_err));
+//     dap_json_object_free(l_jobj);
 //     return l_json_str;
 // }
 

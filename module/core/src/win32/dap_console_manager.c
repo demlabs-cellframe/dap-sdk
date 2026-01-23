@@ -131,7 +131,6 @@ typedef BOOL (WINAPI *PSetConsoleScreenBufferInfoEx)(HANDLE hConsoleOutput, PCON
 void SetupConsole( const char *title, const uint16_t *fontName, int fontx, int fonty )
 {
   HANDLE hConOut;
-  HANDLE hConIn;
 
   HWND hwndConsole = GetConsoleWindow( );
   if ( !hwndConsole ) { // daemon ?
@@ -149,7 +148,6 @@ void SetupConsole( const char *title, const uint16_t *fontName, int fontx, int f
   SetConsoleTitleA( (LPCSTR)title );
 
   hConOut = GetStdHandle( STD_OUTPUT_HANDLE );
-  hConIn  = GetStdHandle( STD_INPUT_HANDLE );
 
   int sx = GetSystemMetrics( SM_CXSCREEN );
   int sy = GetSystemMetrics( SM_CYSCREEN );

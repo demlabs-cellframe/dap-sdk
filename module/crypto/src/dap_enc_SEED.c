@@ -6,6 +6,7 @@
 
 #include "dap_enc_SEED.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "rand/dap_rand.h"
 #include "KeccakHash.h"
 
@@ -20,7 +21,7 @@ void dap_enc_seed_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     {
         log_it(L_ERROR, "seed key cannot be less than SEED_KEY_LENGTH bytes.");
     }
-    a_key->last_used_timestamp = time(NULL);
+    a_key->last_used_timestamp = dap_time_now();
 
 
     a_key->priv_key_data_size = SEED_KEY_LENGTH;

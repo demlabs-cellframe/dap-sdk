@@ -9,7 +9,7 @@ dap_add_library(${PROJECT_NAME} ${DAP_NOTIFY_SRV_SRCS} HEADERS ${DAP_NOTIFY_SRV_
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c )
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json )
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_NOTIFY_SRV_HDRS}")

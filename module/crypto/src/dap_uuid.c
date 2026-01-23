@@ -25,6 +25,7 @@
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 #include "dap_uuid.h"
+#include "dap_time.h"
 #include "dap_guuid.h"
 #include "dap_rand.h"
 #include "dap_strfuncs.h"
@@ -52,7 +53,7 @@ uint128_t dap_uuid_generate_uint128()
 {
     uint32_t l_input[4] ={
         [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
         [3] = random_uint32_t(UINT32_MAX)
     };
@@ -72,7 +73,7 @@ uint64_t dap_uuid_generate_uint64()
 {
     uint16_t l_input[4] = {
         [0] = dap_random_uint16(),
-        [1] = time(NULL) & UINT16_MAX,      /*  time(NULL) % UINT16_MAX */
+        [1] = (uint16_t)(dap_time_now() & UINT16_MAX),      /*  time(NULL) % UINT16_MAX */
         [2] = (uint16_t) atomic_fetch_add(&s_global_counter, 1),
         [3] = dap_random_uint16()
     };
@@ -89,7 +90,7 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
         return;
     uint32_t l_input[4] ={
         [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
         [3] = random_uint32_t(UINT32_MAX)
     };

@@ -1,5 +1,5 @@
 /**
- * @file test_mock.c
+ * @file test_mock_framework.c
  * @brief Unit tests for DAP SDK Mock Framework V4
  * @details Comprehensive tests for all mock framework features:
  *          - Mock declaration with structured config
@@ -29,7 +29,7 @@
 // =============================================================================
 
 // Test 1: Simple mock with default config
-DAP_MOCK_DECLARE(simple_function);
+DAP_MOCK(simple_function);
 
 // Test 2: Mock with custom return value
 DAP_MOCK_DECLARE(function_with_return, {
@@ -60,7 +60,7 @@ DAP_MOCK_DECLARE(function_with_callback, {
 });
 
 // Test 6: Mock initially disabled (configured at runtime)
-DAP_MOCK_DECLARE(disabled_function);
+DAP_MOCK(disabled_function);
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -485,10 +485,10 @@ int main(int argc, char **argv)
         return 1;
     }
     
-    // Initialize mock 
+    // Initialize mock framework
     dap_mock_init();
     
-    log_it(L_INFO, "=== DAP SDK Mock Framework V4 - Unit Tests ===");
+    log_it(L_INFO, "=== DAP SDK Mock Framework - Unit Tests ===");
     log_it(L_INFO, "Testing all mock features...\n");
     
     // Run tests

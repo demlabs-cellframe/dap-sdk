@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
-project(DAP_SDK_NATIVE C)
+project(DAP_SDK_NATIVE C CXX)
 
 # Disable SSL by default - WolfSSL is no longer used
 add_definitions(-DDAP_NET_CLIENT_NO_SSL)
@@ -75,12 +75,23 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
+if(NOT DEFINED DAP_TPL_DIR)
+    set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
+    message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
+endif()
+
+# JSON module is always required (used by core and other modules)
+add_subdirectory(module/json)
+message("[+] Module 'json' (always required)")
+
 # Add DAP SDK unified interface using dap_add_library
 # This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
 dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/json/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/crypto/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
@@ -160,10 +171,35 @@ if (DAPSDK_MODULES MATCHES "test-framework" OR BUILD_DAP_SDK_TESTS)
     message("[+] Testing framework")
 endif()
 
+# Create static libraries for testing (needed for --wrap mocking)
+if(BUILD_DAP_SDK_TESTS)
+    message("[+] Creating static libraries for testing...")
+    foreach(MODULE ${DAP_INTERNAL_MODULES})
+        if(TARGET ${MODULE} AND NOT TARGET ${MODULE}_static)
+            add_library(${MODULE}_static STATIC $<TARGET_OBJECTS:${MODULE}>)
+            # Inherit all properties from OBJECT library
+            get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+            if(MODULE_INCLUDES)
+                target_include_directories(${MODULE}_static PUBLIC ${MODULE_INCLUDES})
+            endif()
+            get_target_property(MODULE_LINK_LIBS ${MODULE} LINK_LIBRARIES)
+            if(MODULE_LINK_LIBS)
+                target_link_libraries(${MODULE}_static PUBLIC ${MODULE_LINK_LIBS})
+            endif()
+            message("[+]   ${MODULE}_static")
+        endif()
+    endforeach()
+endif()
+
 # New tests structure - UPDATED PATHS
 if(BUILD_DAP_SDK_TESTS)
     add_subdirectory(tests)
     message("[+] Tests enabled with new structure")
+endif()
+
+# Benchmarks (optional)
+if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/CMakeLists.txt")
+    add_subdirectory(benchmarks)
 endif()
 
 # Create final combined DAP SDK library

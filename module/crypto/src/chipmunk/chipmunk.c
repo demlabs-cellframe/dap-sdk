@@ -29,6 +29,7 @@
 #include "chipmunk_hash.h"
 #include "chipmunk_hots.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_crypto_common.h"
 #include "rand/dap_rand.h"
 
@@ -155,7 +156,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     memset(l_entropy_source, 0, sizeof(l_entropy_source));
     
     // Используем комбинацию счетчика и системного времени для энтропии
-    uint32_t l_time_part = (uint32_t)time(NULL);
+    uint32_t l_time_part = (uint32_t)dap_time_now();
     memcpy(l_entropy_source, &s_key_counter, 4);
     memcpy(l_entropy_source + 4, &l_time_part, 4);
     

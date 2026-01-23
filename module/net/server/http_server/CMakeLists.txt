@@ -34,7 +34,7 @@ if (UNIX)
     target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json)
 if(WIN32)
     target_link_libraries(${PROJECT_NAME}
     intl iconv

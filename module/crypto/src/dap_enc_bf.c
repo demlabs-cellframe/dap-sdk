@@ -6,6 +6,7 @@
 
 #include "dap_enc_bf.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "rand/dap_rand.h"
 #include "KeccakHash.h"
 
@@ -15,7 +16,7 @@
 void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
 {
-    a_key->last_used_timestamp = time(NULL);
+    a_key->last_used_timestamp = dap_time_now();
 
 
     a_key->priv_key_data_size = sizeof(BF_KEY);

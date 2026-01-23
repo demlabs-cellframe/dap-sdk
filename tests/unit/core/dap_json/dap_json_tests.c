@@ -1155,6 +1155,8 @@ int main(void) {
         return -1;
     }
     
+    dap_json_init(); // Initialize Stage 1 dispatch
+    
     bool l_all_passed = true;
     
     // Basic functionality tests
@@ -1200,6 +1202,9 @@ int main(void) {
     l_all_passed &= s_test_memory_multiple_gets();
     l_all_passed &= s_test_memory_complex_nested();
     l_all_passed &= s_test_borrowed_wrapper_cleanup();
+    
+    // Cleanup thread-local arena before SDK cleanup
+    dap_json_cleanup_thread_arena();
     
     dap_test_sdk_cleanup();
     

@@ -6,6 +6,7 @@
 
 #include "dap_enc_salsa2012.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "rand/dap_rand.h"
 #include "KeccakHash.h"
 
@@ -32,7 +33,7 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
     {
         log_it(L_ERROR, "SALSA20 key cannot be less than 32 bytes but got %zd",key_size);
     }
-    a_key->last_used_timestamp = time(NULL);
+    a_key->last_used_timestamp = dap_time_now();
 
 
     a_key->priv_key_data_size = SALSA20_KEY_SIZE;

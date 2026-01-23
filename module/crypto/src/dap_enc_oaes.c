@@ -7,6 +7,7 @@
 #include "oaes_lib.h"
 #include "dap_enc_oaes.h"
 #include "dap_common.h"
+#include "dap_time.h"
 
 #define LOG_TAG "dap_enc_oaes"
 
@@ -45,7 +46,7 @@ void dap_enc_oaes_key_delete(struct dap_enc_key *a_key)
 void dap_enc_oaes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
 {
-    a_key->last_used_timestamp = time(NULL);
+    a_key->last_used_timestamp = dap_time_now();
 
     oaes_ctx *ctx = get_oaes_ctx(a_key);
     if(ctx == NULL){

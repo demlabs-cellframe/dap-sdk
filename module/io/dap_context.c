@@ -57,6 +57,7 @@
 #define LOG_TAG "dap_context"
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_events.h"
@@ -92,7 +93,8 @@ int dap_context_init()
     l_fdlimit.rlim_cur = l_fdlimit.rlim_max;
     if (setrlimit(RLIMIT_NOFILE, &l_fdlimit))
         return -2;
-    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, l_oldlimit, l_fdlimit.rlim_cur);
+    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, 
+           (uint64_t)l_oldlimit, (uint64_t)l_fdlimit.rlim_cur);
 #endif
     return 0;
 }
@@ -248,11 +250,11 @@ static void *s_context_thread(void *a_arg)
         l_priority = THREAD_PRIORITY_NORMAL;
     }
     if ( !DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &l_context->th, 0, FALSE, DUPLICATE_SAME_ACCESS) )
-        log_it(L_ERROR, "DuplicateHandle() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "DuplicateHandle() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadAffinityMask( l_context->th, (DWORD_PTR)(1 << l_msg->cpu_id) ) ) 
-        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadPriority(l_context->th, l_priority) )
-        log_it(L_ERROR, "Couldn't set thread priority, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "Couldn't set thread priority, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
 #else
     if(l_msg->cpu_id!=-1)
         dap_cpu_assign_thread_on(l_msg->cpu_id );
@@ -593,7 +595,7 @@ lb_exit:
 #endif
     if (l_is_error && l_errno != EEXIST) {
 #ifdef DAP_EVENTS_CAPS_IOCP
-        log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_errno, a_es->socket);
+        log_it(L_ERROR, "IOCP update failed, errno %d socket %"DAP_FORMAT_SOCKET, l_errno, a_es->socket);
 #else
         log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ", error %d: \"%s\"",
             a_es->socket, l_errno, dap_strerror(l_errno) );

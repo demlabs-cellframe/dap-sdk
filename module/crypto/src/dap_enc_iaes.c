@@ -3,6 +3,7 @@
 #include <string.h>
 #include "dap_enc_key.h"
 #include "dap_enc_iaes.h"
+#include "dap_time.h"
 #include "sha3/fips202.h"
 
 // XKCP includes moved here from header for encapsulation
@@ -54,7 +55,7 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
                                                 size_t key_size)
 {
     (void)key_size;
-    a_key->last_used_timestamp = time(NULL);
+    a_key->last_used_timestamp = dap_time_now();
 
     uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
     if (!id_concat_kex) {

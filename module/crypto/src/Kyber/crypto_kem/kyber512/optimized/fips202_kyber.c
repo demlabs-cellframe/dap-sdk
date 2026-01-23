@@ -572,7 +572,7 @@ void sha3_256(uint8_t h[32], const uint8_t *in, size_t inlen)
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen:      length of input in bytes
 **************************************************/
-void sha3_512(uint8_t *h, const uint8_t *in, size_t inlen)
+void sha3_512(uint8_t h[64], const uint8_t *in, size_t inlen)
 {
   unsigned int i;
   uint64_t s[25];
