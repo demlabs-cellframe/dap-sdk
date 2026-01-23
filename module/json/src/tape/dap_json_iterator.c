@@ -521,7 +521,14 @@ bool dap_json_iterator_get_int64(const dap_json_iterator_t *a_iter, int64_t *out
     
     int64_t l_value = strtoll(l_num_str, &l_endptr, 10);
     
+    // Special case: INT64_MIN may cause ERANGE on some platforms
+    // Check if the parsed value is actually INT64_MIN and endptr advanced
     if (errno == ERANGE) {
+        // Allow INT64_MIN even if ERANGE was set
+        if (l_value == INT64_MIN && l_endptr != l_num_str) {
+            *out = l_value;
+            return true;
+        }
         log_it(L_ERROR, "Number overflow at offset %"PRIu64, l_offset);
         return false;
     }
@@ -558,7 +565,14 @@ bool dap_json_iterator_get_uint64(const dap_json_iterator_t *a_iter, uint64_t *o
     
     uint64_t l_value = strtoull(l_num_str, &l_endptr, 10);
     
+    // Special case: UINT64_MAX may cause ERANGE on some platforms
+    // Check if the parsed value is actually UINT64_MAX and endptr advanced
     if (errno == ERANGE) {
+        // Allow UINT64_MAX even if ERANGE was set
+        if (l_value == UINT64_MAX && l_endptr != l_num_str) {
+            *out = l_value;
+            return true;
+        }
         log_it(L_ERROR, "Number overflow at offset %"PRIu64, l_offset);
         return false;
     }

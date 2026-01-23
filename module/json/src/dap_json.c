@@ -2019,17 +2019,17 @@ bool dap_json_object_get_int64_ext(dap_json_t* a_json, const char* a_key, int64_
     }
     
     if (l_value->type == DAP_JSON_TYPE_INT) {
-        // Check if inline (length==0) or allocated (length==1)
-        if (l_value->length == 0) {
-            // Inline: stored in offset as int32
-            *a_out = (int64_t)(int32_t)l_value->offset;
-        } else {
+        // Check if inline or allocated using MALLOC flag
+        if (l_value->flags & DAP_JSON_FLAG_MALLOC) {
             // Allocated: use storage pointer
             int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             if (!l_ptr) {
                 return false;
             }
             *a_out = *l_ptr;
+        } else {
+            // Inline: stored in offset as int32
+            *a_out = (int64_t)(int32_t)l_value->offset;
         }
         return true;
     } else if (l_value->type == DAP_JSON_TYPE_DOUBLE) {
@@ -2115,15 +2115,15 @@ bool dap_json_object_get_uint64_ext(dap_json_t* a_json, const char* a_key, uint6
     }
     
     if (l_value->type == DAP_JSON_TYPE_INT) {
-        // Extract int64
+        // Extract int64 using MALLOC flag check
         int64_t l_int_val;
-        if (l_value->length == 0) {
-            // Inline int32
-            l_int_val = (int64_t)(int32_t)l_value->offset;
-        } else {
+        if (l_value->flags & DAP_JSON_FLAG_MALLOC) {
             // Allocated int64
             int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
+        } else {
+            // Inline int32
+            l_int_val = (int64_t)(int32_t)l_value->offset;
         }
         *a_out = (uint64_t)l_int_val;
         return true;
@@ -2252,15 +2252,15 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
         double *l_ptr = (double*)dap_json_get_storage_ptr(l_value);
         return *l_ptr;
     } else if (l_value->type == DAP_JSON_TYPE_INT) {
-        // Extract int64
+        // Extract int64 using MALLOC flag check
         int64_t l_int_val;
-        if (l_value->length == 0) {
-            // Inline int32
-            l_int_val = (int64_t)(int32_t)l_value->offset;
-        } else {
+        if (l_value->flags & DAP_JSON_FLAG_MALLOC) {
             // Allocated int64
             int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
+        } else {
+            // Inline int32
+            l_int_val = (int64_t)(int32_t)l_value->offset;
         }
         return (double)l_int_val;
     } else if (l_value->type == DAP_JSON_TYPE_STRING) {
@@ -2747,14 +2747,14 @@ int64_t dap_json_get_int64(dap_json_t* a_json)
     }
     
     if (l_value->type == DAP_JSON_TYPE_INT) {
-        // Check if inline or allocated
-        if (l_value->length == 0) {
-            // Inline int32
-            return (int64_t)(int32_t)l_value->offset;
-        } else {
+        // Check if inline or allocated using MALLOC flag
+        if (l_value->flags & DAP_JSON_FLAG_MALLOC) {
             // Allocated int64
             int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             return *l_ptr;
+        } else {
+            // Inline int32
+            return (int64_t)(int32_t)l_value->offset;
         }
     }
     
@@ -2846,15 +2846,15 @@ double dap_json_get_double(dap_json_t* a_json)
     }
     
     if (l_value->type == DAP_JSON_TYPE_INT) {
-        // Extract int64
+        // Extract int64 using MALLOC flag check
         int64_t l_int_val;
-        if (l_value->length == 0) {
-            // Inline int32
-            l_int_val = (int64_t)(int32_t)l_value->offset;
-        } else {
+        if (l_value->flags & DAP_JSON_FLAG_MALLOC) {
             // Allocated int64
             int64_t *l_ptr = (int64_t*)dap_json_get_storage_ptr(l_value);
             l_int_val = *l_ptr;
+        } else {
+            // Inline int32
+            l_int_val = (int64_t)(int32_t)l_value->offset;
         }
         return (double)l_int_val;
     }
