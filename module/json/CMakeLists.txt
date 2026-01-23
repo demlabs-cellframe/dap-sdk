@@ -89,9 +89,9 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     )
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
     # ARM32: ONLY NEON (no SVE/SVE2)
+    # Note: Stage 2 String Scanner SIMD not yet implemented for ARM32
     list(APPEND JSON_ARCH_SRCS 
         ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
-        ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
     )
 endif()
 
@@ -134,13 +134,14 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
     # ARM32 architecture (ARMv7)
-    set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
+    set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c)
     
     # ARM32 - explicit NEON flag required
     set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon")
     
     message(STATUS "[dap_json] NEON implementation enabled (ARM32): ${NEON_SRCS}")
     message(STATUS "[dap_json] SVE/SVE2 skipped (ARM64 only)")
+    message(STATUS "[dap_json] Stage 2 String Scanner SIMD: reference implementation (ARM32 NEON in development)")
 endif()
 
 # Register headers for component-based installation

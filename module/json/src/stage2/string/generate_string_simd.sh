@@ -129,6 +129,12 @@ case "${ARCH}" in
         generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c"
         ;;
     
+    arm|ARM|armv7*)
+        echo "=== ARM32 (ARMv7) SIMD ==="
+        generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
+        echo "Note: SVE/SVE2 require ARM64, skipped on ARM32"
+        ;;
+    
     *)
         echo "⚠️  Unknown architecture '${ARCH}'"
         echo "Only reference implementation will be available"
