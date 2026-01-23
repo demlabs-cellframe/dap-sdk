@@ -310,7 +310,11 @@ endif()
 if(NOT DEFINED THREADS_PREFER_PTHREAD_FLAG)
   set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 endif()
-find_package(Threads REQUIRED)
+
+# Android: threads are built into libc (bionic), no separate pthread library
+if(NOT ANDROID)
+  find_package(Threads REQUIRED)
+endif()
 
 include(cmake/compiler.cmake)
 include(cmake/profile.cmake)
