@@ -30,13 +30,12 @@ static inline uint64_t dap_sve_movemask_u8(svbool_t a_pred)
     uint64_t result = 0;
     
     // Extract each bit from predicate
-    // SVE approach: Create predicates for each lane and test
+    // CRITICAL: Use byte-granular operations (_b8, _u8) not 64-bit!
     for (size_t i = 0; i < vl_bytes; i++) {
-        // Create a predicate that selects only lane 'i'
-        svbool_t lane_pred = svcmpeq_n_u64(svptrue_b64(), svindex_u64(0, 1), (uint64_t)i);
+        // Create a predicate that selects only lane 'i' (BYTE granularity)
+        svbool_t lane_pred = svcmpeq_n_u8(svptrue_b8(), svindex_u8(0, 1), (uint8_t)i);
         
         // Test if lane 'i' is active in our predicate
-        // svcntp counts active lanes - will be 1 if lane is set, 0 otherwise
         if (svptest_any(lane_pred, a_pred)) {
             result |= (1ULL << i);
         }

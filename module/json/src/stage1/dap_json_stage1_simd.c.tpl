@@ -258,20 +258,25 @@ static dap_json_bitmaps_{{ARCH_LOWER}}_t s_classify_chunk_{{ARCH_LOWER}}(const u
 {{/if}}  // USE_AVX512_MASK
 {{/if}}  // ARCH_LOWER != "sve" && != "sve2"
     
-    // DEBUG: Detailed logging for problematic chunk (ALWAYS when last byte is '}')
-    if (a_chunk[15] == '}') {
-        log_it(L_NOTICE, "=== s_classify_chunk: Detected chunk ending with '}' ===");
+    // DEBUG: Detailed logging for problematic chunk (ALWAYS when last byte is '}' or '"')
+    if (a_chunk[15] == '}' || a_chunk[15] == '"') {
+        log_it(L_NOTICE, "=== s_classify_chunk: Detected chunk ending with '%c' ===", a_chunk[15]);
         log_it(L_NOTICE, "Chunk first byte: '%c' (0x%02x)", a_chunk[0], a_chunk[0]);
         log_it(L_NOTICE, "Chunk last byte: '%c' (0x%02x)", a_chunk[15], a_chunk[15]);
-        log_it(L_NOTICE, "Structural bitmap computed: 0x%04x", (unsigned int)bitmaps.structural);
-        log_it(L_NOTICE, "Expected: bit 15 MUST be set for '}'");
+        log_it(L_NOTICE, "ALL BITMAPS:");
+        log_it(L_NOTICE, "  structural: 0x%04x", (unsigned int)bitmaps.structural);
+        log_it(L_NOTICE, "  quote:      0x%04x", (unsigned int)bitmaps.quote);
+        log_it(L_NOTICE, "  backslash:  0x%04x", (unsigned int)bitmaps.backslash);
+        log_it(L_NOTICE, "  whitespace: 0x%04x", (unsigned int)bitmaps.whitespace);
+        log_it(L_NOTICE, "Expected: bit 15 MUST be set for '%c'", a_chunk[15]);
         
         // Show each byte and its classification
         for (int i = 0; i < 16; i++) {
             unsigned char byte = a_chunk[i];
             int is_struct = !!(bitmaps.structural & (1 << i));
-            log_it(L_NOTICE, "  Byte %2d: '%c' (0x%02x) structural=%d%s", 
-                     i, (byte >= 32 && byte < 127) ? byte : '?', byte, is_struct,
+            int is_quote = !!(bitmaps.quote & (1 << i));
+            log_it(L_NOTICE, "  Byte %2d: '%c' (0x%02x) structural=%d quote=%d%s", 
+                     i, (byte >= 32 && byte < 127) ? byte : '?', byte, is_struct, is_quote,
                      (i == 15) ? " <- CRITICAL!" : "");
         }
     }
