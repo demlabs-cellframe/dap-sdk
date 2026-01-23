@@ -739,7 +739,7 @@ function(create_final_shared_library)
             "-framework SystemConfiguration"
         )
     elseif(WIN32)
-        target_link_libraries(${TARGET_NAME} PUBLIC ws2_32 mswsock psapi pthread intl iconv)
+        target_link_libraries(${TARGET_NAME} PUBLIC ws2_32 mswsock psapi pthread)
     endif()
     
     # Export all symbols (needed for plugin system)
