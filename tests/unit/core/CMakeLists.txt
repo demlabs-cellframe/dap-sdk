@@ -224,7 +224,13 @@ if (DAP_USE_RPMALLOC)
       ../../3rdparty/rpmalloc/test/thread.c
       ../../3rdparty/rpmalloc/test/main.c
     )
-    target_link_libraries(rpmalloc_test dap_core m pthread dl)
+    target_link_libraries(rpmalloc_test dap_core)
+    # Platform-specific system libraries
+    if(UNIX AND NOT ANDROID)
+        target_link_libraries(rpmalloc_test m pthread dl)
+    elseif(WIN32)
+        # Windows doesn't need explicit dl/pthread
+    endif()
     target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
     if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
         add_test(
