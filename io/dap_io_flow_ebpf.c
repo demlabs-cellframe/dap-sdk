@@ -77,9 +77,9 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     // code=0xb7 (BPF_ALU | BPF_MOV | BPF_K)
     {.code = 0xb7, .dst_reg = 8, .src_reg = 0, .off = 0, .imm = 0x0008},
     
-    // if (r7 != r8) goto +30 (skip IPv4, try IPv6)
+    // if (r7 != r8) goto +17 (skip IPv4 PATH, go to IPv6 PATH)
     // code=0x5d (BPF_JMP | BPF_JNE | BPF_X)
-    {.code = 0x5d, .dst_reg = 7, .src_reg = 8, .off = 30, .imm = 0},
+    {.code = 0x5d, .dst_reg = 7, .src_reg = 8, .off = 17, .imm = 0},  // FIXED: 17 инструкций до IPv6_PATH
     
     // === IPv4 PATH ===
     // Load data pointer (offset 0 in sk_reuseport_md)
@@ -96,7 +96,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     
     // if (r4 > r3) goto error (packet too small)
     // code=0x2d (BPF_JMP | BPF_JGT | BPF_X)
-    {.code = 0x2d, .dst_reg = 4, .src_reg = 3, .off = 35, .imm = 0},
+    {.code = 0x2d, .dst_reg = 4, .src_reg = 3, .off = 32, .imm = 0},  // FIXED: 32 до ERROR
     
     // Load src_ip (offset 12 in IPv4 header)
     // r2 = *(u32*)(r2 + 12)
@@ -128,7 +128,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     {.code = 0x07, .dst_reg = 5, .src_reg = 0, .off = 0, .imm = 2},
     
     // if (r5 > r3) goto error
-    {.code = 0x2d, .dst_reg = 5, .src_reg = 3, .off = 25, .imm = 0},
+    {.code = 0x2d, .dst_reg = 5, .src_reg = 3, .off = 23, .imm = 0},  // FIXED: 23 до ERROR
     
     // Load src_port (offset 0 in UDP header, 16-bit)
     // r4 = *(u16*)(r4 + 0)
@@ -143,7 +143,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     
     // Jump to return
     // code=0x05 (BPF_JMP | BPF_JA)
-    {.code = 0x05, .dst_reg = 0, .src_reg = 0, .off = 20, .imm = 0},
+    {.code = 0x05, .dst_reg = 0, .src_reg = 0, .off = 18, .imm = 0},  // FIXED: 18 до RETURN
     
     // === IPv6 PATH ===
     // Check if IPv6 (ETH_P_IPV6 = 0x86DD, in network byte order = 0xDD86)
@@ -151,7 +151,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     {.code = 0xb7, .dst_reg = 8, .src_reg = 0, .off = 0, .imm = 0xDD86},
     
     // if (r7 != r8) goto error (not IPv4, not IPv6)
-    {.code = 0x5d, .dst_reg = 7, .src_reg = 8, .off = 15, .imm = 0},
+    {.code = 0x5d, .dst_reg = 7, .src_reg = 8, .off = 17, .imm = 0},  // FIXED: 17 до ERROR
     
     // Load data pointer
     // r2 = ctx->data
@@ -165,7 +165,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     {.code = 0x07, .dst_reg = 4, .src_reg = 0, .off = 0, .imm = 40},
     
     // if (r4 > r3) goto error
-    {.code = 0x2d, .dst_reg = 4, .src_reg = 3, .off = 10, .imm = 0},
+    {.code = 0x2d, .dst_reg = 4, .src_reg = 3, .off = 13, .imm = 0},  // FIXED: 13 до ERROR
     
     // Load first 4 bytes of src_ipv6 (offset 8 in IPv6 header)
     // r2 = *(u32*)(r2 + 8)
@@ -191,7 +191,7 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     {.code = 0x07, .dst_reg = 5, .src_reg = 0, .off = 0, .imm = 2},
     
     // if (r5 > r3) goto error
-    {.code = 0x2d, .dst_reg = 5, .src_reg = 3, .off = 2, .imm = 0},
+    {.code = 0x2d, .dst_reg = 5, .src_reg = 3, .off = 4, .imm = 0},  // FIXED: 4 до ERROR
     
     // Load src_port
     {.code = 0x69, .dst_reg = 4, .src_reg = 4, .off = 0, .imm = 0},
