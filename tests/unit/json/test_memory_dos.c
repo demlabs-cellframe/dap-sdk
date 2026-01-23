@@ -46,7 +46,9 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#ifndef _WIN32
 #include <sys/resource.h>
+#endif
 
 // =============================================================================
 // TIMING UTILITIES

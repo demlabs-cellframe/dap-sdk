@@ -116,9 +116,11 @@ static void test_02_pointer_to_uint_conversion(void)
     
     dap_print_module_name("DAP_POINTER_TO_UINT / DAP_UINT_TO_POINTER");
     
-    unsigned int l_test_value = 12345;
-    void *l_ptr = DAP_UINT_TO_POINTER(l_test_value);
-    unsigned int l_result = DAP_POINTER_TO_UINT(l_ptr);
+    // Note: On Windows x64, unsigned long is 32-bit but pointers are 64-bit
+    // This test uses size_t for proper cross-platform compatibility
+    size_t l_test_value = 12345;
+    void *l_ptr = DAP_SIZE_TO_POINTER(l_test_value);
+    size_t l_result = DAP_POINTER_TO_SIZE(l_ptr);
     
     TEST_ASSERT(l_result == l_test_value, "Pointer to uint conversion failed");
     TEST_SUCCESS("Pointer to uint round-trip works");

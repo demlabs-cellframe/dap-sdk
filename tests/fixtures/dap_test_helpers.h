@@ -218,7 +218,7 @@
 // Test Expectations (non-fatal)
 // ============================================================================
 
-static int g_test_expectations_failed = 0;
+static int g_test_expectations_failed __attribute__((unused)) = 0;
 
 /**
  * @brief Expect a condition (non-fatal, test continues)

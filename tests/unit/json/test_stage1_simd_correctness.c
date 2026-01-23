@@ -263,6 +263,7 @@ static bool s_test_sse2_correctness(void)
 /**
  * @brief Test NEON correctness
  */
+__attribute__((unused))
 static bool s_test_neon_correctness(void)
 {
     log_it(L_DEBUG, "Testing NEON correctness");

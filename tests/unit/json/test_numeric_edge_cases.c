@@ -216,14 +216,14 @@ static bool s_test_float_infinity(void) {
     double l_pos_inf = INFINITY;
     int l_isinf_before = s_is_inf(l_pos_inf);
     union { double d; uint64_t u; } l_pos_conv = { .d = l_pos_inf };
-    log_it(L_DEBUG, "Adding pos_inf: %f (s_is_inf_before=%d, hex=%016lx)", 
+    log_it(L_DEBUG, "Adding pos_inf: %f (s_is_inf_before=%d, hex=%016llx)", 
            l_pos_inf, l_isinf_before, l_pos_conv.u);
     dap_json_object_add_double(l_json, "pos_inf", l_pos_inf);
     
     double l_retrieved_pos = dap_json_object_get_double(l_json, "pos_inf");
     int l_isinf_after = s_is_inf(l_retrieved_pos);
     union { double d; uint64_t u; } l_retr_conv = { .d = l_retrieved_pos };
-    log_it(L_DEBUG, "Retrieved pos_inf: %f (s_is_inf_after=%d, <0=%d, hex=%016lx)", 
+    log_it(L_DEBUG, "Retrieved pos_inf: %f (s_is_inf_after=%d, <0=%d, hex=%016llx)", 
            l_retrieved_pos, l_isinf_after, l_retrieved_pos < 0, l_retr_conv.u);
     
     DAP_TEST_FAIL_IF(!s_is_inf(l_retrieved_pos) || l_retrieved_pos < 0, 

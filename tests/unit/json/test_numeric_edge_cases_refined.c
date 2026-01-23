@@ -74,7 +74,7 @@ static bool s_test_negative_zero_distinction(void) {
     union { double d; uint64_t u; } neg_conv = { .d = neg_zero };
     union { double d; uint64_t u; } pos_conv = { .d = pos_zero };
     
-    log_it(L_DEBUG, "neg_zero bits: 0x%016lx, pos_zero bits: 0x%016lx", 
+    log_it(L_DEBUG, "neg_zero bits: 0x%016llx, pos_zero bits: 0x%016llx", 
            neg_conv.u, pos_conv.u);
     
     // IEEE 754: -0.0 = 0x8000000000000000, +0.0 = 0x0000000000000000
