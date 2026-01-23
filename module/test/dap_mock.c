@@ -502,7 +502,7 @@ static void s_log_mock_call(const char *a_func_name, const char *a_action)
         struct tm *tm_info = localtime(&tv_sec);
         char time_buf[32];
         strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm_info);
-        log_it(L_DEBUG, "[%s.%06lu] MOCK %s: %s", time_buf, tv_usec, a_func_name, a_action);
+        log_it(L_DEBUG, "[%s.%06"DAP_UINT64_FORMAT_U"] MOCK %s: %s", time_buf, tv_usec, a_func_name, a_action);
     } else {
         log_it(L_DEBUG, "MOCK %s: %s", a_func_name, a_action);
     }

@@ -52,7 +52,9 @@
 #if FALCON_RAND_WIN32
 #include <windows.h>
 #include <wincrypt.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "advapi32")
+#endif
 #endif
 
 /* see inner.h */
