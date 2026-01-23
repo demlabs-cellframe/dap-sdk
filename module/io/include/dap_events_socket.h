@@ -36,6 +36,7 @@ typedef int SOCKET;
 #include "uthash.h"
 #include "dap_common.h"
 #include "dap_math_ops.h"
+#include "dap_time.h"
 
 #define DAP_EVENTS_SOCKET_MAX 8194
 
