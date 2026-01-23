@@ -113,7 +113,7 @@ if(UNIX)
     
     # Add Clang-specific flags only when using Clang
     if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
-        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument -Wno-unused-but-set-variable")
     endif()
     if (LINUX)
         set(CCOPT_SYSTEM "")
