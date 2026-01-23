@@ -95,13 +95,19 @@ function(dap_test_link_libraries TARGET_NAME)
         target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
     endif()
     
-    # Windows: Remove intl/iconv libraries that are not available/needed
+    # Windows: Remove intl/iconv from all linked modules
+    # These libraries are not available in standard MinGW and not used in code
     if(WIN32)
-        get_target_property(LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
-        if(LINK_LIBS)
-            list(REMOVE_ITEM LINK_LIBS intl iconv)
-            set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "${LINK_LIBS}")
-        endif()
+        # Clean up transitive dependencies from all modules
+        foreach(MODULE ${SDK_MODULES})
+            if(TARGET ${MODULE}_static)
+                get_target_property(MODULE_LINK_LIBS ${MODULE}_static INTERFACE_LINK_LIBRARIES)
+                if(MODULE_LINK_LIBS)
+                    list(REMOVE_ITEM MODULE_LINK_LIBS intl iconv)
+                    set_target_properties(${MODULE}_static PROPERTIES INTERFACE_LINK_LIBRARIES "${MODULE_LINK_LIBS}")
+                endif()
+            endif()
+        endforeach()
     endif()
     
     # Note: External libraries (sqlite3, json-c, ssl, etc.) are linked transitively
