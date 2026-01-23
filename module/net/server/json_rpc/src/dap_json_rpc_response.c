@@ -268,8 +268,8 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
                 const char *net_name = j_obj_net_name ? dap_json_get_string(j_obj_net_name) : "unknown";
                 const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
                 
-                printf("Print %ld transactions in network %s chain %s. \n"
-                        "Of which %ld were accepted into the ledger and %ld were rejected.\n",
+                printf("Print %"DAP_INT64_FORMAT" transactions in network %s chain %s. \n"
+                        "Of which %"DAP_INT64_FORMAT" were accepted into the ledger and %"DAP_INT64_FORMAT" were rejected.\n",
                         sum, net_name ? net_name : "unknown", 
                         chain_name ? chain_name : "unknown", accepted, rejected);
             } else {
@@ -366,7 +366,7 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
         int64_t removed_count = j_obj_removed ? dap_json_get_int64(j_obj_removed) : 0;
         
-        printf("Removed %ld records from the %s chain mempool in %s network.\n", 
+        printf("Removed %"DAP_INT64_FORMAT" records from the %s chain mempool in %s network.\n", 
                 removed_count, chain_name ? chain_name : "unknown", net_name ? net_name : "unknown");
         printf("Datums:\n");
         if (j_arr_datums)
