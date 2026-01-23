@@ -117,8 +117,8 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
         l_pvt_data->callback_init = (plugin_init_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_init");
         l_pvt_data->callback_deinit = (plugin_deinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
     }else{
-        log_it(L_ERROR,"Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
-        *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+        log_it(L_ERROR,"Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)GetLastError());
+        *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)GetLastError());
         return -5;
     }
 #endif

@@ -134,7 +134,7 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
         DAP_DELETE(l_addr);
 #endif
     } else if (( l_addr = (char*)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS) )) {
-        if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
+        if ( INVALID_SOCKET == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
 #ifdef DAP_OS_WINDOWS
             _set_errno( WSAGetLastError() );
 #endif
