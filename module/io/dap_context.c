@@ -595,7 +595,7 @@ lb_exit:
 #endif
     if (l_is_error && l_errno != EEXIST) {
 #ifdef DAP_EVENTS_CAPS_IOCP
-        log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_errno, a_es->socket);
+        log_it(L_ERROR, "IOCP update failed, errno %d socket %"DAP_FORMAT_SOCKET, l_errno, a_es->socket);
 #else
         log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ", error %d: \"%s\"",
             a_es->socket, l_errno, dap_strerror(l_errno) );
