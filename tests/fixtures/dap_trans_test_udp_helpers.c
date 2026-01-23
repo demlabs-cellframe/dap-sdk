@@ -844,4 +844,3 @@ DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_sendto_unsafe,
     // Simulate successful write - return number of bytes written
     return a_size;
 }
-

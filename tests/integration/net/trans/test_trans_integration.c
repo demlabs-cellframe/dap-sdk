@@ -30,6 +30,7 @@
 #include "dap_client_helpers.h"
 #include "dap_stream.h"
 #include "dap_io_flow.h"
+#include "dap_io_flow_ebpf.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_stream_ctl.h"
 #include "dap_net_trans.h"
@@ -1115,8 +1116,27 @@ static void test_02_sequential_trans_testing(void)
         printf("║  Testing transport: %-35s║\n", g_trans_configs[trans_idx].name);
         printf("╚════════════════════════════════════════════════════════╝\n");
         
+        // Check if eBPF/BPF is available (determines tier)
+        bool l_has_bpf = dap_io_flow_ebpf_is_available();
+        int l_tier = l_has_bpf ? 3 : 1;  // Tier 3 (eBPF) or Tier 1 (application queue)
+        const uint32_t TIER1_MAX_CLIENTS = 20;  // Tier 1 limitation
+        
+        log_it(L_NOTICE, "UDP Load Balancing: Tier %d (%s), max clients: %u", 
+               l_tier, l_has_bpf ? "eBPF/BPF kernel sharding" : "application queue forwarding",
+               l_has_bpf ? 1000 : TIER1_MAX_CLIENTS);
+        
         // Test each scenario for this transport
         for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
+            // CRITICAL: Tier 1 limitation - skip scenarios >20 clients
+            if (l_tier == 1 && g_scenarios[scenario_idx].num_clients > TIER1_MAX_CLIENTS) {
+                printf("\n--- Scenario %zu/%zu: %s ---\n", 
+                       scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
+                printf("⏭️  SKIPPED: Tier 1 limited to %u concurrent clients (scenario has %u)\n",
+                       TIER1_MAX_CLIENTS, g_scenarios[scenario_idx].num_clients);
+                printf("   To enable: run as root or grant CAP_BPF capability for eBPF support\n");
+                continue;
+            }
+            
             printf("\n--- Scenario %zu/%zu: %s ---\n", 
                    scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
             
@@ -1269,11 +1289,11 @@ int main(void)
                                 "debug_more=true\n"
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "debug_dump_stream_headers=false\n"
                                 "debug_channels=false\n"
                                 "[stream_udp]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "[io_flow]\n"
                                 "debug_more=true\n"
                                 "[io_flow_datagram]\n"
@@ -1281,20 +1301,20 @@ int main(void)
                                 "[dap_io_flow_socket]\n"
                                 "debug_more=true\n"
                                 "[net_trans]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "[dap_net_trans_udp_server]\n"
-                                "debug_more=false\n"
+                                "debug_more=true\n"
                                 "[test_trans_helpers]\n"
-                                "debug_more=false\n";
+                                "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout and level to WARNING for performance tests
+    // Set logging output to stdout and level to DEBUG for detailed diagnostics
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_NOTICE);
+    dap_log_level_set(L_DEBUG);
     
     // Initialize config system first
     dap_config_init(".");

@@ -309,7 +309,19 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         return;
     }
     
-    // Stop timers
+    // CRITICAL: Use send_mutex to synchronize with timer callbacks
+    // Timer callbacks ALWAYS lock send_mutex before accessing FC data
+    // By locking here, we prevent callbacks from starting new work
+    pthread_mutex_lock(&a_ctrl->send_mutex);
+    
+    // Clear magic under mutex lock - timer callbacks will see this and exit
+    a_ctrl->magic = 0;
+    
+    // Unlock mutex - timer callbacks can now check magic and bail out safely
+    pthread_mutex_unlock(&a_ctrl->send_mutex);
+    
+    // Stop timers (any running callbacks will exit due to magic=0)
+    // dap_timerfd_delete_unsafe is async, but callbacks won't access FC anymore
     if (a_ctrl->retransmit_timer) {
         dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
         a_ctrl->retransmit_timer = NULL;
@@ -345,9 +357,6 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     log_it(L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
-    
-    // Clear magic to detect use-after-free
-    a_ctrl->magic = 0;
     
     DAP_DELETE(a_ctrl);
 }
@@ -827,17 +836,22 @@ static bool s_retransmit_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
     
-    // Validate FC structure (detect use-after-free)
+    // CRITICAL: Check magic WITHOUT mutex first (fast path for deleted FC)
     if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        log_it(L_WARNING, "Retransmit timer called on deleted/invalid FC (magic=0x%08x)", 
-               l_ctrl ? l_ctrl->magic : 0);
-        return false;  // Stop timer
+        return false;  // Stop timer - FC deleted
+    }
+    
+    // Lock mutex BEFORE accessing any FC data to prevent race with dap_io_flow_ctrl_delete()
+    pthread_mutex_lock(&l_ctrl->send_mutex);
+    
+    // Double-check magic AFTER acquiring lock (detect deletion during lock wait)
+    if (l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
+        pthread_mutex_unlock(&l_ctrl->send_mutex);
+        return false;  // Stop timer - FC deleted while waiting for lock
     }
     
     uint64_t l_now = dap_nanotime_now();
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
-    
-    pthread_mutex_lock(&l_ctrl->send_mutex);
     
     // Scan send window for packets needing retransmission
     for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < l_ctrl->send_seq_next; seq++) {
@@ -897,10 +911,9 @@ static bool s_keepalive_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
     
-    // Validate FC structure (detect use-after-free)
+    // Check magic (no mutex needed for keepalive - it doesn't modify send window)
     if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        log_it(L_WARNING, "Keepalive timer called on deleted/invalid FC");
-        return false;  // Stop timer
+        return false;  // Stop timer - FC deleted
     }
     
     uint64_t l_now = dap_nanotime_now();

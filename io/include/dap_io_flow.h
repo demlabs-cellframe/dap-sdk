@@ -348,26 +348,14 @@ struct dap_io_flow_server {
     // Statistics
     _Atomic size_t local_hits;              ///< Local flow lookups
     _Atomic size_t remote_hits;             ///< Remote flow lookups
-    _Atomic size_t cross_worker_packets;    ///< Cross-worker forwarded packets
     
     bool is_running;                        ///< Server is running
     _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
     
-    // Queue deletion coordination (cross-thread safe cleanup)
-    _Atomic uint32_t pending_queue_deletions;  ///< Number of queues still pending deletion
-    pthread_mutex_t queue_delete_mutex;        ///< Mutex for queue deletion wait
-    pthread_cond_t queue_delete_cond;          ///< Condition variable signaled when all queues deleted
-    
-    // Listener disable coordination (stop packet intake before cleanup)
-    _Atomic uint32_t pending_listener_disables; ///< Number of listeners still pending disable
-    pthread_mutex_t listener_disable_mutex;     ///< Mutex for listener disable wait
-    pthread_cond_t listener_disable_cond;       ///< Condition variable signaled when all listeners disabled
-    
-    // Server deletion coordination (for dap_server with listeners)
-    _Atomic bool server_delete_pending;        ///< dap_server deletion scheduled
-    _Atomic bool server_delete_complete;       ///< dap_server deletion finished
-    pthread_mutex_t server_delete_mutex;       ///< Mutex for server deletion wait
-    pthread_cond_t server_delete_cond;         ///< Condition variable signaled when server deleted
+    // Cross-worker packet tracking (for natural drain during cleanup)
+    _Atomic uint32_t cross_worker_packets;     ///< Number of packets being forwarded between workers
+    pthread_mutex_t cross_worker_mutex;        ///< Mutex for cross-worker drain wait
+    pthread_cond_t cross_worker_cond;          ///< Condition variable for cross-worker drain
 };
 
 // =============================================================================

@@ -29,6 +29,7 @@
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
+#include "dap_time.h"
 #include "dap_io_flow.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
@@ -76,15 +77,6 @@ typedef struct {
     uint32_t worker_id;
 } queue_delete_args_t;
 
-/**
- * @brief Listener disable callback arguments
- * 
- * Passed to worker thread for safe listener read disable from reactor context.
- */
-typedef struct {
-    dap_io_flow_server_t *server;
-    dap_events_socket_t *listener;
-} listener_disable_args_t;
 
 // Forward declarations for internal functions
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
@@ -193,21 +185,10 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
     atomic_init(&l_server->is_deleting, false);   // Server is valid initially
     
-    // Initialize queue deletion coordination
-    pthread_mutex_init(&l_server->queue_delete_mutex, NULL);
-    pthread_cond_init(&l_server->queue_delete_cond, NULL);
-    atomic_init(&l_server->pending_queue_deletions, 0);
-    
-    // Initialize listener disable coordination
-    pthread_mutex_init(&l_server->listener_disable_mutex, NULL);
-    pthread_cond_init(&l_server->listener_disable_cond, NULL);
-    atomic_init(&l_server->pending_listener_disables, 0);
-    
-    // Initialize server deletion coordination
-    pthread_mutex_init(&l_server->server_delete_mutex, NULL);
-    pthread_cond_init(&l_server->server_delete_cond, NULL);
-    atomic_init(&l_server->server_delete_pending, false);
-    atomic_init(&l_server->server_delete_complete, false);
+    // Initialize cross-worker packet drain coordination (for natural drain during cleanup)
+    pthread_mutex_init(&l_server->cross_worker_mutex, NULL);
+    pthread_cond_init(&l_server->cross_worker_cond, NULL);
+    // cross_worker_packets initialized by calloc to 0
     
     log_it(L_INFO, "Created flow server '%s' with %u workers, boundary_type=%d",
            a_name, l_worker_count, a_boundary_type);
@@ -323,130 +304,16 @@ void dap_io_flow_server_stop(dap_io_flow_server_t *a_server)
  * 
  * @param a_arg dap_io_flow_server_t* with server to delete
  */
-static void s_server_delete_worker_callback(void *a_arg)
-{
-    dap_io_flow_server_t *l_server = (dap_io_flow_server_t *)a_arg;
-    if (!l_server || !l_server->dap_server) {
-        log_it(L_ERROR, "s_server_delete_worker_callback: invalid server");
-        if (l_server) {
-            atomic_store(&l_server->server_delete_complete, true);
-            pthread_cond_signal(&l_server->server_delete_cond);
-        }
-        return;
-    }
-    
-    log_it(L_DEBUG, "Worker thread: Deleting dap_server (listeners) from reactor context");
-    
-    // Safe to delete - we're in a worker reactor thread!
-    dap_server_delete(l_server->dap_server);
-    l_server->dap_server = NULL;
-    
-    log_it(L_DEBUG, "Worker thread: dap_server deleted successfully");
-    
-    // Signal completion
-    pthread_mutex_lock(&l_server->server_delete_mutex);
-    atomic_store(&l_server->server_delete_complete, true);
-    pthread_cond_signal(&l_server->server_delete_cond);
-    pthread_mutex_unlock(&l_server->server_delete_mutex);
-}
-
-/**
- * @brief Worker-thread callback to disable reading on listener socket
- * 
- * CRITICAL: Must be called from listener's owner worker thread!
- * Removes socket from reactor's read poll set to stop accepting new packets.
- * Socket remains alive for sending responses to already-queued packets.
- * 
- * @param a_arg listener_disable_args_t* with server and listener socket
- */
-static void s_listener_disable_read_callback(void *a_arg)
-{
-    listener_disable_args_t *l_args = (listener_disable_args_t *)a_arg;
-    if (!l_args) {
-        log_it(L_ERROR, "Listener disable callback: NULL args!");
-        return;
-    }
-    
-    dap_io_flow_server_t *l_server = l_args->server;
-    dap_events_socket_t *l_es = l_args->listener;
-    
-    log_it(L_INFO, "Listener disable callback ENTRY: fd=%d", l_es ? l_es->fd : -1);
-    
-    if (l_es) {
-        // Disable reading - removes from poll/epoll read set
-        dap_events_socket_set_readable_unsafe(l_es, false);
-        log_it(L_INFO, "Disabled read on listener fd=%d", l_es->fd);
-    }
-    
-    // Signal completion
-    pthread_mutex_lock(&l_server->listener_disable_mutex);
-    uint32_t l_remaining = atomic_fetch_sub(&l_server->pending_listener_disables, 1) - 1;
-    log_it(L_INFO, "Listener disable: decremented counter, remaining=%u", l_remaining);
-    if (l_remaining == 0) {
-        pthread_cond_signal(&l_server->listener_disable_cond);
-        log_it(L_INFO, "All listeners disabled - signaling condition variable");
-    }
-    pthread_mutex_unlock(&l_server->listener_disable_mutex);
-    
-    DAP_DELETE(l_args);
-}
-
-/**
- * @brief Worker-thread callback to safely delete context queue
- * 
- * CRITICAL: This callback runs in the worker's reactor thread!
- * Safe to call dap_context_queue_delete() because we're in the owning thread.
- * 
- * @param a_arg queue_delete_args_t* with server, queue, and worker_id
- */
-static void s_queue_delete_worker_callback(void *a_arg)
-{
-    typedef struct {
-        dap_io_flow_server_t *server;
-        dap_context_queue_t *queue;
-        uint32_t worker_id;
-    } queue_delete_args_t;
-    
-    queue_delete_args_t *l_args = (queue_delete_args_t *)a_arg;
-    if (!l_args || !l_args->server || !l_args->queue) {
-        log_it(L_ERROR, "s_queue_delete_worker_callback: invalid args");
-        if (l_args) {
-            if (l_args->server) {
-                atomic_fetch_sub(&l_args->server->pending_queue_deletions, 1);
-                pthread_cond_signal(&l_args->server->queue_delete_cond);
-            }
-            DAP_DELETE(l_args);
-        }
-        return;
-    }
-    
-    log_it(L_DEBUG, "Worker %u: Deleting context queue from reactor thread", l_args->worker_id);
-    
-    // Safe to delete - we're in the reactor thread that owns this queue!
-    dap_context_queue_delete(l_args->queue);
-    
-    // Decrement pending deletions counter
-    uint32_t l_remaining = atomic_fetch_sub(&l_args->server->pending_queue_deletions, 1) - 1;
-    
-    log_it(L_DEBUG, "Worker %u: Queue deleted, %u queues remaining", l_args->worker_id, l_remaining);
-    
-    // Signal if all queues deleted
-    pthread_mutex_lock(&l_args->server->queue_delete_mutex);
-    pthread_cond_signal(&l_args->server->queue_delete_cond);
-    pthread_mutex_unlock(&l_args->server->queue_delete_mutex);
-    
-    DAP_DELETE(l_args);
-}
-
 /**
  * @brief Delete IO flow server and cleanup all resources
  * 
- * Simplified cleanup with lock-free context queues:
- * 1. Cleanup flows (user data)
- * 2. Free inter_worker_queues reference arrays
- * 3. Delete queue_inputs (context queues)
- * 4. Stop server (listeners)
- * 5. Free structures
+ * Intelligent cleanup with natural drain:
+ * 1. Mark is_deleting=true to stop new packet intake
+ * 2. Cleanup flows (protocol data)
+ * 3. Free inter_worker_queues reference arrays
+ * 4. Wait for natural drain of cross_worker_packets (with pruning)
+ * 5. Delete dap_server (listeners)
+ * 6. Free structures (queues NOT deleted - belong to workers)
  */
 void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
 {
@@ -479,72 +346,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         dap_io_flow_server_stop(a_server);
     }
     
-    // Step 0: Packet intake is now stopped by is_deleting check in s_listener_read_callback
-    // No need for complex listener disable coordination - atomic flag is enough!
-    log_it(L_INFO, "Step 0: Packet intake stopped via is_deleting flag");
-    
-    // Give reactors time to process any in-flight read events
-    usleep(50000);  // 50ms
-    
-    // Step 0.5: Wait for all queued packets to drain
-    // Give worker threads time to process remaining packets
     uint32_t l_worker_count = dap_proc_thread_get_count();
-    if (a_server->queue_inputs) {
-        log_it(L_DEBUG, "Waiting for queue drainage (max 1 second)");
-        for (int attempts = 0; attempts < 10; attempts++) {
-            bool all_empty = true;
-            for (uint32_t i = 0; i < l_worker_count; i++) {
-                if (a_server->queue_inputs[i]) {
-                    size_t pending = dap_context_queue_count(a_server->queue_inputs[i]);
-                    if (pending > 0) {
-                        all_empty = false;
-                        log_it(L_DEBUG, "Worker %u queue has %zu pending packets", i, pending);
-                    }
-                }
-            }
-            if (all_empty) {
-                log_it(L_DEBUG, "All queues drained successfully");
-                break;
-            }
-            usleep(100000);  // 100ms between checks
-        }
-    }
-    
-    // CRITICAL: Wait for ALL cross-worker packets to be processed
-    // Even though input queues are drained, workers may still have huge backlogs!
-    // We MUST wait for processing to complete BEFORE scheduling deletion callbacks,
-    // otherwise worker queues will be full and dap_worker_exec_callback_on will fail.
-    debug_if(s_debug_more, L_DEBUG, "Waiting for cross-worker packets to drain completely");
-    
-    uint64_t l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
-    uint32_t l_iterations = 0;
-    const uint32_t MAX_WAIT_ITERATIONS = 100; // 10 seconds max (100ms each) - was 60 sec
-    
-    // Always log drain start
-    log_it(L_INFO, "Cross-worker packet drain START: %lu packets pending", l_cross_worker_packets);
-    
-    while (l_cross_worker_packets > 0 && l_iterations < MAX_WAIT_ITERATIONS) {
-        usleep(100000);  // 100ms
-        l_iterations++;
-        
-        uint64_t l_prev = l_cross_worker_packets;
-        l_cross_worker_packets = atomic_load(&a_server->cross_worker_packets);
-        
-        // Log progress every second for first 10 iterations, then every 5 seconds
-        if (l_iterations <= 10 || l_iterations % 50 == 0) {
-            int64_t l_delta = (int64_t)l_prev - (int64_t)l_cross_worker_packets;
-            log_it(L_INFO, 
-                   "  drain progress: %lu packets (delta: %ld, elapsed: %.1f sec)", 
-                   l_cross_worker_packets, l_delta, l_iterations * 0.1);
-        }
-    }
-    
-    if (l_cross_worker_packets > 0) {
-        log_it(L_WARNING, "Cross-worker packet drain TIMEOUT! %lu packets still pending after %.1f seconds",
-               l_cross_worker_packets, l_iterations * 0.1);
-    } else {
-        log_it(L_INFO, "Cross-worker packet drain COMPLETE (%.1f sec)", l_iterations * 0.1);
-    }
     
     // Step 1: Cleanup all flows (user data)
     debug_if(s_debug_more, L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
@@ -577,49 +379,60 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     debug_if(s_debug_more, L_DEBUG, "Inter-worker queue references freed");
     
-    // Step 3: Schedule queue deletion on each worker thread (thread-safe)
-    // CRITICAL: Queues MUST be deleted from their own reactor threads!
-    debug_if(s_debug_more, L_DEBUG, "Scheduling queue deletions on worker threads");
-    if (a_server->queue_inputs) {
-        // Set number of pending deletions
-        atomic_store(&a_server->pending_queue_deletions, l_worker_count);
+    // Step 3: Intelligent drain - wait for natural completion of all operations
+    // IMPORTANT: Do NOT delete queues - they belong to worker threads lifecycle
+    // Wait for all cross-worker packets to drain with state pruning
+    debug_if(s_debug_more, L_INFO, "Waiting for natural drain of cross-worker packets...");
+    
+    uint64_t l_drain_start = dap_nanotime_now();
+    uint64_t l_max_drain_time_ns = 10 * 60 * 1000000000ULL;  // 10 minutes max
+    uint32_t l_last_count = atomic_load(&a_server->cross_worker_packets);
+    uint32_t l_no_progress_cycles = 0;
+    const uint32_t MAX_NO_PROGRESS = 100;  // 10 seconds of no progress
+    
+    while (atomic_load(&a_server->cross_worker_packets) > 0) {
+        uint32_t l_current = atomic_load(&a_server->cross_worker_packets);
         
-        // Schedule deletion on each worker
-        for (uint32_t i = 0; i < l_worker_count; i++) {
-            if (a_server->queue_inputs[i]) {
-                queue_delete_args_t *l_args = DAP_NEW_Z(queue_delete_args_t);
-                l_args->server = a_server;
-                l_args->queue = a_server->queue_inputs[i];
-                l_args->worker_id = i;
-                
-                dap_proc_thread_t *l_proc = dap_proc_thread_get(i);
-                dap_worker_t *l_worker = l_proc ? (dap_worker_t *)l_proc->context->_inheritor : NULL;
-                if (l_worker) {
-                    log_it(L_DEBUG, "Scheduling queue[%u] deletion on worker %u", i, i);
-                    dap_worker_exec_callback_on(l_worker, s_queue_delete_worker_callback, l_args);
-                } else {
-                    log_it(L_ERROR, "Worker %u not found! Cannot schedule queue deletion", i);
-                    atomic_fetch_sub(&a_server->pending_queue_deletions, 1);
-                    DAP_DELETE(l_args);
-                }
-            } else {
-                // No queue to delete on this worker
-                atomic_fetch_sub(&a_server->pending_queue_deletions, 1);
+        // Check progress (pruning - удаление отработанных)
+        if (l_current < l_last_count) {
+            l_no_progress_cycles = 0;  // Progress made - reset stuck counter
+            debug_if(s_debug_more, L_DEBUG, "Drain progress: %u -> %u packets", 
+                     l_last_count, l_current);
+        } else {
+            l_no_progress_cycles++;
+            if (l_no_progress_cycles >= MAX_NO_PROGRESS) {
+                log_it(L_WARNING, "Drain stuck at %u packets for %u cycles - continuing anyway",
+                       l_current, l_no_progress_cycles);
+                break;  // Stuck - give up
             }
         }
+        l_last_count = l_current;
         
-        // Wait for all workers to complete queue deletions
-        pthread_mutex_lock(&a_server->queue_delete_mutex);
-        while (atomic_load(&a_server->pending_queue_deletions) > 0) {
-            debug_if(s_debug_more, L_DEBUG, "Waiting for %u queues to be deleted...", 
-                   atomic_load(&a_server->pending_queue_deletions));
-            pthread_cond_wait(&a_server->queue_delete_cond, &a_server->queue_delete_mutex);
+        // Timeout check
+        uint64_t l_elapsed_ns = dap_nanotime_now() - l_drain_start;
+        if (l_elapsed_ns > l_max_drain_time_ns) {
+            log_it(L_WARNING, "Drain timeout after %lu sec, %u packets remaining",
+                   l_elapsed_ns / 1000000000, l_current);
+            break;
         }
-        pthread_mutex_unlock(&a_server->queue_delete_mutex);
         
+        usleep(100000);  // 100ms between checks
+    }
+    
+    uint64_t l_drain_time_ms = (dap_nanotime_now() - l_drain_start) / 1000000;
+    uint32_t l_final_count = atomic_load(&a_server->cross_worker_packets);
+    if (l_final_count == 0) {
+        log_it(L_INFO, "Natural drain complete: all packets processed in %lu ms", l_drain_time_ms);
+    } else {
+        log_it(L_WARNING, "Drain finished with %u packets remaining after %lu ms", 
+               l_final_count, l_drain_time_ms);
+    }
+    
+    // Step 4: Free queue_inputs array
+    // Queues themselves NOT deleted - they belong to worker threads
+    if (a_server->queue_inputs) {
         DAP_DELETE(a_server->queue_inputs);
         a_server->queue_inputs = NULL;
-        debug_if(s_debug_more, L_DEBUG, "All queues deleted safely from worker threads");
     }
     
     // Step 5: Free structures
@@ -634,46 +447,17 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_mutex_destroy(&a_server->cleanup_mutex);
     pthread_cond_destroy(&a_server->cleanup_cond);
     
-    // Destroy listener disable synchronization
-    pthread_mutex_destroy(&a_server->listener_disable_mutex);
-    pthread_cond_destroy(&a_server->listener_disable_cond);
+    // Destroy cross-worker packet drain synchronization
+    pthread_mutex_destroy(&a_server->cross_worker_mutex);
+    pthread_cond_destroy(&a_server->cross_worker_cond);
     
-    // Destroy queue deletion synchronization
-    pthread_mutex_destroy(&a_server->queue_delete_mutex);
-    pthread_cond_destroy(&a_server->queue_delete_cond);
-    
-    // Step 6: Delete dap_server (listeners) via worker thread
-    // CRITICAL: Listeners are registered in worker reactors - must delete from worker context!
-    debug_if(s_debug_more, L_DEBUG, "Scheduling dap_server deletion on worker thread");
+    // Step 6: Stop and delete dap_server (listeners)
+    // After drain, listeners can be deleted safely
+    debug_if(s_debug_more, L_DEBUG, "Deleting dap_server (listeners)");
     if (a_server->dap_server) {
-        atomic_store(&a_server->server_delete_pending, true);
-        atomic_store(&a_server->server_delete_complete, false);
-        
-        // Schedule deletion on worker 0 (guaranteed to exist)
-        dap_proc_thread_t *l_proc = dap_proc_thread_get(0);
-        dap_worker_t *l_worker = l_proc ? (dap_worker_t *)l_proc->context->_inheritor : NULL;
-        
-        if (l_worker) {
-            dap_worker_exec_callback_on(l_worker, s_server_delete_worker_callback, a_server);
-            
-            // Wait for deletion to complete
-            pthread_mutex_lock(&a_server->server_delete_mutex);
-            while (!atomic_load(&a_server->server_delete_complete)) {
-                pthread_cond_wait(&a_server->server_delete_cond, &a_server->server_delete_mutex);
-            }
-            pthread_mutex_unlock(&a_server->server_delete_mutex);
-            
-            debug_if(s_debug_more, L_DEBUG, "dap_server deleted safely from worker thread");
-        } else {
-            log_it(L_WARNING, "Worker 0 not found! Deleting dap_server directly (UNSAFE)");
-            dap_server_delete(a_server->dap_server);
-            a_server->dap_server = NULL;
-        }
+        dap_server_delete(a_server->dap_server);
+        a_server->dap_server = NULL;
     }
-    
-    // Destroy server deletion synchronization
-    pthread_mutex_destroy(&a_server->server_delete_mutex);
-    pthread_cond_destroy(&a_server->server_delete_cond);
     
     // Step 7: Final cleanup
     char *l_name_copy = a_server->name ? dap_strdup(a_server->name) : NULL;
@@ -1340,14 +1124,17 @@ static void s_queue_ptr_callback(void *a_ptr)
     // CRITICAL: Check if server is being deleted
     if (atomic_load(&l_server->is_deleting)) {
         debug_if(s_debug_more, L_DEBUG, 
-                 "Queue callback: server '%s' is being deleted - dropping packet",
-                 l_server->name ? l_server->name : "NULL");
+                 "Queue callback: server is being deleted - dropping packet");
         // Release arena page for this packet
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
         // CRITICAL: Decrement counter (we incremented it above)
         atomic_fetch_sub(&l_server->cross_worker_packets, 1);
+        // Signal waiters (quick lock/unlock/signal pattern)
+        pthread_mutex_lock(&l_server->cross_worker_mutex);
+        pthread_cond_signal(&l_server->cross_worker_cond);
+        pthread_mutex_unlock(&l_server->cross_worker_mutex);
         return;
     }
     
@@ -1362,6 +1149,10 @@ static void s_queue_ptr_callback(void *a_ptr)
         }
         // CRITICAL: Decrement counter (we incremented it above)
         atomic_fetch_sub(&l_server->cross_worker_packets, 1);
+        // Signal waiters (quick lock/unlock/signal pattern)
+        pthread_mutex_lock(&l_server->cross_worker_mutex);
+        pthread_cond_signal(&l_server->cross_worker_cond);
+        pthread_mutex_unlock(&l_server->cross_worker_mutex);
         return;
     }
     
@@ -1455,6 +1246,11 @@ static void s_queue_ptr_callback(void *a_ptr)
     // CRITICAL: Decrement cross-worker packet counter after processing!
     // This counter is used in cleanup to wait for all packets to drain.
     atomic_fetch_sub(&l_server->cross_worker_packets, 1);
+    // Signal waiters (quick lock/unlock/signal)
+    pthread_mutex_lock(&l_server->cross_worker_mutex);
+    pthread_cond_signal(&l_server->cross_worker_cond);
+    pthread_mutex_unlock(&l_server->cross_worker_mutex);
+    
     debug_if(s_debug_more, L_DEBUG, 
              "Queue callback: packet processed, cross_worker_packets now: %lu",
              atomic_load(&l_server->cross_worker_packets));

@@ -28,6 +28,7 @@
 #include "dap_io_flow.h"
 #include "dap_io_flow_datagram.h"
 #include "dap_io_flow_socket.h"
+#include "dap_context_queue.h"
 #include "dap_io_flow_ctrl.h"  // Flow Control for reliable delivery
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -163,6 +164,14 @@ typedef struct kem_task_ctx {
     size_t alice_pub_key_size;           // Alice's public key size
     dap_events_socket_uuid_t session_uuid; // Session UUID for validation
 } kem_task_ctx_t;
+
+/**
+ * @brief Listener disable callback arguments
+ */
+typedef struct {
+    dap_io_flow_server_t *server;
+    dap_events_socket_t *listener;
+} listener_disable_args_t;
 
 /**
  * @brief KEM task result
@@ -613,30 +622,27 @@ void dap_net_trans_udp_server_stop(dap_net_trans_udp_server_t *a_server)
     }
 }
 
+
 void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
 {
     if (!a_server) {
         return;
     }
     
-    // CRITICAL: Mark ALL flow servers as deleting IMMEDIATELY!
-    // This stops packet processing from queues before we start cleanup.
+    log_it(L_NOTICE, "Deleting Stream UDP server '%s'", a_server->server_name);
+    
+    // Step 1: Mark all flow servers as deleting
     if (a_server->flow_servers) {
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
-            if (a_server->flow_servers[i]) {
-                atomic_store(&a_server->flow_servers[i]->is_deleting, true);
+            dap_io_flow_server_t *l_fs = a_server->flow_servers[i];
+            if (l_fs) {
+                atomic_store(&l_fs->is_deleting, true);
+                debug_if(s_debug_more, L_DEBUG, "Marked flow_server[%zu] as deleting", i);
             }
         }
     }
     
-    log_it(L_NOTICE, "Deleting Stream UDP server '%s'", a_server->server_name);
-    
-    log_it(L_INFO, "Step 1: Deleting flows from %zu flow servers", 
-           a_server->flow_servers ? a_server->flow_servers_count : 0);
-    
-    // CRITICAL: Delete all flows BEFORE deleting flow servers!
-    // This prevents use-after-free when flows hold pointers to listener_es
-    // that will be freed when flow server is deleted.
+    // Step 2: Delete all flows (synchronously)
     if (a_server->flow_servers) {
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
             if (a_server->flow_servers[i]) {
