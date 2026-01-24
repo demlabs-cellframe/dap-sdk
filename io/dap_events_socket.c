@@ -2045,6 +2045,10 @@ static inline byte_t *s_events_socket_ensure_buf_space(dap_events_socket_t *a_es
 static inline void s_events_socket_finalize_write(dap_events_socket_t *a_es, size_t a_bytes_written)
 {
     a_es->buf_out_size += a_bytes_written;
+    // Update last_time_active on buffer write to prevent false timeouts
+    // when send() returns EAGAIN but connection is still alive
+    if (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
+        a_es->last_time_active = time(NULL);
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_bytes_written, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
